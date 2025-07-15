@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Florr.io Clone</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #2c3e50;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            border: none;
+            background: transparent;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: crosshair;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        #connectionStatus {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 14px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        #uiCanvas {
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" style="position: absolute; top: 0; left: 0; z-index: 0;"></canvas>
+        <canvas id="uiCanvas" style="position: absolute; top: 0; left: 0; z-index: 1000; pointer-events: none;"></canvas>
+        <div id="ui">
+            <div>Health: <span id="health">100</span></div>
+            <div>Players: <span id="playerCount">1</span></div>
+        </div>
+        <div id="connectionStatus">Connecting...</div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+</body>
+</html> 
