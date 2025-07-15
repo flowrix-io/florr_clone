@@ -38,6 +38,9 @@ public:
     void setHealth(int health) { m_health = std::max(0, std::min(health, m_maxHealth)); }
     void setColor(const std::string& color) { m_color = color; }
     void setMousePosition(float mouseX, float mouseY) { m_mouseX = mouseX; m_mouseY = mouseY; }
+    void setCanvasDimensions(float width, float height) { m_canvasWidth = width; m_canvasHeight = height; }
+    float getCanvasWidth() const { return m_canvasWidth; }
+    float getCanvasHeight() const { return m_canvasHeight; }
 
     // Actions
     void takeDamage(int damage);
@@ -63,4 +66,6 @@ private:
     std::vector<OrbitingCircle> m_orbitingCircles;
     float m_mouseX = 0.0f;
     float m_mouseY = 0.0f;
+    float m_canvasWidth = 1200.0f;
+    float m_canvasHeight = 800.0f;
 }; 

@@ -26,6 +26,7 @@ public:
     void removePlayer(const std::string& playerId);
     void updatePlayer(const std::string& playerId, const json& data);
     void updatePlayerMousePosition(const std::string& playerId, float mouseX, float mouseY);
+    void updatePlayerCanvasDimensions(const std::string& playerId, float width, float height);
     std::shared_ptr<Player> getPlayer(const std::string& playerId);
 
     // Mob management

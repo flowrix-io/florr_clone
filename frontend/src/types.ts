@@ -49,7 +49,7 @@ export interface GameState {
 }
 
 export interface GameMessage {
-    type: 'playerUpdate' | 'mobUpdate' | 'gameState' | 'playerJoin' | 'playerLeave' | 'damage' | 'mousePosition';
+    type: 'playerUpdate' | 'mobUpdate' | 'gameState' | 'playerJoin' | 'playerLeave' | 'damage' | 'mousePosition' | 'canvasDimensions';
     data: any;
 }
 

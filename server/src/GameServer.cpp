@@ -76,6 +76,14 @@ void GameServer::updatePlayerMousePosition(const std::string& playerId, float mo
     }
 }
 
+void GameServer::updatePlayerCanvasDimensions(const std::string& playerId, float width, float height) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_players.find(playerId);
+    if (it != m_players.end()) {
+        it->second->setCanvasDimensions(width, height);
+    }
+}
+
 std::shared_ptr<Player> GameServer::getPlayer(const std::string& playerId) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_players.find(playerId);

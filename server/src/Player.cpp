@@ -125,11 +125,9 @@ void Player::fromJson(const json& data) {
 }
 
 void Player::updateMovement(float deltaTime, const Vector2& worldBounds) {
-    // Calculate target position based on mouse relative to player's screen center
-    // Using dynamic canvas size - client will send mouse coordinates relative to their actual canvas
-    // For now, we'll use a reasonable default but this should be made dynamic
-    const float canvasWidth = 1200.0f;  // Reasonable default for modern screens
-    const float canvasHeight = 800.0f;
+    // Use actual canvas size sent by client
+    float canvasWidth = m_canvasWidth;
+    float canvasHeight = m_canvasHeight;
     
     // Mouse coordinates are relative to canvas, convert to world target
     Vector2 targetPos;

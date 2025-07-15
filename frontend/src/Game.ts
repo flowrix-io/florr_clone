@@ -73,6 +73,23 @@ export class Game {
             x: this.canvas.width/2,
             y: this.canvas.height/2
         }
+        
+        // Handle window resizing
+        window.addEventListener('resize', () => {
+            this.canvasSize = {
+                w: window.innerWidth,
+                h: window.innerHeight
+            };
+            this.center = {
+                x: this.canvas.width/2,
+                y: this.canvas.height/2
+            };
+            // Send new dimensions to server
+            if (this.networkManager) {
+                this.networkManager.sendCanvasDimensions(this.canvas.width, this.canvas.height);
+            }
+        });
+
         document.body.addEventListener("mousemove", (e)=>{
             const angle = Math.atan2((e.pageX-window.pageXOffset-this.canvas.getBoundingClientRect().x)*window.devicePixelRatio-this.center.x, -((e.pageY-window.pageYOffset-this.canvas.getBoundingClientRect().y)*window.devicePixelRatio-this.center.y)) - Math.PI/2;
             this.eye.x = Math.cos(angle)*this.s(2);
@@ -149,8 +166,11 @@ export class Game {
         console.log('Assets loaded');
         
         console.log('Connecting to server...');
-        this.networkManager.connect();
+        await this.networkManager.connect();
         console.log('Connected to server');
+        
+        // Send initial canvas dimensions
+        this.networkManager.sendCanvasDimensions(this.canvas.width, this.canvas.height);
         
         console.log('Starting game loop...');
         this.gameLoop();

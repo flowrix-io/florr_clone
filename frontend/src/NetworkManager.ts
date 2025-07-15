@@ -163,6 +163,14 @@ export class NetworkManager {
         });
     }
 
+    public sendCanvasDimensions(width: number, height: number): void {
+        console.log('Sending canvas dimensions:', width, height);
+        this.sendMessage({
+            type: 'canvasDimensions',
+            data: { playerId: this.playerId, width, height }
+        });
+    }
+
     private flushMessageQueue(): void {
         while (this.messageQueue.length > 0) {
             const message = this.messageQueue.shift();

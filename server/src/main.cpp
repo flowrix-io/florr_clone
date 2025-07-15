@@ -98,6 +98,8 @@ public:
                 handleMousePosition(session, data["data"]);
             } else if (type == "damage") {
                 handleDamage(session, data["data"]);
+            } else if (type == "canvasDimensions") {
+                handleCanvasDimensions(session, data["data"]);
             }
         } catch (const exception& e) {
             cerr << "Error parsing message: " << e.what() << endl;
@@ -225,6 +227,21 @@ private:
             message["type"] = "mobUpdate";
             message["data"] = m_gameServer->getMobsJson();
             broadcast(message.dump());
+        }
+    }
+
+    void handleCanvasDimensions(std::shared_ptr<WebSocketSession> session, const json& data) {
+        auto it = m_playerSessions.find(session);
+        if (it != m_playerSessions.end()) {
+            string playerId = data["playerId"];
+            float width = data["width"];
+            float height = data["height"];
+            cout << "Canvas dimensions update for player " << playerId << ": (" << width << ", " << height << ")" << endl;
+            cout.flush();
+            m_gameServer->updatePlayerCanvasDimensions(playerId, width, height);
+        } else {
+            cout << "Session not found for canvas dimensions update" << endl;
+            cout.flush();
         }
     }
 
