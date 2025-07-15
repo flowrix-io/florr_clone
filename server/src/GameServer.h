@@ -5,7 +5,9 @@
 #include <vector>
 #include <string>
 #include <random>
+#include <chrono>
 #include <mutex>
+
 #include <nlohmann/json.hpp>
 
 #include "Player.h"
@@ -53,6 +55,8 @@ private:
     std::map<std::string, std::shared_ptr<Mob>> m_mobs;
     
     std::chrono::steady_clock::time_point m_lastMobSpawnTime;
+    long long m_nextMobId;
+    mutable std::mutex m_mutex;
     // Game settings
     static constexpr int WORLD_WIDTH = 2000;
     static constexpr int WORLD_HEIGHT = 2000;
@@ -66,7 +70,4 @@ private:
     std::uniform_real_distribution<float> m_worldYDist;
     std::uniform_int_distribution<int> m_mobTypeDist;
     
-    int m_nextMobId;
-
-    mutable std::mutex m_mutex;
 }; 

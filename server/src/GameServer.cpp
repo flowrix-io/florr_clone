@@ -38,11 +38,7 @@ std::shared_ptr<Player> GameServer::addPlayer(const std::string& playerId) {
 
 void GameServer::removePlayer(const std::string& playerId) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    auto it = m_players.find(playerId);
-    if (it != m_players.end()) {
-        m_players.erase(it);
-        std::cout << "Player " << playerId << " removed" << std::endl;
-    }
+    m_players.erase(playerId);
 }
 
 void GameServer::updatePlayer(const std::string& playerId, const json& data) {
@@ -87,7 +83,6 @@ std::shared_ptr<Player> GameServer::getPlayer(const std::string& playerId) {
 }
 
 void GameServer::spawnMob() {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (m_mobs.size() >= MAX_MOBS) {
         return;
     }
@@ -123,11 +118,7 @@ bool GameServer::damageMob(const std::string& mobId, int damage) {
 
 void GameServer::removeMob(const std::string& mobId) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    auto it = m_mobs.find(mobId);
-    if (it != m_mobs.end()) {
-        m_mobs.erase(it);
-        std::cout << "Mob " << mobId << " removed" << std::endl;
-    }
+    m_mobs.erase(mobId);
 }
 
 void GameServer::update() {
@@ -202,7 +193,7 @@ void GameServer::updateMobs() {
 void GameServer::updatePlayers() {
     const float deltaTime = 0.016f; // ~60 FPS
     Vector2 worldBounds(WORLD_WIDTH, WORLD_HEIGHT);
-    printf("m_players.size(): %d\n", m_players.size());
+    printf("m_players.size(): %zu\n", m_players.size());
     
     for (auto& [playerId, player] : m_players) {
         // Update player movement based on mouse position
@@ -283,7 +274,6 @@ json GameServer::getGameState() const {
 }
 
 json GameServer::getPlayersJson() const {
-    // This is called by getGameState, which already has a lock. No need to lock here.
     json playersJson;
     for (const auto& [id, player] : m_players) {
         playersJson[id] = player->toJson();
@@ -292,7 +282,6 @@ json GameServer::getPlayersJson() const {
 }
 
 json GameServer::getMobsJson() const {
-    // This is called by getGameState, which already has a lock. No need to lock here.
     json mobsJson;
     for (const auto& [id, mob] : m_mobs) {
         mobsJson[id] = mob->toJson();

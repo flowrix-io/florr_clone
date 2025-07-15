@@ -106,28 +106,30 @@ public:
 
     void removeSession(std::shared_ptr<WebSocketSession> session) {
         std::string playerId;
+        std::vector<std::shared_ptr<WebSocketSession>> sessionsToNotify;
         {
             std::lock_guard<std::mutex> lock(m_sessionsMutex);
-            m_sessions.erase(session);
             auto it = m_playerSessions.find(session);
             if (it != m_playerSessions.end()) {
                 playerId = it->second;
                 m_playerSessions.erase(it);
             }
+            m_sessions.erase(session);
+
+            // Copy the remaining sessions to notify them
+            sessionsToNotify.assign(m_sessions.begin(), m_sessions.end());
         }
+
         if (!playerId.empty()) {
             m_gameServer->removePlayer(playerId);
+
             json message;
             message["type"] = "playerLeave";
             message["data"]["playerId"] = playerId;
-            // Copy sessions under lock, then send outside lock
-            std::vector<std::shared_ptr<WebSocketSession>> sessionsCopy;
-            {
-                std::lock_guard<std::mutex> lock(m_sessionsMutex);
-                sessionsCopy.assign(m_sessions.begin(), m_sessions.end());
-            }
-            for (auto& s : sessionsCopy) {
-                if (s != session) s->send(message.dump());
+            std::string serialized_message = message.dump();
+
+            for (auto& s : sessionsToNotify) {
+                s->send(serialized_message);
             }
         }
     }
@@ -186,10 +188,7 @@ private:
         json message;
         message["type"] = "playerJoin";
         message["data"] = player->toJson();
-        {
-            std::lock_guard<std::mutex> lock(m_sessionsMutex);
-            broadcast(message.dump(), session);
-        }
+        broadcast(message.dump(), session);
     }
 
     void handlePlayerUpdate(std::shared_ptr<WebSocketSession> session, const json& data) {
