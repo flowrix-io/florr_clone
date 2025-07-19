@@ -197,36 +197,7 @@ export class Game {
     }
 
     private checkCollisions(): void {
-        const player = this.gameState.players[this.playerId];
-        if (!player) return;
-
-        Object.values(this.gameState.mobs).forEach(mob => {
-            // Check collision with orbiting circles
-            player.petals.forEach(petal => {
-                const petalX = player.position.x + Math.cos(petal.angle) * petal.orbitRadius;
-                const petalY = player.position.y + Math.sin(petal.angle) * petal.orbitRadius;
-                
-                const dx = petalX - mob.position.x;
-                const dy = petalY - mob.position.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance < petal.radius + mob.radius) {
-                    // Collision detected - damage mob
-                    this.networkManager.sendDamage(mob.id, petal.damage);
-                }
-            });
-
-            // Check collision with player
-            const dx = player.position.x - mob.position.x;
-            const dy = player.position.y - mob.position.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            if (distance < player.radius + mob.radius) {
-                // Player takes damage
-                player.health = Math.max(0, player.health - 1);
-                this.updateHealthUI();
-            }
-        });
+        // Collisions are handled by the server
     }
 
     private updateCamera(): void {
@@ -246,6 +217,7 @@ export class Game {
         
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.uiCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Draw background (easy.svg) as world-locked tiles
         const bgImage = this.assetManager.getAsset('easy');
@@ -344,9 +316,6 @@ export class Game {
     
 
     private drawPlayer(player: Player): void {
-        const { x, y } = player.position;
-        const radius = this.s(player.radius);
-        
         // Draw player body
         this.drawFlower();
 
@@ -358,14 +327,14 @@ export class Game {
             const orbitRadius = this.s(petal.orbitRadius);
             const petalRadius = this.s(petal.radius);
             
-            const petalX = x + Math.cos(petal.angle) * orbitRadius;
-            const petalY = y + Math.sin(petal.angle) * orbitRadius;
+            const petalX = this.center.x + Math.cos(petal.angle) * orbitRadius;
+            const petalY = this.center.y + Math.sin(petal.angle) * orbitRadius;
             
-            this.ctx.save();
-            this.ctx.translate(petalX, petalY);
-            this.ctx.rotate(petal.angle + Math.PI / 2); // Point outwards
-            this.ctx.drawImage(asset, -petalRadius, -petalRadius, petalRadius * 2, petalRadius * 2);
-            this.ctx.restore();
+            this.uiCtx.save();
+            this.uiCtx.translate(petalX, petalY);
+            this.uiCtx.rotate(petal.angle + Math.PI / 2); // Point outwards
+            this.uiCtx.drawImage(asset, -petalRadius, -petalRadius, petalRadius * 2, petalRadius * 2);
+            this.uiCtx.restore();
         });
         
         // Restore the canvas state to remove clipping and other transformations

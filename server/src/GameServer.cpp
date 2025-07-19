@@ -220,26 +220,33 @@ void GameServer::updatePlayers() {
 }
 
 void GameServer::checkCollisions() {
-    // Collision detection is handled client-side for now
-    // Server validates damage requests
+    std::vector<std::string> mobsToRemove;
 
-    // Mob <-> Player Orbiting Circle Collisions
     for (auto& [mobId, mob] : m_mobs) {
         for (auto& [playerId, player] : m_players) {
-            Vector2 mobPos = mob->getPosition();
-            Vector2 playerPos = player->getPosition();
+            // Petal-mob collision
+            for (const auto& petal : player->getPetals()) {
+                Vector2 petalPos = player->getPosition() + Vector2(cos(petal.angle), sin(petal.angle)) * petal.orbitRadius;
+                float distance = (petalPos - mob->getPosition()).length();
 
-            float distance = std::sqrt(
-                (mobPos.x - playerPos.x) * (mobPos.x - playerPos.x) +
-                (mobPos.y - playerPos.y) * (mobPos.y - playerPos.y)
-            );
+                if (distance < petal.radius + mob->getRadius()) {
+                    if (damageMob(mobId, petal.damage)) {
+                        mobsToRemove.push_back(mobId);
+                    }
+                }
+            }
 
-            if (distance < mob->getRadius() + player->getRadius()) {
-                // Apply damage to player
-                player->takeDamage(1); // Simple damage for now
+            // Player-mob collision
+            float distance = (player->getPosition() - mob->getPosition()).length();
+            if (distance < player->getRadius() + mob->getRadius()) {
+                player->takeDamage(1);
                 std::cout << "Player " << playerId << " hit by Mob " << mobId << std::endl;
             }
         }
+    }
+
+    for (const auto& mobId : mobsToRemove) {
+        removeMob(mobId);
     }
 }
 
