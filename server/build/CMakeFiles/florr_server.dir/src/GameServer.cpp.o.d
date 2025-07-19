@@ -1119,5 +1119,7 @@ CMakeFiles/florr_server.dir/src/GameServer.cpp.o: \
   /opt/homebrew/include/nlohmann/thirdparty/hedley/hedley_undef.hpp \
   /Users/darren/florr.io_clone/server/src/Player.h \
   /Users/darren/florr.io_clone/server/src/Vector2.h \
+  /Users/darren/florr.io_clone/server/src/Petal.h \
   /Users/darren/florr.io_clone/server/src/Mob.h \
+  /Users/darren/florr.io_clone/server/src/PetalManager.h \
   /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/usr/include/c++/v1/iostream

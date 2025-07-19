@@ -1,4 +1,4 @@
-import { GameState, Player, Mob, Vector2, Input, OrbitingCircle, MobType } from './types';
+import { GameState, Player, Mob, Vector2, Input, Petal, MobType } from './types';
 import { NetworkManager } from './NetworkManager';
 import { AssetManager } from './AssetManager';
 
@@ -58,11 +58,11 @@ export class Game {
             keys: new Set()
         };
 
-        console.log('Creating NetworkManager...');
-        this.networkManager = new NetworkManager(this.playerId);
-        
         console.log('Creating AssetManager...');
         this.assetManager = new AssetManager();
+
+        console.log('Creating NetworkManager...');
+        this.networkManager = new NetworkManager(this.playerId, this.assetManager);
         
         console.log('Setting up event listeners...');
         this.setupEventListeners();
@@ -136,26 +136,10 @@ export class Game {
             maxHealth: 100,
             radius: 20,
             color: '#3498db',
-            orbitingCircles: this.createOrbitingCircles()
+            petals: []
         };
 
         this.gameState.players[this.playerId] = player;
-    }
-
-    private createOrbitingCircles(): OrbitingCircle[] {
-        const circles: OrbitingCircle[] = [];
-        const colors = ['#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
-        
-        for (let i = 0; i < 5; i++) {
-            circles.push({
-                angle: (i * Math.PI * 2) / 5,
-                radius: 8,
-                orbitRadius: 60,
-                color: colors[i]
-            });
-        }
-        
-        return circles;
     }
 
     public async start(): Promise<void> {
@@ -189,7 +173,6 @@ export class Game {
 
     private update(deltaTime: number): void {
         this.updatePlayer(deltaTime);
-        this.updateOrbitingCircles(deltaTime);
         this.updateMobs(deltaTime);
         this.checkCollisions();
         this.updateCamera();
@@ -208,20 +191,6 @@ export class Game {
         }
     }
 
-    private updateOrbitingCircles(deltaTime: number): void {
-        const player = this.gameState.players[this.playerId];
-        if (!player) return;
-
-        const rotationSpeed = 2; // radians per second
-        
-        player.orbitingCircles.forEach(circle => {
-            circle.angle += rotationSpeed * (deltaTime / 1000);
-            if (circle.angle > Math.PI * 2) {
-                circle.angle -= Math.PI * 2;
-            }
-        });
-    }
-
     private updateMobs(deltaTime: number): void {
         // Mob AI will be handled by the server
         // This is just for client-side prediction
@@ -233,17 +202,17 @@ export class Game {
 
         Object.values(this.gameState.mobs).forEach(mob => {
             // Check collision with orbiting circles
-            player.orbitingCircles.forEach(circle => {
-                const circleX = player.position.x + Math.cos(circle.angle) * circle.orbitRadius;
-                const circleY = player.position.y + Math.sin(circle.angle) * circle.orbitRadius;
+            player.petals.forEach(petal => {
+                const petalX = player.position.x + Math.cos(petal.angle) * petal.orbitRadius;
+                const petalY = player.position.y + Math.sin(petal.angle) * petal.orbitRadius;
                 
-                const dx = circleX - mob.position.x;
-                const dy = circleY - mob.position.y;
+                const dx = petalX - mob.position.x;
+                const dy = petalY - mob.position.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 
-                if (distance < circle.radius + mob.radius) {
+                if (distance < petal.radius + mob.radius) {
                     // Collision detected - damage mob
-                    this.networkManager.sendDamage(mob.id, 10);
+                    this.networkManager.sendDamage(mob.id, petal.damage);
                 }
             });
 
@@ -375,36 +344,32 @@ export class Game {
     
 
     private drawPlayer(player: Player): void {
-        // Draw player
-        const playerImage = this.assetManager.getAsset('player');
+        const { x, y } = player.position;
+        const radius = this.s(player.radius);
+        
+        // Draw player body
         this.drawFlower();
 
-        // Draw orbiting circles
-        player.orbitingCircles.forEach(circle => {
-            const circleX = player.position.x + Math.cos(circle.angle) * circle.orbitRadius;
-            const circleY = player.position.y + Math.sin(circle.angle) * circle.orbitRadius;
-            
-            this.ctx.fillStyle = circle.color;
-            this.ctx.beginPath();
-            this.ctx.arc(circleX, circleY, circle.radius, 0, Math.PI * 2);
-            this.ctx.fill();
-        });
+        // Draw petals
+        player.petals.forEach(petal => {
+            const asset = this.assetManager.getAsset(petal.asset);
+            if (!asset) return;
 
-        // Draw health bar
-        if (player.health < player.maxHealth) {
-            const barWidth = player.radius * 2;
-            const barHeight = 4;
-            const barX = player.position.x - player.radius;
-            const barY = player.position.y - player.radius - 10;
+            const orbitRadius = this.s(petal.orbitRadius);
+            const petalRadius = this.s(petal.radius);
             
-            // Background
-            this.ctx.fillStyle = '#e74c3c';
-            this.ctx.fillRect(barX, barY, barWidth, barHeight);
+            const petalX = x + Math.cos(petal.angle) * orbitRadius;
+            const petalY = y + Math.sin(petal.angle) * orbitRadius;
             
-            // Health
-            this.ctx.fillStyle = '#2ecc71';
-            this.ctx.fillRect(barX, barY, (player.health / player.maxHealth) * barWidth, barHeight);
-        }
+            this.ctx.save();
+            this.ctx.translate(petalX, petalY);
+            this.ctx.rotate(petal.angle + Math.PI / 2); // Point outwards
+            this.ctx.drawImage(asset, -petalRadius, -petalRadius, petalRadius * 2, petalRadius * 2);
+            this.ctx.restore();
+        });
+        
+        // Restore the canvas state to remove clipping and other transformations
+        this.uiCtx.restore();
     }
 
     private drawMob(mob: Mob): void {

@@ -4,18 +4,9 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "Vector2.h"
+#include "Petal.h"
 
 using json = nlohmann::json;
-
-struct OrbitingCircle {
-    float angle = 0.0f;
-    float radius = 8.0f;
-    float orbitRadius = 60.0f;
-    std::string color = "#ffffff";
-    
-    OrbitingCircle(float a, float r, float or_, const std::string& c) 
-        : angle(a), radius(r), orbitRadius(or_), color(c) {}
-};
 
 class Player {
 public:
@@ -30,7 +21,7 @@ public:
     int getMaxHealth() const { return m_maxHealth; }
     float getRadius() const { return m_radius; }
     const std::string& getColor() const { return m_color; }
-    const std::vector<OrbitingCircle>& getOrbitingCircles() const { return m_orbitingCircles; }
+    const std::vector<Petal>& getPetals() const { return m_petals; }
 
     // Setters
     void setPosition(const Vector2& position) { m_position = position; }
@@ -41,11 +32,12 @@ public:
     void setCanvasDimensions(float width, float height) { m_canvasWidth = width; m_canvasHeight = height; }
     float getCanvasWidth() const { return m_canvasWidth; }
     float getCanvasHeight() const { return m_canvasHeight; }
+    void addPetal(const Petal& petal);
 
     // Actions
     void takeDamage(int damage);
     void heal(int amount);
-    void updateOrbitingCircles(float deltaTime);
+    void updatePetals(float deltaTime);
     void updateMovement(float deltaTime, const Vector2& worldBounds);
     bool isDead() const { return m_health <= 0; }
 
@@ -54,7 +46,7 @@ public:
     void fromJson(const json& data);
 
 private:
-    void initializeOrbitingCircles();
+    void initializePetals();
 
     std::string m_id;
     Vector2 m_position;
@@ -63,7 +55,7 @@ private:
     int m_maxHealth;
     float m_radius;
     std::string m_color;
-    std::vector<OrbitingCircle> m_orbitingCircles;
+    std::vector<Petal> m_petals;
     float m_mouseX = 0.0f;
     float m_mouseY = 0.0f;
     float m_canvasWidth = 1200.0f;

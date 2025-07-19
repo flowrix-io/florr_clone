@@ -1,4 +1,5 @@
 #include "Player.h"
+#include "Petal.h"
 #include <iostream>
 #include <cmath>
 
@@ -15,24 +16,23 @@ Player::Player(const std::string& id)
     , m_radius(20.0f)
     , m_color("#3498db")
 {
-    initializeOrbitingCircles();
+    initializePetals();
 }
 
 Player::~Player() {
     // Destructor
 }
 
-void Player::initializeOrbitingCircles() {
-    m_orbitingCircles.clear();
-    
-    const std::vector<std::string> colors = {
-        "#e74c3c", "#2ecc71", "#f39c12", "#9b59b6", "#1abc9c"
-    };
-    
-    for (int i = 0; i < 5; ++i) {
-        float angle = (i * 2.0f * M_PI) / 5.0f;
-        m_orbitingCircles.emplace_back(angle, 8.0f, 60.0f, colors[i]);
+void Player::addPetal(const Petal& petal) {
+    m_petals.push_back(petal);
+    // Evenly distribute petals
+    for(size_t i = 0; i < m_petals.size(); ++i) {
+        m_petals[i].angle = (i * 2.0f * M_PI) / m_petals.size();
     }
+}
+
+void Player::initializePetals() {
+    m_petals.clear();
 }
 
 void Player::takeDamage(int damage) {
@@ -46,13 +46,11 @@ void Player::heal(int amount) {
     m_health = std::min(m_maxHealth, m_health + amount);
 }
 
-void Player::updateOrbitingCircles(float deltaTime) {
-    const float rotationSpeed = 2.0f; // radians per second
-    
-    for (auto& circle : m_orbitingCircles) {
-        circle.angle += rotationSpeed * deltaTime;
-        if (circle.angle > 2.0f * M_PI) {
-            circle.angle -= 2.0f * M_PI;
+void Player::updatePetals(float deltaTime) {
+    for (auto& petal : m_petals) {
+        petal.angle += petal.rotationSpeed * deltaTime;
+        if (petal.angle > 2.0f * M_PI) {
+            petal.angle -= 2.0f * M_PI;
         }
     }
 }
@@ -69,16 +67,7 @@ json Player::toJson() const {
     playerJson["radius"] = m_radius;
     playerJson["color"] = m_color;
     
-    // Serialize orbiting circles
-    playerJson["orbitingCircles"] = json::array();
-    for (const auto& circle : m_orbitingCircles) {
-        json circleJson;
-        circleJson["angle"] = circle.angle;
-        circleJson["radius"] = circle.radius;
-        circleJson["orbitRadius"] = circle.orbitRadius;
-        circleJson["color"] = circle.color;
-        playerJson["orbitingCircles"].push_back(circleJson);
-    }
+    playerJson["petals"] = m_petals;
     
     return playerJson;
 }
@@ -110,16 +99,10 @@ void Player::fromJson(const json& data) {
         m_color = data["color"];
     }
     
-    if (data.contains("orbitingCircles")) {
-        m_orbitingCircles.clear();
-        for (const auto& circleData : data["orbitingCircles"]) {
-            OrbitingCircle circle(
-                circleData["angle"],
-                circleData["radius"],
-                circleData["orbitRadius"],
-                circleData["color"]
-            );
-            m_orbitingCircles.push_back(circle);
+    if (data.contains("petals")) {
+        m_petals.clear();
+        for (const auto& petalData : data["petals"]) {
+            m_petals.push_back(Petal::fromJson(petalData));
         }
     }
 }

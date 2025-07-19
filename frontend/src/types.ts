@@ -10,14 +10,18 @@ export interface Player {
     maxHealth: number;
     radius: number;
     color: string;
-    orbitingCircles: OrbitingCircle[];
+    petals: Petal[];
 }
 
-export interface OrbitingCircle {
-    angle: number;
+export interface Petal {
+    id: string;
+    name: string;
+    asset: string;
+    damage: number;
     radius: number;
     orbitRadius: number;
-    color: string;
+    rotationSpeed: number;
+    angle: number;
 }
 
 export interface Mob {

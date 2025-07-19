@@ -13,6 +13,7 @@
 #include "Player.h"
 #include "Mob.h"
 #include "Vector2.h"
+#include "PetalManager.h"
 
 using json = nlohmann::json;
 
@@ -54,6 +55,7 @@ private:
 
     std::map<std::string, std::shared_ptr<Player>> m_players;
     std::map<std::string, std::shared_ptr<Mob>> m_mobs;
+    PetalManager m_petalManager;
     
     std::chrono::steady_clock::time_point m_lastMobSpawnTime;
     long long m_nextMobId;

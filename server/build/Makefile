@@ -222,6 +222,54 @@ src/Mob.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/florr_server.dir/build.make CMakeFiles/florr_server.dir/src/Mob.cpp.s
 .PHONY : src/Mob.cpp.s
 
+src/Petal.o: src/Petal.cpp.o
+.PHONY : src/Petal.o
+
+# target to build an object file
+src/Petal.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/florr_server.dir/build.make CMakeFiles/florr_server.dir/src/Petal.cpp.o
+.PHONY : src/Petal.cpp.o
+
+src/Petal.i: src/Petal.cpp.i
+.PHONY : src/Petal.i
+
+# target to preprocess a source file
+src/Petal.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/florr_server.dir/build.make CMakeFiles/florr_server.dir/src/Petal.cpp.i
+.PHONY : src/Petal.cpp.i
+
+src/Petal.s: src/Petal.cpp.s
+.PHONY : src/Petal.s
+
+# target to generate assembly for a file
+src/Petal.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/florr_server.dir/build.make CMakeFiles/florr_server.dir/src/Petal.cpp.s
+.PHONY : src/Petal.cpp.s
+
+src/PetalManager.o: src/PetalManager.cpp.o
+.PHONY : src/PetalManager.o
+
+# target to build an object file
+src/PetalManager.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/florr_server.dir/build.make CMakeFiles/florr_server.dir/src/PetalManager.cpp.o
+.PHONY : src/PetalManager.cpp.o
+
+src/PetalManager.i: src/PetalManager.cpp.i
+.PHONY : src/PetalManager.i
+
+# target to preprocess a source file
+src/PetalManager.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/florr_server.dir/build.make CMakeFiles/florr_server.dir/src/PetalManager.cpp.i
+.PHONY : src/PetalManager.cpp.i
+
+src/PetalManager.s: src/PetalManager.cpp.s
+.PHONY : src/PetalManager.s
+
+# target to generate assembly for a file
+src/PetalManager.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/florr_server.dir/build.make CMakeFiles/florr_server.dir/src/PetalManager.cpp.s
+.PHONY : src/PetalManager.cpp.s
+
 src/Player.o: src/Player.cpp.o
 .PHONY : src/Player.o
 
@@ -289,6 +337,12 @@ help:
 	@echo "... src/Mob.o"
 	@echo "... src/Mob.i"
 	@echo "... src/Mob.s"
+	@echo "... src/Petal.o"
+	@echo "... src/Petal.i"
+	@echo "... src/Petal.s"
+	@echo "... src/PetalManager.o"
+	@echo "... src/PetalManager.i"
+	@echo "... src/PetalManager.s"
 	@echo "... src/Player.o"
 	@echo "... src/Player.i"
 	@echo "... src/Player.s"

@@ -1,15 +1,18 @@
 import { GameMessage, GameState, Player } from './types';
+import { AssetManager } from './AssetManager';
 
 export class NetworkManager {
     private ws: WebSocket | null = null;
     private playerId: string;
+    private assetManager: AssetManager;
     private reconnectAttempts: number = 0;
     private maxReconnectAttempts: number = 5;
     private reconnectDelay: number = 1000;
     private messageQueue: GameMessage[] = [];
 
-    constructor(playerId: string) {
+    constructor(playerId: string, assetManager: AssetManager) {
         this.playerId = playerId;
+        this.assetManager = assetManager;
     }
 
     public async connect(): Promise<void> {
@@ -92,6 +95,13 @@ export class NetworkManager {
     }
 
     private onGameStateUpdate(gameState: GameState): void {
+        // Preload petal assets
+        Object.values(gameState.players).forEach(player => {
+            player.petals.forEach(petal => {
+                this.assetManager.preloadAsset(petal.asset, `/${petal.asset}`);
+            });
+        });
+
         // Notify the game about state update
         if (window.game) {
             window.game.updateGameState(gameState);

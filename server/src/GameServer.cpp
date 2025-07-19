@@ -14,6 +14,7 @@ GameServer::GameServer()
     , m_nextMobId(1)
 {
     std::cout << "GameServer initialized" << std::endl;
+    m_petalManager.loadPetals("../data/petals");
 }
 
 GameServer::~GameServer() {
@@ -27,6 +28,11 @@ std::shared_ptr<Player> GameServer::addPlayer(const std::string& playerId) {
     // Set random spawn position
     Vector2 spawnPos = getRandomSpawnPosition();
     player->setPosition(spawnPos);
+
+    const Petal* basicPetal = m_petalManager.getPetal("basic");
+    if (basicPetal) {
+        player->addPetal(*basicPetal);
+    }
     
     m_players[playerId] = player;
     
@@ -209,7 +215,7 @@ void GameServer::updatePlayers() {
         printf("Player %s moved to (%f, %f)\n", playerId.c_str(), player->getPosition().x, player->getPosition().y);
         
         // Update orbiting circles
-        player->updateOrbitingCircles(deltaTime);
+        player->updatePetals(deltaTime);
     }
 }
 

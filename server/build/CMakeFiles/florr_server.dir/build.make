@@ -100,10 +100,38 @@ CMakeFiles/florr_server.dir/src/Mob.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/florr_server.dir/src/Mob.cpp.s"
 	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/darren/florr.io_clone/server/src/Mob.cpp -o CMakeFiles/florr_server.dir/src/Mob.cpp.s
 
+CMakeFiles/florr_server.dir/src/Petal.cpp.o: CMakeFiles/florr_server.dir/flags.make
+CMakeFiles/florr_server.dir/src/Petal.cpp.o: /Users/darren/florr.io_clone/server/src/Petal.cpp
+CMakeFiles/florr_server.dir/src/Petal.cpp.o: CMakeFiles/florr_server.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/darren/florr.io_clone/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/florr_server.dir/src/Petal.cpp.o"
+	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/florr_server.dir/src/Petal.cpp.o -MF CMakeFiles/florr_server.dir/src/Petal.cpp.o.d -o CMakeFiles/florr_server.dir/src/Petal.cpp.o -c /Users/darren/florr.io_clone/server/src/Petal.cpp
+
+CMakeFiles/florr_server.dir/src/Petal.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/florr_server.dir/src/Petal.cpp.i"
+	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/darren/florr.io_clone/server/src/Petal.cpp > CMakeFiles/florr_server.dir/src/Petal.cpp.i
+
+CMakeFiles/florr_server.dir/src/Petal.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/florr_server.dir/src/Petal.cpp.s"
+	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/darren/florr.io_clone/server/src/Petal.cpp -o CMakeFiles/florr_server.dir/src/Petal.cpp.s
+
+CMakeFiles/florr_server.dir/src/PetalManager.cpp.o: CMakeFiles/florr_server.dir/flags.make
+CMakeFiles/florr_server.dir/src/PetalManager.cpp.o: /Users/darren/florr.io_clone/server/src/PetalManager.cpp
+CMakeFiles/florr_server.dir/src/PetalManager.cpp.o: CMakeFiles/florr_server.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/darren/florr.io_clone/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/florr_server.dir/src/PetalManager.cpp.o"
+	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/florr_server.dir/src/PetalManager.cpp.o -MF CMakeFiles/florr_server.dir/src/PetalManager.cpp.o.d -o CMakeFiles/florr_server.dir/src/PetalManager.cpp.o -c /Users/darren/florr.io_clone/server/src/PetalManager.cpp
+
+CMakeFiles/florr_server.dir/src/PetalManager.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/florr_server.dir/src/PetalManager.cpp.i"
+	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/darren/florr.io_clone/server/src/PetalManager.cpp > CMakeFiles/florr_server.dir/src/PetalManager.cpp.i
+
+CMakeFiles/florr_server.dir/src/PetalManager.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/florr_server.dir/src/PetalManager.cpp.s"
+	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/darren/florr.io_clone/server/src/PetalManager.cpp -o CMakeFiles/florr_server.dir/src/PetalManager.cpp.s
+
 CMakeFiles/florr_server.dir/src/Player.cpp.o: CMakeFiles/florr_server.dir/flags.make
 CMakeFiles/florr_server.dir/src/Player.cpp.o: /Users/darren/florr.io_clone/server/src/Player.cpp
 CMakeFiles/florr_server.dir/src/Player.cpp.o: CMakeFiles/florr_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/darren/florr.io_clone/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/florr_server.dir/src/Player.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/darren/florr.io_clone/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/florr_server.dir/src/Player.cpp.o"
 	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/florr_server.dir/src/Player.cpp.o -MF CMakeFiles/florr_server.dir/src/Player.cpp.o.d -o CMakeFiles/florr_server.dir/src/Player.cpp.o -c /Users/darren/florr.io_clone/server/src/Player.cpp
 
 CMakeFiles/florr_server.dir/src/Player.cpp.i: cmake_force
@@ -117,7 +145,7 @@ CMakeFiles/florr_server.dir/src/Player.cpp.s: cmake_force
 CMakeFiles/florr_server.dir/src/main.cpp.o: CMakeFiles/florr_server.dir/flags.make
 CMakeFiles/florr_server.dir/src/main.cpp.o: /Users/darren/florr.io_clone/server/src/main.cpp
 CMakeFiles/florr_server.dir/src/main.cpp.o: CMakeFiles/florr_server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/darren/florr.io_clone/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/florr_server.dir/src/main.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/darren/florr.io_clone/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/florr_server.dir/src/main.cpp.o"
 	/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/florr_server.dir/src/main.cpp.o -MF CMakeFiles/florr_server.dir/src/main.cpp.o.d -o CMakeFiles/florr_server.dir/src/main.cpp.o -c /Users/darren/florr.io_clone/server/src/main.cpp
 
 CMakeFiles/florr_server.dir/src/main.cpp.i: cmake_force
@@ -132,6 +160,8 @@ CMakeFiles/florr_server.dir/src/main.cpp.s: cmake_force
 florr_server_OBJECTS = \
 "CMakeFiles/florr_server.dir/src/GameServer.cpp.o" \
 "CMakeFiles/florr_server.dir/src/Mob.cpp.o" \
+"CMakeFiles/florr_server.dir/src/Petal.cpp.o" \
+"CMakeFiles/florr_server.dir/src/PetalManager.cpp.o" \
 "CMakeFiles/florr_server.dir/src/Player.cpp.o" \
 "CMakeFiles/florr_server.dir/src/main.cpp.o"
 
@@ -140,12 +170,14 @@ florr_server_EXTERNAL_OBJECTS =
 
 florr_server: CMakeFiles/florr_server.dir/src/GameServer.cpp.o
 florr_server: CMakeFiles/florr_server.dir/src/Mob.cpp.o
+florr_server: CMakeFiles/florr_server.dir/src/Petal.cpp.o
+florr_server: CMakeFiles/florr_server.dir/src/PetalManager.cpp.o
 florr_server: CMakeFiles/florr_server.dir/src/Player.cpp.o
 florr_server: CMakeFiles/florr_server.dir/src/main.cpp.o
 florr_server: CMakeFiles/florr_server.dir/build.make
 florr_server: /opt/homebrew/lib/libboost_system.dylib
 florr_server: CMakeFiles/florr_server.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/darren/florr.io_clone/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable florr_server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/darren/florr.io_clone/server/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking CXX executable florr_server"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/florr_server.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
