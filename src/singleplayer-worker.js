@@ -164,6 +164,8 @@ function respawnPlayer(player) {
     socket.emit('playerRespawned', player);
     setTimeout(function () {
         player.isInvulnerable = false;
+        // Notify client that invulnerability has ended
+        socket.emit('playerInvulnerabilityEnded', { playerId: player.id });
     }, RESPAWN_INVULNERABILITY_TIME);
 }
 
@@ -415,6 +417,7 @@ function initializeGame(progress) {
     for (let i = 0; i < remainingCount; i++) {
         enemies.push(createEnemy());
     }
+    console.log(`[WORKER] Created ${enemies.length} enemies (${legendaryCount} legendary, ${mythicCount} mythic, ${remainingCount} others)`);
 
     for (let i = 0; i < OBSTACLE_COUNT; i++) {
         obstacles.push(createObstacle());
@@ -476,19 +479,26 @@ self.onmessage = function(event) {
 case 'playerMovement':
     const player = players[socket.id];
     if (player) {
+        // Debug: Log received movement data
+        console.log(`[JS_WORKER] Player ${socket.id} movement received: client(${data.x.toFixed(1)}, ${data.y.toFixed(1)}) server_current(${player.x.toFixed(1)}, ${player.y.toFixed(1)}) angle:${data.angle.toFixed(2)} velocity(${data.velocityX.toFixed(1)}, ${data.velocityY.toFixed(1)})`);
+        
         let newX = data.x;
         let newY = data.y;
 
         // Apply knockback to player position if it exists
         if (player.knockbackX) {
+            const oldKnockbackX = player.knockbackX;
             player.knockbackX *= KNOCKBACK_RECOVERY_SPEED;
             newX += player.knockbackX;
             if (Math.abs(player.knockbackX) < 0.1) player.knockbackX = 0;
+            console.log(`[JS_WORKER] Player ${socket.id} knockback X: ${oldKnockbackX.toFixed(2)} -> ${player.knockbackX.toFixed(2)}, newX: ${newX.toFixed(1)}`);
         }
         if (player.knockbackY) {
+            const oldKnockbackY = player.knockbackY;
             player.knockbackY *= KNOCKBACK_RECOVERY_SPEED;
             newY += player.knockbackY;
             if (Math.abs(player.knockbackY) < 0.1) player.knockbackY = 0;
+            console.log(`[JS_WORKER] Player ${socket.id} knockback Y: ${oldKnockbackY.toFixed(2)} -> ${player.knockbackY.toFixed(2)}, newY: ${newY.toFixed(1)}`);
         }
 
         let collision = false;
@@ -504,22 +514,41 @@ case 'playerMovement':
                 newY + PLAYER_SIZE > enemy.y
             ) {
                 collision = true;
-                console.log(enemy);
-                if (true) {
+                console.log(`[WORKER] Enemy collision: player(${newX.toFixed(1)}, ${newY.toFixed(1)}, ${PLAYER_SIZE}x${PLAYER_SIZE}) vs enemy(${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}, ${enemySize}x${enemySize}) tier:${enemy.tier}`);
+                if (!player.isInvulnerable) {
                     // Enemy damages player
                     player.health -= enemy.damage;
-                    socket.emit('playerDamaged', { playerId: player.id, health: player.health });
-
-                    // Player damages enemy
-                    enemy.health -= player.damage;  // Use player.damage instead of PLAYER_DAMAGE
-                    socket.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
-
-                    // Calculate knockback direction
+                    player.lastDamageTime = Date.now();
+                    player.isInvulnerable = true;
+                    
+                    // Set invulnerability timer
+                    setTimeout(() => {
+                        if (player) {
+                            player.isInvulnerable = false;
+                            // Notify client that invulnerability has ended
+                            socket.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                        }
+                    }, 1000); // 1 second of invulnerability after taking damage
+                    
+                    // Calculate knockback direction first
                     const dx = enemy.x - newX;
                     const dy = enemy.y - newY;
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     const normalizedDx = dx / distance;
                     const normalizedDy = dy / distance;
+                    
+                    socket.emit('playerDamaged', { 
+                        playerId: player.id, 
+                        health: player.health,
+                        maxHealth: player.maxHealth,
+                        isInvulnerable: player.isInvulnerable,
+                        knockbackX: -normalizedDx * KNOCKBACK_FORCE,
+                        knockbackY: -normalizedDy * KNOCKBACK_FORCE
+                    });
+
+                    // Player damages enemy
+                    enemy.health -= player.damage;  // Use player.damage instead of PLAYER_DAMAGE
+                    socket.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
 
                     // Apply knockback to player's position immediately
                     newX -= normalizedDx * KNOCKBACK_FORCE;
@@ -603,8 +632,19 @@ case 'playerMovement':
 
         // Update player position
         // Even if there was a collision, we want to apply the knockback
-        player.x = Math.max(0, Math.min(WORLD_WIDTH - PLAYER_SIZE, newX));
-        player.y = Math.max(0, Math.min(WORLD_HEIGHT - PLAYER_SIZE, newY));
+        const clampedX = Math.max(0, Math.min(WORLD_WIDTH - PLAYER_SIZE, newX));
+        const clampedY = Math.max(0, Math.min(WORLD_HEIGHT - PLAYER_SIZE, newY));
+        
+        // Debug: Log world bounds clamping
+        if (newX !== clampedX || newY !== clampedY) {
+            console.log(`[JS_WORKER] World bounds collision: requested(${newX.toFixed(1)}, ${newY.toFixed(1)}) -> clamped(${clampedX.toFixed(1)}, ${clampedY.toFixed(1)})`);
+        }
+        
+        // Debug: Log final position update
+        console.log(`[JS_WORKER] Player ${socket.id} final position update: (${player.x.toFixed(1)}, ${player.y.toFixed(1)}) -> (${clampedX.toFixed(1)}, ${clampedY.toFixed(1)})`);
+        
+        player.x = clampedX;
+        player.y = clampedY;
         player.angle = data.angle;
         player.velocityX = data.velocityX;
         player.velocityY = data.velocityY;

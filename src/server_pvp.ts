@@ -341,6 +341,8 @@ function respawnPlayer(player: ServerPlayer) {
 
     setTimeout(() => {
         player.isInvulnerable = false;
+        // Notify client that invulnerability has ended
+        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
     }, RESPAWN_INVULNERABILITY_TIME);
 }
 
@@ -366,7 +368,8 @@ function chatMessage(content: string): ChatMessage {
 }
 
 io.on('connection', (socket: AuthenticatedSocket) => {
-    console.log('A user connected');
+    const connectionTime = Date.now();
+    console.log(`[SERVER_PVP] User connected at ${connectionTime}, socket ID: ${socket.id}`);
 
     // Handle authentication
     socket.on('authenticate', async (credentials: { username: string, password: string, playerName: string }) => {
@@ -409,6 +412,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             setTimeout(() => {
                 if (players[socket.id]) {
                     players[socket.id].isInvulnerable = false;
+                    // Notify client that invulnerability has ended
+                    io.emit('playerInvulnerabilityEnded', { playerId: socket.id });
                 }
             }, RESPAWN_INVULNERABILITY_TIME);
 
@@ -446,8 +451,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     });
 
     // Update disconnect handler
-    socket.on('disconnect', () => {
-        console.log('A user disconnected');
+    socket.on('disconnect', (reason) => {
+        const disconnectTime = Date.now();
+        console.log(`[SERVER_PVP] User ${socket.id} disconnected at ${disconnectTime}, reason: ${reason}`);
         if (players[socket.id] && socket.userId) {
             // Save progress with user ID
             savePlayerProgress(players[socket.id], socket.userId);
@@ -456,22 +462,39 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         io.emit('playerDisconnected', socket.id);
     });
 
-    socket.on('playerMovement', (movementData) => {
+    socket.on('ping', (clientTime: number) => {
+        socket.emit('pong', clientTime);
+    });
+
+    socket.on('playerInput', (inputData) => {
         const player = players[socket.id];
         if (player) {
-            let newX = movementData.x;
-            let newY = movementData.y;
+            const now = Date.now();
+            const clientTimestamp = inputData.timestamp || 0;
+            const latency = now - clientTimestamp;
+            
+            // Debug: Log received input data with timing
+            console.log(`[SERVER_PVP] Player ${socket.id} input received at ${now}: keys:[${inputData.keys}] mouse:(${inputData.mouseX?.toFixed(1)}, ${inputData.mouseY?.toFixed(1)}) velocity(${inputData.velocityX.toFixed(1)}, ${inputData.velocityY.toFixed(1)}) latency:${latency}ms`);
+            
+            // Server calculates new position based on current position and input
+            const deltaTime = Math.min(latency / 1000, 0.05); // Cap delta time to prevent large jumps
+            let newX = player.x + inputData.velocityX * deltaTime;
+            let newY = player.y + inputData.velocityY * deltaTime;
 
             // Apply knockback to player position if it exists
             if (player.knockbackX) {
+                const oldKnockbackX = player.knockbackX;
                 player.knockbackX *= KNOCKBACK_RECOVERY_SPEED;
                 newX += player.knockbackX;
                 if (Math.abs(player.knockbackX) < 0.1) player.knockbackX = 0;
+                console.log(`[SERVER_PVP] Player ${socket.id} knockback X: ${oldKnockbackX.toFixed(2)} -> ${player.knockbackX.toFixed(2)}, newX: ${newX.toFixed(1)}`);
             }
             if (player.knockbackY) {
+                const oldKnockbackY = player.knockbackY;
                 player.knockbackY *= KNOCKBACK_RECOVERY_SPEED;
                 newY += player.knockbackY;
                 if (Math.abs(player.knockbackY) < 0.1) player.knockbackY = 0;
+                console.log(`[SERVER_PVP] Player ${socket.id} knockback Y: ${oldKnockbackY.toFixed(2)} -> ${player.knockbackY.toFixed(2)}, newY: ${newY.toFixed(1)}`);
             }
 
             // Check for item collisions
@@ -538,20 +561,41 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         // Enemy damages player
         const healthBefore = player.health;
         player.health -= enemy.damage;
-        player.lastDamageTime = Date.now();  // Add this line
+        player.lastDamageTime = Date.now();
+        player.isInvulnerable = true;
+        
+        // Set invulnerability timer (1 second after taking damage)
+        setTimeout(() => {
+            if (players[socket.id]) {
+                players[socket.id].isInvulnerable = false;
+                // Notify client that invulnerability has ended
+                io.emit('playerInvulnerabilityEnded', { playerId: socket.id });
+            }
+        }, 1000);
+        
         console.log(`[SERVER_PVP] Player damaged: ${healthBefore} -> ${player.health} (damage: ${enemy.damage})`);
-        io.emit('playerDamaged', { playerId: player.id, health: player.health });
+        
+        // Calculate knockback direction first
+        const dx = enemy.x - newX;
+        const dy = enemy.y - newY;
+        const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+        const normalizedDx = dx / distance;
+        const normalizedDy = dy / distance;
+        const knockbackX = -normalizedDx * KNOCKBACK_FORCE;
+        const knockbackY = -normalizedDy * KNOCKBACK_FORCE;
+        
+        io.emit('playerDamaged', { 
+            playerId: player.id, 
+            health: player.health,
+            maxHealth: player.maxHealth,
+            isInvulnerable: player.isInvulnerable,
+            knockbackX: knockbackX,
+            knockbackY: knockbackY
+        });
 
                         // Player damages enemy
                         enemy.health -= player.damage;
                         io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
-
-                        // Calculate knockback direction
-                        const dx = enemy.x - newX;
-                        const dy = enemy.y - newY;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        const normalizedDx = dx / distance;
-                        const normalizedDy = dy / distance;
 
                         // Apply knockback to player's position immediately
                         newX -= normalizedDx * KNOCKBACK_FORCE;
@@ -695,13 +739,26 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             }
 
             // Update player position even if there was a collision (to apply knockback)
-            player.x = Math.max(0, Math.min(PVP_WORLD_WIDTH - PLAYER_SIZE, newX));
-            player.y = Math.max(0, Math.min(PVP_WORLD_HEIGHT - PLAYER_SIZE, newY));
-            player.angle = movementData.angle;
-            player.velocityX = movementData.velocityX;
-            player.velocityY = movementData.velocityY;
+            const clampedX = Math.max(0, Math.min(PVP_WORLD_WIDTH - PLAYER_SIZE, newX));
+            const clampedY = Math.max(0, Math.min(PVP_WORLD_HEIGHT - PLAYER_SIZE, newY));
+            
+            // Debug: Log world bounds clamping
+            if (newX !== clampedX || newY !== clampedY) {
+                console.log(`[SERVER_PVP] Player ${socket.id} world bounds clamping: (${newX.toFixed(1)}, ${newY.toFixed(1)}) -> (${clampedX.toFixed(1)}, ${clampedY.toFixed(1)})`);
+            }
+            
+            // Debug: Log final position update
+            console.log(`[SERVER_PVP] Player ${socket.id} final position update: (${player.x.toFixed(1)}, ${player.y.toFixed(1)}) -> (${clampedX.toFixed(1)}, ${clampedY.toFixed(1)})`);
+            
+            player.x = clampedX;
+            player.y = clampedY;
+            player.angle = inputData.angle;
+            player.velocityX = inputData.velocityX;
+            player.velocityY = inputData.velocityY;
 
             // Always emit the updated position
+            const emitTime = Date.now();
+            console.log(`[SERVER_PVP] Emitting playerMoved for ${socket.id} at ${emitTime}`);
             io.emit('playerMoved', player);
         }
     });

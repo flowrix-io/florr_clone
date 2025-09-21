@@ -197,6 +197,8 @@ function respawnPlayer(player) {
     player.lastDamageTime = 0;
     setTimeout(() => {
         player.isInvulnerable = false;
+        // Notify client that invulnerability has ended
+        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
     }, constants_1.RESPAWN_INVULNERABILITY_TIME);
 }
 // Helper function to determine spawn type based on level
@@ -274,6 +276,8 @@ io.on('connection', (socket) => {
             setTimeout(() => {
                 if (constants_1.players[socket.id]) {
                     constants_1.players[socket.id].isInvulnerable = false;
+                    // Notify client that invulnerability has ended
+                    io.emit('playerInvulnerabilityEnded', { playerId: socket.id });
                 }
             }, constants_1.RESPAWN_INVULNERABILITY_TIME);
             // Send success response and game state
@@ -634,6 +638,14 @@ function updatePlayerState(player, deltaTime) {
     if (!player || !player.inputs) {
         return;
     }
+    // Debug: Log player state before update
+    console.log(`[SERVER] Player ${player.id} position before update: (${player.x.toFixed(1)}, ${player.y.toFixed(1)})`);
+    console.log(`[SERVER] Player ${player.id} inputs:`, {
+        useMouse: player.inputs.useMouse,
+        mouseX: player.inputs.mouseX?.toFixed(1),
+        mouseY: player.inputs.mouseY?.toFixed(1),
+        keys: player.inputs.keys
+    });
     let targetVelocityX = 0;
     let targetVelocityY = 0;
     if (player.inputs.useMouse && player.inputs.mouseX !== undefined && player.inputs.mouseY !== undefined) {
@@ -672,9 +684,17 @@ function updatePlayerState(player, deltaTime) {
     player.velocityY = targetVelocityY;
     let newX = player.x + player.velocityX * deltaTime;
     let newY = player.y + player.velocityY * deltaTime;
+    // Debug: Log calculated movement
+    console.log(`[SERVER] Player ${player.id} calculated movement: velocity(${player.velocityX.toFixed(1)}, ${player.velocityY.toFixed(1)}) deltaTime:${deltaTime.toFixed(3)} -> newPos(${newX.toFixed(1)}, ${newY.toFixed(1)})`);
     const padding = 5;
-    newX = Math.max(constants_1.PLAYER_SIZE / 2 + padding, Math.min(constants_1.ACTUAL_WORLD_WIDTH - constants_1.PLAYER_SIZE / 2 - padding, newX));
-    newY = Math.max(constants_1.PLAYER_SIZE / 2 + padding, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - constants_1.PLAYER_SIZE / 2 - padding, newY));
+    const clampedX = Math.max(constants_1.PLAYER_SIZE / 2 + padding, Math.min(constants_1.ACTUAL_WORLD_WIDTH - constants_1.PLAYER_SIZE / 2 - padding, newX));
+    const clampedY = Math.max(constants_1.PLAYER_SIZE / 2 + padding, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - constants_1.PLAYER_SIZE / 2 - padding, newY));
+    // Debug: Log world bounds clamping
+    if (newX !== clampedX || newY !== clampedY) {
+        console.log(`[SERVER] Player ${player.id} world bounds clamping: (${newX.toFixed(1)}, ${newY.toFixed(1)}) -> (${clampedX.toFixed(1)}, ${clampedY.toFixed(1)})`);
+    }
+    newX = clampedX;
+    newY = clampedY;
     for (const element of constants_1.WORLD_MAP) {
         if (element.type === 'wall' && element.width > 0 && element.height > 0) {
             const wallX = element.x * constants_1.SCALE_FACTOR;
@@ -692,6 +712,8 @@ function updatePlayerState(player, deltaTime) {
                 if (Math.abs(overlapX) < combinedHalfWidths && Math.abs(overlapY) < combinedHalfHeights) {
                     const penX = combinedHalfWidths - Math.abs(overlapX);
                     const penY = combinedHalfHeights - Math.abs(overlapY);
+                    const oldX = newX;
+                    const oldY = newY;
                     if (penX < penY) {
                         if (overlapX > 0)
                             newX += penX;
@@ -704,6 +726,8 @@ function updatePlayerState(player, deltaTime) {
                         else
                             newY -= penY;
                     }
+                    // Debug: Log wall collision
+                    console.log(`[SERVER] Player ${player.id} wall collision: wall(${wallX.toFixed(1)}, ${wallY.toFixed(1)}, ${wallWidth.toFixed(1)}x${wallHeight.toFixed(1)}) player moved (${oldX.toFixed(1)}, ${oldY.toFixed(1)}) -> (${newX.toFixed(1)}, ${newY.toFixed(1)})`);
                 }
             }
         }
@@ -719,17 +743,37 @@ function updatePlayerState(player, deltaTime) {
             if (!player.isInvulnerable) {
                 player.health -= enemy.damage;
                 player.lastDamageTime = Date.now();
-                io.emit('playerDamaged', { playerId: player.id, health: player.health });
-                enemy.health -= player.damage;
-                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                player.isInvulnerable = true;
+                // Set invulnerability timer (1 second after taking damage)
+                setTimeout(() => {
+                    if (constants_1.players[player.id]) {
+                        constants_1.players[player.id].isInvulnerable = false;
+                        // Notify client that invulnerability has ended
+                        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                    }
+                }, 1000);
+                // Calculate knockback direction first
                 const dx = enemy.x - newX;
                 const dy = enemy.y - newY;
                 const distance = Math.sqrt(dx * dx + dy * dy) || 1;
                 const normalizedDx = dx / distance;
                 const normalizedDy = dy / distance;
                 const knockbackDistance = 25;
+                const knockbackX = -normalizedDx * knockbackDistance;
+                const knockbackY = -normalizedDy * knockbackDistance;
+                // Apply knockback to player position
                 newX -= normalizedDx * knockbackDistance;
                 newY -= normalizedDy * knockbackDistance;
+                io.emit('playerDamaged', {
+                    playerId: player.id,
+                    health: player.health,
+                    maxHealth: player.maxHealth,
+                    isInvulnerable: player.isInvulnerable,
+                    knockbackX: knockbackX,
+                    knockbackY: knockbackY
+                });
+                enemy.health -= player.damage;
+                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
                 if (enemy.health <= 0) {
                     const index = constants_1.enemies.findIndex(e => e.id === enemy.id);
                     if (index !== -1) {
@@ -763,33 +807,34 @@ function updatePlayerState(player, deltaTime) {
             break;
         }
     }
-    if (collision) {
-        for (let i = constants_1.items.length - 1; i >= 0; i--) {
-            const item = constants_1.items[i];
-            const distance = Math.sqrt((newX - item.x) ** 2 + (newY - item.y) ** 2);
-            if (distance < constants_1.PLAYER_SIZE) {
-                const multiplier = { common: 1, uncommon: 1.5, rare: 2, epic: 2.5, legendary: 3, mythic: 4 }[item.rarity || 'common'];
-                switch (item.type) {
-                    case 'health_potion':
-                        player.health = Math.min(player.maxHealth, player.health + (50 * multiplier));
-                        break;
-                    case 'speed_boost':
-                        player.speed_boost = true;
-                        io.emit('speedBoostActive', player.id);
-                        setTimeout(() => {
-                            if (constants_1.players[player.id]) {
-                                constants_1.players[player.id].speed_boost = false;
-                            }
-                        }, 5000 * multiplier);
-                        break;
-                    case 'shield':
-                        break;
-                }
-                constants_1.items.splice(i, 1);
-                io.emit('itemPickedUp', item.id);
+    // Check for item collisions (independent of enemy collisions)
+    for (let i = constants_1.items.length - 1; i >= 0; i--) {
+        const item = constants_1.items[i];
+        const distance = Math.sqrt((newX - item.x) ** 2 + (newY - item.y) ** 2);
+        if (distance < constants_1.PLAYER_SIZE) {
+            const multiplier = { common: 1, uncommon: 1.5, rare: 2, epic: 2.5, legendary: 3, mythic: 4 }[item.rarity || 'common'];
+            switch (item.type) {
+                case 'health_potion':
+                    player.health = Math.min(player.maxHealth, player.health + (50 * multiplier));
+                    break;
+                case 'speed_boost':
+                    player.speed_boost = true;
+                    io.emit('speedBoostActive', player.id);
+                    setTimeout(() => {
+                        if (constants_1.players[player.id]) {
+                            constants_1.players[player.id].speed_boost = false;
+                        }
+                    }, 5000 * multiplier);
+                    break;
+                case 'shield':
+                    break;
             }
+            constants_1.items.splice(i, 1);
+            io.emit('itemPickedUp', item.id);
         }
     }
+    // Debug: Log final position update
+    console.log(`[SERVER] Player ${player.id} final position update: (${player.x.toFixed(1)}, ${player.y.toFixed(1)}) -> (${newX.toFixed(1)}, ${newY.toFixed(1)})`);
     player.x = newX;
     player.y = newY;
     if (player.health <= 0) {

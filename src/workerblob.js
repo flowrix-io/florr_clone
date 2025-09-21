@@ -553,9 +553,19 @@ case 'playerMovement':
             ) {
                 collision = true;
                 console.log(enemy);
-                if (true) {
+                if (!currentPlayer.isInvulnerable) {
                     // Enemy damages player
                     currentPlayer.health -= enemy.damage;
+                    currentPlayer.lastDamageTime = Date.now();
+                    currentPlayer.isInvulnerable = true;
+                    
+                    // Set invulnerability timer
+                    setTimeout(() => {
+                        if (currentPlayer) {
+                            currentPlayer.isInvulnerable = false;
+                        }
+                    }, 1000); // 1 second of invulnerability after taking damage
+                    
                     socket.emit('playerDamaged', { playerId: currentPlayer.id, health: currentPlayer.health });
 
                     // Player damages enemy

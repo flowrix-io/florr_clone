@@ -212,30 +212,44 @@ class GameServer {
         const player = constants_1.players[data.id];
         if (!player)
             return;
-        // Update player position and movement data
-        player.x = Math.max(0, Math.min(constants_1.WORLD_WIDTH - constants_1.PLAYER_SIZE, data.x));
-        player.y = Math.max(0, Math.min(constants_1.WORLD_HEIGHT - constants_1.PLAYER_SIZE, data.y));
+        // Debug: Log received movement data
+        console.log(`[SERVER_HOST] Player ${data.id} movement received: client(${data.x.toFixed(1)}, ${data.y.toFixed(1)}) server_current(${player.x.toFixed(1)}, ${player.y.toFixed(1)}) angle:${data.angle.toFixed(2)} velocity(${data.velocityX.toFixed(1)}, ${data.velocityY.toFixed(1)})`);
+        // Update angle and velocity data
         player.angle = data.angle;
         player.velocityX = data.velocityX;
         player.velocityY = data.velocityY;
+        // Use the new position for collision detection (before clamping)
+        let newX = data.x;
+        let newY = data.y;
+        // Clamp to world bounds
+        newX = Math.max(0, Math.min(constants_1.WORLD_WIDTH - constants_1.PLAYER_SIZE, newX));
+        newY = Math.max(0, Math.min(constants_1.WORLD_HEIGHT - constants_1.PLAYER_SIZE, newY));
         // Check for collisions with enemies
         for (const enemy of constants_1.enemies) {
             const enemySize = constants_1.ENEMY_SIZE * constants_1.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
-            if (player.x < enemy.x + enemySize &&
-                player.x + constants_1.PLAYER_SIZE > enemy.x &&
-                player.y < enemy.y + enemySize &&
-                player.y + constants_1.PLAYER_SIZE > enemy.y) {
+            if (newX < enemy.x + enemySize &&
+                newX + constants_1.PLAYER_SIZE > enemy.x &&
+                newY < enemy.y + enemySize &&
+                newY + constants_1.PLAYER_SIZE > enemy.y) {
                 if (!player.isInvulnerable) {
                     // Handle collision
                     player.health -= enemy.damage;
+                    player.lastDamageTime = Date.now();
+                    player.isInvulnerable = true;
+                    // Set invulnerability timer (1 second after taking damage)
+                    setTimeout(() => {
+                        if (constants_1.players[player.id]) {
+                            constants_1.players[player.id].isInvulnerable = false;
+                        }
+                    }, 1000);
                     // Calculate knockback
-                    const dx = enemy.x - player.x;
-                    const dy = enemy.y - player.y;
+                    const dx = enemy.x - newX;
+                    const dy = enemy.y - newY;
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     const normalizedDx = dx / distance;
                     const normalizedDy = dy / distance;
-                    player.x -= normalizedDx * constants_1.KNOCKBACK_FORCE;
-                    player.y -= normalizedDy * constants_1.KNOCKBACK_FORCE;
+                    const knockbackX = -normalizedDx * constants_1.KNOCKBACK_FORCE;
+                    const knockbackY = -normalizedDy * constants_1.KNOCKBACK_FORCE;
                     // Check if player dies
                     if (player.health <= 0) {
                         this.broadcast({
@@ -256,6 +270,9 @@ class GameServer {
                 }
             }
         }
+        // Update player position after collision checks
+        player.x = newX;
+        player.y = newY;
         // Broadcast updated player state
         this.broadcast({
             type: 'playerMoved',

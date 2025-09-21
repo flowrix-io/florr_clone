@@ -188,7 +188,9 @@ export class Game {
   };
 
   private lastUpdateTime: number = 0;         // Add this property for delta time
-  private lastServerUpdate: number = 0;       // Add this property for server update time
+  private lastServerUpdate: number = 0;
+  private lastHeartbeat: number = 0;
+  private heartbeatInterval: NodeJS.Timeout | null = null;       // Add this property for server update time
 
   // Add to class properties at the top
   private backgroundImage: HTMLImageElement = new Image();
@@ -571,6 +573,8 @@ export class Game {
       });
 
       this.socket.on('connect', () => {
+          const connectTime = performance.now();
+          console.log(`[CLIENT] Connected to server at ${connectTime.toFixed(0)}`);
           this.hideTitleScreen();
           this.showExitButton();
       });
@@ -580,10 +584,22 @@ export class Game {
 
   private setupSocketListeners() {
       this.socket.on('connect', () => {
-          //console.log('Connected to server with ID:', this.socket.id);
+          const connectTime = performance.now();
+          console.log(`[CLIENT] Socket connected with ID ${this.socket.id} at ${connectTime.toFixed(0)}`);
           if (this.socket.id) {
               this.socket.emit('chatMessage', `${this.players.get(this.socket.id)?.name} has joined the game`);
           }
+          
+          // Start heartbeat monitoring
+          this.lastHeartbeat = performance.now();
+          this.heartbeatInterval = setInterval(() => {
+              const now = performance.now();
+              const timeSinceLastHeartbeat = now - this.lastHeartbeat;
+              if (timeSinceLastHeartbeat > 5000) { // 5 seconds without heartbeat
+                  console.log(`[CLIENT] Warning: No server response for ${timeSinceLastHeartbeat.toFixed(0)}ms`);
+              }
+              this.socket.emit('ping', now);
+          }, 1000); // Send ping every second
       });
 
       // Add runJS event handler
@@ -637,16 +653,39 @@ export class Game {
       });
 
       this.socket.on('playerMoved', (player: Player) => {
+          const now = performance.now();
+          this.lastHeartbeat = now; // Update heartbeat on any server message
+          
+          const existingPlayer = this.players.get(player.id);
+          const isCurrentPlayer = player.id === this.socket?.id;
+          
+          // Debug: Log server position updates with timing
+          if (existingPlayer && isCurrentPlayer) {
+              const positionDiff = Math.sqrt(
+                  Math.pow(existingPlayer.x - player.x, 2) + 
+                  Math.pow(existingPlayer.y - player.y, 2)
+              );
+              console.log(`[CLIENT] playerMoved received at ${now.toFixed(0)}: server(${player.x.toFixed(1)}, ${player.y.toFixed(1)}) client_current(${existingPlayer.x.toFixed(1)}, ${existingPlayer.y.toFixed(1)}) diff:${positionDiff.toFixed(1)}px`);
+          }
+          
           console.log(`[CLIENT] Received playerMoved for ${player.id}:`, {
               x: player.x.toFixed(1),
               y: player.y.toFixed(1),
               isMe: player.id === this.socket?.id
           });
-          
-          const existingPlayer = this.players.get(player.id);
           if (existingPlayer) {
-              existingPlayer.targetX = player.x;
-              existingPlayer.targetY = player.y;
+              if (isCurrentPlayer) {
+                  // For current player, use smooth interpolation to server position
+                  console.log(`[CLIENT] Updating position from server: (${existingPlayer.x.toFixed(1)}, ${existingPlayer.y.toFixed(1)}) -> (${player.x.toFixed(1)}, ${player.y.toFixed(1)})`);
+                  existingPlayer.targetX = player.x;
+                  existingPlayer.targetY = player.y;
+              } else {
+                  // For other players, use interpolation to smooth movement
+                  existingPlayer.targetX = player.x;
+                  existingPlayer.targetY = player.y;
+              }
+              
+              // Update other properties
               existingPlayer.angle = player.angle;
               existingPlayer.velocityX = player.velocityX;
               existingPlayer.velocityY = player.velocityY;
@@ -667,8 +706,36 @@ export class Game {
           }
       });
 
+      this.socket.on('disconnect', (reason) => {
+          const disconnectTime = performance.now();
+          console.log(`[CLIENT] Disconnected from server at ${disconnectTime.toFixed(0)}, reason: ${reason}`);
+          
+          // Clear heartbeat monitoring
+          if (this.heartbeatInterval) {
+              clearInterval(this.heartbeatInterval);
+              this.heartbeatInterval = null;
+          }
+      });
+      
+      this.socket.on('pong', (serverTime: number) => {
+          const now = performance.now();
+          const roundTripTime = now - serverTime;
+          this.lastHeartbeat = now;
+          if (roundTripTime < 1000) { // Only log normal pings, not catch-up ones
+              console.log(`[CLIENT] Ping: ${roundTripTime.toFixed(1)}ms`);
+          } else {
+              console.log(`[CLIENT] High ping detected: ${roundTripTime.toFixed(1)}ms`);
+          }
+      });
+      
+      this.socket.on('connect_error', (error) => {
+          const errorTime = performance.now();
+          console.log(`[CLIENT] Connection error at ${errorTime.toFixed(0)}:`, error);
+      });
+
       this.socket.on('playerDisconnected', (playerId: string) => {
-          //console.log('Player disconnected:', playerId);
+          const disconnectTime = performance.now();
+          console.log(`[CLIENT] Player ${playerId} disconnected at ${disconnectTime.toFixed(0)}`);
           this.players.delete(playerId);
       });
 
@@ -694,25 +761,49 @@ export class Game {
           playerId: string, 
           health: number,
           maxHealth: number,
-          knockbackX: number,
-          knockbackY: number 
+          isInvulnerable?: boolean,
+          knockbackX?: number,
+          knockbackY?: number 
       }) => {
           console.log('Player damaged event received:', data);
           const player = this.players.get(data.playerId);
           if (player) {
+              const oldHealth = player.health;
               player.health = data.health;
-              player.maxHealth = data.maxHealth;
-              player.knockbackX = data.knockbackX;
-              player.knockbackY = data.knockbackY;
+              player.maxHealth = data.maxHealth || player.maxHealth;
               
-              // Add visual feedback
-              this.showFloatingText(
-                  player.x,
-                  player.y - 20,
-                  `-${player.maxHealth - data.health}`,
-                  '#FF0000',
-                  20
-              );
+              // Update invulnerability status
+              if (data.isInvulnerable !== undefined) {
+                  player.isInvulnerable = data.isInvulnerable;
+                  
+                  // Set a client-side backup timer in case server event is missed
+                  if (data.isInvulnerable) {
+                      setTimeout(() => {
+                          if (player && player.isInvulnerable) {
+                              player.isInvulnerable = false;
+                              console.log(`[CLIENT] Backup timer: Player ${data.playerId} invulnerability ended`);
+                          }
+                      }, 2000); // 2 seconds backup (longer than server 1 second)
+                  }
+              }
+              
+              // Apply knockback if provided
+              if (data.knockbackX !== undefined && data.knockbackY !== undefined) {
+                  player.knockbackX = data.knockbackX;
+                  player.knockbackY = data.knockbackY;
+              }
+              
+              // Add visual feedback for damage taken
+              const damageTaken = oldHealth - data.health;
+              if (damageTaken > 0) {
+                  this.showFloatingText(
+                      player.x,
+                      player.y - 20,
+                      `-${damageTaken}`,
+                      '#FF0000',
+                      20
+                  );
+              }
           }
       });
 
@@ -725,6 +816,14 @@ export class Game {
 
       this.socket.on('enemyDestroyed', (enemyId: string) => {
           this.enemies.delete(enemyId);
+      });
+
+      this.socket.on('playerInvulnerabilityEnded', (data: { playerId: string }) => {
+          const player = this.players.get(data.playerId);
+          if (player) {
+              player.isInvulnerable = false;
+              console.log(`[CLIENT] Player ${data.playerId} invulnerability ended`);
+          }
       });
 
       this.socket.on('obstaclesUpdate', (obstacles: Obstacle[]) => {
@@ -1255,18 +1354,32 @@ export class Game {
   }
 
   private checkEnemyCollision(player: Player) {
-      const currentTime = Date.now();
-      if (currentTime - this.lastDamageTime < this.DAMAGE_COOLDOWN) {
-          return;
-      }
-
+      // Only do visual feedback on client - server handles actual damage
+      // Client-side collision is only for immediate feedback and prediction
+      
       this.enemies.forEach((enemy, enemyId) => {
-          const dx = player.x - enemy.x;
-          const dy = player.y - enemy.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          if (distance < 40) { // Assuming both player and enemy are 40x40 pixels
-              this.lastDamageTime = currentTime;
-              this.socket.emit('collision', { enemyId });
+          // Use bounding box collision detection to match server logic
+          const enemySize = 40 * this.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
+          
+          // Calculate collision using bounding boxes (same as server-side)
+          if (
+              player.x < enemy.x + enemySize &&
+              player.x + PLAYER_SIZE > enemy.x &&
+              player.y < enemy.y + enemySize &&
+              player.y + PLAYER_SIZE > enemy.y
+          ) {
+              console.log(`[CLIENT] Enemy collision detected: player(${player.x.toFixed(1)}, ${player.y.toFixed(1)}, ${PLAYER_SIZE}x${PLAYER_SIZE}) vs enemy(${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}, ${enemySize}x${enemySize}) tier:${enemy.tier}`);
+              
+              // Show immediate visual feedback (server will handle actual damage)
+              if (!player.isInvulnerable) {
+                  this.showFloatingText(
+                      player.x,
+                      player.y - 30,
+                      'Hit!',
+                      '#FF6666',
+                      16
+                  );
+              }
           }
       });
   }
@@ -1358,6 +1471,10 @@ export class Game {
         if (currentPlayer) {
             this.updatePlayerMovement(currentPlayer, deltaTime);
             this.updateCamera(currentPlayer);
+            
+            // Check collisions for immediate client-side feedback
+            this.checkEnemyCollision(currentPlayer);
+            this.checkItemCollision(currentPlayer);
         }
     }
 
@@ -1451,33 +1568,51 @@ private updatePlayerMovement(player: Player, deltaTime: number) {
         }
     }
 
-    // Direct movement (no interpolation or friction)
+    // Apply knockback if it exists (only visual effect, server handles actual position)
+    if (player.knockbackX && Math.abs(player.knockbackX) > 0.1) {
+        player.knockbackX *= 0.9; // Gradually reduce knockback
+    }
+    if (player.knockbackY && Math.abs(player.knockbackY) > 0.1) {
+        player.knockbackY *= 0.9; // Gradually reduce knockback
+    }
+
+    // Smooth interpolation to server position (no snapping, just smooth lag)
+    if (player.targetX !== undefined && player.targetY !== undefined) {
+        const lerpSpeed = 8.0; // Interpolation speed (higher = faster)
+        const dx = player.targetX - player.x;
+        const dy = player.targetY - player.y;
+        
+        if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
+            player.x += dx * lerpSpeed * cappedDeltaTime;
+            player.y += dy * lerpSpeed * cappedDeltaTime;
+        } else {
+            // Snap to target if very close
+            player.x = player.targetX;
+            player.y = player.targetY;
+        }
+    }
+
+    // Store target velocities for server input
     player.velocityX = targetVelocityX;
     player.velocityY = targetVelocityY;
 
-    // Apply movement directly with capped delta time
-    const predictedX = player.x + player.velocityX * cappedDeltaTime;
-    const predictedY = player.y + player.velocityY * cappedDeltaTime;
-
-    // Check world bounds and collisions
-    const [finalX, finalY] = this.checkCollisions(player, predictedX, predictedY);
-    player.x = finalX;
-    player.y = finalY;
-
-    // Send update to server more frequently for better sync
-    if (currentTime - this.lastServerUpdate > 33) { // 30 updates per second
-        // Reduced logging for performance
-        if (Math.abs(player.velocityX) > 0 || Math.abs(player.velocityY) > 0) {
-            console.log(`[CLIENT] Moving: vel(${player.velocityX.toFixed(1)},${player.velocityY.toFixed(1)}) delta:${cappedDeltaTime.toFixed(3)}`);
-        }
-        this.socket.emit('playerMovement', {
-            x: predictedX,
-            y: predictedY,
+    // Send input/velocity to server (not positions - server is authoritative)
+    if (currentTime - this.lastServerUpdate > 50) { // 20 updates per second
+        // Send only input state and velocities - server calculates positions
+        this.socket.emit('playerInput', {
+            keys: Array.from(this.keysPressed),
+            mouseX: this.mouseX,
+            mouseY: this.mouseY,
+            useMouse: this.useMouseControls,
             angle: player.angle,
-            velocityX: player.velocityX,
-            velocityY: player.velocityY,
+            velocityX: targetVelocityX,
+            velocityY: targetVelocityY,
             timestamp: currentTime
         });
+        
+        if (Math.abs(targetVelocityX) > 0 || Math.abs(targetVelocityY) > 0) {
+            console.log(`[CLIENT] Sent playerInput at ${currentTime.toFixed(0)}: vel(${targetVelocityX.toFixed(1)}, ${targetVelocityY.toFixed(1)}) keys:${Array.from(this.keysPressed).join(',')}`);
+        }
         this.lastServerUpdate = currentTime;
     }
 }
@@ -3602,6 +3737,23 @@ private isInViewport(x: number, y: number, viewport: { left: number, right: numb
       this.ctx.save();
       this.ctx.translate(player.x, player.y);
 
+      // Apply invulnerability visual effect
+      if (player.isInvulnerable) {
+          const flashRate = 200; // Flash every 200ms
+          const currentTime = Date.now();
+          const shouldFlash = Math.floor(currentTime / flashRate) % 2 === 0;
+          
+          if (shouldFlash) {
+              this.ctx.globalAlpha = 0.3; // Make player semi-transparent when flashing
+          }
+          
+          // Draw invulnerability glow effect
+          this.ctx.shadowColor = '#00FFFF';
+          this.ctx.shadowBlur = 15;
+          this.ctx.shadowOffsetX = 0;
+          this.ctx.shadowOffsetY = 0;
+      }
+
       // Draw player sprite
       if (player.id === this.socket?.id) {
           // Apply hue rotation for current player
@@ -3620,11 +3772,22 @@ private isInViewport(x: number, y: number, viewport: { left: number, right: numb
           this.drawFlower(this.playerSprite, this.rotateEye(player.angle, this.playerEye));
       }
       this.playerEye = this.rotateEye(player.angle, this.playerEye);
+      
+      // Reset effects after drawing
+      if (player.isInvulnerable) {
+          this.ctx.globalAlpha = 1.0;
+          this.ctx.shadowBlur = 0;
+      }
 
       // Draw hitbox if enabled
       if (this.showHitboxes) {
+          this.ctx.save();
           this.ctx.strokeStyle = 'red';
-          this.ctx.strokeRect(-20, -20, 40, 40);
+          this.ctx.lineWidth = 2;
+          this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
+          this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
+          this.ctx.strokeRect(-PLAYER_SIZE/2, -PLAYER_SIZE/2, PLAYER_SIZE, PLAYER_SIZE);
+          this.ctx.restore();
       }
 
       // Draw player name
@@ -3656,8 +3819,13 @@ private isInViewport(x: number, y: number, viewport: { left: number, right: numb
 
     // Draw hitbox if enabled
     if (this.showHitboxes) {
+        this.ctx.save();
         this.ctx.strokeStyle = this.ENEMY_COLORS[enemy.tier];
+        this.ctx.lineWidth = 2;
+        this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
+        this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
         this.ctx.strokeRect(-enemySize/2, -enemySize/2, enemySize, enemySize);
+        this.ctx.restore();
     }
 
     // Draw health bar
@@ -3696,24 +3864,34 @@ private isInViewport(x: number, y: number, viewport: { left: number, right: numb
       const sprite = this.itemSprites[item.type];
       if (!sprite) return;
 
+      this.ctx.save();
+      this.ctx.translate(item.x, item.y);
+
       // Draw item rarity glow
       if (item.rarity) {
           this.ctx.save();
           this.ctx.beginPath();
-          this.ctx.arc(item.x, item.y, 25, 0, Math.PI * 2);
+          this.ctx.arc(0, 0, 25, 0, Math.PI * 2);
           this.ctx.fillStyle = `${this.ITEM_RARITY_COLORS[item.rarity]}40`;
           this.ctx.fill();
           this.ctx.restore();
       }
 
       // Draw item sprite
-      this.ctx.drawImage(sprite, item.x - 15, item.y - 15, 30, 30);
+      this.ctx.drawImage(sprite, -15, -15, 30, 30);
 
       // Draw hitbox if enabled
       if (this.showHitboxes) {
+          this.ctx.save();
           this.ctx.strokeStyle = 'yellow';
-          this.ctx.strokeRect(item.x - 15, item.y - 15, 30, 30);
+          this.ctx.lineWidth = 2;
+          this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
+          this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
+          this.ctx.strokeRect(-15, -15, 30, 30);
+          this.ctx.restore();
       }
+
+      this.ctx.restore();
   }
 
   private drawFloatingTexts() {
