@@ -23,7 +23,7 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     res.header('Access-Control-Allow-Credentials', 'true');
-    
+
     if (req.method === 'OPTIONS') {
         res.sendStatus(200);
     } else {
@@ -102,7 +102,7 @@ const io = new Server(httpsServer, {
         origin: function (origin, callback) {
             // Allow requests with no origin (like mobile apps or curl requests)
             if (!origin) return callback(null, true);
-            
+
             // Use the origin of the request
             callback(null, origin);
         },
@@ -120,7 +120,7 @@ const PORT = process.env.PORT || 3000;
 // Replace the initializeObstacles function with this:
 function initializeMapObstacles(): Obstacle[] {
     const mapObstacles: Obstacle[] = [];
-    
+
     // Convert wall elements from WORLD_MAP to obstacles
     WORLD_MAP.filter(isWall).forEach(wall => {
         mapObstacles.push({
@@ -151,20 +151,20 @@ function createEnemy(): Enemy {
         y = Math.random() * ACTUAL_WORLD_HEIGHT;
 
         // Check if position is in a safe zone
-        const inSafeZone = WORLD_MAP.some(element => 
+        const inSafeZone = WORLD_MAP.some(element =>
             element.type === 'safe_zone' &&
-            x >= element.x * SCALE_FACTOR && 
+            x >= element.x * SCALE_FACTOR &&
             x <= (element.x + element.width) * SCALE_FACTOR &&
-            y >= element.y * SCALE_FACTOR && 
+            y >= element.y * SCALE_FACTOR &&
             y <= (element.y + element.height) * SCALE_FACTOR
         );
 
         // Check if position collides with walls
-        const collidesWithWall = WORLD_MAP.some(element => 
+        const collidesWithWall = WORLD_MAP.some(element =>
             element.type === 'wall' &&
-            x >= element.x * SCALE_FACTOR && 
+            x >= element.x * SCALE_FACTOR &&
             x <= (element.x + element.width) * SCALE_FACTOR &&
-            y >= element.y * SCALE_FACTOR && 
+            y >= element.y * SCALE_FACTOR &&
             y <= (element.y + element.height) * SCALE_FACTOR
         );
 
@@ -177,7 +177,7 @@ function createEnemy(): Enemy {
     const tierRoll = Math.random();
     let tier: Enemy['tier'] = 'common';
     let cumulativeProbability = 0;
-    
+
     for (const [t, data] of Object.entries(ENEMY_TIERS)) {
         cumulativeProbability += data.probability;
         if (tierRoll < cumulativeProbability) {
@@ -204,7 +204,7 @@ function createEnemy(): Enemy {
 // Update respawnPlayer to use spawn points from the map
 function respawnPlayer(player: ServerPlayer) {
     // Find valid spawn points for player's level
-    const validSpawnPoints = WORLD_MAP.filter(element => 
+    const validSpawnPoints = WORLD_MAP.filter(element =>
         element.type === 'spawn' &&
         element.properties?.spawnType === getSpawnTypeForLevel(player.level)
     );
@@ -246,18 +246,18 @@ function getSpawnTypeForLevel(level: number): NonNullable<MapElement['properties
 
 // Initialize enemies
 for (let i = 0; i < ENEMY_COUNT; i++) {
-  enemies.push(createEnemy());
+    enemies.push(createEnemy());
 }
 console.log(`[SERVER] Initialized ${enemies.length} enemies`);
 
 // Initialize decorations
 for (let i = 0; i < DECORATION_COUNT; i++) {
-  decorations.push(createDecoration());
+    decorations.push(createDecoration());
 }
 
 // Initialize sands
 for (let i = 0; i < SAND_COUNT; i++) {
-  sands.push(createSand());
+    sands.push(createSand());
 }
 
 interface AuthenticatedSocket extends Socket {
@@ -281,11 +281,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     // Handle authentication
     socket.on('authenticate', async (credentials: { username: string, password: string, playerName: string }) => {
         const user = database.getUser(credentials.username, credentials.password);
-        
+
         if (user) {
             socket.userId = user.id;
             socket.username = user.username;
-            
+
             console.log('User authenticated, loading saved progress for userId:', user.id);
             const savedProgress = database.getPlayerByUserId(user.id);
             console.log('Loaded saved progress:', savedProgress);
@@ -375,7 +375,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
     socket.on('useItem', (itemId: string) => {
         console.log('useItem event received:', itemId); // Add debug log
-        
+
         const player = players[socket.id];
         if (!player) {
             console.log('Player not found:', socket.id);
@@ -385,7 +385,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         // Find the item in the loadout
         const loadoutSlot = player.loadout.findIndex(item => item?.id === itemId);
         console.log('Found item in loadout slot:', loadoutSlot); // Add debug log
-        
+
         if (loadoutSlot === -1) {
             console.log('Item not found in loadout:', itemId);
             return;  // Item not found in loadout
@@ -396,7 +396,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             console.log('Item is null');
             return;
         }
-        
+
         if (item.onCooldown) {
             console.log('Item is on cooldown:', itemId);
             return;
@@ -450,8 +450,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
 
         // Notify clients about the item use without removing it
-        io.emit('itemUsed', { 
-            playerId: socket.id, 
+        io.emit('itemUsed', {
+            playerId: socket.id,
             itemId: itemId,
             type: item.type,
             rarity: item.rarity
@@ -462,13 +462,13 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         const cooldownTime = 10000;  // 10 seconds base cooldown
         item.onCooldown = true;
         console.log('Added cooldown to item');
-        
+
         setTimeout(() => {
             if (player.loadout[loadoutSlot] === item) {
                 item.onCooldown = false;
-                io.emit('itemCooldownComplete', { 
-                    playerId: socket.id, 
-                    itemId: itemId 
+                io.emit('itemCooldownComplete', {
+                    playerId: socket.id,
+                    itemId: itemId
                 });
                 console.log('Cooldown complete for item:', itemId);
             }
@@ -540,7 +540,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     // Add this inside the socket.io connection handler (after other socket handlers)
     socket.on('chatMessage', (message: string) => {
         if (!socket.username) return;  // Ensure user is authenticated
-        
+
         const chatMessage: ChatMessage = {
             sender: socket.username,
             content: message,
@@ -576,7 +576,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             if (!player) return;
 
             // Verify all items exist in player's inventory
-            const validItems = data.items.every(craftItem => 
+            const validItems = data.items.every(craftItem =>
                 player.inventory.some(invItem => invItem.id === craftItem.id)
             );
 
@@ -587,8 +587,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
             // Verify all items are same type and rarity
             const firstItem = data.items[0];
-            const validCraft = data.items.every(item => 
-                item.type === firstItem.type && 
+            const validCraft = data.items.every(item =>
+                item.type === firstItem.type &&
                 item.rarity === firstItem.rarity
             );
 
@@ -613,7 +613,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             }
 
             // Remove crafting items from inventory
-            player.inventory = player.inventory.filter(invItem => 
+            player.inventory = player.inventory.filter(invItem =>
                 !data.items.some(craftItem => craftItem.id === invItem.id)
             );
 
@@ -667,11 +667,11 @@ function moveEnemies() {
         // Find closest player
         let closestPlayer: ServerPlayer;
         let closestDistance = Infinity;
-        
+
         // Convert players object to array and explicitly type it
         const playerArray: ServerPlayer[] = Object.values(players);
         closestPlayer = playerArray[0];
-        
+
         playerArray.forEach(player => {
             const dx = player.x - enemy.x;
             const dy = player.y - enemy.y;
@@ -688,7 +688,7 @@ function moveEnemies() {
             const dx = closestPlayer.x - enemy.x;
             const dy = closestPlayer.y - enemy.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
-            
+
             if (distance > 0) {
                 const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
                 enemy.x += (dx / distance) * speed;
@@ -709,7 +709,7 @@ function moveEnemies() {
                 const dx = enemy.wanderTarget.x - enemy.x;
                 const dy = enemy.wanderTarget.y - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
-                
+
                 if (distance > 5) {
                     const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5; // Slower wandering
                     enemy.x += (dx / distance) * speed;
@@ -732,9 +732,9 @@ function moveEnemies() {
                 height: wall.height * SCALE_FACTOR
             };
 
-            if (enemy.x >= scaledWall.x && 
+            if (enemy.x >= scaledWall.x &&
                 enemy.x <= scaledWall.x + scaledWall.width &&
-                enemy.y >= scaledWall.y && 
+                enemy.y >= scaledWall.y &&
                 enemy.y <= scaledWall.y + scaledWall.height) {
                 // Push enemy away from wall
                 const centerX = scaledWall.x + scaledWall.width / 2;
@@ -742,7 +742,7 @@ function moveEnemies() {
                 const dx = enemy.x - centerX;
                 const dy = enemy.y - centerY;
                 const angle = Math.atan2(dy, dx);
-                
+
                 enemy.x = scaledWall.x + scaledWall.width / 2 + Math.cos(angle) * (scaledWall.width / 2 + 50);
                 enemy.y = scaledWall.y + scaledWall.height / 2 + Math.sin(angle) * (scaledWall.height / 2 + 50);
             }
@@ -756,7 +756,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
     if (!player || !player.inputs) {
         return;
     }
-    
+
     // Debug: Log player state before update
     console.log(`[SERVER] Player ${player.id} position before update: (${player.x.toFixed(1)}, ${player.y.toFixed(1)})`);
     console.log(`[SERVER] Player ${player.id} inputs:`, {
@@ -791,7 +791,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
             targetVelocityX /= length;
             targetVelocityY /= length;
         }
-        
+
         const speed = MAX_SPEED * (player.speed_boost ? 2 : 1);
         targetVelocityX *= speed;
         targetVelocityY *= speed;
@@ -806,19 +806,19 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
 
     let newX = player.x + player.velocityX * deltaTime;
     let newY = player.y + player.velocityY * deltaTime;
-    
+
     // Debug: Log calculated movement
     console.log(`[SERVER] Player ${player.id} calculated movement: velocity(${player.velocityX.toFixed(1)}, ${player.velocityY.toFixed(1)}) deltaTime:${deltaTime.toFixed(3)} -> newPos(${newX.toFixed(1)}, ${newY.toFixed(1)})`);
 
     const padding = 5;
     const clampedX = Math.max(PLAYER_SIZE / 2 + padding, Math.min(ACTUAL_WORLD_WIDTH - PLAYER_SIZE / 2 - padding, newX));
     const clampedY = Math.max(PLAYER_SIZE / 2 + padding, Math.min(ACTUAL_WORLD_HEIGHT - PLAYER_SIZE / 2 - padding, newY));
-    
+
     // Debug: Log world bounds clamping
     if (newX !== clampedX || newY !== clampedY) {
         console.log(`[SERVER] Player ${player.id} world bounds clamping: (${newX.toFixed(1)}, ${newY.toFixed(1)}) -> (${clampedX.toFixed(1)}, ${clampedY.toFixed(1)})`);
     }
-    
+
     newX = clampedX;
     newY = clampedY;
 
@@ -843,7 +843,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                 if (Math.abs(overlapX) < combinedHalfWidths && Math.abs(overlapY) < combinedHalfHeights) {
                     const penX = combinedHalfWidths - Math.abs(overlapX);
                     const penY = combinedHalfHeights - Math.abs(overlapY);
-                    
+
                     const oldX = newX;
                     const oldY = newY;
 
@@ -852,7 +852,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                     } else {
                         if (overlapY > 0) newY += penY; else newY -= penY;
                     }
-                    
+
                     // Debug: Log wall collision
                     console.log(`[SERVER] Player ${player.id} wall collision: wall(${wallX.toFixed(1)}, ${wallY.toFixed(1)}, ${wallWidth.toFixed(1)}x${wallHeight.toFixed(1)}) player moved (${oldX.toFixed(1)}, ${oldY.toFixed(1)}) -> (${newX.toFixed(1)}, ${newY.toFixed(1)})`);
                 }
@@ -863,19 +863,19 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
     let collision = false;
     for (const enemy of enemies) {
         const enemySize = ENEMY_SIZE * ENEMY_SIZE_MULTIPLIERS[enemy.tier as keyof typeof ENEMY_SIZE_MULTIPLIERS];
-        
+
         if (
             newX < enemy.x + enemySize &&
             newX + PLAYER_SIZE > enemy.x &&
             newY < enemy.y + enemySize &&
             newY + PLAYER_SIZE > enemy.y
         ) {
-            collision = true; 
-            if (!player.isInvulnerable) {
+            collision = true;
+            // if (!player.isInvulnerable) {
                 player.health -= enemy.damage;
                 player.lastDamageTime = Date.now();
                 player.isInvulnerable = true;
-                
+
                 // Set invulnerability timer (1 second after taking damage)
                 setTimeout(() => {
                     if (players[player.id]) {
@@ -884,7 +884,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                         io.emit('playerInvulnerabilityEnded', { playerId: player.id });
                     }
                 }, 1000);
-                
+
                 // Calculate knockback direction first
                 const dx = enemy.x - newX;
                 const dy = enemy.y - newY;
@@ -895,13 +895,13 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                 const knockbackDistance = 25;
                 const knockbackX = -normalizedDx * knockbackDistance;
                 const knockbackY = -normalizedDy * knockbackDistance;
-                
+
                 // Apply knockback to player position
                 newX -= normalizedDx * knockbackDistance;
                 newY -= normalizedDy * knockbackDistance;
 
-                io.emit('playerDamaged', { 
-                    playerId: player.id, 
+                io.emit('playerDamaged', {
+                    playerId: player.id,
                     health: player.health,
                     maxHealth: player.maxHealth,
                     isInvulnerable: player.isInvulnerable,
@@ -938,11 +938,11 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                         }
                     }
                 }
-                
+
                 if (player.health <= 0) {
                     break;
                 }
-            }
+            // }
             break;
         }
     }
@@ -976,7 +976,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
 
     // Debug: Log final position update
     console.log(`[SERVER] Player ${player.id} final position update: (${player.x.toFixed(1)}, ${player.y.toFixed(1)}) -> (${newX.toFixed(1)}, ${newY.toFixed(1)})`);
-    
+
     player.x = newX;
     player.y = newY;
 
@@ -996,7 +996,7 @@ function start_loop() {
         for (const id in players) {
             updatePlayerState(players[id], deltaTime);
         }
-        
+
         moveEnemies();
 
         const playersForBroadcast = Object.values(players).map(p => ({
@@ -1073,7 +1073,7 @@ setInterval(() => {
 function savePlayerProgress(player: ServerPlayer, userId: string) {
     if (userId) {
         console.log('Saving player progress for userId:', userId);
-        
+
         const saveResult = database.savePlayer(player.id, userId, {
             level: player.level,
             xp: player.xp,
@@ -1108,7 +1108,7 @@ setInterval(() => {
 // Add after other app.use declarations but before socket.io setup
 app.post('/admin/save-progress', (req, res) => {
     const { playerId } = req.body;
-    
+
     if (!playerId) {
         return res.status(400).json({ message: 'Player ID is required' });
     }
@@ -1132,14 +1132,14 @@ app.post('/admin/save-progress', (req, res) => {
 // Add console command handler after the httpsServer.listen() call
 process.stdin.on('data', (data) => {
     const command = data.toString().trim();
-    
+
     if (command.startsWith('save')) {
         const parts = command.split(' ');
         if (parts.length === 2) {
             const playerId = parts[1];
             const player = players[playerId];
             const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
-            
+
             if (player && socket?.userId) {
                 savePlayerProgress(player, socket.userId);
                 socket.emit('savePlayerProgress', player);
@@ -1186,12 +1186,12 @@ function adjustEnemyCount() {
         enemies.pop();
         io.emit('enemyDestroyed', enemies[enemies.length - 1].id);
     }
-    
+
     // Add new enemies if current count is lower than ENEMY_COUNT
     while (enemies.length < ENEMY_COUNT) {
         enemies.push(createEnemy());
     }
-    
+
     // Update all clients with the new enemy state
     io.emit('enemiesUpdate', enemies);
 }

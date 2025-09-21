@@ -740,70 +740,70 @@ function updatePlayerState(player, deltaTime) {
             newY < enemy.y + enemySize &&
             newY + constants_1.PLAYER_SIZE > enemy.y) {
             collision = true;
-            if (!player.isInvulnerable) {
-                player.health -= enemy.damage;
-                player.lastDamageTime = Date.now();
-                player.isInvulnerable = true;
-                // Set invulnerability timer (1 second after taking damage)
-                setTimeout(() => {
-                    if (constants_1.players[player.id]) {
-                        constants_1.players[player.id].isInvulnerable = false;
-                        // Notify client that invulnerability has ended
-                        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
-                    }
-                }, 1000);
-                // Calculate knockback direction first
-                const dx = enemy.x - newX;
-                const dy = enemy.y - newY;
-                const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-                const normalizedDx = dx / distance;
-                const normalizedDy = dy / distance;
-                const knockbackDistance = 25;
-                const knockbackX = -normalizedDx * knockbackDistance;
-                const knockbackY = -normalizedDy * knockbackDistance;
-                // Apply knockback to player position
-                newX -= normalizedDx * knockbackDistance;
-                newY -= normalizedDy * knockbackDistance;
-                io.emit('playerDamaged', {
-                    playerId: player.id,
-                    health: player.health,
-                    maxHealth: player.maxHealth,
-                    isInvulnerable: player.isInvulnerable,
-                    knockbackX: knockbackX,
-                    knockbackY: knockbackY
-                });
-                enemy.health -= player.damage;
-                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
-                if (enemy.health <= 0) {
-                    const index = constants_1.enemies.findIndex(e => e.id === enemy.id);
-                    if (index !== -1) {
-                        const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
-                        (0, server_utils_1.addXPToPlayer)(player, xpGained);
-                        if (Math.random() < constants_1.DROP_CHANCES[enemy.tier]) {
-                            const dropChance = constants_1.DROP_CHANCES[enemy.tier];
-                            if (Math.random() < dropChance) {
-                                const newItem = {
-                                    id: Math.random().toString(36).substr(2, 9),
-                                    type: ['health_potion', 'speed_boost', 'shield'][Math.floor(Math.random() * 3)],
-                                    x: enemy.x,
-                                    y: enemy.y,
-                                    rarity: enemy.tier
-                                };
-                                constants_1.items.push(newItem);
-                                io.emit('itemSpawned', newItem);
-                            }
-                        }
-                        constants_1.enemies.splice(index, 1);
-                        io.emit('enemyDestroyed', enemy.id);
-                        if (constants_1.enemies.length < ENEMY_COUNT) {
-                            constants_1.enemies.push(createEnemy());
-                        }
-                    }
+            // if (!player.isInvulnerable) {
+            player.health -= enemy.damage;
+            player.lastDamageTime = Date.now();
+            player.isInvulnerable = true;
+            // Set invulnerability timer (1 second after taking damage)
+            setTimeout(() => {
+                if (constants_1.players[player.id]) {
+                    constants_1.players[player.id].isInvulnerable = false;
+                    // Notify client that invulnerability has ended
+                    io.emit('playerInvulnerabilityEnded', { playerId: player.id });
                 }
-                if (player.health <= 0) {
-                    break;
+            }, 1000);
+            // Calculate knockback direction first
+            const dx = enemy.x - newX;
+            const dy = enemy.y - newY;
+            const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+            const normalizedDx = dx / distance;
+            const normalizedDy = dy / distance;
+            const knockbackDistance = 25;
+            const knockbackX = -normalizedDx * knockbackDistance;
+            const knockbackY = -normalizedDy * knockbackDistance;
+            // Apply knockback to player position
+            newX -= normalizedDx * knockbackDistance;
+            newY -= normalizedDy * knockbackDistance;
+            io.emit('playerDamaged', {
+                playerId: player.id,
+                health: player.health,
+                maxHealth: player.maxHealth,
+                isInvulnerable: player.isInvulnerable,
+                knockbackX: knockbackX,
+                knockbackY: knockbackY
+            });
+            enemy.health -= player.damage;
+            io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+            if (enemy.health <= 0) {
+                const index = constants_1.enemies.findIndex(e => e.id === enemy.id);
+                if (index !== -1) {
+                    const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
+                    (0, server_utils_1.addXPToPlayer)(player, xpGained);
+                    if (Math.random() < constants_1.DROP_CHANCES[enemy.tier]) {
+                        const dropChance = constants_1.DROP_CHANCES[enemy.tier];
+                        if (Math.random() < dropChance) {
+                            const newItem = {
+                                id: Math.random().toString(36).substr(2, 9),
+                                type: ['health_potion', 'speed_boost', 'shield'][Math.floor(Math.random() * 3)],
+                                x: enemy.x,
+                                y: enemy.y,
+                                rarity: enemy.tier
+                            };
+                            constants_1.items.push(newItem);
+                            io.emit('itemSpawned', newItem);
+                        }
+                    }
+                    constants_1.enemies.splice(index, 1);
+                    io.emit('enemyDestroyed', enemy.id);
+                    if (constants_1.enemies.length < ENEMY_COUNT) {
+                        constants_1.enemies.push(createEnemy());
+                    }
                 }
             }
+            if (player.health <= 0) {
+                break;
+            }
+            // }
             break;
         }
     }

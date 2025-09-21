@@ -3748,7 +3748,7 @@ private isInViewport(x: number, y: number, viewport: { left: number, right: numb
           }
           
           // Draw invulnerability glow effect
-          this.ctx.shadowColor = '#00FFFF';
+          this.ctx.shadowColor = '#FFFF00';
           this.ctx.shadowBlur = 15;
           this.ctx.shadowOffsetX = 0;
           this.ctx.shadowOffsetY = 0;

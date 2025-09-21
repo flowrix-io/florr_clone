@@ -10431,7 +10431,7 @@ class Game {
                 this.ctx.globalAlpha = 0.3; // Make player semi-transparent when flashing
             }
             // Draw invulnerability glow effect
-            this.ctx.shadowColor = '#00FFFF';
+            this.ctx.shadowColor = '#FFFF00';
             this.ctx.shadowBlur = 15;
             this.ctx.shadowOffsetX = 0;
             this.ctx.shadowOffsetY = 0;
