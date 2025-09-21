@@ -1,0 +1,1013 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.WORLD_MAP = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.ZONE_BOUNDARIES = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = exports.KNOCKBACK_RECOVERY_SPEED = exports.KNOCKBACK_FORCE = exports.RESPAWN_INVULNERABILITY_TIME = exports.MAX_INVENTORY_SIZE = exports.ENEMY_TIERS = exports.MAX_SAND_RADIUS = exports.MIN_SAND_RADIUS = exports.SAND_COUNT = exports.DECORATION_COUNT = exports.ENEMY_DAMAGE = exports.PLAYER_DAMAGE = exports.ENEMY_MAX_HEALTH = exports.PLAYER_MAX_HEALTH = exports.ENEMY_CORAL_DAMAGE = exports.ENEMY_CORAL_HEALTH = exports.ENEMY_CORAL_PROBABILITY = exports.OBSTACLE_COUNT = exports.SCALE_FACTOR = exports.PVP_WORLD_HEIGHT = exports.PVP_WORLD_WIDTH = exports.OLD_WORLD_HEIGHT = exports.OLD_WORLD_WIDTH = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.enemies = exports.dots = exports.players = exports.FISH_RETURN_SPEED = exports.PLAYER_BASE_SPEED = exports.FISH_DETECTION_RADIUS = void 0;
+exports.validateWorldMap = validateWorldMap;
+exports.isWall = isWall;
+exports.isSpawn = isSpawn;
+exports.isTeleporter = isTeleporter;
+exports.isSafeZone = isSafeZone;
+// Add these constants at the top with the others
+exports.FISH_DETECTION_RADIUS = 500; // How far fish can detect players
+exports.PLAYER_BASE_SPEED = 5; // Base player speed to match
+exports.FISH_RETURN_SPEED = 0.5; // Speed at which fish return to their normal behavior
+exports.players = {};
+exports.dots = [];
+exports.enemies = [];
+exports.obstacles = [];
+exports.items = [];
+exports.WORLD_WIDTH = 20000;
+exports.WORLD_HEIGHT = 20000;
+exports.ACTUAL_WORLD_WIDTH = 20000;
+exports.ACTUAL_WORLD_HEIGHT = 20000;
+exports.OLD_WORLD_WIDTH = 10000;
+exports.OLD_WORLD_HEIGHT = 2000;
+exports.PVP_WORLD_WIDTH = 10000;
+exports.PVP_WORLD_HEIGHT = 10000;
+exports.SCALE_FACTOR = 1;
+//export let ENEMY_COUNT = 200;
+exports.OBSTACLE_COUNT = 20;
+exports.ENEMY_CORAL_PROBABILITY = 0.3;
+exports.ENEMY_CORAL_HEALTH = 50;
+exports.ENEMY_CORAL_DAMAGE = 5;
+exports.PLAYER_MAX_HEALTH = 100;
+exports.ENEMY_MAX_HEALTH = 50;
+exports.PLAYER_DAMAGE = 5;
+exports.ENEMY_DAMAGE = 20;
+exports.DECORATION_COUNT = 100;
+exports.SAND_COUNT = 50; // Reduced from 200 to 50
+exports.MIN_SAND_RADIUS = 50; // Increased from 30 to 50
+exports.MAX_SAND_RADIUS = 120; // Increased from 80 to 120
+exports.ENEMY_TIERS = {
+    common: { health: 5, speed: 0.5, damage: 5, probability: 0.4, color: '#808080' },
+    uncommon: { health: 40, speed: 0.75, damage: 10, probability: 0.3, color: '#008000' },
+    rare: { health: 60, speed: 1, damage: 15, probability: 0.15, color: '#0000FF' },
+    epic: { health: 80, speed: 1.25, damage: 20, probability: 0.1, color: '#800080' },
+    legendary: { health: 100, speed: 1.5, damage: 25, probability: 0.04, color: '#FFA500' },
+    mythic: { health: 150, speed: 2, damage: 30, probability: 0.01, color: '#FF0000' }
+};
+exports.MAX_INVENTORY_SIZE = 5;
+exports.RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
+// Add knockback constants at the top with other constants
+exports.KNOCKBACK_FORCE = 20; // Increased from 20 to 100
+exports.KNOCKBACK_RECOVERY_SPEED = 0.9; // How quickly the knockback effect diminishes
+// Add XP-related constants
+exports.BASE_XP_REQUIREMENT = 100;
+exports.XP_MULTIPLIER = 1.5;
+exports.HEALTH_PER_LEVEL = 10;
+exports.DAMAGE_PER_LEVEL = 2;
+exports.PLAYER_SIZE = 40;
+exports.ENEMY_SIZE = 40;
+// Define zone boundaries for different tiers
+exports.ZONE_BOUNDARIES = {
+    common: { start: 0, end: 4000 },
+    uncommon: { start: 4000, end: 8000 },
+    rare: { start: 8000, end: 12000 },
+    epic: { start: 12000, end: 16000 },
+    legendary: { start: 16000, end: 18000 },
+    mythic: { start: 18000, end: exports.WORLD_WIDTH }
+};
+// Add enemy size multipliers like in singleplayer
+exports.ENEMY_SIZE_MULTIPLIERS = {
+    common: 1.0,
+    uncommon: 1.2,
+    rare: 1.4,
+    epic: 1.6,
+    legendary: 1.8,
+    mythic: 2.0
+};
+// Add drop chances like in singleplayer
+exports.DROP_CHANCES = {
+    common: 1, // 10% chance
+    uncommon: 1, // 20% chance
+    rare: 1, // 30% chance
+    epic: 1, // 40% chance
+    legendary: 1, // 50% chance
+    mythic: 1 // 75% chance
+};
+// Add maze configuration
+exports.MAZE_CELL_SIZE = 1000; // Size of each maze cell
+exports.MAZE_WALL_THICKNESS = 100; // Thickness of maze walls
+// Define the permanent map layout
+exports.WORLD_MAP = [
+    {
+        "type": "wall",
+        "x": 38.28125,
+        "y": 50,
+        "width": 40,
+        "height": 19890,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 88.28125,
+        "y": 19880,
+        "width": 15550,
+        "height": 50,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 78.28125,
+        "y": 90,
+        "width": 15580,
+        "height": 70,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 15478.28125,
+        "y": 120,
+        "width": 170,
+        "height": 19760,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 2688.28125,
+        "y": 160,
+        "width": 230,
+        "height": 4420,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 2908.28125,
+        "y": 2780,
+        "width": 3740,
+        "height": 280,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 5818.28125,
+        "y": 3060,
+        "width": 230,
+        "height": 4020,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 2898.28125,
+        "y": 5790,
+        "width": 2900,
+        "height": 210,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 2868.28125,
+        "y": 3000,
+        "width": 3000,
+        "height": 2810,
+        "properties": {
+            "spawnType": "common"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 5848.28125,
+        "y": 900,
+        "width": 240,
+        "height": 1950,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 3478.28125,
+        "y": 500,
+        "width": 1770,
+        "height": 1670,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 448.28125,
+        "y": 460,
+        "width": 1900,
+        "height": 2630,
+        "properties": {
+            "spawnType": "legendary"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 438.28125,
+        "y": 4010,
+        "width": 2150,
+        "height": 1950,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 6448.28125,
+        "y": 400,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 6458.28125,
+        "y": 420,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 6718.28125,
+        "y": 550,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 1478.28125,
+        "y": 4520,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 6778.28125,
+        "y": 490,
+        "width": 2220,
+        "height": 1860,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 6628.28125,
+        "y": 3020,
+        "width": 200,
+        "height": 5700,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6808.28125,
+        "y": 5840,
+        "width": 7650,
+        "height": 130,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 3908.28125,
+        "y": 6720,
+        "width": 970,
+        "height": 350,
+        "properties": {}
+    },
+    {
+        "type": "teleporter",
+        "x": 3338.28125,
+        "y": 8530,
+        "width": 510,
+        "height": 460,
+        "properties": {
+            "teleportTo": {
+                "x": 800,
+                "y": 800
+            }
+        }
+    },
+    {
+        "type": "wall",
+        "x": 2068.28125,
+        "y": 8010,
+        "width": 190,
+        "height": 1360,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 2498.28125,
+        "y": 7870,
+        "width": 1360,
+        "height": 160,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4078.28125,
+        "y": 8110,
+        "width": 130,
+        "height": 1280,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 2448.28125,
+        "y": 8270,
+        "width": 640,
+        "height": 960,
+        "properties": {
+            "spawnType": "legendary"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 278.28125,
+        "y": 8100,
+        "width": 1240,
+        "height": 7640,
+        "properties": {
+            "spawnType": "common"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 3248.28125,
+        "y": 10630,
+        "width": 3330,
+        "height": 130,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 8978.28125,
+        "y": 3730,
+        "width": 640,
+        "height": 680,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 11208.28125,
+        "y": 1920,
+        "width": 610,
+        "height": 560,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 11858.28125,
+        "y": 4040,
+        "width": 670,
+        "height": 670,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 12788.28125,
+        "y": 700,
+        "width": 570,
+        "height": 510,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 14098.28125,
+        "y": 3160,
+        "width": 580,
+        "height": 720,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 9348.28125,
+        "y": 750,
+        "width": 530,
+        "height": 480,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6268.28125,
+        "y": 4370,
+        "width": 130,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6308.28125,
+        "y": 3550,
+        "width": 120,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6278.28125,
+        "y": 5570,
+        "width": 130,
+        "height": 130,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 6118.28125,
+        "y": 4580,
+        "width": 430,
+        "height": 820,
+        "properties": {
+            "spawnType": "common"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 6158.28125,
+        "y": 3770,
+        "width": 360,
+        "height": 490,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 6178.28125,
+        "y": 3130,
+        "width": 370,
+        "height": 310,
+        "properties": {
+            "spawnType": "legendary"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 3128.28125,
+        "y": 10660,
+        "width": 110,
+        "height": 4800,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4298.28125,
+        "y": 11370,
+        "width": 1880,
+        "height": 170,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4168.28125,
+        "y": 11580,
+        "width": 160,
+        "height": 3300,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4218.28125,
+        "y": 11460,
+        "width": 90,
+        "height": 130,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6178.28125,
+        "y": 11520,
+        "width": 140,
+        "height": 4070,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4308.28125,
+        "y": 14840,
+        "width": 200,
+        "height": 190,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4468.28125,
+        "y": 14990,
+        "width": 300,
+        "height": 210,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4688.28125,
+        "y": 15150,
+        "width": 350,
+        "height": 300,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4978.28125,
+        "y": 15390,
+        "width": 410,
+        "height": 330,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 5348.28125,
+        "y": 15660,
+        "width": 290,
+        "height": 300,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 4448.28125,
+        "y": 11650,
+        "width": 1680,
+        "height": 660,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 4458.28125,
+        "y": 12420,
+        "width": 1670,
+        "height": 630,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 2188.28125,
+        "y": 10210,
+        "width": 170,
+        "height": 7140,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 1788.28125,
+        "y": 18880,
+        "width": 8340,
+        "height": 220,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4128.28125,
+        "y": 16600,
+        "width": 1030,
+        "height": 520,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 11558.28125,
+        "y": 14880,
+        "width": 3780,
+        "height": 4880,
+        "properties": {
+            "spawnType": "common"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 9938.28125,
+        "y": 2810,
+        "width": 1440,
+        "height": 1310,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 12688.28125,
+        "y": 1850,
+        "width": 1210,
+        "height": 1650,
+        "properties": {
+            "spawnType": "legendary"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 10838.28125,
+        "y": 730,
+        "width": 1500,
+        "height": 1010,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 10108.28125,
+        "y": 3720,
+        "width": 1500,
+        "height": 1220,
+        "properties": {
+            "spawnType": "common"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 7228.28125,
+        "y": 3690,
+        "width": 1340,
+        "height": 1770,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 8138.28125,
+        "y": 4660,
+        "width": 2270,
+        "height": 890,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 7508.28125,
+        "y": 9730,
+        "width": 4250,
+        "height": 330,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 10518.28125,
+        "y": 6530,
+        "width": 4850,
+        "height": 3050,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 12088.28125,
+        "y": 9690,
+        "width": 270,
+        "height": 2170,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 7108.28125,
+        "y": 8630,
+        "width": 1450,
+        "height": 270,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 7908.28125,
+        "y": 8870,
+        "width": 1930,
+        "height": 680,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 7918.28125,
+        "y": 9600,
+        "width": 1920,
+        "height": 90,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 6848.28125,
+        "y": 8570,
+        "width": 240,
+        "height": 400,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 12458.28125,
+        "y": 9800,
+        "width": 2950,
+        "height": 190,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 12378.28125,
+        "y": 10030,
+        "width": 200,
+        "height": 620,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 11758.28125,
+        "y": 10090,
+        "width": 300,
+        "height": 540,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 11778.28125,
+        "y": 9540,
+        "width": 280,
+        "height": 480,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 7238.28125,
+        "y": 13190,
+        "width": 3620,
+        "height": 250,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 8608.28125,
+        "y": 11350,
+        "width": 140,
+        "height": 1910,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 9288.28125,
+        "y": 13420,
+        "width": 190,
+        "height": 3760,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 7098.28125,
+        "y": 15240,
+        "width": 2220,
+        "height": 140,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 13888.28125,
+        "y": 10790,
+        "width": 230,
+        "height": 3630,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 12158.28125,
+        "y": 12730,
+        "width": 1750,
+        "height": 240,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 8708.28125,
+        "y": 11350,
+        "width": 2700,
+        "height": 160,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 8498.28125,
+        "y": 10020,
+        "width": 110,
+        "height": 660,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 9188.28125,
+        "y": 10640,
+        "width": 110,
+        "height": 690,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 9188.28125,
+        "y": 11250,
+        "width": 60,
+        "height": 160,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 9768.28125,
+        "y": 9980,
+        "width": 170,
+        "height": 740,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 10348.28125,
+        "y": 10310,
+        "width": 150,
+        "height": 1080,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 10968.28125,
+        "y": 10010,
+        "width": 140,
+        "height": 900,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 13188.28125,
+        "y": 9940,
+        "width": 180,
+        "height": 1850,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 8058.28125,
+        "y": 10150,
+        "width": 3450,
+        "height": 1090,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 7718.28125,
+        "y": 11510,
+        "width": 2150,
+        "height": 1610,
+        "properties": {
+            "spawnType": "common"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 11248.28125,
+        "y": 13200,
+        "width": 2480,
+        "height": 1390,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 7278.28125,
+        "y": 13660,
+        "width": 1880,
+        "height": 1360,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 6248.28125,
+        "y": 15990,
+        "width": 2870,
+        "height": 1420,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 6048.28125,
+        "y": 9170,
+        "width": 1180,
+        "height": 1300,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 4698.28125,
+        "y": 9290,
+        "width": 1000,
+        "height": 1150,
+        "properties": {
+            "spawnType": "legendary"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 3378.28125,
+        "y": 9520,
+        "width": 990,
+        "height": 930,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 1758.28125,
+        "y": 9480,
+        "width": 1490,
+        "height": 600,
+        "properties": {
+            "spawnType": "rare"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 2488.28125,
+        "y": 10970,
+        "width": 530,
+        "height": 6350,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 3568.28125,
+        "y": 15440,
+        "width": 1010,
+        "height": 920,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    }
+];
+// Add map validation function
+function validateWorldMap(map) {
+    // Check for required border walls
+    const hasTopWall = map.some(el => el.type === 'wall' && el.y === 0 && el.width === exports.WORLD_WIDTH);
+    const hasBottomWall = map.some(el => el.type === 'wall' && el.y === exports.WORLD_HEIGHT - 100);
+    const hasLeftWall = map.some(el => el.type === 'wall' && el.x === 0);
+    const hasRightWall = map.some(el => el.type === 'wall' && el.x === exports.WORLD_WIDTH - 100);
+    if (!hasTopWall || !hasBottomWall || !hasLeftWall || !hasRightWall) {
+        console.error('Map is missing border walls');
+        return false;
+    }
+    // Check for at least one spawn point per tier
+    const spawnTypes = map
+        .filter(el => el.type === 'spawn')
+        .map(el => el.properties?.spawnType)
+        .filter((type) => type !== undefined);
+    const requiredSpawnTypes = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+    const hasAllSpawnTypes = requiredSpawnTypes.every(type => spawnTypes.includes(type));
+    if (!hasAllSpawnTypes) {
+        console.error('Map is missing spawn points for some tiers');
+        return false;
+    }
+    // Check for overlapping elements
+    for (let i = 0; i < map.length; i++) {
+        for (let j = i + 1; j < map.length; j++) {
+            if (elementsOverlap(map[i], map[j])) {
+                console.error('Map has overlapping elements:', map[i], map[j]);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+function elementsOverlap(a, b) {
+    return !(a.x + a.width < b.x ||
+        b.x + b.width < a.x ||
+        a.y + a.height < b.y ||
+        b.y + b.height < a.y);
+}
+// Add map element type guards
+function isWall(element) {
+    return element.type === 'wall';
+}
+function isSpawn(element) {
+    return element.type === 'spawn';
+}
+function isTeleporter(element) {
+    return element.type === 'teleporter';
+}
+function isSafeZone(element) {
+    return element.type === 'safe_zone';
+}

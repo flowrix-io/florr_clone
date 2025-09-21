@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Axolotl Map Editor</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+        }
+
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+
+        .tools {
+            width: 300px;
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .canvas-container {
+            position: relative;
+            overflow: auto;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 8px;
+        }
+
+        canvas {
+            background: #111;
+        }
+
+        .tool-section {
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button.selected {
+            background: #45a049;
+            box-shadow: 0 0 0 2px white;
+        }
+
+        .element-list {
+            max-height: 300px;
+            overflow-y: auto;
+            background: #333;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .element-item {
+            padding: 5px;
+            margin: 2px 0;
+            background: #444;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .element-item:hover {
+            background: #555;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 5px;
+            margin: 5px 0;
+            background: #333;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 3px;
+        }
+
+        .minimap {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            border: 2px solid #333;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .coordinates {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="tools">
+            <div class="tool-section">
+                <h2>Tools</h2>
+                <button id="wallTool">Wall</button>
+                <button id="spawnTool">Spawn</button>
+                <button id="teleporterTool">Teleporter</button>
+                <button id="safeZoneTool">Safe Zone</button>
+                <button id="selectTool">Select</button>
+                <button id="deleteTool">Delete</button>
+            </div>
+
+            <div class="tool-section">
+                <h2>Properties</h2>
+                <div id="properties">
+                    <input type="number" id="elementWidth" placeholder="Width">
+                    <input type="number" id="elementHeight" placeholder="Height">
+                    <select id="spawnType" style="display: none;">
+                        <option value="common">Common</option>
+                        <option value="uncommon">Uncommon</option>
+                        <option value="rare">Rare</option>
+                        <option value="epic">Epic</option>
+                        <option value="legendary">Legendary</option>
+                        <option value="mythic">Mythic</option>
+                    </select>
+                    <div id="teleporterProps" style="display: none;">
+                        <input type="number" id="teleportX" placeholder="Teleport to X">
+                        <input type="number" id="teleportY" placeholder="Teleport to Y">
+                    </div>
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <h2>Elements</h2>
+                <div id="elementList" class="element-list"></div>
+            </div>
+
+            <div class="tool-section">
+                <h2>Actions</h2>
+                <button id="exportMap">Export Map</button>
+                <button id="importMap">Import Map</button>
+                <button id="validateMap">Validate Map</button>
+                <button id="clearMap">Clear Map</button>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="mapCanvas"></canvas>
+            <canvas id="minimapCanvas" class="minimap"></canvas>
+        </div>
+    </div>
+
+    <div class="coordinates" id="coordinates">X: 0, Y: 0</div>
+
+    <script>
+        // Constants from your game
+        const WORLD_WIDTH = 20000;
+        const WORLD_HEIGHT = 20000;
+        const COLORS = {
+            wall: '#666',
+            spawn: '#4CAF50',
+            teleporter: '#2196F3',
+            safe_zone: '#FFC107'
+        };
+
+        // Editor state
+        let currentTool = 'wall';
+        let elements = [];
+        let selectedElement = null;
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let dragOffset = { x: 0, y: 0 };
+        let cameraOffset = { x: 0, y: 0 };
+        let scale = 0.1;
+
+        // Setup canvases
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+        const minimap = document.getElementById('minimapCanvas');
+        const minimapCtx = minimap.getContext('2d');
+
+        // Set canvas sizes
+        canvas.width = WORLD_WIDTH * scale;
+        canvas.height = WORLD_HEIGHT * scale;
+        minimap.width = 200;
+        minimap.height = 200;
+
+        // Tool selection
+        document.querySelectorAll('.tools button').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.tools button').forEach(b => b.classList.remove('selected'));
+                button.classList.add('selected');
+                currentTool = button.id.replace('Tool', '');
+                updatePropertiesPanel();
+            });
+        });
+
+        // Mouse events
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mousemove', updateCoordinates);
+
+        function updateCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.round((e.clientX - rect.left + cameraOffset.x) / scale);
+            const y = Math.round((e.clientY - rect.top + cameraOffset.y) / scale);
+            document.getElementById('coordinates').textContent = `X: ${x}, Y: ${y}`;
+        }
+
+        function startDrawing(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left + cameraOffset.x) / scale;
+            const y = (e.clientY - rect.top + cameraOffset.y) / scale;
+
+            if (currentTool === 'select') {
+                handleSelection(x, y);
+            } else if (currentTool === 'delete') {
+                handleDeletion(x, y);
+            } else {
+                createNewElement(x, y);
+            }
+
+            isDragging = true;
+            dragStart = { x, y };
+            render();
+        }
+
+        function draw(e) {
+            if (!isDragging) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left + cameraOffset.x) / scale;
+            const y = (e.clientY - rect.top + cameraOffset.y) / scale;
+
+            if (selectedElement) {
+                if (currentTool === 'select') {
+                    selectedElement.x = x - dragOffset.x;
+                    selectedElement.y = y - dragOffset.y;
+                }
+            } else if (currentTool !== 'select' && currentTool !== 'delete') {
+                const width = x - dragStart.x;
+                const height = y - dragStart.y;
+                elements[elements.length - 1].width = Math.abs(width);
+                elements[elements.length - 1].height = Math.abs(height);
+                elements[elements.length - 1].x = width > 0 ? dragStart.x : x;
+                elements[elements.length - 1].y = height > 0 ? dragStart.y : y;
+            }
+
+            render();
+        }
+
+        function stopDrawing() {
+            isDragging = false;
+            updateElementList();
+        }
+
+        function createNewElement(x, y) {
+            const element = {
+                type: currentTool,
+                x: x,
+                y: y,
+                width: 0,
+                height: 0,
+                properties: {}
+            };
+
+            if (currentTool === 'spawn') {
+                element.properties.spawnType = document.getElementById('spawnType').value;
+            } else if (currentTool === 'teleporter') {
+                element.properties.teleportTo = {
+                    x: parseInt(document.getElementById('teleportX').value) || 0,
+                    y: parseInt(document.getElementById('teleportY').value) || 0
+                };
+            } else if (currentTool === 'safe_zone') {
+                element.properties.isNoCombat = true;
+                element.properties.isSafeZone = true;
+            }
+
+            elements.push(element);
+        }
+
+        function handleSelection(x, y) {
+            selectedElement = elements.find(element => 
+                x >= element.x && x <= element.x + element.width &&
+                y >= element.y && y <= element.y + element.height
+            );
+
+            if (selectedElement) {
+                dragOffset.x = x - selectedElement.x;
+                dragOffset.y = y - selectedElement.y;
+            }
+        }
+
+        function handleDeletion(x, y) {
+            const index = elements.findIndex(element => 
+                x >= element.x && x <= element.x + element.width &&
+                y >= element.y && y <= element.y + element.height
+            );
+
+            if (index !== -1) {
+                elements.splice(index, 1);
+                updateElementList();
+            }
+        }
+
+        function render() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            minimapCtx.clearRect(0, 0, minimap.width, minimap.height);
+
+            // Draw grid
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            const gridSize = 1000 * scale;
+            for (let x = 0; x < canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+
+            // Draw elements
+            elements.forEach(element => {
+                ctx.fillStyle = COLORS[element.type];
+                ctx.fillRect(
+                    element.x * scale - cameraOffset.x,
+                    element.y * scale - cameraOffset.y,
+                    element.width * scale,
+                    element.height * scale
+                );
+
+                // Draw on minimap
+                minimapCtx.fillStyle = COLORS[element.type];
+                minimapCtx.fillRect(
+                    (element.x / WORLD_WIDTH) * minimap.width,
+                    (element.y / WORLD_HEIGHT) * minimap.height,
+                    (element.width / WORLD_WIDTH) * minimap.width,
+                    (element.height / WORLD_HEIGHT) * minimap.height
+                );
+            });
+
+            // Draw selection
+            if (selectedElement) {
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(
+                    selectedElement.x * scale - cameraOffset.x,
+                    selectedElement.y * scale - cameraOffset.y,
+                    selectedElement.width * scale,
+                    selectedElement.height * scale
+                );
+            }
+        }
+
+        function updatePropertiesPanel() {
+            const spawnType = document.getElementById('spawnType');
+            const teleporterProps = document.getElementById('teleporterProps');
+
+            spawnType.style.display = currentTool === 'spawn' ? 'block' : 'none';
+            teleporterProps.style.display = currentTool === 'teleporter' ? 'block' : 'none';
+        }
+
+        function updateElementList() {
+            const list = document.getElementById('elementList');
+            list.innerHTML = '';
+            elements.forEach((element, index) => {
+                const item = document.createElement('div');
+                item.className = 'element-item';
+                item.textContent = `${element.type} (${Math.round(element.x)}, ${Math.round(element.y)})`;
+                item.onclick = () => {
+                    selectedElement = element;
+                    render();
+                };
+                list.appendChild(item);
+            });
+        }
+
+        // Export/Import functionality
+        document.getElementById('exportMap').onclick = () => {
+            const mapData = JSON.stringify(elements, null, 2);
+            const blob = new Blob([mapData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'map.json';
+            a.click();
+        };
+
+        document.getElementById('importMap').onclick = () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = event => {
+                    elements = JSON.parse(event.target.result);
+                    updateElementList();
+                    render();
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        };
+
+        document.getElementById('clearMap').onclick = () => {
+            if (confirm('Are you sure you want to clear the map?')) {
+                elements = [];
+                selectedElement = null;
+                updateElementList();
+                render();
+            }
+        };
+
+        document.getElementById('validateMap').onclick = () => {
+            // Implement map validation logic here
+            alert('Map validation not implemented yet');
+        };
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html> 

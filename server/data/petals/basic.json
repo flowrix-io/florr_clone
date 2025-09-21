@@ -1,9 +1,0 @@
-{
-    "id": "basic",
-    "name": "Basic Petal",
-    "asset": "basic_petal.svg",
-    "damage": 10,
-    "radius": 12.0,
-    "orbitRadius": 70.0,
-    "rotationSpeed": 2.0
-} 

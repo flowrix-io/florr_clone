@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Host</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        #status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .online {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .offline {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        #controls {
+            margin: 20px 0;
+        }
+        button {
+            padding: 8px 16px;
+            margin-right: 10px;
+        }
+        #log {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 20px;
+            font-family: monospace;
+        }
+        #connectionInfo {
+            font-size: 18px;
+            margin: 20px 0;
+            padding: 15px;
+            background: #e9ecef;
+            border-radius: 4px;
+            word-break: break-all;
+        }
+        .copy-button {
+            margin-left: 10px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Game Host</h1>
+    <div id="connectionInfo">
+        Server Address: <span id="serverAddress">Initializing...</span>
+        <button class="copy-button" onclick="copyAddress()">Copy</button>
+    </div>
+    <div id="status" class="offline">Status: Offline</div>
+    <div id="controls">
+        <button onclick="startServer()">Start Server</button>
+        <button onclick="stopServer()">Stop Server</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+    <div id="stats">
+        <p>Connected Players: <span id="playerCount">0</span></p>
+        <p>Active Enemies: <span id="enemyCount">0</span></p>
+    </div>
+    <div id="log"></div>
+
+    <script>
+        let worker = null;
+        const log = document.getElementById('log');
+        const status = document.getElementById('status');
+        const playerCount = document.getElementById('playerCount');
+        const enemyCount = document.getElementById('enemyCount');
+        const serverAddress = document.getElementById('serverAddress');
+
+        function copyAddress() {
+            const address = serverAddress.textContent;
+            navigator.clipboard.writeText(address).then(() => {
+                alert('Server address copied to clipboard!');
+            });
+        }
+
+        function updateStatus(isOnline) {
+            status.textContent = `Status: ${isOnline ? 'Online' : 'Offline'}`;
+            status.className = isOnline ? 'online' : 'offline';
+        }
+
+        function logMessage(msg) {
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function startServer() {
+            if (worker) {
+                logMessage('Server is already running');
+                return;
+            }
+
+            try {
+                worker = new Worker('server_worker.js');
+                worker.onmessage = function(e) {
+                    const { type, data } = e.data;
+                    
+                    switch(type) {
+                        case 'log':
+                            logMessage(data);
+                            break;
+                        case 'status':
+                            updateStatus(data.online);
+                            break;
+                        case 'stats':
+                            playerCount.textContent = data.players;
+                            enemyCount.textContent = data.enemies;
+                            break;
+                        case 'address':
+                            serverAddress.textContent = data.address;
+                            break;
+                        default:
+                            logMessage(JSON.stringify(e.data));
+                    }
+                };
+
+                worker.onerror = function(error) {
+                    logMessage(`Error: ${error.message}`);
+                    updateStatus(false);
+                };
+
+                logMessage('Starting server...');
+                worker.postMessage({ type: 'start' });
+            } catch (error) {
+                logMessage(`Failed to start server: ${error.message}`);
+            }
+        }
+
+        function stopServer() {
+            if (!worker) {
+                logMessage('Server is not running');
+                return;
+            }
+
+            worker.postMessage({ type: 'stop' });
+            worker.terminate();
+            worker = null;
+            updateStatus(false);
+            logMessage('Server stopped');
+        }
+
+        function clearLog() {
+            log.innerHTML = '';
+        }
+
+        // Clean up when the page is closed
+        window.addEventListener('beforeunload', () => {
+            if (worker) {
+                stopServer();
+            }
+        });
+    </script>
+</body>
+</html> 

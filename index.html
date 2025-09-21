@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ocean Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        /* ... existing styles ... */
+        #controlToggle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="titleScreen">
+        <h1 class="title">Ocean Adventure</h1>
+        <button id="singlePlayerButton" class="button">Single Player</button>
+        <button id="multiPlayerButton" class="button">Multi Player</button>
+    </div>
+    <button id="exitButton" class="button">Exit</button>
+    <canvas id="gameCanvas"></canvas>
+</body>
+</html>
