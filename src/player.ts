@@ -26,6 +26,8 @@ export interface Player {
   speed_boost?: boolean;
   targetX: number;
   targetY: number;
+  eye?: {x: number, y: number};
+  targetEye?: {x: number, y: number};
 }
 export interface PlayerProgress {
   level: number;

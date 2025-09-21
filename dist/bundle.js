@@ -7364,6 +7364,7 @@ class Game {
         this.cameraX = 0;
         this.cameraY = 0;
         this.playerEye = { x: 0, y: 0 };
+        this.targetEye = { x: 0, y: 0 };
         this.WORLD_WIDTH = ACTUAL_WORLD_WIDTH; // Increased from 2000 to 10000
         this.WORLD_HEIGHT = ACTUAL_WORLD_HEIGHT; // Keep height the same
         this.keysPressed = new Set();
@@ -10438,6 +10439,15 @@ class Game {
         }
         // Draw player sprite
         if (player.id === this.socket?.id) {
+            // Calculate target eye position
+            this.targetEye = {
+                x: Math.cos(player.angle) * this.s(2),
+                y: Math.sin(player.angle) * this.s(4.4)
+            };
+            // Smooth interpolation of eye position (lerp factor controls smoothness)
+            const lerpFactor = 0.15; // Lower = smoother, higher = more responsive
+            this.playerEye.x += (this.targetEye.x - this.playerEye.x) * lerpFactor;
+            this.playerEye.y += (this.targetEye.y - this.playerEye.y) * lerpFactor;
             // Apply hue rotation for current player
             const offscreen = document.createElement('canvas');
             offscreen.width = this.playerSprite.width;
@@ -10447,12 +10457,25 @@ class Game {
             const imageData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
             this.applyHueRotation(offCtx, imageData);
             offCtx.putImageData(imageData, 0, 0);
-            this.drawFlower(this.playerSprite, this.rotateEye(player.angle, this.playerEye));
+            this.drawFlower(this.playerSprite, this.playerEye);
         }
         else {
-            this.drawFlower(this.playerSprite, this.rotateEye(player.angle, this.playerEye));
+            // For other players, use their own smooth eye interpolation
+            if (!player.eye) {
+                player.eye = { x: 0, y: 0 };
+                player.targetEye = { x: 0, y: 0 };
+            }
+            // Calculate target eye position for this player
+            player.targetEye = {
+                x: Math.sin(player.angle) * this.s(2),
+                y: Math.cos(player.angle) * this.s(-4.4)
+            };
+            // Smooth interpolation
+            const lerpFactor = 0.15;
+            player.eye.x += (player.targetEye.x - player.eye.x) * lerpFactor;
+            player.eye.y += (player.targetEye.y - player.eye.y) * lerpFactor;
+            this.drawFlower(this.playerSprite, player.eye);
         }
-        this.playerEye = this.rotateEye(player.angle, this.playerEye);
         // Reset effects after drawing
         if (player.isInvulnerable) {
             this.ctx.globalAlpha = 1.0;
