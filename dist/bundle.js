@@ -6376,9 +6376,10 @@ const ENEMY_TIERS = {
 };
 const MAX_INVENTORY_SIZE = 5;
 const RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
+const MAX_SPEED = 90;
 // Add knockback constants at the top with other constants
-const KNOCKBACK_FORCE = 20; // Increased from 20 to 100
-const KNOCKBACK_RECOVERY_SPEED = 0.9; // How quickly the knockback effect diminishes
+const KNOCKBACK_FORCE = 5; // Reduced for faster movement with many enemies
+const KNOCKBACK_RECOVERY_SPEED = 0.7; // Faster decay to reduce movement resistance
 // Add XP-related constants
 const BASE_XP_REQUIREMENT = 100;
 const XP_MULTIPLIER = 1.5;
@@ -7855,39 +7856,8 @@ class Game {
             });
             const existingPlayer = this.players.get(player.id);
             if (existingPlayer) {
-                // Reduced player update logging for performance
-                // For our own player, DON'T interpolate to avoid feedback loops
-                if (player.id === this.socket?.id) {
-                    const dx = player.x - existingPlayer.x;
-                    const dy = player.y - existingPlayer.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    // Only log significant differences for performance
-                    if (distance > 5) {
-                        console.log(`[CLIENT] Position diff: ${distance.toFixed(1)} pixels - IGNORING server position to avoid feedback loop`);
-                    }
-                    // DON'T update own player position from server to avoid oscillation
-                    // Client is authoritative for its own position for responsiveness
-                    // Commented out client-side prediction logic:
-                    // if (distance > 50) {
-                    //     // Large difference - snap to server position (likely teleport/respawn)
-                    //     console.log(`[CLIENT] Large difference for own player, snapping to server position`);
-                    //     existingPlayer.x = player.x;
-                    //     existingPlayer.y = player.y;
-                    // } else if (distance > 2) {
-                    //     // Small difference - smooth interpolation to reduce snap-back
-                    //     console.log(`[CLIENT] Small difference for own player, interpolating smoothly`);
-                    //     existingPlayer.x += dx * 0.15; // Gentle correction
-                    //     existingPlayer.y += dy * 0.15;
-                    // } else {
-                    //     // Very close - accept client prediction
-                    //     console.log(`[CLIENT] Own player position very close, keeping client prediction`);
-                    // }
-                }
-                else {
-                    // For other players, update position normally
-                    existingPlayer.x = player.x;
-                    existingPlayer.y = player.y;
-                }
+                existingPlayer.targetX = player.x;
+                existingPlayer.targetY = player.y;
                 existingPlayer.angle = player.angle;
                 existingPlayer.velocityX = player.velocityX;
                 existingPlayer.velocityY = player.velocityY;
@@ -7902,7 +7872,9 @@ class Game {
                     imageLoaded: true,
                     score: 0,
                     velocityX: 0,
-                    velocityY: 0
+                    velocityY: 0,
+                    targetX: player.x,
+                    targetY: player.y
                 });
             }
         });
@@ -8103,40 +8075,27 @@ class Game {
         });
         // Listen for server game state updates for better synchronization
         this.socket.on('gameStateUpdate', (data) => {
-            // Removed frequent gameStateUpdate logging for performance
-            data.players.forEach(serverPlayer => {
-                const clientPlayer = this.players.get(serverPlayer.id);
-                if (clientPlayer) {
-                    // Skip position updates for our own player since playerMoved handles this
-                    if (serverPlayer.id === this.socket?.id) {
-                        // Skip own player position updates
-                        // Only update non-position properties for self
-                        clientPlayer.health = serverPlayer.health;
-                        clientPlayer.maxHealth = serverPlayer.maxHealth;
-                        clientPlayer.level = serverPlayer.level;
-                        clientPlayer.score = serverPlayer.score;
-                        return;
-                    }
-                    // For other players, do position sync
-                    const dx = serverPlayer.x - clientPlayer.x;
-                    const dy = serverPlayer.y - clientPlayer.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    console.log(`[CLIENT] Player ${serverPlayer.id} server vs client distance: ${distance.toFixed(1)}`);
-                    if (distance > 100) {
-                        console.log(`[CLIENT] Large difference detected, snapping ${serverPlayer.id} to server position`);
-                        clientPlayer.x = serverPlayer.x;
-                        clientPlayer.y = serverPlayer.y;
-                    }
-                    else if (distance > 5) {
-                        console.log(`[CLIENT] Small difference detected, interpolating ${serverPlayer.id}`);
-                        clientPlayer.x += dx * 0.3;
-                        clientPlayer.y += dy * 0.3;
-                    }
-                    clientPlayer.angle = serverPlayer.angle;
-                    clientPlayer.health = serverPlayer.health;
-                    clientPlayer.maxHealth = serverPlayer.maxHealth;
-                    clientPlayer.level = serverPlayer.level;
-                    clientPlayer.score = serverPlayer.score;
+            const serverPlayers = data.players;
+            serverPlayers.forEach(serverPlayer => {
+                const existingPlayer = this.players.get(serverPlayer.id);
+                if (existingPlayer) {
+                    existingPlayer.targetX = serverPlayer.x;
+                    existingPlayer.targetY = serverPlayer.y;
+                    existingPlayer.angle = serverPlayer.angle;
+                    existingPlayer.health = serverPlayer.health;
+                    existingPlayer.maxHealth = serverPlayer.maxHealth;
+                    existingPlayer.level = serverPlayer.level;
+                }
+                else {
+                    this.players.set(serverPlayer.id, {
+                        ...serverPlayer,
+                        imageLoaded: true,
+                        score: 0,
+                        velocityX: 0,
+                        velocityY: 0,
+                        targetX: serverPlayer.x,
+                        targetY: serverPlayer.y
+                    });
                 }
             });
         });
@@ -8491,7 +8450,7 @@ class Game {
     updatePlayerMovement(player, deltaTime) {
         const currentTime = performance.now();
         // Cap delta time to prevent huge jumps but allow faster movement
-        const cappedDeltaTime = Math.min(deltaTime, 0.050); // Max 50ms (20fps minimum)
+        const cappedDeltaTime = Math.min(deltaTime, 0.033); // Max 33ms (30fps minimum) - increased from 50ms
         // Removed excessive key logging for performance
         // Calculate desired velocity based on input
         let targetVelocityX = 0;
@@ -8535,10 +8494,10 @@ class Game {
         player.velocityX = targetVelocityX;
         player.velocityY = targetVelocityY;
         // Apply movement directly with capped delta time
-        const newX = player.x + player.velocityX * cappedDeltaTime;
-        const newY = player.y + player.velocityY * cappedDeltaTime;
+        const predictedX = player.x + player.velocityX * cappedDeltaTime;
+        const predictedY = player.y + player.velocityY * cappedDeltaTime;
         // Check world bounds and collisions
-        const [finalX, finalY] = this.checkCollisions(player, newX, newY);
+        const [finalX, finalY] = this.checkCollisions(player, predictedX, predictedY);
         player.x = finalX;
         player.y = finalY;
         // Send update to server more frequently for better sync
@@ -8548,8 +8507,8 @@ class Game {
                 console.log(`[CLIENT] Moving: vel(${player.velocityX.toFixed(1)},${player.velocityY.toFixed(1)}) delta:${cappedDeltaTime.toFixed(3)}`);
             }
             this.socket.emit('playerMovement', {
-                x: player.x,
-                y: player.y,
+                x: predictedX,
+                y: predictedY,
                 angle: player.angle,
                 velocityX: player.velocityX,
                 velocityY: player.velocityY,

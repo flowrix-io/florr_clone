@@ -52,9 +52,11 @@ export const MAX_INVENTORY_SIZE = 5;
 
 export const RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
 
+export const MAX_SPEED = 90;
+
 // Add knockback constants at the top with other constants
-export const KNOCKBACK_FORCE = 20; // Increased from 20 to 100
-export const KNOCKBACK_RECOVERY_SPEED = 0.9; // How quickly the knockback effect diminishes
+export const KNOCKBACK_FORCE = 5; // Reduced for faster movement with many enemies
+export const KNOCKBACK_RECOVERY_SPEED = 0.7; // Faster decay to reduce movement resistance
 
 // Add XP-related constants
 export const BASE_XP_REQUIREMENT = 100;

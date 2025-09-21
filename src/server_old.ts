@@ -381,7 +381,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 isInvulnerable: true,
                 level: savedProgress?.level || 1,
                 xp: savedProgress?.xp || 0,
-                xpToNextLevel: calculateXPRequirement(savedProgress?.level || 1)
+                xpToNextLevel: calculateXPRequirement(savedProgress?.level || 1),
+                inputs: { keys: [] }
             };
 
             // Save initial state and log the result

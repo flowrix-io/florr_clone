@@ -260,3 +260,28 @@ export function initializeObstacles(): Obstacle[] {
 
     return [...walls, ...enemyCorals];
 }
+
+export function getXPFromEnemy(enemy: Enemy): number {
+  const tierXP = {
+    common: 10,
+    uncommon: 25,
+    rare: 50,
+    epic: 100,
+    legendary: 200,
+    mythic: 500
+  };
+  return tierXP[enemy.tier] || 10;
+}
+
+export function addXPToPlayer(player: any, xp: number): void {
+  player.xp += xp;
+  // Check for level up
+  while (player.xp >= player.xpToNextLevel) {
+    player.xp -= player.xpToNextLevel;
+    player.level++;
+    player.xpToNextLevel = Math.floor(player.xpToNextLevel * 1.5);
+    player.maxHealth += 10;
+    player.health = player.maxHealth; // Full heal on level up
+    player.damage += 2;
+  }
+}

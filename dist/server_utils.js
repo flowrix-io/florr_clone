@@ -4,6 +4,8 @@ exports.getRandomPositionInZone = getRandomPositionInZone;
 exports.createDecoration = createDecoration;
 exports.createSand = createSand;
 exports.initializeObstacles = initializeObstacles;
+exports.getXPFromEnemy = getXPFromEnemy;
+exports.addXPToPlayer = addXPToPlayer;
 const constants_1 = require("./constants");
 const sands = [];
 function getRandomPositionInZone(zoneIndex) {
@@ -167,4 +169,27 @@ function initializeObstacles() {
         health: constants_1.ENEMY_CORAL_HEALTH
     }));
     return [...walls, ...enemyCorals];
+}
+function getXPFromEnemy(enemy) {
+    const tierXP = {
+        common: 10,
+        uncommon: 25,
+        rare: 50,
+        epic: 100,
+        legendary: 200,
+        mythic: 500
+    };
+    return tierXP[enemy.tier] || 10;
+}
+function addXPToPlayer(player, xp) {
+    player.xp += xp;
+    // Check for level up
+    while (player.xp >= player.xpToNextLevel) {
+        player.xp -= player.xpToNextLevel;
+        player.level++;
+        player.xpToNextLevel = Math.floor(player.xpToNextLevel * 1.5);
+        player.maxHealth += 10;
+        player.health = player.maxHealth; // Full heal on level up
+        player.damage += 2;
+    }
 }

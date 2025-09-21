@@ -126,7 +126,8 @@ class GameServer {
             isInvulnerable: true,
             level: 1,
             xp: 0,
-            xpToNextLevel: this.calculateXPRequirement(1)
+            xpToNextLevel: this.calculateXPRequirement(1),
+            inputs: { keys: [] }
         };
 
         // Send individual message to the newly connected player

@@ -24,7 +24,16 @@ export interface Player {
   xpToNextLevel: number;
   lastDamageTime?: number;
   speed_boost?: boolean;
+  targetX: number;
+  targetY: number;
 }
+export interface PlayerProgress {
+  level: number;
+  xp: number;
+  inventory: Item[];
+  loadout: (Item | null)[];
+}
+
 export interface ServerPlayer {
   id: string;
   name: string;
@@ -47,4 +56,10 @@ export interface ServerPlayer {
   xpToNextLevel: number;
   lastDamageTime?: number;
   speed_boost?: boolean;
+  inputs: {
+    keys: string[];
+    useMouse?: boolean;
+    mouseX?: number;
+    mouseY?: number;
+  };
 }
