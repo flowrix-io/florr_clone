@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthUI = void 0;
 class AuthUI {
     constructor() {
-        // Get DOM elements
+        // Get DOM elements - these should now exist from TitleScreen
         this.authContainer = document.getElementById('authContainer');
         this.loginForm = document.getElementById('loginForm');
         this.registerForm = document.getElementById('registerForm');

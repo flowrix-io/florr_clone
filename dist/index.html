@@ -16,6 +16,7 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
+            background-color: #000;
         }
 
         canvas {
@@ -25,306 +26,23 @@
             width: 100%;
             height: 100%;
         }
-
-        #gameMenu {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 3000;
-            text-align: center;
-            display: flex;
-            gap: 10px;
-            padding: 10px;
-            border-radius: 10px;
-        }
-
-        .center_text {
+        #loadingScreen {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            z-index: 1000;
-            text-align: center;
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            background: transparent;
-            box-shadow: none;
+            color: #fff;
         }
 
-        .title {
-            font-size: 48px;
-            margin-bottom: 20px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-        }
-
-        .instructions {
-            font-size: 24px;
-            margin-bottom: 30px;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-        }
-
-        .name-input {
-            padding: 10px;
-            font-size: 18px;
-            border: 2px solid #b2b2b2;
-            border-radius: 5px;
-            margin-top: 20px;
-            width: 700px;
-            text-align: left;
-            background: rgba(255, 255, 255, 0.9);
-        }
-
-        button {
-            margin: 0 10px;
-            padding: 10px 20px;
-            font-size: 16px;
-            background-color: rgba(255, 255, 255, 0.9);
-            border: 2px solid #333;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        button:hover {
-            background-color: rgba(255, 255, 255, 1);
-            transform: scale(1.05);
-        }
-
-        .auth-container {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 2000;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 20px;
-            border-radius: 10px;
-            color: white;
-            pointer-events: auto;
-        }
-
-        .auth-form {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            min-width: 300px;
-        }
-
-        .auth-form input {
-            padding: 10px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
-        }
-
-        .auth-form button {
-            margin: 5px 0;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        .buttons {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .auth-visible .buttons {
-            opacity: 0.5;
-        }
-
-        body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: url('./assets/background.png') repeat;
-            background-size: 512px 512px; /* Adjust size as needed */
-        }
-
-        .center_text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-            text-align: center;
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            background: transparent;
-            box-shadow: none;
-        }
-
-        .title {
-            font-size: 48px;
-            margin-bottom: 20px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-            color: #ffffff;
-        }
-
-        .instructions {
-            font-size: 24px;
-            margin-bottom: 30px;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-            color: #ffffff;
-        }
-
-        /* Update game menu styling */
-        #gameMenu {
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-        }
-
-        #gameMenu button {
-            background: rgba(255, 255, 255, 0.9);
-            border: 2px solid rgba(255, 255, 255, 0.5);
-            color: #000;
-            font-weight: bold;
-            transition: all 0.3s ease;
-        }
-
-        #gameMenu button:hover {
-            background: rgba(255, 255, 255, 1);
-            transform: scale(1.1);
-        }
-
-        /* Update name input styling */
-        .name-input {
-            background: rgba(255, 255, 255, 0.9);
-            border: 2px solid rgba(255, 255, 255, 0.5);
-            color: #000;
-            font-size: 18px;
-            padding: 10px;
-            width: 300px;
-            margin: 10px 0;
-            border-radius: 5px;
-        }
-
-        /* Update color picker styling */
-        .color-picker {
-            padding: 15px;
-            border-radius: 10px;
-            margin-top: 20px;
-        }
-
-        .color-picker label {
-            color: white;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-        }
-
-        .hue-slider {
-            width: 200px;
-            margin: 10px 0;
-        }
-
-        .color-update-btn {
-            background: rgba(255, 255, 255, 0.9);
-            border: 2px solid rgba(255, 255, 255, 0.5);
-            color: #000;
-            padding: 8px 15px;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .color-update-btn:hover {
-            background: rgba(255, 255, 255, 1);
-            transform: scale(1.1);
-        }
-
-        /* Add animation for background */
-        @keyframes backgroundScroll {
-            from { background-position: 0 0; }
-            to { background-position: 512px 512px; }
-        }
-
-        body {
-            animation: backgroundScroll 20s linear infinite;
-        }
-
-        /* Optional: Add or modify text shadow for better readability */
-        .title, .instructions {
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-        }
     </style>
     <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
     <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
 </head>
 <body>
-    <div id="authContainer" class="auth-container">
-        <div id="loginForm" class="auth-form">
-            <h2>Login</h2>
-            <input type="text" id="loginUsername" placeholder="Username">
-            <input type="password" id="loginPassword" placeholder="Password">
-            <div class="server-input">
-                <input type="text" id="serverIP-connect" placeholder="Server IP">
-            </div>
-            <button id="loginButton">Login</button>
-            <p class="form-switch" id="showRegister">Need an account? Register</p>
-        </div>
-        <div id="registerForm" class="auth-form hidden">
-            <h2>Register</h2>
-            <br/>
-            <h3>Do not use your real name or any personal information as your username.</h3>
-            <input type="text" id="registerUsername" placeholder="Username">
-            <input type="password" id="registerPassword" placeholder="Password">
-            <input type="password" id="registerConfirmPassword" placeholder="Confirm Password">
-            <div class="single-player">
-                <input type="text" id="serverIP-single" placeholder="Server IP">
-            </div>
-            <button id="registerButton">Register</button>
-            <button id="registerOfflineButton">Register Offline</button>
-            <p class="form-switch" id="showLogin">Already have an account? Login</p>
-        </div>
-    </div>
+    <h1 id="loadingScreen">Loading...</h1>
     <canvas id="gameCanvas"></canvas>
-    <div id="exitButtonContainer" style="position: absolute; top: 20px; left: 20px; z-index: 3000; display: none;">
-        <img id="exitButton" src="./assets/exit.png" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px;" alt="Exit">
-    </div>
-    <div id="gameMenu">
-        <button id="multiPlayerButton" class="buttons">Start Game</button>
-    </div>
-    <div class="center_text">
-        <p class="title">Axolotl Game</p>
-        <p class="instructions">Use arrow keys to move. Touch enemies to attack.</p>
-        <input type="text" id="nameInput" class="name-input" placeholder="This axolotl is called...">
-        <div class="color-picker">
-            <label for="hueSlider">Player Color:</label>
-            <input type="range" id="hueSlider" min="0" max="360" value="0" class="hue-slider">
-            <div id="colorPreview" class="color-preview"></div>
-            <button id="updateColorButton" class="color-update-btn">Update Color</button>
-        </div>
-        <div class="controls">
-            <p>Controls:</p>
-            <br/>
-            <p>Press I to open the inventory.</p>
-            <br/>
-            <p>Press number keys 1-9 to use items.</p>
-            <br/>
-            <p>Press C to switch between mouse and keyboard controls</p>
-            <br/>
-            <p>Press R to craft items</p>
-        </div>
-    </div>
-    <div id="deathScreen" class="hidden">
-        <p>You died!</p>
-    </div>
-    <div id="loadingScreen" class="hidden">
-        <p>Loading...</p>
-    </div>
-    <div id="land-container"></div>
-    <div id="axolotl-container"></div>
     <script>
         console.log('Hello');
-        exitButton.addEventListener('click', () => {
-            window.location.reload();
-        });
     </script>
     <script content-type="application/javascript" src="bundle.js"></script>
 </body>

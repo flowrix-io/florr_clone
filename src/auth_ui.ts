@@ -26,7 +26,7 @@ export class AuthUI {
     private registerOfflineButton: HTMLElement;
 
     constructor() {
-        // Get DOM elements
+        // Get DOM elements - these should now exist from TitleScreen
         this.authContainer = document.getElementById('authContainer')!;
         this.loginForm = document.getElementById('loginForm')!;
         this.registerForm = document.getElementById('registerForm')!;
