@@ -90,6 +90,9 @@ function setupSocketListeners(game: any) {
             velocityX: 0,
             velocityY: 0
         });
+        if (player.id === game.socket.id && game.inventoryManager) {
+            game.inventoryManager.updateLoadoutDisplay();
+        }
     });
 
     game.socket.on('playerMoved', (player: Player) => {
@@ -443,7 +446,9 @@ function setupSocketListeners(game: any) {
                 if (game.isInventoryOpen) {
                     game.updateInventoryDisplay();
                 }
-                game.updateLoadoutDisplay();  // Always update loadout display
+                if (game.inventoryManager) {
+                    game.inventoryManager.updateLoadoutDisplay();
+                }
             }
         }
     });

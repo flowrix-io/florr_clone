@@ -129,7 +129,7 @@ export class TitleScreen {
         this.centerText.innerHTML = `
             <p class="title">Axolotl Game</p>
             <p class="instructions">Use arrow keys to move. Touch enemies to attack.</p>
-            <input type="text" id="nameInput" class="name-input" placeholder="This axolotl is called...">
+            <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
             <div class="color-picker">
                 <label for="hueSlider">Player Color:</label>
                 <input type="range" id="hueSlider" min="0" max="360" value="0" class="hue-slider">

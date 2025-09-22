@@ -7,6 +7,7 @@ const constants_1 = require("./constants");
 const graphics_1 = require("./graphics");
 const chat_1 = require("./chat");
 const socket_1 = require("./socket");
+const inventory_1 = require("./inventory");
 class Game {
     constructor() {
         this.speedBoostActive = false;
@@ -213,33 +214,10 @@ class Game {
         this.exitButtonContainer = document.getElementById('exitButtonContainer');
         // Add exit button click handler
         this.exitButton?.addEventListener('click', () => this.handleExit());
-        // Create loadout bar HTML element
-        const loadoutBar = document.createElement('div');
-        loadoutBar.id = 'loadoutBar';
-        loadoutBar.style.position = 'fixed';
-        loadoutBar.style.bottom = '20px';
-        loadoutBar.style.left = '50%';
-        loadoutBar.style.transform = 'translateX(-50%)';
-        loadoutBar.style.display = 'flex';
-        loadoutBar.style.gap = '5px';
-        loadoutBar.style.zIndex = '1000';
-        // Create slots
-        for (let i = 0; i < this.LOADOUT_SLOTS; i++) {
-            const slot = document.createElement('div');
-            slot.className = 'loadout-slot';
-            slot.dataset.slot = i.toString();
-            slot.style.width = '50px';
-            slot.style.height = '50px';
-            slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
-            slot.style.border = '2px solid #00ba3e';
-            slot.style.borderRadius = '5px';
-            loadoutBar.appendChild(slot);
-        }
-        document.body.appendChild(loadoutBar);
         // Set up item sprites
         this.setupItemSprites();
         // Add drag-and-drop event listeners
-        this.setupDragAndDrop();
+        // this.setupDragAndDrop(); // This method is now in inventory.ts
         // Create inventory panel
         this.inventoryPanel = document.createElement('div');
         this.inventoryPanel.id = 'inventoryPanel';
@@ -280,7 +258,8 @@ class Game {
       `;
         document.head.appendChild(style);
         // Add to constructor after other UI initialization
-        this.initializeCrafting();
+        this.inventoryManager = new inventory_1.InventoryManager(this);
+        this.inventoryManager.updateLoadoutDisplay();
         this.svgLoader = new SVGLoader_1.SVGLoader();
         this.loadAssets();
         // Listen for map data from the server
@@ -383,44 +362,39 @@ class Game {
                 }
                 return;
             }
-            // Add chat toggle
             if (event.key === 'Enter') {
                 this.chat?.focus();
                 return;
             }
             if (event.key === 'i' || event.key === 'I') {
-                this.toggleInventory();
+                this.inventoryManager.toggleInventory();
                 return;
             }
-            // Add control toggle with 'C' key
+            if (event.key === 'r' || event.key === 'R') {
+                this.inventoryManager.toggleCrafting();
+                return;
+            }
             if (event.key === 'c' || event.key === 'C') {
                 this.useMouseControls = !this.useMouseControls;
                 this.showFloatingText(this.canvas.width / 2, 50, `Controls: ${this.useMouseControls ? 'Mouse' : 'Keyboard'}`, '#FFFFFF', 20);
                 return;
             }
-            // Add crafting toggle with 'R' key
-            if (event.key === 'r' || event.key === 'R') {
-                this.toggleCrafting();
+            if (event.key === 'h' || event.key === 'H') {
+                this.showHitboxes = !this.showHitboxes;
+                this.showFloatingText(this.canvas.width / 2, 50, `Hitboxes: ${this.showHitboxes ? 'ON' : 'OFF'}`, '#FFFFFF', 20);
+                return;
+            }
+            const key = event.key;
+            const slotIndex = this.inventoryManager.getLoadoutKeyBindings().indexOf(key);
+            if (slotIndex !== -1) {
+                this.inventoryManager.useLoadoutItem(slotIndex);
+                return;
             }
             this.keysPressed.add(event.key);
-            // Remove immediate velocity update - handled in game loop
-            // Handle loadout key bindings
-            const key = event.key;
-            const slotIndex = this.LOADOUT_KEY_BINDINGS.indexOf(key);
-            if (slotIndex !== -1) {
-                this.useLoadoutItem(slotIndex);
-            }
         });
         document.addEventListener('keyup', (event) => {
             this.keysPressed.delete(event.key);
             // Remove immediate velocity update - handled in game loop
-        });
-        // Add hitbox toggle with 'H' key
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'h' || event.key === 'H') {
-                this.showHitboxes = !this.showHitboxes;
-                this.showFloatingText(this.canvas.width / 2, 50, `Hitboxes: ${this.showHitboxes ? 'ON' : 'OFF'}`, '#FFFFFF', 20);
-            }
         });
         // Add name input change listener
         this.nameInput?.addEventListener('change', () => {
@@ -439,7 +413,7 @@ class Game {
                 const itemIndex = parseInt(e.dataTransfer?.getData('text/plain') || '-1');
                 const slot = e.target.dataset.slot;
                 if (itemIndex >= 0 && slot) {
-                    this.equipItemToLoadout(itemIndex, parseInt(slot));
+                    this.inventoryManager.equipItemToLoadout(itemIndex, parseInt(slot));
                 }
             });
         }
@@ -452,27 +426,6 @@ class Game {
         this.cameraX = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH - this.canvas.width, targetX));
         this.cameraY = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - this.canvas.height, targetY));
         this.graphics.setCamera(this.cameraX, this.cameraY);
-    }
-    toggleInventory() {
-        if (!this.inventoryPanel)
-            return;
-        const isOpen = this.inventoryPanel.style.display === 'block';
-        if (!isOpen) {
-            this.inventoryPanel.style.display = 'block';
-            setTimeout(() => {
-                this.inventoryPanel?.classList.add('open');
-            }, 10);
-            this.updateInventoryDisplay();
-        }
-        else {
-            this.inventoryPanel.classList.remove('open');
-            setTimeout(() => {
-                if (this.inventoryPanel) {
-                    this.inventoryPanel.style.display = 'none';
-                }
-            }, 300); // Match transition duration
-        }
-        this.isInventoryOpen = !isOpen;
     }
     gameLoop() {
         this.update();
@@ -653,6 +606,8 @@ class Game {
         this.canvas.style.backgroundColor = 'white';
         // Stop drawing the game loop
         this.gameLoopId = null;
+        // Clean up inventory manager
+        this.inventoryManager.cleanup();
     }
     hideExitButton() {
         if (this.exitButtonContainer) {
@@ -907,114 +862,7 @@ class Game {
             slot.appendChild(keyText);
         });
     }
-    setupDragAndDrop() {
-        // Add global drop handler
-        document.addEventListener('dragover', (e) => {
-            e.preventDefault();
-        });
-        document.addEventListener('drop', (e) => {
-            e.preventDefault();
-            const dragEvent = e;
-            const target = e.target;
-            // If not dropping on loadout slot or inventory grid, return item to inventory
-            if (!target.closest('.loadout-slot') && !target.closest('.inventory-grid')) {
-                const loadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
-                if (loadoutSlot) {
-                    this.moveItemToInventory(parseInt(loadoutSlot));
-                }
-            }
-        });
-        // Make loadout items draggable
-        const updateLoadoutDraggable = () => {
-            const slots = document.querySelectorAll('.loadout-slot');
-            slots.forEach((slot, slotIndex) => {
-                const img = slot.querySelector('img');
-                if (img) {
-                    img.draggable = true;
-                    img.addEventListener('dragstart', (e) => {
-                        const dragEvent = e;
-                        dragEvent.dataTransfer?.setData('text/loadoutSlot', slotIndex.toString());
-                        dragEvent.dataTransfer.effectAllowed = 'move';
-                    });
-                }
-            });
-        };
-        // Update loadout items draggable state whenever the display updates
-        const originalUpdateLoadoutDisplay = this.updateLoadoutDisplay.bind(this);
-        this.updateLoadoutDisplay = () => {
-            originalUpdateLoadoutDisplay();
-            updateLoadoutDraggable();
-        };
-        // Handle drops on loadout slots
-        const slots = document.querySelectorAll('.loadout-slot');
-        slots.forEach((slot, slotIndex) => {
-            // Set the slot index as a data attribute
-            slot.dataset.slot = slotIndex.toString();
-            slot.addEventListener('dragenter', (e) => {
-                e.preventDefault();
-                e.currentTarget.classList.add('drag-over');
-            });
-            slot.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                const dragEvent = e;
-                dragEvent.dataTransfer.dropEffect = 'move';
-                e.currentTarget.classList.add('drag-over');
-            });
-            slot.addEventListener('dragleave', (e) => {
-                e.currentTarget.classList.remove('drag-over');
-            });
-            slot.addEventListener('drop', (e) => {
-                e.preventDefault();
-                const dragEvent = e;
-                const target = e.currentTarget;
-                target.classList.remove('drag-over');
-                // Check if the drop is from inventory or loadout
-                const inventoryIndex = dragEvent.dataTransfer?.getData('text/plain');
-                const fromLoadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
-                if (inventoryIndex) {
-                    // Drop from inventory to loadout
-                    const index = parseInt(inventoryIndex);
-                    const slot = parseInt(target.dataset.slot || '-1');
-                    if (index >= 0 && slot >= 0) {
-                        this.equipItemToLoadout(index, slot);
-                    }
-                }
-                else if (fromLoadoutSlot) {
-                    // Drop from loadout to loadout (swap items)
-                    const fromSlot = parseInt(fromLoadoutSlot);
-                    const toSlot = slotIndex;
-                    if (fromSlot !== toSlot) {
-                        this.swapLoadoutItems(fromSlot, toSlot);
-                    }
-                }
-            });
-        });
-        // Make inventory panel a drop target for loadout items
-        if (this.inventoryPanel) {
-            const grid = this.inventoryPanel.querySelector('.inventory-grid');
-            if (grid) {
-                grid.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                    const dragEvent = e;
-                    dragEvent.dataTransfer.dropEffect = 'move';
-                    grid.classList.add('drag-over');
-                });
-                grid.addEventListener('dragleave', (e) => {
-                    grid.classList.remove('drag-over');
-                });
-                grid.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    grid.classList.remove('drag-over');
-                    const dragEvent = e;
-                    const loadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
-                    if (loadoutSlot) {
-                        this.moveItemToInventory(parseInt(loadoutSlot));
-                    }
-                });
-            }
-        }
-    }
-    // Add method to swap loadout items
+    // Add this method to swap loadout items
     swapLoadoutItems(fromSlot, toSlot) {
         const player = this.players.get(this.socket?.id || '');
         if (!player)
@@ -1239,7 +1087,7 @@ class Game {
                 slot.classList.remove('drag-over');
                 const itemIndex = e.dataTransfer?.getData('text/plain');
                 if (itemIndex) {
-                    this.addItemToCraftingSlot(parseInt(itemIndex), i);
+                    this.inventoryManager.addItemToCraftingSlot(parseInt(itemIndex), i);
                 }
             });
             craftingGrid.appendChild(slot);
@@ -1248,7 +1096,7 @@ class Game {
         const craftButton = document.createElement('button');
         craftButton.className = 'craft-button';
         craftButton.textContent = 'Craft';
-        craftButton.addEventListener('click', () => this.craftItems());
+        craftButton.addEventListener('click', () => this.inventoryManager.craftItems());
         this.craftingPanel.appendChild(craftingGrid);
         this.craftingPanel.appendChild(craftButton);
         document.body.appendChild(this.craftingPanel);
@@ -1320,7 +1168,7 @@ class Game {
         this.isCraftingOpen = !this.isCraftingOpen;
         this.craftingPanel.style.display = this.isCraftingOpen ? 'block' : 'none';
         if (this.isCraftingOpen) {
-            this.updateCraftingDisplay();
+            this.inventoryManager.updateCraftingDisplay();
         }
     }
     // Add to Game class properties
@@ -1349,7 +1197,7 @@ class Game {
         // Remove item from inventory
         player.inventory.splice(inventoryIndex, 1);
         // Update displays
-        this.updateCraftingDisplay();
+        this.inventoryManager.updateCraftingDisplay();
         this.updateInventoryDisplay();
     }
     // Add to Game class properties
@@ -1370,7 +1218,7 @@ class Game {
         this.socket?.emit('craftItems', { items: craftingItems });
         // Clear crafting slots immediately for responsiveness
         this.craftingSlots.forEach(slot => slot.item = null);
-        this.updateCraftingDisplay();
+        this.inventoryManager.updateCraftingDisplay();
     }
     // Add to Game class properties
     updateCraftingDisplay() {
@@ -1421,6 +1269,12 @@ class Game {
             // Create empty walls array if loading fails
             this.walls = [];
         }
+    }
+    getLocalPlayer() {
+        return this.players.get(this.socket?.id || '');
+    }
+    getSocket() {
+        return this.socket;
     }
 }
 exports.Game = Game;
