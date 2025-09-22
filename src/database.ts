@@ -1,66 +1,18 @@
-import Database from 'better-sqlite3';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Item } from './item';
 
-const db = new Database('game.db');
+const dbPath = path.join(__dirname, '..', 'game.db');
+if (fs.existsSync(dbPath)) {
+    fs.unlinkSync(dbPath);
+}
 
-// Initialize database with schema version tracking
-db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_version (
-        version INTEGER PRIMARY KEY
-    );
-`);
+const inventoryPath = path.join(__dirname, 'inventory.json');
 
-// Check current schema version
-const currentVersion = db.prepare('SELECT version FROM schema_version').get() as { version: number } | undefined;
-const LATEST_VERSION = 2;
-
-if (!currentVersion) {
-    // First time setup
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS players (
-            id TEXT PRIMARY KEY,
-            userId TEXT NOT NULL,
-            level INTEGER DEFAULT 1,
-            xp INTEGER DEFAULT 0,
-            maxHealth INTEGER DEFAULT 100,
-            damage INTEGER DEFAULT 10,
-            inventory TEXT DEFAULT '[]',
-            loadout TEXT DEFAULT '[]',
-            lastSeen DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-
-        INSERT INTO schema_version (version) VALUES (${LATEST_VERSION});
-    `);
-} else if (currentVersion.version < LATEST_VERSION) {
-    // Handle migrations
-    if (currentVersion.version < 1) {
-        // Add inventory column if it doesn't exist
-        db.exec(`
-            ALTER TABLE players ADD COLUMN inventory TEXT DEFAULT '[]';
-        `);
-    }
-    
-    if (currentVersion.version < 2) {
-        // Add loadout column
-        try {
-            db.exec(`
-                ALTER TABLE players ADD COLUMN loadout TEXT DEFAULT '[]';
-            `);
-            console.log('Successfully added loadout column');
-        } catch (error) {
-            console.error('Error adding loadout column:', error);
-        }
-    }
-    
-    // Update schema version
-    db.prepare('UPDATE schema_version SET version = ?').run(LATEST_VERSION);
+interface PlayerInventory {
+    [rarity: string]: {
+        [itemType: string]: number;
+    };
 }
 
 export interface PlayerProgress {
@@ -68,127 +20,80 @@ export interface PlayerProgress {
     xp: number;
     maxHealth: number;
     damage: number;
-    inventory?: Item[];
+    inventory?: PlayerInventory;
     loadout?: (Item | null)[];
 }
 
-export interface User {
+interface User {
     id: string;
     username: string;
-    password: string;
+    // For simplicity, storing passwords in plain text. In a real app, hash and salt them.
+    password: string; 
 }
+
+interface DatabaseData {
+    players: { [userId: string]: PlayerProgress };
+    users: { [username: string]: User };
+}
+
+let db: DatabaseData = { players: {}, users: {} };
+
+const readDatabase = () => {
+    try {
+        if (fs.existsSync(inventoryPath)) {
+            const data = fs.readFileSync(inventoryPath, 'utf-8');
+            db = JSON.parse(data);
+        } else {
+            fs.writeFileSync(inventoryPath, JSON.stringify(db, null, 2));
+        }
+    } catch (error) {
+        console.error('Error reading database file:', error);
+    }
+};
+
+const writeDatabase = () => {
+    try {
+        fs.writeFileSync(inventoryPath, JSON.stringify(db, null, 2));
+    } catch (error) {
+        console.error('Error writing to database file:', error);
+    }
+};
+
+readDatabase();
+
 
 export const database = {
     // User-related functions
     createUser: (username: string, password: string): User | null => {
-        const stmt = db.prepare(`
-            INSERT INTO users (id, username, password)
-            VALUES (?, ?, ?)
-        `);
-        
-        try {
-            const userId = Math.random().toString(36).substr(2, 9);
-            stmt.run(userId, username, password);
-            return { id: userId, username, password };
-        } catch (error) {
-            console.error('Error creating user:', error);
-            return null;
+        if (db.users[username]) {
+            return null; // User already exists
         }
+        const userId = Math.random().toString(36).substr(2, 9);
+        const newUser: User = { id: userId, username, password };
+        db.users[username] = newUser;
+        writeDatabase();
+        return newUser;
     },
 
     getUser: (username: string, password: string): User | null => {
-        const stmt = db.prepare('SELECT * FROM users WHERE username = ? AND password = ?');
-        return stmt.get(username, password) as User | null;
-    },
-
-    // Player-related functions
-    savePlayer: (playerId: string, userId: string, progress: PlayerProgress) => {
-        try {
-            console.log('Attempting to save player progress:', {
-                playerId,
-                userId,
-                progress
-            });
-
-            const stmt = db.prepare(`
-                INSERT OR REPLACE INTO players (
-                    id, userId, level, xp, maxHealth, damage, inventory, loadout, lastSeen
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            `);
-
-            const result = stmt.run(
-                playerId,
-                userId,
-                progress.level,
-                progress.xp,
-                progress.maxHealth,
-                progress.damage,
-                JSON.stringify(progress.inventory || []),
-                JSON.stringify(progress.loadout || Array(10).fill(null))
-            );
-
-            console.log('Save player result:', result);
-            return true;
-        } catch (error) {
-            console.error('Error saving player progress:', error);
-            return false;
-        }
-    },
-
-    getPlayer: (playerId: string): PlayerProgress | null => {
-        const stmt = db.prepare('SELECT level, xp, maxHealth, damage, inventory FROM players WHERE id = ?');
-        const result = stmt.get(playerId) as any;
-        if (result) {
-            return {
-                level: result.level,
-                xp: result.xp,
-                maxHealth: result.maxHealth,
-                damage: result.damage,
-                inventory: JSON.parse(result.inventory || '[]')
-            };
+        const user = db.users[username];
+        if (user && user.password === password) {
+            return user;
         }
         return null;
     },
 
-    getPlayerByUserId: (userId: string): PlayerProgress | null => {
-        try {
-            console.log('Attempting to get player by userId:', userId);
-            
-            const stmt = db.prepare(`
-                SELECT level, xp, maxHealth, damage, inventory, loadout 
-                FROM players 
-                WHERE userId = ?
-                ORDER BY lastSeen DESC
-                LIMIT 1
-            `);
-            
-            const result = stmt.get(userId) as any;
-            
-            if (result) {
-                console.log('Found player data:', result);
-                return {
-                    level: result.level,
-                    xp: result.xp,
-                    maxHealth: result.maxHealth,
-                    damage: result.damage,
-                    inventory: JSON.parse(result.inventory || '[]'),
-                    loadout: JSON.parse(result.loadout || '[]')
-                };
-            }
-            console.log('No player data found for userId:', userId);
-            return null;
-        } catch (error) {
-            console.error('Error getting player by userId:', error);
-            return null;
-        }
+    // Player-related functions
+    savePlayer: (userId: string, progress: PlayerProgress) => {
+        db.players[userId] = {
+            ...db.players[userId],
+            ...progress
+        };
+        writeDatabase();
+        return true;
     },
 
-    cleanupOldPlayers: (daysOld: number = 30) => {
-        const stmt = db.prepare(`
-            DELETE FROM players 
-            WHERE lastSeen < datetime('now', '-' || ? || ' days')
-        `);
-        stmt.run(daysOld);
-    }
+    getPlayerByUserId: (userId:string): PlayerProgress | null => {
+        return db.players[userId] || null;
+    },
 }; 

@@ -91,7 +91,7 @@ class GameServer {
             health: constants_1.PLAYER_MAX_HEALTH,
             maxHealth: constants_1.PLAYER_MAX_HEALTH,
             damage: constants_1.PLAYER_DAMAGE,
-            inventory: [],
+            inventory: {},
             loadout: Array(10).fill(null),
             isInvulnerable: true,
             level: 1,

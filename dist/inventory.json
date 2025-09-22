@@ -1,0 +1,44 @@
+{
+  "players": {
+    "00pf7yrz5": {
+      "level": 3,
+      "xp": 5,
+      "maxHealth": 120,
+      "damage": 9,
+      "inventory": {
+        "common": {
+          "shield": 3
+        },
+        "rare": {
+          "shield": 2
+        },
+        "uncommon": {
+          "health_potion": 1,
+          "speed_boost": 1
+        }
+      },
+      "loadout": [
+        {
+          "type": "health_potion",
+          "rarity": "common"
+        },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  },
+  "users": {
+    "sussy": {
+      "id": "00pf7yrz5",
+      "username": "sussy",
+      "password": "sussy"
+    }
+  }
+}

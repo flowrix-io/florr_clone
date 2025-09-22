@@ -74,9 +74,15 @@ class InventoryManager {
             slot.addEventListener('drop', (e) => {
                 e.preventDefault();
                 slot.classList.remove('drag-over');
-                const itemIndex = e.dataTransfer?.getData('text/plain');
-                if (itemIndex) {
-                    this.addItemToCraftingSlot(parseInt(itemIndex), i);
+                const itemData = e.dataTransfer?.getData('text/plain');
+                if (itemData) {
+                    try {
+                        const { rarity, type } = JSON.parse(itemData);
+                        this.addItemToCraftingSlot(rarity, type, i);
+                    }
+                    catch (error) {
+                        console.error('Failed to parse item data for crafting', error);
+                    }
                 }
             });
             craftingGrid.appendChild(slot);
@@ -196,31 +202,27 @@ class InventoryManager {
             this.updateCraftingDisplay();
         }
     }
-    equipItemToLoadout(inventoryIndex, loadoutSlot) {
+    equipItemToLoadout(rarity, type, loadoutSlot) {
         const player = this.game.getLocalPlayer();
-        if (!player || loadoutSlot >= this.LOADOUT_SLOTS)
+        if (!player || loadoutSlot >= this.LOADOUT_SLOTS || this.getItemCount(rarity, type) === 0)
             return;
-        const item = player.inventory[inventoryIndex];
-        if (!item)
-            return;
-        const newInventory = [...player.inventory];
+        const item = { type: type, rarity: rarity };
+        const newInventory = { ...player.inventory };
         const newLoadout = [...player.loadout];
-        newInventory.splice(inventoryIndex, 1);
+        this.removeItem(rarity, type, 1);
         const existingItem = newLoadout[loadoutSlot];
-        if (existingItem) {
-            newInventory.push(existingItem);
+        if (existingItem && existingItem.rarity) {
+            this.addItem(existingItem.rarity, existingItem.type, 1);
         }
         newLoadout[loadoutSlot] = item;
-        player.inventory = newInventory;
         player.loadout = newLoadout;
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,
-            inventory: newInventory
+            inventory: player.inventory
         });
         requestAnimationFrame(() => {
             this.updateInventoryDisplay();
             this.updateLoadoutDisplay();
-            console.log('Equipped item, new loadout:', newLoadout.map(item => item ? item.type : null));
         });
     }
     useLoadoutItem(slot) {
@@ -230,7 +232,7 @@ class InventoryManager {
         const item = player.loadout[slot];
         if (item.onCooldown)
             return;
-        this.game.getSocket()?.emit('useItem', item.id);
+        this.game.getSocket()?.emit('useItem', { type: item.type, rarity: item.rarity });
         const rarityMultipliers = {
             common: 1,
             uncommon: 1.5,
@@ -346,13 +348,13 @@ class InventoryManager {
                 const dragEvent = e;
                 const target = e.currentTarget;
                 target.classList.remove('drag-over');
-                const inventoryIndex = dragEvent.dataTransfer?.getData('text/plain');
+                const itemData = dragEvent.dataTransfer?.getData('text/plain');
                 const fromLoadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
-                if (inventoryIndex) {
-                    const index = parseInt(inventoryIndex);
+                if (itemData) {
+                    const { rarity, type } = JSON.parse(itemData);
                     const slot = parseInt(target.dataset.slot || '-1');
-                    if (index >= 0 && slot >= 0) {
-                        this.equipItemToLoadout(index, slot);
+                    if (rarity && type && slot >= 0) {
+                        this.equipItemToLoadout(rarity, type, slot);
                     }
                 }
                 else if (fromLoadoutSlot) {
@@ -414,18 +416,7 @@ class InventoryManager {
         const title = document.createElement('h2');
         title.textContent = 'Inventory';
         content.appendChild(title);
-        const itemsByRarity = {
-            mythic: [],
-            legendary: [],
-            epic: [],
-            rare: [],
-            uncommon: [],
-            common: []
-        };
-        player.inventory.forEach(item => {
-            const rarity = item.rarity || 'common';
-            itemsByRarity[rarity].push(item);
-        });
+        const rarities = ['mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
         const gridContainer = document.createElement('div');
         gridContainer.className = 'inventory-grid-container';
         gridContainer.style.cssText = `
@@ -434,8 +425,9 @@ class InventoryManager {
           gap: 10px;
           padding: 10px;
       `;
-        Object.entries(itemsByRarity).forEach(([rarity, items]) => {
-            if (items.length > 0) {
+        rarities.forEach(rarity => {
+            const items = player.inventory[rarity];
+            if (items && Object.keys(items).length > 0) {
                 const rarityRow = document.createElement('div');
                 rarityRow.className = 'rarity-row';
                 rarityRow.style.cssText = `
@@ -463,7 +455,7 @@ class InventoryManager {
                   border-radius: 5px;
                   border: 1px solid ${this.ITEM_RARITY_COLORS[rarity]}40;
               `;
-                items.forEach(item => {
+                Object.entries(items).forEach(([type, count]) => {
                     const itemElement = document.createElement('div');
                     itemElement.className = 'inventory-item';
                     itemElement.draggable = true;
@@ -489,16 +481,15 @@ class InventoryManager {
                         itemElement.style.boxShadow = 'none';
                     });
                     itemElement.addEventListener('dragstart', (e) => {
-                        const index = player.inventory.findIndex(i => i.id === item.id);
-                        e.dataTransfer?.setData('text/plain', index.toString());
+                        e.dataTransfer?.setData('text/plain', JSON.stringify({ rarity, type }));
                         itemElement.classList.add('dragging');
                     });
                     itemElement.addEventListener('dragend', () => {
                         itemElement.classList.remove('dragging');
                     });
                     const img = document.createElement('img');
-                    img.src = `./assets/${item.type}.png`;
-                    img.alt = item.type;
+                    img.src = `./assets/${type}.png`;
+                    img.alt = type;
                     img.draggable = false;
                     img.style.cssText = `
                       width: 40px;
@@ -506,6 +497,19 @@ class InventoryManager {
                       object-fit: contain;
                   `;
                     itemElement.appendChild(img);
+                    const countLabel = document.createElement('div');
+                    countLabel.className = 'item-count';
+                    countLabel.textContent = count.toString();
+                    countLabel.style.cssText = `
+                        position: absolute;
+                        bottom: 2px;
+                        right: 4px;
+                        color: white;
+                        font-size: 14px;
+                        font-weight: bold;
+                        text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+                    `;
+                    itemElement.appendChild(countLabel);
                     grid.appendChild(itemElement);
                 });
                 rarityRow.appendChild(grid);
@@ -519,30 +523,28 @@ class InventoryManager {
         if (!player)
             return;
         const item = player.loadout[loadoutSlot];
-        if (!item)
+        if (!item || !item.rarity)
             return;
-        const newInventory = [...player.inventory];
+        this.addItem(item.rarity, item.type, 1);
         const newLoadout = [...player.loadout];
-        newInventory.push(item);
         newLoadout[loadoutSlot] = null;
-        player.inventory = newInventory;
         player.loadout = newLoadout;
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,
-            inventory: newInventory
+            inventory: player.inventory
         });
         requestAnimationFrame(() => {
             this.updateInventoryDisplay();
             this.updateLoadoutDisplay();
         });
     }
-    addItemToCraftingSlot(inventoryIndex, slotIndex) {
+    addItemToCraftingSlot(rarity, type, slotIndex) {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
-        const item = player.inventory[inventoryIndex];
-        if (!item)
+        if (this.getItemCount(rarity, type) === 0)
             return;
+        const item = { type: type, rarity: rarity };
         if (this.craftingSlots[slotIndex].item) {
             return;
         }
@@ -555,7 +557,7 @@ class InventoryManager {
             }
         }
         this.craftingSlots[slotIndex].item = item;
-        player.inventory.splice(inventoryIndex, 1);
+        this.removeItem(rarity, type, 1);
         this.updateCraftingDisplay();
         this.updateInventoryDisplay();
     }
@@ -611,6 +613,38 @@ class InventoryManager {
         }
         this.isInventoryOpen = false;
         this.isCraftingOpen = false;
+    }
+    getItemCount(rarity, type) {
+        const player = this.game.getLocalPlayer();
+        if (!player)
+            return 0;
+        return player.inventory[rarity]?.[type] || 0;
+    }
+    addItem(rarity, type, count) {
+        const player = this.game.getLocalPlayer();
+        if (!player)
+            return;
+        if (!player.inventory[rarity]) {
+            player.inventory[rarity] = {};
+        }
+        if (!player.inventory[rarity][type]) {
+            player.inventory[rarity][type] = 0;
+        }
+        player.inventory[rarity][type] += count;
+    }
+    removeItem(rarity, type, count) {
+        const player = this.game.getLocalPlayer();
+        if (!player)
+            return;
+        if (this.getItemCount(rarity, type) >= count) {
+            player.inventory[rarity][type] -= count;
+            if (player.inventory[rarity][type] === 0) {
+                delete player.inventory[rarity][type];
+                if (Object.keys(player.inventory[rarity]).length === 0) {
+                    delete player.inventory[rarity];
+                }
+            }
+        }
     }
 }
 exports.InventoryManager = InventoryManager;

@@ -4,11 +4,13 @@ import { Server, Socket } from 'socket.io';
 import path from 'path';
 import fs from 'fs';
 import { database } from './database';
-import { ServerPlayer, PlayerProgress } from './player';
-import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, ENEMY_SIZE_MULTIPLIERS, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, items, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, isWall, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED } from './constants';
+import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
+import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, ENEMY_SIZE_MULTIPLIERS, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, isWall, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, addXPToPlayer } from './server_utils';
-import { Item, ItemWithRarity } from './item';
+import { Item, ItemWithRarity, WorldItem } from './item';
 const app = express();
+
+const items: WorldItem[] = [];
 
 const decorations: Decoration[] = [];
 const sands: Sand[] = [];
@@ -245,6 +247,35 @@ function getSpawnTypeForLevel(level: number): NonNullable<MapElement['properties
     return 'mythic';
 }
 
+function addItem(inventory: PlayerInventory, rarity: string, type: string, count: number) {
+    if (!inventory[rarity]) {
+        inventory[rarity] = {};
+    }
+    if (!inventory[rarity][type]) {
+        inventory[rarity][type] = 0;
+    }
+    inventory[rarity][type] += count;
+}
+
+function removeItem(inventory: PlayerInventory, rarity: string, type: string, count: number): boolean {
+    if (inventory[rarity] && inventory[rarity][type] && inventory[rarity][type] >= count) {
+        inventory[rarity][type] -= count;
+        if (inventory[rarity][type] === 0) {
+            delete inventory[rarity][type];
+            if (Object.keys(inventory[rarity]).length === 0) {
+                delete inventory[rarity];
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+function hasItem(inventory: PlayerInventory, rarity: string, type: string, count: number): boolean {
+    return inventory[rarity]?.[type] >= count;
+}
+
+
 // Initialize enemies
 for (let i = 0; i < ENEMY_COUNT; i++) {
     enemies.push(createEnemy());
@@ -304,7 +335,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 health: savedProgress?.maxHealth || PLAYER_MAX_HEALTH,
                 maxHealth: savedProgress?.maxHealth || PLAYER_MAX_HEALTH,
                 damage: savedProgress?.damage || PLAYER_DAMAGE,
-                inventory: savedProgress?.inventory || [],
+                inventory: savedProgress?.inventory || {},
                 loadout: savedProgress?.loadout || Array(10).fill(null),
                 isInvulnerable: true,
                 level: savedProgress?.level || 1,
@@ -356,7 +387,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         console.log('A user disconnected');
         if (players[socket.id] && socket.userId) {
             console.log('Saving player progress for userId:', socket.userId);
-            database.savePlayer(players[socket.id].id, socket.userId, players[socket.id]);
+            savePlayerProgress(players[socket.id], socket.userId);
         }
         delete players[socket.id];
         delete playerUserIds[socket.id]; // Clean up the mapping
@@ -376,43 +407,17 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
     });
 
-    socket.on('useItem', (itemId: string) => {
-        console.log('useItem event received:', itemId); // Add debug log
-
+    socket.on('useItem', (itemData: { type: string, rarity: string }) => {
         const player = players[socket.id];
-        if (!player) {
-            console.log('Player not found:', socket.id);
-            return;
-        }
+        if (!player) return;
 
-        // Find the item in the loadout
-        const loadoutSlot = player.loadout.findIndex(item => item?.id === itemId);
-        console.log('Found item in loadout slot:', loadoutSlot); // Add debug log
+        // For now, we don't check if the item is in the loadout on the server,
+        // we trust the client. This could be improved for security.
+        const item: ItemWithRarity = {
+            type: itemData.type as any,
+            rarity: itemData.rarity as any,
+        };
 
-        if (loadoutSlot === -1) {
-            console.log('Item not found in loadout:', itemId);
-            return;  // Item not found in loadout
-        }
-
-        const item = player.loadout[loadoutSlot] as ItemWithRarity;  // Cast to ItemWithRarity
-        if (!item) {
-            console.log('Item is null');
-            return;
-        }
-
-        if (item.onCooldown) {
-            console.log('Item is on cooldown:', itemId);
-            return;
-        }
-
-        console.log('Using item:', {  // Add detailed item debug log
-            itemId,
-            type: item.type,
-            rarity: item.rarity,
-            loadoutSlot
-        });
-
-        // Rest of the code remains the same...
         const rarityMultipliers: Record<string, number> = {
             common: 1,
             uncommon: 1.5,
@@ -455,31 +460,13 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         // Notify clients about the item use without removing it
         io.emit('itemUsed', {
             playerId: socket.id,
-            itemId: itemId,
-            type: item.type,
-            rarity: item.rarity
+            item: itemData,
         });
-        console.log('Emitted itemUsed event');
 
-        // Add cooldown to the item
-        const cooldownTime = 10000;  // 10 seconds base cooldown
-        item.onCooldown = true;
-        console.log('Added cooldown to item');
-
-        setTimeout(() => {
-            if (player.loadout[loadoutSlot] === item) {
-                item.onCooldown = false;
-                io.emit('itemCooldownComplete', {
-                    playerId: socket.id,
-                    itemId: itemId
-                });
-                console.log('Cooldown complete for item:', itemId);
-            }
-        }, cooldownTime * (1 / multiplier));
+        // Add cooldown to the item in player's loadout (client-side handles the visual)
 
         // Update the player state
         io.emit('playerUpdated', player);
-        console.log('Updated player state');
     });
 
     // Add save handler for when players gain XP or level up
@@ -520,7 +507,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
     });
 
-    socket.on('updateLoadout', (data: { loadout: (Item | null)[]; inventory: Item[] }) => {
+    socket.on('updateLoadout', (data: { loadout: (Item | null)[]; inventory: PlayerInventory }) => {
         const player = players[socket.id];
         if (player) {
             player.loadout = data.loadout;
@@ -571,78 +558,69 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     }
 
     // Add to socket connection handler after other socket events
-    io.on('connection', (socket: AuthenticatedSocket) => {
-        // ... existing connection code ...
+    socket.on('craftItems', (data: { items: Item[] }) => {
+        const player = players[socket.id];
+        if (!player) return;
 
-        socket.on('craftItems', (data: CraftingRequest) => {
-            const player = players[socket.id];
-            if (!player) return;
+        if (data.items.length === 0) return;
 
-            // Verify all items exist in player's inventory
-            const validItems = data.items.every(craftItem =>
-                player.inventory.some(invItem => invItem.id === craftItem.id)
-            );
+        const firstItem = data.items[0];
+        const { type, rarity } = firstItem;
 
-            if (!validItems) {
-                socket.emit('craftingFailed', 'Invalid items selected for crafting');
-                return;
-            }
+        if (!rarity) return;
 
-            // Verify all items are same type and rarity
-            const firstItem = data.items[0];
-            const validCraft = data.items.every(item =>
-                item.type === firstItem.type &&
-                item.rarity === firstItem.rarity
-            );
+        // Verify all items are same type and rarity
+        const validCraft = data.items.every(item =>
+            item.type === type && item.rarity === rarity
+        );
 
-            if (!validCraft) {
-                socket.emit('craftingFailed', 'Items must be of same type and rarity');
-                return;
-            }
+        if (!validCraft) {
+            socket.emit('craftingFailed', 'Items must be of same type and rarity');
+            return;
+        }
 
-            // Define rarity upgrade path
-            const rarityUpgrades: Record<string, string> = {
-                common: 'uncommon',
-                uncommon: 'rare',
-                rare: 'epic',
-                epic: 'legendary',
-                legendary: 'mythic'
-            };
+        // Check if player has enough items
+        if (!hasItem(player.inventory, rarity, type, data.items.length)) {
+            socket.emit('craftingFailed', 'Not enough items to craft');
+            return;
+        }
 
-            const currentRarity = firstItem.rarity || 'common';
-            if (!rarityUpgrades[currentRarity]) {
-                socket.emit('craftingFailed', 'Cannot upgrade mythic items');
-                return;
-            }
+        // Define rarity upgrade path
+        const rarityUpgrades: Record<string, string> = {
+            common: 'uncommon',
+            uncommon: 'rare',
+            rare: 'epic',
+            epic: 'legendary',
+            legendary: 'mythic'
+        };
 
-            // Remove crafting items from inventory
-            player.inventory = player.inventory.filter(invItem =>
-                !data.items.some(craftItem => craftItem.id === invItem.id)
-            );
+        const newRarity = rarityUpgrades[rarity];
+        if (!newRarity) {
+            socket.emit('craftingFailed', 'Cannot upgrade mythic items');
+            return;
+        }
 
-            // Create new upgraded item
-            const newItem: Item = {
-                id: Math.random().toString(36).substr(2, 9),
-                type: firstItem.type,
-                x: player.x,
-                y: player.y,
-                rarity: rarityUpgrades[currentRarity] as Item['rarity']
-            };
+        // Remove crafting items from inventory
+        removeItem(player.inventory, rarity, type, data.items.length);
 
-            // Add new item to inventory
-            player.inventory.push(newItem);
+        // Add new item to inventory
+        addItem(player.inventory, newRarity, type, 1);
+        
+        const newItem: Item = {
+            type: type,
+            rarity: newRarity as Item['rarity']
+        };
 
-            // Notify clients
-            socket.emit('craftingSuccess', {
-                newItem,
-                inventory: player.inventory
-            });
-
-            // Save player progress
-            if (socket.userId) {
-                savePlayerProgress(player, socket.userId);
-            }
+        // Notify clients
+        socket.emit('craftingSuccess', {
+            newItem,
+            inventory: player.inventory
         });
+
+        // Save player progress
+        if (socket.userId) {
+            savePlayerProgress(player, socket.userId);
+        }
     });
 });
 
@@ -923,7 +901,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                         if (Math.random() < DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES]) {
                             const dropChance = DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES];
                             if (Math.random() < dropChance) {
-                                const newItem: ItemWithRarity = {
+                                const newItem: WorldItem = {
                                     id: Math.random().toString(36).substr(2, 9),
                                     type: ['health_potion', 'speed_boost', 'shield'][Math.floor(Math.random() * 3)] as Item['type'],
                                     x: enemy.x,
@@ -956,15 +934,8 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         const distance = Math.sqrt((newX - item.x) ** 2 + (newY - item.y) ** 2);
         if (distance < PLAYER_SIZE) {
             // Add item to player's inventory instead of immediately activating it
-            const inventoryItem = {
-                id: item.id,
-                type: item.type,
-                x: item.x, // Keep original position for reference
-                y: item.y,
-                rarity: item.rarity || 'common'
-            };
-            
-            player.inventory.push(inventoryItem);
+            const rarity = item.rarity || 'common';
+            addItem(player.inventory, rarity, item.type, 1);
             
             // Remove item from world
             items.splice(i, 1);
@@ -1036,9 +1007,9 @@ function calculateXPRequirement(level: number): number {
 
 
 // Optional: Clean up old player data periodically
-setInterval(() => {
-    database.cleanupOldPlayers(30); // Clean up players not seen in 30 days
-}, 24 * 60 * 60 * 1000); // Run once per day
+// setInterval(() => {
+//     database.cleanupOldPlayers(30); // Clean up players not seen in 30 days
+// }, 24 * 60 * 60 * 1000); // Run once per day
 
 // Add this function near the other helper functions
 function handleLevelUp(player: ServerPlayer): void {
@@ -1081,7 +1052,7 @@ function savePlayerProgress(player: ServerPlayer, userId: string) {
     if (userId) {
         console.log('Saving player progress for userId:', userId);
 
-        const saveResult = database.savePlayer(player.id, userId, {
+        const saveResult = database.savePlayer(userId, {
             level: player.level,
             xp: player.xp,
             maxHealth: player.maxHealth,

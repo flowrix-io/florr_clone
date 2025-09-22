@@ -1,6 +1,6 @@
 import { Player } from './player';
 import { Enemy } from './enemy';
-import { Item } from './item';
+import { Item, WorldItem } from './item';
 import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE } from './constants';
 
 export interface FloatingText {
@@ -517,7 +517,7 @@ export class Graphics {
         this.ctx.restore();
     }
 
-    private drawItem(item: Item) {
+    private drawItem(item: WorldItem) {
         const sprite = this.itemSprites[item.type];
         if (!sprite) return;
 
@@ -626,7 +626,7 @@ export class Graphics {
         this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     }
 
-    public drawGameObjects(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, Item>, currentPlayerId: string) {
+    public drawGameObjects(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, currentPlayerId: string) {
         const viewport = {
             left: this.cameraX,
             top: this.cameraY,
@@ -655,7 +655,7 @@ export class Graphics {
         }
     }
 
-    public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, Item>, currentPlayerId: string) {
+    public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, currentPlayerId: string) {
         const player = players.get(currentPlayerId);
         if (player) {
             const targetX = player.x - this.canvas.width / 2;

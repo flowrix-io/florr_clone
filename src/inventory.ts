@@ -1,5 +1,5 @@
-import { Item } from './item';
-import { Player } from './player';
+import { Item, ItemWithRarity } from './item';
+import { Player, PlayerInventory } from './player';
 import { Socket } from './socket';
 
 interface CraftingSlot {
@@ -99,9 +99,14 @@ export class InventoryManager {
             slot.addEventListener('drop', (e) => {
                 e.preventDefault();
                 slot.classList.remove('drag-over');
-                const itemIndex = e.dataTransfer?.getData('text/plain');
-                if (itemIndex) {
-                    this.addItemToCraftingSlot(parseInt(itemIndex), i);
+                const itemData = e.dataTransfer?.getData('text/plain');
+                if (itemData) {
+                    try {
+                        const { rarity, type } = JSON.parse(itemData);
+                        this.addItemToCraftingSlot(rarity, type, i);
+                    } catch (error) {
+                        console.error('Failed to parse item data for crafting', error);
+                    }
                 }
             });
 
@@ -230,37 +235,34 @@ export class InventoryManager {
         }
     }
 
-    public equipItemToLoadout(inventoryIndex: number, loadoutSlot: number) {
+    public equipItemToLoadout(rarity: string, type: string, loadoutSlot: number) {
         const player = this.game.getLocalPlayer();
-        if (!player || loadoutSlot >= this.LOADOUT_SLOTS) return;
+        if (!player || loadoutSlot >= this.LOADOUT_SLOTS || this.getItemCount(rarity, type) === 0) return;
 
-        const item = player.inventory[inventoryIndex];
-        if (!item) return;
+        const item: Item = { type: type as any, rarity: rarity as any };
 
-        const newInventory = [...player.inventory];
+        const newInventory = { ...player.inventory };
         const newLoadout = [...player.loadout];
 
-        newInventory.splice(inventoryIndex, 1);
+        this.removeItem(rarity, type, 1);
 
         const existingItem = newLoadout[loadoutSlot];
-        if (existingItem) {
-            newInventory.push(existingItem);
+        if (existingItem && existingItem.rarity) {
+            this.addItem(existingItem.rarity, existingItem.type, 1);
         }
 
         newLoadout[loadoutSlot] = item;
-
-        player.inventory = newInventory;
+        
         player.loadout = newLoadout;
 
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,
-            inventory: newInventory
+            inventory: player.inventory
         });
 
         requestAnimationFrame(() => {
             this.updateInventoryDisplay();
             this.updateLoadoutDisplay();
-            console.log('Equipped item, new loadout:', newLoadout.map(item => item ? item.type : null));
         });
     }
 
@@ -268,10 +270,10 @@ export class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player || !player.loadout[slot]) return;
 
-        const item = player.loadout[slot];
+        const item = player.loadout[slot] as ItemWithRarity;
         if ((item as any).onCooldown) return;
 
-        this.game.getSocket()?.emit('useItem', item.id);
+        this.game.getSocket()?.emit('useItem', { type: item.type, rarity: item.rarity });
 
         const rarityMultipliers: Record<string, number> = {
             common: 1,
@@ -424,14 +426,14 @@ export class InventoryManager {
                 const target = e.currentTarget as HTMLElement;
                 target.classList.remove('drag-over');
 
-                const inventoryIndex = dragEvent.dataTransfer?.getData('text/plain');
+                const itemData = dragEvent.dataTransfer?.getData('text/plain');
                 const fromLoadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
 
-                if (inventoryIndex) {
-                    const index = parseInt(inventoryIndex);
+                if (itemData) {
+                    const { rarity, type } = JSON.parse(itemData);
                     const slot = parseInt(target.dataset.slot || '-1');
-                    if (index >= 0 && slot >= 0) {
-                        this.equipItemToLoadout(index, slot);
+                    if (rarity && type && slot >= 0) {
+                        this.equipItemToLoadout(rarity, type, slot);
                     }
                 } else if (fromLoadoutSlot) {
                     const fromSlot = parseInt(fromLoadoutSlot);
@@ -502,19 +504,7 @@ export class InventoryManager {
         title.textContent = 'Inventory';
         content.appendChild(title);
 
-        const itemsByRarity: Record<string, Item[]> = {
-            mythic: [],
-            legendary: [],
-            epic: [],
-            rare: [],
-            uncommon: [],
-            common: []
-        };
-
-        player.inventory.forEach(item => {
-            const rarity = item.rarity || 'common';
-            itemsByRarity[rarity].push(item);
-        });
+        const rarities = ['mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
 
         const gridContainer = document.createElement('div');
         gridContainer.className = 'inventory-grid-container';
@@ -525,8 +515,9 @@ export class InventoryManager {
           padding: 10px;
       `;
 
-        Object.entries(itemsByRarity).forEach(([rarity, items]) => {
-            if (items.length > 0) {
+        rarities.forEach(rarity => {
+            const items = player.inventory[rarity];
+            if (items && Object.keys(items).length > 0) {
                 const rarityRow = document.createElement('div');
                 rarityRow.className = 'rarity-row';
                 rarityRow.style.cssText = `
@@ -557,7 +548,7 @@ export class InventoryManager {
                   border: 1px solid ${this.ITEM_RARITY_COLORS[rarity]}40;
               `;
 
-                items.forEach(item => {
+                Object.entries(items).forEach(([type, count]) => {
                     const itemElement = document.createElement('div');
                     itemElement.className = 'inventory-item';
                     itemElement.draggable = true;
@@ -587,8 +578,7 @@ export class InventoryManager {
                     });
 
                     itemElement.addEventListener('dragstart', (e) => {
-                        const index = player.inventory.findIndex(i => i.id === item.id);
-                        e.dataTransfer?.setData('text/plain', index.toString());
+                        e.dataTransfer?.setData('text/plain', JSON.stringify({ rarity, type }));
                         itemElement.classList.add('dragging');
                     });
 
@@ -597,8 +587,8 @@ export class InventoryManager {
                     });
 
                     const img = document.createElement('img');
-                    img.src = `./assets/${item.type}.png`;
-                    img.alt = item.type;
+                    img.src = `./assets/${type}.png`;
+                    img.alt = type;
                     img.draggable = false;
                     img.style.cssText = `
                       width: 40px;
@@ -607,6 +597,21 @@ export class InventoryManager {
                   `;
 
                     itemElement.appendChild(img);
+
+                    const countLabel = document.createElement('div');
+                    countLabel.className = 'item-count';
+                    countLabel.textContent = count.toString();
+                    countLabel.style.cssText = `
+                        position: absolute;
+                        bottom: 2px;
+                        right: 4px;
+                        color: white;
+                        font-size: 14px;
+                        font-weight: bold;
+                        text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+                    `;
+                    itemElement.appendChild(countLabel);
+
                     grid.appendChild(itemElement);
                 });
 
@@ -623,20 +628,17 @@ export class InventoryManager {
         if (!player) return;
 
         const item = player.loadout[loadoutSlot];
-        if (!item) return;
-
-        const newInventory = [...player.inventory];
+        if (!item || !item.rarity) return;
+        
+        this.addItem(item.rarity, item.type, 1);
+        
         const newLoadout = [...player.loadout];
-
-        newInventory.push(item);
         newLoadout[loadoutSlot] = null;
-
-        player.inventory = newInventory;
         player.loadout = newLoadout;
 
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,
-            inventory: newInventory
+            inventory: player.inventory
         });
 
         requestAnimationFrame(() => {
@@ -645,13 +647,14 @@ export class InventoryManager {
         });
     }
 
-    public addItemToCraftingSlot(inventoryIndex: number, slotIndex: number) {
+    public addItemToCraftingSlot(rarity: string, type: string, slotIndex: number) {
         const player = this.game.getLocalPlayer();
         if (!player) return;
 
-        const item = player.inventory[inventoryIndex];
-        if (!item) return;
-
+        if (this.getItemCount(rarity, type) === 0) return;
+        
+        const item: Item = { type: type as any, rarity: rarity as any };
+        
         if (this.craftingSlots[slotIndex].item) {
             return;
         }
@@ -673,7 +676,7 @@ export class InventoryManager {
 
         this.craftingSlots[slotIndex].item = item;
 
-        player.inventory.splice(inventoryIndex, 1);
+        this.removeItem(rarity, type, 1);
 
         this.updateCraftingDisplay();
         this.updateInventoryDisplay();
@@ -744,5 +747,39 @@ export class InventoryManager {
 
         this.isInventoryOpen = false;
         this.isCraftingOpen = false;
+    }
+
+    private getItemCount(rarity: string, type: string): number {
+        const player = this.game.getLocalPlayer();
+        if (!player) return 0;
+        return player.inventory[rarity]?.[type] || 0;
+    }
+
+    private addItem(rarity: string, type: string, count: number) {
+        const player = this.game.getLocalPlayer();
+        if (!player) return;
+
+        if (!player.inventory[rarity]) {
+            player.inventory[rarity] = {};
+        }
+        if (!player.inventory[rarity][type]) {
+            player.inventory[rarity][type] = 0;
+        }
+        player.inventory[rarity][type] += count;
+    }
+
+    private removeItem(rarity: string, type: string, count: number) {
+        const player = this.game.getLocalPlayer();
+        if (!player) return;
+
+        if (this.getItemCount(rarity, type) >= count) {
+            player.inventory[rarity][type] -= count;
+            if (player.inventory[rarity][type] === 0) {
+                delete player.inventory[rarity][type];
+                if (Object.keys(player.inventory[rarity]).length === 0) {
+                    delete player.inventory[rarity];
+                }
+            }
+        }
     }
 }

@@ -1,5 +1,11 @@
 import {Item} from './item';
 
+export interface PlayerInventory {
+    [rarity: string]: {
+        [itemType: string]: number;
+    };
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -14,7 +20,7 @@ export interface Player {
   health: number;
   maxHealth: number;
   damage: number;
-  inventory: Item[];
+  inventory: PlayerInventory;
   loadout: (Item | null)[];
   isInvulnerable?: boolean;
   knockbackX?: number;
@@ -32,7 +38,7 @@ export interface Player {
 export interface PlayerProgress {
   level: number;
   xp: number;
-  inventory: Item[];
+  inventory: PlayerInventory;
   loadout: (Item | null)[];
 }
 
@@ -48,7 +54,7 @@ export interface ServerPlayer {
   health: number;
   maxHealth: number;
   damage: number;
-  inventory: Item[];
+  inventory: PlayerInventory;
   loadout: (Item | null)[];
   isInvulnerable?: boolean;
   knockbackX?: number;

@@ -1,7 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import { Player, ServerPlayer } from './player';
 import { Enemy, Obstacle } from './enemy';
-import { Item } from './item';
+import { Item, WorldItem } from './item';
 
 export { Socket };
 
@@ -287,7 +287,7 @@ function setupSocketListeners(game: any) {
         }
     });
 
-    game.socket.on('itemsUpdate', (items: Item[]) => {
+    game.socket.on('itemsUpdate', (items: WorldItem[]) => {
         game.items.clear();
         items.forEach(item => {
             game.items.set(item.id, item);
@@ -588,7 +588,7 @@ function setupSocketListeners(game: any) {
         });
     });
 
-    game.socket.on('updateItems', (serverItems: Item[]) => {
+    game.socket.on('updateItems', (serverItems: WorldItem[]) => {
         game.items.clear();
         serverItems.forEach(item => {
             game.items.set(item.id, item);
