@@ -606,14 +606,6 @@ export class Game {
         this.graphics.setCamera(this.cameraX, this.cameraY);
     }
 
-    private generateDot() {
-        const dot: Dot = {
-            x: Math.random() * this.WORLD_WIDTH,
-            y: Math.random() * this.WORLD_HEIGHT
-        };
-        this.dots.push(dot);
-    }
-
     private toggleInventory() {
         if (!this.inventoryPanel) return;
 
@@ -848,69 +840,6 @@ export class Game {
 
         // Stop drawing the game loop
         this.gameLoopId = null;
-    }
-
-    private loadPlayerProgress(): { level: number; xp: number; maxHealth: number; damage: number } {
-        const savedProgress = localStorage.getItem('playerProgress');
-        if (savedProgress) {
-            return JSON.parse(savedProgress);
-        }
-        return {
-            level: 1,
-            xp: 0,
-            maxHealth: this.PLAYER_MAX_HEALTH,
-            damage: this.PLAYER_DAMAGE
-        };
-    }
-
-    private savePlayerProgress(player: Player) {
-        const progress = {
-            level: player.level,
-            xp: player.xp,
-            maxHealth: player.maxHealth,
-            damage: player.damage
-        };
-        localStorage.setItem('playerProgress', JSON.stringify(progress));
-    }
-
-    private showDeathScreen() {
-        const deathScreen = document.getElementById('deathScreen');
-        if (deathScreen) {
-            deathScreen.style.display = 'flex';
-        }
-    }
-
-    private hideDeathScreen() {
-        const deathScreen = document.getElementById('deathScreen');
-        if (deathScreen) {
-            deathScreen.style.display = 'none';
-        }
-    }
-
-    private hideTitleScreen() {
-        if (this.titleScreen) {
-            this.titleScreen.style.display = 'none';
-            this.titleScreen.style.opacity = '0';
-        }
-        if (this.nameInput) {
-            this.nameInput.style.display = 'none';
-            this.nameInput.style.opacity = '0';
-        }
-        // Hide game menu when game starts
-        const gameMenu = document.getElementById('gameMenu');
-        if (gameMenu) {
-            gameMenu.style.display = 'none';
-            gameMenu.style.opacity = '0';
-        }
-
-        // Ensure canvas is visible
-        this.canvas.style.zIndex = '1';
-    }
-
-    private showExitButton() {
-        if (this.exitButtonContainer) {
-            this.exitButtonContainer.style.display = 'block';
-        }
     }
 
     private hideExitButton() {
@@ -1547,31 +1476,6 @@ export class Game {
         });
     }
 
-    private showSaveIndicator() {
-        if (!this.saveIndicator) return;
-
-        // Clear any existing timeout
-        if (this.saveIndicatorTimeout) {
-            clearTimeout(this.saveIndicatorTimeout);
-        }
-
-        // Show the indicator
-        this.saveIndicator.style.display = 'block';
-        this.saveIndicator.style.opacity = '1';
-
-        // Hide after 2 seconds
-        this.saveIndicatorTimeout = setTimeout(() => {
-            if (this.saveIndicator) {
-                this.saveIndicator.style.opacity = '0';
-                setTimeout(() => {
-                    if (this.saveIndicator) {
-                        this.saveIndicator.style.display = 'none';
-                    }
-                }, 300); // Match transition duration
-            }
-        }, 2000);
-    }
-
     // Add this helper method to handle asset URLs
     private async getAssetUrl(filename: string): Promise<string> {
         // Remove the file extension to get the asset key
@@ -1839,12 +1743,5 @@ export class Game {
             // Create empty walls array if loading fails
             this.walls = [];
         }
-    }
-
-    // Add these methods to the Game class
-
-
-    private getCurrentPlayerId(): string {
-        return this.socket?.id || '';
     }
 }

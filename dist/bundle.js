@@ -7169,13 +7169,6 @@ class Game {
         this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - this.canvas.height, targetY));
         this.graphics.setCamera(this.cameraX, this.cameraY);
     }
-    generateDot() {
-        const dot = {
-            x: Math.random() * this.WORLD_WIDTH,
-            y: Math.random() * this.WORLD_HEIGHT
-        };
-        this.dots.push(dot);
-    }
     toggleInventory() {
         if (!this.inventoryPanel)
             return;
@@ -7376,62 +7369,6 @@ class Game {
         this.canvas.style.backgroundColor = 'white';
         // Stop drawing the game loop
         this.gameLoopId = null;
-    }
-    loadPlayerProgress() {
-        const savedProgress = localStorage.getItem('playerProgress');
-        if (savedProgress) {
-            return JSON.parse(savedProgress);
-        }
-        return {
-            level: 1,
-            xp: 0,
-            maxHealth: this.PLAYER_MAX_HEALTH,
-            damage: this.PLAYER_DAMAGE
-        };
-    }
-    savePlayerProgress(player) {
-        const progress = {
-            level: player.level,
-            xp: player.xp,
-            maxHealth: player.maxHealth,
-            damage: player.damage
-        };
-        localStorage.setItem('playerProgress', JSON.stringify(progress));
-    }
-    showDeathScreen() {
-        const deathScreen = document.getElementById('deathScreen');
-        if (deathScreen) {
-            deathScreen.style.display = 'flex';
-        }
-    }
-    hideDeathScreen() {
-        const deathScreen = document.getElementById('deathScreen');
-        if (deathScreen) {
-            deathScreen.style.display = 'none';
-        }
-    }
-    hideTitleScreen() {
-        if (this.titleScreen) {
-            this.titleScreen.style.display = 'none';
-            this.titleScreen.style.opacity = '0';
-        }
-        if (this.nameInput) {
-            this.nameInput.style.display = 'none';
-            this.nameInput.style.opacity = '0';
-        }
-        // Hide game menu when game starts
-        const gameMenu = document.getElementById('gameMenu');
-        if (gameMenu) {
-            gameMenu.style.display = 'none';
-            gameMenu.style.opacity = '0';
-        }
-        // Ensure canvas is visible
-        this.canvas.style.zIndex = '1';
-    }
-    showExitButton() {
-        if (this.exitButtonContainer) {
-            this.exitButtonContainer.style.display = 'block';
-        }
     }
     hideExitButton() {
         if (this.exitButtonContainer) {
@@ -7974,28 +7911,6 @@ class Game {
             loadout: player.loadout
         });
     }
-    showSaveIndicator() {
-        if (!this.saveIndicator)
-            return;
-        // Clear any existing timeout
-        if (this.saveIndicatorTimeout) {
-            clearTimeout(this.saveIndicatorTimeout);
-        }
-        // Show the indicator
-        this.saveIndicator.style.display = 'block';
-        this.saveIndicator.style.opacity = '1';
-        // Hide after 2 seconds
-        this.saveIndicatorTimeout = setTimeout(() => {
-            if (this.saveIndicator) {
-                this.saveIndicator.style.opacity = '0';
-                setTimeout(() => {
-                    if (this.saveIndicator) {
-                        this.saveIndicator.style.display = 'none';
-                    }
-                }, 300); // Match transition duration
-            }
-        }, 2000);
-    }
     // Add this helper method to handle asset URLs
     async getAssetUrl(filename) {
         // Remove the file extension to get the asset key
@@ -8222,10 +8137,6 @@ class Game {
             // Create empty walls array if loading fails
             this.walls = [];
         }
-    }
-    // Add these methods to the Game class
-    getCurrentPlayerId() {
-        return this.socket?.id || '';
     }
 }
 
