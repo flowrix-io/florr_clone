@@ -1,11 +1,12 @@
-import { Player } from './player';
+import { Player, PlayerProgress, ServerPlayer } from './player';
 import { Dot, Enemy, Obstacle } from './enemy';
 import { io, Socket } from 'socket.io-client';
-import { Item } from './item';
+import { Item, ItemWithRarity } from './item';
 import { workerBlob } from './workerblob';
 import { IMAGE_ASSETS } from './imageAssets';
 import { SVGLoader } from './SVGLoader';
 import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE } from './constants';
+import { Graphics } from './graphics';
 
 // Add these interfaces at the top of the file
 interface SandboxedScript {
@@ -41,11 +42,11 @@ export class Game {
     private shieldActive: boolean = false;
     private debugCollision: boolean = false; // Toggle for collision debugging
     private canvas: HTMLCanvasElement;
-    private ctx: CanvasRenderingContext2D;
+    private graphics: Graphics;
     private socket!: Socket;  // Using the definite assignment assertion
     private players: Map<string, Player> = new Map();
     private playerSprite: HTMLImageElement = new Image();
-    private dots: Dot[] = [];
+    private dots: { x: number, y: number }[] = [];
     private readonly DOT_SIZE = 5;
     private readonly DOT_COUNT = 20;
     private readonly PLAYER_ACCELERATION = 0.5;  // Adjusted for smoother acceleration
@@ -64,29 +65,13 @@ export class Game {
     private coralSprite: HTMLImageElement = new Image();
     private palmSprite: HTMLImageElement = new Image();
     private readonly PLAYER_MAX_HEALTH = 100;
-    private readonly ENEMY_MAX_HEALTH: Record<Enemy['tier'], number> = {
-        common: 20,
-        uncommon: 40,
-        rare: 60,
-        epic: 80,
-        legendary: 100,
-        mythic: 150
-    };
     private readonly PLAYER_DAMAGE = 10;
     private readonly ENEMY_DAMAGE = 5;
     private readonly DAMAGE_COOLDOWN = 1000; // 1 second cooldown
     private lastDamageTime: number = 0;
-    private readonly ENEMY_COLORS = {
-        common: '#808080',
-        uncommon: '#008000',
-        rare: '#0000FF',
-        epic: '#800080',
-        legendary: '#FFA500',
-        mythic: '#FF0000'
-    };
     private obstacles: Obstacle[] = [];
     private readonly ENEMY_CORAL_MAX_HEALTH = 50;
-    private items: Item[] = [];
+    private items: Map<string, Item> = new Map();
     private itemSprites: Record<string, HTMLImageElement> = {};
     private isInventoryOpen: boolean = false;
     private isSinglePlayer: boolean = false;
@@ -109,14 +94,6 @@ export class Game {
         lifetime: number;
     }> = [];
     // Add enemy size multipliers as a class property
-    private readonly ENEMY_SIZE_MULTIPLIERS: Record<Enemy['tier'], number> = {
-        common: 1.0,
-        uncommon: 1.2,
-        rare: 1.4,
-        epic: 1.6,
-        legendary: 1.8,
-        mythic: 2.0
-    };
     // Add property to track if player is dead
     private isPlayerDead: boolean = false;
     // Add minimap properties
@@ -176,17 +153,11 @@ export class Game {
     private isCraftingOpen: boolean = false;
     private svgLoader: SVGLoader;
     // Add to class properties
-    private walls: Array<{ x: number, y: number, element: SVGElement }> = [];
+    private walls: any[] = [];
     private readonly WALL_SPACING = 500; // Distance between walls
     private world_map_data: MapElement[] = [];
 
     // Add map rendering properties
-    private readonly MAP_COLORS = {
-        wall: 'rgba(102, 102, 102, 0.8)',
-        spawn: 'rgba(76, 175, 80, 0.3)',
-        teleporter: 'rgba(33, 150, 243, 0.5)',
-        safe_zone: 'rgba(255, 193, 7, 0.2)'
-    };
 
     private lastUpdateTime: number = 0;         // Add this property for delta time
     private lastServerUpdate: number = 0;
@@ -197,11 +168,33 @@ export class Game {
     private backgroundImage: HTMLImageElement = new Image();
 
     private wallTexture: HTMLImageElement = new Image(); // Add this to class properties
+    private backgroundTexture: HTMLImageElement = new Image();
+    private healthPotionSprite: HTMLImageElement = new Image();
+    private speedBoostSprite: HTMLImageElement = new Image();
+    private shieldSprite: HTMLImageElement = new Image();
+
+    private lastDeathTime: number = 0;
+    private deathCooldown: number = 3000; // 3 seconds
+
+    private lastMessageTime: number = 0; // Add this line
+    private messageCooldown: number = 1000; // 1 second cooldown
+
+    private gameStartTime: number = 0;
 
     constructor(isSinglePlayer: boolean = false) {
         //console.log('Game constructor called');
         this.canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-        this.ctx = this.canvas.getContext('2d')!;
+        this.graphics = new Graphics(
+            this.canvas, 
+            this.playerSprite, 
+            this.wallTexture,
+            this.octopusSprite,
+            this.fishSprite,
+            this.healthPotionSprite,
+            this.speedBoostSprite,
+            this.shieldSprite,
+            this.backgroundTexture
+        );
 
         // Set initial canvas size
         this.resizeCanvas();
@@ -416,7 +409,14 @@ export class Game {
 
         // Listen for map data from the server
         this.socket.on('mapData', (mapData: MapElement[]) => {
+            //console.log('Received map data:', mapData);
+            this.world_map_data = mapData;
+            this.graphics.setMap(mapData);
             this.renderMap(mapData);
+        });
+
+        this.socket.on('zoneUpdate', (zones: any) => {
+            // ... existing code ...
         });
 
         // Load background image
@@ -430,6 +430,8 @@ export class Game {
         this.wallTexture.onload = () => {
             console.log('Wall texture loaded successfully');
         };
+
+        this.gameStartTime = Date.now();
     }
 
     private async initializeSprites(): Promise<void> {
@@ -846,13 +848,16 @@ export class Game {
         });
 
         this.socket.on('itemsUpdate', (items: Item[]) => {
-            this.items = items;
+            this.items.clear();
+            items.forEach(item => {
+                this.items.set(item.id, item);
+            });
         });
 
         this.socket.on('itemCollected', (data: { playerId: string, itemId: string }) => {
             const player = this.players.get(data.playerId);
             if (player) {
-                this.items = this.items.filter(item => item.id !== data.itemId);
+                this.items.delete(data.itemId);
                 if (data.playerId === this.socket.id) {
                     // Update inventory display if it's open
                     if (this.isInventoryOpen) {
@@ -1093,6 +1098,75 @@ export class Game {
                 }
             });
         });
+
+        this.socket.on('updatePlayers', (serverPlayers: ServerPlayer[]) => {
+            const serverPlayerIds = serverPlayers.map(p => p.id);
+            // Remove players that are no longer sent by the server
+            this.players.forEach((player, playerId) => {
+                if (!serverPlayerIds.includes(playerId)) {
+                    this.players.delete(playerId);
+                }
+            });
+
+            serverPlayers.forEach(serverPlayer => {
+                let player = this.players.get(serverPlayer.id);
+                if (player) {
+                    // Update existing player
+                    player.x = serverPlayer.x;
+                    player.y = serverPlayer.y;
+                    player.angle = serverPlayer.angle;
+                    player.score = serverPlayer.score;
+                    player.health = serverPlayer.health;
+                    player.maxHealth = serverPlayer.maxHealth;
+                    player.damage = serverPlayer.damage;
+                    player.inventory = serverPlayer.inventory;
+                    player.loadout = serverPlayer.loadout;
+                    player.isInvulnerable = serverPlayer.isInvulnerable;
+                    player.knockbackX = serverPlayer.knockbackX;
+                    player.knockbackY = serverPlayer.knockbackY;
+                    player.level = serverPlayer.level;
+                    player.xp = serverPlayer.xp;
+                    player.xpToNextLevel = serverPlayer.xpToNextLevel;
+                    player.lastDamageTime = serverPlayer.lastDamageTime;
+                    player.speed_boost = serverPlayer.speed_boost;
+                } else {
+                    // Add new player
+                    player = {
+                        ...serverPlayer,
+                        image: new Image(),
+                        imageLoaded: false,
+                        targetX: serverPlayer.x,
+                        targetY: serverPlayer.y,
+                    };
+                    player.image.src = 'assets/player.png';
+                    player.image.onload = () => {
+                        player!.imageLoaded = true;
+                    };
+                    this.players.set(serverPlayer.id, player);
+                }
+            });
+        });
+
+        this.socket.on('updateEnemies', (serverEnemies: Enemy[]) => {
+            this.enemies.clear();
+            serverEnemies.forEach(enemy => {
+                this.enemies.set(enemy.id, enemy);
+            });
+        });
+
+        this.socket.on('updateItems', (serverItems: Item[]) => {
+            this.items.clear();
+            serverItems.forEach(item => {
+                this.items.set(item.id, item);
+            });
+        });
+
+        this.socket.on('playerDied', (data: { playerId: string }) => {
+            if (data.playerId === this.socket.id) {
+                this.isPlayerDead = true;
+                this.showDeathScreen();
+            }
+        });
     }
 
     private setupEventListeners() {
@@ -1199,18 +1273,7 @@ export class Game {
         // Clamp camera to world bounds with proper dimensions
         this.cameraX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - this.canvas.width, targetX));
         this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - this.canvas.height, targetY));
-
-        // Debug camera position
-        if (this.showHitboxes) {
-            console.log('Camera Position:', {
-                x: this.cameraX,
-                y: this.cameraY,
-                playerX: player.x,
-                playerY: player.y,
-                worldWidth: ACTUAL_WORLD_WIDTH,
-                worldHeight: ACTUAL_WORLD_HEIGHT
-            });
-        }
+        this.graphics.setCamera(this.cameraX, this.cameraY);
     }
 
     private generateDots() {
@@ -1225,37 +1288,6 @@ export class Game {
             y: Math.random() * this.WORLD_HEIGHT
         };
         this.dots.push(dot);
-    }
-
-    private checkEnemyCollision(player: Player) {
-        // Only do visual feedback on client - server handles actual damage
-        // Client-side collision is only for immediate feedback and prediction
-
-        this.enemies.forEach((enemy, enemyId) => {
-            // Use bounding box collision detection to match server logic
-            const enemySize = 40 * this.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
-
-            // Calculate collision using bounding boxes (same as server-side)
-            if (
-                player.x < enemy.x + enemySize &&
-                player.x + PLAYER_SIZE > enemy.x &&
-                player.y < enemy.y + enemySize &&
-                player.y + PLAYER_SIZE > enemy.y
-            ) {
-                console.log(`[CLIENT] Enemy collision detected: player(${player.x.toFixed(1)}, ${player.y.toFixed(1)}, ${PLAYER_SIZE}x${PLAYER_SIZE}) vs enemy(${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}, ${enemySize}x${enemySize}) tier:${enemy.tier}`);
-
-                // Show immediate visual feedback (server will handle actual damage)
-                if (!player.isInvulnerable) {
-                    this.showFloatingText(
-                        player.x,
-                        player.y - 30,
-                        'Hit!',
-                        '#FF6666',
-                        16
-                    );
-                }
-            }
-        });
     }
 
     private checkItemCollision(player: Player) {
@@ -1313,230 +1345,77 @@ export class Game {
     }
 
     private gameLoop() {
-        // Calculate delta time
-        const currentTime = performance.now();
-        const deltaTime = (currentTime - this.lastUpdateTime) / 16.67; // Normalize to ~60 FPS
-        this.lastUpdateTime = currentTime;
-
-        // Clear the canvas
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Draw tiled background
-        const pattern = this.ctx.createPattern(this.backgroundImage, 'repeat');
-        if (pattern) {
-            this.ctx.save();
-            // Apply camera transform to background
-            this.ctx.translate(-this.cameraX * 0.5, -this.cameraY * 0.5); // Parallax effect
-            this.ctx.fillStyle = pattern;
-            this.ctx.fillRect(
-                this.cameraX * 0.5,
-                this.cameraY * 0.5,
-                this.canvas.width + this.cameraX * 0.5,
-                this.canvas.height + this.cameraY * 0.5
-            );
-            this.ctx.restore();
-        }
-
-        // Get current player and update
-        const currentSocketId = this.socket?.id;
-        let currentPlayer: Player | undefined = undefined;
-        if (currentSocketId) {
-            currentPlayer = this.players.get(currentSocketId);
-            if (currentPlayer) {
-                this.updatePlayerMovement(currentPlayer, deltaTime);
-                this.updateCamera(currentPlayer);
-
-                // Check collisions for immediate client-side feedback
-                this.checkEnemyCollision(currentPlayer);
-                this.checkItemCollision(currentPlayer);
-            }
-        }
-
-        this.ctx.save();
-        this.ctx.translate(-this.cameraX, -this.cameraY);
-
-        // Draw world bounds
-        this.ctx.strokeStyle = 'black';
-        this.ctx.strokeRect(0, 0, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT);
-
-        // Draw zone boundaries
-        const zoneWidth = ACTUAL_WORLD_WIDTH / 6;
-        const zones = [
-            { name: 'Common', color: 'rgba(128, 128, 128, 0.1)' },
-            { name: 'Uncommon', color: 'rgba(144, 238, 144, 0.1)' },
-            { name: 'Rare', color: 'rgba(0, 0, 255, 0.1)' },
-            { name: 'Epic', color: 'rgba(128, 0, 128, 0.1)' },
-            { name: 'Legendary', color: 'rgba(255, 165, 0, 0.1)' },
-            { name: 'Mythic', color: 'rgba(255, 0, 0, 0.1)' }
-        ];
-
-        zones.forEach((zone, index) => {
-            const x = index * zoneWidth;
-            this.ctx.fillStyle = zone.color;
-            this.ctx.fillRect(x, 0, zoneWidth, ACTUAL_WORLD_HEIGHT);
-
-            // Draw zone name
-            this.ctx.fillStyle = 'black';
-            this.ctx.font = '20px Arial';
-            this.ctx.fillText(zone.name, x + 10, 30);
-        });
-
-        // Draw map elements
-        this.drawMap();
-
-        // Draw game objects
-        this.drawGameObjects();
-
-        this.ctx.restore();
-
-        // Draw UI elements (after restore)
-        this.drawUI();
-
+        this.update();
+        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '');
         requestAnimationFrame(() => this.gameLoop());
     }
 
+    private update() {
+        // Interpolate all players' positions
+        for (const player of this.players.values()) {
+            if (player.targetX !== undefined && player.targetY !== undefined) {
+                const lerpFactor = 0.1; // Adjust for smoother or more responsive movement
+                player.x += (player.targetX - player.x) * lerpFactor;
+                player.y += (player.targetY - player.y) * lerpFactor;
+            }
+        }
+
+        const player = this.players.get(this.socket?.id ?? '');
+        if (player) {
+            this.updatePlayerMovement(player, 1); // Assuming 60fps, so delta is roughly 1
+            this.updateCamera(player);
+            this.updatePlayerEye();
+        }
+    }
+
     private updatePlayerMovement(player: Player, deltaTime: number) {
-        const currentTime = performance.now();
+        const speed = 5 * (player.speed_boost ? 2 : 1);
+        let dx = 0;
+        let dy = 0;
 
-        // Cap delta time to prevent huge jumps but allow faster movement
-        const cappedDeltaTime = Math.min(deltaTime, 0.033); // Max 33ms (30fps minimum) - increased from 50ms
+        if (this.keysPressed.has('ArrowUp') || this.keysPressed.has('w')) {
+            dy -= 1;
+        }
+        if (this.keysPressed.has('ArrowDown') || this.keysPressed.has('s')) {
+            dy += 1;
+        }
+        if (this.keysPressed.has('ArrowLeft') || this.keysPressed.has('a')) {
+            dx -= 1;
+        }
+        if (this.keysPressed.has('ArrowRight') || this.keysPressed.has('d')) {
+            dx += 1;
+        }
+        
+        // Only send input, don't update position locally
+        this.socket.emit('playerInput', { keys: Array.from(this.keysPressed) });
+    }
 
-        // Removed excessive key logging for performance
-
-        // Calculate desired velocity based on input
-        let targetVelocityX = 0;
-        let targetVelocityY = 0;
-
-        if (this.useMouseControls) {
+    private updatePlayerEye() {
+        const player = this.players.get(this.socket?.id ?? '');
+        if (player) {
             const dx = this.mouseX - player.x;
             const dy = this.mouseY - player.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance > 5) {
-                const speed = this.MAX_SPEED * (this.speedBoostActive ? 2 : 1);
-                targetVelocityX = (dx / distance) * speed;
-                targetVelocityY = (dy / distance) * speed;
-                player.angle = Math.atan2(dy, dx);
+            const angle = Math.atan2(dy, dx);
+            const distance = Math.min(Math.sqrt(dx * dx + dy * dy), 10);
+            this.playerEye = {
+                x: Math.cos(angle) * distance,
+                y: Math.sin(angle) * distance
+            };
+            if (player.eye) {
+                player.eye.x = this.playerEye.x;
+                player.eye.y = this.playerEye.y;
             }
-        } else {
-            // Keyboard controls  
-            if (this.keysPressed.has('ArrowLeft') || this.keysPressed.has('a')) targetVelocityX -= 1;
-            if (this.keysPressed.has('ArrowRight') || this.keysPressed.has('d')) targetVelocityX += 1;
-            if (this.keysPressed.has('ArrowUp') || this.keysPressed.has('w')) targetVelocityY -= 1;
-            if (this.keysPressed.has('ArrowDown') || this.keysPressed.has('s')) targetVelocityY += 1;
-
-            // Normalize diagonal movement
-            if (targetVelocityX !== 0 && targetVelocityY !== 0) {
-                const length = Math.sqrt(targetVelocityX * targetVelocityX + targetVelocityY * targetVelocityY);
-                targetVelocityX /= length;
-                targetVelocityY /= length;
-            }
-
-            // Apply speed
-            const speed = this.MAX_SPEED * (this.speedBoostActive ? 2 : 1);
-            targetVelocityX *= speed;
-            targetVelocityY *= speed;
-
-            if (targetVelocityX !== 0 || targetVelocityY !== 0) {
-                player.angle = Math.atan2(targetVelocityY, targetVelocityX);
-            }
-        }
-
-        // Apply knockback if it exists (only visual effect, server handles actual position)
-        if (player.knockbackX && Math.abs(player.knockbackX) > 0.1) {
-            player.knockbackX *= 0.9; // Gradually reduce knockback
-        }
-        if (player.knockbackY && Math.abs(player.knockbackY) > 0.1) {
-            player.knockbackY *= 0.9; // Gradually reduce knockback
-        }
-
-        // Smooth interpolation to server position (no snapping, just smooth lag)
-        if (player.targetX !== undefined && player.targetY !== undefined) {
-            const lerpSpeed = 8.0; // Interpolation speed (higher = faster)
-            const dx = player.targetX - player.x;
-            const dy = player.targetY - player.y;
-
-            if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
-                player.x += dx * lerpSpeed * cappedDeltaTime;
-                player.y += dy * lerpSpeed * cappedDeltaTime;
-            } else {
-                // Snap to target if very close
-                player.x = player.targetX;
-                player.y = player.targetY;
-            }
-        }
-
-        // Store target velocities for server input
-        player.velocityX = targetVelocityX;
-        player.velocityY = targetVelocityY;
-
-        // Send input/velocity to server (not positions - server is authoritative)
-        if (currentTime - this.lastServerUpdate > 50) { // 20 updates per second
-            // Send only input state and velocities - server calculates positions
-            this.socket.emit('playerInput', {
-                keys: Array.from(this.keysPressed),
-                mouseX: this.mouseX,
-                mouseY: this.mouseY,
-                useMouse: this.useMouseControls,
-                angle: player.angle,
-                velocityX: targetVelocityX,
-                velocityY: targetVelocityY,
-                timestamp: currentTime
-            });
-
-            if (Math.abs(targetVelocityX) > 0 || Math.abs(targetVelocityY) > 0) {
-                console.log(`[CLIENT] Sent playerInput at ${currentTime.toFixed(0)}: vel(${targetVelocityX.toFixed(1)}, ${targetVelocityY.toFixed(1)}) keys:${Array.from(this.keysPressed).join(',')}`);
-            }
-            this.lastServerUpdate = currentTime;
         }
     }
 
-    private drawGameObjects() {
-        // Draw only objects that are within the viewport
-        const viewport = {
-            left: this.cameraX,
-            right: this.cameraX + this.canvas.width,
-            top: this.cameraY,
-            bottom: this.cameraY + this.canvas.height
-        };
-
-        // Draw dots
-        this.dots.forEach(dot => {
-            if (this.isInViewport(dot.x, dot.y, viewport)) {
-                this.ctx.fillStyle = 'yellow';
-                this.ctx.beginPath();
-                this.ctx.arc(dot.x, dot.y, this.DOT_SIZE, 0, Math.PI * 2);
-                this.ctx.fill();
-            }
-        });
-
-        // Draw players
-        this.players.forEach(player => {
-            if (this.isInViewport(player.x, player.y, viewport)) {
-                this.drawPlayer(player);
-            }
-        });
-
-        // Draw enemies
-        this.enemies.forEach(enemy => {
-            if (this.isInViewport(enemy.x, enemy.y, viewport)) {
-                this.drawEnemy(enemy);
-            }
-        });
-
-        // Draw items
-        this.items.forEach(item => {
-            if (this.isInViewport(item.x, item.y, viewport)) {
-                this.drawItem(item);
-            }
-        });
+    private showFloatingText(x: number, y: number, text: string, color: string, fontSize: number) {
+        this.graphics.showFloatingText(x, y, text, color, fontSize);
     }
 
-    private isInViewport(x: number, y: number, viewport: { left: number, right: number, top: number, bottom: number }): boolean {
-        return x >= viewport.left - 100 &&
-            x <= viewport.right + 100 &&
-            y >= viewport.top - 100 &&
-            y <= viewport.bottom + 100;
+    private renderMap(mapData: MapElement[]) {
+        // Store the map data and render it
+        this.world_map_data = mapData;
+        this.graphics.drawMap(mapData);
     }
 
     private async setupItemSprites() {
@@ -1563,6 +1442,7 @@ export class Game {
             }));
 
             console.log('All item sprites loaded successfully:', Object.keys(this.itemSprites));
+            this.graphics.setupItemSprites(this.itemSprites);
         } catch (error) {
             console.error('Error loading item sprites:', error);
         }
@@ -1609,7 +1489,7 @@ export class Game {
         this.enemies.clear();
         this.dots = [];
         this.obstacles = [];
-        this.items = [];
+        this.items = new Map();
         this.world_map_data = [];
         this.floatingTexts = [];
         this.decorations = [];
@@ -1619,23 +1499,23 @@ export class Game {
         // Define clear canvas function
         const clearCanvas = () => {
             // Clear the main canvas
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            this.graphics.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
             // Fill with white background
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            this.graphics.ctx.fillStyle = 'white';
+            this.graphics.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
             // Explicitly clear the minimap area
             const minimapX = this.canvas.width - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
             const minimapY = this.MINIMAP_PADDING;
-            this.ctx.clearRect(
+            this.graphics.ctx.clearRect(
                 minimapX - 5,
                 minimapY - 5,
                 this.MINIMAP_WIDTH + 10,
                 this.MINIMAP_HEIGHT + 10
             );
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillRect(
+            this.graphics.ctx.fillStyle = 'white';
+            this.graphics.ctx.fillRect(
                 minimapX - 5,
                 minimapY - 5,
                 this.MINIMAP_WIDTH + 10,
@@ -1720,19 +1600,6 @@ export class Game {
         return Math.floor(this.BASE_XP_REQUIREMENT * Math.pow(this.XP_MULTIPLIER, level - 1));
     }
 
-    // Add the showFloatingText method
-    private showFloatingText(x: number, y: number, text: string, color: string, fontSize: number) {
-        this.floatingTexts.push({
-            x,
-            y,
-            text,
-            color,
-            fontSize,
-            alpha: 1,
-            lifetime: 60 // frames
-        });
-    }
-
     private showDeathScreen() {
         const deathScreen = document.getElementById('deathScreen');
         if (deathScreen) {
@@ -1745,63 +1612,6 @@ export class Game {
         if (deathScreen) {
             deathScreen.style.display = 'none';
         }
-    }
-
-    // Add minimap drawing
-    private drawMinimap() {
-        const minimapX = this.canvas.width - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
-        const minimapY = this.MINIMAP_PADDING;
-        const minimapScale = {
-            x: this.MINIMAP_WIDTH / ACTUAL_WORLD_WIDTH,
-            y: this.MINIMAP_HEIGHT / ACTUAL_WORLD_HEIGHT
-        };
-
-        // Draw minimap background (white instead of black)
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        this.ctx.fillRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
-
-        // Draw only walls on minimap
-        this.world_map_data.forEach(element => {
-            // Only draw walls
-            if (element.type === 'wall') {
-                const scaledX = minimapX + (element.x * minimapScale.x);
-                const scaledY = minimapY + (element.y * minimapScale.y);
-                const scaledWidth = element.width * minimapScale.x;
-                const scaledHeight = element.height * minimapScale.y;
-
-                this.ctx.fillStyle = '#000000'; // Black for walls
-                this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
-            }
-        });
-
-        // Draw all players on minimap with solid colors
-        this.players.forEach(player => {
-            this.ctx.fillStyle = player.id === this.socket.id ? '#FF0000' : '#000000'; // Red for current player, black for others
-            this.ctx.beginPath();
-            this.ctx.arc(
-                minimapX + (player.x * minimapScale.x),
-                minimapY + (player.y * minimapScale.y),
-                4, // Slightly larger dots
-                0,
-                Math.PI * 2
-            );
-            this.ctx.fill();
-        });
-
-        // Draw viewport rectangle in black
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(
-            minimapX + (this.cameraX * minimapScale.x),
-            minimapY + (this.cameraY * minimapScale.y),
-            (this.canvas.width * minimapScale.x),
-            (this.canvas.height * minimapScale.y)
-        );
-
-        // Draw border
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     }
 
     private hideTitleScreen() {
@@ -1883,9 +1693,9 @@ export class Game {
         // Force multiple clear attempts to ensure everything is gone
         for (let i = 0; i < 3; i++) {
             requestAnimationFrame(() => {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this.ctx.fillStyle = 'white';
-                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                this.graphics.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.graphics.ctx.fillStyle = 'white';
+                this.graphics.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
             });
         }
     }
@@ -3151,464 +2961,8 @@ export class Game {
         }
     }
 
-    private drawMap() {
-        // Draw all map elements
-        this.world_map_data.forEach(element => {
-            const x = element.x;
-            const y = element.y;
-            const width = element.width;
-            const height = element.height;
-
-            // Only draw elements that are visible in the viewport
-            if (
-                x + width >= this.cameraX &&
-                x <= this.cameraX + this.canvas.width &&
-                y + height >= this.cameraY &&
-                y <= this.cameraY + this.canvas.height
-            ) {
-                if (element.type === 'wall') {
-                    // Draw wall texture tiled
-                    const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
-                    if (pattern) {
-                        this.ctx.save();
-                        this.ctx.fillStyle = pattern;
-                        this.ctx.fillRect(x, y, width, height);
-                        this.ctx.restore();
-                    }
-                } else {
-                    // Draw other elements normally
-                    this.ctx.fillStyle = this.MAP_COLORS[element.type];
-                    this.ctx.fillRect(x, y, width, height);
-
-                    // Add visual indicators for special elements
-                    if (element.type === 'teleporter') {
-                        this.drawTeleporter(x, y, width, height);
-                    } else if (element.type === 'spawn') {
-                        this.drawSpawnPoint(x, y, width, height, element.properties?.spawnType);
-                    }
-                }
-
-                // Draw debug info if hitboxes are enabled
-                if (this.showHitboxes) {
-                    this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-                    this.ctx.strokeRect(x, y, width, height);
-                    this.ctx.fillStyle = 'white';
-                    this.ctx.font = '12px Arial';
-                    this.ctx.fillText(`${Math.round(x)},${Math.round(y)}`, x, y - 5);
-                }
-            }
-        });
-    }
-
-    private drawTeleporter(x: number, y: number, width: number, height: number) {
-        // Create a pulsing effect
-        const time = Date.now() / 1000;
-        const pulseSize = 0.2 * Math.sin(time * 2) + 0.8; // Pulse between 0.6 and 1.0
-
-        // Draw outer glow
-        const gradient = this.ctx.createRadialGradient(
-            x + width / 2, y + height / 2, 0,
-            x + width / 2, y + height / 2, (width / 2) * pulseSize
-        );
-        gradient.addColorStop(0, 'rgba(0, 183, 255, 0.6)');
-        gradient.addColorStop(0.6, 'rgba(0, 106, 255, 0.3)');
-        gradient.addColorStop(1, 'rgba(0, 47, 255, 0)');
-
-        this.ctx.fillStyle = gradient;
-        this.ctx.fillRect(x, y, width, height);
-
-        // Draw portal rings
-        const numRings = 3;
-        this.ctx.lineWidth = 4;
-
-        for (let i = 0; i < numRings; i++) {
-            const ringSize = ((i + 1) / numRings) * width / 2 * pulseSize;
-            const opacity = 1 - (i / numRings);
-
-            this.ctx.strokeStyle = `rgba(255, 255, 255, ${opacity})`;
-            this.ctx.beginPath();
-            this.ctx.ellipse(
-                x + width / 2,
-                y + height / 2,
-                ringSize,
-                ringSize * 0.4,
-                0,
-                0,
-                Math.PI * 2
-            );
-            this.ctx.stroke();
-        }
-
-        // Add some particle effects
-        const numParticles = 8;
-        const particleTime = time * 3;
-
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        for (let i = 0; i < numParticles; i++) {
-            const angle = (i / numParticles) * Math.PI * 2 + particleTime;
-            const particleX = x + width / 2 + Math.cos(angle) * width / 3 * pulseSize;
-            const particleY = y + height / 2 + Math.sin(angle) * height / 4 * pulseSize;
-
-            this.ctx.beginPath();
-            this.ctx.arc(particleX, particleY, 3, 0, Math.PI * 2);
-            this.ctx.fill();
-        }
-    }
-
-    private drawSpawnPoint(x: number, y: number, width: number, height: number, type?: string) {
-        // Draw spawn area indicator
-        const color = type ? this.getTierColor(type) : 'rgba(76, 175, 80, 0.3)';
-        this.ctx.fillStyle = color;
-        this.ctx.fillRect(x, y, width, height);
-
-        // Add spawn point marker
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-        this.ctx.lineWidth = 2;
-        this.ctx.beginPath();
-        this.ctx.arc(x + width / 2, y + height / 2, Math.min(width, height) / 4, 0, Math.PI * 2);
-        this.ctx.stroke();
-
-        // Add tier label
-        if (type) {
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = '20px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(type.toUpperCase(), x + width / 2, y + height / 2);
-        }
-    }
-
-    private getTierColor(tier: string): string {
-        const colors = {
-            common: 'rgba(128, 128, 128, 0.3)',
-            uncommon: 'rgba(0, 128, 0, 0.3)',
-            rare: 'rgba(0, 0, 255, 0.3)',
-            epic: 'rgba(128, 0, 128, 0.3)',
-            legendary: 'rgba(255, 165, 0, 0.3)',
-            mythic: 'rgba(255, 0, 0, 0.3)'
-        };
-        return colors[tier as keyof typeof colors] || colors.common;
-    }
-
     // Add these methods to the Game class
 
-    private drawUI() {
-        // Draw player stats
-        const player = this.players.get(this.socket?.id || '');
-        if (player) {
-            // Draw health bar
-            const healthBarWidth = 200;
-            const healthBarHeight = 20;
-            const healthX = 20;
-            const healthY = 20;
-
-            // Health bar background
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            this.ctx.fillRect(healthX, healthY, healthBarWidth, healthBarHeight);
-
-            // Health bar fill
-            this.ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
-            this.ctx.fillRect(
-                healthX,
-                healthY,
-                (player.health / player.maxHealth) * healthBarWidth,
-                healthBarHeight
-            );
-
-            // Health text
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = '14px Arial';
-            this.ctx.fillText(
-                `Health: ${Math.round(player.health)}/${player.maxHealth}`,
-                healthX + 5,
-                healthY + 15
-            );
-
-            // Draw XP bar
-            const xpBarY = healthY + healthBarHeight + 5;
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            this.ctx.fillRect(healthX, xpBarY, healthBarWidth, healthBarHeight);
-
-            this.ctx.fillStyle = 'rgba(0, 128, 255, 0.7)';
-            this.ctx.fillRect(
-                healthX,
-                xpBarY,
-                (player.xp / player.xpToNextLevel) * healthBarWidth,
-                healthBarHeight
-            );
-
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillText(
-                `Level ${player.level} - XP: ${player.xp}/${player.xpToNextLevel}`,
-                healthX + 5,
-                xpBarY + 15
-            );
-        }
-
-        // Draw minimap
-        this.drawMinimap();
-
-        // Draw floating texts
-        this.drawFloatingTexts();
-    }
-    private s(size: number): number {
-        return 1 * size;
-    }
-    private drawFlower(center: { x: number, y: number }, eye: { x: number, y: number }) {
-        this.ctx.lineCap = "round";
-        this.ctx.lineWidth = this.s(1.7);
-        this.ctx.beginPath();
-        this.ctx.arc(center.x, center.y, this.s(26.5), 0, Math.PI * 2, false);
-        this.ctx.fillStyle = "#CFBB50";
-        this.ctx.closePath();
-        this.ctx.fill();
-        this.ctx.beginPath();
-        this.ctx.arc(center.x, center.y, this.s(23.5), 0, Math.PI * 2, false);
-        this.ctx.fillStyle = "#FFE763";
-        this.ctx.closePath();
-        this.ctx.fill();
-        this.ctx.beginPath();
-        this.ctx.moveTo(center.x - this.s(6), center.y + this.s(10));
-        this.ctx.quadraticCurveTo(center.x, center.y + this.s(14.5), center.x + this.s(6), center.y + this.s(10));
-        this.ctx.strokeStyle = "#000";
-        this.ctx.fillStyle = "#000";
-        this.ctx.stroke();
-        this.ctx.beginPath();
-        this.ctx.ellipse(center.x + this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
-        this.ctx.ellipse(center.x - this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
-        this.ctx.fill();
-        this.ctx.clip();
-        this.ctx.beginPath();
-        this.ctx.fillStyle = "#fff";
-        this.ctx.arc(center.x + this.s(7) + eye.x, center.y + eye.y - this.s(4.8), this.s(3), 0, Math.PI * 2, false);
-        this.ctx.arc(center.x - this.s(7) + eye.x, center.y + eye.y - this.s(4.8), this.s(3), 0, Math.PI * 2, false);
-        this.ctx.fill();
-        this.ctx.lineWidth = this.s(1);
-        this.ctx.beginPath();
-        this.ctx.ellipse(center.x + this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
-        this.ctx.stroke();
-        this.ctx.beginPath();
-        this.ctx.ellipse(center.x - this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
-        this.ctx.stroke();
-    }
-
-    private rotateEye(angle: number, eye: { x: number, y: number }) {
-        return {
-            x: (Math.sin(angle) * this.s(2) - eye.x),
-            y: (Math.cos(angle) * this.s(-4.4) - eye.y)
-        };
-    }
-    private drawPlayer(player: Player) {
-        this.ctx.save();
-        this.ctx.translate(player.x, player.y);
-
-        // Apply invulnerability visual effect
-        if (player.isInvulnerable) {
-            const flashRate = 200; // Flash every 200ms
-            const currentTime = Date.now();
-            const shouldFlash = Math.floor(currentTime / flashRate) % 2 === 0;
-
-            if (shouldFlash) {
-                this.ctx.globalAlpha = 0.3; // Make player semi-transparent when flashing
-            }
-
-            // Draw invulnerability glow effect
-            this.ctx.shadowColor = '#FFFF00';
-            this.ctx.shadowBlur = 15;
-            this.ctx.shadowOffsetX = 0;
-            this.ctx.shadowOffsetY = 0;
-        }
-
-        // Draw player sprite
-        if (player.id === this.socket?.id) {
-            // Calculate target eye position
-            this.targetEye = {
-                x: Math.cos(player.angle) * this.s(2),
-                y: Math.sin(player.angle) * this.s(4.4)
-            };
-
-            // Smooth interpolation of eye position (lerp factor controls smoothness)
-            const lerpFactor = 0.15; // Lower = smoother, higher = more responsive
-            this.playerEye.x += (this.targetEye.x - this.playerEye.x) * lerpFactor;
-            this.playerEye.y += (this.targetEye.y - this.playerEye.y) * lerpFactor;
-
-            // Apply hue rotation for current player
-            const offscreen = document.createElement('canvas');
-            offscreen.width = this.playerSprite.width;
-            offscreen.height = this.playerSprite.height;
-            const offCtx = offscreen.getContext('2d')!;
-
-            offCtx.drawImage(this.playerSprite, 0, 0);
-            const imageData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
-            this.applyHueRotation(offCtx, imageData);
-            offCtx.putImageData(imageData, 0, 0);
-
-            this.drawFlower(this.playerSprite, this.playerEye);
-        } else {
-            // For other players, use their own smooth eye interpolation
-            if (!player.eye) {
-                player.eye = { x: 0, y: 0 };
-                player.targetEye = { x: 0, y: 0 };
-            }
-
-            // Calculate target eye position for this player
-            player.targetEye = {
-                x: Math.sin(player.angle) * this.s(2),
-                y: Math.cos(player.angle) * this.s(-4.4)
-            };
-
-            // Smooth interpolation
-            const lerpFactor = 0.15;
-            player.eye.x += (player.targetEye.x - player.eye.x) * lerpFactor;
-            player.eye.y += (player.targetEye.y - player.eye.y) * lerpFactor;
-
-            this.drawFlower(this.playerSprite, player.eye);
-        }
-
-        // Reset effects after drawing
-        if (player.isInvulnerable) {
-            this.ctx.globalAlpha = 1.0;
-            this.ctx.shadowBlur = 0;
-        }
-
-        // Draw hitbox if enabled
-        if (this.showHitboxes) {
-            this.ctx.save();
-            this.ctx.strokeStyle = 'red';
-            this.ctx.lineWidth = 2;
-            this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
-            this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
-            this.ctx.strokeRect(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
-            this.ctx.restore();
-        }
-
-        // Draw player name
-        this.ctx.fillStyle = 'white';
-        this.ctx.textAlign = 'center';
-        this.ctx.font = '14px Arial';
-        this.ctx.fillText(player.name || 'Anonymous', 0, -30);
-
-        this.ctx.restore();
-    }
-
-    private drawEnemy(enemy: Enemy) {
-        const sizeMultiplier = this.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
-        const enemySize = 40 * sizeMultiplier;
-
-        this.ctx.save();
-        this.ctx.translate(enemy.x, enemy.y);
-        this.ctx.rotate(enemy.angle);
-
-        // Draw enemy sprite based on type
-        const sprite = enemy.type === 'octopus' ? this.octopusSprite : this.fishSprite;
-        this.ctx.drawImage(
-            sprite,
-            -enemySize / 2,
-            -enemySize / 2,
-            enemySize,
-            enemySize
-        );
-
-        // Draw hitbox if enabled
-        if (this.showHitboxes) {
-            this.ctx.save();
-            this.ctx.strokeStyle = this.ENEMY_COLORS[enemy.tier];
-            this.ctx.lineWidth = 2;
-            this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
-            this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
-            this.ctx.strokeRect(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
-            this.ctx.restore();
-        }
-
-        // Draw health bar
-        const healthBarWidth = enemySize;
-        const healthBarHeight = 5;
-        const healthBarY = -enemySize / 2 - 10;
-
-        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-        this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth, healthBarHeight);
-
-        this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
-        this.ctx.fillRect(
-            -healthBarWidth / 2,
-            healthBarY,
-            (enemy.health / this.ENEMY_MAX_HEALTH[enemy.tier]) * healthBarWidth,
-            healthBarHeight
-        );
-
-        // Draw enemy tier with tier color
-        this.ctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
-        this.ctx.textAlign = 'center';
-        this.ctx.font = '12px Arial'; // Made text bold for better visibility
-
-        // Add black outline to text for better visibility
-        this.ctx.strokeStyle = 'white';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeText(enemy.tier.toUpperCase(), 0, enemySize / 2 + 20);
-
-        // Draw the text
-        this.ctx.fillText(enemy.tier.toUpperCase(), 0, enemySize / 2 + 20);
-
-        this.ctx.restore();
-    }
-
-    private drawItem(item: Item) {
-        const sprite = this.itemSprites[item.type];
-        if (!sprite) return;
-
-        this.ctx.save();
-        this.ctx.translate(item.x, item.y);
-
-        // Draw item rarity glow
-        if (item.rarity) {
-            this.ctx.save();
-            this.ctx.beginPath();
-            this.ctx.arc(0, 0, 25, 0, Math.PI * 2);
-            this.ctx.fillStyle = `${this.ITEM_RARITY_COLORS[item.rarity]}40`;
-            this.ctx.fill();
-            this.ctx.restore();
-        }
-
-        // Draw item sprite
-        this.ctx.drawImage(sprite, -15, -15, 30, 30);
-
-        // Draw hitbox if enabled
-        if (this.showHitboxes) {
-            this.ctx.save();
-            this.ctx.strokeStyle = 'yellow';
-            this.ctx.lineWidth = 2;
-            this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
-            this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
-            this.ctx.strokeRect(-15, -15, 30, 30);
-            this.ctx.restore();
-        }
-
-        this.ctx.restore();
-    }
-
-    private drawFloatingTexts() {
-        this.floatingTexts = this.floatingTexts.filter(text => {
-            text.y -= 1;
-            text.alpha -= 1 / text.lifetime;
-
-            if (text.alpha <= 0) return false;
-
-            this.ctx.save();
-            this.ctx.globalAlpha = text.alpha;
-            this.ctx.fillStyle = text.color;
-            this.ctx.font = `${text.fontSize}px Arial`;
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(text.text, text.x, text.y);
-            this.ctx.restore();
-
-            return true;
-        });
-    }
-
-    private renderMap(mapData: MapElement[]) {
-        // Store the map data and render it
-        this.world_map_data = mapData; // Assuming WORLD_MAP is mutable or use a separate variable
-        this.drawMap();
-    }
 
     private getCurrentPlayerId(): string {
         if (this.isSinglePlayer) {
