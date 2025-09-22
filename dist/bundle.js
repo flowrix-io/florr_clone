@@ -8257,61 +8257,6 @@ class Game {
             });
         }
     }
-    updatePlayerVelocity() {
-        const player = this.players.get(this.socket?.id || '');
-        if (!player)
-            return;
-        if (this.useMouseControls) {
-            // Mouse controls
-            const dx = this.mouseX - player.x;
-            const dy = this.mouseY - player.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance > 5) { // Add dead zone to prevent jittering
-                // Direct movement (no acceleration/momentum)
-                const speed = this.MAX_SPEED * (this.speedBoostActive ? 3 : 1);
-                player.velocityX = (dx / distance) * speed;
-                player.velocityY = (dy / distance) * speed;
-                player.angle = Math.atan2(dy, dx);
-            }
-            else {
-                // Stop immediately when close to target
-                player.velocityX = 0;
-                player.velocityY = 0;
-            }
-        }
-        else {
-            // Keyboard controls
-            let dx = 0;
-            let dy = 0;
-            if (this.keysPressed.has('ArrowUp') || this.keysPressed.has('w'))
-                dy -= 1;
-            if (this.keysPressed.has('ArrowDown') || this.keysPressed.has('s'))
-                dy += 1;
-            if (this.keysPressed.has('ArrowLeft') || this.keysPressed.has('a'))
-                dx -= 1;
-            if (this.keysPressed.has('ArrowRight') || this.keysPressed.has('d'))
-                dx += 1;
-            if (dx !== 0 || dy !== 0) {
-                // Normalize diagonal movement
-                if (dx !== 0 && dy !== 0) {
-                    const length = Math.sqrt(dx * dx + dy * dy);
-                    dx /= length;
-                    dy /= length;
-                }
-                // Direct movement (no momentum/mass)
-                const speed = this.MAX_SPEED * (this.speedBoostActive ? 3 : 1);
-                player.velocityX = dx * speed;
-                player.velocityY = dy * speed;
-                player.angle = Math.atan2(dy, dx);
-            }
-            else {
-                // Stop immediately when no keys pressed
-                player.velocityX = 0;
-                player.velocityY = 0;
-            }
-        }
-        // Don't send here - updatePlayerMovement handles server communication
-    }
     updateCamera(player) {
         // Center camera on player
         const targetX = player.x - this.canvas.width / 2;
@@ -8331,57 +8276,6 @@ class Game {
             });
         }
     }
-    updatePlayerPosition(player) {
-        if (!player)
-            return;
-        // Direct position calculation (no sliding physics)
-        let newX = player.x + player.velocityX;
-        let newY = player.y + player.velocityY;
-        // Apply knockback if it exists (keep knockback for combat)
-        if (player.knockbackX) {
-            player.knockbackX *= 0.8; // Simpler knockback recovery
-            newX += player.knockbackX;
-            if (Math.abs(player.knockbackX) < 0.1)
-                player.knockbackX = 0;
-        }
-        if (player.knockbackY) {
-            player.knockbackY *= 0.8; // Simpler knockback recovery
-            newY += player.knockbackY;
-            if (Math.abs(player.knockbackY) < 0.1)
-                player.knockbackY = 0;
-        }
-        // Constrain to world bounds
-        newX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - PLAYER_SIZE, newX));
-        newY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - PLAYER_SIZE, newY));
-        // Check wall collisions
-        let collision = false;
-        for (const element of this.world_map_data) {
-            if (isWall(element)) {
-                if (newX < element.x + element.width &&
-                    newX + PLAYER_SIZE > element.x &&
-                    newY < element.y + element.height &&
-                    newY + PLAYER_SIZE > element.y) {
-                    collision = true;
-                    // Calculate push direction
-                    const centerX = element.x + element.width / 2;
-                    const centerY = element.y + element.height / 2;
-                    const dx = player.x - centerX;
-                    const dy = player.y - centerY;
-                    const angle = Math.atan2(dy, dx);
-                    // Push player away from wall
-                    newX = element.x + element.width / 2 + Math.cos(angle) * (element.width / 2 + PLAYER_SIZE);
-                    newY = element.y + element.height / 2 + Math.sin(angle) * (element.height / 2 + PLAYER_SIZE);
-                    // Stop movement in collision direction
-                    player.velocityX = 0;
-                    player.velocityY = 0;
-                    break;
-                }
-            }
-        }
-        // Update player position
-        player.x = newX;
-        player.y = newY;
-    }
     generateDots() {
         for (let i = 0; i < this.DOT_COUNT; i++) {
             this.generateDot();
@@ -8393,20 +8287,6 @@ class Game {
             y: Math.random() * this.WORLD_HEIGHT
         };
         this.dots.push(dot);
-    }
-    checkDotCollision(player) {
-        for (let i = this.dots.length - 1; i >= 0; i--) {
-            const dot = this.dots[i];
-            const dx = player.x - dot.x;
-            const dy = player.y - dot.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance < this.DOT_SIZE + 20) {
-                this.socket.emit('collectDot', i);
-                player.score++;
-                this.dots.splice(i, 1);
-                this.generateDot();
-            }
-        }
     }
     checkEnemyCollision(player) {
         // Only do visual feedback on client - server handles actual damage
@@ -8627,96 +8507,6 @@ class Game {
             }
             this.lastServerUpdate = currentTime;
         }
-    }
-    checkCollisions(player, newX, newY) {
-        // World bounds with padding
-        const PADDING = PLAYER_SIZE / 2;
-        let finalX = Math.max(PADDING, Math.min(ACTUAL_WORLD_WIDTH - PADDING, newX));
-        let finalY = Math.max(PADDING, Math.min(ACTUAL_WORLD_HEIGHT - PADDING, newY));
-        // Store original position for restoration if needed
-        const originalX = player.x;
-        const originalY = player.y;
-        let isColliding = false;
-        let collisionDebugInfo = [];
-        // Debug: Log if player position was clamped by world bounds
-        if (newX !== finalX || newY !== finalY) {
-            collisionDebugInfo.push(`[CLIENT] World bounds collision: requested(${newX.toFixed(1)}, ${newY.toFixed(1)}) -> clamped(${finalX.toFixed(1)}, ${finalY.toFixed(1)})`);
-        }
-        // Check wall collisions with improved corner handling
-        for (const element of this.world_map_data) {
-            // Skip non-wall elements
-            if (!isWall(element))
-                continue;
-            const wallX = element.x;
-            const wallY = element.y;
-            const wallWidth = element.width;
-            const wallHeight = element.height;
-            // Skip walls with zero or negative dimensions to prevent phantom collisions
-            if (wallWidth <= 0 || wallHeight <= 0) {
-                collisionDebugInfo.push(`[CLIENT] Skipped zero-sized wall at (${wallX}, ${wallY}) with size (${wallWidth}x${wallHeight})`);
-                continue;
-            }
-            // Add padding to wall collision box
-            const WALL_PADDING = 5;
-            if (finalX - PADDING < wallX + wallWidth + WALL_PADDING &&
-                finalX + PADDING > wallX - WALL_PADDING &&
-                finalY - PADDING < wallY + wallHeight + WALL_PADDING &&
-                finalY + PADDING > wallY - WALL_PADDING) {
-                isColliding = true;
-                collisionDebugInfo.push(`[CLIENT] Wall collision detected: wall(${wallX}, ${wallY}, ${wallWidth}x${wallHeight}) vs player(${finalX.toFixed(1)}, ${finalY.toFixed(1)})`);
-                // Debug: Log collision resolution details
-                const closestXBefore = Math.max(wallX, Math.min(wallX + wallWidth, finalX));
-                const closestYBefore = Math.max(wallY, Math.min(wallY + wallHeight, finalY));
-                // Calculate the closest point on the wall to the player
-                const closestX = Math.max(wallX, Math.min(wallX + wallWidth, finalX));
-                const closestY = Math.max(wallY, Math.min(wallY + wallHeight, finalY));
-                // Calculate vector from closest point to player
-                const dx = finalX - closestX;
-                const dy = finalY - closestY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance < PADDING) {
-                    // Normalize the vector and push player out
-                    if (distance > 0) {
-                        const newFinalX = closestX + (dx / distance) * (PADDING + 1);
-                        const newFinalY = closestY + (dy / distance) * (PADDING + 1);
-                        collisionDebugInfo.push(`[CLIENT] Collision resolution: distance=${distance.toFixed(2)}, pushed from (${finalX.toFixed(1)}, ${finalY.toFixed(1)}) to (${newFinalX.toFixed(1)}, ${newFinalY.toFixed(1)})`);
-                        finalX = newFinalX;
-                        finalY = newFinalY;
-                    }
-                    else {
-                        // If distance is 0 (player exactly on wall), push in the direction of movement
-                        const moveX = finalX - originalX;
-                        const moveY = finalY - originalY;
-                        const moveDist = Math.sqrt(moveX * moveX + moveY * moveY);
-                        if (moveDist > 0) {
-                            const newFinalX = closestX - (moveX / moveDist) * (PADDING + 1);
-                            const newFinalY = closestY - (moveY / moveDist) * (PADDING + 1);
-                            collisionDebugInfo.push(`[CLIENT] Zero-distance collision: moved from (${finalX.toFixed(1)}, ${finalY.toFixed(1)}) to (${newFinalX.toFixed(1)}, ${newFinalY.toFixed(1)})`);
-                            finalX = newFinalX;
-                            finalY = newFinalY;
-                        }
-                    }
-                    // Zero out velocity in collision direction
-                    const vx = Math.abs(dx) > Math.abs(dy);
-                    if (vx) {
-                        collisionDebugInfo.push(`[CLIENT] Zeroed X velocity (was ${player.velocityX.toFixed(2)})`);
-                        player.velocityX = 0;
-                    }
-                    else {
-                        collisionDebugInfo.push(`[CLIENT] Zeroed Y velocity (was ${player.velocityY.toFixed(2)})`);
-                        player.velocityY = 0;
-                    }
-                }
-            }
-        }
-        // Debug: Log collision information if any occurred and debugging is enabled
-        if (this.debugCollision && collisionDebugInfo.length > 0) {
-            console.log(`=== COLLISION DEBUG ===`);
-            collisionDebugInfo.forEach(info => console.log(info));
-            console.log(`Final position: (${finalX.toFixed(1)}, ${finalY.toFixed(1)})`);
-            console.log(`=======================`);
-        }
-        return [finalX, finalY];
     }
     drawGameObjects() {
         // Draw only objects that are within the viewport
@@ -10137,98 +9927,6 @@ class Game {
             // Create empty walls array if loading fails
             this.walls = [];
         }
-    }
-    // Example method to render an SVG
-    renderGameElement(elementId, svgPath) {
-        const container = document.getElementById(elementId);
-        if (container) {
-            this.svgLoader.renderSVG(svgPath, container);
-        }
-    }
-    // Add to class properties
-    async initializeWalls() {
-        try {
-            // Create a grid-based maze layout
-            const GRID_SIZE = 10; // Size of each grid cell
-            const GRID_COLS = Math.floor(this.WORLD_WIDTH / (this.WALL_SPACING * GRID_SIZE));
-            const GRID_ROWS = Math.floor(this.WORLD_HEIGHT / (this.WALL_SPACING * GRID_SIZE));
-            // Create maze pattern
-            for (let row = 0; row < GRID_ROWS; row++) {
-                for (let col = 0; col < GRID_COLS; col++) {
-                    // Add random walls with 30% probability
-                    if (Math.random() < 0.3) {
-                        const x = col * this.WALL_SPACING * GRID_SIZE;
-                        const y = row * this.WALL_SPACING * GRID_SIZE;
-                        // Randomly choose horizontal or vertical wall
-                        if (Math.random() < 0.5) {
-                            // Horizontal wall
-                            for (let i = 0; i < GRID_SIZE; i++) {
-                                const wall = await this.svgLoader.loadSVG('/src/land.svg');
-                                this.walls.push({
-                                    x: x + (i * this.WALL_SPACING),
-                                    y: y,
-                                    element: wall
-                                });
-                            }
-                        }
-                        else {
-                            // Vertical wall
-                            for (let i = 0; i < GRID_SIZE; i++) {
-                                const wall = await this.svgLoader.loadSVG('/src/land.svg');
-                                this.walls.push({
-                                    x: x,
-                                    y: y + (i * this.WALL_SPACING),
-                                    element: wall
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            // Always add boundary walls
-            // Top and bottom walls
-            for (let x = 0; x < this.WORLD_WIDTH; x += this.WALL_SPACING) {
-                const topWall = await this.svgLoader.loadSVG('/src/land.svg');
-                const bottomWall = await this.svgLoader.loadSVG('/src/land.svg');
-                this.walls.push({ x, y: 0, element: topWall }, { x, y: this.WORLD_HEIGHT - 100, element: bottomWall });
-            }
-            // Left and right walls
-            for (let y = 0; y < this.WORLD_HEIGHT; y += this.WALL_SPACING) {
-                const leftWall = await this.svgLoader.loadSVG('/src/land.svg');
-                const rightWall = await this.svgLoader.loadSVG('/src/land.svg');
-                this.walls.push({ x: 0, y, element: leftWall }, { x: this.WORLD_WIDTH - 100, y, element: rightWall });
-            }
-            console.log(`Generated ${this.walls.length} walls`);
-        }
-        catch (error) {
-            console.error('Failed to initialize walls:', error);
-        }
-    }
-    // Update the drawWalls method to be more efficient
-    drawWalls() {
-        if (!this.ctx)
-            return;
-        this.walls.forEach(wall => {
-            if (!wall || !wall.element)
-                return;
-            // Only draw walls that are within the viewport
-            if (wall.x + 100 >= this.cameraX &&
-                wall.x <= this.cameraX + this.canvas.width &&
-                wall.y + 100 >= this.cameraY &&
-                wall.y <= this.cameraY + this.canvas.height) {
-                try {
-                    this.ctx.save();
-                    this.ctx.translate(wall.x - this.cameraX, wall.y - this.cameraY);
-                    // Draw a simple rectangle if SVG fails
-                    this.ctx.fillStyle = '#666';
-                    this.ctx.fillRect(0, 0, 100, 100);
-                    this.ctx.restore();
-                }
-                catch (error) {
-                    console.warn('Error drawing wall:', error);
-                }
-            }
-        });
     }
     drawMap() {
         // Draw all map elements
