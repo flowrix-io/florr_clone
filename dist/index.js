@@ -7,21 +7,13 @@ const auth_ui_1 = require("./auth_ui");
 const authUI = new auth_ui_1.AuthUI();
 let currentGame = null;
 window.onload = () => {
-    const singlePlayerButton = document.getElementById('singlePlayerButton');
     const multiPlayerButton = document.getElementById('multiPlayerButton');
-    singlePlayerButton?.addEventListener('click', () => {
-        if (currentGame) {
-            // Cleanup previous game
-            currentGame.cleanup();
-        }
-        currentGame = new game_1.Game(true);
-    });
     multiPlayerButton?.addEventListener('click', () => {
         if (currentGame) {
             // Cleanup previous game
             currentGame.cleanup();
         }
-        currentGame = new game_1.Game(false);
+        currentGame = new game_1.Game();
     });
 };
 // Add this at the top of index.ts, before the Game class

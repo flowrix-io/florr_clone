@@ -15,6 +15,7 @@ const app = (0, express_1.default)();
 const decorations = [];
 const sands = [];
 let ENEMY_COUNT = 1000;
+const playerUserIds = {}; // Maps player ID to user ID
 // Add body parser middleware for JSON
 app.use(express_1.default.json());
 // Add CORS middleware with specific origin
@@ -244,6 +245,7 @@ io.on('connection', (socket) => {
         if (user) {
             socket.userId = user.id;
             socket.username = user.username;
+            playerUserIds[socket.id] = user.id; // Store the mapping
             console.log('User authenticated, loading saved progress for userId:', user.id);
             const savedProgress = database_1.database.getPlayerByUserId(user.id);
             console.log('Loaded saved progress:', savedProgress);
@@ -309,6 +311,7 @@ io.on('connection', (socket) => {
             database_1.database.savePlayer(constants_1.players[socket.id].id, socket.userId, constants_1.players[socket.id]);
         }
         delete constants_1.players[socket.id];
+        delete playerUserIds[socket.id]; // Clean up the mapping
         io.emit('playerDisconnected', socket.id);
     });
     socket.on('collectDot', (dotIndex) => {
@@ -812,25 +815,25 @@ function updatePlayerState(player, deltaTime) {
         const item = constants_1.items[i];
         const distance = Math.sqrt((newX - item.x) ** 2 + (newY - item.y) ** 2);
         if (distance < constants_1.PLAYER_SIZE) {
-            const multiplier = { common: 1, uncommon: 1.5, rare: 2, epic: 2.5, legendary: 3, mythic: 4 }[item.rarity || 'common'];
-            switch (item.type) {
-                case 'health_potion':
-                    player.health = Math.min(player.maxHealth, player.health + (50 * multiplier));
-                    break;
-                case 'speed_boost':
-                    player.speed_boost = true;
-                    io.emit('speedBoostActive', player.id);
-                    setTimeout(() => {
-                        if (constants_1.players[player.id]) {
-                            constants_1.players[player.id].speed_boost = false;
-                        }
-                    }, 5000 * multiplier);
-                    break;
-                case 'shield':
-                    break;
-            }
+            // Add item to player's inventory instead of immediately activating it
+            const inventoryItem = {
+                id: item.id,
+                type: item.type,
+                x: item.x, // Keep original position for reference
+                y: item.y,
+                rarity: item.rarity || 'common'
+            };
+            player.inventory.push(inventoryItem);
+            // Remove item from world
             constants_1.items.splice(i, 1);
+            // Emit events to update client
             io.emit('itemPickedUp', item.id);
+            io.to(player.id).emit('inventoryUpdated', player.inventory);
+            // Save player progress to persist inventory changes
+            const userId = playerUserIds[player.id];
+            if (userId) {
+                savePlayerProgress(player, userId);
+            }
         }
     }
     // Debug: Log final position update

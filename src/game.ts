@@ -2,7 +2,6 @@ import { Player, PlayerProgress, ServerPlayer } from './player';
 import { Dot, Enemy, Obstacle } from './enemy';
 import { io, Socket } from 'socket.io-client';
 import { Item, ItemWithRarity } from './item';
-import { workerBlob } from './workerblob';
 import { IMAGE_ASSETS } from './imageAssets';
 import { SVGLoader } from './SVGLoader';
 import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE } from './constants';
@@ -75,8 +74,6 @@ export class Game {
     private items: Map<string, Item> = new Map();
     private itemSprites: Record<string, HTMLImageElement> = {};
     private isInventoryOpen: boolean = false;
-    private isSinglePlayer: boolean = false;
-    private worker: Worker | null = null;
     private gameLoopId: number | null = null;
     private socketHandlers: Map<string, Function> = new Map();
     private readonly BASE_XP_REQUIREMENT = 100;
@@ -185,7 +182,7 @@ export class Game {
     // Add chat property
     private chat: Chat | null = null;
 
-    constructor(isSinglePlayer: boolean = false) {
+    constructor() {
         //console.log('Game constructor called');
         this.canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
         this.graphics = new Graphics(
@@ -206,7 +203,6 @@ export class Game {
         // Add resize listener
         window.addEventListener('resize', () => this.resizeCanvas());
 
-        this.isSinglePlayer = isSinglePlayer;
 
         // Initialize sprites with CORS settings and wait for them to load
         Promise.all([
@@ -290,13 +286,8 @@ export class Game {
         this.titleScreen = document.querySelector('.center_text');
         this.nameInput = document.getElementById('nameInput') as HTMLInputElement;
 
-        // Initialize game mode after resource loading
-        if (this.isSinglePlayer) {
-            this.initSinglePlayerMode();
-            this.hideTitleScreen();
-        } else {
-            this.initMultiPlayerMode();
-        }
+        // Initialize multiplayer mode after resource loading
+        this.initMultiPlayerMode();
 
         // Move authentication to after socket initialization
         this.authenticate();
@@ -509,75 +500,6 @@ export class Game {
         });
     }
 
-    private initSinglePlayerMode() {
-        console.log('Initializing single player mode');
-        try {
-            // Create inline worker with the worker code
-
-            // Create worker from blob
-            this.worker = new Worker(URL.createObjectURL(workerBlob));
-
-            // Load saved progress
-            const savedProgress = this.loadPlayerProgress();
-            console.log('Loaded saved progress:', savedProgress);
-
-            // Create mock socket
-            const mockSocket = {
-                id: 'player1',
-                emit: (event: string, data: any) => {
-                    console.log('Emitting event:', event, data);
-                    this.worker?.postMessage({
-                        type: 'socketEvent',
-                        event,
-                        data
-                    });
-                },
-                on: (event: string, handler: Function) => {
-                    console.log('Registering handler for event:', event);
-                    this.socketHandlers.set(event, handler);
-                },
-                disconnect: () => {
-                    this.worker?.terminate();
-                }
-            };
-
-            // Use mock socket
-            this.socket = mockSocket as any;
-
-            // Set up socket listeners
-            this.setupSocketListeners();
-
-            // Handle worker messages
-            this.worker.onmessage = (event) => {
-                const { type, event: socketEvent, data } = event.data;
-                //console.log('Received message from worker:', type, socketEvent, data);
-
-                if (type === 'socketEvent') {
-                    const handler = this.socketHandlers.get(socketEvent);
-                    if (handler) {
-                        handler(data);
-                    }
-                }
-            };
-
-            // Initialize game
-            console.log('Sending init message to worker with saved progress');
-            this.worker.postMessage({
-                type: 'init',
-                savedProgress: {
-                    level: savedProgress['level'],
-                    xp: savedProgress['xp'],
-                    maxHealth: savedProgress['maxHealth'],
-                    damage: savedProgress['damage']
-                }
-            });
-
-        } catch (error) {
-            console.error('Error initializing worker:', error);
-        }
-
-        this.showExitButton();
-    }
 
     private initMultiPlayerMode() {
         this.socket = io(prompt("Enter the server URL eg https://localhost:3000: \n Join a public server: https://54.151.123.177:3000/") || "", {
@@ -1182,7 +1104,7 @@ export class Game {
             }
 
             // Add chat toggle
-            if (event.key === 'Enter' && !this.isSinglePlayer) {
+            if (event.key === 'Enter') {
                 this.chat?.focus();
                 return;
             }
@@ -1333,10 +1255,6 @@ export class Game {
         const player = this.players.get(playerData.id);
         if (player) {
             Object.assign(player, playerData);
-            // Update camera position for the local player
-            if (this.isSinglePlayer) {
-                this.updateCamera(player);
-            }
         }
     }
 
@@ -1461,24 +1379,10 @@ export class Game {
 
     // Change from private to public
     public cleanup() {
-        // Save progress before cleanup if in single player mode
-        if (this.isSinglePlayer && this.socket?.id) {
-            const player = this.players.get(this.socket.id);
-            if (player) {
-                this.savePlayerProgress(player);
-            }
-        }
-
         // Stop the game loop immediately to prevent further drawing
         if (this.gameLoopId) {
             cancelAnimationFrame(this.gameLoopId);
             this.gameLoopId = null;
-        }
-
-        // Terminate the web worker if it exists
-        if (this.worker) {
-            this.worker.terminate();
-            this.worker = null;
         }
 
         // Disconnect socket if it exists
@@ -1596,10 +1500,6 @@ export class Game {
             damage: player.damage
         };
         localStorage.setItem('playerProgress', JSON.stringify(progress));
-    }
-
-    private calculateXPRequirement(level: number): number {
-        return Math.floor(this.BASE_XP_REQUIREMENT * Math.pow(this.XP_MULTIPLIER, level - 1));
     }
 
     private showDeathScreen() {
@@ -2574,11 +2474,6 @@ export class Game {
 
 
     private getCurrentPlayerId(): string {
-        if (this.isSinglePlayer) {
-            const player = this.players.values().next().value;
-            return player?.id || '';
-        } else {
-            return this.socket?.id || '';
-        }
+        return this.socket?.id || '';
     }
 }
