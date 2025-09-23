@@ -856,6 +856,7 @@ function updatePlayerState(player, deltaTime) {
                             maxHealth: petal.maxHealth
                         };
                         // Add cooldown (similar to other items)
+                        const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
                         setTimeout(() => {
                             if (constants_1.players[player.id] && player.loadout[i] && player.loadout[i].onCooldown) {
                                 // Restore petal after cooldown
@@ -869,9 +870,9 @@ function updatePlayerState(player, deltaTime) {
                                     slotIndex: i,
                                     petal: player.loadout[i]
                                 });
-                                console.log(`Petal ${petal.petalType} restored for player ${player.id}`);
+                                console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
                             }
-                        }, 10000); // 10 second cooldown
+                        }, cooldownTime);
                         io.emit('petalBroken', {
                             playerId: player.id,
                             slotIndex: i,
