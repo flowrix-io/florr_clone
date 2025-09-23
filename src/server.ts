@@ -739,14 +739,6 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         return;
     }
 
-    // Debug: Log player state before update
-    console.log(`[SERVER] Player ${player.id} position before update: (${player.x.toFixed(1)}, ${player.y.toFixed(1)})`);
-    console.log(`[SERVER] Player ${player.id} inputs:`, {
-        useMouse: player.inputs.useMouse,
-        mouseX: player.inputs.mouseX?.toFixed(1),
-        mouseY: player.inputs.mouseY?.toFixed(1),
-        keys: player.inputs.keys
-    });
 
     let targetVelocityX = 0;
     let targetVelocityY = 0;
@@ -789,17 +781,9 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
     let newX = player.x + player.velocityX * deltaTime;
     let newY = player.y + player.velocityY * deltaTime;
 
-    // Debug: Log calculated movement
-    console.log(`[SERVER] Player ${player.id} calculated movement: velocity(${player.velocityX.toFixed(1)}, ${player.velocityY.toFixed(1)}) deltaTime:${deltaTime.toFixed(3)} -> newPos(${newX.toFixed(1)}, ${newY.toFixed(1)})`);
-
     const padding = 5;
     const clampedX = Math.max(PLAYER_SIZE / 2 + padding, Math.min(ACTUAL_WORLD_WIDTH - PLAYER_SIZE / 2 - padding, newX));
     const clampedY = Math.max(PLAYER_SIZE / 2 + padding, Math.min(ACTUAL_WORLD_HEIGHT - PLAYER_SIZE / 2 - padding, newY));
-
-    // Debug: Log world bounds clamping
-    if (newX !== clampedX || newY !== clampedY) {
-        console.log(`[SERVER] Player ${player.id} world bounds clamping: (${newX.toFixed(1)}, ${newY.toFixed(1)}) -> (${clampedX.toFixed(1)}, ${clampedY.toFixed(1)})`);
-    }
 
     newX = clampedX;
     newY = clampedY;
@@ -1100,9 +1084,6 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
             }
         }
     }
-
-    // Debug: Log final position update
-    console.log(`[SERVER] Player ${player.id} final position update: (${player.x.toFixed(1)}, ${player.y.toFixed(1)}) -> (${newX.toFixed(1)}, ${newY.toFixed(1)})`);
 
     player.x = newX;
     player.y = newY;
