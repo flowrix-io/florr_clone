@@ -442,9 +442,6 @@ class Graphics {
         this.ctx.restore();
     }
     drawItem(item) {
-        const sprite = this.itemSprites[item.type];
-        if (!sprite)
-            return;
         this.ctx.save();
         this.ctx.translate(item.x, item.y);
         // Draw item rarity glow
@@ -456,8 +453,18 @@ class Graphics {
             this.ctx.fill();
             this.ctx.restore();
         }
-        // Draw item sprite
-        this.ctx.drawImage(sprite, -15, -15, 30, 30);
+        // Handle different item types
+        if (item.type === 'petal') {
+            // Draw petal procedurally
+            this.drawWorldPetal(item);
+        }
+        else {
+            // Draw other items with sprites
+            const sprite = this.itemSprites[item.type];
+            if (sprite) {
+                this.ctx.drawImage(sprite, -15, -15, 30, 30);
+            }
+        }
         // Draw hitbox if enabled
         if (this.showHitboxes) {
             this.ctx.save();
@@ -469,6 +476,31 @@ class Graphics {
             this.ctx.restore();
         }
         this.ctx.restore();
+    }
+    drawWorldPetal(item) {
+        if (!item.petalType || !item.rarity)
+            return;
+        const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+        if (!stats)
+            return;
+        // Draw petal shape
+        const size = 12 * stats.size;
+        this.ctx.fillStyle = stats.color;
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 1;
+        // Draw a simple petal shape (ellipse)
+        this.ctx.beginPath();
+        this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        // Add rarity glow effect
+        if (item.rarity !== 'common') {
+            this.ctx.shadowColor = stats.color;
+            this.ctx.shadowBlur = 5;
+            this.ctx.beginPath();
+            this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
     }
     drawFloatingTexts() {
         this.floatingTexts = this.floatingTexts.filter(text => {

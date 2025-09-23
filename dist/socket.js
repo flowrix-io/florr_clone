@@ -242,6 +242,14 @@ function setupSocketListeners(game) {
             game.items.set(item.id, item);
         });
     });
+    game.socket.on('itemSpawned', (item) => {
+        console.log('Item spawned:', item);
+        game.items.set(item.id, item);
+    });
+    game.socket.on('itemPickedUp', (itemId) => {
+        console.log('Item picked up:', itemId);
+        game.items.delete(itemId);
+    });
     game.socket.on('itemCollected', (data) => {
         const player = game.players.get(data.playerId);
         if (player) {

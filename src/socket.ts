@@ -294,6 +294,16 @@ function setupSocketListeners(game: any) {
         });
     });
 
+    game.socket.on('itemSpawned', (item: WorldItem) => {
+        console.log('Item spawned:', item);
+        game.items.set(item.id, item);
+    });
+
+    game.socket.on('itemPickedUp', (itemId: string) => {
+        console.log('Item picked up:', itemId);
+        game.items.delete(itemId);
+    });
+
     game.socket.on('itemCollected', (data: { playerId: string, itemId: string }) => {
         const player = game.players.get(data.playerId);
         if (player) {
