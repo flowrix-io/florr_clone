@@ -1,7 +1,375 @@
 /******/ (() => { // webpackBootstrap
 /******/ 	"use strict";
-/******/ 	// The require scope
-/******/ 	var __webpack_require__ = {};
+/******/ 	var __webpack_modules__ = ({
+
+/***/ 375:
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   PETAL_CONFIG: () => (/* binding */ PETAL_CONFIG),
+/* harmony export */   q: () => (/* binding */ getPetalStats)
+/* harmony export */ });
+/* unused harmony exports getAllPetalTypes, getPetalRarities */
+const PETAL_CONFIG = {
+    basic: {
+        common: {
+            name: "Basic Petal",
+            damage: 5,
+            health: 10,
+            size: 1.0,
+            speed: 1.0,
+            description: "A simple petal that provides basic protection",
+            color: "#90EE90",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#90EE90" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#98FB98" opacity="0.7"/>
+            </svg>`
+        },
+        uncommon: {
+            name: "Enhanced Basic Petal",
+            damage: 8,
+            health: 15,
+            size: 1.1,
+            speed: 1.0,
+            description: "An improved basic petal with better stats",
+            color: "#32CD32",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#32CD32" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#7CFC00" opacity="0.7"/>
+                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#ADFF2F" opacity="0.5"/>
+            </svg>`
+        },
+        rare: {
+            name: "Superior Basic Petal",
+            damage: 12,
+            health: 22,
+            size: 1.2,
+            speed: 1.0,
+            description: "A superior basic petal with enhanced capabilities",
+            color: "#228B22",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#228B22" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#32CD32" opacity="0.8"/>
+                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#7CFC00" opacity="0.6"/>
+                <ellipse cx="16" cy="16" rx="8" ry="4" fill="#ADFF2F" opacity="0.4"/>
+            </svg>`
+        },
+        epic: {
+            name: "Elite Basic Petal",
+            damage: 18,
+            health: 32,
+            size: 1.3,
+            speed: 1.0,
+            description: "An elite basic petal with impressive power",
+            color: "#006400",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="15" ry="11" fill="#006400" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#228B22" opacity="0.8"/>
+                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#32CD32" opacity="0.6"/>
+                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#7CFC00" opacity="0.4"/>
+                <ellipse cx="16" cy="16" rx="7" ry="3" fill="#ADFF2F" opacity="0.2"/>
+            </svg>`
+        },
+        legendary: {
+            name: "Legendary Basic Petal",
+            damage: 26,
+            health: 45,
+            size: 1.4,
+            speed: 1.0,
+            description: "A legendary basic petal of immense strength",
+            color: "#8B4513",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="16" ry="12" fill="#8B4513" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#A0522D" opacity="0.8"/>
+                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#D2691E" opacity="0.6"/>
+                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#F4A460" opacity="0.4"/>
+                <ellipse cx="16" cy="16" rx="8" ry="4" fill="#FFD700" opacity="0.2"/>
+            </svg>`
+        },
+        mythic: {
+            name: "Mythic Basic Petal",
+            damage: 40,
+            health: 65,
+            size: 1.5,
+            speed: 1.0,
+            description: "A mythic basic petal with otherworldly power",
+            color: "#4B0082",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="16" ry="12" fill="#4B0082" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#6A0DAD" opacity="0.8"/>
+                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#8A2BE2" opacity="0.6"/>
+                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#9370DB" opacity="0.4"/>
+                <ellipse cx="16" cy="16" rx="8" ry="4" fill="#DDA0DD" opacity="0.2"/>
+                <ellipse cx="16" cy="16" rx="6" ry="2" fill="#FFD700" opacity="0.3"/>
+            </svg>`
+        }
+    },
+    rose: {
+        common: {
+            name: "Rose Petal",
+            damage: 8,
+            health: 8,
+            size: 0.9,
+            speed: 1.2,
+            description: "A thorny petal that deals extra damage",
+            color: "#FF69B4",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#FF69B4" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#FFB6C1" opacity="0.7"/>
+                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FF1493" opacity="0.5"/>
+            </svg>`
+        },
+        uncommon: {
+            name: "Blood Rose Petal",
+            damage: 12,
+            health: 12,
+            size: 1.0,
+            speed: 1.2,
+            description: "A crimson petal with sharp thorns",
+            color: "#DC143C",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#DC143C" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#FF6347" opacity="0.7"/>
+                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#8B0000" opacity="0.6"/>
+                <circle cx="12" cy="12" r="1" fill="#000"/>
+                <circle cx="20" cy="12" r="1" fill="#000"/>
+            </svg>`
+        },
+        rare: {
+            name: "Royal Rose Petal",
+            damage: 18,
+            health: 18,
+            size: 1.1,
+            speed: 1.2,
+            description: "A majestic rose petal fit for royalty",
+            color: "#8B0000",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#8B0000" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#DC143C" opacity="0.8"/>
+                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#FF6347" opacity="0.6"/>
+                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FFD700" opacity="0.4"/>
+                <circle cx="12" cy="12" r="1" fill="#FFD700"/>
+                <circle cx="20" cy="12" r="1" fill="#FFD700"/>
+            </svg>`
+        },
+        epic: {
+            name: "Divine Rose Petal",
+            damage: 26,
+            health: 26,
+            size: 1.2,
+            speed: 1.2,
+            description: "A divine rose petal blessed with power",
+            color: "#B22222",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#B22222" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#8B0000" opacity="0.8"/>
+                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#DC143C" opacity="0.6"/>
+                <ellipse cx="16" cy="16" rx="8" ry="4" fill="#FF6347" opacity="0.4"/>
+                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FFD700" opacity="0.5"/>
+                <circle cx="12" cy="12" r="1" fill="#FFD700"/>
+                <circle cx="20" cy="12" r="1" fill="#FFD700"/>
+                <circle cx="16" cy="8" r="1" fill="#FFD700"/>
+            </svg>`
+        },
+        legendary: {
+            name: "Eternal Rose Petal",
+            damage: 38,
+            health: 38,
+            size: 1.3,
+            speed: 1.2,
+            description: "An eternal rose petal that never wilts",
+            color: "#FF1493",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="15" ry="11" fill="#FF1493" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#B22222" opacity="0.8"/>
+                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#8B0000" opacity="0.6"/>
+                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#DC143C" opacity="0.4"/>
+                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FFD700" opacity="0.6"/>
+                <circle cx="12" cy="12" r="1" fill="#FFD700"/>
+                <circle cx="20" cy="12" r="1" fill="#FFD700"/>
+                <circle cx="16" cy="8" r="1" fill="#FFD700"/>
+                <circle cx="10" cy="16" r="1" fill="#FFD700"/>
+                <circle cx="22" cy="16" r="1" fill="#FFD700"/>
+            </svg>`
+        },
+        mythic: {
+            name: "Celestial Rose Petal",
+            damage: 55,
+            health: 55,
+            size: 1.4,
+            speed: 1.2,
+            description: "A celestial rose petal from the heavens",
+            color: "#FF6347",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="16" ry="12" fill="#FF6347" stroke="#000" stroke-width="1"/>
+                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#FF1493" opacity="0.8"/>
+                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#B22222" opacity="0.6"/>
+                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#8B0000" opacity="0.4"/>
+                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FFD700" opacity="0.7"/>
+                <circle cx="12" cy="12" r="1" fill="#FFD700"/>
+                <circle cx="20" cy="12" r="1" fill="#FFD700"/>
+                <circle cx="16" cy="8" r="1" fill="#FFD700"/>
+                <circle cx="10" cy="16" r="1" fill="#FFD700"/>
+                <circle cx="22" cy="16" r="1" fill="#FFD700"/>
+                <circle cx="16" cy="24" r="1" fill="#FFD700"/>
+                <circle cx="8" cy="8" r="0.5" fill="#FFD700"/>
+                <circle cx="24" cy="8" r="0.5" fill="#FFD700"/>
+                <circle cx="8" cy="24" r="0.5" fill="#FFD700"/>
+                <circle cx="24" cy="24" r="0.5" fill="#FFD700"/>
+            </svg>`
+        }
+    },
+    stinger: {
+        common: {
+            name: "Stinger",
+            damage: 12,
+            health: 5,
+            size: 0.8,
+            speed: 1.5,
+            description: "A fast, sharp petal that prioritizes offense",
+            color: "#FFD700",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#FFD700" stroke="#000" stroke-width="1"/>
+                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#FFA500" opacity="0.7"/>
+            </svg>`
+        },
+        uncommon: {
+            name: "Venomous Stinger",
+            damage: 18,
+            health: 7,
+            size: 0.85,
+            speed: 1.5,
+            description: "A poisonous stinger with deadly precision",
+            color: "#FFA500",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#FFA500" stroke="#000" stroke-width="1"/>
+                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#FF8C00" opacity="0.8"/>
+                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
+                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
+            </svg>`
+        },
+        rare: {
+            name: "Barbed Stinger",
+            damage: 26,
+            health: 10,
+            size: 0.9,
+            speed: 1.5,
+            description: "A barbed stinger that tears through enemies",
+            color: "#FF8C00",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#FF8C00" stroke="#000" stroke-width="1"/>
+                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#FF7F50" opacity="0.8"/>
+                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
+                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
+                <circle cx="16" cy="12" r="0.5" fill="#8B0000"/>
+                <circle cx="16" cy="20" r="0.5" fill="#8B0000"/>
+            </svg>`
+        },
+        epic: {
+            name: "Razor Stinger",
+            damage: 38,
+            health: 14,
+            size: 0.95,
+            speed: 1.5,
+            description: "A razor-sharp stinger of incredible lethality",
+            color: "#FF7F50",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#FF7F50" stroke="#000" stroke-width="1"/>
+                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#FF4500" opacity="0.8"/>
+                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
+                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
+                <circle cx="16" cy="12" r="0.5" fill="#8B0000"/>
+                <circle cx="16" cy="20" r="0.5" fill="#8B0000"/>
+                <circle cx="12" cy="16" r="0.5" fill="#8B0000"/>
+                <circle cx="20" cy="16" r="0.5" fill="#8B0000"/>
+            </svg>`
+        },
+        legendary: {
+            name: "Infernal Stinger",
+            damage: 55,
+            health: 20,
+            size: 1.0,
+            speed: 1.5,
+            description: "An infernal stinger wreathed in flames",
+            color: "#FF4500",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#FF4500" stroke="#000" stroke-width="1"/>
+                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#DC143C" opacity="0.8"/>
+                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
+                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
+                <circle cx="16" cy="12" r="0.5" fill="#8B0000"/>
+                <circle cx="16" cy="20" r="0.5" fill="#8B0000"/>
+                <circle cx="12" cy="16" r="0.5" fill="#8B0000"/>
+                <circle cx="20" cy="16" r="0.5" fill="#8B0000"/>
+                <circle cx="16" cy="8" r="0.3" fill="#FFD700"/>
+                <circle cx="16" cy="24" r="0.3" fill="#FFD700"/>
+            </svg>`
+        },
+        mythic: {
+            name: "Void Stinger",
+            damage: 80,
+            health: 28,
+            size: 1.1,
+            speed: 1.5,
+            description: "A void stinger that pierces reality itself",
+            color: "#800080",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="16" rx="15" ry="11" fill="#800080" stroke="#000" stroke-width="1"/>
+                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#4B0082" opacity="0.8"/>
+                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
+                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
+                <circle cx="16" cy="12" r="0.5" fill="#8B0000"/>
+                <circle cx="16" cy="20" r="0.5" fill="#8B0000"/>
+                <circle cx="12" cy="16" r="0.5" fill="#8B0000"/>
+                <circle cx="20" cy="16" r="0.5" fill="#8B0000"/>
+                <circle cx="16" cy="8" r="0.3" fill="#FFD700"/>
+                <circle cx="16" cy="24" r="0.3" fill="#FFD700"/>
+                <circle cx="8" cy="8" r="0.2" fill="#FFD700"/>
+                <circle cx="24" cy="8" r="0.2" fill="#FFD700"/>
+                <circle cx="8" cy="24" r="0.2" fill="#FFD700"/>
+                <circle cx="24" cy="24" r="0.2" fill="#FFD700"/>
+            </svg>`
+        }
+    }
+};
+function getPetalStats(petalType, rarity) {
+    return PETAL_CONFIG[petalType]?.[rarity] || null;
+}
+function getAllPetalTypes() {
+    return Object.keys(PETAL_CONFIG);
+}
+function getPetalRarities(petalType) {
+    return Object.keys(PETAL_CONFIG[petalType] || {});
+}
+
+
+/***/ })
+
+/******/ 	});
+/************************************************************************/
+/******/ 	// The module cache
+/******/ 	var __webpack_module_cache__ = {};
+/******/ 	
+/******/ 	// The require function
+/******/ 	function __webpack_require__(moduleId) {
+/******/ 		// Check if module is in cache
+/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 		if (cachedModule !== undefined) {
+/******/ 			return cachedModule.exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = __webpack_module_cache__[moduleId] = {
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
+/******/ 			exports: {}
+/******/ 		};
+/******/ 	
+/******/ 		// Execute the module function
+/******/ 		__webpack_modules__[moduleId](module, module.exports, __webpack_require__);
+/******/ 	
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
 /******/ 	
 /************************************************************************/
 /******/ 	/* webpack/runtime/define property getters */
@@ -33,6 +401,7 @@
 /******/ 	})();
 /******/ 	
 /************************************************************************/
+var __webpack_exports__ = {};
 
 // NAMESPACE OBJECT: ./node_modules/socket.io-parser/build/esm/index.js
 var socket_io_parser_build_esm_namespaceObject = {};
@@ -1125,187 +1494,8 @@ function isSafeZone(element) {
     return element.type === 'safe_zone';
 }
 
-;// ./src/petals.ts
-const PETAL_CONFIG = {
-    basic: {
-        common: {
-            name: "Basic Petal",
-            damage: 5,
-            health: 10,
-            size: 1.0,
-            speed: 1.0,
-            description: "A simple petal that provides basic protection",
-            color: "#90EE90"
-        },
-        uncommon: {
-            name: "Enhanced Basic Petal",
-            damage: 8,
-            health: 15,
-            size: 1.1,
-            speed: 1.0,
-            description: "An improved basic petal with better stats",
-            color: "#32CD32"
-        },
-        rare: {
-            name: "Superior Basic Petal",
-            damage: 12,
-            health: 22,
-            size: 1.2,
-            speed: 1.0,
-            description: "A superior basic petal with enhanced capabilities",
-            color: "#228B22"
-        },
-        epic: {
-            name: "Elite Basic Petal",
-            damage: 18,
-            health: 32,
-            size: 1.3,
-            speed: 1.0,
-            description: "An elite basic petal with impressive power",
-            color: "#006400"
-        },
-        legendary: {
-            name: "Legendary Basic Petal",
-            damage: 26,
-            health: 45,
-            size: 1.4,
-            speed: 1.0,
-            description: "A legendary basic petal of immense strength",
-            color: "#8B4513"
-        },
-        mythic: {
-            name: "Mythic Basic Petal",
-            damage: 40,
-            health: 65,
-            size: 1.5,
-            speed: 1.0,
-            description: "A mythic basic petal with otherworldly power",
-            color: "#4B0082"
-        }
-    },
-    rose: {
-        common: {
-            name: "Rose Petal",
-            damage: 8,
-            health: 8,
-            size: 0.9,
-            speed: 1.2,
-            description: "A thorny petal that deals extra damage",
-            color: "#FF69B4"
-        },
-        uncommon: {
-            name: "Blood Rose Petal",
-            damage: 12,
-            health: 12,
-            size: 1.0,
-            speed: 1.2,
-            description: "A crimson petal with sharp thorns",
-            color: "#DC143C"
-        },
-        rare: {
-            name: "Royal Rose Petal",
-            damage: 18,
-            health: 18,
-            size: 1.1,
-            speed: 1.2,
-            description: "A majestic rose petal fit for royalty",
-            color: "#8B0000"
-        },
-        epic: {
-            name: "Divine Rose Petal",
-            damage: 26,
-            health: 26,
-            size: 1.2,
-            speed: 1.2,
-            description: "A divine rose petal blessed with power",
-            color: "#B22222"
-        },
-        legendary: {
-            name: "Eternal Rose Petal",
-            damage: 38,
-            health: 38,
-            size: 1.3,
-            speed: 1.2,
-            description: "An eternal rose petal that never wilts",
-            color: "#FF1493"
-        },
-        mythic: {
-            name: "Celestial Rose Petal",
-            damage: 55,
-            health: 55,
-            size: 1.4,
-            speed: 1.2,
-            description: "A celestial rose petal from the heavens",
-            color: "#FF6347"
-        }
-    },
-    stinger: {
-        common: {
-            name: "Stinger",
-            damage: 12,
-            health: 5,
-            size: 0.8,
-            speed: 1.5,
-            description: "A fast, sharp petal that prioritizes offense",
-            color: "#FFD700"
-        },
-        uncommon: {
-            name: "Venomous Stinger",
-            damage: 18,
-            health: 7,
-            size: 0.85,
-            speed: 1.5,
-            description: "A poisonous stinger with deadly precision",
-            color: "#FFA500"
-        },
-        rare: {
-            name: "Barbed Stinger",
-            damage: 26,
-            health: 10,
-            size: 0.9,
-            speed: 1.5,
-            description: "A barbed stinger that tears through enemies",
-            color: "#FF8C00"
-        },
-        epic: {
-            name: "Razor Stinger",
-            damage: 38,
-            health: 14,
-            size: 0.95,
-            speed: 1.5,
-            description: "A razor-sharp stinger of incredible lethality",
-            color: "#FF7F50"
-        },
-        legendary: {
-            name: "Infernal Stinger",
-            damage: 55,
-            health: 20,
-            size: 1.0,
-            speed: 1.5,
-            description: "An infernal stinger wreathed in flames",
-            color: "#FF4500"
-        },
-        mythic: {
-            name: "Void Stinger",
-            damage: 80,
-            health: 28,
-            size: 1.1,
-            speed: 1.5,
-            description: "A void stinger that pierces reality itself",
-            color: "#800080"
-        }
-    }
-};
-function getPetalStats(petalType, rarity) {
-    return PETAL_CONFIG[petalType]?.[rarity] || null;
-}
-function getAllPetalTypes() {
-    return Object.keys(PETAL_CONFIG);
-}
-function getPetalRarities(petalType) {
-    return Object.keys(PETAL_CONFIG[petalType] || {});
-}
-
+// EXTERNAL MODULE: ./src/petals.ts
+var src_petals = __webpack_require__(375);
 ;// ./src/graphics.ts
 
 
@@ -1366,6 +1556,7 @@ class Graphics {
         };
         this.showHitboxes = false;
         this.itemSprites = {};
+        this.petalImageCache = {};
         this.canvas = canvas;
         this.ctx = this.canvas.getContext('2d');
         this.playerSprite = playerSprite;
@@ -1672,8 +1863,11 @@ class Graphics {
         petals.forEach((petal, index) => {
             if (!petal || !petal.petalType || !petal.rarity)
                 return;
-            const stats = getPetalStats(petal.petalType, petal.rarity);
+            const stats = (0,src_petals/* getPetalStats */.q)(petal.petalType, petal.rarity);
             if (!stats)
+                return;
+            // Skip drawing if petal is on cooldown
+            if (petal.onCooldown)
                 return;
             // Calculate rotation angle
             const rotationSpeed = stats.speed * 0.002; // Convert to radians per ms
@@ -1683,33 +1877,38 @@ class Graphics {
             // Calculate position around player
             const petalX = player.x + Math.cos(totalAngle) * baseRadius;
             const petalY = player.y + Math.sin(totalAngle) * baseRadius;
-            // Draw petal
+            // Draw petal using SVG image
             this.ctx.save();
             this.ctx.translate(petalX, petalY);
             this.ctx.rotate(totalAngle + Math.PI / 2); // Orient petal tangent to circle
-            // Draw petal shape
             const size = 12 * stats.size;
-            this.ctx.fillStyle = stats.color;
-            this.ctx.strokeStyle = '#000000';
-            this.ctx.lineWidth = 1;
-            // Draw a simple petal shape (ellipse)
-            this.ctx.beginPath();
-            this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.stroke();
-            // Add rarity glow effect
-            if (petal.rarity !== 'common') {
-                this.ctx.shadowColor = stats.color;
-                this.ctx.shadowBlur = 5;
+            // Render petal using cached image
+            const petalKey = `${petal.petalType}_${petal.rarity}`;
+            const petalImage = this.petalImageCache[petalKey];
+            if (petalImage) {
+                this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+                // Add rarity glow effect
+                if (petal.rarity !== 'common') {
+                    this.ctx.shadowColor = stats.color;
+                    this.ctx.shadowBlur = 5;
+                    this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+                }
+            }
+            else {
+                // Fallback to colored circle if image not loaded
+                this.ctx.fillStyle = stats.color;
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 1;
                 this.ctx.beginPath();
                 this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
                 this.ctx.fill();
+                this.ctx.stroke();
             }
             // Draw health bar for petals
             if (petal.health !== undefined && petal.maxHealth !== undefined && petal.maxHealth > 0) {
                 const healthBarWidth = size;
                 const healthBarHeight = 3;
-                const healthBarY = -size * 0.7 - 8;
+                const healthBarY = -size * 0.7 / 2 - 8;
                 // Health bar background
                 this.ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
                 this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth, healthBarHeight);
@@ -1799,26 +1998,31 @@ class Graphics {
     drawWorldPetal(item) {
         if (!item.petalType || !item.rarity)
             return;
-        const stats = getPetalStats(item.petalType, item.rarity);
+        const stats = (0,src_petals/* getPetalStats */.q)(item.petalType, item.rarity);
         if (!stats)
             return;
-        // Draw petal shape
+        // Draw petal using cached image
         const size = 12 * stats.size;
-        this.ctx.fillStyle = stats.color;
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 1;
-        // Draw a simple petal shape (ellipse)
-        this.ctx.beginPath();
-        this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
-        // Add rarity glow effect
-        if (item.rarity !== 'common') {
-            this.ctx.shadowColor = stats.color;
-            this.ctx.shadowBlur = 5;
+        const petalKey = `${item.petalType}_${item.rarity}`;
+        const petalImage = this.petalImageCache[petalKey];
+        if (petalImage) {
+            this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+            // Add rarity glow effect
+            if (item.rarity !== 'common') {
+                this.ctx.shadowColor = stats.color;
+                this.ctx.shadowBlur = 5;
+                this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+            }
+        }
+        else {
+            // Fallback to colored circle if image not loaded
+            this.ctx.fillStyle = stats.color;
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 1;
             this.ctx.beginPath();
             this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
             this.ctx.fill();
+            this.ctx.stroke();
         }
     }
     drawFloatingTexts() {
@@ -1931,6 +2135,30 @@ class Graphics {
     }
     setupItemSprites(itemSprites) {
         this.itemSprites = itemSprites;
+    }
+    async preloadPetalImages() {
+        const { PETAL_CONFIG } = await Promise.resolve(/* import() */).then(__webpack_require__.bind(__webpack_require__, 375));
+        const loadPromises = [];
+        Object.entries(PETAL_CONFIG).forEach(([petalType, rarities]) => {
+            Object.entries(rarities).forEach(([rarity, stats]) => {
+                const key = `${petalType}_${rarity}`;
+                const img = new Image();
+                const promise = new Promise((resolve, reject) => {
+                    img.onload = () => {
+                        this.petalImageCache[key] = img;
+                        resolve();
+                    };
+                    img.onerror = reject;
+                    // Convert SVG string to data URL
+                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                    const url = URL.createObjectURL(svgBlob);
+                    img.src = url;
+                });
+                loadPromises.push(promise);
+            });
+        });
+        await Promise.all(loadPromises);
+        console.log('All petal images preloaded');
     }
 }
 
@@ -6783,8 +7011,27 @@ function setupSocketListeners(game) {
         console.log('Petal broken:', data);
         const player = game.players.get(data.playerId);
         if (player && player.loadout) {
-            // Remove the broken petal from loadout
-            player.loadout[data.slotIndex] = null;
+            // Set petal on cooldown instead of removing it
+            if (player.loadout[data.slotIndex]) {
+                player.loadout[data.slotIndex].onCooldown = true;
+            }
+            // Update inventory display if it's the current player
+            if (data.playerId === game.socket.id) {
+                if (game.isInventoryOpen) {
+                    game.updateInventoryDisplay();
+                }
+                if (game.inventoryManager) {
+                    game.inventoryManager.updateLoadoutDisplay();
+                }
+            }
+        }
+    });
+    game.socket.on('petalRestored', (data) => {
+        console.log('Petal restored:', data);
+        const player = game.players.get(data.playerId);
+        if (player && player.loadout) {
+            // Restore the petal to the loadout
+            player.loadout[data.slotIndex] = data.petal;
             // Update inventory display if it's the current player
             if (data.playerId === game.socket.id) {
                 if (game.isInventoryOpen) {
@@ -7246,7 +7493,7 @@ class InventoryManager {
         };
         // Initialize health for petals
         if (itemType === 'petal' && petalType && rarity) {
-            const stats = getPetalStats(petalType, rarity);
+            const stats = (0,src_petals/* getPetalStats */.q)(petalType, rarity);
             if (stats) {
                 item.health = stats.health;
                 item.maxHealth = stats.health;
@@ -7328,15 +7575,79 @@ class InventoryManager {
         console.log('Found ' + slots.length + ' loadout slots');
         slots.forEach((slot, index) => {
             slot.innerHTML = '';
+            slot.classList.remove('on-cooldown', 'petal-slot');
             const item = player.loadout[index];
             if (item) {
-                const img = document.createElement('img');
-                img.src = `./assets/${item.type}.png`;
-                img.alt = item.type;
-                img.style.width = '80%';
-                img.style.height = '80%';
-                img.style.objectFit = 'contain';
-                slot.appendChild(img);
+                // Handle cooldown state
+                if (item.onCooldown) {
+                    slot.classList.add('on-cooldown');
+                }
+                // Handle different item types
+                if (item.type === 'petal') {
+                    slot.classList.add('petal-slot');
+                    // Create petal visual using SVG image
+                    const petalDiv = document.createElement('div');
+                    petalDiv.style.width = '80%';
+                    petalDiv.style.height = '80%';
+                    petalDiv.style.display = 'flex';
+                    petalDiv.style.alignItems = 'center';
+                    petalDiv.style.justifyContent = 'center';
+                    // Get petal SVG from stats
+                    if (item.petalType && item.rarity) {
+                        const stats = (0,src_petals/* getPetalStats */.q)(item.petalType, item.rarity);
+                        if (stats && stats.image) {
+                            // Create an image element with the SVG data
+                            const img = document.createElement('img');
+                            img.style.width = '100%';
+                            img.style.height = '100%';
+                            img.style.objectFit = 'contain';
+                            // Convert SVG string to data URL
+                            const svgDataUrl = `data:image/svg+xml;base64,${btoa(stats.image)}`;
+                            img.src = svgDataUrl;
+                            petalDiv.appendChild(img);
+                        }
+                        else {
+                            // Fallback to colored circle
+                            petalDiv.style.borderRadius = '50%';
+                            petalDiv.style.border = '2px solid #000';
+                            petalDiv.style.backgroundColor = '#90EE90'; // Default green
+                        }
+                    }
+                    else {
+                        // Fallback to colored circle
+                        petalDiv.style.borderRadius = '50%';
+                        petalDiv.style.border = '2px solid #000';
+                        petalDiv.style.backgroundColor = '#90EE90'; // Default green
+                    }
+                    // Show health bar for petals
+                    if (item.health !== undefined && item.maxHealth !== undefined && item.maxHealth > 0) {
+                        const healthBar = document.createElement('div');
+                        healthBar.style.position = 'absolute';
+                        healthBar.style.bottom = '0';
+                        healthBar.style.left = '0';
+                        healthBar.style.width = '100%';
+                        healthBar.style.height = '3px';
+                        healthBar.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
+                        const healthFill = document.createElement('div');
+                        const healthPercentage = item.health / item.maxHealth;
+                        healthFill.style.width = `${healthPercentage * 100}%`;
+                        healthFill.style.height = '100%';
+                        healthFill.style.backgroundColor = 'rgba(0, 255, 0, 0.7)';
+                        healthBar.appendChild(healthFill);
+                        slot.appendChild(healthBar);
+                    }
+                    slot.appendChild(petalDiv);
+                }
+                else {
+                    // Regular items (health potion, speed boost, shield)
+                    const img = document.createElement('img');
+                    img.src = `./assets/${item.type}.png`;
+                    img.alt = item.type;
+                    img.style.width = '80%';
+                    img.style.height = '80%';
+                    img.style.objectFit = 'contain';
+                    slot.appendChild(img);
+                }
             }
             const keyText = document.createElement('div');
             keyText.className = 'key-binding';
@@ -7829,7 +8140,8 @@ class Game {
         // Initialize sprites with CORS settings and wait for them to load
         Promise.all([
             this.initializeSprites(),
-            this.setupItemSprites()
+            this.setupItemSprites(),
+            this.graphics.preloadPetalImages()
         ]).then(() => {
             console.log('All sprites loaded successfully');
             this.updateColorPreview();

@@ -211,7 +211,8 @@ export class Game {
         // Initialize sprites with CORS settings and wait for them to load
         Promise.all([
             this.initializeSprites(),
-            this.setupItemSprites()
+            this.setupItemSprites(),
+            this.graphics.preloadPetalImages()
         ]).then(() => {
             console.log('All sprites loaded successfully');
             this.updateColorPreview();

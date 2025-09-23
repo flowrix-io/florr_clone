@@ -308,8 +308,29 @@ function setupSocketListeners(game: any) {
         console.log('Petal broken:', data);
         const player = game.players.get(data.playerId);
         if (player && player.loadout) {
-            // Remove the broken petal from loadout
-            player.loadout[data.slotIndex] = null;
+            // Set petal on cooldown instead of removing it
+            if (player.loadout[data.slotIndex]) {
+                player.loadout[data.slotIndex]!.onCooldown = true;
+            }
+            
+            // Update inventory display if it's the current player
+            if (data.playerId === game.socket.id) {
+                if (game.isInventoryOpen) {
+                    game.updateInventoryDisplay();
+                }
+                if (game.inventoryManager) {
+                    game.inventoryManager.updateLoadoutDisplay();
+                }
+            }
+        }
+    });
+
+    game.socket.on('petalRestored', (data: { playerId: string, slotIndex: number, petal: any }) => {
+        console.log('Petal restored:', data);
+        const player = game.players.get(data.playerId);
+        if (player && player.loadout) {
+            // Restore the petal to the loadout
+            player.loadout[data.slotIndex] = data.petal;
             
             // Update inventory display if it's the current player
             if (data.playerId === game.socket.id) {

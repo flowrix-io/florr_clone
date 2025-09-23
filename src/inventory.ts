@@ -380,16 +380,86 @@ export class InventoryManager {
         console.log('Found ' + slots.length + ' loadout slots');
         slots.forEach((slot, index) => {
             slot.innerHTML = '';
+            slot.classList.remove('on-cooldown', 'petal-slot');
 
             const item = player.loadout[index];
             if (item) {
-                const img = document.createElement('img');
-                img.src = `./assets/${item.type}.png`;
-                img.alt = item.type;
-                img.style.width = '80%';
-                img.style.height = '80%';
-                img.style.objectFit = 'contain';
-                slot.appendChild(img);
+                // Handle cooldown state
+                if (item.onCooldown) {
+                    slot.classList.add('on-cooldown');
+                }
+
+                // Handle different item types
+                if (item.type === 'petal') {
+                    slot.classList.add('petal-slot');
+                    
+                    // Create petal visual using SVG image
+                    const petalDiv = document.createElement('div');
+                    petalDiv.style.width = '80%';
+                    petalDiv.style.height = '80%';
+                    petalDiv.style.display = 'flex';
+                    petalDiv.style.alignItems = 'center';
+                    petalDiv.style.justifyContent = 'center';
+                    
+                    // Get petal SVG from stats
+                    if (item.petalType && item.rarity) {
+                        const stats = getPetalStats(item.petalType, item.rarity);
+                        if (stats && stats.image) {
+                            // Create an image element with the SVG data
+                            const img = document.createElement('img');
+                            img.style.width = '100%';
+                            img.style.height = '100%';
+                            img.style.objectFit = 'contain';
+                            
+                            // Convert SVG string to data URL
+                            const svgDataUrl = `data:image/svg+xml;base64,${btoa(stats.image)}`;
+                            img.src = svgDataUrl;
+                            
+                            petalDiv.appendChild(img);
+                        } else {
+                            // Fallback to colored circle
+                            petalDiv.style.borderRadius = '50%';
+                            petalDiv.style.border = '2px solid #000';
+                            petalDiv.style.backgroundColor = '#90EE90'; // Default green
+                        }
+                    } else {
+                        // Fallback to colored circle
+                        petalDiv.style.borderRadius = '50%';
+                        petalDiv.style.border = '2px solid #000';
+                        petalDiv.style.backgroundColor = '#90EE90'; // Default green
+                    }
+                    
+                    // Show health bar for petals
+                    if (item.health !== undefined && item.maxHealth !== undefined && item.maxHealth > 0) {
+                        const healthBar = document.createElement('div');
+                        healthBar.style.position = 'absolute';
+                        healthBar.style.bottom = '0';
+                        healthBar.style.left = '0';
+                        healthBar.style.width = '100%';
+                        healthBar.style.height = '3px';
+                        healthBar.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
+                        
+                        const healthFill = document.createElement('div');
+                        const healthPercentage = item.health / item.maxHealth;
+                        healthFill.style.width = `${healthPercentage * 100}%`;
+                        healthFill.style.height = '100%';
+                        healthFill.style.backgroundColor = 'rgba(0, 255, 0, 0.7)';
+                        
+                        healthBar.appendChild(healthFill);
+                        slot.appendChild(healthBar);
+                    }
+                    
+                    slot.appendChild(petalDiv);
+                } else {
+                    // Regular items (health potion, speed boost, shield)
+                    const img = document.createElement('img');
+                    img.src = `./assets/${item.type}.png`;
+                    img.alt = item.type;
+                    img.style.width = '80%';
+                    img.style.height = '80%';
+                    img.style.objectFit = 'contain';
+                    slot.appendChild(img);
+                }
             }
 
             const keyText = document.createElement('div');

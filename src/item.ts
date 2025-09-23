@@ -4,6 +4,7 @@ export interface Item {
   petalType?: string; // For petals: 'basic', 'rose', 'stinger', etc.
   health?: number; // For petals: current health
   maxHealth?: number; // For petals: maximum health
+  onCooldown?: boolean; // For all items: cooldown state
 }
 
 export interface WorldItem extends Item {

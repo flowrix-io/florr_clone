@@ -988,13 +988,35 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
 
                     // Check if petal breaks
                     if (petal.health <= 0) {
-                        // Petal breaks - remove from loadout and add to cooldown
-                        player.loadout[i] = null;
+                        // Petal breaks - set on cooldown instead of removing
+                        petal.onCooldown = true;
+                        
+                        // Store original petal data for restoration
+                        const originalPetal = {
+                            type: petal.type,
+                            petalType: petal.petalType,
+                            rarity: petal.rarity,
+                            maxHealth: petal.maxHealth
+                        };
                         
                         // Add cooldown (similar to other items)
                         setTimeout(() => {
-                            // Petal cooldown complete - could be restored or just removed
-                            console.log(`Petal ${petal.petalType} cooldown complete for player ${player.id}`);
+                            if (players[player.id] && player.loadout[i] && player.loadout[i]!.onCooldown) {
+                                // Restore petal after cooldown
+                                player.loadout[i] = {
+                                    ...originalPetal,
+                                    health: originalPetal.maxHealth, // Restore full health
+                                    onCooldown: false
+                                };
+                                
+                                io.emit('petalRestored', {
+                                    playerId: player.id,
+                                    slotIndex: i,
+                                    petal: player.loadout[i]
+                                });
+                                
+                                console.log(`Petal ${petal.petalType} restored for player ${player.id}`);
+                            }
                         }, 10000); // 10 second cooldown
 
                         io.emit('petalBroken', {

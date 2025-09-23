@@ -75,6 +75,7 @@ export class Graphics {
     };
     private showHitboxes: boolean = false;
     private itemSprites: Record<string, HTMLImageElement> = {};
+    private petalImageCache: Record<string, HTMLImageElement> = {};
 
 
     constructor(
@@ -475,6 +476,9 @@ export class Graphics {
             const stats = getPetalStats(petal.petalType, petal.rarity);
             if (!stats) return;
 
+            // Skip drawing if petal is on cooldown
+            if (petal.onCooldown) return;
+
             // Calculate rotation angle
             const rotationSpeed = stats.speed * 0.002; // Convert to radians per ms
             const baseAngle = index * angleStep;
@@ -485,37 +489,42 @@ export class Graphics {
             const petalX = player.x + Math.cos(totalAngle) * baseRadius;
             const petalY = player.y + Math.sin(totalAngle) * baseRadius;
 
-            // Draw petal
+            // Draw petal using SVG image
             this.ctx.save();
             this.ctx.translate(petalX, petalY);
             this.ctx.rotate(totalAngle + Math.PI / 2); // Orient petal tangent to circle
 
-            // Draw petal shape
             const size = 12 * stats.size;
-            this.ctx.fillStyle = stats.color;
-            this.ctx.strokeStyle = '#000000';
-            this.ctx.lineWidth = 1;
-
-            // Draw a simple petal shape (ellipse)
-            this.ctx.beginPath();
-            this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.stroke();
-
-            // Add rarity glow effect
-            if (petal.rarity !== 'common') {
-                this.ctx.shadowColor = stats.color;
-                this.ctx.shadowBlur = 5;
+            
+            // Render petal using cached image
+            const petalKey = `${petal.petalType}_${petal.rarity}`;
+            const petalImage = this.petalImageCache[petalKey];
+            
+            if (petalImage) {
+                this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+                
+                // Add rarity glow effect
+                if (petal.rarity !== 'common') {
+                    this.ctx.shadowColor = stats.color;
+                    this.ctx.shadowBlur = 5;
+                    this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+                }
+            } else {
+                // Fallback to colored circle if image not loaded
+                this.ctx.fillStyle = stats.color;
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 1;
                 this.ctx.beginPath();
                 this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
                 this.ctx.fill();
+                this.ctx.stroke();
             }
-
+            
             // Draw health bar for petals
             if (petal.health !== undefined && petal.maxHealth !== undefined && petal.maxHealth > 0) {
                 const healthBarWidth = size;
                 const healthBarHeight = 3;
-                const healthBarY = -size * 0.7 - 8;
+                const healthBarY = -size * 0.7 / 2 - 8;
 
                 // Health bar background
                 this.ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
@@ -638,25 +647,29 @@ export class Graphics {
         const stats = getPetalStats(item.petalType, item.rarity);
         if (!stats) return;
 
-        // Draw petal shape
+        // Draw petal using cached image
         const size = 12 * stats.size;
-        this.ctx.fillStyle = stats.color;
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 1;
-
-        // Draw a simple petal shape (ellipse)
-        this.ctx.beginPath();
-        this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
-
-        // Add rarity glow effect
-        if (item.rarity !== 'common') {
-            this.ctx.shadowColor = stats.color;
-            this.ctx.shadowBlur = 5;
+        const petalKey = `${item.petalType}_${item.rarity}`;
+        const petalImage = this.petalImageCache[petalKey];
+        
+        if (petalImage) {
+            this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+            
+            // Add rarity glow effect
+            if (item.rarity !== 'common') {
+                this.ctx.shadowColor = stats.color;
+                this.ctx.shadowBlur = 5;
+                this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+            }
+        } else {
+            // Fallback to colored circle if image not loaded
+            this.ctx.fillStyle = stats.color;
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 1;
             this.ctx.beginPath();
             this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
             this.ctx.fill();
+            this.ctx.stroke();
         }
     }
 
@@ -808,4 +821,36 @@ export class Graphics {
     public setupItemSprites(itemSprites: Record<string, HTMLImageElement>) {
         this.itemSprites = itemSprites;
     }
+
+    public async preloadPetalImages() {
+        const { PETAL_CONFIG } = await import('./petals');
+        
+        const loadPromises: Promise<void>[] = [];
+        
+        Object.entries(PETAL_CONFIG).forEach(([petalType, rarities]) => {
+            Object.entries(rarities).forEach(([rarity, stats]) => {
+                const key = `${petalType}_${rarity}`;
+                const img = new Image();
+                
+                const promise = new Promise<void>((resolve, reject) => {
+                    img.onload = () => {
+                        this.petalImageCache[key] = img;
+                        resolve();
+                    };
+                    img.onerror = reject;
+                    
+                    // Convert SVG string to data URL
+                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                    const url = URL.createObjectURL(svgBlob);
+                    img.src = url;
+                });
+                
+                loadPromises.push(promise);
+            });
+        });
+        
+        await Promise.all(loadPromises);
+        console.log('All petal images preloaded');
+    }
+
 }
