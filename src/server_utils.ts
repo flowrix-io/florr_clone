@@ -22,6 +22,8 @@ export interface Enemy {
   isHostile?: boolean;
   wanderTarget?: { x: number; y: number };
   lastWanderTime?: number;
+  spawnTime?: number;  // Timestamp when enemy was spawned
+  lastViewportCheck?: number;  // Last time this enemy was in any player's viewport
 }
 
 export interface Obstacle {

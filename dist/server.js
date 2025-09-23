@@ -128,11 +128,182 @@ function initializeMapObstacles() {
 // Update the server initialization code
 // Replace the old obstacle initialization with:
 constants_1.obstacles.push(...initializeMapObstacles());
-// Update the createEnemy function to respect safe zones
+// Viewport optimization functions
+function getPlayerViewports() {
+    const viewports = [];
+    for (const playerId in constants_1.players) {
+        const player = constants_1.players[playerId];
+        if (player && player.x !== undefined && player.y !== undefined &&
+            !isNaN(player.x) && !isNaN(player.y) &&
+            player.x >= 0 && player.x <= constants_1.ACTUAL_WORLD_WIDTH &&
+            player.y >= 0 && player.y <= constants_1.ACTUAL_WORLD_HEIGHT) {
+            viewports.push({
+                x: player.x - constants_1.VIEWPORT_WIDTH / 2,
+                y: player.y - constants_1.VIEWPORT_HEIGHT / 2,
+                width: constants_1.VIEWPORT_WIDTH,
+                height: constants_1.VIEWPORT_HEIGHT
+            });
+        }
+    }
+    return viewports;
+}
+function isPositionInAnyViewport(x, y) {
+    const viewports = getPlayerViewports();
+    // If no players are connected, allow spawning anywhere (for initial server startup)
+    if (viewports.length === 0) {
+        return true;
+    }
+    for (const viewport of viewports) {
+        const extendedViewport = {
+            x: viewport.x - constants_1.VIEWPORT_BUFFER,
+            y: viewport.y - constants_1.VIEWPORT_BUFFER,
+            width: viewport.width + (constants_1.VIEWPORT_BUFFER * 2),
+            height: viewport.height + (constants_1.VIEWPORT_BUFFER * 2)
+        };
+        if (x >= extendedViewport.x && x <= extendedViewport.x + extendedViewport.width &&
+            y >= extendedViewport.y && y <= extendedViewport.y + extendedViewport.height) {
+            return true;
+        }
+    }
+    return false;
+}
+function getEnemiesInViewportCount() {
+    const viewports = getPlayerViewports();
+    // If no players are connected, count all enemies (for initial server startup)
+    if (viewports.length === 0) {
+        return constants_1.enemies.length;
+    }
+    let count = 0;
+    for (const enemy of constants_1.enemies) {
+        if (isPositionInAnyViewport(enemy.x, enemy.y)) {
+            count++;
+        }
+    }
+    return count;
+}
+function updateEnemyViewportStatus() {
+    const currentTime = Date.now();
+    for (const enemy of constants_1.enemies) {
+        if (isPositionInAnyViewport(enemy.x, enemy.y)) {
+            enemy.lastViewportCheck = currentTime;
+        }
+    }
+}
+function validatePlayerPositions() {
+    // Clean up any invalid player positions that might affect viewport calculations
+    for (const playerId in constants_1.players) {
+        const player = constants_1.players[playerId];
+        if (player) {
+            // Reset invalid positions to a safe default
+            if (isNaN(player.x) || isNaN(player.y) ||
+                player.x < 0 || player.x > constants_1.ACTUAL_WORLD_WIDTH ||
+                player.y < 0 || player.y > constants_1.ACTUAL_WORLD_HEIGHT) {
+                console.log(`[SERVER] Fixing invalid position for player ${playerId}: (${player.x}, ${player.y})`);
+                // Reset to center of world
+                player.x = constants_1.ACTUAL_WORLD_WIDTH / 2;
+                player.y = constants_1.ACTUAL_WORLD_HEIGHT / 2;
+                // Notify client of position correction
+                io.to(playerId).emit('positionCorrected', { x: player.x, y: player.y });
+            }
+        }
+    }
+}
+function calculateCurrentDensity() {
+    const playerCount = Object.keys(constants_1.players).length;
+    const totalEnemies = constants_1.enemies.length;
+    const enemiesInViewport = getEnemiesInViewportCount();
+    if (playerCount > 0) {
+        const totalViewportArea = constants_1.VIEWPORT_WITH_BUFFER_AREA * playerCount;
+        const currentDensity = enemiesInViewport / totalViewportArea;
+        const densityRatio = currentDensity / constants_1.ORIGINAL_ENEMY_DENSITY;
+        console.log(`[SERVER] Density Analysis:`);
+        console.log(`  Players: ${playerCount}`);
+        console.log(`  Total Enemies: ${totalEnemies}`);
+        console.log(`  Enemies in Viewport: ${enemiesInViewport}`);
+        console.log(`  Current Density: ${currentDensity.toFixed(8)} enemies/pixel²`);
+        console.log(`  Original Density: ${constants_1.ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
+        console.log(`  Density Ratio: ${(densityRatio * 100).toFixed(1)}%`);
+        return {
+            playerCount,
+            totalEnemies,
+            enemiesInViewport,
+            currentDensity,
+            densityRatio
+        };
+    }
+    return null;
+}
+function triggerViewportUpdate() {
+    console.log(`[SERVER] Triggering viewport update for ${Object.keys(constants_1.players).length} players`);
+    // Validate and fix any invalid player positions first
+    validatePlayerPositions();
+    // Force update all enemy viewport statuses
+    updateEnemyViewportStatus();
+    // Despawn any enemies that have been outside viewport for too long
+    despawnDistantEnemies();
+    // Log current enemy distribution and density analysis
+    const densityInfo = calculateCurrentDensity();
+    if (densityInfo) {
+        console.log(`[SERVER] Viewport update: ${densityInfo.enemiesInViewport}/${densityInfo.totalEnemies} enemies in viewport`);
+    }
+    // Try to spawn new enemies if we're below the target count
+    const playerCount = Object.keys(constants_1.players).length;
+    if (playerCount > 0) {
+        const targetEnemyCount = constants_1.ENEMIES_PER_VIEWPORT * playerCount;
+        const currentViewportEnemies = getEnemiesInViewportCount();
+        if (currentViewportEnemies < targetEnemyCount) {
+            const enemiesToSpawn = Math.min(5, targetEnemyCount - currentViewportEnemies); // Spawn up to 5 at a time
+            let spawned = 0;
+            for (let i = 0; i < enemiesToSpawn; i++) {
+                const newEnemy = createEnemy();
+                if (newEnemy) {
+                    constants_1.enemies.push(newEnemy);
+                    spawned++;
+                }
+            }
+            if (spawned > 0) {
+                console.log(`[SERVER] Player join spawn: ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
+            }
+        }
+    }
+}
+function despawnDistantEnemies() {
+    const currentTime = Date.now();
+    const enemiesToRemove = [];
+    for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
+        const enemy = constants_1.enemies[i];
+        // Skip if enemy was never in viewport (newly spawned)
+        if (!enemy.lastViewportCheck) {
+            continue;
+        }
+        // Check if enemy has been outside viewport for too long
+        if (currentTime - enemy.lastViewportCheck > constants_1.ENEMY_DESPAWN_TIME) {
+            enemiesToRemove.push(i);
+        }
+    }
+    // Remove enemies and notify clients
+    for (const index of enemiesToRemove) {
+        const enemy = constants_1.enemies[index];
+        constants_1.enemies.splice(index, 1);
+        io.emit('enemyDestroyed', enemy.id);
+    }
+}
+// Update the createEnemy function to respect safe zones and viewport optimization
 function createEnemy() {
+    const playerCount = Object.keys(constants_1.players).length;
+    // Don't spawn if we already have enough enemies in viewport
+    // Use a minimum of 1 player count to prevent division by zero during startup
+    const effectivePlayerCount = Math.max(1, playerCount);
+    const targetEnemyCount = constants_1.ENEMIES_PER_VIEWPORT * effectivePlayerCount;
+    if (getEnemiesInViewportCount() >= targetEnemyCount) {
+        return null; // Return null to indicate no spawn needed
+    }
     let validPosition = false;
     let x = 0, y = 0;
-    while (!validPosition) {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 50; // Prevent infinite loops
+    while (!validPosition && attempts < MAX_ATTEMPTS) {
+        attempts++;
         x = Math.random() * constants_1.ACTUAL_WORLD_WIDTH;
         y = Math.random() * constants_1.ACTUAL_WORLD_HEIGHT;
         // Check if position is in a safe zone
@@ -147,9 +318,15 @@ function createEnemy() {
             x <= (element.x + element.width) * constants_1.SCALE_FACTOR &&
             y >= element.y * constants_1.SCALE_FACTOR &&
             y <= (element.y + element.height) * constants_1.SCALE_FACTOR);
-        if (!inSafeZone && !collidesWithWall) {
+        // Check if position is in any player's viewport (with buffer)
+        const inViewport = isPositionInAnyViewport(x, y);
+        if (!inSafeZone && !collidesWithWall && inViewport) {
             validPosition = true;
         }
+    }
+    // If we couldn't find a valid position, return null
+    if (!validPosition) {
+        return null;
     }
     // Rest of createEnemy function remains the same
     const tierRoll = Math.random();
@@ -162,6 +339,7 @@ function createEnemy() {
             break;
         }
     }
+    const currentTime = Date.now();
     return {
         id: Math.random().toString(36).substr(2, 9),
         type: Math.random() < 0.5 ? 'octopus' : 'fish',
@@ -173,7 +351,9 @@ function createEnemy() {
         speed: constants_1.ENEMY_TIERS[tier].speed,
         damage: constants_1.ENEMY_TIERS[tier].damage,
         knockbackX: 0,
-        knockbackY: 0
+        knockbackY: 0,
+        spawnTime: currentTime,
+        lastViewportCheck: currentTime // Mark as in viewport since we spawned it there
     };
 }
 // Update respawnPlayer to use spawn points from the map
@@ -244,10 +424,20 @@ function hasItem(inventory, rarity, type, count) {
     return inventory[rarity]?.[type] >= count;
 }
 // Initialize enemies
+let successfulSpawns = 0;
 for (let i = 0; i < ENEMY_COUNT; i++) {
-    constants_1.enemies.push(createEnemy());
+    const enemy = createEnemy();
+    if (enemy) {
+        constants_1.enemies.push(enemy);
+        successfulSpawns++;
+    }
 }
-console.log(`[SERVER] Initialized ${constants_1.enemies.length} enemies`);
+console.log(`[SERVER] Initialized ${constants_1.enemies.length} enemies (${successfulSpawns}/${ENEMY_COUNT} successful spawns)`);
+console.log(`[SERVER] Density Configuration:`);
+console.log(`  Original Density: ${constants_1.ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
+console.log(`  Enemies per Viewport: ${constants_1.ENEMIES_PER_VIEWPORT}`);
+console.log(`  Viewport Area (with buffer): ${constants_1.VIEWPORT_WITH_BUFFER_AREA.toLocaleString()} pixels²`);
+console.log(`  Target: Maintain same density as ${constants_1.ORIGINAL_ENEMY_COUNT} enemies across entire world`);
 // Initialize decorations
 for (let i = 0; i < constants_1.DECORATION_COUNT; i++) {
     decorations.push((0, server_utils_1.createDecoration)());
@@ -301,6 +491,8 @@ io.on('connection', (socket) => {
             // Save initial state and log the result
             console.log('Saving initial player state');
             savePlayerProgress(constants_1.players[socket.id], user.id);
+            // Trigger viewport update when new player joins
+            triggerViewportUpdate();
             // Remove initial invulnerability after the specified time
             setTimeout(() => {
                 if (constants_1.players[socket.id]) {
@@ -340,6 +532,8 @@ io.on('connection', (socket) => {
         delete constants_1.players[socket.id];
         delete playerUserIds[socket.id]; // Clean up the mapping
         io.emit('playerDisconnected', socket.id);
+        // Trigger viewport update when player disconnects
+        triggerViewportUpdate();
     });
     socket.on('collectDot', (dotIndex) => {
         if (dotIndex >= 0 && dotIndex < constants_1.dots.length) {
@@ -784,8 +978,10 @@ function updatePlayerState(player, deltaTime) {
                     }
                     constants_1.enemies.splice(index, 1);
                     io.emit('enemyDestroyed', enemy.id);
-                    if (constants_1.enemies.length < ENEMY_COUNT) {
-                        constants_1.enemies.push(createEnemy());
+                    // Try to spawn a new enemy, but only if we can find a valid position
+                    const newEnemy = createEnemy();
+                    if (newEnemy) {
+                        constants_1.enemies.push(newEnemy);
                     }
                 }
             }
@@ -902,8 +1098,10 @@ function updatePlayerState(player, deltaTime) {
                             }
                             constants_1.enemies.splice(index, 1);
                             io.emit('enemyDestroyed', enemy.id);
-                            if (constants_1.enemies.length < ENEMY_COUNT) {
-                                constants_1.enemies.push(createEnemy());
+                            // Try to spawn a new enemy, but only if we can find a valid position
+                            const newEnemy = createEnemy();
+                            if (newEnemy) {
+                                constants_1.enemies.push(newEnemy);
                             }
                         }
                     }
@@ -949,6 +1147,10 @@ function start_loop() {
             updatePlayerState(constants_1.players[id], deltaTime);
         }
         moveEnemies();
+        // Update viewport status for all enemies
+        updateEnemyViewportStatus();
+        // Despawn enemies that have been outside viewport for too long
+        despawnDistantEnemies();
         const playersForBroadcast = Object.values(constants_1.players).map(p => ({
             id: p.id,
             name: p.name,
@@ -1008,6 +1210,43 @@ setInterval(() => {
         }
     });
 }, HEALTH_REGEN_INTERVAL);
+// Add viewport refresh interval (every 10 seconds)
+setInterval(() => {
+    console.log(`[SERVER] Refreshing viewport status for ${Object.keys(constants_1.players).length} players`);
+    // Validate and fix any invalid player positions first
+    validatePlayerPositions();
+    // Force update all enemy viewport statuses
+    updateEnemyViewportStatus();
+    // Despawn any enemies that have been outside viewport for too long
+    despawnDistantEnemies();
+    // Log current enemy distribution and density analysis
+    const densityInfo = calculateCurrentDensity();
+    if (densityInfo) {
+        console.log(`[SERVER] Viewport refresh: ${densityInfo.enemiesInViewport}/${densityInfo.totalEnemies} enemies in viewport`);
+    }
+}, 10000); // 10 seconds
+// Add density maintenance interval (every 2 seconds)
+setInterval(() => {
+    const playerCount = Object.keys(constants_1.players).length;
+    if (playerCount > 0) {
+        const targetEnemyCount = constants_1.ENEMIES_PER_VIEWPORT * playerCount;
+        const currentViewportEnemies = getEnemiesInViewportCount();
+        if (currentViewportEnemies < targetEnemyCount) {
+            const enemiesToSpawn = Math.min(3, targetEnemyCount - currentViewportEnemies); // Spawn up to 3 at a time
+            let spawned = 0;
+            for (let i = 0; i < enemiesToSpawn; i++) {
+                const newEnemy = createEnemy();
+                if (newEnemy) {
+                    constants_1.enemies.push(newEnemy);
+                    spawned++;
+                }
+            }
+            if (spawned > 0) {
+                console.log(`[SERVER] Density maintenance: spawned ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
+            }
+        }
+    }
+}, 2000); // 2 seconds
 // Move savePlayerProgress outside the socket connection handler
 function savePlayerProgress(player, userId) {
     if (userId) {
@@ -1117,17 +1356,29 @@ process.stdin.on('data', (data) => {
 });
 // Add this function after the command handler
 function adjustEnemyCount() {
-    // Remove excess enemies if current count is higher than ENEMY_COUNT
-    while (constants_1.enemies.length > ENEMY_COUNT) {
-        constants_1.enemies.pop();
-        io.emit('enemyDestroyed', constants_1.enemies[constants_1.enemies.length - 1].id);
+    const playerCount = Object.keys(constants_1.players).length;
+    const targetEnemyCount = playerCount > 0 ? constants_1.ENEMIES_PER_VIEWPORT * playerCount : ENEMY_COUNT;
+    // Remove excess enemies if current count is higher than target
+    while (constants_1.enemies.length > targetEnemyCount) {
+        const removedEnemy = constants_1.enemies.pop();
+        if (removedEnemy) {
+            io.emit('enemyDestroyed', removedEnemy.id);
+        }
     }
-    // Add new enemies if current count is lower than ENEMY_COUNT
-    while (constants_1.enemies.length < ENEMY_COUNT) {
-        constants_1.enemies.push(createEnemy());
+    // Add new enemies if current count is lower than target
+    while (constants_1.enemies.length < targetEnemyCount) {
+        const enemy = createEnemy();
+        if (enemy) {
+            constants_1.enemies.push(enemy);
+        }
+        else {
+            // If we can't spawn more enemies (no valid positions), break the loop
+            break;
+        }
     }
     // Update all clients with the new enemy state
     io.emit('enemiesUpdate', constants_1.enemies);
+    console.log(`[SERVER] Adjusted enemy count to ${constants_1.enemies.length}/${targetEnemyCount} (${playerCount} players)`);
 }
 // Add after other app.use declarations
 app.use('/assets', (req, res, next) => {

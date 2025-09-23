@@ -417,6 +417,13 @@ class SVGLoader {
 const FISH_DETECTION_RADIUS = 500; // How far fish can detect players
 const PLAYER_BASE_SPEED = 5; // Base player speed to match
 const FISH_RETURN_SPEED = 0.5; // Speed at which fish return to their normal behavior
+// Viewport optimization constants
+const VIEWPORT_BUFFER = 500; // Extra distance beyond viewport to keep enemies active
+const ENEMY_DESPAWN_TIME = 30000; // 30 seconds in milliseconds
+// Viewport dimensions
+const VIEWPORT_WIDTH = 1920;
+const VIEWPORT_HEIGHT = 1080;
+const VIEWPORT_AREA = VIEWPORT_WIDTH * VIEWPORT_HEIGHT; // 2,073,600 pixels²
 const players = {};
 const dots = (/* unused pure expression or super */ null && ([]));
 const enemies = (/* unused pure expression or super */ null && ([]));
@@ -426,6 +433,12 @@ const WORLD_WIDTH = 20000;
 const WORLD_HEIGHT = 20000;
 const ACTUAL_WORLD_WIDTH = 20000;
 const ACTUAL_WORLD_HEIGHT = 20000;
+// Density calculation constants (defined after world dimensions)
+const TOTAL_WORLD_AREA = ACTUAL_WORLD_WIDTH * ACTUAL_WORLD_HEIGHT; // 400,000,000 pixels²
+const ORIGINAL_ENEMY_COUNT = 1000;
+const ORIGINAL_ENEMY_DENSITY = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA; // 0.0000025 enemies per pixel²
+const VIEWPORT_WITH_BUFFER_AREA = (VIEWPORT_WIDTH + VIEWPORT_BUFFER * 2) * (VIEWPORT_HEIGHT + VIEWPORT_BUFFER * 2); // 6,073,600 pixels²
+const ENEMIES_PER_VIEWPORT = Math.ceil(ORIGINAL_ENEMY_DENSITY * VIEWPORT_WITH_BUFFER_AREA); // ~15 enemies per viewport
 const OLD_WORLD_WIDTH = 10000;
 const OLD_WORLD_HEIGHT = 2000;
 const PVP_WORLD_WIDTH = 10000;

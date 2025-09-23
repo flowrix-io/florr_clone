@@ -9,6 +9,15 @@ export const FISH_DETECTION_RADIUS = 500;  // How far fish can detect players
 export const PLAYER_BASE_SPEED = 5;  // Base player speed to match
 export const FISH_RETURN_SPEED = 0.5;  // Speed at which fish return to their normal behavior
 
+// Viewport optimization constants
+export const VIEWPORT_BUFFER = 500;  // Extra distance beyond viewport to keep enemies active
+export const ENEMY_DESPAWN_TIME = 30000;  // 30 seconds in milliseconds
+
+// Viewport dimensions
+export const VIEWPORT_WIDTH = 1920;
+export const VIEWPORT_HEIGHT = 1080;
+export const VIEWPORT_AREA = VIEWPORT_WIDTH * VIEWPORT_HEIGHT;  // 2,073,600 pixels²
+
 export const players: Record<string, ServerPlayer> = {};
 export const dots: Dot[] = [];
 export const enemies: Enemy[] = [];
@@ -19,6 +28,13 @@ export const WORLD_WIDTH = 20000;
 export const WORLD_HEIGHT = 20000;
 export const ACTUAL_WORLD_WIDTH = 20000;
 export const ACTUAL_WORLD_HEIGHT = 20000;
+
+// Density calculation constants (defined after world dimensions)
+export const TOTAL_WORLD_AREA = ACTUAL_WORLD_WIDTH * ACTUAL_WORLD_HEIGHT;  // 400,000,000 pixels²
+export const ORIGINAL_ENEMY_COUNT = 1000;
+export const ORIGINAL_ENEMY_DENSITY = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;  // 0.0000025 enemies per pixel²
+export const VIEWPORT_WITH_BUFFER_AREA = (VIEWPORT_WIDTH + VIEWPORT_BUFFER * 2) * (VIEWPORT_HEIGHT + VIEWPORT_BUFFER * 2);  // 6,073,600 pixels²
+export const ENEMIES_PER_VIEWPORT = Math.ceil(ORIGINAL_ENEMY_DENSITY * VIEWPORT_WITH_BUFFER_AREA);  // ~15 enemies per viewport
 export const OLD_WORLD_WIDTH = 10000;
 export const OLD_WORLD_HEIGHT = 2000;
 export const PVP_WORLD_WIDTH = 10000;
