@@ -114,7 +114,7 @@ class TitleScreen {
             box-shadow: none;
         `;
         this.centerText.innerHTML = `
-            <p class="title">Axolotl Game</p>
+            <p class="title">florr.io clone</p>
             <p class="instructions">Use arrow keys to move. Touch enemies to attack.</p>
             <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
             <div class="color-picker">

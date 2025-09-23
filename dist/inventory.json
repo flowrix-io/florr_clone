@@ -2,7 +2,7 @@
   "players": {
     "00pf7yrz5": {
       "level": 8,
-      "xp": 724,
+      "xp": 999,
       "maxHealth": 170,
       "damage": 19,
       "inventory": {
@@ -16,14 +16,15 @@
         "rare": {
           "shield": 3,
           "health_potion": 2,
-          "petal_rose": 4,
+          "petal_rose": 5,
           "speed_boost": 1,
-          "petal_stinger": 1
+          "petal_stinger": 1,
+          "petal_basic": 1
         },
         "uncommon": {
           "health_potion": 6,
           "shield": 4,
-          "petal_stinger": 5,
+          "petal_stinger": 6,
           "petal_rose": 2,
           "speed_boost": 2,
           "petal_basic": 1
@@ -49,7 +50,7 @@
           "type": "petal",
           "rarity": "mythic",
           "petalType": "stinger",
-          "health": 17,
+          "health": 16,
           "maxHealth": 28
         },
         {
@@ -66,23 +67,25 @@
         },
         {
           "type": "petal",
-          "rarity": "common",
           "petalType": "stinger",
+          "rarity": "common",
+          "maxHealth": 5,
           "health": 5,
-          "maxHealth": 5
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "common",
           "petalType": "rose",
+          "rarity": "common",
+          "maxHealth": 8,
           "health": 8,
-          "maxHealth": 8
+          "onCooldown": false
         },
         {
           "type": "petal",
           "rarity": "common",
           "petalType": "basic",
-          "health": 9,
+          "health": 1,
           "maxHealth": 10
         },
         null,

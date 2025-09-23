@@ -91,7 +91,7 @@ const PETAL_CONFIG = {
             damage: 8,
             health: 8,
             size: 0.9,
-            speed: 1.2,
+            speed: 1.0,
             description: "A thorny petal that deals extra damage",
             color: "#FF69B4",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -103,7 +103,7 @@ const PETAL_CONFIG = {
             damage: 12,
             health: 12,
             size: 1.0,
-            speed: 1.2,
+            speed: 1.0,
             description: "A crimson petal with sharp thorns",
             color: "#DC143C",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -115,7 +115,7 @@ const PETAL_CONFIG = {
             damage: 18,
             health: 18,
             size: 1.1,
-            speed: 1.2,
+            speed: 1.0,
             description: "A majestic rose petal fit for royalty",
             color: "#8B0000",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -127,7 +127,7 @@ const PETAL_CONFIG = {
             damage: 26,
             health: 26,
             size: 1.2,
-            speed: 1.2,
+            speed: 1.0,
             description: "A divine rose petal blessed with power",
             color: "#B22222",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -139,7 +139,7 @@ const PETAL_CONFIG = {
             damage: 38,
             health: 38,
             size: 1.3,
-            speed: 1.2,
+            speed: 1.0,
             description: "An eternal rose petal that never wilts",
             color: "#FF1493",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -151,7 +151,7 @@ const PETAL_CONFIG = {
             damage: 55,
             health: 55,
             size: 1.4,
-            speed: 1.2,
+            speed: 1.0,
             description: "A celestial rose petal from the heavens",
             color: "#FF6347",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -9084,7 +9084,7 @@ class TitleScreen {
             box-shadow: none;
         `;
         this.centerText.innerHTML = `
-            <p class="title">Axolotl Game</p>
+            <p class="title">florr.io clone</p>
             <p class="instructions">Use arrow keys to move. Touch enemies to attack.</p>
             <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
             <div class="color-picker">
