@@ -1,6 +1,7 @@
 export interface Item {
-  type: 'health_potion' | 'speed_boost' | 'shield';
+  type: 'health_potion' | 'speed_boost' | 'shield' | 'petal';
   rarity?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
+  petalType?: string; // For petals: 'basic', 'rose', 'stinger', etc.
 }
 
 export interface WorldItem extends Item {

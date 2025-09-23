@@ -2,6 +2,7 @@ import { Player } from './player';
 import { Enemy } from './enemy';
 import { Item, WorldItem } from './item';
 import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE } from './constants';
+import { getPetalStats } from './petals';
 
 export interface FloatingText {
     x: number;
@@ -454,6 +455,64 @@ export class Graphics {
         this.ctx.fillText(player.name || 'Anonymous', 0, -30);
 
         this.ctx.restore();
+        
+        // Draw petals around player (outside of transform context)
+        this.drawPlayerPetals(player);
+    }
+
+    private drawPlayerPetals(player: Player) {
+        // Get all petals from player loadout
+        const petals = player.loadout.filter(item => item && item.type === 'petal');
+        if (petals.length === 0) return;
+
+        const currentTime = Date.now();
+        const baseRadius = 60; // Distance from player center
+        const angleStep = (Math.PI * 2) / petals.length; // Evenly space petals
+
+        petals.forEach((petal, index) => {
+            if (!petal || !petal.petalType || !petal.rarity) return;
+            
+            const stats = getPetalStats(petal.petalType, petal.rarity);
+            if (!stats) return;
+
+            // Calculate rotation angle
+            const rotationSpeed = stats.speed * 0.002; // Convert to radians per ms
+            const baseAngle = index * angleStep;
+            const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
+            const totalAngle = baseAngle + rotationAngle;
+
+            // Calculate position around player
+            const petalX = player.x + Math.cos(totalAngle) * baseRadius;
+            const petalY = player.y + Math.sin(totalAngle) * baseRadius;
+
+            // Draw petal
+            this.ctx.save();
+            this.ctx.translate(petalX, petalY);
+            this.ctx.rotate(totalAngle + Math.PI / 2); // Orient petal tangent to circle
+
+            // Draw petal shape
+            const size = 12 * stats.size;
+            this.ctx.fillStyle = stats.color;
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 1;
+
+            // Draw a simple petal shape (ellipse)
+            this.ctx.beginPath();
+            this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+
+            // Add rarity glow effect
+            if (petal.rarity !== 'common') {
+                this.ctx.shadowColor = stats.color;
+                this.ctx.shadowBlur = 5;
+                this.ctx.beginPath();
+                this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+
+            this.ctx.restore();
+        });
     }
 
     public drawEnemy(enemy: Enemy) {

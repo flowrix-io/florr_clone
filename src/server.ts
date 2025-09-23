@@ -8,6 +8,7 @@ import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, ENEMY_SIZE_MULTIPLIERS, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, isWall, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, addXPToPlayer } from './server_utils';
 import { Item, ItemWithRarity, WorldItem } from './item';
+import { getAllPetalTypes } from './petals';
 const app = express();
 
 const items: WorldItem[] = [];
@@ -901,12 +902,27 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                         if (Math.random() < DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES]) {
                             const dropChance = DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES];
                             if (Math.random() < dropChance) {
+                                // Determine item type - 60% chance for consumables, 40% chance for petals
+                                let itemType: Item['type'];
+                                let petalType: string | undefined;
+                                
+                                if (Math.random() < 0.6) {
+                                    // Drop consumable item
+                                    itemType = ['health_potion', 'speed_boost', 'shield'][Math.floor(Math.random() * 3)] as Item['type'];
+                                } else {
+                                    // Drop petal
+                                    itemType = 'petal';
+                                    const petalTypes = getAllPetalTypes();
+                                    petalType = petalTypes[Math.floor(Math.random() * petalTypes.length)];
+                                }
+
                                 const newItem: WorldItem = {
                                     id: Math.random().toString(36).substr(2, 9),
-                                    type: ['health_potion', 'speed_boost', 'shield'][Math.floor(Math.random() * 3)] as Item['type'],
+                                    type: itemType,
                                     x: enemy.x,
                                     y: enemy.y,
-                                    rarity: enemy.tier
+                                    rarity: enemy.tier,
+                                    petalType: petalType
                                 };
                                 items.push(newItem);
                                 io.emit('itemSpawned', newItem);
@@ -935,7 +951,8 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         if (distance < PLAYER_SIZE) {
             // Add item to player's inventory instead of immediately activating it
             const rarity = item.rarity || 'common';
-            addItem(player.inventory, rarity, item.type, 1);
+            const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+            addItem(player.inventory, rarity, itemKey, 1);
             
             // Remove item from world
             items.splice(i, 1);

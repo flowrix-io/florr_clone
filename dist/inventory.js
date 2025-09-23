@@ -206,13 +206,28 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player || loadoutSlot >= this.LOADOUT_SLOTS || this.getItemCount(rarity, type) === 0)
             return;
-        const item = { type: type, rarity: rarity };
+        // Parse petal type if it's a petal
+        let itemType;
+        let petalType;
+        if (type.startsWith('petal_')) {
+            itemType = 'petal';
+            petalType = type.substring(6); // Remove 'petal_' prefix
+        }
+        else {
+            itemType = type;
+        }
+        const item = {
+            type: itemType,
+            rarity: rarity,
+            petalType: petalType
+        };
         const newInventory = { ...player.inventory };
         const newLoadout = [...player.loadout];
         this.removeItem(rarity, type, 1);
         const existingItem = newLoadout[loadoutSlot];
         if (existingItem && existingItem.rarity) {
-            this.addItem(existingItem.rarity, existingItem.type, 1);
+            const existingKey = existingItem.type === 'petal' ? `${existingItem.type}_${existingItem.petalType}` : existingItem.type;
+            this.addItem(existingItem.rarity, existingKey, 1);
         }
         newLoadout[loadoutSlot] = item;
         player.loadout = newLoadout;
@@ -232,6 +247,11 @@ class InventoryManager {
         const item = player.loadout[slot];
         if (item.onCooldown)
             return;
+        // Petals cannot be used as consumables
+        if (item.type === 'petal') {
+            this.game.showFloatingText(this.game.canvas.width / 2, 50, 'Petals cannot be used - they provide passive protection!', '#FFA500', 16);
+            return;
+        }
         this.game.getSocket()?.emit('useItem', { type: item.type, rarity: item.rarity });
         const rarityMultipliers = {
             common: 1,
@@ -525,7 +545,8 @@ class InventoryManager {
         const item = player.loadout[loadoutSlot];
         if (!item || !item.rarity)
             return;
-        this.addItem(item.rarity, item.type, 1);
+        const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+        this.addItem(item.rarity, itemKey, 1);
         const newLoadout = [...player.loadout];
         newLoadout[loadoutSlot] = null;
         player.loadout = newLoadout;

@@ -1125,7 +1125,189 @@ function isSafeZone(element) {
     return element.type === 'safe_zone';
 }
 
+;// ./src/petals.ts
+const PETAL_CONFIG = {
+    basic: {
+        common: {
+            name: "Basic Petal",
+            damage: 5,
+            health: 10,
+            size: 1.0,
+            speed: 1.0,
+            description: "A simple petal that provides basic protection",
+            color: "#90EE90"
+        },
+        uncommon: {
+            name: "Enhanced Basic Petal",
+            damage: 8,
+            health: 15,
+            size: 1.1,
+            speed: 1.0,
+            description: "An improved basic petal with better stats",
+            color: "#32CD32"
+        },
+        rare: {
+            name: "Superior Basic Petal",
+            damage: 12,
+            health: 22,
+            size: 1.2,
+            speed: 1.0,
+            description: "A superior basic petal with enhanced capabilities",
+            color: "#228B22"
+        },
+        epic: {
+            name: "Elite Basic Petal",
+            damage: 18,
+            health: 32,
+            size: 1.3,
+            speed: 1.0,
+            description: "An elite basic petal with impressive power",
+            color: "#006400"
+        },
+        legendary: {
+            name: "Legendary Basic Petal",
+            damage: 26,
+            health: 45,
+            size: 1.4,
+            speed: 1.0,
+            description: "A legendary basic petal of immense strength",
+            color: "#8B4513"
+        },
+        mythic: {
+            name: "Mythic Basic Petal",
+            damage: 40,
+            health: 65,
+            size: 1.5,
+            speed: 1.0,
+            description: "A mythic basic petal with otherworldly power",
+            color: "#4B0082"
+        }
+    },
+    rose: {
+        common: {
+            name: "Rose Petal",
+            damage: 8,
+            health: 8,
+            size: 0.9,
+            speed: 1.2,
+            description: "A thorny petal that deals extra damage",
+            color: "#FF69B4"
+        },
+        uncommon: {
+            name: "Blood Rose Petal",
+            damage: 12,
+            health: 12,
+            size: 1.0,
+            speed: 1.2,
+            description: "A crimson petal with sharp thorns",
+            color: "#DC143C"
+        },
+        rare: {
+            name: "Royal Rose Petal",
+            damage: 18,
+            health: 18,
+            size: 1.1,
+            speed: 1.2,
+            description: "A majestic rose petal fit for royalty",
+            color: "#8B0000"
+        },
+        epic: {
+            name: "Divine Rose Petal",
+            damage: 26,
+            health: 26,
+            size: 1.2,
+            speed: 1.2,
+            description: "A divine rose petal blessed with power",
+            color: "#B22222"
+        },
+        legendary: {
+            name: "Eternal Rose Petal",
+            damage: 38,
+            health: 38,
+            size: 1.3,
+            speed: 1.2,
+            description: "An eternal rose petal that never wilts",
+            color: "#FF1493"
+        },
+        mythic: {
+            name: "Celestial Rose Petal",
+            damage: 55,
+            health: 55,
+            size: 1.4,
+            speed: 1.2,
+            description: "A celestial rose petal from the heavens",
+            color: "#FF6347"
+        }
+    },
+    stinger: {
+        common: {
+            name: "Stinger",
+            damage: 12,
+            health: 5,
+            size: 0.8,
+            speed: 1.5,
+            description: "A fast, sharp petal that prioritizes offense",
+            color: "#FFD700"
+        },
+        uncommon: {
+            name: "Venomous Stinger",
+            damage: 18,
+            health: 7,
+            size: 0.85,
+            speed: 1.5,
+            description: "A poisonous stinger with deadly precision",
+            color: "#FFA500"
+        },
+        rare: {
+            name: "Barbed Stinger",
+            damage: 26,
+            health: 10,
+            size: 0.9,
+            speed: 1.5,
+            description: "A barbed stinger that tears through enemies",
+            color: "#FF8C00"
+        },
+        epic: {
+            name: "Razor Stinger",
+            damage: 38,
+            health: 14,
+            size: 0.95,
+            speed: 1.5,
+            description: "A razor-sharp stinger of incredible lethality",
+            color: "#FF7F50"
+        },
+        legendary: {
+            name: "Infernal Stinger",
+            damage: 55,
+            health: 20,
+            size: 1.0,
+            speed: 1.5,
+            description: "An infernal stinger wreathed in flames",
+            color: "#FF4500"
+        },
+        mythic: {
+            name: "Void Stinger",
+            damage: 80,
+            health: 28,
+            size: 1.1,
+            speed: 1.5,
+            description: "A void stinger that pierces reality itself",
+            color: "#800080"
+        }
+    }
+};
+function getPetalStats(petalType, rarity) {
+    return PETAL_CONFIG[petalType]?.[rarity] || null;
+}
+function getAllPetalTypes() {
+    return Object.keys(PETAL_CONFIG);
+}
+function getPetalRarities(petalType) {
+    return Object.keys(PETAL_CONFIG[petalType] || {});
+}
+
 ;// ./src/graphics.ts
+
 
 class Graphics {
     constructor(canvas, playerSprite, wallTexture, octopusSprite, fishSprite, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
@@ -1476,6 +1658,55 @@ class Graphics {
         this.ctx.font = '14px Arial';
         this.ctx.fillText(player.name || 'Anonymous', 0, -30);
         this.ctx.restore();
+        // Draw petals around player (outside of transform context)
+        this.drawPlayerPetals(player);
+    }
+    drawPlayerPetals(player) {
+        // Get all petals from player loadout
+        const petals = player.loadout.filter(item => item && item.type === 'petal');
+        if (petals.length === 0)
+            return;
+        const currentTime = Date.now();
+        const baseRadius = 60; // Distance from player center
+        const angleStep = (Math.PI * 2) / petals.length; // Evenly space petals
+        petals.forEach((petal, index) => {
+            if (!petal || !petal.petalType || !petal.rarity)
+                return;
+            const stats = getPetalStats(petal.petalType, petal.rarity);
+            if (!stats)
+                return;
+            // Calculate rotation angle
+            const rotationSpeed = stats.speed * 0.002; // Convert to radians per ms
+            const baseAngle = index * angleStep;
+            const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
+            const totalAngle = baseAngle + rotationAngle;
+            // Calculate position around player
+            const petalX = player.x + Math.cos(totalAngle) * baseRadius;
+            const petalY = player.y + Math.sin(totalAngle) * baseRadius;
+            // Draw petal
+            this.ctx.save();
+            this.ctx.translate(petalX, petalY);
+            this.ctx.rotate(totalAngle + Math.PI / 2); // Orient petal tangent to circle
+            // Draw petal shape
+            const size = 12 * stats.size;
+            this.ctx.fillStyle = stats.color;
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 1;
+            // Draw a simple petal shape (ellipse)
+            this.ctx.beginPath();
+            this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            // Add rarity glow effect
+            if (petal.rarity !== 'common') {
+                this.ctx.shadowColor = stats.color;
+                this.ctx.shadowBlur = 5;
+                this.ctx.beginPath();
+                this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            this.ctx.restore();
+        });
     }
     drawEnemy(enemy) {
         const sizeMultiplier = this.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
@@ -6927,13 +7158,28 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player || loadoutSlot >= this.LOADOUT_SLOTS || this.getItemCount(rarity, type) === 0)
             return;
-        const item = { type: type, rarity: rarity };
+        // Parse petal type if it's a petal
+        let itemType;
+        let petalType;
+        if (type.startsWith('petal_')) {
+            itemType = 'petal';
+            petalType = type.substring(6); // Remove 'petal_' prefix
+        }
+        else {
+            itemType = type;
+        }
+        const item = {
+            type: itemType,
+            rarity: rarity,
+            petalType: petalType
+        };
         const newInventory = { ...player.inventory };
         const newLoadout = [...player.loadout];
         this.removeItem(rarity, type, 1);
         const existingItem = newLoadout[loadoutSlot];
         if (existingItem && existingItem.rarity) {
-            this.addItem(existingItem.rarity, existingItem.type, 1);
+            const existingKey = existingItem.type === 'petal' ? `${existingItem.type}_${existingItem.petalType}` : existingItem.type;
+            this.addItem(existingItem.rarity, existingKey, 1);
         }
         newLoadout[loadoutSlot] = item;
         player.loadout = newLoadout;
@@ -6953,6 +7199,11 @@ class InventoryManager {
         const item = player.loadout[slot];
         if (item.onCooldown)
             return;
+        // Petals cannot be used as consumables
+        if (item.type === 'petal') {
+            this.game.showFloatingText(this.game.canvas.width / 2, 50, 'Petals cannot be used - they provide passive protection!', '#FFA500', 16);
+            return;
+        }
         this.game.getSocket()?.emit('useItem', { type: item.type, rarity: item.rarity });
         const rarityMultipliers = {
             common: 1,
@@ -7246,7 +7497,8 @@ class InventoryManager {
         const item = player.loadout[loadoutSlot];
         if (!item || !item.rarity)
             return;
-        this.addItem(item.rarity, item.type, 1);
+        const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+        this.addItem(item.rarity, itemKey, 1);
         const newLoadout = [...player.loadout];
         newLoadout[loadoutSlot] = null;
         player.loadout = newLoadout;

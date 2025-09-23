@@ -11,6 +11,7 @@ const fs_1 = __importDefault(require("fs"));
 const database_1 = require("./database");
 const constants_1 = require("./constants");
 const server_utils_1 = require("./server_utils");
+const petals_1 = require("./petals");
 const app = (0, express_1.default)();
 const items = [];
 const decorations = [];
@@ -770,12 +771,26 @@ function updatePlayerState(player, deltaTime) {
                     if (Math.random() < constants_1.DROP_CHANCES[enemy.tier]) {
                         const dropChance = constants_1.DROP_CHANCES[enemy.tier];
                         if (Math.random() < dropChance) {
+                            // Determine item type - 60% chance for consumables, 40% chance for petals
+                            let itemType;
+                            let petalType;
+                            if (Math.random() < 0.6) {
+                                // Drop consumable item
+                                itemType = ['health_potion', 'speed_boost', 'shield'][Math.floor(Math.random() * 3)];
+                            }
+                            else {
+                                // Drop petal
+                                itemType = 'petal';
+                                const petalTypes = (0, petals_1.getAllPetalTypes)();
+                                petalType = petalTypes[Math.floor(Math.random() * petalTypes.length)];
+                            }
                             const newItem = {
                                 id: Math.random().toString(36).substr(2, 9),
-                                type: ['health_potion', 'speed_boost', 'shield'][Math.floor(Math.random() * 3)],
+                                type: itemType,
                                 x: enemy.x,
                                 y: enemy.y,
-                                rarity: enemy.tier
+                                rarity: enemy.tier,
+                                petalType: petalType
                             };
                             items.push(newItem);
                             io.emit('itemSpawned', newItem);
@@ -802,7 +817,8 @@ function updatePlayerState(player, deltaTime) {
         if (distance < constants_1.PLAYER_SIZE) {
             // Add item to player's inventory instead of immediately activating it
             const rarity = item.rarity || 'common';
-            addItem(player.inventory, rarity, item.type, 1);
+            const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+            addItem(player.inventory, rarity, itemKey, 1);
             // Remove item from world
             items.splice(i, 1);
             // Emit events to update client

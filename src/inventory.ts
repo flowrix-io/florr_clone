@@ -1,6 +1,7 @@
 import { Item, ItemWithRarity } from './item';
 import { Player, PlayerInventory } from './player';
 import { Socket } from './socket';
+import { getPetalStats } from './petals';
 
 interface CraftingSlot {
     index: number;
@@ -239,7 +240,22 @@ export class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player || loadoutSlot >= this.LOADOUT_SLOTS || this.getItemCount(rarity, type) === 0) return;
 
-        const item: Item = { type: type as any, rarity: rarity as any };
+        // Parse petal type if it's a petal
+        let itemType: Item['type'];
+        let petalType: string | undefined;
+        
+        if (type.startsWith('petal_')) {
+            itemType = 'petal';
+            petalType = type.substring(6); // Remove 'petal_' prefix
+        } else {
+            itemType = type as Item['type'];
+        }
+
+        const item: Item = { 
+            type: itemType, 
+            rarity: rarity as any,
+            petalType: petalType
+        };
 
         const newInventory = { ...player.inventory };
         const newLoadout = [...player.loadout];
@@ -248,7 +264,8 @@ export class InventoryManager {
 
         const existingItem = newLoadout[loadoutSlot];
         if (existingItem && existingItem.rarity) {
-            this.addItem(existingItem.rarity, existingItem.type, 1);
+            const existingKey = existingItem.type === 'petal' ? `${existingItem.type}_${existingItem.petalType}` : existingItem.type;
+            this.addItem(existingItem.rarity, existingKey, 1);
         }
 
         newLoadout[loadoutSlot] = item;
@@ -272,6 +289,18 @@ export class InventoryManager {
 
         const item = player.loadout[slot] as ItemWithRarity;
         if ((item as any).onCooldown) return;
+
+        // Petals cannot be used as consumables
+        if (item.type === 'petal') {
+            this.game.showFloatingText(
+                this.game.canvas.width / 2,
+                50,
+                'Petals cannot be used - they provide passive protection!',
+                '#FFA500',
+                16
+            );
+            return;
+        }
 
         this.game.getSocket()?.emit('useItem', { type: item.type, rarity: item.rarity });
 
@@ -630,7 +659,8 @@ export class InventoryManager {
         const item = player.loadout[loadoutSlot];
         if (!item || !item.rarity) return;
         
-        this.addItem(item.rarity, item.type, 1);
+        const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+        this.addItem(item.rarity, itemKey, 1);
         
         const newLoadout = [...player.loadout];
         newLoadout[loadoutSlot] = null;
