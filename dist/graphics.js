@@ -413,12 +413,14 @@ class Graphics {
             const petalKey = `${petal.petalType}_${petal.rarity}`;
             const petalImage = this.petalImageCache[petalKey];
             if (petalImage) {
-                this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+                // Use consistent scaling to maintain aspect ratio
+                const petalSize = size;
+                this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                 // Add rarity glow effect
                 if (petal.rarity !== 'common') {
                     this.ctx.shadowColor = stats.color;
                     this.ctx.shadowBlur = 5;
-                    this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+                    this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                 }
             }
             else {
@@ -427,7 +429,7 @@ class Graphics {
                 this.ctx.strokeStyle = '#000000';
                 this.ctx.lineWidth = 1;
                 this.ctx.beginPath();
-                this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
+                this.ctx.ellipse(0, 0, size / 2, size / 2, 0, 0, Math.PI * 2);
                 this.ctx.fill();
                 this.ctx.stroke();
             }
@@ -533,12 +535,14 @@ class Graphics {
         const petalKey = `${item.petalType}_${item.rarity}`;
         const petalImage = this.petalImageCache[petalKey];
         if (petalImage) {
-            this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+            // Use consistent scaling to maintain aspect ratio
+            const petalSize = size;
+            this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
             // Add rarity glow effect
             if (item.rarity !== 'common') {
                 this.ctx.shadowColor = stats.color;
                 this.ctx.shadowBlur = 5;
-                this.ctx.drawImage(petalImage, -size / 2, -size * 0.7 / 2, size, size * 0.7);
+                this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
             }
         }
         else {
@@ -547,7 +551,7 @@ class Graphics {
             this.ctx.strokeStyle = '#000000';
             this.ctx.lineWidth = 1;
             this.ctx.beginPath();
-            this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
+            this.ctx.ellipse(0, 0, size / 2, size / 2, 0, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.stroke();
         }

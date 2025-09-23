@@ -2,13 +2,13 @@
   "players": {
     "00pf7yrz5": {
       "level": 8,
-      "xp": 324,
+      "xp": 554,
       "maxHealth": 170,
       "damage": 19,
       "inventory": {
         "common": {
           "shield": 8,
-          "health_potion": 5,
+          "health_potion": 6,
           "speed_boost": 4,
           "petal_stinger": 2,
           "petal_basic": 1,
@@ -17,8 +17,9 @@
         "rare": {
           "shield": 3,
           "health_potion": 2,
-          "petal_rose": 3,
-          "speed_boost": 1
+          "petal_rose": 4,
+          "speed_boost": 1,
+          "petal_stinger": 1
         },
         "uncommon": {
           "health_potion": 4,
@@ -36,7 +37,7 @@
           "shield": 2,
           "petal_basic": 2,
           "petal_rose": 2,
-          "speed_boost": 2
+          "speed_boost": 3
         },
         "legendary": {
           "petal_stinger": 1,
@@ -49,7 +50,7 @@
           "type": "petal",
           "rarity": "mythic",
           "petalType": "stinger",
-          "health": 26,
+          "health": 21,
           "maxHealth": 28
         },
         {

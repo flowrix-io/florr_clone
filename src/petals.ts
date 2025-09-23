@@ -21,92 +21,73 @@ export const PETAL_CONFIG: PetalConfig = {
             name: "Basic Petal",
             damage: 5,
             health: 10,
-            size: 1.0,
+            size: 2.0,
             speed: 1.0,
             description: "A simple petal that provides basic protection",
             color: "#90EE90",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#90EE90" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#98FB98" opacity="0.7"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="16" fill="white"/>
+</svg>`
         },
         uncommon: {
             name: "Enhanced Basic Petal",
             damage: 8,
             health: 15,
-            size: 1.1,
+            size: 2.0,
             speed: 1.0,
             description: "An improved basic petal with better stats",
             color: "#32CD32",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#32CD32" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#7CFC00" opacity="0.7"/>
-                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#ADFF2F" opacity="0.5"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="16" fill="white"/>
+</svg>`
         },
         rare: {
             name: "Superior Basic Petal",
             damage: 12,
             health: 22,
-            size: 1.2,
+            size: 2.0,
             speed: 1.0,
             description: "A superior basic petal with enhanced capabilities",
             color: "#228B22",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#228B22" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#32CD32" opacity="0.8"/>
-                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#7CFC00" opacity="0.6"/>
-                <ellipse cx="16" cy="16" rx="8" ry="4" fill="#ADFF2F" opacity="0.4"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="16" fill="white"/>
+</svg>`
         },
         epic: {
             name: "Elite Basic Petal",
             damage: 18,
             health: 32,
-            size: 1.3,
+            size: 2.0,
             speed: 1.0,
             description: "An elite basic petal with impressive power",
             color: "#006400",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="15" ry="11" fill="#006400" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#228B22" opacity="0.8"/>
-                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#32CD32" opacity="0.6"/>
-                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#7CFC00" opacity="0.4"/>
-                <ellipse cx="16" cy="16" rx="7" ry="3" fill="#ADFF2F" opacity="0.2"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="16" fill="white"/>
+</svg>`
         },
         legendary: {
             name: "Legendary Basic Petal",
             damage: 26,
             health: 45,
-            size: 1.4,
+            size: 2.0,
             speed: 1.0,
             description: "A legendary basic petal of immense strength",
             color: "#8B4513",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="16" ry="12" fill="#8B4513" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#A0522D" opacity="0.8"/>
-                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#D2691E" opacity="0.6"/>
-                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#F4A460" opacity="0.4"/>
-                <ellipse cx="16" cy="16" rx="8" ry="4" fill="#FFD700" opacity="0.2"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="16" fill="white"/>
+</svg>`
         },
         mythic: {
             name: "Mythic Basic Petal",
             damage: 40,
             health: 65,
-            size: 1.5,
+            size: 2.0,
             speed: 1.0,
             description: "A mythic basic petal with otherworldly power",
             color: "#4B0082",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="16" ry="12" fill="#4B0082" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#6A0DAD" opacity="0.8"/>
-                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#8A2BE2" opacity="0.6"/>
-                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#9370DB" opacity="0.4"/>
-                <ellipse cx="16" cy="16" rx="8" ry="4" fill="#DDA0DD" opacity="0.2"/>
-                <ellipse cx="16" cy="16" rx="6" ry="2" fill="#FFD700" opacity="0.3"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="16" fill="white"/>
+</svg>`
         }
     },
     rose: {
