@@ -8,7 +8,7 @@ import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, ENEMY_SIZE_MULTIPLIERS, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, isWall, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, addXPToPlayer } from './server_utils';
 import { Item, ItemWithRarity, WorldItem } from './item';
-import { getAllPetalTypes } from './petals';
+import { getAllPetalTypes, getPetalStats } from './petals';
 const app = express();
 
 const items: WorldItem[] = [];
@@ -941,6 +941,114 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                 }
             // }
             break;
+        }
+    }
+
+    // Check for petal-enemy collisions
+    if (player.loadout) {
+        for (let i = 0; i < player.loadout.length; i++) {
+            const petal = player.loadout[i];
+            if (!petal || petal.type !== 'petal' || !petal.petalType || !petal.rarity || !petal.health || petal.health <= 0) {
+                continue;
+            }
+
+            const petalStats = getPetalStats(petal.petalType, petal.rarity);
+            if (!petalStats) continue;
+
+            // Calculate petal position around player
+            const currentTime = Date.now();
+            const baseRadius = 60; // Distance from player center
+            const angleStep = (Math.PI * 2) / player.loadout.filter(p => p && p.type === 'petal').length;
+            const petalIndex = player.loadout.filter(p => p && p.type === 'petal').indexOf(petal);
+            
+            const rotationSpeed = petalStats.speed * 0.002; // Convert to radians per ms
+            const baseAngle = petalIndex * angleStep;
+            const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
+            const totalAngle = baseAngle + rotationAngle;
+
+            const petalX = player.x + Math.cos(totalAngle) * baseRadius;
+            const petalY = player.y + Math.sin(totalAngle) * baseRadius;
+
+            // Check collision with enemies
+            for (const enemy of enemies) {
+                const enemySize = ENEMY_SIZE * ENEMY_SIZE_MULTIPLIERS[enemy.tier as keyof typeof ENEMY_SIZE_MULTIPLIERS];
+                const petalSize = 12 * petalStats.size;
+
+                if (
+                    petalX < enemy.x + enemySize &&
+                    petalX + petalSize > enemy.x &&
+                    petalY < enemy.y + enemySize &&
+                    petalY + petalSize > enemy.y
+                ) {
+                    // Petal hits enemy - deal damage to both
+                    enemy.health -= petalStats.damage;
+                    petal.health -= 1; // Petal loses 1 health per hit
+
+                    io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+
+                    // Check if petal breaks
+                    if (petal.health <= 0) {
+                        // Petal breaks - remove from loadout and add to cooldown
+                        player.loadout[i] = null;
+                        
+                        // Add cooldown (similar to other items)
+                        setTimeout(() => {
+                            // Petal cooldown complete - could be restored or just removed
+                            console.log(`Petal ${petal.petalType} cooldown complete for player ${player.id}`);
+                        }, 10000); // 10 second cooldown
+
+                        io.emit('petalBroken', {
+                            playerId: player.id,
+                            slotIndex: i,
+                            petalType: petal.petalType,
+                            rarity: petal.rarity
+                        });
+                    }
+
+                    // Check if enemy dies
+                    if (enemy.health <= 0) {
+                        const index = enemies.findIndex(e => e.id === enemy.id);
+                        if (index !== -1) {
+                            const xpGained = getXPFromEnemy(enemy);
+                            addXPToPlayer(player, xpGained);
+                            if (Math.random() < DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES]) {
+                                const dropChance = DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES];
+                                if (Math.random() < dropChance) {
+                                    // Determine item type - 60% chance for consumables, 40% chance for petals
+                                    let itemType: Item['type'];
+                                    let petalType: string | undefined;
+                                    
+                                    if (Math.random() < 0.6) {
+                                        // Drop consumable item
+                                        itemType = ['health_potion', 'speed_boost', 'shield'][Math.floor(Math.random() * 3)] as Item['type'];
+                                    } else {
+                                        // Drop petal
+                                        itemType = 'petal';
+                                        const petalTypes = getAllPetalTypes();
+                                        petalType = petalTypes[Math.floor(Math.random() * petalTypes.length)];
+                                    }
+
+                                    const newItem: WorldItem = {
+                                        id: Math.random().toString(36).substr(2, 9),
+                                        type: itemType,
+                                        x: enemy.x,
+                                        y: enemy.y,
+                                        rarity: enemy.tier,
+                                        petalType: petalType
+                                    };
+                                    items.push(newItem);
+                                    io.emit('itemSpawned', newItem);
+                                }
+                            }
+                            enemies.splice(index, 1);
+                            io.emit('enemyDestroyed', enemy.id);
+                            if (enemies.length < ENEMY_COUNT) {
+                                enemies.push(createEnemy());
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

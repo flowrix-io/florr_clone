@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryManager = void 0;
+const petals_1 = require("./petals");
 class InventoryManager {
     constructor(game) {
         this.inventoryPanel = null;
@@ -221,6 +222,14 @@ class InventoryManager {
             rarity: rarity,
             petalType: petalType
         };
+        // Initialize health for petals
+        if (itemType === 'petal' && petalType && rarity) {
+            const stats = (0, petals_1.getPetalStats)(petalType, rarity);
+            if (stats) {
+                item.health = stats.health;
+                item.maxHealth = stats.health;
+            }
+        }
         const newInventory = { ...player.inventory };
         const newLoadout = [...player.loadout];
         this.removeItem(rarity, type, 1);

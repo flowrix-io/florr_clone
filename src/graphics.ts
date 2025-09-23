@@ -511,6 +511,22 @@ export class Graphics {
                 this.ctx.fill();
             }
 
+            // Draw health bar for petals
+            if (petal.health !== undefined && petal.maxHealth !== undefined && petal.maxHealth > 0) {
+                const healthBarWidth = size;
+                const healthBarHeight = 3;
+                const healthBarY = -size * 0.7 - 8;
+
+                // Health bar background
+                this.ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+                this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth, healthBarHeight);
+
+                // Health bar fill
+                const healthPercentage = petal.health / petal.maxHealth;
+                this.ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+                this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth * healthPercentage, healthBarHeight);
+            }
+
             this.ctx.restore();
         });
     }

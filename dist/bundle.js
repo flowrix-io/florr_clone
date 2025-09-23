@@ -1705,6 +1705,19 @@ class Graphics {
                 this.ctx.ellipse(0, 0, size / 2, size * 0.7, 0, 0, Math.PI * 2);
                 this.ctx.fill();
             }
+            // Draw health bar for petals
+            if (petal.health !== undefined && petal.maxHealth !== undefined && petal.maxHealth > 0) {
+                const healthBarWidth = size;
+                const healthBarHeight = 3;
+                const healthBarY = -size * 0.7 - 8;
+                // Health bar background
+                this.ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+                this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth, healthBarHeight);
+                // Health bar fill
+                const healthPercentage = petal.health / petal.maxHealth;
+                this.ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+                this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth * healthPercentage, healthBarHeight);
+            }
             this.ctx.restore();
         });
     }
@@ -6766,6 +6779,23 @@ function setupSocketListeners(game) {
         console.log('Item picked up:', itemId);
         game.items.delete(itemId);
     });
+    game.socket.on('petalBroken', (data) => {
+        console.log('Petal broken:', data);
+        const player = game.players.get(data.playerId);
+        if (player && player.loadout) {
+            // Remove the broken petal from loadout
+            player.loadout[data.slotIndex] = null;
+            // Update inventory display if it's the current player
+            if (data.playerId === game.socket.id) {
+                if (game.isInventoryOpen) {
+                    game.updateInventoryDisplay();
+                }
+                if (game.inventoryManager) {
+                    game.inventoryManager.updateLoadoutDisplay();
+                }
+            }
+        }
+    });
     game.socket.on('itemCollected', (data) => {
         const player = game.players.get(data.playerId);
         if (player) {
@@ -6993,6 +7023,7 @@ function setupSocketListeners(game) {
 }
 
 ;// ./src/inventory.ts
+
 class InventoryManager {
     constructor(game) {
         this.inventoryPanel = null;
@@ -7213,6 +7244,14 @@ class InventoryManager {
             rarity: rarity,
             petalType: petalType
         };
+        // Initialize health for petals
+        if (itemType === 'petal' && petalType && rarity) {
+            const stats = getPetalStats(petalType, rarity);
+            if (stats) {
+                item.health = stats.health;
+                item.maxHealth = stats.health;
+            }
+        }
         const newInventory = { ...player.inventory };
         const newLoadout = [...player.loadout];
         this.removeItem(rarity, type, 1);

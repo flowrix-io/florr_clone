@@ -257,6 +257,15 @@ export class InventoryManager {
             petalType: petalType
         };
 
+        // Initialize health for petals
+        if (itemType === 'petal' && petalType && rarity) {
+            const stats = getPetalStats(petalType, rarity);
+            if (stats) {
+                item.health = stats.health;
+                item.maxHealth = stats.health;
+            }
+        }
+
         const newInventory = { ...player.inventory };
         const newLoadout = [...player.loadout];
 

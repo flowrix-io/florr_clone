@@ -304,6 +304,25 @@ function setupSocketListeners(game: any) {
         game.items.delete(itemId);
     });
 
+    game.socket.on('petalBroken', (data: { playerId: string, slotIndex: number, petalType: string, rarity: string }) => {
+        console.log('Petal broken:', data);
+        const player = game.players.get(data.playerId);
+        if (player && player.loadout) {
+            // Remove the broken petal from loadout
+            player.loadout[data.slotIndex] = null;
+            
+            // Update inventory display if it's the current player
+            if (data.playerId === game.socket.id) {
+                if (game.isInventoryOpen) {
+                    game.updateInventoryDisplay();
+                }
+                if (game.inventoryManager) {
+                    game.inventoryManager.updateLoadoutDisplay();
+                }
+            }
+        }
+    });
+
     game.socket.on('itemCollected', (data: { playerId: string, itemId: string }) => {
         const player = game.players.get(data.playerId);
         if (player) {
