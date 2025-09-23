@@ -88,11 +88,9 @@ exports.PETAL_CONFIG = {
             speed: 1.2,
             description: "A thorny petal that deals extra damage",
             color: "#FF69B4",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#FF69B4" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#FFB6C1" opacity="0.7"/>
-                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FF1493" opacity="0.5"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`
         },
         uncommon: {
             name: "Blood Rose Petal",
@@ -102,13 +100,9 @@ exports.PETAL_CONFIG = {
             speed: 1.2,
             description: "A crimson petal with sharp thorns",
             color: "#DC143C",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#DC143C" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#FF6347" opacity="0.7"/>
-                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#8B0000" opacity="0.6"/>
-                <circle cx="12" cy="12" r="1" fill="#000"/>
-                <circle cx="20" cy="12" r="1" fill="#000"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`
         },
         rare: {
             name: "Royal Rose Petal",
@@ -118,14 +112,9 @@ exports.PETAL_CONFIG = {
             speed: 1.2,
             description: "A majestic rose petal fit for royalty",
             color: "#8B0000",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#8B0000" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#DC143C" opacity="0.8"/>
-                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#FF6347" opacity="0.6"/>
-                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FFD700" opacity="0.4"/>
-                <circle cx="12" cy="12" r="1" fill="#FFD700"/>
-                <circle cx="20" cy="12" r="1" fill="#FFD700"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`
         },
         epic: {
             name: "Divine Rose Petal",
@@ -135,16 +124,9 @@ exports.PETAL_CONFIG = {
             speed: 1.2,
             description: "A divine rose petal blessed with power",
             color: "#B22222",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#B22222" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#8B0000" opacity="0.8"/>
-                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#DC143C" opacity="0.6"/>
-                <ellipse cx="16" cy="16" rx="8" ry="4" fill="#FF6347" opacity="0.4"/>
-                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FFD700" opacity="0.5"/>
-                <circle cx="12" cy="12" r="1" fill="#FFD700"/>
-                <circle cx="20" cy="12" r="1" fill="#FFD700"/>
-                <circle cx="16" cy="8" r="1" fill="#FFD700"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`
         },
         legendary: {
             name: "Eternal Rose Petal",
@@ -154,18 +136,9 @@ exports.PETAL_CONFIG = {
             speed: 1.2,
             description: "An eternal rose petal that never wilts",
             color: "#FF1493",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="15" ry="11" fill="#FF1493" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#B22222" opacity="0.8"/>
-                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#8B0000" opacity="0.6"/>
-                <ellipse cx="16" cy="16" rx="9" ry="5" fill="#DC143C" opacity="0.4"/>
-                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FFD700" opacity="0.6"/>
-                <circle cx="12" cy="12" r="1" fill="#FFD700"/>
-                <circle cx="20" cy="12" r="1" fill="#FFD700"/>
-                <circle cx="16" cy="8" r="1" fill="#FFD700"/>
-                <circle cx="10" cy="16" r="1" fill="#FFD700"/>
-                <circle cx="22" cy="16" r="1" fill="#FFD700"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`
         },
         mythic: {
             name: "Celestial Rose Petal",
@@ -175,23 +148,9 @@ exports.PETAL_CONFIG = {
             speed: 1.2,
             description: "A celestial rose petal from the heavens",
             color: "#FF6347",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="16" ry="12" fill="#FF6347" stroke="#000" stroke-width="1"/>
-                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#FF1493" opacity="0.8"/>
-                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#B22222" opacity="0.6"/>
-                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#8B0000" opacity="0.4"/>
-                <path d="M16 8 L18 12 L22 10 L20 14 L24 16 L20 18 L22 22 L18 20 L16 24 L14 20 L10 22 L12 18 L8 16 L12 14 L10 10 L14 12 Z" fill="#FFD700" opacity="0.7"/>
-                <circle cx="12" cy="12" r="1" fill="#FFD700"/>
-                <circle cx="20" cy="12" r="1" fill="#FFD700"/>
-                <circle cx="16" cy="8" r="1" fill="#FFD700"/>
-                <circle cx="10" cy="16" r="1" fill="#FFD700"/>
-                <circle cx="22" cy="16" r="1" fill="#FFD700"/>
-                <circle cx="16" cy="24" r="1" fill="#FFD700"/>
-                <circle cx="8" cy="8" r="0.5" fill="#FFD700"/>
-                <circle cx="24" cy="8" r="0.5" fill="#FFD700"/>
-                <circle cx="8" cy="24" r="0.5" fill="#FFD700"/>
-                <circle cx="24" cy="24" r="0.5" fill="#FFD700"/>
-            </svg>`
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`
         }
     },
     stinger: {
@@ -200,110 +159,78 @@ exports.PETAL_CONFIG = {
             damage: 12,
             health: 5,
             size: 0.8,
-            speed: 1.5,
+            speed: 1.0,
             description: "A fast, sharp petal that prioritizes offense",
             color: "#FFD700",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="10" ry="6" fill="#FFD700" stroke="#000" stroke-width="1"/>
-                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#FFA500" opacity="0.7"/>
-            </svg>`
+  <polygon points="16,0 32,32 0,32" fill="black" />
+</svg>
+`
         },
         uncommon: {
             name: "Venomous Stinger",
             damage: 18,
             health: 7,
             size: 0.85,
-            speed: 1.5,
+            speed: 1.0,
             description: "A poisonous stinger with deadly precision",
             color: "#FFA500",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="11" ry="7" fill="#FFA500" stroke="#000" stroke-width="1"/>
-                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#FF8C00" opacity="0.8"/>
-                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
-                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
-            </svg>`
+  <polygon points="16,0 32,32 0,32" fill="black" />
+</svg>
+`
         },
         rare: {
             name: "Barbed Stinger",
             damage: 26,
             health: 10,
             size: 0.9,
-            speed: 1.5,
+            speed: 1.0,
             description: "A barbed stinger that tears through enemies",
             color: "#FF8C00",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="12" ry="8" fill="#FF8C00" stroke="#000" stroke-width="1"/>
-                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#FF7F50" opacity="0.8"/>
-                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
-                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
-                <circle cx="16" cy="12" r="0.5" fill="#8B0000"/>
-                <circle cx="16" cy="20" r="0.5" fill="#8B0000"/>
-            </svg>`
+  <polygon points="16,0 32,32 0,32" fill="black" />
+</svg>
+`
         },
         epic: {
             name: "Razor Stinger",
             damage: 38,
             health: 14,
             size: 0.95,
-            speed: 1.5,
+            speed: 1.0,
             description: "A razor-sharp stinger of incredible lethality",
             color: "#FF7F50",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="13" ry="9" fill="#FF7F50" stroke="#000" stroke-width="1"/>
-                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#FF4500" opacity="0.8"/>
-                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
-                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
-                <circle cx="16" cy="12" r="0.5" fill="#8B0000"/>
-                <circle cx="16" cy="20" r="0.5" fill="#8B0000"/>
-                <circle cx="12" cy="16" r="0.5" fill="#8B0000"/>
-                <circle cx="20" cy="16" r="0.5" fill="#8B0000"/>
-            </svg>`
+  <polygon points="16,0 32,32 0,32" fill="black" />
+</svg>
+`
         },
         legendary: {
             name: "Infernal Stinger",
             damage: 55,
             health: 20,
             size: 1.0,
-            speed: 1.5,
+            speed: 1.0,
             description: "An infernal stinger wreathed in flames",
             color: "#FF4500",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="14" ry="10" fill="#FF4500" stroke="#000" stroke-width="1"/>
-                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#DC143C" opacity="0.8"/>
-                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
-                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
-                <circle cx="16" cy="12" r="0.5" fill="#8B0000"/>
-                <circle cx="16" cy="20" r="0.5" fill="#8B0000"/>
-                <circle cx="12" cy="16" r="0.5" fill="#8B0000"/>
-                <circle cx="20" cy="16" r="0.5" fill="#8B0000"/>
-                <circle cx="16" cy="8" r="0.3" fill="#FFD700"/>
-                <circle cx="16" cy="24" r="0.3" fill="#FFD700"/>
-            </svg>`
+  <polygon points="16,0 32,32 0,32" fill="black" />
+</svg>
+`
         },
         mythic: {
             name: "Void Stinger",
             damage: 80,
             health: 28,
             size: 1.1,
-            speed: 1.5,
+            speed: 1.0,
             description: "A void stinger that pierces reality itself",
             color: "#800080",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="16" cy="16" rx="15" ry="11" fill="#800080" stroke="#000" stroke-width="1"/>
-                <path d="M16 8 L20 12 L24 8 L20 16 L28 16 L20 20 L24 24 L20 20 L16 24 L12 20 L8 24 L12 20 L4 16 L12 16 L8 12 L12 8 Z" fill="#4B0082" opacity="0.8"/>
-                <circle cx="14" cy="14" r="1" fill="#8B0000"/>
-                <circle cx="18" cy="14" r="1" fill="#8B0000"/>
-                <circle cx="16" cy="12" r="0.5" fill="#8B0000"/>
-                <circle cx="16" cy="20" r="0.5" fill="#8B0000"/>
-                <circle cx="12" cy="16" r="0.5" fill="#8B0000"/>
-                <circle cx="20" cy="16" r="0.5" fill="#8B0000"/>
-                <circle cx="16" cy="8" r="0.3" fill="#FFD700"/>
-                <circle cx="16" cy="24" r="0.3" fill="#FFD700"/>
-                <circle cx="8" cy="8" r="0.2" fill="#FFD700"/>
-                <circle cx="24" cy="8" r="0.2" fill="#FFD700"/>
-                <circle cx="8" cy="24" r="0.2" fill="#FFD700"/>
-                <circle cx="24" cy="24" r="0.2" fill="#FFD700"/>
-            </svg>`
+  <polygon points="16,0 32,32 0,32" fill="black" />
+</svg>
+`
         }
     }
 };
