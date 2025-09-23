@@ -216,13 +216,13 @@ function calculateCurrentDensity() {
         const totalViewportArea = constants_1.VIEWPORT_WITH_BUFFER_AREA * playerCount;
         const currentDensity = enemiesInViewport / totalViewportArea;
         const densityRatio = currentDensity / constants_1.ORIGINAL_ENEMY_DENSITY;
-        console.log(`[SERVER] Density Analysis:`);
-        console.log(`  Players: ${playerCount}`);
-        console.log(`  Total Enemies: ${totalEnemies}`);
-        console.log(`  Enemies in Viewport: ${enemiesInViewport}`);
-        console.log(`  Current Density: ${currentDensity.toFixed(8)} enemies/pixel²`);
-        console.log(`  Original Density: ${constants_1.ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
-        console.log(`  Density Ratio: ${(densityRatio * 100).toFixed(1)}%`);
+        // console.log(`[SERVER] Density Analysis:`);
+        // console.log(`  Players: ${playerCount}`);
+        // console.log(`  Total Enemies: ${totalEnemies}`);
+        // console.log(`  Enemies in Viewport: ${enemiesInViewport}`);
+        // console.log(`  Current Density: ${currentDensity.toFixed(8)} enemies/pixel²`);
+        // console.log(`  Original Density: ${ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
+        // console.log(`  Density Ratio: ${(densityRatio * 100).toFixed(1)}%`);
         return {
             playerCount,
             totalEnemies,
@@ -234,7 +234,7 @@ function calculateCurrentDensity() {
     return null;
 }
 function triggerViewportUpdate() {
-    console.log(`[SERVER] Triggering viewport update for ${Object.keys(constants_1.players).length} players`);
+    // console.log(`[SERVER] Triggering viewport update for ${Object.keys(players).length} players`);
     // Validate and fix any invalid player positions first
     validatePlayerPositions();
     // Force update all enemy viewport statuses
@@ -463,9 +463,9 @@ io.on('connection', (socket) => {
             socket.userId = user.id;
             socket.username = user.username;
             playerUserIds[socket.id] = user.id; // Store the mapping
-            console.log('User authenticated, loading saved progress for userId:', user.id);
+            // console.log('User authenticated, loading saved progress for userId:', user.id);
             const savedProgress = database_1.database.getPlayerByUserId(user.id);
-            console.log('Loaded saved progress:', savedProgress);
+            // console.log('Loaded saved progress:', savedProgress);
             constants_1.players[socket.id] = {
                 id: socket.id,
                 name: credentials.playerName || 'Anonymous',
@@ -489,7 +489,7 @@ io.on('connection', (socket) => {
                 inputs: { keys: [] }
             };
             // Save initial state and log the result
-            console.log('Saving initial player state');
+            // console.log('Saving initial player state');
             savePlayerProgress(constants_1.players[socket.id], user.id);
             // Trigger viewport update when new player joins
             triggerViewportUpdate();
@@ -526,7 +526,7 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('A user disconnected');
         if (constants_1.players[socket.id] && socket.userId) {
-            console.log('Saving player progress for userId:', socket.userId);
+            // console.log('Saving player progress for userId:', socket.userId);
             savePlayerProgress(constants_1.players[socket.id], socket.userId);
         }
         delete constants_1.players[socket.id];
@@ -569,26 +569,26 @@ io.on('connection', (socket) => {
         switch (item.type) {
             case 'health_potion':
                 player.health = Math.min(player.maxHealth, player.health + (50 * multiplier));
-                console.log('Applied health potion effect:', player.health);
+                // console.log('Applied health potion effect:', player.health);
                 break;
             case 'speed_boost':
                 player.speed_boost = true;
                 io.emit('speedBoostActive', player.id);
-                console.log('Applied speed boost effect');
+                // console.log('Applied speed boost effect');
                 setTimeout(() => {
                     if (constants_1.players[socket.id]) {
                         constants_1.players[socket.id].speed_boost = false;
-                        console.log('Speed boost wore off');
+                        // console.log('Speed boost wore off');
                     }
                 }, 5000 * multiplier);
                 break;
             case 'shield':
                 player.isInvulnerable = true;
-                console.log('Applied shield effect');
+                // console.log('Applied shield effect');
                 setTimeout(() => {
                     if (constants_1.players[socket.id]) {
                         constants_1.players[socket.id].isInvulnerable = false;
-                        console.log('Shield wore off');
+                        // console.log('Shield wore off');
                     }
                 }, 3000 * multiplier);
                 break;
@@ -896,7 +896,7 @@ function updatePlayerState(player, deltaTime) {
                             newY -= penY;
                     }
                     // Debug: Log wall collision
-                    console.log(`[SERVER] Player ${player.id} wall collision: wall(${wallX.toFixed(1)}, ${wallY.toFixed(1)}, ${wallWidth.toFixed(1)}x${wallHeight.toFixed(1)}) player moved (${oldX.toFixed(1)}, ${oldY.toFixed(1)}) -> (${newX.toFixed(1)}, ${newY.toFixed(1)})`);
+                    // console.log(`[SERVER] Player ${player.id} wall collision: wall(${wallX.toFixed(1)}, ${wallY.toFixed(1)}, ${wallWidth.toFixed(1)}x${wallHeight.toFixed(1)}) player moved (${oldX.toFixed(1)}, ${oldY.toFixed(1)}) -> (${newX.toFixed(1)}, ${newY.toFixed(1)})`);
                 }
             }
         }
@@ -1052,7 +1052,7 @@ function updatePlayerState(player, deltaTime) {
                                     slotIndex: i,
                                     petal: player.loadout[i]
                                 });
-                                console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
+                                // console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
                             }
                         }, cooldownTime);
                         io.emit('petalBroken', {
@@ -1212,7 +1212,7 @@ setInterval(() => {
 }, HEALTH_REGEN_INTERVAL);
 // Add viewport refresh interval (every 10 seconds)
 setInterval(() => {
-    console.log(`[SERVER] Refreshing viewport status for ${Object.keys(constants_1.players).length} players`);
+    // console.log(`[SERVER] Refreshing viewport status for ${Object.keys(players).length} players`);
     // Validate and fix any invalid player positions first
     validatePlayerPositions();
     // Force update all enemy viewport statuses
@@ -1221,9 +1221,9 @@ setInterval(() => {
     despawnDistantEnemies();
     // Log current enemy distribution and density analysis
     const densityInfo = calculateCurrentDensity();
-    if (densityInfo) {
-        console.log(`[SERVER] Viewport refresh: ${densityInfo.enemiesInViewport}/${densityInfo.totalEnemies} enemies in viewport`);
-    }
+    // if (densityInfo) {
+    //     console.log(`[SERVER] Viewport refresh: ${densityInfo.enemiesInViewport}/${densityInfo.totalEnemies} enemies in viewport`);
+    // }
 }, 10000); // 10 seconds
 // Add density maintenance interval (every 2 seconds)
 setInterval(() => {
@@ -1241,16 +1241,16 @@ setInterval(() => {
                     spawned++;
                 }
             }
-            if (spawned > 0) {
-                console.log(`[SERVER] Density maintenance: spawned ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
-            }
+            // if (spawned > 0) {
+            //     console.log(`[SERVER] Density maintenance: spawned ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
+            // }
         }
     }
 }, 2000); // 2 seconds
 // Move savePlayerProgress outside the socket connection handler
 function savePlayerProgress(player, userId) {
     if (userId) {
-        console.log('Saving player progress for userId:', userId);
+        // console.log('Saving player progress for userId:', userId);
         const saveResult = database_1.database.savePlayer(userId, {
             level: player.level,
             xp: player.xp,
@@ -1259,15 +1259,14 @@ function savePlayerProgress(player, userId) {
             inventory: player.inventory,
             loadout: player.loadout
         });
-        if (saveResult) {
-            console.log('Successfully saved player progress');
-        }
-        else {
-            console.error('Failed to save player progress');
-        }
+        // if (saveResult) {
+        //     console.log('Successfully saved player progress');
+        // } else {
+        //     console.error('Failed to save player progress');
+        // }
     }
     else {
-        console.warn('Attempted to save player progress without userId');
+        // console.warn('Attempted to save player progress without userId');
     }
 }
 // Add periodic saving
@@ -1313,10 +1312,10 @@ process.stdin.on('data', (data) => {
             if (player && socket?.userId) {
                 savePlayerProgress(player, socket.userId);
                 socket.emit('savePlayerProgress', player);
-                console.log(`Progress saved for player ${playerId}`);
+                // console.log(`Progress saved for player ${playerId}`);
             }
             else {
-                console.log(`Player ${playerId} not found or not authenticated`);
+                // console.log(`Player ${playerId} not found or not authenticated`);
             }
         }
         else if (parts.length === 1) {
@@ -1329,7 +1328,7 @@ process.stdin.on('data', (data) => {
                     savedCount++;
                 }
             });
-            console.log(`Saved progress for ${savedCount} players`);
+            // console.log(`Saved progress for ${savedCount} players`);
         }
     }
     else if (command === 'list-players') {
