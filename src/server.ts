@@ -957,7 +957,8 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
 
             // Calculate petal position around player
             const currentTime = Date.now();
-            const baseRadius = 60; // Distance from player center
+            const petalExtension = player.inputs.petalExtension || 1.0;
+            const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
             const angleStep = (Math.PI * 2) / player.loadout.filter(p => p && p.type === 'petal').length;
             const petalIndex = player.loadout.filter(p => p && p.type === 'petal').indexOf(petal);
             

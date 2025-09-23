@@ -300,7 +300,7 @@ class Graphics {
         this.ctx.ellipse(center.x - this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
         this.ctx.stroke();
     }
-    drawPlayer(player, socket) {
+    drawPlayer(player, socket, petalExtension = 1.0) {
         this.ctx.save();
         this.ctx.translate(player.x, player.y);
         // Apply invulnerability visual effect
@@ -377,15 +377,15 @@ class Graphics {
         this.ctx.fillText(player.name || 'Anonymous', 0, -30);
         this.ctx.restore();
         // Draw petals around player (outside of transform context)
-        this.drawPlayerPetals(player);
+        this.drawPlayerPetals(player, petalExtension);
     }
-    drawPlayerPetals(player) {
+    drawPlayerPetals(player, petalExtension = 1.0) {
         // Get all petals from player loadout
         const petals = player.loadout.filter(item => item && item.type === 'petal');
         if (petals.length === 0)
             return;
         const currentTime = Date.now();
-        const baseRadius = 60; // Distance from player center
+        const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = (Math.PI * 2) / petals.length; // Evenly space petals
         petals.forEach((petal, index) => {
             if (!petal || !petal.petalType || !petal.rarity)
@@ -612,7 +612,7 @@ class Graphics {
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     }
-    drawGameObjects(players, enemies, items, currentPlayerId) {
+    drawGameObjects(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
         const viewport = {
             left: this.cameraX,
             top: this.cameraY,
@@ -623,7 +623,7 @@ class Graphics {
         for (const player of players.values()) {
             if (player.x > viewport.left - constants_1.PLAYER_SIZE && player.x < viewport.right + constants_1.PLAYER_SIZE &&
                 player.y > viewport.top - constants_1.PLAYER_SIZE && player.y < viewport.bottom + constants_1.PLAYER_SIZE) {
-                this.drawPlayer(player, currentPlayerId);
+                this.drawPlayer(player, currentPlayerId, petalExtension);
             }
         }
         // Draw enemies
@@ -637,7 +637,7 @@ class Graphics {
             this.drawItem(item);
         }
     }
-    render(players, enemies, items, currentPlayerId) {
+    render(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
         const player = players.get(currentPlayerId);
         if (player) {
             const targetX = player.x - this.canvas.width / 2;
@@ -659,7 +659,7 @@ class Graphics {
         // Draw the map
         this.drawMap(this.mapData);
         // Draw game objects
-        this.drawGameObjects(players, enemies, items, currentPlayerId);
+        this.drawGameObjects(players, enemies, items, currentPlayerId, petalExtension);
         this.ctx.restore();
         // Draw UI elements (not affected by camera)
         this.drawUI(players, currentPlayerId);

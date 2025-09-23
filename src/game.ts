@@ -60,6 +60,7 @@ export class Game {
     private readonly WORLD_WIDTH = ACTUAL_WORLD_WIDTH;  // Increased from 2000 to 10000
     private readonly WORLD_HEIGHT = ACTUAL_WORLD_HEIGHT;  // Keep height the same
     private keysPressed: Set<string> = new Set();
+    private petalExtension: number = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
     private enemies: Map<string, Enemy> = new Map();
     private octopusSprite: HTMLImageElement = new Image();
     private fishSprite: HTMLImageElement = new Image();
@@ -580,7 +581,7 @@ export class Game {
 
     private gameLoop() {
         this.update();
-        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '');
+        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
 
@@ -594,11 +595,36 @@ export class Game {
             }
         }
 
+        // Update petal extension based on key presses
+        this.updatePetalExtension();
+
         const player = this.players.get(this.socket?.id ?? '');
         if (player) {
             this.updatePlayerMovement(player, 1); // Assuming 60fps, so delta is roughly 1
             this.updateCamera(player);
             this.updatePlayerEye();
+        }
+    }
+
+    private updatePetalExtension() {
+        const extensionSpeed = 0.05; // How fast petals extend/retract
+        const maxExtension = 2.0; // Maximum extension multiplier
+        const minExtension = 0.7; // Minimum extension multiplier
+
+        if (this.keysPressed.has(' ')) {
+            // Space key - extend petals
+            this.petalExtension = Math.min(maxExtension, this.petalExtension + extensionSpeed);
+        } else if (this.keysPressed.has('Shift')) {
+            // Shift key - retract petals
+            this.petalExtension = Math.max(minExtension, this.petalExtension - extensionSpeed);
+        } else {
+            // No keys pressed - return to normal
+            const targetExtension = 1.0;
+            if (this.petalExtension > targetExtension) {
+                this.petalExtension = Math.max(targetExtension, this.petalExtension - extensionSpeed);
+            } else if (this.petalExtension < targetExtension) {
+                this.petalExtension = Math.min(targetExtension, this.petalExtension + extensionSpeed);
+            }
         }
     }
 
@@ -621,7 +647,10 @@ export class Game {
         }
         
         // Only send input, don't update position locally
-        this.socket.emit('playerInput', { keys: Array.from(this.keysPressed) });
+        this.socket.emit('playerInput', { 
+            keys: Array.from(this.keysPressed), 
+            petalExtension: this.petalExtension 
+        });
     }
 
     private updatePlayerEye() {

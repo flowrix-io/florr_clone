@@ -8,8 +8,8 @@ exports.PETAL_CONFIG = {
     basic: {
         common: {
             name: "Basic Petal",
-            damage: 5,
-            health: 10,
+            damage: 1,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "A simple petal that provides basic protection",
@@ -20,8 +20,8 @@ exports.PETAL_CONFIG = {
         },
         uncommon: {
             name: "Enhanced Basic Petal",
-            damage: 8,
-            health: 15,
+            damage: 2,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "An improved basic petal with better stats",
@@ -32,8 +32,8 @@ exports.PETAL_CONFIG = {
         },
         rare: {
             name: "Superior Basic Petal",
-            damage: 12,
-            health: 22,
+            damage: 2,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "A superior basic petal with enhanced capabilities",
@@ -44,8 +44,8 @@ exports.PETAL_CONFIG = {
         },
         epic: {
             name: "Elite Basic Petal",
-            damage: 18,
-            health: 32,
+            damage: 2,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "An elite basic petal with impressive power",
@@ -56,8 +56,8 @@ exports.PETAL_CONFIG = {
         },
         legendary: {
             name: "Legendary Basic Petal",
-            damage: 26,
-            health: 45,
+            damage: 3,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "A legendary basic petal of immense strength",
@@ -68,8 +68,8 @@ exports.PETAL_CONFIG = {
         },
         mythic: {
             name: "Mythic Basic Petal",
-            damage: 40,
-            health: 65,
+            damage: 4,
+            health: 5,
             size: 2.0,
             speed: 1.0,
             description: "A mythic basic petal with otherworldly power",
@@ -82,8 +82,8 @@ exports.PETAL_CONFIG = {
     rose: {
         common: {
             name: "Rose Petal",
-            damage: 8,
-            health: 8,
+            damage: 1,
+            health: 1,
             size: 0.9,
             speed: 1.0,
             description: "A thorny petal that deals extra damage",
@@ -94,8 +94,8 @@ exports.PETAL_CONFIG = {
         },
         uncommon: {
             name: "Blood Rose Petal",
-            damage: 12,
-            health: 12,
+            damage: 1,
+            health: 1,
             size: 1.0,
             speed: 1.0,
             description: "A crimson petal with sharp thorns",
@@ -106,8 +106,8 @@ exports.PETAL_CONFIG = {
         },
         rare: {
             name: "Royal Rose Petal",
-            damage: 18,
-            health: 18,
+            damage: 1,
+            health: 1,
             size: 1.1,
             speed: 1.0,
             description: "A majestic rose petal fit for royalty",
@@ -118,8 +118,8 @@ exports.PETAL_CONFIG = {
         },
         epic: {
             name: "Divine Rose Petal",
-            damage: 26,
-            health: 26,
+            damage: 2,
+            health: 2,
             size: 1.2,
             speed: 1.0,
             description: "A divine rose petal blessed with power",
@@ -130,8 +130,8 @@ exports.PETAL_CONFIG = {
         },
         legendary: {
             name: "Eternal Rose Petal",
-            damage: 38,
-            health: 38,
+            damage: 3,
+            health: 6,
             size: 1.3,
             speed: 1.0,
             description: "An eternal rose petal that never wilts",
@@ -142,8 +142,8 @@ exports.PETAL_CONFIG = {
         },
         mythic: {
             name: "Celestial Rose Petal",
-            damage: 55,
-            health: 55,
+            damage: 4,
+            health: 8,
             size: 1.4,
             speed: 1.0,
             description: "A celestial rose petal from the heavens",
@@ -156,8 +156,8 @@ exports.PETAL_CONFIG = {
     stinger: {
         common: {
             name: "Stinger",
-            damage: 12,
-            health: 5,
+            damage: 2,
+            health: 2,
             size: 0.8,
             speed: 1.0,
             description: "A fast, sharp petal that prioritizes offense",
@@ -169,8 +169,8 @@ exports.PETAL_CONFIG = {
         },
         uncommon: {
             name: "Venomous Stinger",
-            damage: 18,
-            health: 7,
+            damage: 2,
+            health: 4,
             size: 0.85,
             speed: 1.0,
             description: "A poisonous stinger with deadly precision",
@@ -182,8 +182,8 @@ exports.PETAL_CONFIG = {
         },
         rare: {
             name: "Barbed Stinger",
-            damage: 26,
-            health: 10,
+            damage: 3,
+            health: 4,
             size: 0.9,
             speed: 1.0,
             description: "A barbed stinger that tears through enemies",
@@ -195,8 +195,8 @@ exports.PETAL_CONFIG = {
         },
         epic: {
             name: "Razor Stinger",
-            damage: 38,
-            health: 14,
+            damage: 5,
+            health: 4,
             size: 0.95,
             speed: 1.0,
             description: "A razor-sharp stinger of incredible lethality",
@@ -208,8 +208,8 @@ exports.PETAL_CONFIG = {
         },
         legendary: {
             name: "Infernal Stinger",
-            damage: 55,
-            health: 20,
+            damage: 8,
+            health: 5,
             size: 1.0,
             speed: 1.0,
             description: "An infernal stinger wreathed in flames",
@@ -221,8 +221,8 @@ exports.PETAL_CONFIG = {
         },
         mythic: {
             name: "Void Stinger",
-            damage: 80,
-            health: 28,
+            damage: 10,
+            health: 5,
             size: 1.1,
             speed: 1.0,
             description: "A void stinger that pierces reality itself",

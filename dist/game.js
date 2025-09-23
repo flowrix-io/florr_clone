@@ -28,6 +28,7 @@ class Game {
         this.WORLD_WIDTH = constants_1.ACTUAL_WORLD_WIDTH; // Increased from 2000 to 10000
         this.WORLD_HEIGHT = constants_1.ACTUAL_WORLD_HEIGHT; // Keep height the same
         this.keysPressed = new Set();
+        this.petalExtension = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
         this.enemies = new Map();
         this.octopusSprite = new Image();
         this.fishSprite = new Image();
@@ -429,7 +430,7 @@ class Game {
     }
     gameLoop() {
         this.update();
-        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '');
+        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
     update() {
@@ -441,11 +442,36 @@ class Game {
                 player.y += (player.targetY - player.y) * lerpFactor;
             }
         }
+        // Update petal extension based on key presses
+        this.updatePetalExtension();
         const player = this.players.get(this.socket?.id ?? '');
         if (player) {
             this.updatePlayerMovement(player, 1); // Assuming 60fps, so delta is roughly 1
             this.updateCamera(player);
             this.updatePlayerEye();
+        }
+    }
+    updatePetalExtension() {
+        const extensionSpeed = 0.05; // How fast petals extend/retract
+        const maxExtension = 2.0; // Maximum extension multiplier
+        const minExtension = 0.7; // Minimum extension multiplier
+        if (this.keysPressed.has(' ')) {
+            // Space key - extend petals
+            this.petalExtension = Math.min(maxExtension, this.petalExtension + extensionSpeed);
+        }
+        else if (this.keysPressed.has('Shift')) {
+            // Shift key - retract petals
+            this.petalExtension = Math.max(minExtension, this.petalExtension - extensionSpeed);
+        }
+        else {
+            // No keys pressed - return to normal
+            const targetExtension = 1.0;
+            if (this.petalExtension > targetExtension) {
+                this.petalExtension = Math.max(targetExtension, this.petalExtension - extensionSpeed);
+            }
+            else if (this.petalExtension < targetExtension) {
+                this.petalExtension = Math.min(targetExtension, this.petalExtension + extensionSpeed);
+            }
         }
     }
     updatePlayerMovement(player, deltaTime) {
@@ -465,7 +491,10 @@ class Game {
             dx += 1;
         }
         // Only send input, don't update position locally
-        this.socket.emit('playerInput', { keys: Array.from(this.keysPressed) });
+        this.socket.emit('playerInput', {
+            keys: Array.from(this.keysPressed),
+            petalExtension: this.petalExtension
+        });
     }
     updatePlayerEye() {
         const player = this.players.get(this.socket?.id ?? '');

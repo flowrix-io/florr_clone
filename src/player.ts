@@ -69,5 +69,6 @@ export interface ServerPlayer {
     useMouse?: boolean;
     mouseX?: number;
     mouseY?: number;
+    petalExtension?: number;
   };
 }

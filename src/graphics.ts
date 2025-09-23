@@ -366,7 +366,7 @@ export class Graphics {
         this.ctx.stroke();
     }
 
-    public drawPlayer(player: Player, socket: string) {
+    public drawPlayer(player: Player, socket: string, petalExtension: number = 1.0) {
         this.ctx.save();
         this.ctx.translate(player.x, player.y);
 
@@ -458,16 +458,16 @@ export class Graphics {
         this.ctx.restore();
         
         // Draw petals around player (outside of transform context)
-        this.drawPlayerPetals(player);
+        this.drawPlayerPetals(player, petalExtension);
     }
 
-    private drawPlayerPetals(player: Player) {
+    private drawPlayerPetals(player: Player, petalExtension: number = 1.0) {
         // Get all petals from player loadout
         const petals = player.loadout.filter(item => item && item.type === 'petal');
         if (petals.length === 0) return;
 
         const currentTime = Date.now();
-        const baseRadius = 60; // Distance from player center
+        const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = (Math.PI * 2) / petals.length; // Evenly space petals
 
         petals.forEach((petal, index) => {
@@ -752,7 +752,7 @@ export class Graphics {
         this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     }
 
-    public drawGameObjects(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, currentPlayerId: string) {
+    public drawGameObjects(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, currentPlayerId: string, petalExtension: number = 1.0) {
         const viewport = {
             left: this.cameraX,
             top: this.cameraY,
@@ -764,7 +764,7 @@ export class Graphics {
         for (const player of players.values()) {
             if (player.x > viewport.left - PLAYER_SIZE && player.x < viewport.right + PLAYER_SIZE &&
                 player.y > viewport.top - PLAYER_SIZE && player.y < viewport.bottom + PLAYER_SIZE) {
-                this.drawPlayer(player, currentPlayerId);
+                this.drawPlayer(player, currentPlayerId, petalExtension);
             }
         }
 
@@ -781,7 +781,7 @@ export class Graphics {
         }
     }
 
-    public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, currentPlayerId: string) {
+    public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, currentPlayerId: string, petalExtension: number = 1.0) {
         const player = players.get(currentPlayerId);
         if (player) {
             const targetX = player.x - this.canvas.width / 2;
@@ -815,7 +815,7 @@ export class Graphics {
         this.drawMap(this.mapData);
 
         // Draw game objects
-        this.drawGameObjects(players, enemies, items, currentPlayerId);
+        this.drawGameObjects(players, enemies, items, currentPlayerId, petalExtension);
 
         this.ctx.restore();
 

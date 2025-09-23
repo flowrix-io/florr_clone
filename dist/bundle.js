@@ -14,8 +14,8 @@ const PETAL_CONFIG = {
     basic: {
         common: {
             name: "Basic Petal",
-            damage: 5,
-            health: 10,
+            damage: 1,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "A simple petal that provides basic protection",
@@ -26,8 +26,8 @@ const PETAL_CONFIG = {
         },
         uncommon: {
             name: "Enhanced Basic Petal",
-            damage: 8,
-            health: 15,
+            damage: 2,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "An improved basic petal with better stats",
@@ -38,8 +38,8 @@ const PETAL_CONFIG = {
         },
         rare: {
             name: "Superior Basic Petal",
-            damage: 12,
-            health: 22,
+            damage: 2,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "A superior basic petal with enhanced capabilities",
@@ -50,8 +50,8 @@ const PETAL_CONFIG = {
         },
         epic: {
             name: "Elite Basic Petal",
-            damage: 18,
-            health: 32,
+            damage: 2,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "An elite basic petal with impressive power",
@@ -62,8 +62,8 @@ const PETAL_CONFIG = {
         },
         legendary: {
             name: "Legendary Basic Petal",
-            damage: 26,
-            health: 45,
+            damage: 3,
+            health: 2,
             size: 2.0,
             speed: 1.0,
             description: "A legendary basic petal of immense strength",
@@ -74,8 +74,8 @@ const PETAL_CONFIG = {
         },
         mythic: {
             name: "Mythic Basic Petal",
-            damage: 40,
-            health: 65,
+            damage: 4,
+            health: 5,
             size: 2.0,
             speed: 1.0,
             description: "A mythic basic petal with otherworldly power",
@@ -88,8 +88,8 @@ const PETAL_CONFIG = {
     rose: {
         common: {
             name: "Rose Petal",
-            damage: 8,
-            health: 8,
+            damage: 1,
+            health: 1,
             size: 0.9,
             speed: 1.0,
             description: "A thorny petal that deals extra damage",
@@ -100,8 +100,8 @@ const PETAL_CONFIG = {
         },
         uncommon: {
             name: "Blood Rose Petal",
-            damage: 12,
-            health: 12,
+            damage: 1,
+            health: 1,
             size: 1.0,
             speed: 1.0,
             description: "A crimson petal with sharp thorns",
@@ -112,8 +112,8 @@ const PETAL_CONFIG = {
         },
         rare: {
             name: "Royal Rose Petal",
-            damage: 18,
-            health: 18,
+            damage: 1,
+            health: 1,
             size: 1.1,
             speed: 1.0,
             description: "A majestic rose petal fit for royalty",
@@ -124,8 +124,8 @@ const PETAL_CONFIG = {
         },
         epic: {
             name: "Divine Rose Petal",
-            damage: 26,
-            health: 26,
+            damage: 2,
+            health: 2,
             size: 1.2,
             speed: 1.0,
             description: "A divine rose petal blessed with power",
@@ -136,8 +136,8 @@ const PETAL_CONFIG = {
         },
         legendary: {
             name: "Eternal Rose Petal",
-            damage: 38,
-            health: 38,
+            damage: 3,
+            health: 6,
             size: 1.3,
             speed: 1.0,
             description: "An eternal rose petal that never wilts",
@@ -148,8 +148,8 @@ const PETAL_CONFIG = {
         },
         mythic: {
             name: "Celestial Rose Petal",
-            damage: 55,
-            health: 55,
+            damage: 4,
+            health: 8,
             size: 1.4,
             speed: 1.0,
             description: "A celestial rose petal from the heavens",
@@ -162,8 +162,8 @@ const PETAL_CONFIG = {
     stinger: {
         common: {
             name: "Stinger",
-            damage: 12,
-            health: 5,
+            damage: 2,
+            health: 2,
             size: 0.8,
             speed: 1.0,
             description: "A fast, sharp petal that prioritizes offense",
@@ -175,8 +175,8 @@ const PETAL_CONFIG = {
         },
         uncommon: {
             name: "Venomous Stinger",
-            damage: 18,
-            health: 7,
+            damage: 2,
+            health: 4,
             size: 0.85,
             speed: 1.0,
             description: "A poisonous stinger with deadly precision",
@@ -188,8 +188,8 @@ const PETAL_CONFIG = {
         },
         rare: {
             name: "Barbed Stinger",
-            damage: 26,
-            health: 10,
+            damage: 3,
+            health: 4,
             size: 0.9,
             speed: 1.0,
             description: "A barbed stinger that tears through enemies",
@@ -201,8 +201,8 @@ const PETAL_CONFIG = {
         },
         epic: {
             name: "Razor Stinger",
-            damage: 38,
-            health: 14,
+            damage: 5,
+            health: 4,
             size: 0.95,
             speed: 1.0,
             description: "A razor-sharp stinger of incredible lethality",
@@ -214,8 +214,8 @@ const PETAL_CONFIG = {
         },
         legendary: {
             name: "Infernal Stinger",
-            damage: 55,
-            health: 20,
+            damage: 8,
+            health: 5,
             size: 1.0,
             speed: 1.0,
             description: "An infernal stinger wreathed in flames",
@@ -227,8 +227,8 @@ const PETAL_CONFIG = {
         },
         mythic: {
             name: "Void Stinger",
-            damage: 80,
-            health: 28,
+            damage: 10,
+            health: 5,
             size: 1.1,
             speed: 1.0,
             description: "A void stinger that pierces reality itself",
@@ -1681,7 +1681,7 @@ class Graphics {
         this.ctx.ellipse(center.x - this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
         this.ctx.stroke();
     }
-    drawPlayer(player, socket) {
+    drawPlayer(player, socket, petalExtension = 1.0) {
         this.ctx.save();
         this.ctx.translate(player.x, player.y);
         // Apply invulnerability visual effect
@@ -1758,15 +1758,15 @@ class Graphics {
         this.ctx.fillText(player.name || 'Anonymous', 0, -30);
         this.ctx.restore();
         // Draw petals around player (outside of transform context)
-        this.drawPlayerPetals(player);
+        this.drawPlayerPetals(player, petalExtension);
     }
-    drawPlayerPetals(player) {
+    drawPlayerPetals(player, petalExtension = 1.0) {
         // Get all petals from player loadout
         const petals = player.loadout.filter(item => item && item.type === 'petal');
         if (petals.length === 0)
             return;
         const currentTime = Date.now();
-        const baseRadius = 60; // Distance from player center
+        const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = (Math.PI * 2) / petals.length; // Evenly space petals
         petals.forEach((petal, index) => {
             if (!petal || !petal.petalType || !petal.rarity)
@@ -1993,7 +1993,7 @@ class Graphics {
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     }
-    drawGameObjects(players, enemies, items, currentPlayerId) {
+    drawGameObjects(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
         const viewport = {
             left: this.cameraX,
             top: this.cameraY,
@@ -2004,7 +2004,7 @@ class Graphics {
         for (const player of players.values()) {
             if (player.x > viewport.left - PLAYER_SIZE && player.x < viewport.right + PLAYER_SIZE &&
                 player.y > viewport.top - PLAYER_SIZE && player.y < viewport.bottom + PLAYER_SIZE) {
-                this.drawPlayer(player, currentPlayerId);
+                this.drawPlayer(player, currentPlayerId, petalExtension);
             }
         }
         // Draw enemies
@@ -2018,7 +2018,7 @@ class Graphics {
             this.drawItem(item);
         }
     }
-    render(players, enemies, items, currentPlayerId) {
+    render(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
         const player = players.get(currentPlayerId);
         if (player) {
             const targetX = player.x - this.canvas.width / 2;
@@ -2040,7 +2040,7 @@ class Graphics {
         // Draw the map
         this.drawMap(this.mapData);
         // Draw game objects
-        this.drawGameObjects(players, enemies, items, currentPlayerId);
+        this.drawGameObjects(players, enemies, items, currentPlayerId, petalExtension);
         this.ctx.restore();
         // Draw UI elements (not affected by camera)
         this.drawUI(players, currentPlayerId);
@@ -7951,6 +7951,7 @@ class Game {
         this.WORLD_WIDTH = ACTUAL_WORLD_WIDTH; // Increased from 2000 to 10000
         this.WORLD_HEIGHT = ACTUAL_WORLD_HEIGHT; // Keep height the same
         this.keysPressed = new Set();
+        this.petalExtension = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
         this.enemies = new Map();
         this.octopusSprite = new Image();
         this.fishSprite = new Image();
@@ -8352,7 +8353,7 @@ class Game {
     }
     gameLoop() {
         this.update();
-        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '');
+        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
     update() {
@@ -8364,11 +8365,36 @@ class Game {
                 player.y += (player.targetY - player.y) * lerpFactor;
             }
         }
+        // Update petal extension based on key presses
+        this.updatePetalExtension();
         const player = this.players.get(this.socket?.id ?? '');
         if (player) {
             this.updatePlayerMovement(player, 1); // Assuming 60fps, so delta is roughly 1
             this.updateCamera(player);
             this.updatePlayerEye();
+        }
+    }
+    updatePetalExtension() {
+        const extensionSpeed = 0.05; // How fast petals extend/retract
+        const maxExtension = 2.0; // Maximum extension multiplier
+        const minExtension = 0.7; // Minimum extension multiplier
+        if (this.keysPressed.has(' ')) {
+            // Space key - extend petals
+            this.petalExtension = Math.min(maxExtension, this.petalExtension + extensionSpeed);
+        }
+        else if (this.keysPressed.has('Shift')) {
+            // Shift key - retract petals
+            this.petalExtension = Math.max(minExtension, this.petalExtension - extensionSpeed);
+        }
+        else {
+            // No keys pressed - return to normal
+            const targetExtension = 1.0;
+            if (this.petalExtension > targetExtension) {
+                this.petalExtension = Math.max(targetExtension, this.petalExtension - extensionSpeed);
+            }
+            else if (this.petalExtension < targetExtension) {
+                this.petalExtension = Math.min(targetExtension, this.petalExtension + extensionSpeed);
+            }
         }
     }
     updatePlayerMovement(player, deltaTime) {
@@ -8388,7 +8414,10 @@ class Game {
             dx += 1;
         }
         // Only send input, don't update position locally
-        this.socket.emit('playerInput', { keys: Array.from(this.keysPressed) });
+        this.socket.emit('playerInput', {
+            keys: Array.from(this.keysPressed),
+            petalExtension: this.petalExtension
+        });
     }
     updatePlayerEye() {
         const player = this.players.get(this.socket?.id ?? '');
