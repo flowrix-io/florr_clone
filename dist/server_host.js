@@ -4,6 +4,31 @@ const constants_1 = require("./constants");
 const server_utils_1 = require("./server_utils");
 const signaling_1 = require("./signaling");
 const mobs_1 = require("./mobs");
+const petals_1 = require("./petals");
+// Helper function to create initial basic petals for new players
+function createInitialBasicPetals() {
+    const basicPetalStats = (0, petals_1.getPetalStats)('basic', 'common');
+    if (!basicPetalStats) {
+        console.error('Failed to get basic petal stats');
+        return [];
+    }
+    return Array(5).fill(null).map(() => ({
+        type: 'petal',
+        rarity: 'common',
+        petalType: 'basic',
+        health: basicPetalStats.health,
+        maxHealth: basicPetalStats.health,
+        onCooldown: false
+    }));
+}
+// Helper function to create initial inventory with basic petals
+function createInitialInventory() {
+    return {
+        common: {
+            'petal_basic': 5
+        }
+    };
+}
 class GameServer {
     constructor() {
         this.connections = new Map();
@@ -92,8 +117,8 @@ class GameServer {
             health: constants_1.PLAYER_MAX_HEALTH,
             maxHealth: constants_1.PLAYER_MAX_HEALTH,
             damage: constants_1.PLAYER_DAMAGE,
-            inventory: {},
-            loadout: Array(10).fill(null),
+            inventory: createInitialInventory(),
+            loadout: createInitialBasicPetals().concat(Array(5).fill(null)),
             isInvulnerable: true,
             level: 1,
             xp: 0,

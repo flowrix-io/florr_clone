@@ -1,24 +1,64 @@
 {
   "players": {
-    "g3esagcdx": {
-      "level": 1,
-      "xp": 20,
-      "maxHealth": 100,
-      "damage": 5,
+    "t9pyo2soj": {
+      "level": 2,
+      "xp": 5,
+      "maxHealth": 110,
+      "damage": 7,
       "inventory": {
         "common": {
+          "petal_basic": 5,
+          "petal_stinger": 1,
           "shield": 1
+        },
+        "uncommon": {
+          "speed_boost": 1
+        },
+        "rare": {
+          "petal_rose": 1
         }
       },
       "loadout": [
         {
-          "type": "health_potion",
-          "rarity": "common"
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 2,
+          "onCooldown": false
         },
-        null,
-        null,
-        null,
-        null,
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 1,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 6,
+          "onCooldown": false
+        },
         null,
         null,
         null,
@@ -29,7 +69,7 @@
   },
   "users": {
     "sussy": {
-      "id": "g3esagcdx",
+      "id": "t9pyo2soj",
       "username": "sussy",
       "password": "sussy"
     }

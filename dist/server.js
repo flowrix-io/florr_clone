@@ -19,6 +19,30 @@ const decorations = [];
 const sands = [];
 let ENEMY_COUNT = 1000;
 const playerUserIds = {}; // Maps player ID to user ID
+// Helper function to create initial basic petals for new players
+function createInitialBasicPetals() {
+    const basicPetalStats = (0, petals_1.getPetalStats)('basic', 'common');
+    if (!basicPetalStats) {
+        console.error('Failed to get basic petal stats');
+        return [];
+    }
+    return Array(5).fill(null).map(() => ({
+        type: 'petal',
+        rarity: 'common',
+        petalType: 'basic',
+        health: basicPetalStats.health,
+        maxHealth: basicPetalStats.health,
+        onCooldown: false
+    }));
+}
+// Helper function to create initial inventory with basic petals
+function createInitialInventory() {
+    return {
+        common: {
+            'petal_basic': 5
+        }
+    };
+}
 // Add body parser middleware for JSON
 app.use(express_1.default.json());
 // Add CORS middleware with specific origin
@@ -539,8 +563,8 @@ io.on('connection', (socket) => {
                 health: savedProgress?.maxHealth || constants_1.PLAYER_MAX_HEALTH,
                 maxHealth: savedProgress?.maxHealth || constants_1.PLAYER_MAX_HEALTH,
                 damage: savedProgress?.damage || constants_1.PLAYER_DAMAGE,
-                inventory: savedProgress?.inventory || {},
-                loadout: savedProgress?.loadout || Array(10).fill(null),
+                inventory: savedProgress?.inventory || createInitialInventory(),
+                loadout: savedProgress?.loadout || createInitialBasicPetals().concat(Array(5).fill(null)),
                 isInvulnerable: true,
                 level: savedProgress?.level || 1,
                 xp: savedProgress?.xp || 0,
