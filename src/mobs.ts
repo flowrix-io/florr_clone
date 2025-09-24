@@ -403,18 +403,37 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="16" cy="16" r="16" fill="#ff0000"/>
-<circle cx="35" cy="16" r="12" fill="#000000" clip-path="url(#cut-off-circle)"/>
-<circle cx="12" cy="23" r="4" fill="#000000"/>
-<circle cx="16" cy="8" r="4" fill="#000000"/>
-<circle cx="5" cy="14" r="4" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-38 -38 76 76" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="ladybug-body-clip">
+      <path d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z" />
+    </clipPath>
+  </defs>
+
+  <circle cx="15" cy="0" r="18.5" fill="#111111" />
+
+  <path 
+    fill="#eb4034" 
+    fill-rule="evenodd"
+    d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z"
+  />
+
+  <g clip-path="url(#ladybug-body-clip)" fill="#111111">
+    <circle cx="-15.3" cy="15.8" r="6.1" />
+    <circle cx="5.2" cy="20.1" r="5.5" />
+    <circle cx="0.5" cy="-0.8" r="8.2" />
+    <circle cx="-20.9" cy="-10.4" r="4.8" />
+    <circle cx="10.7" cy="-22.6" r="7.0" />
+    <circle cx="-5.4" cy="-25.3" r="5.8" />
+    <circle cx="15.1" cy="5.9" r="6.6" />
+  </g>
+  
+  <path 
+    fill="#bc332a" 
+    fill-rule="evenodd"
+    d="M 27.64 18.91 Q 19.81 30.36 6.17 32.92 Q -7.46 35.48 -18.91 27.64 Q -30.36 19.81 -32.92 6.17 Q -35.48 -7.46 -27.64 -18.91 Q -19.81 -30.36 -6.17 -32.92 Q 7.46 -35.48 18.91 -27.64 Q 24.10 -24.10 27.64 -18.91 Q 28.32 -17.92 28.25 -16.73 Q 28.18 -15.54 27.39 -14.63 Q 14.64 0 27.39 14.63 Q 28.18 15.54 28.25 16.73 Q 28.32 17.92 27.64 18.91 L 27.64 18.91 M 21.87 14.96 L 24.76 16.93 L 22.12 19.23 Q 5.35 0 22.12 -19.23 L 24.76 -16.93 L 21.87 -14.96 Q 19.06 -19.06 14.96 -21.87 Q 5.90 -28.06 -4.88 -26.04 Q -15.67 -24.02 -21.87 -14.96 Q -28.06 -5.90 -26.04 4.88 Q -24.02 15.67 -14.96 21.87 Q -5.90 28.06 4.88 26.04 Q 15.67 24.02 21.87 14.96 Z"
+  />
+
 </svg>`,
             is_hostile: false,
             range: 100
@@ -428,18 +447,37 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="16" cy="16" r="16" fill="#ff0000"/>
-<circle cx="35" cy="16" r="12" fill="#000000" clip-path="url(#cut-off-circle)"/>
-<circle cx="12" cy="23" r="4" fill="#000000"/>
-<circle cx="16" cy="8" r="4" fill="#000000"/>
-<circle cx="5" cy="14" r="4" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-38 -38 76 76" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="ladybug-body-clip">
+      <path d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z" />
+    </clipPath>
+  </defs>
+
+  <circle cx="15" cy="0" r="18.5" fill="#111111" />
+
+  <path 
+    fill="#eb4034" 
+    fill-rule="evenodd"
+    d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z"
+  />
+
+  <g clip-path="url(#ladybug-body-clip)" fill="#111111">
+    <circle cx="-15.3" cy="15.8" r="6.1" />
+    <circle cx="5.2" cy="20.1" r="5.5" />
+    <circle cx="0.5" cy="-0.8" r="8.2" />
+    <circle cx="-20.9" cy="-10.4" r="4.8" />
+    <circle cx="10.7" cy="-22.6" r="7.0" />
+    <circle cx="-5.4" cy="-25.3" r="5.8" />
+    <circle cx="15.1" cy="5.9" r="6.6" />
+  </g>
+  
+  <path 
+    fill="#bc332a" 
+    fill-rule="evenodd"
+    d="M 27.64 18.91 Q 19.81 30.36 6.17 32.92 Q -7.46 35.48 -18.91 27.64 Q -30.36 19.81 -32.92 6.17 Q -35.48 -7.46 -27.64 -18.91 Q -19.81 -30.36 -6.17 -32.92 Q 7.46 -35.48 18.91 -27.64 Q 24.10 -24.10 27.64 -18.91 Q 28.32 -17.92 28.25 -16.73 Q 28.18 -15.54 27.39 -14.63 Q 14.64 0 27.39 14.63 Q 28.18 15.54 28.25 16.73 Q 28.32 17.92 27.64 18.91 L 27.64 18.91 M 21.87 14.96 L 24.76 16.93 L 22.12 19.23 Q 5.35 0 22.12 -19.23 L 24.76 -16.93 L 21.87 -14.96 Q 19.06 -19.06 14.96 -21.87 Q 5.90 -28.06 -4.88 -26.04 Q -15.67 -24.02 -21.87 -14.96 Q -28.06 -5.90 -26.04 4.88 Q -24.02 15.67 -14.96 21.87 Q -5.90 28.06 4.88 26.04 Q 15.67 24.02 21.87 14.96 Z"
+  />
+
 </svg>`,
             is_hostile: false,
             range: 100
@@ -453,18 +491,37 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="16" cy="16" r="16" fill="#ff0000"/>
-<circle cx="35" cy="16" r="12" fill="#000000" clip-path="url(#cut-off-circle)"/>
-<circle cx="12" cy="23" r="4" fill="#000000"/>
-<circle cx="16" cy="8" r="4" fill="#000000"/>
-<circle cx="5" cy="14" r="4" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-38 -38 76 76" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="ladybug-body-clip">
+      <path d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z" />
+    </clipPath>
+  </defs>
+
+  <circle cx="15" cy="0" r="18.5" fill="#111111" />
+
+  <path 
+    fill="#eb4034" 
+    fill-rule="evenodd"
+    d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z"
+  />
+
+  <g clip-path="url(#ladybug-body-clip)" fill="#111111">
+    <circle cx="-15.3" cy="15.8" r="6.1" />
+    <circle cx="5.2" cy="20.1" r="5.5" />
+    <circle cx="0.5" cy="-0.8" r="8.2" />
+    <circle cx="-20.9" cy="-10.4" r="4.8" />
+    <circle cx="10.7" cy="-22.6" r="7.0" />
+    <circle cx="-5.4" cy="-25.3" r="5.8" />
+    <circle cx="15.1" cy="5.9" r="6.6" />
+  </g>
+  
+  <path 
+    fill="#bc332a" 
+    fill-rule="evenodd"
+    d="M 27.64 18.91 Q 19.81 30.36 6.17 32.92 Q -7.46 35.48 -18.91 27.64 Q -30.36 19.81 -32.92 6.17 Q -35.48 -7.46 -27.64 -18.91 Q -19.81 -30.36 -6.17 -32.92 Q 7.46 -35.48 18.91 -27.64 Q 24.10 -24.10 27.64 -18.91 Q 28.32 -17.92 28.25 -16.73 Q 28.18 -15.54 27.39 -14.63 Q 14.64 0 27.39 14.63 Q 28.18 15.54 28.25 16.73 Q 28.32 17.92 27.64 18.91 L 27.64 18.91 M 21.87 14.96 L 24.76 16.93 L 22.12 19.23 Q 5.35 0 22.12 -19.23 L 24.76 -16.93 L 21.87 -14.96 Q 19.06 -19.06 14.96 -21.87 Q 5.90 -28.06 -4.88 -26.04 Q -15.67 -24.02 -21.87 -14.96 Q -28.06 -5.90 -26.04 4.88 Q -24.02 15.67 -14.96 21.87 Q -5.90 28.06 4.88 26.04 Q 15.67 24.02 21.87 14.96 Z"
+  />
+
 </svg>`,
             is_hostile: false,
             range: 100
@@ -478,18 +535,37 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="16" cy="16" r="16" fill="#ff0000"/>
-<circle cx="35" cy="16" r="12" fill="#000000" clip-path="url(#cut-off-circle)"/>
-<circle cx="12" cy="23" r="4" fill="#000000"/>
-<circle cx="16" cy="8" r="4" fill="#000000"/>
-<circle cx="5" cy="14" r="4" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-38 -38 76 76" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="ladybug-body-clip">
+      <path d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z" />
+    </clipPath>
+  </defs>
+
+  <circle cx="15" cy="0" r="18.5" fill="#111111" />
+
+  <path 
+    fill="#eb4034" 
+    fill-rule="evenodd"
+    d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z"
+  />
+
+  <g clip-path="url(#ladybug-body-clip)" fill="#111111">
+    <circle cx="-15.3" cy="15.8" r="6.1" />
+    <circle cx="5.2" cy="20.1" r="5.5" />
+    <circle cx="0.5" cy="-0.8" r="8.2" />
+    <circle cx="-20.9" cy="-10.4" r="4.8" />
+    <circle cx="10.7" cy="-22.6" r="7.0" />
+    <circle cx="-5.4" cy="-25.3" r="5.8" />
+    <circle cx="15.1" cy="5.9" r="6.6" />
+  </g>
+  
+  <path 
+    fill="#bc332a" 
+    fill-rule="evenodd"
+    d="M 27.64 18.91 Q 19.81 30.36 6.17 32.92 Q -7.46 35.48 -18.91 27.64 Q -30.36 19.81 -32.92 6.17 Q -35.48 -7.46 -27.64 -18.91 Q -19.81 -30.36 -6.17 -32.92 Q 7.46 -35.48 18.91 -27.64 Q 24.10 -24.10 27.64 -18.91 Q 28.32 -17.92 28.25 -16.73 Q 28.18 -15.54 27.39 -14.63 Q 14.64 0 27.39 14.63 Q 28.18 15.54 28.25 16.73 Q 28.32 17.92 27.64 18.91 L 27.64 18.91 M 21.87 14.96 L 24.76 16.93 L 22.12 19.23 Q 5.35 0 22.12 -19.23 L 24.76 -16.93 L 21.87 -14.96 Q 19.06 -19.06 14.96 -21.87 Q 5.90 -28.06 -4.88 -26.04 Q -15.67 -24.02 -21.87 -14.96 Q -28.06 -5.90 -26.04 4.88 Q -24.02 15.67 -14.96 21.87 Q -5.90 28.06 4.88 26.04 Q 15.67 24.02 21.87 14.96 Z"
+  />
+
 </svg>`,
             is_hostile: false,
             range: 100
@@ -503,18 +579,37 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="16" cy="16" r="16" fill="#ff0000"/>
-<circle cx="35" cy="16" r="12" fill="#000000" clip-path="url(#cut-off-circle)"/>
-<circle cx="12" cy="23" r="4" fill="#000000"/>
-<circle cx="16" cy="8" r="4" fill="#000000"/>
-<circle cx="5" cy="14" r="4" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-38 -38 76 76" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="ladybug-body-clip">
+      <path d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z" />
+    </clipPath>
+  </defs>
+
+  <circle cx="15" cy="0" r="18.5" fill="#111111" />
+
+  <path 
+    fill="#eb4034" 
+    fill-rule="evenodd"
+    d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z"
+  />
+
+  <g clip-path="url(#ladybug-body-clip)" fill="#111111">
+    <circle cx="-15.3" cy="15.8" r="6.1" />
+    <circle cx="5.2" cy="20.1" r="5.5" />
+    <circle cx="0.5" cy="-0.8" r="8.2" />
+    <circle cx="-20.9" cy="-10.4" r="4.8" />
+    <circle cx="10.7" cy="-22.6" r="7.0" />
+    <circle cx="-5.4" cy="-25.3" r="5.8" />
+    <circle cx="15.1" cy="5.9" r="6.6" />
+  </g>
+  
+  <path 
+    fill="#bc332a" 
+    fill-rule="evenodd"
+    d="M 27.64 18.91 Q 19.81 30.36 6.17 32.92 Q -7.46 35.48 -18.91 27.64 Q -30.36 19.81 -32.92 6.17 Q -35.48 -7.46 -27.64 -18.91 Q -19.81 -30.36 -6.17 -32.92 Q 7.46 -35.48 18.91 -27.64 Q 24.10 -24.10 27.64 -18.91 Q 28.32 -17.92 28.25 -16.73 Q 28.18 -15.54 27.39 -14.63 Q 14.64 0 27.39 14.63 Q 28.18 15.54 28.25 16.73 Q 28.32 17.92 27.64 18.91 L 27.64 18.91 M 21.87 14.96 L 24.76 16.93 L 22.12 19.23 Q 5.35 0 22.12 -19.23 L 24.76 -16.93 L 21.87 -14.96 Q 19.06 -19.06 14.96 -21.87 Q 5.90 -28.06 -4.88 -26.04 Q -15.67 -24.02 -21.87 -14.96 Q -28.06 -5.90 -26.04 4.88 Q -24.02 15.67 -14.96 21.87 Q -5.90 28.06 4.88 26.04 Q 15.67 24.02 21.87 14.96 Z"
+  />
+
 </svg>`,
             is_hostile: false,
             range: 100
@@ -528,18 +623,37 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="16" cy="16" r="16" fill="#ff0000"/>
-<circle cx="35" cy="16" r="12" fill="#000000" clip-path="url(#cut-off-circle)"/>
-<circle cx="12" cy="23" r="4" fill="#000000"/>
-<circle cx="16" cy="8" r="4" fill="#000000"/>
-<circle cx="5" cy="14" r="4" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-38 -38 76 76" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="ladybug-body-clip">
+      <path d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z" />
+    </clipPath>
+  </defs>
+
+  <circle cx="15" cy="0" r="18.5" fill="#111111" />
+
+  <path 
+    fill="#eb4034" 
+    fill-rule="evenodd"
+    d="M 24.76 16.93 Q 17.74 27.19 5.53 29.48 Q -6.68 31.77 -16.93 24.76 Q -27.19 17.74 -29.48 5.53 Q -31.77 -6.68 -24.76 -16.93 Q -17.74 -27.19 -5.53 -29.48 Q 6.68 -31.77 16.93 -24.76 Q 19.24 -23.18 21.21 -21.21 Q 23.18 -19.24 24.76 -16.93 Q 10 0 24.76 16.93 Z"
+  />
+
+  <g clip-path="url(#ladybug-body-clip)" fill="#111111">
+    <circle cx="-15.3" cy="15.8" r="6.1" />
+    <circle cx="5.2" cy="20.1" r="5.5" />
+    <circle cx="0.5" cy="-0.8" r="8.2" />
+    <circle cx="-20.9" cy="-10.4" r="4.8" />
+    <circle cx="10.7" cy="-22.6" r="7.0" />
+    <circle cx="-5.4" cy="-25.3" r="5.8" />
+    <circle cx="15.1" cy="5.9" r="6.6" />
+  </g>
+  
+  <path 
+    fill="#bc332a" 
+    fill-rule="evenodd"
+    d="M 27.64 18.91 Q 19.81 30.36 6.17 32.92 Q -7.46 35.48 -18.91 27.64 Q -30.36 19.81 -32.92 6.17 Q -35.48 -7.46 -27.64 -18.91 Q -19.81 -30.36 -6.17 -32.92 Q 7.46 -35.48 18.91 -27.64 Q 24.10 -24.10 27.64 -18.91 Q 28.32 -17.92 28.25 -16.73 Q 28.18 -15.54 27.39 -14.63 Q 14.64 0 27.39 14.63 Q 28.18 15.54 28.25 16.73 Q 28.32 17.92 27.64 18.91 L 27.64 18.91 M 21.87 14.96 L 24.76 16.93 L 22.12 19.23 Q 5.35 0 22.12 -19.23 L 24.76 -16.93 L 21.87 -14.96 Q 19.06 -19.06 14.96 -21.87 Q 5.90 -28.06 -4.88 -26.04 Q -15.67 -24.02 -21.87 -14.96 Q -28.06 -5.90 -26.04 4.88 Q -24.02 15.67 -14.96 21.87 Q -5.90 28.06 4.88 26.04 Q 15.67 24.02 21.87 14.96 Z"
+  />
+
 </svg>`,
             is_hostile: false,
             range: 100
