@@ -422,6 +422,7 @@ function setupSocketListeners(game) {
     // Listen for server game state updates for better synchronization
     game.socket.on('gameStateUpdate', (data) => {
         const serverPlayers = data.players;
+        const serverEnemies = data.enemies;
         serverPlayers.forEach(serverPlayer => {
             const existingPlayer = game.players.get(serverPlayer.id);
             if (existingPlayer) {
@@ -444,6 +445,12 @@ function setupSocketListeners(game) {
                 });
             }
         });
+        if (serverEnemies) {
+            game.enemies.clear();
+            serverEnemies.forEach(enemy => {
+                game.enemies.set(enemy.id, enemy);
+            });
+        }
     });
     game.socket.on('updatePlayers', (serverPlayers) => {
         const serverPlayerIds = serverPlayers.map(p => p.id);

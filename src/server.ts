@@ -9,7 +9,7 @@ import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS,
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, addXPToPlayer } from './server_utils';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getAllPetalTypes, getPetalStats } from './petals';
-import { MOB_CONFIG, getMobStats } from './mobs';
+import { MOB_CONFIG, getMobStats, getAllMobTypes } from './mobs';
 const app = express();
 
 const items: WorldItem[] = [];
@@ -412,15 +412,12 @@ function createEnemy(): Enemy {
     }
 
     // Select mob type (fish, octopus, or shark)
-    const mobTypeRoll = Math.random();
-    let mobType: Enemy['type'] = 'fish';
-    if (mobTypeRoll < 0.4) {
-        mobType = 'fish';
-    } else if (mobTypeRoll < 0.8) {
-        mobType = 'octopus';
-    } else {
-        mobType = 'shark';
+    const allMobTypes = getAllMobTypes();
+    if (allMobTypes.length === 0) {
+        console.error("No mob types found in MOB_CONFIG.");
+        return null as any;
     }
+    const mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
 
     // Get mob stats from config
     const mobStats = getMobStats(mobType, tier);
@@ -428,6 +425,14 @@ function createEnemy(): Enemy {
         console.error(`No mob stats found for ${mobType} ${tier}`);
         return null as any;
     }
+
+    console.log(`[DEBUG] Spawning ${mobType} (${tier}) mob with stats:`, {
+        health: mobStats.health,
+        damage: mobStats.damage,
+        speed: mobStats.speed,
+        isHostile: mobStats.is_hostile,
+        range: mobStats.range
+    });
 
     const currentTime = Date.now();
     return {

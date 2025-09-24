@@ -26,6 +26,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Graphics = void 0;
 const constants_1 = require("./constants");
 const petals_1 = require("./petals");
+const mobs_1 = require("./mobs");
 class Graphics {
     constructor(canvas, playerSprite, wallTexture, octopusSprite, fishSprite, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
         this.cameraX = 0;
@@ -84,6 +85,7 @@ class Graphics {
         this.showHitboxes = false;
         this.itemSprites = {};
         this.petalImageCache = {};
+        this.mobImageCache = new Map();
         this.canvas = canvas;
         this.ctx = this.canvas.getContext('2d');
         this.playerSprite = playerSprite;
@@ -94,6 +96,27 @@ class Graphics {
         this.speedBoostSprite = speedBoostSprite;
         this.shieldSprite = shieldSprite;
         this.backgroundTexture = backgroundTexture;
+        // Preload all mob SVG images
+        this.preloadMobImages();
+    }
+    async preloadMobImages() {
+        const mobTypes = (0, mobs_1.getAllMobTypes)();
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        for (const mobType of mobTypes) {
+            for (const rarity of rarities) {
+                const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);
+                if (mobStats && mobStats.image) {
+                    const cacheKey = `${mobType}_${rarity}`;
+                    try {
+                        await this.loadSVGAsImage(mobStats.image, cacheKey);
+                        console.log(`[GRAPHICS] Preloaded ${mobType} ${rarity} sprite`);
+                    }
+                    catch (error) {
+                        console.error(`[GRAPHICS] Failed to load ${mobType} ${rarity} sprite:`, error);
+                    }
+                }
+            }
+        }
     }
     clear() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -449,15 +472,48 @@ class Graphics {
             this.ctx.restore();
         });
     }
+    async loadSVGAsImage(svgString, cacheKey) {
+        // Check cache first
+        if (this.mobImageCache.has(cacheKey)) {
+            return this.mobImageCache.get(cacheKey);
+        }
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            const dataUrl = 'data:image/svg+xml;base64,' + btoa(svgString);
+            img.onload = () => {
+                this.mobImageCache.set(cacheKey, img);
+                resolve(img);
+            };
+            img.onerror = reject;
+            img.src = dataUrl;
+        });
+    }
     drawEnemy(enemy) {
         const sizeMultiplier = this.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
         const enemySize = 40 * sizeMultiplier;
         this.ctx.save();
         this.ctx.translate(enemy.x, enemy.y);
         this.ctx.rotate(enemy.angle);
-        // Draw enemy sprite based on type
-        const sprite = enemy.type === 'octopus' ? this.octopusSprite : this.fishSprite;
-        this.ctx.drawImage(sprite, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+        // Draw enemy sprite using SVG from mob config
+        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+        const cacheKey = `${enemy.type}_${enemy.tier}`;
+        if (mobStats && mobStats.image && this.mobImageCache.has(cacheKey)) {
+            // Use cached SVG image
+            const img = this.mobImageCache.get(cacheKey);
+            this.ctx.drawImage(img, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+        }
+        else if (mobStats && mobStats.image) {
+            // Load SVG image asynchronously and cache it
+            this.loadSVGAsImage(mobStats.image, cacheKey);
+            // For now, use fallback until image loads
+            const sprite = enemy.type === 'octopus' ? this.octopusSprite : this.fishSprite;
+            this.ctx.drawImage(sprite, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+        }
+        else {
+            // Fallback to old sprite system if no mob config found
+            const sprite = enemy.type === 'octopus' ? this.octopusSprite : this.fishSprite;
+            this.ctx.drawImage(sprite, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+        }
         // Draw hitbox if enabled
         if (this.showHitboxes) {
             this.ctx.save();

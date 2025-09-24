@@ -341,23 +341,25 @@ function createEnemy() {
         }
     }
     // Select mob type (fish, octopus, or shark)
-    const mobTypeRoll = Math.random();
-    let mobType = 'fish';
-    if (mobTypeRoll < 0.4) {
-        mobType = 'fish';
+    const allMobTypes = (0, mobs_1.getAllMobTypes)();
+    if (allMobTypes.length === 0) {
+        console.error("No mob types found in MOB_CONFIG.");
+        return null;
     }
-    else if (mobTypeRoll < 0.8) {
-        mobType = 'octopus';
-    }
-    else {
-        mobType = 'shark';
-    }
+    const mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)];
     // Get mob stats from config
     const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
     if (!mobStats) {
         console.error(`No mob stats found for ${mobType} ${tier}`);
         return null;
     }
+    console.log(`[DEBUG] Spawning ${mobType} (${tier}) mob with stats:`, {
+        health: mobStats.health,
+        damage: mobStats.damage,
+        speed: mobStats.speed,
+        isHostile: mobStats.is_hostile,
+        range: mobStats.range
+    });
     const currentTime = Date.now();
     return {
         id: Math.random().toString(36).substr(2, 9),
