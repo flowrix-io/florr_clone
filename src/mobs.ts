@@ -303,19 +303,45 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="14" cy="16" r="5" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<circle cx="20" cy="16" r="6" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<ellipse cx="28" cy="12" rx="4" ry="1" fill="#000000" transform="rotate(25 25 12)"/>
-<ellipse cx="28" cy="20" rx="4" ry="1" fill="#000000" transform="rotate(-25 25 20)"/>
-<ellipse cx="12" cy="11" rx="6" ry="3" fill="#c2c2c2" transform="rotate(25 12 11)" opacity="0.5"/>
-<ellipse cx="12" cy="19" rx="6" ry="3" fill="#c2c2c2" transform="rotate(-25 12 19)" opacity="0.5"/>
+            image: `<svg width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#555555" stroke="#444444" stroke-width="7" />
+
+  <g fill="#eeeeee" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(-18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  </g>
+
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="2s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+  </path>
+
+  <circle cx="4" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
+
 </svg>`,
             is_hostile: true,
             range: 100
@@ -329,19 +355,45 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="14" cy="16" r="5" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<circle cx="20" cy="16" r="6" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<ellipse cx="28" cy="12" rx="4" ry="1" fill="#000000" transform="rotate(25 25 12)"/>
-<ellipse cx="28" cy="20" rx="4" ry="1" fill="#000000" transform="rotate(-25 25 20)"/>
-<ellipse cx="12" cy="11" rx="6" ry="3" fill="#c2c2c2" transform="rotate(25 12 11)" opacity="0.5"/>
-<ellipse cx="12" cy="19" rx="6" ry="3" fill="#c2c2c2" transform="rotate(-25 12 19)" opacity="0.5"/>
+            image: `<svg width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#555555" stroke="#444444" stroke-width="7" />
+
+  <g fill="#eeeeee" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(-18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  </g>
+
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="2s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+  </path>
+
+  <circle cx="4" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
+
 </svg>`,
             is_hostile: true,
             range: 200
@@ -355,19 +407,45 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="14" cy="16" r="5" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<circle cx="20" cy="16" r="6" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<ellipse cx="28" cy="12" rx="4" ry="1" fill="#000000" transform="rotate(25 25 12)"/>
-<ellipse cx="28" cy="20" rx="4" ry="1" fill="#000000" transform="rotate(-25 25 20)"/>
-<ellipse cx="12" cy="11" rx="6" ry="3" fill="#c2c2c2" transform="rotate(25 12 11)" opacity="0.5"/>
-<ellipse cx="12" cy="19" rx="6" ry="3" fill="#c2c2c2" transform="rotate(-25 12 19)" opacity="0.5"/>
+            image: `<svg width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#555555" stroke="#444444" stroke-width="7" />
+
+  <g fill="#eeeeee" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(-18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  </g>
+
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="2s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+  </path>
+
+  <circle cx="4" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
+
 </svg>`,
             is_hostile: true,
             range: 350
@@ -381,19 +459,45 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="14" cy="16" r="5" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<circle cx="20" cy="16" r="6" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<ellipse cx="28" cy="12" rx="4" ry="1" fill="#000000" transform="rotate(25 25 12)"/>
-<ellipse cx="28" cy="20" rx="4" ry="1" fill="#000000" transform="rotate(-25 25 20)"/>
-<ellipse cx="12" cy="11" rx="6" ry="3" fill="#c2c2c2" transform="rotate(25 12 11)" opacity="0.5"/>
-<ellipse cx="12" cy="19" rx="6" ry="3" fill="#c2c2c2" transform="rotate(-25 12 19)" opacity="0.5"/>
+            image: `<svg width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#555555" stroke="#444444" stroke-width="7" />
+
+  <g fill="#eeeeee" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(-18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  </g>
+
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="2s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+  </path>
+
+  <circle cx="4" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
+
 </svg>`,
             is_hostile: true,
             range: 500
@@ -407,19 +511,45 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="14" cy="16" r="5" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<circle cx="20" cy="16" r="6" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<ellipse cx="28" cy="12" rx="4" ry="1" fill="#000000" transform="rotate(25 25 12)"/>
-<ellipse cx="28" cy="20" rx="4" ry="1" fill="#000000" transform="rotate(-25 25 20)"/>
-<ellipse cx="12" cy="11" rx="6" ry="3" fill="#c2c2c2" transform="rotate(25 12 11)" opacity="0.5"/>
-<ellipse cx="12" cy="19" rx="6" ry="3" fill="#c2c2c2" transform="rotate(-25 12 19)" opacity="0.5"/>
+            image: `<svg width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#555555" stroke="#444444" stroke-width="7" />
+
+  <g fill="#eeeeee" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(-18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  </g>
+
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="2s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+  </path>
+
+  <circle cx="4" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
+
 </svg>`,
             is_hostile: true,
             range: 600
@@ -433,19 +563,45 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<defs>
-  <!-- Define the second circle as the clipping path -->
-  <clipPath id="cut-off-circle">
-    <circle cx="16" cy="16" r="16" />
-  </clipPath>
-</defs>
-<circle cx="14" cy="16" r="5" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<circle cx="20" cy="16" r="6" fill="#6e6e6e" stroke="#5c5c5c" stroke-width="2"/>
-<ellipse cx="28" cy="12" rx="4" ry="1" fill="#000000" transform="rotate(25 25 12)"/>
-<ellipse cx="28" cy="20" rx="4" ry="1" fill="#000000" transform="rotate(-25 25 20)"/>
-<ellipse cx="12" cy="11" rx="6" ry="3" fill="#c2c2c2" transform="rotate(25 12 11)" opacity="0.5"/>
-<ellipse cx="12" cy="19" rx="6" ry="3" fill="#c2c2c2" transform="rotate(-25 12 19)" opacity="0.5"/>
+            image: `<svg width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#555555" stroke="#444444" stroke-width="7" />
+
+  <g fill="#eeeeee" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(-18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -3.6; 0"
+                        keyTimes="0; 0.5; 1"
+                        dur="2s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  </g>
+
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="2s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+  </path>
+
+  <circle cx="4" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
+
 </svg>`,
             is_hostile: true,
             range: 750
