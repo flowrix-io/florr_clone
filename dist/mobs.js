@@ -285,7 +285,7 @@ exports.MOB_CONFIG = {
             damage: 10,
             health: 10,
             size: 1.0,
-            speed: 0.5,
+            speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
@@ -311,7 +311,7 @@ exports.MOB_CONFIG = {
             damage: 10,
             health: 20,
             size: 1.2,
-            speed: 0.5,
+            speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
@@ -337,7 +337,7 @@ exports.MOB_CONFIG = {
             damage: 15,
             health: 30,
             size: 1.4,
-            speed: 0.5,
+            speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
@@ -363,7 +363,7 @@ exports.MOB_CONFIG = {
             damage: 20,
             health: 25,
             size: 1.8,
-            speed: 0.5,
+            speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
@@ -389,7 +389,7 @@ exports.MOB_CONFIG = {
             damage: 25,
             health: 40,
             size: 2.5,
-            speed: 0.5,
+            speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
@@ -415,7 +415,7 @@ exports.MOB_CONFIG = {
             damage: 30,
             health: 60,
             size: 3.0,
-            speed: 0.5,
+            speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
             color: "#87CEEB",
