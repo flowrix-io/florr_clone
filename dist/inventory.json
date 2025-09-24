@@ -1,92 +1,24 @@
 {
   "players": {
-    "449r69336": {
-      "level": 10,
-      "xp": 1404,
-      "maxHealth": 190,
-      "damage": 23,
+    "g3esagcdx": {
+      "level": 1,
+      "xp": 20,
+      "maxHealth": 100,
+      "damage": 5,
       "inventory": {
-        "uncommon": {
-          "speed_boost": 9,
-          "petal_basic": 3,
-          "shield": 12,
-          "health_potion": 15,
-          "petal_rose": 3,
-          "petal_stinger": 6
-        },
         "common": {
-          "health_potion": 10,
-          "petal_basic": 10,
-          "petal_rose": 8,
-          "shield": 13,
-          "petal_stinger": 9,
-          "speed_boost": 13
-        },
-        "epic": {
-          "speed_boost": 6,
-          "petal_stinger": 8,
-          "health_potion": 4,
-          "petal_basic": 5,
           "shield": 1
-        },
-        "rare": {
-          "health_potion": 4,
-          "petal_basic": 3,
-          "speed_boost": 3,
-          "petal_stinger": 6,
-          "shield": 3,
-          "petal_rose": 3
-        },
-        "legendary": {
-          "shield": 1,
-          "health_potion": 2,
-          "petal_basic": 1
-        },
-        "mythic": {
-          "health_potion": 1
         }
       },
       "loadout": [
         {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "legendary",
-          "maxHealth": 2,
-          "health": 2,
-          "onCooldown": false
+          "type": "health_potion",
+          "rarity": "common"
         },
-        {
-          "type": "petal",
-          "petalType": "stinger",
-          "rarity": "legendary",
-          "maxHealth": 5,
-          "health": 0,
-          "onCooldown": true
-        },
-        {
-          "type": "petal",
-          "petalType": "stinger",
-          "rarity": "epic",
-          "maxHealth": 4,
-          "health": 1,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "stinger",
-          "rarity": "epic",
-          "maxHealth": 4,
-          "health": 0,
-          "onCooldown": true
-        },
-        {
-          "type": "petal",
-          "petalType": "rose",
-          "rarity": "epic",
-          "maxHealth": 2,
-          "health": 2,
-          "onCooldown": false
-        },
+        null,
+        null,
+        null,
+        null,
         null,
         null,
         null,
@@ -97,7 +29,7 @@
   },
   "users": {
     "sussy": {
-      "id": "449r69336",
+      "id": "g3esagcdx",
       "username": "sussy",
       "password": "sussy"
     }

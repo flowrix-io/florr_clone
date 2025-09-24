@@ -2926,7 +2926,7 @@ class Graphics {
         this.ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
         this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth, healthBarHeight);
         this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
-        this.ctx.fillRect(-healthBarWidth / 2, healthBarY, (enemy.health / this.ENEMY_MAX_HEALTH[enemy.tier]) * healthBarWidth, healthBarHeight);
+        this.ctx.fillRect(-healthBarWidth / 2, healthBarY, (enemy.health / enemy.maxHealth) * healthBarWidth, healthBarHeight);
         // Draw enemy tier with tier color
         this.ctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
         this.ctx.textAlign = 'center';

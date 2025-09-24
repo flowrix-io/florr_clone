@@ -415,6 +415,7 @@ function createEnemy() {
         y,
         angle: Math.random() * Math.PI * 2,
         health: mobStats.health,
+        maxHealth: mobStats.health,
         speed: mobStats.speed,
         damage: mobStats.damage,
         knockbackX: 0,

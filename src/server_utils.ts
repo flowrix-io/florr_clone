@@ -9,12 +9,13 @@ export interface Dot {
 
 export interface Enemy {
   id: string;
-  type: 'octopus' | 'fish' | 'shark';
+  type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
   x: number;
   y: number;
   angle: number;
   health: number;
+  maxHealth: number;
   speed: number;
   damage: number;
   knockbackX?: number;

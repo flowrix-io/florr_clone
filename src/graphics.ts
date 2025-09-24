@@ -657,7 +657,7 @@ export class Graphics {
         this.ctx.fillRect(
             -healthBarWidth / 2,
             healthBarY,
-            (enemy.health / this.ENEMY_MAX_HEALTH[enemy.tier]) * healthBarWidth,
+            (enemy.health / enemy.maxHealth) * healthBarWidth,
             healthBarHeight
         );
 
