@@ -2,7 +2,7 @@
   "players": {
     "449r69336": {
       "level": 10,
-      "xp": 369,
+      "xp": 379,
       "maxHealth": 190,
       "damage": 23,
       "inventory": {
@@ -15,7 +15,7 @@
           "petal_stinger": 6
         },
         "common": {
-          "health_potion": 8,
+          "health_potion": 9,
           "petal_basic": 10,
           "petal_rose": 8,
           "shield": 13,
@@ -59,7 +59,7 @@
           "petalType": "stinger",
           "rarity": "legendary",
           "maxHealth": 5,
-          "health": 5,
+          "health": 4,
           "onCooldown": false
         },
         {
@@ -67,7 +67,7 @@
           "petalType": "stinger",
           "rarity": "epic",
           "maxHealth": 4,
-          "health": 1,
+          "health": 4,
           "onCooldown": false
         },
         {

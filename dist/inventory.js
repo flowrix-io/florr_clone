@@ -332,9 +332,10 @@ class InventoryManager {
                             img.style.width = '100%';
                             img.style.height = '100%';
                             img.style.objectFit = 'contain';
-                            // Convert SVG string to data URL
-                            const svgDataUrl = `data:image/svg+xml;base64,${btoa(stats.image)}`;
-                            img.src = svgDataUrl;
+                            // Convert SVG string to blob URL (same as graphics system)
+                            const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                            const url = URL.createObjectURL(svgBlob);
+                            img.src = url;
                             petalDiv.appendChild(img);
                         }
                         else {
@@ -580,16 +581,52 @@ class InventoryManager {
                     itemElement.addEventListener('dragend', () => {
                         itemElement.classList.remove('dragging');
                     });
-                    const img = document.createElement('img');
-                    img.src = `./assets/${type}.png`;
-                    img.alt = type;
-                    img.draggable = false;
-                    img.style.cssText = `
-                      width: 40px;
-                      height: 40px;
-                      object-fit: contain;
-                  `;
-                    itemElement.appendChild(img);
+                    // Handle different item types for display
+                    if (type.startsWith('petal_')) {
+                        // Handle petal items with SVG
+                        const petalType = type.replace('petal_', '');
+                        const stats = (0, petals_1.getPetalStats)(petalType, rarity);
+                        if (stats && stats.image) {
+                            const img = document.createElement('img');
+                            img.alt = type;
+                            img.draggable = false;
+                            img.style.cssText = `
+                              width: 40px;
+                              height: 40px;
+                              object-fit: contain;
+                          `;
+                            // Convert SVG string to blob URL (same as loadout display)
+                            const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                            const url = URL.createObjectURL(svgBlob);
+                            img.src = url;
+                            itemElement.appendChild(img);
+                        }
+                        else {
+                            // Fallback to colored circle for petals
+                            const fallbackDiv = document.createElement('div');
+                            fallbackDiv.style.cssText = `
+                              width: 40px;
+                              height: 40px;
+                              border-radius: 50%;
+                              background-color: #90EE90;
+                              border: 2px solid #000;
+                          `;
+                            itemElement.appendChild(fallbackDiv);
+                        }
+                    }
+                    else {
+                        // Handle other items with PNG images
+                        const img = document.createElement('img');
+                        img.src = `./assets/${type}.png`;
+                        img.alt = type;
+                        img.draggable = false;
+                        img.style.cssText = `
+                          width: 40px;
+                          height: 40px;
+                          object-fit: contain;
+                      `;
+                        itemElement.appendChild(img);
+                    }
                     const countLabel = document.createElement('div');
                     countLabel.className = 'item-count';
                     countLabel.textContent = count.toString();
