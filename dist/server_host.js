@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const constants_1 = require("./constants");
 const server_utils_1 = require("./server_utils");
 const signaling_1 = require("./signaling");
+const mobs_1 = require("./mobs");
 class GameServer {
     constructor() {
         this.connections = new Map();
@@ -158,7 +159,7 @@ class GameServer {
         }, 1000);
     }
     createEnemy() {
-        // Enemy creation logic (unchanged)
+        // Enemy creation logic using mob configs
         const x = Math.random() * constants_1.WORLD_WIDTH;
         let tier = 'common';
         for (const [t, zone] of Object.entries(constants_1.ZONE_BOUNDARIES)) {
@@ -167,19 +168,54 @@ class GameServer {
                 break;
             }
         }
-        const tierData = constants_1.ENEMY_TIERS[tier];
+        // Select mob type (fish, octopus, or shark)
+        const mobTypeRoll = Math.random();
+        let mobType = 'fish';
+        if (mobTypeRoll < 0.4) {
+            mobType = 'fish';
+        }
+        else if (mobTypeRoll < 0.8) {
+            mobType = 'octopus';
+        }
+        else {
+            mobType = 'shark';
+        }
+        // Get mob stats from config
+        const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
+        if (!mobStats) {
+            console.error(`No mob stats found for ${mobType} ${tier}`);
+            // Fallback to old system
+            const tierData = constants_1.ENEMY_TIERS[tier];
+            return {
+                id: Math.random().toString(36).substr(2, 9),
+                type: mobType,
+                tier,
+                x: x,
+                y: Math.random() * constants_1.WORLD_HEIGHT,
+                angle: Math.random() * Math.PI * 2,
+                health: tierData.health,
+                speed: tierData.speed,
+                damage: tierData.damage,
+                knockbackX: 0,
+                knockbackY: 0,
+                isHostile: false,
+                range: 100
+            };
+        }
         return {
             id: Math.random().toString(36).substr(2, 9),
-            type: Math.random() < 0.5 ? 'octopus' : 'fish',
+            type: mobType,
             tier,
             x: x,
             y: Math.random() * constants_1.WORLD_HEIGHT,
             angle: Math.random() * Math.PI * 2,
-            health: tierData.health,
-            speed: tierData.speed,
-            damage: tierData.damage,
+            health: mobStats.health,
+            speed: mobStats.speed,
+            damage: mobStats.damage,
             knockbackX: 0,
-            knockbackY: 0
+            knockbackY: 0,
+            isHostile: mobStats.is_hostile,
+            range: mobStats.range
         };
     }
     createObstacle() {

@@ -9,7 +9,7 @@ export interface Dot {
 
 export interface Enemy {
   id: string;
-  type: 'octopus' | 'fish';
+  type: 'octopus' | 'fish' | 'shark';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
   x: number;
   y: number;
@@ -20,6 +20,7 @@ export interface Enemy {
   knockbackX?: number;
   knockbackY?: number;
   isHostile?: boolean;
+  range?: number;
   wanderTarget?: { x: number; y: number };
   lastWanderTime?: number;
   spawnTime?: number;  // Timestamp when enemy was spawned

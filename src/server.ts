@@ -9,6 +9,7 @@ import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS,
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, addXPToPlayer } from './server_utils';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getAllPetalTypes, getPetalStats } from './petals';
+import { MOB_CONFIG, getMobStats } from './mobs';
 const app = express();
 
 const items: WorldItem[] = [];
@@ -397,7 +398,7 @@ function createEnemy(): Enemy {
         return null as any;
     }
 
-    // Rest of createEnemy function remains the same
+    // Select mob type and tier using mob configs
     const tierRoll = Math.random();
     let tier: Enemy['tier'] = 'common';
     let cumulativeProbability = 0;
@@ -410,19 +411,39 @@ function createEnemy(): Enemy {
         }
     }
 
+    // Select mob type (fish, octopus, or shark)
+    const mobTypeRoll = Math.random();
+    let mobType: Enemy['type'] = 'fish';
+    if (mobTypeRoll < 0.4) {
+        mobType = 'fish';
+    } else if (mobTypeRoll < 0.8) {
+        mobType = 'octopus';
+    } else {
+        mobType = 'shark';
+    }
+
+    // Get mob stats from config
+    const mobStats = getMobStats(mobType, tier);
+    if (!mobStats) {
+        console.error(`No mob stats found for ${mobType} ${tier}`);
+        return null as any;
+    }
+
     const currentTime = Date.now();
     return {
         id: Math.random().toString(36).substr(2, 9),
-        type: Math.random() < 0.5 ? 'octopus' : 'fish',
+        type: mobType,
         tier,
         x,
         y,
         angle: Math.random() * Math.PI * 2,
-        health: ENEMY_TIERS[tier].health,
-        speed: ENEMY_TIERS[tier].speed,
-        damage: ENEMY_TIERS[tier].damage,
+        health: mobStats.health,
+        speed: mobStats.speed,
+        damage: mobStats.damage,
         knockbackX: 0,
         knockbackY: 0,
+        isHostile: mobStats.is_hostile,
+        range: mobStats.range,
         spawnTime: currentTime,
         lastViewportCheck: currentTime  // Mark as in viewport since we spawned it there
     };

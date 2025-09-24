@@ -12,6 +12,7 @@ const database_1 = require("./database");
 const constants_1 = require("./constants");
 const server_utils_1 = require("./server_utils");
 const petals_1 = require("./petals");
+const mobs_1 = require("./mobs");
 const app = (0, express_1.default)();
 const items = [];
 const decorations = [];
@@ -328,7 +329,7 @@ function createEnemy() {
     if (!validPosition) {
         return null;
     }
-    // Rest of createEnemy function remains the same
+    // Select mob type and tier using mob configs
     const tierRoll = Math.random();
     let tier = 'common';
     let cumulativeProbability = 0;
@@ -339,19 +340,39 @@ function createEnemy() {
             break;
         }
     }
+    // Select mob type (fish, octopus, or shark)
+    const mobTypeRoll = Math.random();
+    let mobType = 'fish';
+    if (mobTypeRoll < 0.4) {
+        mobType = 'fish';
+    }
+    else if (mobTypeRoll < 0.8) {
+        mobType = 'octopus';
+    }
+    else {
+        mobType = 'shark';
+    }
+    // Get mob stats from config
+    const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
+    if (!mobStats) {
+        console.error(`No mob stats found for ${mobType} ${tier}`);
+        return null;
+    }
     const currentTime = Date.now();
     return {
         id: Math.random().toString(36).substr(2, 9),
-        type: Math.random() < 0.5 ? 'octopus' : 'fish',
+        type: mobType,
         tier,
         x,
         y,
         angle: Math.random() * Math.PI * 2,
-        health: constants_1.ENEMY_TIERS[tier].health,
-        speed: constants_1.ENEMY_TIERS[tier].speed,
-        damage: constants_1.ENEMY_TIERS[tier].damage,
+        health: mobStats.health,
+        speed: mobStats.speed,
+        damage: mobStats.damage,
         knockbackX: 0,
         knockbackY: 0,
+        isHostile: mobStats.is_hostile,
+        range: mobStats.range,
         spawnTime: currentTime,
         lastViewportCheck: currentTime // Mark as in viewport since we spawned it there
     };

@@ -5,7 +5,7 @@ export interface Dot {
 
 export interface Enemy {
   id: string;
-  type: 'octopus' | 'fish';
+  type: 'octopus' | 'fish' | 'shark';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
   x: number;
   y: number;
@@ -17,6 +17,8 @@ export interface Enemy {
   knockbackY?: number;
   wanderTarget?: { x: number; y: number };
   lastWanderTime?: number;
+  isHostile?: boolean;
+  range?: number;
 }
 
 export interface Obstacle {
