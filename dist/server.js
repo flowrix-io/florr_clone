@@ -250,10 +250,22 @@ function triggerViewportUpdate() {
     // Try to spawn new enemies if we're below the target count
     const playerCount = Object.keys(constants_1.players).length;
     if (playerCount > 0) {
-        const targetEnemyCount = constants_1.ENEMIES_PER_VIEWPORT * playerCount;
+        // Calculate target enemy count based on current viewport density
+        const viewports = getPlayerViewports();
+        const totalViewportArea = viewports.reduce((total, viewport) => {
+            const extendedViewport = {
+                x: viewport.x - constants_1.VIEWPORT_BUFFER,
+                y: viewport.y - constants_1.VIEWPORT_BUFFER,
+                width: viewport.width + (constants_1.VIEWPORT_BUFFER * 2),
+                height: viewport.height + (constants_1.VIEWPORT_BUFFER * 2)
+            };
+            return total + (extendedViewport.width * extendedViewport.height);
+        }, 0);
+        const targetDensity = constants_1.ORIGINAL_ENEMY_COUNT / constants_1.TOTAL_WORLD_AREA;
+        const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
         const currentViewportEnemies = getEnemiesInViewportCount();
         if (currentViewportEnemies < targetEnemyCount) {
-            const enemiesToSpawn = Math.min(5, targetEnemyCount - currentViewportEnemies); // Spawn up to 5 at a time
+            const enemiesToSpawn = Math.min(5, targetEnemyCount - currentViewportEnemies);
             let spawned = 0;
             for (let i = 0; i < enemiesToSpawn; i++) {
                 const newEnemy = createEnemy();
@@ -273,13 +285,21 @@ function despawnDistantEnemies() {
     const enemiesToRemove = [];
     for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
         const enemy = constants_1.enemies[i];
-        // Skip if enemy was never in viewport (newly spawned)
-        if (!enemy.lastViewportCheck) {
-            continue;
+        // Check if enemy is currently outside any player's viewport
+        const inViewport = isPositionInAnyViewport(enemy.x, enemy.y);
+        if (!inViewport) {
+            // If enemy is outside viewport, update or set the last viewport check time
+            if (!enemy.lastViewportCheck) {
+                enemy.lastViewportCheck = currentTime;
+            }
+            // Despawn if enemy has been outside viewport for more than 30 seconds
+            if (currentTime - enemy.lastViewportCheck > 30000) { // 30 seconds
+                enemiesToRemove.push(i);
+            }
         }
-        // Check if enemy has been outside viewport for too long
-        if (currentTime - enemy.lastViewportCheck > constants_1.ENEMY_DESPAWN_TIME) {
-            enemiesToRemove.push(i);
+        else {
+            // Enemy is in viewport, reset the last viewport check
+            enemy.lastViewportCheck = undefined;
         }
     }
     // Remove enemies and notify clients
@@ -287,26 +307,54 @@ function despawnDistantEnemies() {
         const enemy = constants_1.enemies[index];
         constants_1.enemies.splice(index, 1);
         io.emit('enemyDestroyed', enemy.id);
+        console.log(`[SERVER] Despawned enemy ${enemy.id} (${enemy.type} ${enemy.tier}) - outside viewport for 30+ seconds`);
     }
 }
-// Update the createEnemy function to respect safe zones and viewport optimization
+// Update the createEnemy function to spawn only in player viewports
 function createEnemy() {
     const playerCount = Object.keys(constants_1.players).length;
+    // Don't spawn if no players are connected
+    if (playerCount === 0) {
+        return null;
+    }
+    // Calculate target enemy count based on viewport density
+    const viewports = getPlayerViewports();
+    const totalViewportArea = viewports.reduce((total, viewport) => {
+        const extendedViewport = {
+            x: viewport.x - constants_1.VIEWPORT_BUFFER,
+            y: viewport.y - constants_1.VIEWPORT_BUFFER,
+            width: viewport.width + (constants_1.VIEWPORT_BUFFER * 2),
+            height: viewport.height + (constants_1.VIEWPORT_BUFFER * 2)
+        };
+        return total + (extendedViewport.width * extendedViewport.height);
+    }, 0);
+    // Calculate target density: same as 1000 enemies across the whole world
+    const targetDensity = constants_1.ORIGINAL_ENEMY_COUNT / constants_1.TOTAL_WORLD_AREA;
+    const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
     // Don't spawn if we already have enough enemies in viewport
-    // Use a minimum of 1 player count to prevent division by zero during startup
-    const effectivePlayerCount = Math.max(1, playerCount);
-    const targetEnemyCount = constants_1.ENEMIES_PER_VIEWPORT * effectivePlayerCount;
     if (getEnemiesInViewportCount() >= targetEnemyCount) {
-        return null; // Return null to indicate no spawn needed
+        return null;
     }
     let validPosition = false;
     let x = 0, y = 0;
     let attempts = 0;
-    const MAX_ATTEMPTS = 50; // Prevent infinite loops
+    const MAX_ATTEMPTS = 100; // Increased attempts for viewport-only spawning
     while (!validPosition && attempts < MAX_ATTEMPTS) {
         attempts++;
-        x = Math.random() * constants_1.ACTUAL_WORLD_WIDTH;
-        y = Math.random() * constants_1.ACTUAL_WORLD_HEIGHT;
+        // Pick a random player and spawn near their viewport
+        const randomPlayerId = Object.keys(constants_1.players)[Math.floor(Math.random() * Object.keys(constants_1.players).length)];
+        const player = constants_1.players[randomPlayerId];
+        // Generate position within player's viewport (with buffer)
+        const viewportBuffer = constants_1.VIEWPORT_BUFFER;
+        const minX = player.x - constants_1.VIEWPORT_WIDTH / 2 - viewportBuffer;
+        const maxX = player.x + constants_1.VIEWPORT_WIDTH / 2 + viewportBuffer;
+        const minY = player.y - constants_1.VIEWPORT_HEIGHT / 2 - viewportBuffer;
+        const maxY = player.y + constants_1.VIEWPORT_HEIGHT / 2 + viewportBuffer;
+        x = minX + Math.random() * (maxX - minX);
+        y = minY + Math.random() * (maxY - minY);
+        // Clamp to world boundaries
+        x = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH, x));
+        y = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT, y));
         // Check if position is in a safe zone
         const inSafeZone = constants_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
             x >= element.x * constants_1.SCALE_FACTOR &&
@@ -319,9 +367,7 @@ function createEnemy() {
             x <= (element.x + element.width) * constants_1.SCALE_FACTOR &&
             y >= element.y * constants_1.SCALE_FACTOR &&
             y <= (element.y + element.height) * constants_1.SCALE_FACTOR);
-        // Check if position is in any player's viewport (with buffer)
-        const inViewport = isPositionInAnyViewport(x, y);
-        if (!inSafeZone && !collidesWithWall && inViewport) {
+        if (!inSafeZone && !collidesWithWall) {
             validPosition = true;
         }
     }
@@ -446,21 +492,12 @@ function removeItem(inventory, rarity, type, count) {
 function hasItem(inventory, rarity, type, count) {
     return inventory[rarity]?.[type] >= count;
 }
-// Initialize enemies
-let successfulSpawns = 0;
-for (let i = 0; i < ENEMY_COUNT; i++) {
-    const enemy = createEnemy();
-    if (enemy) {
-        constants_1.enemies.push(enemy);
-        successfulSpawns++;
-    }
-}
-console.log(`[SERVER] Initialized ${constants_1.enemies.length} enemies (${successfulSpawns}/${ENEMY_COUNT} successful spawns)`);
+// Initialize enemies - now only spawn when players connect
+console.log(`[SERVER] Enemy spawning system initialized - enemies will spawn when players connect`);
 console.log(`[SERVER] Density Configuration:`);
 console.log(`  Original Density: ${constants_1.ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
-console.log(`  Enemies per Viewport: ${constants_1.ENEMIES_PER_VIEWPORT}`);
-console.log(`  Viewport Area (with buffer): ${constants_1.VIEWPORT_WITH_BUFFER_AREA.toLocaleString()} pixels²`);
 console.log(`  Target: Maintain same density as ${constants_1.ORIGINAL_ENEMY_COUNT} enemies across entire world`);
+console.log(`  Despawn Rule: Enemies outside viewport for 30+ seconds will despawn`);
 // Initialize decorations
 for (let i = 0; i < constants_1.DECORATION_COUNT; i++) {
     decorations.push((0, server_utils_1.createDecoration)());
@@ -1252,10 +1289,22 @@ setInterval(() => {
 setInterval(() => {
     const playerCount = Object.keys(constants_1.players).length;
     if (playerCount > 0) {
-        const targetEnemyCount = constants_1.ENEMIES_PER_VIEWPORT * playerCount;
+        // Calculate target enemy count based on current viewport density
+        const viewports = getPlayerViewports();
+        const totalViewportArea = viewports.reduce((total, viewport) => {
+            const extendedViewport = {
+                x: viewport.x - constants_1.VIEWPORT_BUFFER,
+                y: viewport.y - constants_1.VIEWPORT_BUFFER,
+                width: viewport.width + (constants_1.VIEWPORT_BUFFER * 2),
+                height: viewport.height + (constants_1.VIEWPORT_BUFFER * 2)
+            };
+            return total + (extendedViewport.width * extendedViewport.height);
+        }, 0);
+        const targetDensity = constants_1.ORIGINAL_ENEMY_COUNT / constants_1.TOTAL_WORLD_AREA;
+        const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
         const currentViewportEnemies = getEnemiesInViewportCount();
         if (currentViewportEnemies < targetEnemyCount) {
-            const enemiesToSpawn = Math.min(3, targetEnemyCount - currentViewportEnemies); // Spawn up to 3 at a time
+            const enemiesToSpawn = Math.min(3, targetEnemyCount - currentViewportEnemies);
             let spawned = 0;
             for (let i = 0; i < enemiesToSpawn; i++) {
                 const newEnemy = createEnemy();
@@ -1264,9 +1313,9 @@ setInterval(() => {
                     spawned++;
                 }
             }
-            // if (spawned > 0) {
-            //     console.log(`[SERVER] Density maintenance: spawned ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
-            // }
+            if (spawned > 0) {
+                console.log(`[SERVER] Density maintenance: spawned ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
+            }
         }
     }
 }, 2000); // 2 seconds

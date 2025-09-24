@@ -2,7 +2,7 @@
   "players": {
     "449r69336": {
       "level": 9,
-      "xp": 1546,
+      "xp": 1596,
       "maxHealth": 180,
       "damage": 21,
       "inventory": {
@@ -33,7 +33,7 @@
           "petal_basic": 3,
           "speed_boost": 3,
           "petal_stinger": 5,
-          "shield": 1,
+          "shield": 2,
           "petal_rose": 3
         },
         "legendary": {
@@ -65,7 +65,7 @@
           "petalType": "stinger",
           "rarity": "epic",
           "maxHealth": 4,
-          "health": 4,
+          "health": 2,
           "onCooldown": false
         },
         {
