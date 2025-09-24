@@ -22,8 +22,8 @@ export const MOB_CONFIG: MobConfig = {
     bee: {
         common: {
             name: "Common Bee",
-            damage: 10,
-            health: 10,
+            damage: 50,
+            health: 37.5,
             size: 1.0,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -84,8 +84,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         uncommon: {
             name: "Common Bee",
-            damage: 15,
-            health: 15,
+            damage: 150,
+            health: 140.6,
             size: 1.2,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -146,8 +146,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         rare: {
             name: "Common Bee",
-            damage: 20,
-            health: 20,
+            damage: 450,
+            health: 506.2,
             size: 1.5,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -208,8 +208,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         epic: {
             name: "Common Bee",
-            damage: 25,
-            health: 25,
+            damage: 1350,
+            health: 1518.6,
             size: 1.8,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -270,8 +270,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         legendary: {
             name: "Common Bee",
-            damage: 35,
-            health: 35,
+            damage: 4050,
+            health: 4555.8,
             size: 2.5,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -332,8 +332,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         mythic: {
             name: "Common Bee",
-            damage: 50,
-            health: 50,
+            damage: 12150,
+            health: 13667.4,
             size: 3.0,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -397,7 +397,7 @@ export const MOB_CONFIG: MobConfig = {
         common: {
             name: "Common Ladybug",
             damage: 10,
-            health: 10,
+            health: 62.5,
             size: 1.0,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -440,8 +440,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         uncommon: {
             name: "Common Ladybug",
-            damage: 10,
-            health: 20,
+            damage: 30,
+            health: 187.5,
             size: 1.2,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -484,8 +484,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         rare: {
             name: "Common Ladybug",
-            damage: 15,
-            health: 30,
+            damage: 90,
+            health: 562.5,
             size: 1.4,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -528,8 +528,8 @@ export const MOB_CONFIG: MobConfig = {
         },  
         epic: {
             name: "Common Ladybug",
-            damage: 20,
-            health: 25,
+            damage: 270,
+            health: 1687.5,
             size: 1.8,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -572,8 +572,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         legendary: {
             name: "Common Ladybug",
-            damage: 25,
-            health: 40,
+            damage: 810,
+            health: 5062.5,
             size: 2.5,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
@@ -663,7 +663,7 @@ export const MOB_CONFIG: MobConfig = {
         common: {
             name: "Common Soldier Ant",
             damage: 10,
-            health: 10,
+            health: 100,
             size: 1.0,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
@@ -714,8 +714,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         uncommon: {
             name: "Common Soldier Ant",
-            damage: 10,
-            health: 20,
+            damage: 30,
+            health: 300,
             size: 1.2,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
@@ -766,8 +766,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         rare: { 
             name: "Common Soldier Ant",
-            damage: 15,
-            health: 30,
+            damage: 90,
+            health: 900,
             size: 1.4,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
@@ -818,8 +818,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         epic: {
             name: "Common Soldier Ant",
-            damage: 20,
-            health: 25,
+            damage: 270,
+            health: 2700,
             size: 1.8,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
@@ -870,8 +870,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         legendary: {
             name: "Common Soldier Ant",
-            damage: 25,
-            health: 40,
+            damage: 810,
+            health: 8100,
             size: 2.5,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
@@ -922,8 +922,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         mythic: {
             name: "Common Soldier Ant",
-            damage: 30,
-            health: 60,
+            damage: 2430,
+            health: 24300,
             size: 3.0,
             speed: 1.0,
             cooldown: 2000, // 2 seconds

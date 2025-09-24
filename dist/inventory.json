@@ -2,7 +2,7 @@
   "players": {
     "449r69336": {
       "level": 10,
-      "xp": 1304,
+      "xp": 1404,
       "maxHealth": 190,
       "damage": 23,
       "inventory": {
@@ -23,7 +23,7 @@
           "speed_boost": 13
         },
         "epic": {
-          "speed_boost": 5,
+          "speed_boost": 6,
           "petal_stinger": 8,
           "health_potion": 4,
           "petal_basic": 5,

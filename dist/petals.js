@@ -8,11 +8,11 @@ exports.PETAL_CONFIG = {
     basic: {
         common: {
             name: "Basic Petal",
-            damage: 1,
-            health: 2,
+            damage: 10,
+            health: 10,
             size: 2.0,
             speed: 1.0,
-            cooldown: 1000, // 10 seconds
+            cooldown: 1200, // 10 seconds
             description: "A simple petal that provides basic protection",
             color: "#90EE90",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -21,11 +21,11 @@ exports.PETAL_CONFIG = {
         },
         uncommon: {
             name: "Enhanced Basic Petal",
-            damage: 2,
-            health: 2,
+            damage: 30,
+            health: 30,
             size: 2.0,
             speed: 1.0,
-            cooldown: 1000, // 9 seconds
+            cooldown: 1200, // 9 seconds
             description: "An improved basic petal with better stats",
             color: "#32CD32",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -34,11 +34,11 @@ exports.PETAL_CONFIG = {
         },
         rare: {
             name: "Superior Basic Petal",
-            damage: 2,
-            health: 2,
+            damage: 90,
+            health: 90,
             size: 2.0,
             speed: 1.0,
-            cooldown: 1000, // 8 seconds
+            cooldown: 1200, // 8 seconds
             description: "A superior basic petal with enhanced capabilities",
             color: "#228B22",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -47,11 +47,11 @@ exports.PETAL_CONFIG = {
         },
         epic: {
             name: "Elite Basic Petal",
-            damage: 2,
-            health: 2,
+            damage: 270,
+            health: 270,
             size: 2.0,
             speed: 1.0,
-            cooldown: 1000, // 7 seconds
+            cooldown: 1200, // 7 seconds
             description: "An elite basic petal with impressive power",
             color: "#006400",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -60,11 +60,11 @@ exports.PETAL_CONFIG = {
         },
         legendary: {
             name: "Legendary Basic Petal",
-            damage: 3,
-            health: 2,
+            damage: 810,
+            health: 810,
             size: 2.0,
             speed: 1.0,
-            cooldown: 1000, // 6 seconds
+            cooldown: 1200, // 6 seconds
             description: "A legendary basic petal of immense strength",
             color: "#8B4513",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -73,11 +73,11 @@ exports.PETAL_CONFIG = {
         },
         mythic: {
             name: "Mythic Basic Petal",
-            damage: 4,
-            health: 5,
+            damage: 2430,
+            health: 2430,
             size: 2.0,
             speed: 1.0,
-            cooldown: 1000, // 5 seconds
+            cooldown: 1200, // 5 seconds
             description: "A mythic basic petal with otherworldly power",
             color: "#4B0082",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -88,8 +88,8 @@ exports.PETAL_CONFIG = {
     rose: {
         common: {
             name: "Rose Petal",
-            damage: 1,
-            health: 1,
+            damage: 5,
+            health: 5,
             size: 0.9,
             speed: 1.0,
             cooldown: 1500, // 8 seconds
@@ -101,8 +101,8 @@ exports.PETAL_CONFIG = {
         },
         uncommon: {
             name: "Blood Rose Petal",
-            damage: 1,
-            health: 1,
+            damage: 15,
+            health: 15,
             size: 1.0,
             speed: 1.0,
             cooldown: 1500, // 7 seconds
@@ -114,8 +114,8 @@ exports.PETAL_CONFIG = {
         },
         rare: {
             name: "Royal Rose Petal",
-            damage: 1,
-            health: 1,
+            damage: 45,
+            health: 45,
             size: 1.1,
             speed: 1.0,
             cooldown: 1500, // 6 seconds
@@ -127,8 +127,8 @@ exports.PETAL_CONFIG = {
         },
         epic: {
             name: "Divine Rose Petal",
-            damage: 2,
-            health: 2,
+            damage: 135,
+            health: 135,
             size: 1.2,
             speed: 1.0,
             cooldown: 1500, // 5 seconds
@@ -140,8 +140,8 @@ exports.PETAL_CONFIG = {
         },
         legendary: {
             name: "Eternal Rose Petal",
-            damage: 3,
-            health: 6,
+            damage: 405,
+            health: 405,
             size: 1.3,
             speed: 1.0,
             cooldown: 1500, // 4 seconds
@@ -153,8 +153,8 @@ exports.PETAL_CONFIG = {
         },
         mythic: {
             name: "Celestial Rose Petal",
-            damage: 4,
-            health: 8,
+            damage: 1215,
+            health: 1215,
             size: 1.4,
             speed: 1.0,
             cooldown: 1500, // 3 seconds
@@ -168,7 +168,7 @@ exports.PETAL_CONFIG = {
     stinger: {
         common: {
             name: "Stinger",
-            damage: 2,
+            damage: 100,
             health: 2,
             size: 0.8,
             speed: 1.0,
@@ -182,8 +182,8 @@ exports.PETAL_CONFIG = {
         },
         uncommon: {
             name: "Venomous Stinger",
-            damage: 2,
-            health: 4,
+            damage: 300,
+            health: 6,
             size: 0.85,
             speed: 1.0,
             cooldown: 5000, // 5 seconds
@@ -196,8 +196,8 @@ exports.PETAL_CONFIG = {
         },
         rare: {
             name: "Barbed Stinger",
-            damage: 3,
-            health: 4,
+            damage: 900,
+            health: 18,
             size: 0.9,
             speed: 1.0,
             cooldown: 5000, // 4 seconds
@@ -210,8 +210,8 @@ exports.PETAL_CONFIG = {
         },
         epic: {
             name: "Razor Stinger",
-            damage: 5,
-            health: 4,
+            damage: 2700,
+            health: 54,
             size: 0.95,
             speed: 1.0,
             cooldown: 5000, // 3 seconds
@@ -224,8 +224,8 @@ exports.PETAL_CONFIG = {
         },
         legendary: {
             name: "Infernal Stinger",
-            damage: 8,
-            health: 5,
+            damage: 8100,
+            health: 162,
             size: 1.0,
             speed: 1.0,
             cooldown: 5000, // 2.5 seconds
@@ -238,16 +238,32 @@ exports.PETAL_CONFIG = {
         },
         mythic: {
             name: "Void Stinger",
-            damage: 10,
-            health: 5,
+            damage: 24300,
+            health: 486,
             size: 1.1,
             speed: 1.0,
             cooldown: 5000, // 2 seconds
             description: "A void stinger that pierces reality itself",
             color: "#800080",
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <polygon points="16,0 32,32 0,32" fill="black" />
+            image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Top triangle (Blue) -->
+  <polygon
+    points="100,20 150,110 50,110"
+    style="fill:black;" />
+
+  <!-- Bottom-left triangle (Red) -->
+  <polygon
+    points="50,110 100,200 0,200"
+    style="fill:black;" />
+
+  <!-- Bottom-right triangle (Green) -->
+  <polygon
+    points="150,110 200,200 100,200"
+    style="fill:black;" />
+
 </svg>
+
 `
         }
     }
