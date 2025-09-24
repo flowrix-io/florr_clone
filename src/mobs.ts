@@ -29,13 +29,55 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<ellipse cx="12" cy="16" rx="12" ry="9" fill="#ffff00"/>
-<path d="M 0 80 A 8 8 0 0 0 24 18" stroke="black" fill="none" stroke-width="2"/>
-  <path d="M 0 80 A 8 8 0 0 0 24 -14" stroke="black" fill="none" stroke-width="2" transform="scale(1, -1)"/>
-<rect x="12" y="7" width="3" height="18" fill="#000000"/>
-<rect x="4" y="10" width="3" height="12" fill="#000000"/>
-<rect x="20" y="10" width="3" height="12" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-45 -30 95 60" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="bee-body-clip">
+      <ellipse cx="0" cy="0" rx="30" ry="20" />
+    </clipPath>
+  </defs>
+
+  <path 
+    d="M -25 9 L -37 0 L -25 -9" 
+    fill="#333333" 
+    stroke="#292929" 
+    stroke-width="5" 
+    stroke-linecap="round" 
+    stroke-linejoin="round" 
+  />
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="#ffe763" 
+  />
+
+  <g clip-path="url(#bee-body-clip)">
+    <rect x="-30" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="-10" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="10" y="-20" width="10" height="40" fill="#333333" />
+  </g>
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="none" 
+    stroke="#ccb94f" 
+    stroke-width="5" 
+  />
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 -5 Q 35 -5 40 -15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="-15" r="5" />
+  </g>
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 5 Q 35 5 40 15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="15" r="5" />
+  </g>
 </svg>`,
             is_hostile: false,
             range: 100
@@ -49,13 +91,55 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<ellipse cx="12" cy="16" rx="12" ry="9" fill="#ffff00"/>
-<path d="M 0 80 A 8 8 0 0 0 24 18" stroke="black" fill="none" stroke-width="2"/>
-  <path d="M 0 80 A 8 8 0 0 0 24 -14" stroke="black" fill="none" stroke-width="2" transform="scale(1, -1)"/>
-<rect x="12" y="7" width="3" height="18" fill="#000000"/>
-<rect x="4" y="10" width="3" height="12" fill="#000000"/>
-<rect x="20" y="10" width="3" height="12" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-45 -30 95 60" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="bee-body-clip">
+      <ellipse cx="0" cy="0" rx="30" ry="20" />
+    </clipPath>
+  </defs>
+
+  <path 
+    d="M -25 9 L -37 0 L -25 -9" 
+    fill="#333333" 
+    stroke="#292929" 
+    stroke-width="5" 
+    stroke-linecap="round" 
+    stroke-linejoin="round" 
+  />
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="#ffe763" 
+  />
+
+  <g clip-path="url(#bee-body-clip)">
+    <rect x="-30" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="-10" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="10" y="-20" width="10" height="40" fill="#333333" />
+  </g>
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="none" 
+    stroke="#ccb94f" 
+    stroke-width="5" 
+  />
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 -5 Q 35 -5 40 -15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="-15" r="5" />
+  </g>
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 5 Q 35 5 40 15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="15" r="5" />
+  </g>
 </svg>`,
             is_hostile: false,
             range: 100
@@ -69,13 +153,55 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<ellipse cx="12" cy="16" rx="12" ry="9" fill="#ffff00"/>
-<path d="M 0 80 A 8 8 0 0 0 24 18" stroke="black" fill="none" stroke-width="2"/>
-  <path d="M 0 80 A 8 8 0 0 0 24 -14" stroke="black" fill="none" stroke-width="2" transform="scale(1, -1)"/>
-<rect x="12" y="7" width="3" height="18" fill="#000000"/>
-<rect x="4" y="10" width="3" height="12" fill="#000000"/>
-<rect x="20" y="10" width="3" height="12" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-45 -30 95 60" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="bee-body-clip">
+      <ellipse cx="0" cy="0" rx="30" ry="20" />
+    </clipPath>
+  </defs>
+
+  <path 
+    d="M -25 9 L -37 0 L -25 -9" 
+    fill="#333333" 
+    stroke="#292929" 
+    stroke-width="5" 
+    stroke-linecap="round" 
+    stroke-linejoin="round" 
+  />
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="#ffe763" 
+  />
+
+  <g clip-path="url(#bee-body-clip)">
+    <rect x="-30" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="-10" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="10" y="-20" width="10" height="40" fill="#333333" />
+  </g>
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="none" 
+    stroke="#ccb94f" 
+    stroke-width="5" 
+  />
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 -5 Q 35 -5 40 -15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="-15" r="5" />
+  </g>
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 5 Q 35 5 40 15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="15" r="5" />
+  </g>
 </svg>`,
             is_hostile: false,
             range: 100
@@ -89,13 +215,55 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<ellipse cx="12" cy="16" rx="12" ry="9" fill="#ffff00"/>
-<path d="M 0 80 A 8 8 0 0 0 24 18" stroke="black" fill="none" stroke-width="2"/>
-  <path d="M 0 80 A 8 8 0 0 0 24 -14" stroke="black" fill="none" stroke-width="2" transform="scale(1, -1)"/>
-<rect x="12" y="7" width="3" height="18" fill="#000000"/>
-<rect x="4" y="10" width="3" height="12" fill="#000000"/>
-<rect x="20" y="10" width="3" height="12" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-45 -30 95 60" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="bee-body-clip">
+      <ellipse cx="0" cy="0" rx="30" ry="20" />
+    </clipPath>
+  </defs>
+
+  <path 
+    d="M -25 9 L -37 0 L -25 -9" 
+    fill="#333333" 
+    stroke="#292929" 
+    stroke-width="5" 
+    stroke-linecap="round" 
+    stroke-linejoin="round" 
+  />
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="#ffe763" 
+  />
+
+  <g clip-path="url(#bee-body-clip)">
+    <rect x="-30" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="-10" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="10" y="-20" width="10" height="40" fill="#333333" />
+  </g>
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="none" 
+    stroke="#ccb94f" 
+    stroke-width="5" 
+  />
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 -5 Q 35 -5 40 -15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="-15" r="5" />
+  </g>
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 5 Q 35 5 40 15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="15" r="5" />
+  </g>
 </svg>`,
             is_hostile: false,
             range: 100
@@ -109,13 +277,55 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<ellipse cx="12" cy="16" rx="12" ry="9" fill="#ffff00"/>
-<path d="M 0 80 A 8 8 0 0 0 24 18" stroke="black" fill="none" stroke-width="2"/>
-  <path d="M 0 80 A 8 8 0 0 0 24 -14" stroke="black" fill="none" stroke-width="2" transform="scale(1, -1)"/>
-<rect x="12" y="7" width="3" height="18" fill="#000000"/>
-<rect x="4" y="10" width="3" height="12" fill="#000000"/>
-<rect x="20" y="10" width="3" height="12" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-45 -30 95 60" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="bee-body-clip">
+      <ellipse cx="0" cy="0" rx="30" ry="20" />
+    </clipPath>
+  </defs>
+
+  <path 
+    d="M -25 9 L -37 0 L -25 -9" 
+    fill="#333333" 
+    stroke="#292929" 
+    stroke-width="5" 
+    stroke-linecap="round" 
+    stroke-linejoin="round" 
+  />
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="#ffe763" 
+  />
+
+  <g clip-path="url(#bee-body-clip)">
+    <rect x="-30" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="-10" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="10" y="-20" width="10" height="40" fill="#333333" />
+  </g>
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="none" 
+    stroke="#ccb94f" 
+    stroke-width="5" 
+  />
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 -5 Q 35 -5 40 -15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="-15" r="5" />
+  </g>
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 5 Q 35 5 40 15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="15" r="5" />
+  </g>
 </svg>`,
             is_hostile: false,
             range: 100
@@ -129,13 +339,55 @@ export const MOB_CONFIG: MobConfig = {
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
             color: "#87CEEB",
-            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<ellipse cx="12" cy="16" rx="12" ry="9" fill="#ffff00"/>
-<path d="M 0 80 A 8 8 0 0 0 24 18" stroke="black" fill="none" stroke-width="2"/>
-  <path d="M 0 80 A 8 8 0 0 0 24 -14" stroke="black" fill="none" stroke-width="2" transform="scale(1, -1)"/>
-<rect x="12" y="7" width="3" height="18" fill="#000000"/>
-<rect x="4" y="10" width="3" height="12" fill="#000000"/>
-<rect x="20" y="10" width="3" height="12" fill="#000000"/>
+            image: `<svg width="32" height="32" viewBox="-45 -30 95 60" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="bee-body-clip">
+      <ellipse cx="0" cy="0" rx="30" ry="20" />
+    </clipPath>
+  </defs>
+
+  <path 
+    d="M -25 9 L -37 0 L -25 -9" 
+    fill="#333333" 
+    stroke="#292929" 
+    stroke-width="5" 
+    stroke-linecap="round" 
+    stroke-linejoin="round" 
+  />
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="#ffe763" 
+  />
+
+  <g clip-path="url(#bee-body-clip)">
+    <rect x="-30" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="-10" y="-20" width="10" height="40" fill="#333333" />
+    <rect x="10" y="-20" width="10" height="40" fill="#333333" />
+  </g>
+
+  <ellipse 
+    cx="0" 
+    cy="0" 
+    rx="30" 
+    ry="20" 
+    fill="none" 
+    stroke="#ccb94f" 
+    stroke-width="5" 
+  />
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 -5 Q 35 -5 40 -15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="-15" r="5" />
+  </g>
+
+  <g stroke="#333333" fill="#333333">
+    <path d="M 25 5 Q 35 5 40 15" stroke-width="3" fill="none" />
+    <circle cx="40" cy="15" r="5" />
+  </g>
 </svg>`,
             is_hostile: false,
             range: 100
