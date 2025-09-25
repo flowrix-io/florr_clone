@@ -2,17 +2,17 @@
   "players": {
     "t9pyo2soj": {
       "level": 5,
-      "xp": 388,
+      "xp": 458,
       "maxHealth": 140,
       "damage": 13,
       "inventory": {
         "common": {
-          "petal_basic": 6,
+          "petal_basic": 7,
           "petal_stinger": 3,
-          "shield": 3,
-          "speed_boost": 2,
-          "health_potion": 2,
-          "petal_rose": 1
+          "shield": 4,
+          "speed_boost": 3,
+          "health_potion": 4,
+          "petal_rose": 2
         },
         "uncommon": {
           "health_potion": 3,
@@ -36,7 +36,23 @@
           "petalType": "basic",
           "rarity": "common",
           "maxHealth": 10,
-          "health": 3,
+          "health": 4,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 4,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 8,
           "onCooldown": false
         },
         {
@@ -45,22 +61,6 @@
           "rarity": "common",
           "maxHealth": 10,
           "health": 3,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 10,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 10,
           "onCooldown": false
         },
         {
@@ -76,7 +76,7 @@
           "petalType": "rose",
           "rarity": "rare",
           "maxHealth": 45,
-          "health": 1,
+          "health": 40,
           "onCooldown": false
         },
         {
@@ -84,7 +84,7 @@
           "petalType": "rose",
           "rarity": "rare",
           "maxHealth": 45,
-          "health": 19,
+          "health": 17,
           "onCooldown": false
         },
         {

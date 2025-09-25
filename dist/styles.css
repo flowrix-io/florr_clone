@@ -255,11 +255,11 @@ label {
 /* Add these styles for the inventory panel */
 .inventory-panel {
     position: fixed;
-    top: 0;
-    right: -300px; /* Start off-screen */
+    top: 33.33vh; /* Start at 1/3 from top, leaving top empty */
+    left: -300px; /* Start off-screen to the left */
     width: 300px;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.8);
+    height: 66.67vh; /* 2/3 of viewport height */
+    background: #599fdc; /* Blue background color */
     transition: transform 0.3s ease-out;
     z-index: 1000;
     padding: 20px;
@@ -267,10 +267,11 @@ label {
     color: white;
     display: flex;
     flex-direction: column;
+    border-right: 3px solid #4a8bc2; /* Add a subtle border */
 }
 
 .inventory-panel.open {
-    transform: translateX(-300px);
+    transform: translateX(300px); /* Slide in from the left */
 }
 
 /* Update existing inventory content styles */

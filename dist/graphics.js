@@ -75,12 +75,12 @@ class Graphics {
             mythic: 150
         };
         this.ITEM_RARITY_COLORS = {
-            common: '#808080', // Gray
-            uncommon: '#008000', // Green
-            rare: '#0000FF', // Blue
-            epic: '#800080', // Purple
-            legendary: '#FFA500', // Orange
-            mythic: '#FF0000' // Red
+            common: '#7eef6d',
+            uncommon: '#ffe65d',
+            rare: '#4d52e3',
+            epic: '#861fde',
+            legendary: '#de1f1f',
+            mythic: '#1fdbde'
         };
         this.showHitboxes = false;
         this.itemSprites = {};

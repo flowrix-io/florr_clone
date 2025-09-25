@@ -25,12 +25,12 @@ export class InventoryManager {
     private readonly LOADOUT_SLOTS = 10;
     private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
     private readonly ITEM_RARITY_COLORS: Record<string, string> = {
-        common: '#808080',
-        uncommon: '#008000',
-        rare: '#0000FF',
-        epic: '#800080',
-        legendary: '#FFA500',
-        mythic: '#FF0000'
+        common: '#7eef6d',
+        uncommon: '#ffe65d',
+        rare: '#4d52e3',
+        epic: '#861fde',
+        legendary: '#de1f1f',
+        mythic: '#1fdbde'
     };
 
     constructor(game: GameInterface) {

@@ -66,13 +66,13 @@ export class Graphics {
         legendary: 100,
         mythic: 150
     };
-    private readonly ITEM_RARITY_COLORS: Record<string, string> = {
-        common: '#808080',      // Gray
-        uncommon: '#008000',    // Green
-        rare: '#0000FF',       // Blue
-        epic: '#800080',       // Purple
-        legendary: '#FFA500',   // Orange
-        mythic: '#FF0000'      // Red
+    private readonly ITEM_RARITY_COLORS = {
+        common: '#7eef6d',
+        uncommon: '#ffe65d',
+        rare: '#4d52e3',
+        epic: '#861fde',
+        legendary: '#de1f1f',
+        mythic: '#1fdbde'
     };
     private showHitboxes: boolean = false;
     private itemSprites: Record<string, HTMLImageElement> = {};
