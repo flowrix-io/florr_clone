@@ -1307,6 +1307,21 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                     enemy.health -= petalStats.damage;
                     petal.health -= 1; // Petal loses 1 health per hit
 
+                    // Apply knockback to enemy
+                    const knockbackForce = petalStats.knockback || 0;
+                    if (knockbackForce > 0) {
+                        // Calculate knockback direction from petal to enemy
+                        const dx = enemy.x - petalX;
+                        const dy = enemy.y - petalY;
+                        const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const normalizedDx = dx / distance;
+                        const normalizedDy = dy / distance;
+
+                        // Apply knockback to enemy
+                        enemy.knockbackX = normalizedDx * knockbackForce;
+                        enemy.knockbackY = normalizedDy * knockbackForce;
+                    }
+
                     io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
 
                     // Check if petal breaks

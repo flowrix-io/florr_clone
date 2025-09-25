@@ -13,6 +13,7 @@ exports.PETAL_CONFIG = {
             size: 2.0,
             speed: 1.0,
             cooldown: 1200, // 10 seconds
+            knockback: 5,
             description: "A simple petal that provides basic protection",
             color: "#90EE90",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -26,6 +27,7 @@ exports.PETAL_CONFIG = {
             size: 2.0,
             speed: 1.0,
             cooldown: 1200, // 9 seconds
+            knockback: 8,
             description: "An improved basic petal with better stats",
             color: "#32CD32",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -39,6 +41,7 @@ exports.PETAL_CONFIG = {
             size: 2.0,
             speed: 1.0,
             cooldown: 1200, // 8 seconds
+            knockback: 12,
             description: "A superior basic petal with enhanced capabilities",
             color: "#228B22",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -52,6 +55,7 @@ exports.PETAL_CONFIG = {
             size: 2.0,
             speed: 1.0,
             cooldown: 1200, // 7 seconds
+            knockback: 18,
             description: "An elite basic petal with impressive power",
             color: "#006400",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -65,6 +69,7 @@ exports.PETAL_CONFIG = {
             size: 2.0,
             speed: 1.0,
             cooldown: 1200, // 6 seconds
+            knockback: 25,
             description: "A legendary basic petal of immense strength",
             color: "#8B4513",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -78,6 +83,7 @@ exports.PETAL_CONFIG = {
             size: 2.0,
             speed: 1.0,
             cooldown: 1200, // 5 seconds
+            knockback: 35,
             description: "A mythic basic petal with otherworldly power",
             color: "#4B0082",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -93,6 +99,7 @@ exports.PETAL_CONFIG = {
             size: 0.9,
             speed: 1.0,
             cooldown: 1500, // 8 seconds
+            knockback: 3,
             description: "A thorny petal that deals extra damage",
             color: "#FF69B4",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -106,6 +113,7 @@ exports.PETAL_CONFIG = {
             size: 1.0,
             speed: 1.0,
             cooldown: 1500, // 7 seconds
+            knockback: 6,
             description: "A crimson petal with sharp thorns",
             color: "#DC143C",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -119,6 +127,7 @@ exports.PETAL_CONFIG = {
             size: 1.1,
             speed: 1.0,
             cooldown: 1500, // 6 seconds
+            knockback: 10,
             description: "A majestic rose petal fit for royalty",
             color: "#8B0000",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -132,6 +141,7 @@ exports.PETAL_CONFIG = {
             size: 1.2,
             speed: 1.0,
             cooldown: 1500, // 5 seconds
+            knockback: 15,
             description: "A divine rose petal blessed with power",
             color: "#B22222",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -145,6 +155,7 @@ exports.PETAL_CONFIG = {
             size: 1.3,
             speed: 1.0,
             cooldown: 1500, // 4 seconds
+            knockback: 22,
             description: "An eternal rose petal that never wilts",
             color: "#FF1493",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -158,6 +169,7 @@ exports.PETAL_CONFIG = {
             size: 1.4,
             speed: 1.0,
             cooldown: 1500, // 3 seconds
+            knockback: 30,
             description: "A celestial rose petal from the heavens",
             color: "#FF6347",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -173,6 +185,7 @@ exports.PETAL_CONFIG = {
             size: 0.8,
             speed: 1.0,
             cooldown: 5000, // 6 seconds
+            knockback: 8,
             description: "A fast, sharp petal that prioritizes offense",
             color: "#FFD700",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
@@ -187,6 +200,7 @@ exports.PETAL_CONFIG = {
             size: 0.85,
             speed: 1.0,
             cooldown: 5000, // 5 seconds
+            knockback: 12,
             description: "A poisonous stinger with deadly precision",
             color: "#FFA500",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
@@ -201,6 +215,7 @@ exports.PETAL_CONFIG = {
             size: 0.9,
             speed: 1.0,
             cooldown: 5000, // 4 seconds
+            knockback: 18,
             description: "A barbed stinger that tears through enemies",
             color: "#FF8C00",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
@@ -215,6 +230,7 @@ exports.PETAL_CONFIG = {
             size: 0.95,
             speed: 1.0,
             cooldown: 5000, // 3 seconds
+            knockback: 25,
             description: "A razor-sharp stinger of incredible lethality",
             color: "#FF7F50",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
@@ -229,6 +245,7 @@ exports.PETAL_CONFIG = {
             size: 1.0,
             speed: 1.0,
             cooldown: 5000, // 2.5 seconds
+            knockback: 35,
             description: "An infernal stinger wreathed in flames",
             color: "#FF4500",
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
@@ -243,6 +260,7 @@ exports.PETAL_CONFIG = {
             size: 1.1,
             speed: 1.0,
             cooldown: 5000, // 2 seconds
+            knockback: 50,
             description: "A void stinger that pierces reality itself",
             color: "#800080",
             image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
