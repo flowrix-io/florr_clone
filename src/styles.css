@@ -274,6 +274,165 @@ label {
     transform: translateX(300px); /* Slide in from the left */
 }
 
+/* Crafting panel styles */
+.crafting-panel {
+    position: fixed;
+    top: 33.33vh; /* Start at 1/3 from top, leaving top empty */
+    left: -300px; /* Start off-screen to the left */
+    width: 300px;
+    height: 66.67vh; /* 2/3 of viewport height */
+    background: #d8a05d; /* Orange background color */
+    transition: transform 0.3s ease-out;
+    z-index: 1000;
+    padding: 20px;
+    box-sizing: border-box;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    border-right: 3px solid #c4914a; /* Add a subtle border */
+}
+
+.crafting-panel.open {
+    transform: translateX(300px); /* Slide in from the left */
+}
+
+.crafting-content {
+    height: 100%;
+    overflow-y: auto;
+    padding: 10px;
+    box-sizing: border-box;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.crafting-panel h2 {
+    margin: 0 0 20px 0;
+    text-align: center;
+    color: white;
+    font-size: 24px;
+}
+
+.crafting-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+    padding: 10px;
+}
+
+.crafting-slot {
+    width: 60px;
+    height: 60px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid #666;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.crafting-slot.drag-over {
+    border-color: #00ff00;
+    background: rgba(0, 255, 0, 0.2);
+}
+
+.crafting-slot img {
+    width: 80%;
+    height: 80%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+}
+
+.success-chance {
+    text-align: center;
+    margin: 10px 0;
+    font-size: 16px;
+    font-weight: bold;
+    color: #fff;
+}
+
+.petal-count {
+    text-align: center;
+    margin: 10px 0;
+    font-size: 16px;
+    font-weight: bold;
+    color: #fff;
+}
+
+.craft-button {
+    width: 100%;
+    padding: 10px;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-bottom: 10px;
+}
+
+.craft-button:hover {
+    background: #45a049;
+}
+
+.craft-button:disabled {
+    background: #666;
+    cursor: not-allowed;
+}
+
+.crafting-inventory-preview {
+    border-top: 2px solid #c4914a;
+    padding-top: 10px;
+    margin-top: 10px;
+}
+
+.crafting-inventory-preview h3 {
+    margin: 0 0 10px 0;
+    text-align: center;
+    color: white;
+    font-size: 18px;
+}
+
+.crafting-inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.crafting-inventory-item {
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid #666;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    position: relative;
+}
+
+.crafting-inventory-item:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.crafting-inventory-item img {
+    width: 80%;
+    height: 80%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+}
+
+.crafting-inventory-item:active {
+    cursor: grabbing;
+}
+
 /* Update existing inventory content styles */
 .inventory-content {
     height: 100%;
@@ -361,7 +520,7 @@ label {
 .chat-container {
     position: fixed;
     left: 20px;
-    bottom: 100px;
+    bottom: 20px;
     width: 300px;
     height: 200px;
     background: rgba(0, 0, 0, 0.7);
@@ -369,7 +528,7 @@ label {
     display: flex;
     flex-direction: column;
     padding: 10px;
-    z-index: 1000;
+    z-index: 50;
 }
 
 .chat-messages {

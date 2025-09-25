@@ -58,7 +58,7 @@ class Chat {
           background: transparent;
           display: flex;
           flex-direction: column;
-          z-index: 1000;
+          z-index: 200;
           font-family: Arial, sans-serif;
       `;
         // Create messages container with transparent background
@@ -71,6 +71,7 @@ class Chat {
           color: white;
           text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
           background: transparent;
+          z-index: 200;
           font-family: Arial, sans-serif;
       `;
         // Create input container
@@ -80,6 +81,7 @@ class Chat {
           padding: 5px;
           background: transparent;
           font-family: Arial, sans-serif;
+          z-index: 200;
       `;
         // Create input field with semi-transparent background
         this.chatInput = document.createElement('input');
@@ -95,6 +97,7 @@ class Chat {
           color: white;
           outline: none;
           font-family: Arial, sans-serif;
+          z-index: 200;
       `;
         // Add event listeners
         this.chatInput.addEventListener('focus', () => {

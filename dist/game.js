@@ -267,7 +267,7 @@ class Game {
       `;
         document.head.appendChild(style);
         // Add to constructor after other UI initialization
-        this.inventoryManager = new inventory_1.InventoryManager(this);
+        this.inventoryManager = new inventory_1.InventoryManager(this, this.chat);
         this.inventoryManager.updateLoadoutDisplay();
         this.svgLoader = new SVGLoader_1.SVGLoader();
         this.loadAssets();

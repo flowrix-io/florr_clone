@@ -381,7 +381,7 @@ export class Game {
         document.head.appendChild(style);
 
         // Add to constructor after other UI initialization
-        this.inventoryManager = new InventoryManager(this);
+        this.inventoryManager = new InventoryManager(this, this.chat);
         this.inventoryManager.updateLoadoutDisplay();
 
         this.svgLoader = new SVGLoader();

@@ -3,14 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryManager = void 0;
 const petals_1 = require("./petals");
 class InventoryManager {
-    constructor(game) {
+    constructor(game, chat) {
         this.inventoryPanel = null;
         this.craftingPanel = null;
-        this.craftingSlots = Array(4).fill(null).map((_, i) => ({ index: i, item: null }));
+        this.craftingSlots = Array(5).fill(null).map((_, i) => ({ index: i, item: null }));
         this.isInventoryOpen = false;
         this.isCraftingOpen = false;
         this.LOADOUT_SLOTS = 10;
         this.LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+        this.chat = null;
         this.ITEM_RARITY_COLORS = {
             common: '#7eef6d',
             uncommon: '#ffe65d',
@@ -20,6 +21,7 @@ class InventoryManager {
             mythic: '#1fdbde'
         };
         this.game = game;
+        this.chat = chat;
         // Create loadout bar
         const loadoutBar = document.createElement('div');
         loadoutBar.id = 'loadoutBar';
@@ -59,9 +61,14 @@ class InventoryManager {
         this.craftingPanel.id = 'craftingPanel';
         this.craftingPanel.className = 'crafting-panel';
         this.craftingPanel.style.display = 'none';
+        const craftingContent = document.createElement('div');
+        craftingContent.className = 'crafting-content';
+        const title = document.createElement('h2');
+        title.textContent = 'Crafting';
+        craftingContent.appendChild(title);
         const craftingGrid = document.createElement('div');
         craftingGrid.className = 'crafting-grid';
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 5; i++) {
             const slot = document.createElement('div');
             slot.className = 'crafting-slot';
             slot.dataset.index = i.toString();
@@ -88,12 +95,32 @@ class InventoryManager {
             });
             craftingGrid.appendChild(slot);
         }
+        const successChance = document.createElement('div');
+        successChance.className = 'success-chance';
+        successChance.textContent = 'Success Chance: 0%';
+        craftingContent.appendChild(successChance);
+        const petalCount = document.createElement('div');
+        petalCount.className = 'petal-count';
+        petalCount.textContent = 'Petals: 0';
+        craftingContent.appendChild(petalCount);
         const craftButton = document.createElement('button');
         craftButton.className = 'craft-button';
         craftButton.textContent = 'Craft';
         craftButton.addEventListener('click', () => this.craftItems());
-        this.craftingPanel.appendChild(craftingGrid);
-        this.craftingPanel.appendChild(craftButton);
+        // Create inventory preview section
+        const inventoryPreview = document.createElement('div');
+        inventoryPreview.className = 'crafting-inventory-preview';
+        const previewTitle = document.createElement('h3');
+        previewTitle.textContent = 'Inventory';
+        inventoryPreview.appendChild(previewTitle);
+        const inventoryGrid = document.createElement('div');
+        inventoryGrid.className = 'crafting-inventory-grid';
+        inventoryPreview.appendChild(inventoryGrid);
+        craftingContent.appendChild(craftingGrid);
+        craftingContent.appendChild(successChance);
+        craftingContent.appendChild(craftButton);
+        craftingContent.appendChild(inventoryPreview);
+        this.craftingPanel.appendChild(craftingContent);
         document.body.appendChild(this.craftingPanel);
         // Add styles
         const style = document.createElement('style');
@@ -116,55 +143,6 @@ class InventoryManager {
                 from { height: 100%; }
                 to { height: 0%; }
             }
-            .crafting-panel {
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: rgba(0, 0, 0, 0.9);
-                padding: 20px;
-                border-radius: 10px;
-                border: 2px solid #666;
-                display: none;
-                z-index: 1000;
-            }
-            .crafting-grid {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 10px;
-                margin-bottom: 20px;
-            }
-            .crafting-slot {
-                width: 60px;
-                height: 60px;
-                background: rgba(255, 255, 255, 0.1);
-                border: 2px solid #666;
-                border-radius: 5px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .crafting-slot.drag-over {
-                border-color: #00ff00;
-                background: rgba(0, 255, 0, 0.2);
-            }
-            .craft-button {
-                width: 100%;
-                padding: 10px;
-                background: #4CAF50;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                cursor: pointer;
-                font-size: 16px;
-            }
-            .craft-button:hover {
-                background: #45a049;
-            }
-            .craft-button:disabled {
-                background: #666;
-                cursor: not-allowed;
-            }
         `;
         document.head.appendChild(style);
         // Setup drag and drop
@@ -173,12 +151,27 @@ class InventoryManager {
     getLoadoutKeyBindings() {
         return this.LOADOUT_KEY_BINDINGS;
     }
+    hideChat() {
+        if (this.chat?.chatContainer) {
+            this.chat.chatContainer.setAttribute('z-index', '0');
+            this.chat.chatInput?.setAttribute('z-index', '0');
+            this.chat.hide();
+        }
+    }
+    showChat() {
+        if (this.chat?.chatContainer) {
+            this.chat.chatContainer.setAttribute('z-index', '1000');
+            this.chat.chatInput?.setAttribute('z-index', '1000');
+            this.chat.show();
+        }
+    }
     toggleInventory() {
         if (!this.inventoryPanel)
             return;
         const isOpen = this.inventoryPanel.style.display === 'block';
         if (!isOpen) {
             this.inventoryPanel.style.display = 'block';
+            this.hideChat();
             setTimeout(() => {
                 this.inventoryPanel?.classList.add('open');
             }, 10);
@@ -186,6 +179,7 @@ class InventoryManager {
         }
         else {
             this.inventoryPanel.classList.remove('open');
+            this.showChat();
             setTimeout(() => {
                 if (this.inventoryPanel) {
                     this.inventoryPanel.style.display = 'none';
@@ -197,11 +191,25 @@ class InventoryManager {
     toggleCrafting() {
         if (!this.craftingPanel)
             return;
-        this.isCraftingOpen = !this.isCraftingOpen;
-        this.craftingPanel.style.display = this.isCraftingOpen ? 'block' : 'none';
-        if (this.isCraftingOpen) {
+        const isOpen = this.craftingPanel.classList.contains('open');
+        if (!isOpen) {
+            this.craftingPanel.style.display = 'block';
+            this.hideChat();
+            setTimeout(() => {
+                this.craftingPanel?.classList.add('open');
+            }, 10);
             this.updateCraftingDisplay();
         }
+        else {
+            this.craftingPanel.classList.remove('open');
+            this.showChat();
+            setTimeout(() => {
+                if (this.craftingPanel) {
+                    this.craftingPanel.style.display = 'none';
+                }
+            }, 300);
+        }
+        this.isCraftingOpen = !isOpen;
     }
     equipItemToLoadout(rarity, type, loadoutSlot) {
         const player = this.game.getLocalPlayer();
@@ -692,6 +700,22 @@ class InventoryManager {
         this.updateCraftingDisplay();
         this.updateInventoryDisplay();
     }
+    removeItemFromCraftingSlot(slotIndex) {
+        const craftingSlot = this.craftingSlots[slotIndex];
+        if (!craftingSlot.item)
+            return;
+        const player = this.game.getLocalPlayer();
+        if (!player)
+            return;
+        // Return item to inventory
+        if (craftingSlot.item.rarity && craftingSlot.item.type) {
+            this.addItem(craftingSlot.item.rarity, craftingSlot.item.type, 1);
+        }
+        // Clear the crafting slot
+        craftingSlot.item = null;
+        this.updateCraftingDisplay();
+        this.updateInventoryDisplay();
+    }
     craftItems() {
         const player = this.game.getLocalPlayer();
         if (!player)
@@ -708,24 +732,295 @@ class InventoryManager {
         this.updateCraftingDisplay();
     }
     updateCraftingDisplay() {
+        if (!this.craftingPanel)
+            return;
+        const player = this.game.getLocalPlayer();
+        if (!player)
+            return;
+        // Update crafting slots
         const slots = document.querySelectorAll('.crafting-slot');
         slots.forEach((slot, index) => {
             slot.innerHTML = '';
             const craftingSlot = this.craftingSlots[index];
             if (craftingSlot.item) {
-                const img = document.createElement('img');
-                img.src = `./assets/${craftingSlot.item.type}.png`;
-                img.alt = craftingSlot.item.type;
-                img.style.width = '80%';
-                img.style.height = '80%';
-                img.style.objectFit = 'contain';
+                // Handle different item types
+                if (craftingSlot.item.type === 'petal') {
+                    // Create petal visual using SVG image
+                    const petalDiv = document.createElement('div');
+                    petalDiv.style.width = '80%';
+                    petalDiv.style.height = '80%';
+                    petalDiv.style.display = 'flex';
+                    petalDiv.style.alignItems = 'center';
+                    petalDiv.style.justifyContent = 'center';
+                    petalDiv.style.position = 'relative';
+                    // Get petal SVG from stats
+                    if (craftingSlot.item.petalType && craftingSlot.item.rarity) {
+                        const stats = (0, petals_1.getPetalStats)(craftingSlot.item.petalType, craftingSlot.item.rarity);
+                        if (stats && stats.image) {
+                            // Create an image element with the SVG data
+                            const img = document.createElement('img');
+                            img.style.width = '100%';
+                            img.style.height = '100%';
+                            img.style.objectFit = 'contain';
+                            // Convert SVG string to blob URL (same as graphics system)
+                            const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                            const url = URL.createObjectURL(svgBlob);
+                            img.src = url;
+                            petalDiv.appendChild(img);
+                        }
+                        else {
+                            // Fallback to colored circle
+                            petalDiv.style.borderRadius = '50%';
+                            petalDiv.style.border = '2px solid #000';
+                            petalDiv.style.backgroundColor = '#90EE90'; // Default green
+                        }
+                    }
+                    else {
+                        // Fallback to colored circle
+                        petalDiv.style.borderRadius = '50%';
+                        petalDiv.style.border = '2px solid #000';
+                        petalDiv.style.backgroundColor = '#90EE90'; // Default green
+                    }
+                    // Add remove button
+                    const removeBtn = document.createElement('button');
+                    removeBtn.innerHTML = '×';
+                    removeBtn.style.position = 'absolute';
+                    removeBtn.style.top = '-5px';
+                    removeBtn.style.right = '-5px';
+                    removeBtn.style.width = '20px';
+                    removeBtn.style.height = '20px';
+                    removeBtn.style.borderRadius = '50%';
+                    removeBtn.style.border = 'none';
+                    removeBtn.style.backgroundColor = '#ff4444';
+                    removeBtn.style.color = 'white';
+                    removeBtn.style.fontSize = '14px';
+                    removeBtn.style.cursor = 'pointer';
+                    removeBtn.style.display = 'flex';
+                    removeBtn.style.alignItems = 'center';
+                    removeBtn.style.justifyContent = 'center';
+                    removeBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.removeItemFromCraftingSlot(index);
+                    });
+                    petalDiv.appendChild(removeBtn);
+                    slot.appendChild(petalDiv);
+                }
+                else {
+                    // Handle other item types with PNG images
+                    const img = document.createElement('img');
+                    img.src = `./assets/${craftingSlot.item.type}.png`;
+                    img.alt = craftingSlot.item.type;
+                    img.style.width = '80%';
+                    img.style.height = '80%';
+                    img.style.objectFit = 'contain';
+                    img.style.position = 'relative';
+                    // Add remove button
+                    const removeBtn = document.createElement('button');
+                    removeBtn.innerHTML = '×';
+                    removeBtn.style.position = 'absolute';
+                    removeBtn.style.top = '-5px';
+                    removeBtn.style.right = '-5px';
+                    removeBtn.style.width = '20px';
+                    removeBtn.style.height = '20px';
+                    removeBtn.style.borderRadius = '50%';
+                    removeBtn.style.border = 'none';
+                    removeBtn.style.backgroundColor = '#ff4444';
+                    removeBtn.style.color = 'white';
+                    removeBtn.style.fontSize = '14px';
+                    removeBtn.style.cursor = 'pointer';
+                    removeBtn.style.display = 'flex';
+                    removeBtn.style.alignItems = 'center';
+                    removeBtn.style.justifyContent = 'center';
+                    removeBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.removeItemFromCraftingSlot(index);
+                    });
+                    slot.appendChild(img);
+                    slot.appendChild(removeBtn);
+                }
                 if (craftingSlot.item.rarity) {
                     slot.style.borderColor = this.ITEM_RARITY_COLORS[craftingSlot.item.rarity];
                 }
-                slot.appendChild(img);
             }
             else {
                 slot.style.borderColor = '#666';
+            }
+        });
+        // Calculate and update success chance
+        const successChance = this.calculateSuccessChance();
+        const successElement = this.craftingPanel.querySelector('.success-chance');
+        if (successElement) {
+            successElement.textContent = `Success Chance: ${successChance}%`;
+        }
+        // Calculate and update petal count
+        const petalCount = this.calculatePetalCount();
+        const petalElement = this.craftingPanel.querySelector('.petal-count');
+        if (petalElement) {
+            petalElement.textContent = `Petals: ${petalCount}`;
+        }
+        // Update inventory preview
+        this.updateCraftingInventoryPreview();
+    }
+    calculateSuccessChance() {
+        const items = this.craftingSlots
+            .map(slot => slot.item)
+            .filter((item) => item !== null);
+        if (items.length === 0)
+            return 0;
+        // Group items by rarity
+        const rarityCounts = {};
+        items.forEach(item => {
+            if (item.rarity) {
+                rarityCounts[item.rarity] = (rarityCounts[item.rarity] || 0) + 1;
+            }
+        });
+        // Calculate success chance based on rarity progression
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        let baseChance = 64; // 64% for common->uncommon
+        // Find the highest rarity in the crafting slots
+        let highestRarityIndex = -1;
+        for (const rarity of rarities) {
+            if (rarityCounts[rarity] > 0) {
+                highestRarityIndex = rarities.indexOf(rarity);
+            }
+        }
+        if (highestRarityIndex === -1)
+            return 0;
+        // Halve the chance for each rarity level above common
+        const chance = baseChance / Math.pow(2, highestRarityIndex);
+        return Math.round(chance);
+    }
+    calculatePetalCount() {
+        const player = this.game.getLocalPlayer();
+        if (!player)
+            return 0;
+        let totalPetals = 0;
+        const petalRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        petalRarities.forEach(rarity => {
+            const petalCount = player.inventory[rarity]?.['petal'] || 0;
+            totalPetals += petalCount;
+        });
+        return totalPetals;
+    }
+    updateCraftingInventoryPreview() {
+        const inventoryGrid = this.craftingPanel?.querySelector('.crafting-inventory-grid');
+        if (!inventoryGrid)
+            return;
+        const player = this.game.getLocalPlayer();
+        if (!player)
+            return;
+        inventoryGrid.innerHTML = '';
+        const rarities = ['mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        rarities.forEach(rarity => {
+            const rarityItems = player.inventory[rarity];
+            if (rarityItems) {
+                Object.entries(rarityItems).forEach(([itemType, count]) => {
+                    if (count > 0) {
+                        const itemElement = document.createElement('div');
+                        itemElement.className = 'crafting-inventory-item';
+                        itemElement.draggable = true;
+                        itemElement.dataset.rarity = rarity;
+                        itemElement.dataset.type = itemType;
+                        itemElement.dataset.count = count.toString();
+                        // Create container for item display
+                        const itemContainer = document.createElement('div');
+                        itemContainer.style.position = 'relative';
+                        itemContainer.style.width = '100%';
+                        itemContainer.style.height = '100%';
+                        itemContainer.style.display = 'flex';
+                        itemContainer.style.flexDirection = 'column';
+                        itemContainer.style.alignItems = 'center';
+                        itemContainer.style.justifyContent = 'center';
+                        // Handle different item types
+                        if (itemType === 'petal') {
+                            // Create petal visual using SVG image
+                            const petalDiv = document.createElement('div');
+                            petalDiv.style.width = '60%';
+                            petalDiv.style.height = '60%';
+                            petalDiv.style.display = 'flex';
+                            petalDiv.style.alignItems = 'center';
+                            petalDiv.style.justifyContent = 'center';
+                            // Get petal SVG from stats - need to determine petal type
+                            const petalTypes = ['basic', 'rose', 'stinger'];
+                            let petalStats = null;
+                            let petalType = 'basic'; // default
+                            // Try to find the correct petal type
+                            for (const type of petalTypes) {
+                                const stats = (0, petals_1.getPetalStats)(type, rarity);
+                                if (stats) {
+                                    petalStats = stats;
+                                    petalType = type;
+                                    break;
+                                }
+                            }
+                            if (petalStats && petalStats.image) {
+                                // Create an image element with the SVG data
+                                const img = document.createElement('img');
+                                img.style.width = '100%';
+                                img.style.height = '100%';
+                                img.style.objectFit = 'contain';
+                                // Convert SVG string to blob URL (same as graphics system)
+                                const svgBlob = new Blob([petalStats.image], { type: 'image/svg+xml' });
+                                const url = URL.createObjectURL(svgBlob);
+                                img.src = url;
+                                petalDiv.appendChild(img);
+                            }
+                            else {
+                                // Fallback to colored circle
+                                petalDiv.style.borderRadius = '50%';
+                                petalDiv.style.border = '2px solid #000';
+                                petalDiv.style.backgroundColor = '#90EE90'; // Default green
+                            }
+                            itemContainer.appendChild(petalDiv);
+                        }
+                        else {
+                            // Handle other item types with PNG images
+                            const img = document.createElement('img');
+                            img.src = `./assets/${itemType}.png`;
+                            img.alt = itemType;
+                            img.style.width = '60%';
+                            img.style.height = '60%';
+                            img.style.objectFit = 'contain';
+                            itemContainer.appendChild(img);
+                        }
+                        // Add count display
+                        const countDisplay = document.createElement('div');
+                        countDisplay.style.position = 'absolute';
+                        countDisplay.style.top = '2px';
+                        countDisplay.style.right = '2px';
+                        countDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+                        countDisplay.style.color = 'white';
+                        countDisplay.style.fontSize = '10px';
+                        countDisplay.style.padding = '1px 3px';
+                        countDisplay.style.borderRadius = '3px';
+                        countDisplay.style.fontWeight = 'bold';
+                        countDisplay.textContent = count.toString();
+                        itemContainer.appendChild(countDisplay);
+                        // Add rarity indicator
+                        const rarityDisplay = document.createElement('div');
+                        rarityDisplay.style.position = 'absolute';
+                        rarityDisplay.style.bottom = '2px';
+                        rarityDisplay.style.left = '2px';
+                        rarityDisplay.style.backgroundColor = this.ITEM_RARITY_COLORS[rarity] || '#666';
+                        rarityDisplay.style.color = 'white';
+                        rarityDisplay.style.fontSize = '8px';
+                        rarityDisplay.style.padding = '1px 2px';
+                        rarityDisplay.style.borderRadius = '2px';
+                        rarityDisplay.style.fontWeight = 'bold';
+                        rarityDisplay.textContent = rarity.charAt(0).toUpperCase();
+                        itemContainer.appendChild(rarityDisplay);
+                        itemElement.appendChild(itemContainer);
+                        // Add drag event listeners
+                        itemElement.addEventListener('dragstart', (e) => {
+                            e.dataTransfer?.setData('text/plain', JSON.stringify({
+                                rarity: rarity,
+                                type: itemType,
+                                count: count
+                            }));
+                        });
+                        inventoryGrid.appendChild(itemElement);
+                    }
+                });
             }
         });
     }

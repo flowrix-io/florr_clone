@@ -963,22 +963,66 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             return;
         }
 
+        // Calculate success chance (same as client-side logic)
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        const rarityIndex = rarities.indexOf(rarity);
+        const baseChance = 64; // 64% for common->uncommon
+        const successChance = baseChance / Math.pow(2, rarityIndex);
+        
+        // Roll for success
+        const roll = Math.random() * 100;
+        const success = roll < successChance;
+
         // Remove crafting items from inventory
         removeItem(player.inventory, rarity, type, data.items.length);
 
-        // Add new item to inventory
-        addItem(player.inventory, newRarity, type, 1);
-        
-        const newItem: Item = {
-            type: type,
-            rarity: newRarity as Item['rarity']
-        };
+        if (success) {
+            // Crafting succeeded - add new item to inventory
+            addItem(player.inventory, newRarity, type, 1);
+            
+            const newItem: Item = {
+                type: type,
+                rarity: newRarity as Item['rarity']
+            };
 
-        // Notify clients
-        socket.emit('craftingSuccess', {
-            newItem,
-            inventory: player.inventory
-        });
+            // Notify clients of success
+            socket.emit('craftingSuccess', {
+                newItem,
+                inventory: player.inventory,
+                successChance: Math.round(successChance)
+            });
+        } else {
+            // Crafting failed - lose 1-4 petals
+            const petalsLost = Math.floor(Math.random() * 4) + 1; // 1-4 petals
+            
+            // Count available petals in inventory
+            let totalPetals = 0;
+            const petalRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+            petalRarities.forEach(petalRarity => {
+                const petalCount = player.inventory[petalRarity]?.['petal'] || 0;
+                totalPetals += petalCount;
+            });
+
+            // Remove petals (prioritize lower rarities first)
+            let petalsToRemove = Math.min(petalsLost, totalPetals);
+            for (const petalRarity of petalRarities) {
+                if (petalsToRemove <= 0) break;
+                const petalCount = player.inventory[petalRarity]?.['petal'] || 0;
+                if (petalCount > 0) {
+                    const removeFromThisRarity = Math.min(petalsToRemove, petalCount);
+                    removeItem(player.inventory, petalRarity, 'petal', removeFromThisRarity);
+                    petalsToRemove -= removeFromThisRarity;
+                }
+            }
+
+            // Notify clients of failure
+            socket.emit('craftingFailed', {
+                message: `Crafting failed! Lost ${petalsLost} petals.`,
+                inventory: player.inventory,
+                successChance: Math.round(successChance),
+                petalsLost: petalsLost
+            });
+        }
 
         // Save player progress
         if (socket.userId) {

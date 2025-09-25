@@ -12,8 +12,8 @@ interface SandboxWindow extends Window {
 }
 
 export class Chat {
-    private chatContainer: HTMLDivElement | null = null;
-    private chatInput: HTMLInputElement | null = null;
+    public chatContainer: HTMLDivElement | null = null;
+    public chatInput: HTMLInputElement | null = null;
     private chatMessages: HTMLDivElement | null = null;
     private isChatFocused: boolean = false;
     private pendingScripts: Map<string, SandboxedScript> = new Map();
@@ -77,7 +77,7 @@ export class Chat {
           background: transparent;
           display: flex;
           flex-direction: column;
-          z-index: 1000;
+          z-index: 200;
           font-family: Arial, sans-serif;
       `;
 
@@ -91,6 +91,7 @@ export class Chat {
           color: white;
           text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
           background: transparent;
+          z-index: 200;
           font-family: Arial, sans-serif;
       `;
 
@@ -101,6 +102,7 @@ export class Chat {
           padding: 5px;
           background: transparent;
           font-family: Arial, sans-serif;
+          z-index: 200;
       `;
 
         // Create input field with semi-transparent background
@@ -117,6 +119,7 @@ export class Chat {
           color: white;
           outline: none;
           font-family: Arial, sans-serif;
+          z-index: 200;
       `;
 
         // Add event listeners
