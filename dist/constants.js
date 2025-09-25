@@ -52,12 +52,12 @@ exports.SAND_COUNT = 50; // Reduced from 200 to 50
 exports.MIN_SAND_RADIUS = 50; // Increased from 30 to 50
 exports.MAX_SAND_RADIUS = 120; // Increased from 80 to 120
 exports.ENEMY_TIERS = {
-    common: { health: 5, speed: 0.5, damage: 5, probability: 0.4, color: '#808080' },
-    uncommon: { health: 40, speed: 0.75, damage: 10, probability: 0.3, color: '#008000' },
-    rare: { health: 60, speed: 1, damage: 15, probability: 0.15, color: '#0000FF' },
-    epic: { health: 80, speed: 1.25, damage: 20, probability: 0.1, color: '#800080' },
-    legendary: { health: 100, speed: 1.5, damage: 25, probability: 0.04, color: '#FFA500' },
-    mythic: { health: 150, speed: 2, damage: 30, probability: 0.01, color: '#FF0000' }
+    common: { health: 5, speed: 0.5, damage: 5, probability: 0.4, color: '#7eef6d' },
+    uncommon: { health: 40, speed: 0.75, damage: 10, probability: 0.3, color: '#ffe65d' },
+    rare: { health: 60, speed: 1, damage: 15, probability: 0.15, color: '#4d52e3' },
+    epic: { health: 80, speed: 1.25, damage: 20, probability: 0.1, color: '#861fde' },
+    legendary: { health: 100, speed: 1.5, damage: 25, probability: 0.04, color: '#1fdbde' },
+    mythic: { health: 150, speed: 2, damage: 30, probability: 0.01, color: '#de1f65' }
 };
 exports.MAX_INVENTORY_SIZE = 5;
 exports.RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn

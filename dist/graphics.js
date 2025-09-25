@@ -51,12 +51,12 @@ class Graphics {
             safe_zone: 'rgba(255, 193, 7, 0.2)'
         };
         this.ENEMY_COLORS = {
-            common: '#808080',
-            uncommon: '#008000',
-            rare: '#0000FF',
-            epic: '#800080',
-            legendary: '#FFA500',
-            mythic: '#FF0000'
+            common: '#7eef6d',
+            uncommon: '#ffe65d',
+            rare: '#4d52e3',
+            epic: '#861fde',
+            legendary: '#de1f1f',
+            mythic: '#1fdbde'
         };
         this.ENEMY_SIZE_MULTIPLIERS = {
             common: 1.0,
@@ -232,23 +232,23 @@ class Graphics {
         return colors[tier] || colors.common;
     }
     drawSpawnPoint(x, y, width, height, type) {
-        // Draw spawn area indicator
-        const color = type ? this.getTierColor(type) : 'rgba(76, 175, 80, 0.3)';
-        this.ctx.fillStyle = color;
-        this.ctx.fillRect(x, y, width, height);
-        // Add spawn point marker
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-        this.ctx.lineWidth = 2;
-        this.ctx.beginPath();
-        this.ctx.arc(x + width / 2, y + height / 2, Math.min(width, height) / 4, 0, Math.PI * 2);
-        this.ctx.stroke();
-        // Add tier label
-        if (type) {
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = '20px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(type.toUpperCase(), x + width / 2, y + height / 2);
-        }
+        // // Draw spawn area indicator
+        // const color = type ? this.getTierColor(type) : 'rgba(76, 175, 80, 0.3)';
+        // this.ctx.fillStyle = color;
+        // this.ctx.fillRect(x, y, width, height);
+        // // Add spawn point marker
+        // this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        // this.ctx.lineWidth = 2;
+        // this.ctx.beginPath();
+        // this.ctx.arc(x + width / 2, y + height / 2, Math.min(width, height) / 4, 0, Math.PI * 2);
+        // this.ctx.stroke();
+        // // Add tier label
+        // if (type) {
+        //     this.ctx.fillStyle = 'white';
+        //     this.ctx.font = '20px Arial';
+        //     this.ctx.textAlign = 'center';
+        //     this.ctx.fillText(type.toUpperCase(), x + width / 2, y + height / 2);
+        // }
     }
     drawUI(players, socket) {
         // Draw player stats
