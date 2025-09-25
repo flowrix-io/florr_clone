@@ -186,11 +186,24 @@ class GameServer {
     createEnemy() {
         // Enemy creation logic using mob configs
         const x = Math.random() * constants_1.WORLD_WIDTH;
+        const y = Math.random() * constants_1.WORLD_HEIGHT;
         let tier = 'common';
-        for (const [t, zone] of Object.entries(constants_1.ZONE_BOUNDARIES)) {
-            if (x >= zone.start && x < zone.end) {
-                tier = t;
-                break;
+        // Check if position is in a spawn zone
+        const spawnZoneType = this.getSpawnZoneType(x, y);
+        if (spawnZoneType) {
+            // In a spawn zone - only spawn the specific rarity for this zone
+            tier = spawnZoneType;
+        }
+        else {
+            // Outside spawn zones - use normal probability distribution
+            const tierRoll = Math.random();
+            let cumulativeProbability = 0;
+            for (const [t, data] of Object.entries(constants_1.ENEMY_TIERS)) {
+                cumulativeProbability += data.probability;
+                if (tierRoll < cumulativeProbability) {
+                    tier = t;
+                    break;
+                }
             }
         }
         // Select mob type (fish, octopus, or shark)
@@ -270,6 +283,22 @@ class GameServer {
     }
     postMessage(type, data) {
         self.postMessage({ type, data });
+    }
+    // Helper function to get spawn zone type for a given position
+    getSpawnZoneType(x, y) {
+        for (const element of constants_1.WORLD_MAP) {
+            if (element.type === 'spawn' && element.properties?.spawnType) {
+                const scaledX = x / constants_1.SCALE_FACTOR;
+                const scaledY = y / constants_1.SCALE_FACTOR;
+                if (scaledX >= element.x &&
+                    scaledX <= element.x + element.width &&
+                    scaledY >= element.y &&
+                    scaledY <= element.y + element.height) {
+                    return element.properties.spawnType;
+                }
+            }
+        }
+        return null; // Not in any spawn zone
     }
     handlePlayerMovement(data) {
         const player = constants_1.players[data.id];

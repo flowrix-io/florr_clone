@@ -393,6 +393,24 @@ function despawnDistantEnemies() {
     }
 }
 
+// Helper function to get spawn zone type for a given position
+function getSpawnZoneType(x: number, y: number): string | null {
+    for (const element of WORLD_MAP) {
+        if (element.type === 'spawn' && element.properties?.spawnType) {
+            const scaledX = x / SCALE_FACTOR;
+            const scaledY = y / SCALE_FACTOR;
+            
+            if (scaledX >= element.x && 
+                scaledX <= element.x + element.width && 
+                scaledY >= element.y && 
+                scaledY <= element.y + element.height) {
+                return element.properties.spawnType;
+            }
+        }
+    }
+    return null; // Not in any spawn zone
+}
+
 // Update the createEnemy function to spawn only in player viewports
 function createEnemy(): Enemy {
     const playerCount = Object.keys(players).length;
@@ -477,16 +495,24 @@ function createEnemy(): Enemy {
         return null as any;
     }
 
-    // Select mob type and tier using mob configs
-    const tierRoll = Math.random();
+    // Check if position is in a spawn zone
+    const spawnZoneType = getSpawnZoneType(x, y);
     let tier: Enemy['tier'] = 'common';
-    let cumulativeProbability = 0;
 
-    for (const [t, data] of Object.entries(ENEMY_TIERS)) {
-        cumulativeProbability += data.probability;
-        if (tierRoll < cumulativeProbability) {
-            tier = t as Enemy['tier'];
-            break;
+    if (spawnZoneType) {
+        // In a spawn zone - only spawn the specific rarity for this zone
+        tier = spawnZoneType as Enemy['tier'];
+    } else {
+        // Outside spawn zones - use normal probability distribution
+        const tierRoll = Math.random();
+        let cumulativeProbability = 0;
+
+        for (const [t, data] of Object.entries(ENEMY_TIERS)) {
+            cumulativeProbability += data.probability;
+            if (tierRoll < cumulativeProbability) {
+                tier = t as Enemy['tier'];
+                break;
+            }
         }
     }
 

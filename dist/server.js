@@ -334,6 +334,22 @@ function despawnDistantEnemies() {
         console.log(`[SERVER] Despawned enemy ${enemy.id} (${enemy.type} ${enemy.tier}) - outside viewport for 30+ seconds`);
     }
 }
+// Helper function to get spawn zone type for a given position
+function getSpawnZoneType(x, y) {
+    for (const element of constants_1.WORLD_MAP) {
+        if (element.type === 'spawn' && element.properties?.spawnType) {
+            const scaledX = x / constants_1.SCALE_FACTOR;
+            const scaledY = y / constants_1.SCALE_FACTOR;
+            if (scaledX >= element.x &&
+                scaledX <= element.x + element.width &&
+                scaledY >= element.y &&
+                scaledY <= element.y + element.height) {
+                return element.properties.spawnType;
+            }
+        }
+    }
+    return null; // Not in any spawn zone
+}
 // Update the createEnemy function to spawn only in player viewports
 function createEnemy() {
     const playerCount = Object.keys(constants_1.players).length;
@@ -399,15 +415,23 @@ function createEnemy() {
     if (!validPosition) {
         return null;
     }
-    // Select mob type and tier using mob configs
-    const tierRoll = Math.random();
+    // Check if position is in a spawn zone
+    const spawnZoneType = getSpawnZoneType(x, y);
     let tier = 'common';
-    let cumulativeProbability = 0;
-    for (const [t, data] of Object.entries(constants_1.ENEMY_TIERS)) {
-        cumulativeProbability += data.probability;
-        if (tierRoll < cumulativeProbability) {
-            tier = t;
-            break;
+    if (spawnZoneType) {
+        // In a spawn zone - only spawn the specific rarity for this zone
+        tier = spawnZoneType;
+    }
+    else {
+        // Outside spawn zones - use normal probability distribution
+        const tierRoll = Math.random();
+        let cumulativeProbability = 0;
+        for (const [t, data] of Object.entries(constants_1.ENEMY_TIERS)) {
+            cumulativeProbability += data.probability;
+            if (tierRoll < cumulativeProbability) {
+                tier = t;
+                break;
+            }
         }
     }
     // Select mob type (fish, octopus, or shark)

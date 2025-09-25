@@ -2,21 +2,20 @@
   "players": {
     "t9pyo2soj": {
       "level": 3,
-      "xp": 0,
+      "xp": 115,
       "maxHealth": 120,
       "damage": 9,
       "inventory": {
         "common": {
           "petal_basic": 6,
           "petal_stinger": 1,
-          "shield": 2
-        },
-        "uncommon": {
+          "shield": 3,
           "speed_boost": 2,
           "health_potion": 1
         },
-        "rare": {
-          "petal_rose": 2
+        "uncommon": {
+          "health_potion": 1,
+          "petal_basic": 1
         }
       },
       "loadout": [
@@ -41,7 +40,15 @@
           "petalType": "basic",
           "rarity": "common",
           "maxHealth": 10,
-          "health": 3,
+          "health": 10,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 5,
           "onCooldown": false
         },
         {
@@ -54,17 +61,31 @@
         },
         {
           "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 10,
+          "rarity": "rare",
+          "petalType": "rose",
+          "health": 12,
+          "maxHealth": 45
+        },
+        {
+          "type": "petal",
+          "petalType": "rose",
+          "rarity": "rare",
+          "maxHealth": 45,
+          "health": 26,
           "onCooldown": false
         },
-        null,
-        null,
-        null,
-        null,
-        null
+        {
+          "type": "speed_boost",
+          "rarity": "uncommon"
+        },
+        {
+          "type": "speed_boost",
+          "rarity": "uncommon"
+        },
+        {
+          "type": "health_potion",
+          "rarity": "rare"
+        }
       ]
     }
   },

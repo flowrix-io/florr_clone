@@ -5,7 +5,8 @@ import {
     DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL,
     BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME,
     enemies, players, items, dots, obstacles, OBSTACLE_COUNT,
-    ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT
+    ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT,
+    WORLD_MAP, SCALE_FACTOR
 } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand } from './server_utils';
 import { Item } from './item';
@@ -226,12 +227,26 @@ class GameServer {
     private createEnemy(): Enemy {
         // Enemy creation logic using mob configs
         const x = Math.random() * WORLD_WIDTH;
+        const y = Math.random() * WORLD_HEIGHT;
         let tier: Enemy['tier'] = 'common';
         
-        for (const [t, zone] of Object.entries(ZONE_BOUNDARIES)) {
-            if (x >= zone.start && x < zone.end) {
-                tier = t as Enemy['tier'];
-                break;
+        // Check if position is in a spawn zone
+        const spawnZoneType = this.getSpawnZoneType(x, y);
+        
+        if (spawnZoneType) {
+            // In a spawn zone - only spawn the specific rarity for this zone
+            tier = spawnZoneType as Enemy['tier'];
+        } else {
+            // Outside spawn zones - use normal probability distribution
+            const tierRoll = Math.random();
+            let cumulativeProbability = 0;
+
+            for (const [t, data] of Object.entries(ENEMY_TIERS)) {
+                cumulativeProbability += data.probability;
+                if (tierRoll < cumulativeProbability) {
+                    tier = t as Enemy['tier'];
+                    break;
+                }
             }
         }
 
@@ -316,6 +331,24 @@ class GameServer {
 
     private postMessage(type: string, data: any) {
         self.postMessage({ type, data });
+    }
+
+    // Helper function to get spawn zone type for a given position
+    private getSpawnZoneType(x: number, y: number): string | null {
+        for (const element of WORLD_MAP) {
+            if (element.type === 'spawn' && element.properties?.spawnType) {
+                const scaledX = x / SCALE_FACTOR;
+                const scaledY = y / SCALE_FACTOR;
+                
+                if (scaledX >= element.x && 
+                    scaledX <= element.x + element.width && 
+                    scaledY >= element.y && 
+                    scaledY <= element.y + element.height) {
+                    return element.properties.spawnType;
+                }
+            }
+        }
+        return null; // Not in any spawn zone
     }
 
     private handlePlayerMovement(data: {
