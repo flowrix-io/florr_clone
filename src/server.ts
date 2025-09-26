@@ -431,8 +431,12 @@ function getRandomPositionInZoneType(zoneType: string): { x: number, y: number }
     if (zones.length === 0) return null;
     
     const zone = zones[Math.floor(Math.random() * zones.length)];
-    const x = (zone.x + Math.random() * zone.width) * SCALE_FACTOR;
-    const y = (zone.y + Math.random() * zone.height) * SCALE_FACTOR;
+    let x = (zone.x + Math.random() * zone.width) * SCALE_FACTOR;
+    let y = (zone.y + Math.random() * zone.height) * SCALE_FACTOR;
+    
+    // Ensure position is within world boundaries
+    x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
+    y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
     
     return { x, y };
 }
@@ -1297,11 +1301,15 @@ function moveEnemies() {
             }
         }
 
-        // Constrain to world boundaries
-        enemy.x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - ENEMY_SIZE, enemy.x));
-        enemy.y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - ENEMY_SIZE, enemy.y));
+        // Get enemy size based on tier
+        const enemySize = ENEMY_SIZE * ENEMY_SIZE_MULTIPLIERS[enemy.tier];
+        const halfSize = enemySize / 2;
 
-        // Check for wall collisions
+        // Constrain to world boundaries (accounting for enemy size)
+        enemy.x = Math.max(halfSize, Math.min(ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
+        enemy.y = Math.max(halfSize, Math.min(ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
+
+        // Check for wall collisions with proper size consideration
         WORLD_MAP.filter(isWall).forEach(wall => {
             const scaledWall = {
                 x: wall.x * SCALE_FACTOR,
@@ -1310,19 +1318,48 @@ function moveEnemies() {
                 height: wall.height * SCALE_FACTOR
             };
 
-            if (enemy.x >= scaledWall.x &&
-                enemy.x <= scaledWall.x + scaledWall.width &&
-                enemy.y >= scaledWall.y &&
-                enemy.y <= scaledWall.y + scaledWall.height) {
-                // Push enemy away from wall
-                const centerX = scaledWall.x + scaledWall.width / 2;
-                const centerY = scaledWall.y + scaledWall.height / 2;
-                const dx = enemy.x - centerX;
-                const dy = enemy.y - centerY;
-                const angle = Math.atan2(dy, dx);
+            // Check if enemy (with size) overlaps with wall
+            const enemyLeft = enemy.x - halfSize;
+            const enemyRight = enemy.x + halfSize;
+            const enemyTop = enemy.y - halfSize;
+            const enemyBottom = enemy.y + halfSize;
 
-                enemy.x = scaledWall.x + scaledWall.width / 2 + Math.cos(angle) * (scaledWall.width / 2 + 50);
-                enemy.y = scaledWall.y + scaledWall.height / 2 + Math.sin(angle) * (scaledWall.height / 2 + 50);
+            const wallLeft = scaledWall.x;
+            const wallRight = scaledWall.x + scaledWall.width;
+            const wallTop = scaledWall.y;
+            const wallBottom = scaledWall.y + scaledWall.height;
+
+            // Check for overlap
+            if (enemyRight > wallLeft && enemyLeft < wallRight && 
+                enemyBottom > wallTop && enemyTop < wallBottom) {
+                
+                // Calculate overlap amounts
+                const overlapLeft = enemyRight - wallLeft;
+                const overlapRight = wallRight - enemyLeft;
+                const overlapTop = enemyBottom - wallTop;
+                const overlapBottom = wallBottom - enemyTop;
+
+                // Find the minimum overlap to determine push direction
+                const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+
+                // Push enemy away from wall in the direction of minimum overlap
+                if (minOverlap === overlapLeft) {
+                    // Push left
+                    enemy.x = wallLeft - halfSize - 5; // 5px buffer
+                } else if (minOverlap === overlapRight) {
+                    // Push right
+                    enemy.x = wallRight + halfSize + 5; // 5px buffer
+                } else if (minOverlap === overlapTop) {
+                    // Push up
+                    enemy.y = wallTop - halfSize - 5; // 5px buffer
+                } else if (minOverlap === overlapBottom) {
+                    // Push down
+                    enemy.y = wallBottom + halfSize + 5; // 5px buffer
+                }
+
+                // Ensure enemy stays within world boundaries after push
+                enemy.x = Math.max(halfSize, Math.min(ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
+                enemy.y = Math.max(halfSize, Math.min(ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
             }
         });
     });
