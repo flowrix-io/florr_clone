@@ -396,27 +396,19 @@ function setupSocketListeners(game) {
     game.socket.on('savePlayerProgress', () => {
         game.showSaveIndicator();
     });
-    game.socket.on('craftingSuccess', (data) => {
+    game.socket.on('craftingFinished', (data) => {
         const player = game.players.get(game.socket?.id || '');
         if (player) {
             player.inventory = data.inventory;
-            game.showFloatingText(game.canvas.width / 2, 50, `Successfully crafted ${data.newItem.rarity} ${data.newItem.type}!`, game.ITEM_RARITY_COLORS[data.newItem.rarity || 'common'], 24);
-            game.updateInventoryDisplay();
-        }
-    });
-    game.socket.on('craftingFailed', (message) => {
-        game.showFloatingText(game.canvas.width / 2, 50, message, '#FF0000', 20);
-        // Return items to inventory
-        const player = game.players.get(game.socket?.id || '');
-        if (player) {
-            game.craftingSlots.forEach((slot) => {
-                if (slot.item) {
-                    player.inventory.push(slot.item);
-                }
-            });
-            game.craftingSlots.forEach((slot) => slot.item = null);
-            game.updateCraftingDisplay();
-            game.updateInventoryDisplay();
+            if (data.successCount > 0) {
+                game.showFloatingText(game.canvas.width / 2, 50, `Successfully crafted ${data.successCount}x ${data.newItem.rarity} ${data.newItem.type}!`, game.ITEM_RARITY_COLORS[data.newItem.rarity || 'common'], 24);
+            }
+            if (data.failCount > 0) {
+                game.showFloatingText(game.canvas.width / 2, 80, `Failed to craft ${data.failCount}x. Items were lost.`, '#FF0000', 20);
+            }
+            if (game.inventoryManager.isCraftingOpen) {
+                game.inventoryManager.updateCraftingDisplay();
+            }
         }
     });
     // Listen for server game state updates for better synchronization

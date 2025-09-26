@@ -2,20 +2,21 @@
   "players": {
     "t9pyo2soj": {
       "level": 6,
-      "xp": 377,
+      "xp": 547,
       "maxHealth": 150,
       "damage": 15,
       "inventory": {
         "common": {
-          "petal_basic": 1975,
-          "petal_stinger": 3,
+          "petal_basic": 1956,
+          "petal_stinger": 4,
           "speed_boost": 3,
           "health_potion": 4,
-          "petal_rose": 2
+          "petal_rose": 2,
+          "shield": 1
         },
         "uncommon": {
           "health_potion": 3,
-          "petal_basic": 7,
+          "petal_basic": 10,
           "petal_stinger": 2,
           "shield": 1
         },
@@ -26,6 +27,11 @@
         },
         "epic": {
           "petal_basic": 1,
+          "petal_rose": 1,
+          "speed_boost": 1
+        },
+        "mythic": {
+          "petal_basic": 925,
           "petal_rose": 1,
           "speed_boost": 1
         },
@@ -51,14 +57,6 @@
           "petalType": "basic",
           "rarity": "common",
           "maxHealth": 10,
-          "health": 8,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
           "health": 9,
           "onCooldown": false
         },
@@ -68,14 +66,6 @@
           "rarity": "common",
           "maxHealth": 10,
           "health": 9,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 5,
           "onCooldown": false
         },
         {
@@ -88,10 +78,18 @@
         },
         {
           "type": "petal",
-          "petalType": "rose",
-          "rarity": "rare",
-          "maxHealth": 45,
-          "health": 25,
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 9,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 2,
           "onCooldown": false
         },
         {
@@ -99,7 +97,15 @@
           "petalType": "rose",
           "rarity": "rare",
           "maxHealth": 45,
-          "health": 39,
+          "health": 18,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "rose",
+          "rarity": "rare",
+          "maxHealth": 45,
+          "health": 24,
           "onCooldown": false
         },
         {

@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { Player, ServerPlayer } from './player';
+import { Player, PlayerInventory, ServerPlayer } from './player';
 import { Enemy, Obstacle } from './enemy';
 import { Item, WorldItem } from './item';
 
@@ -515,44 +515,33 @@ function setupSocketListeners(game: any) {
         game.showSaveIndicator();
     });
 
-    game.socket.on('craftingSuccess', (data: { newItem: Item; inventory: Item[] }) => {
+    game.socket.on('craftingFinished', (data: { successCount: number, failCount: number, newItem: Item, inventory: PlayerInventory }) => {
         const player = game.players.get(game.socket?.id || '');
         if (player) {
             player.inventory = data.inventory;
 
-            game.showFloatingText(
-                game.canvas.width / 2,
-                50,
-                `Successfully crafted ${data.newItem.rarity} ${data.newItem.type}!`,
-                game.ITEM_RARITY_COLORS[data.newItem.rarity || 'common'],
-                24
-            );
+            if (data.successCount > 0) {
+                game.showFloatingText(
+                    game.canvas.width / 2,
+                    50,
+                    `Successfully crafted ${data.successCount}x ${data.newItem.rarity} ${data.newItem.type}!`,
+                    game.ITEM_RARITY_COLORS[data.newItem.rarity || 'common'],
+                    24
+                );
+            }
+            if (data.failCount > 0) {
+                game.showFloatingText(
+                    game.canvas.width / 2,
+                    80,
+                    `Failed to craft ${data.failCount}x. Items were lost.`,
+                    '#FF0000',
+                    20
+                );
+            }
 
-            game.updateInventoryDisplay();
-        }
-    });
-
-    game.socket.on('craftingFailed', (message: string) => {
-        game.showFloatingText(
-            game.canvas.width / 2,
-            50,
-            message,
-            '#FF0000',
-            20
-        );
-
-        // Return items to inventory
-        const player = game.players.get(game.socket?.id || '');
-        if (player) {
-            game.craftingSlots.forEach((slot: { item: Item | null }) => {
-                if (slot.item) {
-                    player.inventory.push(slot.item);
-                }
-            });
-            game.craftingSlots.forEach((slot: { item: Item | null }) => slot.item = null);
-
-            game.updateCraftingDisplay();
-            game.updateInventoryDisplay();
+            if (game.inventoryManager.isCraftingOpen) {
+                game.inventoryManager.updateCraftingDisplay();
+            }
         }
     });
 

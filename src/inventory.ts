@@ -21,7 +21,7 @@ export class InventoryManager {
     private game: GameInterface;
     private inventoryPanel: HTMLDivElement | null = null;
     private craftingPanel: HTMLDivElement | null = null;
-    private craftingSlots: CraftingSlot[] = Array(5).fill(null).map((_, i) => ({ index: i, item: null }));
+    private craftingItems: Item[] = [];
     private isInventoryOpen: boolean = false;
     private isCraftingOpen: boolean = false;
     private readonly LOADOUT_SLOTS = 10;
@@ -98,7 +98,7 @@ export class InventoryManager {
 
         const craftingMain = document.createElement('div');
         craftingMain.className = 'crafting-main';
-        craftingMain.style.flex = '0 0 50%';  // Take half height
+        craftingMain.style.flex = '0 0 50%';
 
         const craftingCircleContainer = document.createElement('div');
         craftingCircleContainer.className = 'crafting-circle-container';
@@ -107,11 +107,12 @@ export class InventoryManager {
             const slot = document.createElement('div');
             slot.className = 'crafting-slot';
             slot.dataset.index = i.toString();
-            slot.style.width = '40px';
-            slot.style.height = '40px';
-            slot.style.position = 'absolute';
             craftingCircleContainer.appendChild(slot);
         }
+
+        const multiplierText = document.createElement('div');
+        multiplierText.className = 'crafting-multiplier';
+        craftingCircleContainer.appendChild(multiplierText);
         
         craftingMain.appendChild(craftingCircleContainer);
 
@@ -158,13 +159,31 @@ export class InventoryManager {
                 justify-content: center;
                 gap: 15px;
                 margin-bottom: 15px;
-                max-height: none;  // Remove previous restriction
+                max-height: none;
             }
             .crafting-circle-container {
                 position: relative;
                 width: 180px;
                 height: 180px;
                 flex-shrink: 0;
+            }
+            .crafting-slot {
+                width: 40px;
+                height: 40px;
+                position: absolute;
+                cursor: pointer !important;
+                user-select: none;
+            }
+            .crafting-multiplier {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                font-size: 24px;
+                font-weight: bold;
+                color: white;
+                text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+                display: none;
             }
             .crafting-actions {
                 display: flex;
@@ -598,6 +617,13 @@ export class InventoryManager {
             });
         });
 
+        const craftingSlots = this.craftingPanel?.querySelectorAll('.crafting-slot');
+        craftingSlots?.forEach(slot => {
+            slot.addEventListener('click', () => {
+                this.removeCraftingBatch();
+            });
+        });
+
         if (this.inventoryPanel) {
             const grid = this.inventoryPanel.querySelector('.inventory-grid');
             if (grid) {
@@ -843,22 +869,30 @@ export class InventoryManager {
 
         if (this.getItemCount(rarity, type) === 0) return;
         
-        const isPetal = this.allPetalTypes.includes(type);
+        let itemType: Item['type'];
+        let petalType: string | undefined;
+        
+        if (type.startsWith('petal_')) {
+            itemType = 'petal';
+            petalType = type.substring(6);
+        } else {
+            itemType = type as Item['type'];
+        }
 
         const item: Item = { 
-            type: isPetal ? 'petal' : type as Item['type'], 
+            type: itemType,
             rarity: rarity as Item['rarity'], 
-            petalType: isPetal ? type : undefined 
+            petalType: petalType 
         };
         
-        if (this.craftingSlots[slotIndex].item) {
+        if (this.craftingItems[slotIndex]) {
             return;
         }
 
-        const existingItems = this.craftingSlots.filter(slot => slot.item !== null);
+        const existingItems = this.craftingItems.filter(slot => slot !== null);
         if (existingItems.length > 0) {
-            const firstItem = existingItems[0].item!;
-            if (item.type !== firstItem.type || item.rarity !== firstItem.rarity) {
+            const firstItem = existingItems[0];
+            if (item.type !== firstItem.type || item.rarity !== firstItem.rarity || item.petalType !== firstItem.petalType) {
                 this.game.showFloatingText(
                     this.game.canvas.width / 2,
                     50,
@@ -870,7 +904,7 @@ export class InventoryManager {
             }
         }
 
-        this.craftingSlots[slotIndex].item = item;
+        this.craftingItems[slotIndex] = item;
 
         this.removeItem(rarity, type, 1);
 
@@ -882,55 +916,71 @@ export class InventoryManager {
         const itemsFromStack = this.getItemCount(rarity, type);
         if (itemsFromStack === 0) return;
 
+        const isPetal = type.startsWith('petal_');
+        const petalType = isPetal ? type.substring(6) : undefined;
+        const itemType = isPetal ? 'petal' : type;
+
+        if (this.craftingItems.length > 0) {
+            const firstItem = this.craftingItems[0];
+            if (firstItem.rarity !== rarity || firstItem.type !== itemType || firstItem.petalType !== petalType) {
+                const itemsToReturn = [...this.craftingItems];
+                this.craftingItems = [];
+                itemsToReturn.forEach(item => {
+                    const itemKey = item.petalType ? `petal_${item.petalType}` : item.type;
+                    this.addItem(item.rarity!, itemKey, 1);
+                });
+            }
+        }
+
+        let amountToAdd;
         if (isShiftClick) {
-            const emptySlotsCount = this.craftingSlots.filter(s => s.item === null).length;
-            const amountToAdd = Math.min(emptySlotsCount, itemsFromStack);
-            
-            for (let i = 0; i < amountToAdd; i++) {
-                this.addItemToCrafting(rarity, type);
-            }
+            amountToAdd = itemsFromStack;
         } else {
-            const itemsInCrafting = this.craftingSlots.filter(s => s.item !== null).length;
-            const areAllSlotsEmpty = itemsInCrafting === 0;
+            amountToAdd = 5;
+        }
+        
+        const actualAmountToAdd = Math.min(amountToAdd, this.getItemCount(rarity, type));
 
-            if (areAllSlotsEmpty && itemsFromStack >= 5) {
-                 for (let i = 0; i < 5; i++) {
-                    this.addItemToCrafting(rarity, type);
-                }
-            } else {
-                this.addItemToCrafting(rarity, type);
+        if (actualAmountToAdd < 5) {
+            this.game.showFloatingText(
+                this.game.canvas.width / 2, 50,
+                'You need at least 5 items to add a batch.',
+                '#FF0000', 20
+            );
+            return;
+        }
+
+        const batchesToAdd = Math.floor(actualAmountToAdd / 5);
+        const totalItemsToAdd = batchesToAdd * 5;
+
+        const item: Item = {
+            type: itemType as Item['type'],
+            rarity: rarity as Item['rarity'],
+            petalType: petalType
+        };
+
+        for (let i = 0; i < totalItemsToAdd; i++) {
+            this.craftingItems.push(item);
+        }
+        this.removeItem(rarity, type, totalItemsToAdd);
+
+        this.updateCraftingDisplay();
+        this.updateInventoryDisplay();
+    }
+
+    public removeCraftingBatch() {
+        if (this.craftingItems.length === 0) return;
+
+        const itemsToRemove = this.craftingItems.splice(-5);
+
+        if (itemsToRemove.length > 0) {
+            const item = itemsToRemove[0];
+            const type = item.petalType ? `petal_${item.petalType}` : item.type;
+            if (item.rarity) {
+                this.addItem(item.rarity, type, itemsToRemove.length);
             }
         }
-    }
-
-    private addItemToCrafting(rarity: string, type: string) {
-        const firstEmptySlot = this.craftingSlots.find(s => s.item === null);
-        if (firstEmptySlot) {
-            // const itemTypeForCraftingSlot = type.startsWith('petal_') ? type.replace('petal_', '') : type;
-            const itemTypeForCraftingSlot = type;
-            console.log('Adding item to crafting slot:', rarity, itemTypeForCraftingSlot, firstEmptySlot.index);
-            this.addItemToCraftingSlot(rarity, itemTypeForCraftingSlot, firstEmptySlot.index);
-        }
-    }
-
-    public removeItemFromCraftingSlot(slotIndex: number) {
-        const craftingSlot = this.craftingSlots[slotIndex];
-        if (!craftingSlot.item) return;
-
-        const player = this.game.getLocalPlayer();
-        if (!player) return;
-
-        const item = craftingSlot.item;
-        const type = item.petalType || item.type; // Use petalType if it exists, otherwise the item type
-
-        // Return item to inventory
-        if (item.rarity && type) {
-            this.addItem(item.rarity, type, 1);
-        }
-
-        // Clear the crafting slot
-        craftingSlot.item = null;
-
+        
         this.updateCraftingDisplay();
         this.updateInventoryDisplay();
     }
@@ -939,24 +989,22 @@ export class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player) return;
 
-        if (!this.craftingSlots.every(slot => slot.item !== null)) {
+        const itemsToCraftCount = this.craftingItems.length;
+
+        if (itemsToCraftCount < 5 || itemsToCraftCount % 5 !== 0) {
             this.game.showFloatingText(
                 this.game.canvas.width / 2,
                 50,
-                'All slots must be filled to craft!',
+                'You must add items in multiples of 5 to craft!',
                 '#FF0000',
                 20
             );
             return;
         }
 
-        const craftingItems = this.craftingSlots
-            .map(slot => slot.item)
-            .filter((item): item is Item => item !== null);
+        this.game.getSocket()?.emit('craftItems', { items: this.craftingItems });
 
-        this.game.getSocket()?.emit('craftItems', { items: craftingItems });
-
-        this.craftingSlots.forEach(slot => slot.item = null);
+        this.craftingItems = [];
         this.updateCraftingDisplay();
     }
 
@@ -966,129 +1014,65 @@ export class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player) return;
 
-        // Update crafting slots
-        const slots = document.querySelectorAll('.crafting-slot');
+        const slots = this.craftingPanel.querySelectorAll('.crafting-slot');
         const container = this.craftingPanel.querySelector('.crafting-circle-container') as HTMLElement;
+        const multiplierEl = this.craftingPanel.querySelector('.crafting-multiplier') as HTMLElement;
         const radius = 70; 
         const containerSize = 180;
 
-        slots.forEach((slot, index) => {
-            if (container) {
-                const angle = (index / slots.length) * 2 * Math.PI;
-                const x = (containerSize / 2) + radius * Math.cos(angle) - 20;  // Half of 40px
-                const y = (containerSize / 2) + radius * Math.sin(angle) - 20;
-                (slot as HTMLElement).style.left = `${x}px`;
-                (slot as HTMLElement).style.top = `${y}px`;
-            }
+        if (this.craftingItems.length > 0) {
+            const firstItem = this.craftingItems[0];
+            const attempts = this.craftingItems.length / 5;
+            multiplierEl.textContent = `x${attempts}`;
+            multiplierEl.style.display = 'block';
 
-            slot.innerHTML = '';
+            slots.forEach((slot, index) => {
+                if (container) {
+                    const angle = (index / slots.length) * 2 * Math.PI;
+                    const x = (containerSize / 2) + radius * Math.cos(angle) - 20;
+                    const y = (containerSize / 2) + radius * Math.sin(angle) - 20;
+                    (slot as HTMLElement).style.left = `${x}px`;
+                    (slot as HTMLElement).style.top = `${y}px`;
+                }
+    
+                slot.innerHTML = '';
+                (slot as HTMLElement).style.borderColor = this.ITEM_RARITY_COLORS[firstItem.rarity!]!;
 
-            const craftingSlot = this.craftingSlots[index];
-            if (craftingSlot.item) {
-                // Handle different item types
-                console.log('Crafting slot item:', craftingSlot.item);
-                if (craftingSlot.item.type.includes('petal') && craftingSlot.item.rarity) {
-                    // Create petal visual using SVG image
-                    const petalDiv = document.createElement('div');
-                    petalDiv.style.width = '80%';
-                    petalDiv.style.height = '80%';
-                    petalDiv.style.display = 'flex';
-                    petalDiv.style.alignItems = 'center';
-                    petalDiv.style.justifyContent = 'center';
-                    petalDiv.style.position = 'relative';
-                    petalDiv.style.pointerEvents = 'auto'; // Ensure clicks work
-                    
-                    // Get petal SVG from stats
-                    const stats = getPetalStats(craftingSlot.item.type.replace('petal_', ''), craftingSlot.item.rarity);
+                if (firstItem.type === 'petal' && firstItem.petalType && firstItem.rarity) {
+                    const stats = getPetalStats(firstItem.petalType, firstItem.rarity);
                     if (stats && stats.image) {
-                        // Create an image element with the SVG data
                         const img = document.createElement('img');
                         img.style.width = '100%';
                         img.style.height = '100%';
                         img.style.objectFit = 'contain';
-                        img.style.pointerEvents = 'none'; // Prevent drag cursor
-                        img.draggable = false; // Prevent dragging
-
-                        // Convert SVG string to blob URL (same as graphics system)
                         const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                        const url = URL.createObjectURL(svgBlob);
-                        img.src = url;
-
-                        petalDiv.appendChild(img);
-                    } else {
-                        // Fallback to colored circle
-                        petalDiv.style.borderRadius = '50%';
-                        petalDiv.style.border = '2px solid #000';
-                        petalDiv.style.backgroundColor = '#90EE90'; // Default green
+                        img.src = URL.createObjectURL(svgBlob);
+                        slot.appendChild(img);
                     }
-
-                    // Add remove button
-                    const removeBtn = document.createElement('button');
-                    removeBtn.innerHTML = '×';
-                    removeBtn.style.position = 'absolute';
-                    removeBtn.style.top = '-5px';
-                    removeBtn.style.right = '-5px';
-                    removeBtn.style.width = '20px';
-                    removeBtn.style.height = '20px';
-                    removeBtn.style.borderRadius = '50%';
-                    removeBtn.style.border = 'none';
-                    removeBtn.style.backgroundColor = '#ff4444';
-                    removeBtn.style.color = 'white';
-                    removeBtn.style.fontSize = '14px';
-                    removeBtn.style.cursor = 'pointer';
-                    removeBtn.style.display = 'flex';
-                    removeBtn.style.alignItems = 'center';
-                    removeBtn.style.justifyContent = 'center';
-                    removeBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.removeItemFromCraftingSlot(index);
-                    });
-
-                    petalDiv.appendChild(removeBtn);
-                    slot.appendChild(petalDiv);
                 } else {
-                    // Handle other item types with PNG images
                     const img = document.createElement('img');
-                    img.src = `./assets/${craftingSlot.item.type}.png`;
-                    img.alt = craftingSlot.item.type;
+                    img.src = `./assets/${firstItem.type}.png`;
+                    img.alt = firstItem.type;
                     img.style.width = '80%';
                     img.style.height = '80%';
                     img.style.objectFit = 'contain';
-                    img.style.position = 'relative';
-
-                    // Add remove button
-                    const removeBtn = document.createElement('button');
-                    removeBtn.innerHTML = '×';
-                    removeBtn.style.position = 'absolute';
-                    removeBtn.style.top = '-5px';
-                    removeBtn.style.right = '-5px';
-                    removeBtn.style.width = '20px';
-                    removeBtn.style.height = '20px';
-                    removeBtn.style.borderRadius = '50%';
-                    removeBtn.style.border = 'none';
-                    removeBtn.style.backgroundColor = '#ff4444';
-                    removeBtn.style.color = 'white';
-                    removeBtn.style.fontSize = '14px';
-                    removeBtn.style.cursor = 'pointer';
-                    removeBtn.style.display = 'flex';
-                    removeBtn.style.alignItems = 'center';
-                    removeBtn.style.justifyContent = 'center';
-                    removeBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.removeItemFromCraftingSlot(index);
-                    });
-
                     slot.appendChild(img);
-                    slot.appendChild(removeBtn);
                 }
-
-                if (craftingSlot.item.rarity) {
-                    (slot as HTMLElement).style.borderColor = this.ITEM_RARITY_COLORS[craftingSlot.item.rarity];
+            });
+        } else {
+            multiplierEl.style.display = 'none';
+            slots.forEach((slot, index) => {
+                if (container) {
+                    const angle = (index / slots.length) * 2 * Math.PI;
+                    const x = (containerSize / 2) + radius * Math.cos(angle) - 20;
+                    const y = (containerSize / 2) + radius * Math.sin(angle) - 20;
+                    (slot as HTMLElement).style.left = `${x}px`;
+                    (slot as HTMLElement).style.top = `${y}px`;
                 }
-            } else {
+                slot.innerHTML = '';
                 (slot as HTMLElement).style.borderColor = '#666';
-            }
-        });
+            });
+        }
 
         // Calculate and update success chance
         const successChance = this.calculateSuccessChance();
@@ -1102,9 +1086,7 @@ export class InventoryManager {
     }
 
     private calculateSuccessChance(): number {
-        const items = this.craftingSlots
-            .map(slot => slot.item)
-            .filter((item): item is Item => item !== null);
+        const items = this.craftingItems;
 
         if (items.length === 0) return 0;
 
