@@ -63,7 +63,7 @@ export interface ServerPlayer {
   xp: number;
   xpToNextLevel: number;
   lastDamageTime?: number;
-  speed_boost?: boolean;
+  speed_boost: number;
   inputs: {
     keys: string[];
     useMouse?: boolean;

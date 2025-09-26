@@ -10,7 +10,7 @@ export interface Dot {
 export interface Enemy {
   id: string;
   type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant';
-  tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
+  tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
   x: number;
   y: number;
   angle: number;
@@ -272,7 +272,10 @@ export function getXPFromEnemy(enemy: Enemy): number {
     rare: 50,
     epic: 100,
     legendary: 200,
-    mythic: 500
+    mythic: 500,
+    ultra: 1500,
+    super: 4500,
+    unique: 13500
   };
   return tierXP[enemy.tier] || 10;
 }

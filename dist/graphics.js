@@ -56,7 +56,10 @@ class Graphics {
             rare: '#4d52e3',
             epic: '#861fde',
             legendary: '#de1f1f',
-            mythic: '#1fdbde'
+            mythic: '#1fdbde',
+            ultra: '#de1f65',
+            super: '#2bffa4',
+            unique: '#bf00ff'
         };
         this.ENEMY_SIZE_MULTIPLIERS = {
             common: 1.0,
@@ -64,7 +67,10 @@ class Graphics {
             rare: 1.4,
             epic: 1.6,
             legendary: 1.8,
-            mythic: 2.0
+            mythic: 2.0,
+            ultra: 2.5,
+            super: 3.0,
+            unique: 3.5
         };
         this.ENEMY_MAX_HEALTH = {
             common: 20,
@@ -72,7 +78,10 @@ class Graphics {
             rare: 60,
             epic: 80,
             legendary: 100,
-            mythic: 150
+            mythic: 150,
+            ultra: 450,
+            super: 1350,
+            unique: 4050
         };
         this.ITEM_RARITY_COLORS = {
             common: '#7eef6d',

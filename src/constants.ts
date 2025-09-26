@@ -61,7 +61,8 @@ export const ENEMY_TIERS = {
   rare: { health: 60, speed: 1, damage: 15, probability: 0.15, color: '#4d52e3' },
   epic: { health: 80, speed: 1.25, damage: 20, probability: 0.1, color: '#861fde' },
   legendary: { health: 100, speed: 1.5, damage: 25, probability: 0.04, color: '#1fdbde' },
-  mythic: { health: 150, speed: 2, damage: 30, probability: 0.01, color: '#de1f65' }
+  mythic: { health: 150, speed: 2, damage: 30, probability: 0.01, color: '#de1f65' },
+  ultra: { health: 450, speed: 2, damage: 90, probability: 0.0001, color: '#de1f65' }
 };
 
 export const MAX_INVENTORY_SIZE = 5;
@@ -99,7 +100,10 @@ export const ENEMY_SIZE_MULTIPLIERS = {
     rare: 1.4,
     epic: 1.6,
     legendary: 1.8,
-    mythic: 2.0
+    mythic: 2.0,
+    ultra: 2.5,
+    super: 3.0,
+    unique: 3.5
 };
 
 // Add drop chances like in singleplayer

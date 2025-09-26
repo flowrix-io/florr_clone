@@ -14,6 +14,11 @@ const app = express();
 
 const items: WorldItem[] = [];
 
+// Special mob tracking
+let ultraMobCount = 0;
+let superMobCount = 0;
+let uniqueMobCount = 0;
+
 const decorations: Decoration[] = [];
 const sands: Sand[] = [];
 let ENEMY_COUNT = 1000;
@@ -365,6 +370,11 @@ function despawnDistantEnemies() {
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
         
+        // Special mobs (ultra, super, unique) never despawn
+        if (enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique') {
+            continue;
+        }
+        
         // Check if enemy is currently outside any player's viewport
         const inViewport = isPositionInAnyViewport(enemy.x, enemy.y);
         
@@ -409,6 +419,131 @@ function getSpawnZoneType(x: number, y: number): string | null {
         }
     }
     return null; // Not in any spawn zone
+}
+
+// Helper function to get random position in a specific zone type
+function getRandomPositionInZoneType(zoneType: string): { x: number, y: number } | null {
+    const zones = WORLD_MAP.filter(element => 
+        element.type === 'spawn' && 
+        element.properties?.spawnType === zoneType
+    );
+    
+    if (zones.length === 0) return null;
+    
+    const zone = zones[Math.floor(Math.random() * zones.length)];
+    const x = (zone.x + Math.random() * zone.width) * SCALE_FACTOR;
+    const y = (zone.y + Math.random() * zone.height) * SCALE_FACTOR;
+    
+    return { x, y };
+}
+
+// Function to create special mobs (ultra, super, unique)
+function createSpecialMob(tier: 'ultra' | 'super' | 'unique'): Enemy | null {
+    let zoneType: string;
+    
+    if (tier === 'ultra') {
+        zoneType = 'legendary';
+    } else if (tier === 'super') {
+        zoneType = 'mythic';
+    } else { // unique
+        zoneType = 'mythic';
+    }
+    
+    const position = getRandomPositionInZoneType(zoneType);
+    if (!position) {
+        console.error(`No ${zoneType} zones found for ${tier} mob spawning`);
+        return null;
+    }
+    
+    const allMobTypes = getAllMobTypes();
+    if (allMobTypes.length === 0) {
+        console.error("No mob types found in MOB_CONFIG.");
+        return null;
+    }
+    
+    const mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
+    const mobStats = getMobStats(mobType, tier);
+    
+    if (!mobStats) {
+        console.error(`No mob stats found for ${mobType} ${tier}`);
+        return null;
+    }
+    
+    const currentTime = Date.now();
+    return {
+        id: Math.random().toString(36).substr(2, 9),
+        type: mobType,
+        tier: tier,
+        x: position.x,
+        y: position.y,
+        angle: Math.random() * Math.PI * 2,
+        health: mobStats.health,
+        maxHealth: mobStats.health,
+        speed: mobStats.speed,
+        damage: mobStats.damage,
+        knockbackX: 0,
+        knockbackY: 0,
+        isHostile: mobStats.is_hostile,
+        range: mobStats.range
+    };
+}
+
+// Function to update special mob counts
+function updateSpecialMobCounts() {
+    ultraMobCount = enemies.filter(e => e.tier === 'ultra').length;
+    superMobCount = enemies.filter(e => e.tier === 'super').length;
+    uniqueMobCount = enemies.filter(e => e.tier === 'unique').length;
+}
+
+// Function to spawn special mobs
+function spawnSpecialMobs() {
+    // Update counts first
+    updateSpecialMobCounts();
+    
+    // Spawn ultra mob if none exists
+    if (ultraMobCount === 0) {
+        const ultraMob = createSpecialMob('ultra');
+        if (ultraMob) {
+            enemies.push(ultraMob);
+            ultraMobCount = 1;
+            io.emit('chatMessage', {
+                type: 'system',
+                message: 'An ultra mob has spawned in a legendary zone!',
+                timestamp: Date.now()
+            });
+            console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
+        }
+    }
+    
+    // Spawn super mob if none exists
+    if (superMobCount === 0) {
+        const superMob = createSpecialMob('super');
+        if (superMob) {
+            enemies.push(superMob);
+            superMobCount = 1;
+            io.emit('chatMessage', {
+                type: 'system',
+                message: 'A super mob has spawned in a mythic zone!',
+                timestamp: Date.now()
+            });
+            console.log(`[SERVER] Spawned super mob: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
+        }
+    }
+    
+    // Spawn unique mob with 1/4 chance if super mob exists
+    if (superMobCount > 0 && uniqueMobCount === 0 && Math.random() < 0.25) {
+        const uniqueMob = createSpecialMob('unique');
+        if (uniqueMob) {
+            enemies.push(uniqueMob);
+            uniqueMobCount = 1;
+            io.emit('chatMessage', {
+                type: 'system',
+                message: 'A unique mob has spawned in a mythic zone!',
+                timestamp: Date.now()
+            });
+            console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);
+        }
+    }
 }
 
 // Update the createEnemy function to spawn only in player viewports
@@ -515,6 +650,7 @@ function createEnemy(): Enemy {
             }
         }
     }
+
 
     // Select mob type (fish, octopus, or shark)
     const allMobTypes = getAllMobTypes();
@@ -700,7 +836,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 xpToNextLevel: calculateXPRequirement(savedProgress?.level || 1),
                 knockbackX: 0,
                 knockbackY: 0,
-                inputs: { keys: [] }
+                inputs: { keys: [] },
+                speed_boost: 1
             };
 
             // Save initial state and log the result
@@ -790,6 +927,15 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             mythic: 4
         };
 
+        const speedBoostMultipliers: Record<string, number> = {
+            common: 2,
+            uncommon: 2.8,
+            rare: 3.6,
+            epic: 5.2,
+            legendary: 6.8,
+            mythic: 8.4
+        };
+
         const multiplier = item.rarity ? rarityMultipliers[item.rarity] : 1;
 
         switch (item.type) {
@@ -798,12 +944,12 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 // console.log('Applied health potion effect:', player.health);
                 break;
             case 'speed_boost':
-                player.speed_boost = true;
+                player.speed_boost = item.rarity ? rarityMultipliers[item.rarity] : 1;
                 io.emit('speedBoostActive', player.id);
                 // console.log('Applied speed boost effect');
                 setTimeout(() => {
                     if (players[socket.id]) {
-                        players[socket.id].speed_boost = false;
+                        players[socket.id].speed_boost = 1;
                         // console.log('Speed boost wore off');
                     }
                 }, 5000 * multiplier);
@@ -893,6 +1039,85 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     // Add this inside the socket.io connection handler (after other socket handlers)
     socket.on('chatMessage', (message: string) => {
         if (!socket.username) return;  // Ensure user is authenticated
+
+        // Check for commands
+        if (message.startsWith('/')) {
+            const command = message.substring(1).toLowerCase();
+            
+            if (command === 'list_ultra') {
+                const ultraMobs = enemies.filter(e => e.tier === 'ultra');
+                if (ultraMobs.length === 0) {
+                    io.emit('chatMessage', {
+                        sender: 'System',
+                        content: 'No ultra mobs currently spawned.',
+                        timestamp: Date.now()
+                    });
+                } else {
+                    ultraMobs.forEach(mob => {
+                        const x = Math.round(mob.x / SCALE_FACTOR);
+                        const y = Math.round(mob.y / SCALE_FACTOR);
+                        io.emit('chatMessage', {
+                            sender: 'System',
+                            content: `Ultra ${mob.type} at position (${x}, ${y})`,
+                            timestamp: Date.now()
+                        });
+                    });
+                }
+                return;
+            }
+            
+            if (command === 'list_super') {
+                const superMobs = enemies.filter(e => e.tier === 'super');
+                if (superMobs.length === 0) {
+                    io.emit('chatMessage', {
+                        sender: 'System',
+                        content: 'No super mobs currently spawned.',
+                        timestamp: Date.now()
+                    });
+                } else {
+                    superMobs.forEach(mob => {
+                        const x = Math.round(mob.x / SCALE_FACTOR);
+                        const y = Math.round(mob.y / SCALE_FACTOR);
+                        io.emit('chatMessage', {
+                            sender: 'System',
+                            content: `Super ${mob.type} at position (${x}, ${y})`,
+                            timestamp: Date.now()
+                        });
+                    });
+                }
+                return;
+            }
+            
+            if (command === 'list_unique') {
+                const uniqueMobs = enemies.filter(e => e.tier === 'unique');
+                if (uniqueMobs.length === 0) {
+                    io.emit('chatMessage', {
+                        sender: 'System',
+                        content: 'No unique mobs currently spawned.',
+                        timestamp: Date.now()
+                    });
+                } else {
+                    uniqueMobs.forEach(mob => {
+                        const x = Math.round(mob.x / SCALE_FACTOR);
+                        const y = Math.round(mob.y / SCALE_FACTOR);
+                        io.emit('chatMessage', {
+                            sender: 'System',
+                            content: `Unique ${mob.type} at position (${x}, ${y})`,
+                            timestamp: Date.now()
+                        });
+                    });
+                }
+                return;
+            }
+            
+            // Unknown command
+            io.emit('chatMessage', {
+                sender: 'System',
+                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique',
+                timestamp: Date.now()
+            });
+            return;
+        }
 
         const chatMessage: ChatMessage = {
             sender: socket.username,
@@ -1120,7 +1345,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance > 5) {
-            const speed = MAX_SPEED * (player.speed_boost ? 2 : 1);
+            const speed = MAX_SPEED * player.speed_boost;
             targetVelocityX = (dx / distance) * speed;
             targetVelocityY = (dy / distance) * speed;
             player.angle = Math.atan2(dy, dx);
@@ -1137,7 +1362,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
             targetVelocityY /= length;
         }
 
-        const speed = MAX_SPEED * (player.speed_boost ? 2 : 1);
+        const speed = MAX_SPEED * player.speed_boost;
         targetVelocityX *= speed;
         targetVelocityY *= speed;
 
@@ -1284,6 +1509,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                             }
                         }
                         enemies.splice(index, 1);
+                        updateSpecialMobCounts();
                         io.emit('enemyDestroyed', enemy.id);
                         // Try to spawn a new enemy, but only if we can find a valid position
                         const newEnemy = createEnemy();
@@ -1437,6 +1663,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                                 }
                             }
                             enemies.splice(index, 1);
+                            updateSpecialMobCounts();
                             io.emit('enemyDestroyed', enemy.id);
                             // Try to spawn a new enemy, but only if we can find a valid position
                             const newEnemy = createEnemy();
@@ -1631,6 +1858,19 @@ setInterval(() => {
         }
     }
 }, 2000); // 2 seconds
+
+// Add special mob spawning timer (every 1 minute)
+setInterval(() => {
+    const playerCount = Object.keys(players).length;
+    if (playerCount > 0) {
+        spawnSpecialMobs();
+    }
+}, 60000); // 60 seconds
+
+// Initial spawn of special mobs when server starts
+setTimeout(() => {
+    spawnSpecialMobs();
+}, 5000); // 5 seconds after server start
 
 // Move savePlayerProgress outside the socket connection handler
 function savePlayerProgress(player: ServerPlayer, userId: string) {

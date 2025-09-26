@@ -6,7 +6,7 @@ export interface Dot {
 export interface Enemy {
   id: string;
   type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant';
-  tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
+  tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
   x: number;
   y: number;
   angle: number;
