@@ -751,7 +751,9 @@ class InventoryManager {
     addItemToCrafting(rarity, type) {
         const firstEmptySlot = this.craftingSlots.find(s => s.item === null);
         if (firstEmptySlot) {
-            const itemTypeForCraftingSlot = type.startsWith('petal_') ? type.replace('petal_', '') : type;
+            // const itemTypeForCraftingSlot = type.startsWith('petal_') ? type.replace('petal_', '') : type;
+            const itemTypeForCraftingSlot = type;
+            console.log('Adding item to crafting slot:', rarity, itemTypeForCraftingSlot, firstEmptySlot.index);
             this.addItemToCraftingSlot(rarity, itemTypeForCraftingSlot, firstEmptySlot.index);
         }
     }
@@ -811,7 +813,8 @@ class InventoryManager {
             const craftingSlot = this.craftingSlots[index];
             if (craftingSlot.item) {
                 // Handle different item types
-                if (craftingSlot.item.type === 'petal' && craftingSlot.item.petalType && craftingSlot.item.rarity) {
+                console.log('Crafting slot item:', craftingSlot.item);
+                if (craftingSlot.item.type.includes('petal') && craftingSlot.item.rarity) {
                     // Create petal visual using SVG image
                     const petalDiv = document.createElement('div');
                     petalDiv.style.width = '80%';
@@ -822,7 +825,7 @@ class InventoryManager {
                     petalDiv.style.position = 'relative';
                     petalDiv.style.pointerEvents = 'auto'; // Ensure clicks work
                     // Get petal SVG from stats
-                    const stats = (0, petals_1.getPetalStats)(craftingSlot.item.petalType, craftingSlot.item.rarity);
+                    const stats = (0, petals_1.getPetalStats)(craftingSlot.item.type.replace('petal_', ''), craftingSlot.item.rarity);
                     if (stats && stats.image) {
                         // Create an image element with the SVG data
                         const img = document.createElement('img');
