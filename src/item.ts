@@ -1,6 +1,6 @@
 export interface Item {
   type: 'health_potion' | 'speed_boost' | 'shield' | 'petal';
-  rarity?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
+  rarity?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
   petalType?: string; // For petals: 'basic', 'rose', 'stinger', etc.
   health?: number; // For petals: current health
   maxHealth?: number; // For petals: maximum health
@@ -14,6 +14,6 @@ export interface WorldItem extends Item {
 }
 
 export interface ItemWithRarity extends Item {
-  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
   onCooldown?: boolean;
 }

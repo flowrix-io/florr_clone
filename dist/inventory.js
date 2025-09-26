@@ -18,7 +18,10 @@ class InventoryManager {
             rare: '#4d52e3',
             epic: '#861fde',
             legendary: '#de1f1f',
-            mythic: '#1fdbde'
+            mythic: '#1fdbde',
+            ultra: '#de1f65',
+            super: '#2bffa4',
+            unique: '#bf00ff'
         };
         this.game = game;
         this.chat = chat;
@@ -295,7 +298,10 @@ class InventoryManager {
             rare: 2,
             epic: 2.5,
             legendary: 3,
-            mythic: 4
+            mythic: 4,
+            ultra: 5,
+            super: 6,
+            unique: 7
         };
         const multiplier = item.rarity ? rarityMultipliers[item.rarity] : 1;
         switch (item.type) {
@@ -537,7 +543,7 @@ class InventoryManager {
         const title = document.createElement('h2');
         title.textContent = 'Inventory';
         content.appendChild(title);
-        const rarities = ['mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
         const gridContainer = document.createElement('div');
         gridContainer.className = 'inventory-grid-container';
         gridContainer.style.cssText = `
@@ -934,7 +940,7 @@ class InventoryManager {
             }
         });
         // Calculate success chance based on rarity progression
-        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         let baseChance = 64; // 64% for common->uncommon
         // Find the highest rarity in the crafting slots
         let highestRarityIndex = -1;
@@ -954,7 +960,7 @@ class InventoryManager {
         if (!player)
             return 0;
         let totalPetals = 0;
-        const petalRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        const petalRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         petalRarities.forEach(rarity => {
             const petalCount = player.inventory[rarity]?.['petal'] || 0;
             totalPetals += petalCount;
@@ -969,7 +975,7 @@ class InventoryManager {
         if (!player)
             return;
         inventoryGrid.innerHTML = '';
-        const rarities = ['mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
         rarities.forEach(rarity => {
             const rarityItems = player.inventory[rarity];
             if (rarityItems) {

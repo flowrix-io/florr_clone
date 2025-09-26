@@ -80,7 +80,10 @@ class Graphics {
             rare: '#4d52e3',
             epic: '#861fde',
             legendary: '#de1f1f',
-            mythic: '#1fdbde'
+            mythic: '#1fdbde',
+            ultra: '#de1f65',
+            super: '#2bffa4',
+            unique: '#bf00ff'
         };
         this.showHitboxes = false;
         this.itemSprites = {};
@@ -101,7 +104,7 @@ class Graphics {
     }
     async preloadMobImages() {
         const mobTypes = (0, mobs_1.getAllMobTypes)();
-        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         for (const mobType of mobTypes) {
             for (const rarity of rarities) {
                 const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);

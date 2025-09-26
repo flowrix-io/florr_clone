@@ -96,6 +96,48 @@ const PETAL_CONFIG = {
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
+        },
+        ultra: {
+            name: "Ultra Basic Petal",
+            damage: 7290,
+            health: 7290,
+            size: 2.0,
+            speed: 1.0,
+            cooldown: 1200, // 4 seconds
+            knockback: 45,
+            description: "An ultra basic petal with cosmic power",
+            color: "#de1f65",
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="16" fill="white"/>
+</svg>`
+        },
+        super: {
+            name: "Super Basic Petal",
+            damage: 21870,
+            health: 21870,
+            size: 2.0,
+            speed: 1.0,
+            cooldown: 1200, // 3 seconds
+            knockback: 55,
+            description: "A super basic petal with divine energy",
+            color: "#2bffa4",
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="16" fill="white"/>
+</svg>`
+        },
+        unique: {
+            name: "Unique Basic Petal",
+            damage: 65610,
+            health: 65610,
+            size: 2.0,
+            speed: 1.0,
+            cooldown: 1200, // 2 seconds
+            knockback: 65,
+            description: "A unique basic petal of ultimate power",
+            color: "#bf00ff",
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="16" fill="white"/>
+</svg>`
         }
     },
     rose: {
@@ -179,6 +221,48 @@ const PETAL_CONFIG = {
             knockback: 30,
             description: "A celestial rose petal from the heavens",
             color: "#FF6347",
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`
+        },
+        ultra: {
+            name: "Ultra Rose Petal",
+            damage: 3645,
+            health: 3645,
+            size: 1.5,
+            speed: 1.0,
+            cooldown: 1500, // 2.5 seconds
+            knockback: 40,
+            description: "An ultra rose petal with cosmic beauty",
+            color: "#de1f65",
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`
+        },
+        super: {
+            name: "Super Rose Petal",
+            damage: 10935,
+            health: 10935,
+            size: 1.6,
+            speed: 1.0,
+            cooldown: 1500, // 2 seconds
+            knockback: 50,
+            description: "A super rose petal with divine elegance",
+            color: "#2bffa4",
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`
+        },
+        unique: {
+            name: "Unique Rose Petal",
+            damage: 32805,
+            health: 32805,
+            size: 1.7,
+            speed: 1.0,
+            cooldown: 1500, // 1.5 seconds
+            knockback: 60,
+            description: "A unique rose petal of ultimate perfection",
+            color: "#bf00ff",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -270,6 +354,99 @@ const PETAL_CONFIG = {
             knockback: 50,
             description: "A void stinger that pierces reality itself",
             color: "#800080",
+            image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Top triangle (Blue) -->
+  <polygon
+    points="100,20 150,110 50,110"
+    style="fill:black;" />
+
+  <!-- Bottom-left triangle (Red) -->
+  <polygon
+    points="50,110 100,200 0,200"
+    style="fill:black;" />
+
+  <!-- Bottom-right triangle (Green) -->
+  <polygon
+    points="150,110 200,200 100,200"
+    style="fill:black;" />
+
+</svg>
+
+`
+        },
+        ultra: {
+            name: "Ultra Stinger",
+            damage: 72900,
+            health: 1458,
+            size: 1.2,
+            speed: 1.0,
+            cooldown: 5000, // 1.5 seconds
+            knockback: 60,
+            description: "An ultra stinger with cosmic precision",
+            color: "#de1f65",
+            image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Top triangle (Blue) -->
+  <polygon
+    points="100,20 150,110 50,110"
+    style="fill:black;" />
+
+  <!-- Bottom-left triangle (Red) -->
+  <polygon
+    points="50,110 100,200 0,200"
+    style="fill:black;" />
+
+  <!-- Bottom-right triangle (Green) -->
+  <polygon
+    points="150,110 200,200 100,200"
+    style="fill:black;" />
+
+</svg>
+
+`
+        },
+        super: {
+            name: "Super Stinger",
+            damage: 218700,
+            health: 4374,
+            size: 1.3,
+            speed: 1.0,
+            cooldown: 5000, // 1 second
+            knockback: 70,
+            description: "A super stinger with divine lethality",
+            color: "#2bffa4",
+            image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Top triangle (Blue) -->
+  <polygon
+    points="100,20 150,110 50,110"
+    style="fill:black;" />
+
+  <!-- Bottom-left triangle (Red) -->
+  <polygon
+    points="50,110 100,200 0,200"
+    style="fill:black;" />
+
+  <!-- Bottom-right triangle (Green) -->
+  <polygon
+    points="150,110 200,200 100,200"
+    style="fill:black;" />
+
+</svg>
+
+`
+        },
+        unique: {
+            name: "Unique Stinger",
+            damage: 656100,
+            health: 13122,
+            size: 1.4,
+            speed: 1.0,
+            cooldown: 5000, // 0.5 seconds
+            knockback: 80,
+            description: "A unique stinger of ultimate destruction",
+            color: "#bf00ff",
             image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
 
   <!-- Top triangle (Blue) -->
@@ -2495,7 +2672,10 @@ class Graphics {
             rare: '#4d52e3',
             epic: '#861fde',
             legendary: '#de1f1f',
-            mythic: '#1fdbde'
+            mythic: '#1fdbde',
+            ultra: '#de1f65',
+            super: '#2bffa4',
+            unique: '#bf00ff'
         };
         this.showHitboxes = false;
         this.itemSprites = {};
@@ -2516,7 +2696,7 @@ class Graphics {
     }
     async preloadMobImages() {
         const mobTypes = getAllMobTypes();
-        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         for (const mobType of mobTypes) {
             for (const rarity of rarities) {
                 const mobStats = getMobStats(mobType, rarity);
@@ -8299,7 +8479,10 @@ class InventoryManager {
             rare: '#4d52e3',
             epic: '#861fde',
             legendary: '#de1f1f',
-            mythic: '#1fdbde'
+            mythic: '#1fdbde',
+            ultra: '#de1f65',
+            super: '#2bffa4',
+            unique: '#bf00ff'
         };
         this.game = game;
         this.chat = chat;
@@ -8576,7 +8759,10 @@ class InventoryManager {
             rare: 2,
             epic: 2.5,
             legendary: 3,
-            mythic: 4
+            mythic: 4,
+            ultra: 5,
+            super: 6,
+            unique: 7
         };
         const multiplier = item.rarity ? rarityMultipliers[item.rarity] : 1;
         switch (item.type) {
@@ -8818,7 +9004,7 @@ class InventoryManager {
         const title = document.createElement('h2');
         title.textContent = 'Inventory';
         content.appendChild(title);
-        const rarities = ['mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
         const gridContainer = document.createElement('div');
         gridContainer.className = 'inventory-grid-container';
         gridContainer.style.cssText = `
@@ -9215,7 +9401,7 @@ class InventoryManager {
             }
         });
         // Calculate success chance based on rarity progression
-        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         let baseChance = 64; // 64% for common->uncommon
         // Find the highest rarity in the crafting slots
         let highestRarityIndex = -1;
@@ -9235,7 +9421,7 @@ class InventoryManager {
         if (!player)
             return 0;
         let totalPetals = 0;
-        const petalRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        const petalRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         petalRarities.forEach(rarity => {
             const petalCount = player.inventory[rarity]?.['petal'] || 0;
             totalPetals += petalCount;
@@ -9250,7 +9436,7 @@ class InventoryManager {
         if (!player)
             return;
         inventoryGrid.innerHTML = '';
-        const rarities = ['mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
         rarities.forEach(rarity => {
             const rarityItems = player.inventory[rarity];
             if (rarityItems) {

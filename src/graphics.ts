@@ -72,7 +72,10 @@ export class Graphics {
         rare: '#4d52e3',
         epic: '#861fde',
         legendary: '#de1f1f',
-        mythic: '#1fdbde'
+        mythic: '#1fdbde',
+        ultra: '#de1f65',
+        super: '#2bffa4',
+        unique: '#bf00ff'
     };
     private showHitboxes: boolean = false;
     private itemSprites: Record<string, HTMLImageElement> = {};
@@ -107,7 +110,7 @@ export class Graphics {
 
     private async preloadMobImages() {
         const mobTypes = getAllMobTypes();
-        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         
         for (const mobType of mobTypes) {
             for (const rarity of rarities) {

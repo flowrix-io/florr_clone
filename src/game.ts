@@ -30,6 +30,9 @@ interface ItemRarityColors {
     epic: string;
     legendary: string;
     mythic: string;
+    ultra: string;
+    super: string;
+    unique: string;
 }
 
 // Add after other interfaces at the top
