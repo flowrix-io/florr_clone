@@ -67,47 +67,34 @@ class InventoryManager {
         const title = document.createElement('h2');
         title.textContent = 'Crafting';
         craftingContent.appendChild(title);
-        const craftingGrid = document.createElement('div');
-        craftingGrid.className = 'crafting-grid';
+        const craftingMain = document.createElement('div');
+        craftingMain.className = 'crafting-main';
+        craftingMain.style.flex = '0 0 50%'; // Take half height
+        const craftingCircleContainer = document.createElement('div');
+        craftingCircleContainer.className = 'crafting-circle-container';
         for (let i = 0; i < 5; i++) {
             const slot = document.createElement('div');
             slot.className = 'crafting-slot';
             slot.dataset.index = i.toString();
-            slot.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                slot.classList.add('drag-over');
-            });
-            slot.addEventListener('dragleave', () => {
-                slot.classList.remove('drag-over');
-            });
-            slot.addEventListener('drop', (e) => {
-                e.preventDefault();
-                slot.classList.remove('drag-over');
-                const itemData = e.dataTransfer?.getData('text/plain');
-                if (itemData) {
-                    try {
-                        const { rarity, type } = JSON.parse(itemData);
-                        this.addItemToCraftingSlot(rarity, type, i);
-                    }
-                    catch (error) {
-                        console.error('Failed to parse item data for crafting', error);
-                    }
-                }
-            });
-            craftingGrid.appendChild(slot);
+            slot.style.width = '40px';
+            slot.style.height = '40px';
+            slot.style.position = 'absolute';
+            craftingCircleContainer.appendChild(slot);
         }
-        const successChance = document.createElement('div');
-        successChance.className = 'success-chance';
-        successChance.textContent = 'Success Chance: 0%';
-        craftingContent.appendChild(successChance);
-        const petalCount = document.createElement('div');
-        petalCount.className = 'petal-count';
-        petalCount.textContent = 'Petals: 0';
-        craftingContent.appendChild(petalCount);
+        craftingMain.appendChild(craftingCircleContainer);
+        const craftingActions = document.createElement('div');
+        craftingActions.className = 'crafting-actions';
         const craftButton = document.createElement('button');
         craftButton.className = 'craft-button';
         craftButton.textContent = 'Craft';
         craftButton.addEventListener('click', () => this.craftItems());
+        craftingActions.appendChild(craftButton);
+        const successChance = document.createElement('div');
+        successChance.className = 'success-chance';
+        successChance.textContent = 'Success Chance: 0%';
+        craftingActions.appendChild(successChance);
+        craftingMain.appendChild(craftingActions);
+        craftingContent.appendChild(craftingMain);
         // Create inventory preview section
         const inventoryPreview = document.createElement('div');
         inventoryPreview.className = 'crafting-inventory-preview';
@@ -117,15 +104,46 @@ class InventoryManager {
         const inventoryGrid = document.createElement('div');
         inventoryGrid.className = 'crafting-inventory-grid';
         inventoryPreview.appendChild(inventoryGrid);
-        craftingContent.appendChild(craftingGrid);
-        craftingContent.appendChild(successChance);
-        craftingContent.appendChild(craftButton);
         craftingContent.appendChild(inventoryPreview);
         this.craftingPanel.appendChild(craftingContent);
         document.body.appendChild(this.craftingPanel);
         // Add styles
         const style = document.createElement('style');
         style.textContent = `
+            .crafting-main {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 15px;
+                margin-bottom: 15px;
+                max-height: none;  // Remove previous restriction
+            }
+            .crafting-circle-container {
+                position: relative;
+                width: 180px;
+                height: 180px;
+                flex-shrink: 0;
+            }
+            .crafting-actions {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                flex-shrink: 0;
+            }
+            .crafting-inventory-preview {
+                margin-top: 15px;
+                border-top: 2px solid #444;
+                padding-top: 10px;
+                flex: 1 1 auto;
+                overflow-y: auto;
+            }
+            .crafting-slot {
+                cursor: pointer !important;
+                user-select: none;
+            }
+            .crafting-slot img {
+                pointer-events: none;
+            }
             .loadout-slot.on-cooldown {
                 position: relative;
                 overflow: hidden;
@@ -706,6 +724,37 @@ class InventoryManager {
         this.updateCraftingDisplay();
         this.updateInventoryDisplay();
     }
+    handleCraftingItemClick(rarity, type, isShiftClick) {
+        const itemsFromStack = this.getItemCount(rarity, type);
+        if (itemsFromStack === 0)
+            return;
+        if (isShiftClick) {
+            const emptySlotsCount = this.craftingSlots.filter(s => s.item === null).length;
+            const amountToAdd = Math.min(emptySlotsCount, itemsFromStack);
+            for (let i = 0; i < amountToAdd; i++) {
+                this.addItemToCrafting(rarity, type);
+            }
+        }
+        else {
+            const itemsInCrafting = this.craftingSlots.filter(s => s.item !== null).length;
+            const areAllSlotsEmpty = itemsInCrafting === 0;
+            if (areAllSlotsEmpty && itemsFromStack >= 5) {
+                for (let i = 0; i < 5; i++) {
+                    this.addItemToCrafting(rarity, type);
+                }
+            }
+            else {
+                this.addItemToCrafting(rarity, type);
+            }
+        }
+    }
+    addItemToCrafting(rarity, type) {
+        const firstEmptySlot = this.craftingSlots.find(s => s.item === null);
+        if (firstEmptySlot) {
+            const itemTypeForCraftingSlot = type.startsWith('petal_') ? type.replace('petal_', '') : type;
+            this.addItemToCraftingSlot(rarity, itemTypeForCraftingSlot, firstEmptySlot.index);
+        }
+    }
     removeItemFromCraftingSlot(slotIndex) {
         const craftingSlot = this.craftingSlots[slotIndex];
         if (!craftingSlot.item)
@@ -747,7 +796,17 @@ class InventoryManager {
             return;
         // Update crafting slots
         const slots = document.querySelectorAll('.crafting-slot');
+        const container = this.craftingPanel.querySelector('.crafting-circle-container');
+        const radius = 70;
+        const containerSize = 180;
         slots.forEach((slot, index) => {
+            if (container) {
+                const angle = (index / slots.length) * 2 * Math.PI;
+                const x = (containerSize / 2) + radius * Math.cos(angle) - 20; // Half of 40px
+                const y = (containerSize / 2) + radius * Math.sin(angle) - 20;
+                slot.style.left = `${x}px`;
+                slot.style.top = `${y}px`;
+            }
             slot.innerHTML = '';
             const craftingSlot = this.craftingSlots[index];
             if (craftingSlot.item) {
@@ -761,6 +820,7 @@ class InventoryManager {
                     petalDiv.style.alignItems = 'center';
                     petalDiv.style.justifyContent = 'center';
                     petalDiv.style.position = 'relative';
+                    petalDiv.style.pointerEvents = 'auto'; // Ensure clicks work
                     // Get petal SVG from stats
                     const stats = (0, petals_1.getPetalStats)(craftingSlot.item.petalType, craftingSlot.item.rarity);
                     if (stats && stats.image) {
@@ -769,6 +829,8 @@ class InventoryManager {
                         img.style.width = '100%';
                         img.style.height = '100%';
                         img.style.objectFit = 'contain';
+                        img.style.pointerEvents = 'none'; // Prevent drag cursor
+                        img.draggable = false; // Prevent dragging
                         // Convert SVG string to blob URL (same as graphics system)
                         const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
                         const url = URL.createObjectURL(svgBlob);
@@ -852,12 +914,6 @@ class InventoryManager {
         if (successElement) {
             successElement.textContent = `Success Chance: ${successChance}%`;
         }
-        // Calculate and update petal count
-        const petalCount = this.calculatePetalCount();
-        const petalElement = this.craftingPanel.querySelector('.petal-count');
-        if (petalElement) {
-            petalElement.textContent = `Petals: ${petalCount}`;
-        }
         // Update inventory preview
         this.updateCraftingInventoryPreview();
     }
@@ -918,7 +974,6 @@ class InventoryManager {
                     if (count > 0) {
                         const itemElement = document.createElement('div');
                         itemElement.className = 'crafting-inventory-item';
-                        itemElement.draggable = true;
                         itemElement.dataset.rarity = rarity;
                         itemElement.dataset.type = itemType;
                         itemElement.dataset.count = count.toString();
@@ -999,13 +1054,8 @@ class InventoryManager {
                         rarityDisplay.textContent = rarity.charAt(0).toUpperCase();
                         itemContainer.appendChild(rarityDisplay);
                         itemElement.appendChild(itemContainer);
-                        // Add drag event listeners
-                        itemElement.addEventListener('dragstart', (e) => {
-                            e.dataTransfer?.setData('text/plain', JSON.stringify({
-                                rarity: rarity,
-                                type: itemType,
-                                count: count
-                            }));
+                        itemElement.addEventListener('click', (e) => {
+                            this.handleCraftingItemClick(rarity, itemType, e.shiftKey);
                         });
                         inventoryGrid.appendChild(itemElement);
                     }
