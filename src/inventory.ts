@@ -1,8 +1,9 @@
 import { Item, ItemWithRarity } from './item';
 import { Player, PlayerInventory } from './player';
 import { Socket } from './socket';
-import { getPetalStats } from './petals';
+import { getPetalStats, getAllPetalTypes } from './petals';
 import { Chat } from './chat';
+import { Game } from './game';
 
 interface CraftingSlot {
     index: number;
@@ -25,6 +26,7 @@ export class InventoryManager {
     private isCraftingOpen: boolean = false;
     private readonly LOADOUT_SLOTS = 10;
     private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+    private readonly allPetalTypes: string[];
     private chat: Chat | null = null;
     private readonly ITEM_RARITY_COLORS: Record<string, string> = {
         common: '#7eef6d',
@@ -38,6 +40,7 @@ export class InventoryManager {
     constructor(game: GameInterface,  chat: Chat | null) {
         this.game = game;
         this.chat = chat;
+        this.allPetalTypes = getAllPetalTypes();
 
         // Create loadout bar
         const loadoutBar = document.createElement('div');
@@ -816,7 +819,13 @@ export class InventoryManager {
 
         if (this.getItemCount(rarity, type) === 0) return;
         
-        const item: Item = { type: type as any, rarity: rarity as any };
+        const isPetal = this.allPetalTypes.includes(type);
+
+        const item: Item = { 
+            type: isPetal ? 'petal' : type as Item['type'], 
+            rarity: rarity as Item['rarity'], 
+            petalType: isPetal ? type : undefined 
+        };
         
         if (this.craftingSlots[slotIndex].item) {
             return;
@@ -852,9 +861,12 @@ export class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player) return;
 
+        const item = craftingSlot.item;
+        const type = item.petalType || item.type; // Use petalType if it exists, otherwise the item type
+
         // Return item to inventory
-        if (craftingSlot.item.rarity && craftingSlot.item.type) {
-            this.addItem(craftingSlot.item.rarity, craftingSlot.item.type, 1);
+        if (item.rarity && type) {
+            this.addItem(item.rarity, type, 1);
         }
 
         // Clear the crafting slot
@@ -903,7 +915,7 @@ export class InventoryManager {
             const craftingSlot = this.craftingSlots[index];
             if (craftingSlot.item) {
                 // Handle different item types
-                if (craftingSlot.item.type === 'petal') {
+                if (craftingSlot.item.type === 'petal' && craftingSlot.item.petalType && craftingSlot.item.rarity) {
                     // Create petal visual using SVG image
                     const petalDiv = document.createElement('div');
                     petalDiv.style.width = '80%';
@@ -914,27 +926,20 @@ export class InventoryManager {
                     petalDiv.style.position = 'relative';
                     
                     // Get petal SVG from stats
-                    if (craftingSlot.item.petalType && craftingSlot.item.rarity) {
-                        const stats = getPetalStats(craftingSlot.item.petalType, craftingSlot.item.rarity);
-                        if (stats && stats.image) {
-                            // Create an image element with the SVG data
-                            const img = document.createElement('img');
-                            img.style.width = '100%';
-                            img.style.height = '100%';
-                            img.style.objectFit = 'contain';
-                            
-                            // Convert SVG string to blob URL (same as graphics system)
-                            const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                            const url = URL.createObjectURL(svgBlob);
-                            img.src = url;
-                            
-                            petalDiv.appendChild(img);
-                        } else {
-                            // Fallback to colored circle
-                            petalDiv.style.borderRadius = '50%';
-                            petalDiv.style.border = '2px solid #000';
-                            petalDiv.style.backgroundColor = '#90EE90'; // Default green
-                        }
+                    const stats = getPetalStats(craftingSlot.item.petalType, craftingSlot.item.rarity);
+                    if (stats && stats.image) {
+                        // Create an image element with the SVG data
+                        const img = document.createElement('img');
+                        img.style.width = '100%';
+                        img.style.height = '100%';
+                        img.style.objectFit = 'contain';
+                        
+                        // Convert SVG string to blob URL (same as graphics system)
+                        const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                        const url = URL.createObjectURL(svgBlob);
+                        img.src = url;
+                        
+                        petalDiv.appendChild(img);
                     } else {
                         // Fallback to colored circle
                         petalDiv.style.borderRadius = '50%';
@@ -1111,7 +1116,7 @@ export class InventoryManager {
                         itemContainer.style.justifyContent = 'center';
 
                         // Handle different item types
-                        if (itemType === 'petal') {
+                        if (itemType.includes('petal_')) {
                             // Create petal visual using SVG image
                             const petalDiv = document.createElement('div');
                             petalDiv.style.width = '60%';
@@ -1120,22 +1125,10 @@ export class InventoryManager {
                             petalDiv.style.alignItems = 'center';
                             petalDiv.style.justifyContent = 'center';
                             
-                            // Get petal SVG from stats - need to determine petal type
-                            const petalTypes = ['basic', 'rose', 'stinger'];
-                            let petalStats = null;
-                            let petalType = 'basic'; // default
+                            // Get petal SVG from stats
+                            const stats = getPetalStats(itemType.replace('petal_', ''), rarity);
                             
-                            // Try to find the correct petal type
-                            for (const type of petalTypes) {
-                                const stats = getPetalStats(type, rarity);
-                                if (stats) {
-                                    petalStats = stats;
-                                    petalType = type;
-                                    break;
-                                }
-                            }
-                            
-                            if (petalStats && petalStats.image) {
+                            if (stats && stats.image) {
                                 // Create an image element with the SVG data
                                 const img = document.createElement('img');
                                 img.style.width = '100%';
@@ -1143,7 +1136,7 @@ export class InventoryManager {
                                 img.style.objectFit = 'contain';
                                 
                                 // Convert SVG string to blob URL (same as graphics system)
-                                const svgBlob = new Blob([petalStats.image], { type: 'image/svg+xml' });
+                                const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
                                 const url = URL.createObjectURL(svgBlob);
                                 img.src = url;
                                 
@@ -1219,15 +1212,8 @@ export class InventoryManager {
 
         const loadoutBar = document.getElementById('loadoutBar');
         if (loadoutBar) {
-            loadoutBar.style.display = 'none';
-            const slots = loadoutBar.querySelectorAll('.loadout-slot');
-            slots.forEach(slot => {
-                slot.innerHTML = '';
-            });
+            loadoutBar.remove();
         }
-
-        this.isInventoryOpen = false;
-        this.isCraftingOpen = false;
     }
 
     private getItemCount(rarity: string, type: string): number {
