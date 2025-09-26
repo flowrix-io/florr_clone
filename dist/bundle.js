@@ -714,12 +714,15 @@ const ENEMY_SIZE_MULTIPLIERS = {
 };
 // Add drop chances like in singleplayer
 const DROP_CHANCES = {
-    common: 1, // 10% chance
-    uncommon: 1, // 20% chance
-    rare: 1, // 30% chance
-    epic: 1, // 40% chance
-    legendary: 1, // 50% chance
-    mythic: 1 // 75% chance
+    common: 0.1, // 10% chance
+    uncommon: 0.2, // 20% chance
+    rare: 0.3, // 30% chance
+    epic: 0.4, // 40% chance
+    legendary: 0.5, // 50% chance
+    mythic: 0.75, // 75% chance
+    ultra: 0.9, // 90% chance
+    super: 0.95, // 95% chance
+    unique: 1.0 // 100% chance
 };
 // Add maze configuration
 const MAZE_CELL_SIZE = 1000; // Size of each maze cell
@@ -3101,6 +3104,7 @@ class Graphics {
     constructor(canvas, playerSprite, wallTexture, octopusSprite, fishSprite, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
         this.cameraX = 0;
         this.cameraY = 0;
+        this.zoomLevel = 1.0;
         this.floatingTexts = [];
         this.mapData = [];
         this.MINIMAP_WIDTH = 200;
@@ -3203,9 +3207,10 @@ class Graphics {
     clear() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
-    setCamera(x, y) {
+    setCamera(x, y, zoom = 1.0) {
         this.cameraX = x;
         this.cameraY = y;
+        this.zoomLevel = zoom;
     }
     setMap(mapData) {
         this.mapData = mapData;
@@ -3776,16 +3781,11 @@ class Graphics {
         }
     }
     render(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
-        const player = players.get(currentPlayerId);
-        if (player) {
-            const targetX = player.x - this.canvas.width / 2;
-            const targetY = player.y - this.canvas.height / 2;
-            this.cameraX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - this.canvas.width, targetX));
-            this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - this.canvas.height, targetY));
-        }
         this.ctx.save();
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // Apply zoom scaling
+        this.ctx.scale(this.zoomLevel, this.zoomLevel);
         // Translate the context by the camera position
         this.ctx.translate(-this.cameraX, -this.cameraY);
         // Draw background pattern
@@ -10058,6 +10058,10 @@ class Game {
         this.cameraY = 0;
         this.playerEye = { x: 0, y: 0 };
         this.targetEye = { x: 0, y: 0 };
+        this.zoomLevel = 1.0;
+        this.MIN_ZOOM = 0.5;
+        this.MAX_ZOOM = 3.0;
+        this.ZOOM_STEP = 0.1;
         this.WORLD_WIDTH = ACTUAL_WORLD_WIDTH; // Increased from 2000 to 10000
         this.WORLD_HEIGHT = ACTUAL_WORLD_HEIGHT; // Keep height the same
         this.keysPressed = new Set();
@@ -10404,8 +10408,22 @@ class Game {
                 }
                 return;
             }
+            // Prevent browser shortcuts for game keys only when chat is not focused
+            const gameKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'i', 'r', 'c', 'h', 'Enter', 'Escape', '-', '=', 'Shift', 'Control', 'Alt'];
+            if (gameKeys.includes(event.key) || event.key.match(/^[1-9]$/)) {
+                event.preventDefault();
+            }
             if (event.key === 'Enter') {
                 this.chat?.focus();
+                return;
+            }
+            // Zoom controls
+            if (event.key === '-' || event.key === '_') {
+                this.zoomOut();
+                return;
+            }
+            if (event.key === '=' || event.key === '+') {
+                this.zoomIn();
                 return;
             }
             if (event.key === 'i' || event.key === 'I') {
@@ -10452,14 +10470,24 @@ class Game {
             });
         }
     }
+    zoomIn() {
+        this.zoomLevel = Math.min(this.zoomLevel + this.ZOOM_STEP, this.MAX_ZOOM);
+        this.showFloatingText(this.canvas.width / 2, 50, `Zoom: ${Math.round(this.zoomLevel * 100)}%`, '#FFFFFF', 20);
+    }
+    zoomOut() {
+        this.zoomLevel = Math.max(this.zoomLevel - this.ZOOM_STEP, this.MIN_ZOOM);
+        this.showFloatingText(this.canvas.width / 2, 50, `Zoom: ${Math.round(this.zoomLevel * 100)}%`, '#FFFFFF', 20);
+    }
     updateCamera(player) {
-        // Center camera on player
-        const targetX = player.x - this.canvas.width / 2;
-        const targetY = player.y - this.canvas.height / 2;
+        // Center camera on player with zoom
+        const scaledWidth = this.canvas.width / this.zoomLevel;
+        const scaledHeight = this.canvas.height / this.zoomLevel;
+        const targetX = player.x - scaledWidth / 2;
+        const targetY = player.y - scaledHeight / 2;
         // Clamp camera to world bounds with proper dimensions
-        this.cameraX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - this.canvas.width, targetX));
-        this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - this.canvas.height, targetY));
-        this.graphics.setCamera(this.cameraX, this.cameraY);
+        this.cameraX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - scaledWidth, targetX));
+        this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - scaledHeight, targetY));
+        this.graphics.setCamera(this.cameraX, this.cameraY, this.zoomLevel);
     }
     gameLoop() {
         this.update();

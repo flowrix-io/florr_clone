@@ -21,6 +21,7 @@ export class Graphics {
     public ctx: CanvasRenderingContext2D;
     private cameraX: number = 0;
     private cameraY: number = 0;
+    private zoomLevel: number = 1.0;
     private playerSprite: HTMLImageElement;
     private floatingTexts: FloatingText[] = [];
     private mapData: MapElement[] = [];
@@ -141,9 +142,10 @@ export class Graphics {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
-    public setCamera(x: number, y: number) {
+    public setCamera(x: number, y: number, zoom: number = 1.0) {
         this.cameraX = x;
         this.cameraY = y;
+        this.zoomLevel = zoom;
     }
     
     public setMap(mapData: MapElement[]) {
@@ -868,18 +870,13 @@ export class Graphics {
     }
 
     public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, currentPlayerId: string, petalExtension: number = 1.0) {
-        const player = players.get(currentPlayerId);
-        if (player) {
-            const targetX = player.x - this.canvas.width / 2;
-            const targetY = player.y - this.canvas.height / 2;
-            this.cameraX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - this.canvas.width, targetX));
-            this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - this.canvas.height, targetY));
-        }
-
         this.ctx.save();
 
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Apply zoom scaling
+        this.ctx.scale(this.zoomLevel, this.zoomLevel);
 
         // Translate the context by the camera position
         this.ctx.translate(-this.cameraX, -this.cameraY);

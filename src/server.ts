@@ -1516,9 +1516,15 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                     if (index !== -1) {
                         const xpGained = getXPFromEnemy(enemy);
                         addXPToPlayer(player, xpGained);
-                        if (Math.random() < DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES]) {
-                            const dropChance = DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES];
-                            if (Math.random() < dropChance) {
+                        // Check for item drop
+                        const dropChance = DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES];
+                        if (Math.random() < dropChance) {
+                            // Special mobs get multiple drops
+                            const isSpecialMob = enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique';
+                            const dropCount = isSpecialMob ? 
+                                (enemy.tier === 'ultra' ? 2 : enemy.tier === 'super' ? 3 : 4) : 1;
+                            
+                            for (let dropIndex = 0; dropIndex < dropCount; dropIndex++) {
                                 // Determine item type - 60% chance for consumables, 40% chance for petals
                                 let itemType: Item['type'];
                                 let petalType: string | undefined;
@@ -1533,16 +1539,37 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                                     petalType = petalTypes[Math.floor(Math.random() * petalTypes.length)];
                                 }
 
+                                // Add some random offset for multiple drops
+                                const offsetX = isSpecialMob ? (Math.random() - 0.5) * 100 : 0;
+                                const offsetY = isSpecialMob ? (Math.random() - 0.5) * 100 : 0;
+
                                 const newItem: WorldItem = {
                                     id: Math.random().toString(36).substr(2, 9),
                                     type: itemType,
-                                    x: enemy.x,
-                                    y: enemy.y,
+                                    x: enemy.x + offsetX,
+                                    y: enemy.y + offsetY,
                                     rarity: enemy.tier,
                                     petalType: petalType
                                 };
                                 items.push(newItem);
                                 io.emit('itemSpawned', newItem);
+                            }
+                            
+                            // Special mobs also get a guaranteed petal drop
+                            if (isSpecialMob) {
+                                const petalTypes = getAllPetalTypes();
+                                const petalType = petalTypes[Math.floor(Math.random() * petalTypes.length)];
+                                
+                                const guaranteedPetal: WorldItem = {
+                                    id: Math.random().toString(36).substr(2, 9),
+                                    type: 'petal',
+                                    x: enemy.x + (Math.random() - 0.5) * 80,
+                                    y: enemy.y + (Math.random() - 0.5) * 80,
+                                    rarity: enemy.tier,
+                                    petalType: petalType
+                                };
+                                items.push(guaranteedPetal);
+                                io.emit('itemSpawned', guaranteedPetal);
                             }
                         }
                         enemies.splice(index, 1);

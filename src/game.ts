@@ -60,6 +60,10 @@ export class Game {
     private cameraY = 0;
     private playerEye: { x: number, y: number } = { x: 0, y: 0 };
     private targetEye: { x: number, y: number } = { x: 0, y: 0 };
+    private zoomLevel = 1.0;
+    private readonly MIN_ZOOM = 0.5;
+    private readonly MAX_ZOOM = 3.0;
+    private readonly ZOOM_STEP = 0.1;
     private readonly WORLD_WIDTH = ACTUAL_WORLD_WIDTH;  // Increased from 2000 to 10000
     private readonly WORLD_HEIGHT = ACTUAL_WORLD_HEIGHT;  // Keep height the same
     private keysPressed: Set<string> = new Set();
@@ -501,8 +505,25 @@ export class Game {
                 return;
             }
 
+            // Prevent browser shortcuts for game keys only when chat is not focused
+            const gameKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'i', 'r', 'c', 'h', 'Enter', 'Escape', '-', '=', 'Shift', 'Control', 'Alt'];
+            if (gameKeys.includes(event.key) || event.key.match(/^[1-9]$/)) {
+                event.preventDefault();
+            }
+
             if (event.key === 'Enter') {
                 this.chat?.focus();
+                return;
+            }
+
+            // Zoom controls
+            if (event.key === '-' || event.key === '_') {
+                this.zoomOut();
+                return;
+            }
+
+            if (event.key === '=' || event.key === '+') {
+                this.zoomIn();
                 return;
             }
 
@@ -571,15 +592,40 @@ export class Game {
         }
     }
 
+    private zoomIn() {
+        this.zoomLevel = Math.min(this.zoomLevel + this.ZOOM_STEP, this.MAX_ZOOM);
+        this.showFloatingText(
+            this.canvas.width / 2,
+            50,
+            `Zoom: ${Math.round(this.zoomLevel * 100)}%`,
+            '#FFFFFF',
+            20
+        );
+    }
+
+    private zoomOut() {
+        this.zoomLevel = Math.max(this.zoomLevel - this.ZOOM_STEP, this.MIN_ZOOM);
+        this.showFloatingText(
+            this.canvas.width / 2,
+            50,
+            `Zoom: ${Math.round(this.zoomLevel * 100)}%`,
+            '#FFFFFF',
+            20
+        );
+    }
+
     private updateCamera(player: Player) {
-        // Center camera on player
-        const targetX = player.x - this.canvas.width / 2;
-        const targetY = player.y - this.canvas.height / 2;
+        // Center camera on player with zoom
+        const scaledWidth = this.canvas.width / this.zoomLevel;
+        const scaledHeight = this.canvas.height / this.zoomLevel;
+        
+        const targetX = player.x - scaledWidth / 2;
+        const targetY = player.y - scaledHeight / 2;
 
         // Clamp camera to world bounds with proper dimensions
-        this.cameraX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - this.canvas.width, targetX));
-        this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - this.canvas.height, targetY));
-        this.graphics.setCamera(this.cameraX, this.cameraY);
+        this.cameraX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - scaledWidth, targetX));
+        this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - scaledHeight, targetY));
+        this.graphics.setCamera(this.cameraX, this.cameraY, this.zoomLevel);
     }
 
     private gameLoop() {

@@ -31,6 +31,7 @@ class Graphics {
     constructor(canvas, playerSprite, wallTexture, octopusSprite, fishSprite, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
         this.cameraX = 0;
         this.cameraY = 0;
+        this.zoomLevel = 1.0;
         this.floatingTexts = [];
         this.mapData = [];
         this.MINIMAP_WIDTH = 200;
@@ -133,9 +134,10 @@ class Graphics {
     clear() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
-    setCamera(x, y) {
+    setCamera(x, y, zoom = 1.0) {
         this.cameraX = x;
         this.cameraY = y;
+        this.zoomLevel = zoom;
     }
     setMap(mapData) {
         this.mapData = mapData;
@@ -706,16 +708,11 @@ class Graphics {
         }
     }
     render(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
-        const player = players.get(currentPlayerId);
-        if (player) {
-            const targetX = player.x - this.canvas.width / 2;
-            const targetY = player.y - this.canvas.height / 2;
-            this.cameraX = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH - this.canvas.width, targetX));
-            this.cameraY = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - this.canvas.height, targetY));
-        }
         this.ctx.save();
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // Apply zoom scaling
+        this.ctx.scale(this.zoomLevel, this.zoomLevel);
         // Translate the context by the camera position
         this.ctx.translate(-this.cameraX, -this.cameraY);
         // Draw background pattern
