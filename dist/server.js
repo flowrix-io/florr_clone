@@ -435,8 +435,8 @@ function spawnSpecialMobs() {
             constants_1.enemies.push(ultraMob);
             ultraMobCount = 1;
             io.emit('chatMessage', {
-                type: 'system',
-                message: 'An ultra mob has spawned in a legendary zone!',
+                sender: 'System',
+                content: 'An ultra mob has spawned in a legendary zone!',
                 timestamp: Date.now()
             });
             console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
@@ -449,8 +449,8 @@ function spawnSpecialMobs() {
             constants_1.enemies.push(superMob);
             superMobCount = 1;
             io.emit('chatMessage', {
-                type: 'system',
-                message: 'A super mob has spawned in a mythic zone!',
+                sender: 'System',
+                content: 'A super mob has spawned in a mythic zone!',
                 timestamp: Date.now()
             });
             console.log(`[SERVER] Spawned super mob: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
@@ -463,8 +463,8 @@ function spawnSpecialMobs() {
             constants_1.enemies.push(uniqueMob);
             uniqueMobCount = 1;
             io.emit('chatMessage', {
-                type: 'system',
-                message: 'A unique mob has spawned in a mythic zone!',
+                sender: 'System',
+                content: 'A unique mob has spawned in a mythic zone!',
                 timestamp: Date.now()
             });
             console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);

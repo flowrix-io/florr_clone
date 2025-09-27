@@ -2,7 +2,7 @@
   "players": {
     "t9pyo2soj": {
       "level": 13,
-      "xp": 665,
+      "xp": 8240,
       "maxHealth": 220,
       "damage": 29,
       "inventory": {
@@ -33,27 +33,28 @@
           "petal_basic": 4,
           "petal_rose": 1,
           "speed_boost": 3,
-          "health_potion": 1
+          "health_potion": 1,
+          "petal_stinger": 2
         },
         "mythic": {
           "petal_basic": 926,
-          "petal_rose": 2,
+          "petal_rose": 3,
           "health_potion": 5,
           "speed_boost": 2,
-          "petal_stinger": 1
+          "petal_stinger": 2
         },
         "ultra": {
           "speed_boost": 2
         },
         "super": {
-          "speed_boost": 1
+          "speed_boost": 2
         },
         "legendary": {
           "speed_boost": 1,
           "health_potion": 3,
           "petal_rose": 1,
           "petal_basic": 2,
-          "shield": 1
+          "shield": 2
         }
       },
       "loadout": [
@@ -61,42 +62,42 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "basic",
-          "health": 65602,
+          "health": 65599,
           "maxHealth": 65610
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "rose",
-          "health": 32800,
+          "health": 32794,
           "maxHealth": 32805
         },
         {
           "type": "petal",
           "rarity": "super",
           "petalType": "basic",
-          "health": 21867,
+          "health": 21866,
           "maxHealth": 21870
         },
         {
           "type": "petal",
           "rarity": "super",
           "petalType": "rose",
-          "health": 10931,
+          "health": 10927,
           "maxHealth": 10935
         },
         {
           "type": "petal",
           "rarity": "ultra",
           "petalType": "basic",
-          "health": 7282,
+          "health": 7273,
           "maxHealth": 7290
         },
         {
           "type": "petal",
           "rarity": "ultra",
           "petalType": "rose",
-          "health": 3644,
+          "health": 3638,
           "maxHealth": 3645
         },
         null,

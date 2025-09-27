@@ -511,8 +511,8 @@ function spawnSpecialMobs() {
             enemies.push(ultraMob);
             ultraMobCount = 1;
             io.emit('chatMessage', {
-                type: 'system',
-                message: 'An ultra mob has spawned in a legendary zone!',
+                sender: 'System',
+                content: 'An ultra mob has spawned in a legendary zone!',
                 timestamp: Date.now()
             });
             console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
@@ -526,8 +526,8 @@ function spawnSpecialMobs() {
             enemies.push(superMob);
             superMobCount = 1;
             io.emit('chatMessage', {
-                type: 'system',
-                message: 'A super mob has spawned in a mythic zone!',
+                sender: 'System',
+                content: 'A super mob has spawned in a mythic zone!',
                 timestamp: Date.now()
             });
             console.log(`[SERVER] Spawned super mob: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
@@ -541,8 +541,8 @@ function spawnSpecialMobs() {
             enemies.push(uniqueMob);
             uniqueMobCount = 1;
             io.emit('chatMessage', {
-                type: 'system',
-                message: 'A unique mob has spawned in a mythic zone!',
+                sender: 'System',
+                content: 'A unique mob has spawned in a mythic zone!',
                 timestamp: Date.now()
             });
             console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);
@@ -1517,8 +1517,8 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                         const xpGained = getXPFromEnemy(enemy);
                         addXPToPlayer(player, xpGained);
                         // Check for item drop
-                        const dropChance = DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES];
-                        if (Math.random() < dropChance) {
+                            const dropChance = DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES];
+                            if (Math.random() < dropChance) {
                             // Special mobs get multiple drops
                             const isSpecialMob = enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique';
                             const dropCount = isSpecialMob ? 
