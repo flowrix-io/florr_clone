@@ -77,7 +77,7 @@ export const KNOCKBACK_RECOVERY_SPEED = 0.7; // Faster decay to reduce movement 
 
 // Add XP-related constants
 export const BASE_XP_REQUIREMENT = 100;
-export const XP_MULTIPLIER = 1.5;
+export const XP_MULTIPLIER = 1.25;
 export const HEALTH_PER_LEVEL = 10;
 export const DAMAGE_PER_LEVEL = 2;
 export const PLAYER_SIZE = 40;

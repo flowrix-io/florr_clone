@@ -127,7 +127,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 10
+            xp: 1
         },
         uncommon: {
             name: "Uncommon Bee",
@@ -190,7 +190,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 30
+            xp: 3
         },
         rare: {
             name: "Rare Bee",
@@ -253,7 +253,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 90
+            xp: 30
         },
         epic: {
             name: "Epic Bee",
@@ -379,7 +379,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 810
+            xp: 1400
         },
         mythic: {
             name: "Mythic Bee",
@@ -442,7 +442,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 2430
+            xp: 32000
         },
         ultra: {
             name: "Ultra Bee",
@@ -505,7 +505,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 7290
+            xp: 150000
         },
         super: {
             name: "Super Bee",
@@ -568,7 +568,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 21870
+            xp: 1200000
         },
         unique: {
             name: "Unique Bee",
@@ -631,7 +631,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 65610
+            xp: 6800000
         }
     },
     ladybug: {
@@ -678,7 +678,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 10
+            xp: 1
         },
         uncommon: {
             name: "Uncommon Ladybug",
@@ -723,7 +723,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 30
+            xp: 3
         },
         rare: {
             name: "Rare Ladybug",
@@ -768,7 +768,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 90
+            xp: 30
         },  
         epic: {
             name: "Epic Ladybug",
@@ -858,7 +858,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 810
+            xp: 1400
         },
         mythic: {
             name: "Mythic Ladybug",
@@ -903,7 +903,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 2430
+            xp: 32000
         },
         ultra: {
             name: "Ultra Ladybug",
@@ -948,7 +948,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 7290
+            xp: 150000
         },
         super: {
             name: "Super Ladybug",
@@ -993,7 +993,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 21870
+            xp: 1200000
         },
         unique: {
             name: "Unique Ladybug",
@@ -1038,7 +1038,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: false,
             range: 100,
-            xp: 65610
+            xp: 6800000
         }
     },
     soldier_ant: {
@@ -1093,7 +1093,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: true,
             range: 100,
-            xp: 10
+            xp: 1
         },
         uncommon: {
             name: "Uncommon Soldier Ant",
@@ -1146,7 +1146,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: true,
             range: 200,
-            xp: 30
+            xp: 3
         },
         rare: { 
             name: "Rare Soldier Ant",
@@ -1199,7 +1199,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: true,
             range: 350,
-            xp: 90
+            xp: 30
         },
         epic: {
             name: "Epic Soldier Ant",
@@ -1305,7 +1305,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: true,
             range: 600,
-            xp: 810
+            xp: 1400
         },
         mythic: {
             name: "Mythic Soldier Ant",
@@ -1358,7 +1358,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: true,
             range: 750,
-            xp: 2430
+            xp: 32000
         },
         ultra: {
             name: "Ultra Soldier Ant",
@@ -1411,7 +1411,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: true,
             range: 750,
-            xp: 7290
+            xp: 150000
         },
         super: {
             name: "Super Soldier Ant",
@@ -1464,7 +1464,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: true,
             range: 750,
-            xp: 21870
+            xp: 1200000
         },
         unique: {
             name: "Unique Soldier Ant",
@@ -1517,7 +1517,7 @@ export const MOB_CONFIG: MobConfig = {
 </svg>`,
             is_hostile: true,
             range: 750,
-            xp: 65610
+            xp: 6800000
         }
     }
 };
