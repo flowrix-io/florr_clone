@@ -2,7 +2,7 @@
   "players": {
     "t9pyo2soj": {
       "level": 13,
-      "xp": 8240,
+      "xp": 8300,
       "maxHealth": 220,
       "damage": 29,
       "inventory": {
@@ -83,14 +83,14 @@
           "type": "petal",
           "rarity": "super",
           "petalType": "rose",
-          "health": 10927,
+          "health": 10925,
           "maxHealth": 10935
         },
         {
           "type": "petal",
           "rarity": "ultra",
           "petalType": "basic",
-          "health": 7273,
+          "health": 7272,
           "maxHealth": 7290
         },
         {
@@ -120,12 +120,14 @@
     "sussy": {
       "id": "t9pyo2soj",
       "username": "sussy",
-      "password": "sussy"
+      "password": "$2b$12$ZHbLp2Tf8QyPT7R4CcVZJuWDaJoT6wWS9b4gODg3Di3peWbYuaAuS",
+      "isPlainText": false
     },
     "q": {
       "id": "ux9dtcbf4",
       "username": "q",
-      "password": "q"
+      "password": "$2b$12$Iwkhn9vDWN6MCeDMEqxKv.uYBlS6F0g5cLni48dRl2mfl7PiqF8O.",
+      "isPlainText": false
     }
   }
 }

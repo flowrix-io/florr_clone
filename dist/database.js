@@ -26,11 +26,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.database = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const bcrypt = __importStar(require("bcrypt"));
 const dbPath = path.join(__dirname, '..', 'game.db');
 if (fs.existsSync(dbPath)) {
     fs.unlinkSync(dbPath);
 }
 const inventoryPath = path.join(__dirname, 'inventory.json');
+// Password hashing configuration
+const SALT_ROUNDS = 12;
 let db = { players: {}, users: {} };
 const readDatabase = () => {
     try {
@@ -62,14 +65,33 @@ exports.database = {
             return null; // User already exists
         }
         const userId = Math.random().toString(36).substr(2, 9);
-        const newUser = { id: userId, username, password };
+        const hashedPassword = bcrypt.hashSync(password, SALT_ROUNDS);
+        const newUser = { id: userId, username, password: hashedPassword };
         db.users[username] = newUser;
         writeDatabase();
         return newUser;
     },
     getUser: (username, password) => {
         const user = db.users[username];
-        if (user && user.password === password) {
+        if (!user) {
+            return null;
+        }
+        // Check if this is a plain text password (for migration)
+        if (user.isPlainText || !user.password.startsWith('$2b$')) {
+            // This is a plain text password - check it and migrate to hash
+            if (user.password === password) {
+                console.log(`Migrating password for user: ${username}`);
+                const hashedPassword = bcrypt.hashSync(password, SALT_ROUNDS);
+                user.password = hashedPassword;
+                user.isPlainText = false;
+                db.users[username] = user;
+                writeDatabase();
+                return user;
+            }
+            return null;
+        }
+        // This is a hashed password - use bcrypt to compare
+        if (bcrypt.compareSync(password, user.password)) {
             return user;
         }
         return null;
@@ -85,5 +107,34 @@ exports.database = {
     },
     getPlayerByUserId: (userId) => {
         return db.players[userId] || null;
+    },
+    // Migration function to upgrade all plain text passwords to hashed passwords
+    migratePasswords: () => {
+        let migrated = 0;
+        for (const username in db.users) {
+            const user = db.users[username];
+            if (user.isPlainText || !user.password.startsWith('$2b$')) {
+                console.log(`Migrating password for user: ${username}`);
+                const hashedPassword = bcrypt.hashSync(user.password, SALT_ROUNDS);
+                user.password = hashedPassword;
+                user.isPlainText = false;
+                migrated++;
+            }
+        }
+        if (migrated > 0) {
+            writeDatabase();
+            console.log(`Successfully migrated ${migrated} passwords to hashed format`);
+        }
+        return migrated;
+    },
+    // Check if there are any plain text passwords that need migration
+    checkForPlainTextPasswords: () => {
+        for (const username in db.users) {
+            const user = db.users[username];
+            if (user.isPlainText || !user.password.startsWith('$2b$')) {
+                return true;
+            }
+        }
+        return false;
     },
 };

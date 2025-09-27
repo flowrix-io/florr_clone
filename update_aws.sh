@@ -7,7 +7,7 @@ wget https://sussybite.s3.amazonaws.com/public_build_florrclone.zip
 unzip public_build_florrclone.zip
 rm public_build_florrclone.zip
 cd dist
-npm install socket.io express
+npm install socket.io express bcrypt
 wget https://sussybite.s3.amazonaws.com/cert.key
 wget https://sussybite.s3.amazonaws.com/cert.crt
 rm inventory.json

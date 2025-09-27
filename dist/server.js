@@ -9,6 +9,15 @@ const socket_io_1 = require("socket.io");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const database_1 = require("./database");
+// Check for and migrate any plain text passwords on server startup
+if (database_1.database.checkForPlainTextPasswords()) {
+    console.log('[SERVER] Detecting plain text passwords, running migration...');
+    const migrated = database_1.database.migratePasswords();
+    console.log(`[SERVER] Password migration completed: ${migrated} passwords updated`);
+}
+else {
+    console.log('[SERVER] All passwords are already hashed');
+}
 const constants_1 = require("./constants");
 const server_utils_1 = require("./server_utils");
 const petals_1 = require("./petals");
