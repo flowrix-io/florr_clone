@@ -266,29 +266,31 @@ export function initializeObstacles(): Obstacle[] {
 }
 
 export function getXPFromEnemy(enemy: Enemy): number {
+  // Import mob config to get actual XP values
+  const { getMobStats } = require('./mobs');
+  
+  // Map enemy types to mob types - only handle mobs that exist in our config
+  const mobType = enemy.type;
+  if (mobType === 'bee' || mobType === 'ladybug' || mobType === 'soldier_ant') {
+    const mobStats = getMobStats(mobType, enemy.tier);
+    if (mobStats && mobStats.xp) {
+      return mobStats.xp;
+    }
+  }
+  
+  // Fallback to tier-based XP for other enemy types or if mob config lookup fails
   const tierXP = {
     common: 10,
-    uncommon: 25,
-    rare: 50,
-    epic: 100,
-    legendary: 200,
-    mythic: 500,
-    ultra: 1500,
-    super: 4500,
-    unique: 13500
+    uncommon: 30,
+    rare: 90,
+    epic: 270,
+    legendary: 810,
+    mythic: 2430,
+    ultra: 7290,
+    super: 21870,
+    unique: 65610
   };
   return tierXP[enemy.tier] || 10;
 }
 
-export function addXPToPlayer(player: any, xp: number): void {
-  player.xp += xp;
-  // Check for level up
-  while (player.xp >= player.xpToNextLevel) {
-    player.xp -= player.xpToNextLevel;
-    player.level++;
-    player.xpToNextLevel = Math.floor(player.xpToNextLevel * 1.5);
-    player.maxHealth += 10;
-    player.health = player.maxHealth; // Full heal on level up
-    player.damage += 2;
-  }
-}
+// Note: addXPToPlayer moved to server.ts to properly handle socket events

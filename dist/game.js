@@ -955,5 +955,19 @@ class Game {
             retract_petals: 'Shift',
         };
     }
+    savePlayerProgress() { }
+    hideTitleScreen() { }
+    showDeathScreen() {
+        document.getElementById('deathScreen')?.classList.remove('hidden');
+    }
+    hideDeathScreen() {
+        document.getElementById('deathScreen')?.classList.add('hidden');
+    }
+    showTitleScreen() {
+        document.getElementById('titleScreen')?.classList.remove('hidden');
+    }
+    showSaveIndicator() {
+        this.graphics.showFloatingText(this.canvas.width / 2, 0, 'Progress Saved', 'white', 20);
+    }
 }
 exports.Game = Game;

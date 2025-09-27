@@ -1200,4 +1200,18 @@ export class Game {
             retract_petals: 'Shift',
         };
     }
+    public savePlayerProgress() {}
+    public hideTitleScreen() {}
+    public showDeathScreen() {
+        document.getElementById('deathScreen')?.classList.remove('hidden');
+    }
+    public hideDeathScreen() {
+        document.getElementById('deathScreen')?.classList.add('hidden');
+    }
+    public showTitleScreen() {
+        document.getElementById('titleScreen')?.classList.remove('hidden');
+    }
+    public showSaveIndicator() {
+        this.graphics.showFloatingText(this.canvas.width / 2, 0, 'Progress Saved', 'white', 20);
+    }
 }

@@ -15,7 +15,7 @@ if (database.checkForPlainTextPasswords()) {
 }
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, ENEMY_SIZE_MULTIPLIERS, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, isWall, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA } from './constants';
-import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, addXPToPlayer } from './server_utils';
+import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy } from './server_utils';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getAllPetalTypes, getPetalStats } from './petals';
 import { MOB_CONFIG, getMobStats, getAllMobTypes } from './mobs';
@@ -803,6 +803,35 @@ interface AuthenticatedSocket extends Socket {
     username?: string;
 }
 
+// XP and level management functions
+function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: string): void {
+    player.xp += xp;
+    while (player.xp >= player.xpToNextLevel) {
+        player.xp -= player.xpToNextLevel;
+        player.level++;
+        player.xpToNextLevel = calculateXPRequirement(player.level);
+        handleLevelUp(player);
+    }
+
+    // Save progress after XP gain if we have the socket ID
+    if (socketId) {
+        const socket = Array.from(io.sockets.sockets.values()).find(s => s.id === socketId) as AuthenticatedSocket;
+        if (socket?.userId) {
+            savePlayerProgress(player, socket.userId);
+        }
+    }
+
+    io.emit('xpGained', {
+        playerId: player.id,
+        xp: xp,
+        totalXp: player.xp,
+        level: player.level,
+        xpToNextLevel: player.xpToNextLevel,
+        maxHealth: player.maxHealth,
+        damage: player.damage
+    });
+}
+
 io.on('connection', (socket: AuthenticatedSocket) => {
     console.log('A user connected');
 
@@ -991,34 +1020,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         io.emit('playerUpdated', player);
     });
 
-    // Add save handler for when players gain XP or level up
-
-
-    // Update the addXPToPlayer function to save progress
-    function addXPToPlayer(player: ServerPlayer, xp: number): void {
-        player.xp += xp;
-        while (player.xp >= player.xpToNextLevel) {
-            player.xp -= player.xpToNextLevel;
-            player.level++;
-            player.xpToNextLevel = calculateXPRequirement(player.level);
-            handleLevelUp(player);
-        }
-
-        // Save progress after XP gain using the socket's userId
-        if (socket.userId) {
-            savePlayerProgress(player, socket.userId);
-        }
-
-        io.emit('xpGained', {
-            playerId: player.id,
-            xp: xp,
-            totalXp: player.xp,
-            level: player.level,
-            xpToNextLevel: player.xpToNextLevel,
-            maxHealth: player.maxHealth,
-            damage: player.damage
-        });
-    }
+    // XP handling is now managed by the global addXPToPlayer function
 
     // Add a name update handler
     socket.on('updateName', (newName: string) => {
@@ -1554,7 +1556,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                     const index = enemies.findIndex(e => e.id === enemy.id);
                     if (index !== -1) {
                         const xpGained = getXPFromEnemy(enemy);
-                        addXPToPlayer(player, xpGained);
+                        addXPToPlayer(player, xpGained, player.id);
                         // Check for item drop
                             const dropChance = DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES];
                             if (Math.random() < dropChance) {
@@ -1735,7 +1737,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                         const index = enemies.findIndex(e => e.id === enemy.id);
                         if (index !== -1) {
                             const xpGained = getXPFromEnemy(enemy);
-                            addXPToPlayer(player, xpGained);
+                            addXPToPlayer(player, xpGained, player.id);
                             if (Math.random() < DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES]) {
                                 const dropChance = DROP_CHANCES[enemy.tier as keyof typeof DROP_CHANCES];
                                 if (Math.random() < dropChance) {

@@ -27,6 +27,18 @@ const DAMAGE_SCALING = {
     super: 2187,
     unique: 6561
 };
+// XP scaling: Base value of 10, multiplied by 3 for each rarity level
+const XP_SCALING = {
+    common: 10,
+    uncommon: 30,
+    rare: 90,
+    epic: 270,
+    legendary: 810,
+    mythic: 2430,
+    ultra: 7290,
+    super: 21870,
+    unique: 65610
+};
 // Base stats for each mob type (common values)
 const BASE_STATS = {
     bee: { damage: 50, health: 37.5 },
@@ -95,13 +107,14 @@ exports.MOB_CONFIG = {
   </g>
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 10
         },
         uncommon: {
             name: "Uncommon Bee",
             damage: 150,
             health: 140.625,
-            size: 2.0,
+            size: 3.0,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -157,13 +170,14 @@ exports.MOB_CONFIG = {
   </g>
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 30
         },
         rare: {
             name: "Rare Bee",
             damage: 450,
             health: 506.25,
-            size: 5,
+            size: 9,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -219,13 +233,14 @@ exports.MOB_CONFIG = {
   </g>
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 90
         },
         epic: {
             name: "Epic Bee",
             damage: 1350,
             health: 2025,
-            size: 7,
+            size: 27,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -281,13 +296,14 @@ exports.MOB_CONFIG = {
   </g>
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 270
         },
         legendary: {
             name: "Legendary Bee",
             damage: 4050,
             health: 15187.5,
-            size: 12,
+            size: 81,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -343,13 +359,14 @@ exports.MOB_CONFIG = {
   </g>
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 810
         },
         mythic: {
             name: "Mythic Bee",
             damage: 12150,
             health: 91125,
-            size: 19,
+            size: 243,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -405,13 +422,14 @@ exports.MOB_CONFIG = {
   </g>
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 2430
         },
         ultra: {
             name: "Ultra Bee",
             damage: 36450,
             health: 1093500,
-            size: 31,
+            size: 729,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "An ultra bee with cosmic power",
@@ -467,13 +485,14 @@ exports.MOB_CONFIG = {
   </g>
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 7290
         },
         super: {
             name: "Super Bee",
             damage: 109350,
             health: 49207500,
-            size: 50,
+            size: 2187,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A super bee with divine energy",
@@ -529,13 +548,14 @@ exports.MOB_CONFIG = {
   </g>
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 21870
         },
         unique: {
             name: "Unique Bee",
             damage: 328050,
             health: 737611250,
-            size: 81,
+            size: 6561,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A unique bee of ultimate power",
@@ -591,7 +611,8 @@ exports.MOB_CONFIG = {
   </g>
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 65610
         }
     },
     ladybug: {
@@ -637,13 +658,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 10
         },
         uncommon: {
             name: "Uncommon Ladybug",
             damage: 30,
             health: 234.375,
-            size: 2.0,
+            size: 3.0,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -681,13 +703,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 30
         },
         rare: {
             name: "Rare Ladybug",
             damage: 90,
             health: 843.75,
-            size: 5,
+            size: 9,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -725,13 +748,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 90
         },
         epic: {
             name: "Epic Ladybug",
             damage: 270,
             health: 3375,
-            size: 7,
+            size: 27,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -769,13 +793,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 270
         },
         legendary: {
             name: "Legendary Ladybug",
             damage: 810,
             health: 25312.5,
-            size: 12,
+            size: 81,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -813,13 +838,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 810
         },
         mythic: {
             name: "Mythic Ladybug",
             damage: 2430,
             health: 151875,
-            size: 19,
+            size: 243,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -857,13 +883,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 2430
         },
         ultra: {
             name: "Ultra Ladybug",
             damage: 7290,
             health: 1822500,
-            size: 31,
+            size: 729,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "An ultra ladybug with cosmic power",
@@ -901,13 +928,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 7290
         },
         super: {
             name: "Super Ladybug",
             damage: 21870,
             health: 82012500,
-            size: 50,
+            size: 2187,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A super ladybug with divine energy",
@@ -945,13 +973,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 21870
         },
         unique: {
             name: "Unique Ladybug",
             damage: 65610,
             health: 1230187500,
-            size: 81,
+            size: 6561,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A unique ladybug of ultimate power",
@@ -989,7 +1018,8 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: false,
-            range: 100
+            range: 100,
+            xp: 65610
         }
     },
     soldier_ant: {
@@ -1043,13 +1073,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: true,
-            range: 100
+            range: 100,
+            xp: 10
         },
         uncommon: {
             name: "Uncommon Soldier Ant",
             damage: 30,
             health: 375,
-            size: 2.0,
+            size: 3.0,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1095,13 +1126,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: true,
-            range: 200
+            range: 200,
+            xp: 30
         },
         rare: {
             name: "Rare Soldier Ant",
             damage: 90,
             health: 1350,
-            size: 5,
+            size: 9,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1147,13 +1179,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: true,
-            range: 350
+            range: 350,
+            xp: 90
         },
         epic: {
             name: "Epic Soldier Ant",
             damage: 270,
             health: 5400,
-            size: 7,
+            size: 27,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1199,13 +1232,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: true,
-            range: 500
+            range: 500,
+            xp: 270
         },
         legendary: {
             name: "Legendary Soldier Ant",
             damage: 810,
             health: 40500,
-            size: 12,
+            size: 81,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1251,13 +1285,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: true,
-            range: 600
+            range: 600,
+            xp: 810
         },
         mythic: {
             name: "Mythic Soldier Ant",
             damage: 2430,
             health: 243000,
-            size: 19,
+            size: 243,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1303,13 +1338,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: true,
-            range: 750
+            range: 750,
+            xp: 2430
         },
         ultra: {
             name: "Ultra Soldier Ant",
             damage: 7290,
             health: 2916000,
-            size: 31,
+            size: 729,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "An ultra soldier ant with cosmic power",
@@ -1355,13 +1391,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: true,
-            range: 750
+            range: 750,
+            xp: 7290
         },
         super: {
             name: "Super Soldier Ant",
             damage: 21870,
             health: 131220000,
-            size: 50,
+            size: 2187,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A super soldier ant with divine energy",
@@ -1407,13 +1444,14 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: true,
-            range: 750
+            range: 750,
+            xp: 21870
         },
         unique: {
             name: "Unique Soldier Ant",
             damage: 65610,
             health: 1968300000,
-            size: 81,
+            size: 6561,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A unique soldier ant of ultimate power",
@@ -1459,7 +1497,8 @@ exports.MOB_CONFIG = {
 
 </svg>`,
             is_hostile: true,
-            range: 750
+            range: 750,
+            xp: 65610
         }
     }
 };

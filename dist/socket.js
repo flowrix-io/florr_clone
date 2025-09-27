@@ -312,7 +312,7 @@ function setupSocketListeners(game) {
         }
     });
     game.socket.on('xpGained', (data) => {
-        //console.log('XP gained:', data);  // Add logging
+        console.log('XP gained:', data); // Add logging
         const player = game.players.get(data.playerId);
         if (player) {
             player.xp = data.totalXp;
@@ -427,6 +427,8 @@ function setupSocketListeners(game) {
                 existingPlayer.health = serverPlayer.health;
                 existingPlayer.maxHealth = serverPlayer.maxHealth;
                 existingPlayer.level = serverPlayer.level;
+                // Preserve XP values - don't overwrite them from gameStateUpdate
+                // as they are managed separately by xpGained events
             }
             else {
                 game.players.set(serverPlayer.id, {
@@ -436,7 +438,10 @@ function setupSocketListeners(game) {
                     velocityX: 0,
                     velocityY: 0,
                     targetX: serverPlayer.x,
-                    targetY: serverPlayer.y
+                    targetY: serverPlayer.y,
+                    // Initialize XP values for new players
+                    xp: 0,
+                    xpToNextLevel: 100
                 });
             }
         });
