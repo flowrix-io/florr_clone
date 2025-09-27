@@ -12,6 +12,38 @@ export interface MobStats {
     range: number; // Detection/attack range
 }
 
+// Scaling multipliers for mob stats
+const HEALTH_SCALING = {
+    common: 1,
+    uncommon: 3.75,
+    rare: 13.5,
+    epic: 54,
+    legendary: 405,
+    mythic: 2430,
+    ultra: 29160,
+    super: 1312200,
+    unique: 19683000
+};
+
+const DAMAGE_SCALING = {
+    common: 1,
+    uncommon: 3,
+    rare: 9,
+    epic: 27,
+    legendary: 81,
+    mythic: 243,
+    ultra: 729,
+    super: 2187,
+    unique: 6561
+};
+
+// Base stats for each mob type (common values)
+const BASE_STATS = {
+    bee: { damage: 50, health: 37.5 },
+    ladybug: { damage: 10, health: 62.5 },
+    soldier_ant: { damage: 10, health: 100 }
+};
+
 export interface MobConfig {
     [mobType: string]: {
         [rarity: string]: MobStats;
@@ -83,10 +115,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         uncommon: {
-            name: "Common Bee",
+            name: "Uncommon Bee",
             damage: 150,
-            health: 140.6,
-            size: 1.2,
+            health: 140.625,
+            size: 2.0,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -145,10 +177,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         rare: {
-            name: "Common Bee",
+            name: "Rare Bee",
             damage: 450,
-            health: 506.2,
-            size: 1.5,
+            health: 506.25,
+            size: 5,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -207,10 +239,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         epic: {
-            name: "Common Bee",
+            name: "Epic Bee",
             damage: 1350,
-            health: 1518.6,
-            size: 1.8,
+            health: 2025,
+            size: 7,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -269,10 +301,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         legendary: {
-            name: "Common Bee",
+            name: "Legendary Bee",
             damage: 4050,
-            health: 4555.8,
-            size: 2.5,
+            health: 15187.5,
+            size: 12,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -331,10 +363,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         mythic: {
-            name: "Common Bee",
+            name: "Mythic Bee",
             damage: 12150,
-            health: 13667.4,
-            size: 3.0,
+            health: 91125,
+            size: 19,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -395,8 +427,8 @@ export const MOB_CONFIG: MobConfig = {
         ultra: {
             name: "Ultra Bee",
             damage: 36450,
-            health: 41002.2,
-            size: 3.5,
+            health: 1093500,
+            size: 31,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "An ultra bee with cosmic power",
@@ -457,8 +489,8 @@ export const MOB_CONFIG: MobConfig = {
         super: {
             name: "Super Bee",
             damage: 109350,
-            health: 123006.6,
-            size: 4.0,
+            health: 49207500,
+            size: 50,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A super bee with divine energy",
@@ -519,8 +551,8 @@ export const MOB_CONFIG: MobConfig = {
         unique: {
             name: "Unique Bee",
             damage: 328050,
-            health: 369019.8,
-            size: 4.5,
+            health: 737611250,
+            size: 81,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A unique bee of ultimate power",
@@ -625,10 +657,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         uncommon: {
-            name: "Common Ladybug",
+            name: "Uncommon Ladybug",
             damage: 30,
-            health: 187.5,
-            size: 1.2,
+            health: 234.375,
+            size: 2.0,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -669,10 +701,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         rare: {
-            name: "Common Ladybug",
+            name: "Rare Ladybug",
             damage: 90,
-            health: 562.5,
-            size: 1.4,
+            health: 843.75,
+            size: 5,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -713,10 +745,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },  
         epic: {
-            name: "Common Ladybug",
+            name: "Epic Ladybug",
             damage: 270,
-            health: 1687.5,
-            size: 1.8,
+            health: 3375,
+            size: 7,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -757,10 +789,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         legendary: {
-            name: "Common Ladybug",
+            name: "Legendary Ladybug",
             damage: 810,
-            health: 5062.5,
-            size: 2.5,
+            health: 25312.5,
+            size: 12,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -801,10 +833,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         mythic: {
-            name: "Common Ladybug",
-            damage: 30,
-            health: 60,
-            size: 3.0,
+            name: "Mythic Ladybug",
+            damage: 2430,
+            health: 151875,
+            size: 19,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -846,9 +878,9 @@ export const MOB_CONFIG: MobConfig = {
         },
         ultra: {
             name: "Ultra Ladybug",
-            damage: 90,
-            health: 180,
-            size: 3.5,
+            damage: 7290,
+            health: 1822500,
+            size: 31,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "An ultra ladybug with cosmic power",
@@ -890,9 +922,9 @@ export const MOB_CONFIG: MobConfig = {
         },
         super: {
             name: "Super Ladybug",
-            damage: 270,
-            health: 540,
-            size: 4.0,
+            damage: 21870,
+            health: 82012500,
+            size: 50,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A super ladybug with divine energy",
@@ -934,9 +966,9 @@ export const MOB_CONFIG: MobConfig = {
         },
         unique: {
             name: "Unique Ladybug",
-            damage: 810,
-            health: 1620,
-            size: 4.5,
+            damage: 65610,
+            health: 1230187500,
+            size: 81,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A unique ladybug of ultimate power",
@@ -1031,10 +1063,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 100
         },
         uncommon: {
-            name: "Common Soldier Ant",
+            name: "Uncommon Soldier Ant",
             damage: 30,
-            health: 300,
-            size: 1.2,
+            health: 375,
+            size: 2.0,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1083,10 +1115,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 200
         },
         rare: { 
-            name: "Common Soldier Ant",
+            name: "Rare Soldier Ant",
             damage: 90,
-            health: 900,
-            size: 1.4,
+            health: 1350,
+            size: 5,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1135,10 +1167,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 350
         },
         epic: {
-            name: "Common Soldier Ant",
+            name: "Epic Soldier Ant",
             damage: 270,
-            health: 2700,
-            size: 1.8,
+            health: 5400,
+            size: 7,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1187,10 +1219,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 500
         },
         legendary: {
-            name: "Common Soldier Ant",
+            name: "Legendary Soldier Ant",
             damage: 810,
-            health: 8100,
-            size: 2.5,
+            health: 40500,
+            size: 12,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1239,10 +1271,10 @@ export const MOB_CONFIG: MobConfig = {
             range: 600
         },
         mythic: {
-            name: "Common Soldier Ant",
+            name: "Mythic Soldier Ant",
             damage: 2430,
-            health: 24300,
-            size: 3.0,
+            health: 243000,
+            size: 19,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -1293,8 +1325,8 @@ export const MOB_CONFIG: MobConfig = {
         ultra: {
             name: "Ultra Soldier Ant",
             damage: 7290,
-            health: 72900,
-            size: 3.5,
+            health: 2916000,
+            size: 31,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "An ultra soldier ant with cosmic power",
@@ -1345,8 +1377,8 @@ export const MOB_CONFIG: MobConfig = {
         super: {
             name: "Super Soldier Ant",
             damage: 21870,
-            health: 218700,
-            size: 4.0,
+            health: 131220000,
+            size: 50,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A super soldier ant with divine energy",
@@ -1397,8 +1429,8 @@ export const MOB_CONFIG: MobConfig = {
         unique: {
             name: "Unique Soldier Ant",
             damage: 65610,
-            health: 656100,
-            size: 4.5,
+            health: 1968300000,
+            size: 81,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A unique soldier ant of ultimate power",

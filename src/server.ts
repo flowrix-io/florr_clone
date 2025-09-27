@@ -1066,7 +1066,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                         timestamp: Date.now()
                     });
                 } else {
-                    ultraMobs.forEach(mob => {
+                    ultraMobs.forEach((mob, index) => {
                         const x = Math.round(mob.x / SCALE_FACTOR);
                         const y = Math.round(mob.y / SCALE_FACTOR);
                         io.emit('chatMessage', {
@@ -1074,6 +1074,16 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                             content: `Ultra ${mob.type} at position (${x}, ${y})`,
                             timestamp: Date.now()
                         });
+                        
+                        // Emit viewport animation event with delay for each mob
+                        setTimeout(() => {
+                            socket.emit('animateViewportToMob', {
+                                x: mob.x,
+                                y: mob.y,
+                                mobType: mob.type,
+                                rarity: 'ultra'
+                            });
+                        }, index * 2500); // 2.5 second delay between each mob animation
                     });
                 }
                 return;
@@ -1088,7 +1098,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                         timestamp: Date.now()
                     });
                 } else {
-                    superMobs.forEach(mob => {
+                    superMobs.forEach((mob, index) => {
                         const x = Math.round(mob.x / SCALE_FACTOR);
                         const y = Math.round(mob.y / SCALE_FACTOR);
                         io.emit('chatMessage', {
@@ -1096,6 +1106,16 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                             content: `Super ${mob.type} at position (${x}, ${y})`,
                             timestamp: Date.now()
                         });
+                        
+                        // Emit viewport animation event with delay for each mob
+                        setTimeout(() => {
+                            socket.emit('animateViewportToMob', {
+                                x: mob.x,
+                                y: mob.y,
+                                mobType: mob.type,
+                                rarity: 'super'
+                            });
+                        }, index * 2500); // 2.5 second delay between each mob animation
                     });
                 }
                 return;
@@ -1110,7 +1130,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                         timestamp: Date.now()
                     });
                 } else {
-                    uniqueMobs.forEach(mob => {
+                    uniqueMobs.forEach((mob, index) => {
                         const x = Math.round(mob.x / SCALE_FACTOR);
                         const y = Math.round(mob.y / SCALE_FACTOR);
                         io.emit('chatMessage', {
@@ -1118,6 +1138,16 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                             content: `Unique ${mob.type} at position (${x}, ${y})`,
                             timestamp: Date.now()
                         });
+                        
+                        // Emit viewport animation event with delay for each mob
+                        setTimeout(() => {
+                            socket.emit('animateViewportToMob', {
+                                x: mob.x,
+                                y: mob.y,
+                                mobType: mob.type,
+                                rarity: 'unique'
+                            });
+                        }, index * 2500); // 2.5 second delay between each mob animation
                     });
                 }
                 return;

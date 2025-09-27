@@ -26,6 +26,14 @@ class Game {
         this.playerEye = { x: 0, y: 0 };
         this.targetEye = { x: 0, y: 0 };
         this.zoomLevel = 1.0;
+        // Viewport animation properties
+        this.isAnimatingViewport = false;
+        this.animationStartTime = 0;
+        this.animationDuration = 1000; // 1 second for each animation phase
+        this.animationStartPos = { x: 0, y: 0 };
+        this.animationTargetPos = { x: 0, y: 0 };
+        this.animationPhase = 'none';
+        this.savedPlayerPos = { x: 0, y: 0 };
         this.MIN_ZOOM = 0.5;
         this.MAX_ZOOM = 3.0;
         this.ZOOM_STEP = 0.1;
@@ -288,6 +296,10 @@ class Game {
         this.socket.on('zoneUpdate', (zones) => {
             // ... existing code ...
         });
+        // Handle viewport animation to mobs
+        this.socket.on('animateViewportToMob', (data) => {
+            this.startViewportAnimation(data.x, data.y);
+        });
         // Load background image
         this.backgroundImage.src = imageAssets_1.IMAGE_ASSETS["background"];
         this.backgroundImage.onload = () => {
@@ -450,6 +462,10 @@ class Game {
         this.showFloatingText(this.canvas.width / 2, 50, `Zoom: ${Math.round(this.zoomLevel * 100)}%`, '#FFFFFF', 20);
     }
     updateCamera(player) {
+        if (this.isAnimatingViewport) {
+            this.updateViewportAnimation();
+            return;
+        }
         // Center camera on player with zoom
         const scaledWidth = this.canvas.width / this.zoomLevel;
         const scaledHeight = this.canvas.height / this.zoomLevel;
@@ -459,6 +475,71 @@ class Game {
         this.cameraX = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH - scaledWidth, targetX));
         this.cameraY = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - scaledHeight, targetY));
         this.graphics.setCamera(this.cameraX, this.cameraY, this.zoomLevel);
+    }
+    startViewportAnimation(mobX, mobY) {
+        const localPlayer = this.getLocalPlayer();
+        if (!localPlayer)
+            return;
+        // Save current player position
+        this.savedPlayerPos = { x: localPlayer.x, y: localPlayer.y };
+        // Set up animation to mob
+        this.animationStartPos = { x: this.cameraX, y: this.cameraY };
+        const scaledWidth = this.canvas.width / this.zoomLevel;
+        const scaledHeight = this.canvas.height / this.zoomLevel;
+        this.animationTargetPos = {
+            x: Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH - scaledWidth, mobX - scaledWidth / 2)),
+            y: Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - scaledHeight, mobY - scaledHeight / 2))
+        };
+        this.isAnimatingViewport = true;
+        this.animationPhase = 'to_mob';
+        this.animationStartTime = Date.now();
+    }
+    updateViewportAnimation() {
+        const currentTime = Date.now();
+        const elapsed = currentTime - this.animationStartTime;
+        if (this.animationPhase === 'to_mob') {
+            // Animate to mob position
+            const progress = Math.min(elapsed / this.animationDuration, 1);
+            const easeProgress = this.easeInOutCubic(progress);
+            this.cameraX = this.animationStartPos.x + (this.animationTargetPos.x - this.animationStartPos.x) * easeProgress;
+            this.cameraY = this.animationStartPos.y + (this.animationTargetPos.y - this.animationStartPos.y) * easeProgress;
+            if (progress >= 1) {
+                // Switch to waiting phase
+                this.animationPhase = 'at_mob';
+                this.animationStartTime = currentTime;
+            }
+        }
+        else if (this.animationPhase === 'at_mob') {
+            // Wait at mob for 1 second
+            if (elapsed >= this.animationDuration) {
+                // Set up animation back to player
+                this.animationStartPos = { x: this.cameraX, y: this.cameraY };
+                const scaledWidth = this.canvas.width / this.zoomLevel;
+                const scaledHeight = this.canvas.height / this.zoomLevel;
+                this.animationTargetPos = {
+                    x: Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH - scaledWidth, this.savedPlayerPos.x - scaledWidth / 2)),
+                    y: Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - scaledHeight, this.savedPlayerPos.y - scaledHeight / 2))
+                };
+                this.animationPhase = 'to_player';
+                this.animationStartTime = currentTime;
+            }
+        }
+        else if (this.animationPhase === 'to_player') {
+            // Animate back to player
+            const progress = Math.min(elapsed / this.animationDuration, 1);
+            const easeProgress = this.easeInOutCubic(progress);
+            this.cameraX = this.animationStartPos.x + (this.animationTargetPos.x - this.animationStartPos.x) * easeProgress;
+            this.cameraY = this.animationStartPos.y + (this.animationTargetPos.y - this.animationStartPos.y) * easeProgress;
+            if (progress >= 1) {
+                // Animation complete
+                this.isAnimatingViewport = false;
+                this.animationPhase = 'none';
+            }
+        }
+        this.graphics.setCamera(this.cameraX, this.cameraY, this.zoomLevel);
+    }
+    easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
     gameLoop() {
         this.update();

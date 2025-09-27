@@ -1,10 +1,10 @@
 {
   "players": {
     "t9pyo2soj": {
-      "level": 13,
-      "xp": 8300,
-      "maxHealth": 220,
-      "damage": 29,
+      "level": 14,
+      "xp": 3251,
+      "maxHealth": 230,
+      "damage": 31,
       "inventory": {
         "common": {
           "petal_basic": 1961,
@@ -24,7 +24,7 @@
         },
         "rare": {
           "petal_stinger": 6,
-          "speed_boost": 3,
+          "speed_boost": 4,
           "health_potion": 1,
           "petal_rose": 2,
           "shield": 2
@@ -37,10 +37,10 @@
           "petal_stinger": 2
         },
         "mythic": {
-          "petal_basic": 926,
-          "petal_rose": 3,
+          "petal_basic": 927,
+          "petal_rose": 4,
           "health_potion": 5,
-          "speed_boost": 2,
+          "speed_boost": 3,
           "petal_stinger": 2
         },
         "ultra": {
@@ -62,42 +62,42 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "basic",
-          "health": 65599,
+          "health": 65557,
           "maxHealth": 65610
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "rose",
-          "health": 32794,
+          "health": 32762,
           "maxHealth": 32805
         },
         {
           "type": "petal",
           "rarity": "super",
           "petalType": "basic",
-          "health": 21866,
+          "health": 21841,
           "maxHealth": 21870
         },
         {
           "type": "petal",
           "rarity": "super",
           "petalType": "rose",
-          "health": 10925,
+          "health": 10871,
           "maxHealth": 10935
         },
         {
           "type": "petal",
           "rarity": "ultra",
           "petalType": "basic",
-          "health": 7272,
+          "health": 7233,
           "maxHealth": 7290
         },
         {
           "type": "petal",
           "rarity": "ultra",
           "petalType": "rose",
-          "health": 3638,
+          "health": 3582,
           "maxHealth": 3645
         },
         null,
