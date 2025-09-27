@@ -14,6 +14,7 @@ export class TitleScreen {
     private loadingScreen!: HTMLElement;
     private landContainer!: HTMLElement;
     private axolotlContainer!: HTMLElement;
+    private settingsMenu!: HTMLElement;
 
     constructor() {
         this.initializeElements();
@@ -59,8 +60,14 @@ export class TitleScreen {
             <h2>Login</h2>
             <input type="text" id="loginUsername" placeholder="Username">
             <input type="password" id="loginPassword" placeholder="Password">
-            <div class="server-input">
-                <input type="text" id="serverIP-connect" placeholder="Server IP">
+            <div class="advanced-settings">
+                <button type="button" id="advancedSettingsToggle" class="advanced-toggle">Advanced Settings ▼</button>
+                <div id="advancedSettings" class="advanced-settings-content hidden">
+                    <div class="server-input">
+                        <label for="serverIP-connect">Server IP:</label>
+                        <input type="text" id="serverIP-connect" placeholder="Server IP">
+                    </div>
+                </div>
             </div>
             <button id="loginButton">Login</button>
             <p class="form-switch" id="showRegister">Need an account? Register</p>
@@ -82,8 +89,14 @@ export class TitleScreen {
             <input type="text" id="registerUsername" placeholder="Username">
             <input type="password" id="registerPassword" placeholder="Password">
             <input type="password" id="registerConfirmPassword" placeholder="Confirm Password">
-            <div class="single-player">
-                <input type="text" id="serverIP-single" placeholder="Server IP">
+            <div class="advanced-settings">
+                <button type="button" id="advancedSettingsToggleRegister" class="advanced-toggle">Advanced Settings ▼</button>
+                <div id="advancedSettingsRegister" class="advanced-settings-content hidden">
+                    <div class="server-input">
+                        <label for="serverIP-single">Server IP:</label>
+                        <input type="text" id="serverIP-single" placeholder="Server IP">
+                    </div>
+                </div>
             </div>
             <button id="registerButton">Register</button>
             <button id="registerOfflineButton">Register Offline</button>
@@ -109,6 +122,7 @@ export class TitleScreen {
         `;
         this.gameMenu.innerHTML = `
             <button id="multiPlayerButton" class="buttons">Start Game</button>
+            <button id="settingsButton" class="buttons">Settings</button>
         `;
 
         // Create center text
@@ -148,6 +162,47 @@ export class TitleScreen {
                 <p>Press R to craft items</p>
             </div>
         `;
+
+        this.settingsMenu = this.createElement('div', 'settings-menu hidden');
+        this.settingsMenu.id = 'settingsMenu';
+        this.settingsMenu.innerHTML = `
+            <div class="settings-menu-content">
+                <div class="settings-menu-header">
+                    <h2>Settings</h2>
+                    <button id="closeSettingsButton">&times;</button>
+                </div>
+                <div class="settings-menu-tabs">
+                    <button class="tab-button active" data-tab="controls">Controls</button>
+                    <button class="tab-button" data-tab="graphics">Graphics</button>
+                    <button class="tab-button" data-tab="advanced">Advanced</button>
+                </div>
+                <div class="settings-menu-body">
+                    <div id="controls-tab" class="tab-content active">
+                        <h3>Controls</h3>
+                        <div class="controls-grid">
+                            <!-- Controls will be dynamically added here -->
+                        </div>
+                        <button id="saveControlsButton">Save Controls</button>
+                        <button id="resetControlsButton">Reset to Default</button>
+                    </div>
+                    <div id="graphics-tab" class="tab-content">
+                        <h3>Graphics</h3>
+                        <label>
+                            <input type="checkbox" id="showHitboxesCheckbox">
+                            Show Hitboxes
+                        </label>
+                    </div>
+                    <div id="advanced-tab" class="tab-content">
+                        <h3>Advanced Settings</h3>
+                        <div class="server-input">
+                            <label for="serverIP-settings">Server IP:</label>
+                            <input type="text" id="serverIP-settings" placeholder="Server IP">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
 
         // Create exit button container
         this.exitButtonContainer = this.createElement('div', '');
@@ -198,6 +253,66 @@ export class TitleScreen {
             });
         }
 
+        // Settings menu event listeners
+        const settingsButton = this.gameMenu.querySelector('#settingsButton');
+        const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
+
+        if (settingsButton) {
+            settingsButton.addEventListener('click', () => {
+                this.settingsMenu.classList.remove('hidden');
+            });
+        }
+
+        if (closeSettingsButton) {
+            closeSettingsButton.addEventListener('click', () => {
+                this.settingsMenu.classList.add('hidden');
+            });
+        }
+
+        this.settingsMenu.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', () => {
+                const tab = button.getAttribute('data-tab');
+                this.settingsMenu.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                this.settingsMenu.querySelectorAll('.tab-content').forEach(content => {
+                    if (content.id === `${tab}-tab`) {
+                        content.classList.add('active');
+                    } else {
+                        content.classList.remove('active');
+                    }
+                });
+            });
+        });
+
+        // Controls settings
+        this.populateControlsTab();
+        const saveControlsButton = this.settingsMenu.querySelector('#saveControlsButton');
+        if (saveControlsButton) {
+            saveControlsButton.addEventListener('click', () => this.saveControls());
+        }
+        const resetControlsButton = this.settingsMenu.querySelector('#resetControlsButton');
+        if (resetControlsButton) {
+            resetControlsButton.addEventListener('click', () => this.resetControls());
+        }
+
+
+        // Settings change listeners
+        const showHitboxesCheckbox = this.settingsMenu.querySelector('#showHitboxesCheckbox') as HTMLInputElement;
+        if (showHitboxesCheckbox) {
+            showHitboxesCheckbox.addEventListener('change', () => {
+                localStorage.setItem('showHitboxes', showHitboxesCheckbox.checked.toString());
+            });
+        }
+
+        const serverIPInput = this.settingsMenu.querySelector('#serverIP-settings') as HTMLInputElement;
+        if (serverIPInput) {
+            serverIPInput.addEventListener('input', () => {
+                localStorage.setItem('serverIP', serverIPInput.value);
+            });
+            serverIPInput.value = localStorage.getItem('serverIP') || window.location.origin;
+        }
+
+
         // Form switching
         const showRegister = this.loginForm.querySelector('#showRegister');
         const showLogin = this.registerForm.querySelector('#showLogin');
@@ -226,6 +341,245 @@ export class TitleScreen {
         document.body.appendChild(this.loadingScreen);
         document.body.appendChild(this.landContainer);
         document.body.appendChild(this.axolotlContainer);
+        document.body.appendChild(this.settingsMenu);
+
+        // Add CSS for advanced settings
+        this.addAdvancedSettingsStyles();
+        
+        // Debug: Check if forms are in DOM
+        console.log('Login form in DOM:', document.getElementById('loginForm'));
+        console.log('Register form in DOM:', document.getElementById('registerForm'));
+        console.log('Advanced settings toggle in DOM:', document.getElementById('advancedSettingsToggle'));
+        console.log('Advanced settings toggle register in DOM:', document.getElementById('advancedSettingsToggleRegister'));
+        console.log('Login form innerHTML:', this.loginForm.innerHTML);
+        
+        // Setup advanced settings toggle functionality
+        this.setupAdvancedSettingsToggle();
+        this.loadSettings();
+    }
+
+    private populateControlsTab(): void {
+        const controlsGrid = this.settingsMenu.querySelector('.controls-grid');
+        if (!controlsGrid) return;
+
+        const controls = this.getControls();
+
+        controlsGrid.innerHTML = '';
+        for (const action in controls) {
+            const controlRow = document.createElement('div');
+            controlRow.className = 'control-row';
+            controlRow.innerHTML = `
+                <label>${action.replace(/_/g, ' ')}</label>
+                <input type="text" class="control-input" data-action="${action}" value="${controls[action]}">
+            `;
+            controlsGrid.appendChild(controlRow);
+        }
+
+        controlsGrid.querySelectorAll('.control-input').forEach(input => {
+            input.addEventListener('keydown', (e: any) => {
+                e.preventDefault();
+                (input as HTMLInputElement).value = e.key;
+            });
+        });
+    }
+
+    private getControls(): { [key: string]: string } {
+        const savedControls = localStorage.getItem('controls');
+        if (savedControls) {
+            return { ...this.getDefaultControls(), ...JSON.parse(savedControls) };
+        }
+        return this.getDefaultControls();
+    }
+
+    private getDefaultControls(): { [key: string]: string } {
+        return {
+            move_up: 'w',
+            move_down: 's',
+            move_left: 'a',
+            move_right: 'd',
+            inventory: 'i',
+            crafting: 'r',
+            toggle_mouse_controls: 'c',
+            toggle_hitboxes: 'h',
+            zoom_in: '=',
+            zoom_out: '-',
+            chat: 'Enter',
+            extend_petals: ' ',
+            retract_petals: 'Shift',
+        };
+    }
+
+    private saveControls(): void {
+        const controls: { [key: string]: string } = {};
+        this.settingsMenu.querySelectorAll('.control-input').forEach(input => {
+            const action = input.getAttribute('data-action');
+            if (action) {
+                controls[action] = (input as HTMLInputElement).value;
+            }
+        });
+        localStorage.setItem('controls', JSON.stringify(controls));
+        alert('Controls saved!');
+    }
+
+    private resetControls(): void {
+        localStorage.removeItem('controls');
+        this.populateControlsTab();
+        alert('Controls have been reset to default.');
+    }
+
+    private loadSettings(): void {
+        const showHitboxes = localStorage.getItem('showHitboxes') === 'true';
+        const showHitboxesCheckbox = this.settingsMenu.querySelector('#showHitboxesCheckbox') as HTMLInputElement;
+        if (showHitboxesCheckbox) {
+            showHitboxesCheckbox.checked = showHitboxes;
+        }
+
+        const serverIP = localStorage.getItem('serverIP') || window.location.origin;
+        const serverIPInput = this.settingsMenu.querySelector('#serverIP-settings') as HTMLInputElement;
+        if (serverIPInput) {
+            serverIPInput.value = serverIP;
+        }
+    }
+
+    private addAdvancedSettingsStyles(): void {
+        const style = document.createElement('style');
+        style.textContent = `
+            .auth-form .advanced-settings {
+                margin: 10px 0 !important;
+            }
+            
+            .auth-form .advanced-toggle {
+                background: rgba(255, 0, 0, 0.8) !important;
+                border: 2px solid yellow !important;
+                color: white !important;
+                padding: 8px 12px !important;
+                border-radius: 5px !important;
+                cursor: pointer !important;
+                font-size: 14px !important;
+                transition: all 0.3s ease !important;
+                width: 100% !important;
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+            }
+            
+            .auth-form .advanced-toggle:hover {
+                background: rgba(255, 255, 255, 0.2) !important;
+                border-color: rgba(255, 255, 255, 0.5) !important;
+            }
+            
+            .auth-form .advanced-settings-content {
+                margin-top: 10px !important;
+                padding: 10px !important;
+                background: rgba(0, 0, 0, 0.3) !important;
+                border-radius: 5px !important;
+                border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            }
+            
+            .auth-form .advanced-settings-content.hidden {
+                display: none !important;
+            }
+            
+            .auth-form .server-input {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 5px !important;
+            }
+            
+            .auth-form .server-input label {
+                color: white !important;
+                font-size: 14px !important;
+                font-weight: bold !important;
+            }
+            
+            .auth-form .server-input input {
+                padding: 8px !important;
+                border: 1px solid rgba(255, 255, 255, 0.3) !important;
+                border-radius: 4px !important;
+                background: rgba(255, 255, 255, 0.1) !important;
+                color: white !important;
+                font-size: 14px !important;
+            }
+            
+            .auth-form .server-input input::placeholder {
+                color: rgba(255, 255, 255, 0.6) !important;
+            }
+            
+            .auth-form .server-input input:focus {
+                outline: none !important;
+                border-color: rgba(255, 255, 255, 0.6) !important;
+                background: rgba(255, 255, 255, 0.15) !important;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    private setupAdvancedSettingsToggle(): void {
+        // Get current origin for default values
+        const currentOrigin = window.location.origin;
+        
+        console.log('Setting up advanced settings toggle...');
+        console.log('Current origin:', currentOrigin);
+        
+        // Use setTimeout to ensure DOM is ready
+        setTimeout(() => {
+            console.log('Inside setTimeout - checking for elements...');
+            
+            // Setup login form advanced settings
+            const loginToggle = document.getElementById('advancedSettingsToggle');
+            const loginAdvancedSettings = document.getElementById('advancedSettings');
+            const loginServerInput = document.getElementById('serverIP-connect') as HTMLInputElement;
+            
+            console.log('Login elements found:', { loginToggle, loginAdvancedSettings, loginServerInput });
+            console.log('Login toggle element:', loginToggle);
+            console.log('Login toggle innerHTML:', loginToggle?.innerHTML);
+            console.log('Login toggle style:', loginToggle?.style.cssText);
+            console.log('Login toggle computed style:', loginToggle ? window.getComputedStyle(loginToggle) : 'Element not found');
+            
+            if (loginToggle && loginAdvancedSettings && loginServerInput) {
+                // Set default value to current origin
+                loginServerInput.value = currentOrigin;
+                
+                loginToggle.addEventListener('click', () => {
+                    const isHidden = loginAdvancedSettings.classList.contains('hidden');
+                    if (isHidden) {
+                        loginAdvancedSettings.classList.remove('hidden');
+                        loginToggle.textContent = 'Advanced Settings ▲';
+                    } else {
+                        loginAdvancedSettings.classList.add('hidden');
+                        loginToggle.textContent = 'Advanced Settings ▼';
+                        // Reset to default when collapsed
+                        loginServerInput.value = currentOrigin;
+                    }
+                });
+                }
+            
+            // Setup register form advanced settings
+            const registerToggle = document.getElementById('advancedSettingsToggleRegister');
+            const registerAdvancedSettings = document.getElementById('advancedSettingsRegister');
+            const registerServerInput = document.getElementById('serverIP-single') as HTMLInputElement;
+            
+            console.log('Register elements found:', { registerToggle, registerAdvancedSettings, registerServerInput });
+            console.log('Current origin for register:', currentOrigin);
+            
+            if (registerToggle && registerAdvancedSettings && registerServerInput) {
+                // Set default value to current origin
+                registerServerInput.value = currentOrigin;
+                
+                registerToggle.addEventListener('click', () => {
+                    const isHidden = registerAdvancedSettings.classList.contains('hidden');
+                    if (isHidden) {
+                        registerAdvancedSettings.classList.remove('hidden');
+                        registerToggle.textContent = 'Advanced Settings ▲';
+                    } else {
+                        registerAdvancedSettings.classList.add('hidden');
+                        registerToggle.textContent = 'Advanced Settings ▼';
+                        // Reset to default when collapsed
+                        registerServerInput.value = currentOrigin;
+                    }
+                });
+            }
+        }, 100); // 100ms delay to ensure DOM is ready
     }
 
     public showLoginForm(): void {
@@ -331,6 +685,20 @@ export class TitleScreen {
         return this.gameMenu.querySelector('#multiPlayerButton') as HTMLButtonElement;
     }
 
+    public getSettingsButton(): HTMLButtonElement | null {
+        return this.gameMenu.querySelector('#settingsButton') as HTMLButtonElement;
+    }
+
+    public getShowHitboxes(): boolean {
+        const checkbox = this.settingsMenu.querySelector('#showHitboxesCheckbox') as HTMLInputElement;
+        return checkbox ? checkbox.checked : false;
+    }
+
+    public getServerIP(): string {
+        const input = this.settingsMenu.querySelector('#serverIP-settings') as HTMLInputElement;
+        return input ? input.value : window.location.origin;
+    }
+
     public getNameInput(): HTMLInputElement | null {
         return this.centerText.querySelector('#nameInput') as HTMLInputElement;
     }
@@ -385,7 +753,7 @@ export const titleScreenStyles = `
     }
 
     .hidden {
-        display: none;
+        display: none !important;
     }
 
     .buttons {
@@ -514,6 +882,97 @@ export const titleScreenStyles = `
     button:hover {
         background-color: rgba(255, 255, 255, 1);
         transform: scale(1.05);
+    }
+
+    .settings-menu {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 4000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .settings-menu-content {
+        background: rgba(0, 0, 0, 0.8);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        width: 500px;
+        max-width: 90%;
+    }
+
+    .settings-menu-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #444;
+        padding-bottom: 10px;
+        margin-bottom: 10px;
+    }
+
+    #closeSettingsButton {
+        background: transparent;
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+    }
+
+    .settings-menu-tabs {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .tab-button {
+        padding: 10px;
+        background: #333;
+        border: 1px solid #555;
+        color: white;
+        cursor: pointer;
+        border-radius: 5px;
+    }
+
+    .tab-button.active {
+        background: #555;
+        border-bottom: 1px solid #555;
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .controls-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .control-row {
+        display: contents;
+    }
+
+    .control-row label {
+        text-transform: capitalize;
+    }
+
+    .control-input {
+        background: #555;
+        border: 1px solid #777;
+        color: white;
+        padding: 5px;
+        border-radius: 3px;
+        text-align: center;
     }
 `;
 

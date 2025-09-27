@@ -39,7 +39,9 @@ function setupGameEventListeners() {
                 // Cleanup previous game
                 currentGame.cleanup();
             }
-            currentGame = new Game();
+            const showHitboxes = titleScreen?.getShowHitboxes() || false;
+            const serverIp = titleScreen?.getServerIP() || window.location.origin;
+            currentGame = new Game(showHitboxes, serverIp);
             
             // Hide menus and show game
             titleScreen?.hideAuthContainer();

@@ -87,7 +87,7 @@ export class Graphics {
         super: '#2bffa4',
         unique: '#bf00ff'
     };
-    private showHitboxes: boolean = false;
+    public showHitboxes: boolean = false;
     private itemSprites: Record<string, HTMLImageElement> = {};
     private petalImageCache: Record<string, HTMLImageElement> = {};
 

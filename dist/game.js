@@ -9,7 +9,7 @@ const chat_1 = require("./chat");
 const socket_1 = require("./socket");
 const inventory_1 = require("./inventory");
 class Game {
-    constructor() {
+    constructor(showHitboxes, serverIp) {
         this.speedBoostActive = false;
         this.shieldActive = false;
         this.debugCollision = false; // Toggle for collision debugging
@@ -124,9 +124,12 @@ class Game {
         this.gameStartTime = 0;
         // Add chat property
         this.chat = null;
+        this.showHitboxes = showHitboxes;
+        this.loadControls();
         //console.log('Game constructor called');
         this.canvas = document.getElementById('gameCanvas');
         this.graphics = new graphics_1.Graphics(this.canvas, this.playerSprite, this.wallTexture, this.octopusSprite, this.fishSprite, this.healthPotionSprite, this.speedBoostSprite, this.shieldSprite, this.backgroundTexture);
+        this.graphics.showHitboxes = this.showHitboxes;
         // Set initial canvas size
         this.resizeCanvas();
         // Add resize listener
@@ -197,7 +200,7 @@ class Game {
         this.titleScreen = document.querySelector('.center_text');
         this.nameInput = document.getElementById('nameInput');
         // Initialize multiplayer mode after resource loading
-        (0, socket_1.initMultiPlayerMode)(this);
+        (0, socket_1.initMultiPlayerMode)(this, serverIp);
         // Move authentication to after socket initialization
         this.authenticate();
         this.socket.on('inventoryUpdated', (inventory) => {
@@ -376,38 +379,39 @@ class Game {
                 return;
             }
             // Prevent browser shortcuts for game keys only when chat is not focused
-            const gameKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'i', 'r', 'c', 'h', 'Enter', 'Escape', '-', '=', 'Shift', 'Control', 'Alt'];
+            const gameKeys = Object.values(this.controls);
             if (gameKeys.includes(event.key) || event.key.match(/^[1-9]$/)) {
                 event.preventDefault();
             }
-            if (event.key === 'Enter') {
+            if (event.key === this.controls.chat) {
                 this.chat?.focus();
                 return;
             }
             // Zoom controls
-            if (event.key === '-' || event.key === '_') {
+            if (event.key === this.controls.zoom_out) {
                 this.zoomOut();
                 return;
             }
-            if (event.key === '=' || event.key === '+') {
+            if (event.key === this.controls.zoom_in) {
                 this.zoomIn();
                 return;
             }
-            if (event.key === 'i' || event.key === 'I') {
+            if (event.key === this.controls.inventory) {
                 this.inventoryManager.toggleInventory();
                 return;
             }
-            if (event.key === 'r' || event.key === 'R') {
+            if (event.key === this.controls.crafting) {
                 this.inventoryManager.toggleCrafting();
                 return;
             }
-            if (event.key === 'c' || event.key === 'C') {
+            if (event.key === this.controls.toggle_mouse_controls) {
                 this.useMouseControls = !this.useMouseControls;
                 this.showFloatingText(this.canvas.width / 2, 50, `Controls: ${this.useMouseControls ? 'Mouse' : 'Keyboard'}`, '#FFFFFF', 20);
                 return;
             }
-            if (event.key === 'h' || event.key === 'H') {
+            if (event.key === this.controls.toggle_hitboxes) {
                 this.showHitboxes = !this.showHitboxes;
+                this.graphics.showHitboxes = this.showHitboxes;
                 this.showFloatingText(this.canvas.width / 2, 50, `Hitboxes: ${this.showHitboxes ? 'ON' : 'OFF'}`, '#FFFFFF', 20);
                 return;
             }
@@ -506,16 +510,16 @@ class Game {
         const speed = 5 * (player.speed_boost ? 2 : 1);
         let dx = 0;
         let dy = 0;
-        if (this.keysPressed.has('ArrowUp') || this.keysPressed.has('w')) {
+        if (this.keysPressed.has(this.controls.move_up) || this.keysPressed.has('ArrowUp')) {
             dy -= 1;
         }
-        if (this.keysPressed.has('ArrowDown') || this.keysPressed.has('s')) {
+        if (this.keysPressed.has(this.controls.move_down) || this.keysPressed.has('ArrowDown')) {
             dy += 1;
         }
-        if (this.keysPressed.has('ArrowLeft') || this.keysPressed.has('a')) {
+        if (this.keysPressed.has(this.controls.move_left) || this.keysPressed.has('ArrowLeft')) {
             dx -= 1;
         }
-        if (this.keysPressed.has('ArrowRight') || this.keysPressed.has('d')) {
+        if (this.keysPressed.has(this.controls.move_right) || this.keysPressed.has('ArrowRight')) {
             dx += 1;
         }
         // Only send input, don't update position locally
@@ -843,6 +847,32 @@ class Game {
     }
     getSocket() {
         return this.socket;
+    }
+    loadControls() {
+        const savedControls = localStorage.getItem('controls');
+        if (savedControls) {
+            this.controls = { ...this.getDefaultControls(), ...JSON.parse(savedControls) };
+        }
+        else {
+            this.controls = this.getDefaultControls();
+        }
+    }
+    getDefaultControls() {
+        return {
+            move_up: 'w',
+            move_down: 's',
+            move_left: 'a',
+            move_right: 'd',
+            inventory: 'i',
+            crafting: 'r',
+            toggle_mouse_controls: 'c',
+            toggle_hitboxes: 'h',
+            zoom_in: '=',
+            zoom_out: '-',
+            chat: 'Enter',
+            extend_petals: ' ',
+            retract_petals: 'Shift',
+        };
     }
 }
 exports.Game = Game;

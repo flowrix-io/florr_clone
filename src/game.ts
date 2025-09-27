@@ -193,8 +193,11 @@ export class Game {
 
     // Add property
     private inventoryManager!: InventoryManager;
+    private controls!: { [key: string]: string };
 
-    constructor() {
+    constructor(showHitboxes: boolean, serverIp: string) {
+        this.showHitboxes = showHitboxes;
+        this.loadControls();
         //console.log('Game constructor called');
         this.canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
         this.graphics = new Graphics(
@@ -208,6 +211,7 @@ export class Game {
             this.shieldSprite,
             this.backgroundTexture
         );
+        this.graphics.showHitboxes = this.showHitboxes;
 
         // Set initial canvas size
         this.resizeCanvas();
@@ -300,7 +304,7 @@ export class Game {
         this.nameInput = document.getElementById('nameInput') as HTMLInputElement;
 
         // Initialize multiplayer mode after resource loading
-        initMultiPlayerMode(this);
+        initMultiPlayerMode(this, serverIp);
 
         // Move authentication to after socket initialization
         this.authenticate();
@@ -506,38 +510,38 @@ export class Game {
             }
 
             // Prevent browser shortcuts for game keys only when chat is not focused
-            const gameKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'i', 'r', 'c', 'h', 'Enter', 'Escape', '-', '=', 'Shift', 'Control', 'Alt'];
+            const gameKeys = Object.values(this.controls);
             if (gameKeys.includes(event.key) || event.key.match(/^[1-9]$/)) {
                 event.preventDefault();
             }
 
-            if (event.key === 'Enter') {
+            if (event.key === this.controls.chat) {
                 this.chat?.focus();
                 return;
             }
 
             // Zoom controls
-            if (event.key === '-' || event.key === '_') {
+            if (event.key === this.controls.zoom_out) {
                 this.zoomOut();
                 return;
             }
 
-            if (event.key === '=' || event.key === '+') {
+            if (event.key === this.controls.zoom_in) {
                 this.zoomIn();
                 return;
             }
 
-            if (event.key === 'i' || event.key === 'I') {
+            if (event.key === this.controls.inventory) {
                 this.inventoryManager.toggleInventory();
                 return;
             }
 
-            if (event.key === 'r' || event.key === 'R') {
+            if (event.key === this.controls.crafting) {
                 this.inventoryManager.toggleCrafting();
                 return;
             }
 
-            if (event.key === 'c' || event.key === 'C') {
+            if (event.key === this.controls.toggle_mouse_controls) {
                 this.useMouseControls = !this.useMouseControls;
                 this.showFloatingText(
                     this.canvas.width / 2,
@@ -549,8 +553,9 @@ export class Game {
                 return;
             }
 
-            if (event.key === 'h' || event.key === 'H') {
+            if (event.key === this.controls.toggle_hitboxes) {
                 this.showHitboxes = !this.showHitboxes;
+                this.graphics.showHitboxes = this.showHitboxes;
                 this.showFloatingText(
                     this.canvas.width / 2,
                     50,
@@ -682,16 +687,16 @@ export class Game {
         let dx = 0;
         let dy = 0;
 
-        if (this.keysPressed.has('ArrowUp') || this.keysPressed.has('w')) {
+        if (this.keysPressed.has(this.controls.move_up) || this.keysPressed.has('ArrowUp')) {
             dy -= 1;
         }
-        if (this.keysPressed.has('ArrowDown') || this.keysPressed.has('s')) {
+        if (this.keysPressed.has(this.controls.move_down) || this.keysPressed.has('ArrowDown')) {
             dy += 1;
         }
-        if (this.keysPressed.has('ArrowLeft') || this.keysPressed.has('a')) {
+        if (this.keysPressed.has(this.controls.move_left) || this.keysPressed.has('ArrowLeft')) {
             dx -= 1;
         }
-        if (this.keysPressed.has('ArrowRight') || this.keysPressed.has('d')) {
+        if (this.keysPressed.has(this.controls.move_right) || this.keysPressed.has('ArrowRight')) {
             dx += 1;
         }
         
@@ -1071,5 +1076,32 @@ export class Game {
 
     public getSocket() {
         return this.socket;
+    }
+
+    private loadControls() {
+        const savedControls = localStorage.getItem('controls');
+        if (savedControls) {
+            this.controls = { ...this.getDefaultControls(), ...JSON.parse(savedControls) };
+        } else {
+            this.controls = this.getDefaultControls();
+        }
+    }
+
+    private getDefaultControls(): { [key: string]: string } {
+        return {
+            move_up: 'w',
+            move_down: 's',
+            move_left: 'a',
+            move_right: 'd',
+            inventory: 'i',
+            crafting: 'r',
+            toggle_mouse_controls: 'c',
+            toggle_hitboxes: 'h',
+            zoom_in: '=',
+            zoom_out: '-',
+            chat: 'Enter',
+            extend_petals: ' ',
+            retract_petals: 'Shift',
+        };
     }
 }

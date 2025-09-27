@@ -18,8 +18,9 @@ class AuthUI {
         this.registerPassword = document.getElementById('registerPassword');
         this.registerConfirmPassword = document.getElementById('registerConfirmPassword');
         this.serverIPInput = document.getElementById('serverIP-connect');
-        // Set default server URL
-        this.serverIPInput.value = 'https://localhost:3000';
+        // Set default server URL to current origin
+        const currentOrigin = window.location.origin;
+        this.serverIPInput.value = currentOrigin;
         this.serverUrl = this.serverIPInput.value;
         // Form switch elements
         this.showRegisterLink = document.getElementById('showRegister');

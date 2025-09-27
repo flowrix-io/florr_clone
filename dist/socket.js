@@ -4,8 +4,11 @@ exports.Socket = void 0;
 exports.initMultiPlayerMode = initMultiPlayerMode;
 const socket_io_client_1 = require("socket.io-client");
 Object.defineProperty(exports, "Socket", { enumerable: true, get: function () { return socket_io_client_1.Socket; } });
-function initMultiPlayerMode(game) {
-    game.socket = (0, socket_io_client_1.io)(prompt("Enter the server URL eg https://localhost:3000: \n Join a public server: https://54.151.123.177:3000/") || "", {
+function initMultiPlayerMode(game, serverIp) {
+    // Use current origin as default, or prompt if needed
+    const defaultUrl = serverIp || window.location.origin;
+    const serverUrl = prompt(`Enter the server URL (default: ${defaultUrl}):\n\nJoin a public server: https://54.151.123.177:3000/`) || defaultUrl;
+    game.socket = (0, socket_io_client_1.io)(serverUrl, {
         secure: true,
         rejectUnauthorized: false,
         withCredentials: true

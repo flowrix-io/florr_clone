@@ -5,8 +5,12 @@ import { Item, WorldItem } from './item';
 
 export { Socket };
 
-export function initMultiPlayerMode(game: any) {
-    game.socket = io(prompt("Enter the server URL eg https://localhost:3000: \n Join a public server: https://54.151.123.177:3000/") || "", {
+export function initMultiPlayerMode(game: any, serverIp: string) {
+    // Use current origin as default, or prompt if needed
+    const defaultUrl = serverIp || window.location.origin;
+    const serverUrl = prompt(`Enter the server URL (default: ${defaultUrl}):\n\nJoin a public server: https://54.151.123.177:3000/`) || defaultUrl;
+    
+    game.socket = io(serverUrl, {
         secure: true,
         rejectUnauthorized: false,
         withCredentials: true
