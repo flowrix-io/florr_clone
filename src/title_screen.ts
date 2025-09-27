@@ -583,13 +583,17 @@ export class TitleScreen {
     }
 
     public showLoginForm(): void {
-        this.loginForm.classList.remove('hidden');
-        this.registerForm.classList.add('hidden');
+        // console.log('Showing login form');
+        // this.loginForm.classList.remove('hidden');
+        // this.registerForm.classList.add('hidden');
+        // handled in auth_ui.ts
     }
 
     public showRegisterForm(): void {
-        this.loginForm.classList.add('hidden');
-        this.registerForm.classList.remove('hidden');
+        // console.log('Showing register form');
+        // this.loginForm.classList.add('hidden');
+        // this.registerForm.classList.remove('hidden');
+        // handled in auth_ui.ts
     }
 
     public hideAuthContainer(): void {
