@@ -560,6 +560,13 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
+        // Safety check: ensure inventory exists and is properly initialized
+        if (!player.inventory || typeof player.inventory !== 'object') {
+            console.warn('[INVENTORY] Player inventory is not properly initialized:', player.inventory);
+            // Initialize empty inventory if missing
+            player.inventory = {};
+            return;
+        }
         const content = this.inventoryPanel.querySelector('.inventory-content');
         if (!content)
             return;
@@ -709,6 +716,11 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
+        // Safety check: ensure loadout exists and is properly initialized
+        if (!player.loadout || !Array.isArray(player.loadout) || loadoutSlot >= player.loadout.length) {
+            console.warn(`[INVENTORY] Invalid loadout access: slot ${loadoutSlot}, loadout:`, player.loadout);
+            return;
+        }
         const item = player.loadout[loadoutSlot];
         if (!item || !item.rarity)
             return;

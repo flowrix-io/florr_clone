@@ -25,8 +25,86 @@ function setupSocketListeners(game) {
     game.socket.on('connect', () => {
         const connectTime = performance.now();
         console.log(`[CLIENT] Socket connected with ID ${game.socket.id} at ${connectTime.toFixed(0)}`);
-        if (game.socket.id) {
-            game.socket.emit('chatMessage', `${game.players.get(game.socket.id)?.name} has joined the game`);
+        // Handle cross-server transfer claim if pending
+        if (game.pendingTransfer) {
+            console.log(`[CLIENT] Connected to new server, claiming transferred player`);
+            fetch(game.pendingTransfer.newServerUrl + '/transfer/claim', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    transferToken: game.pendingTransfer.transferToken,
+                    newSocketId: game.socket.id
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                if (data.success) {
+                    console.log('[CLIENT] Successfully claimed transferred player');
+                    game.hideTransferMessage();
+                    // Ensure player data is properly initialized with defaults if needed
+                    if (data.playerData && game.socket.id) {
+                        // Initialize or get current player
+                        let currentPlayer = game.players.get(game.socket.id);
+                        if (!currentPlayer) {
+                            // Create new player object if it doesn't exist
+                            currentPlayer = {
+                                id: game.socket.id,
+                                name: data.playerData.name || 'Anonymous',
+                                x: data.playerData.x || 200,
+                                y: data.playerData.y || 200,
+                                angle: data.playerData.angle || 0,
+                                score: data.playerData.score || 0,
+                                imageLoaded: false,
+                                image: new Image(),
+                                velocityX: 0,
+                                velocityY: 0,
+                                health: data.playerData.health || 100,
+                                maxHealth: data.playerData.maxHealth || 100,
+                                damage: data.playerData.damage || 10,
+                                inventory: data.playerData.inventory || {},
+                                loadout: data.playerData.loadout || [],
+                                level: data.playerData.level || 1,
+                                xp: data.playerData.xp || 0,
+                                xpToNextLevel: data.playerData.xpToNextLevel || 100,
+                                targetX: data.playerData.x || 200,
+                                targetY: data.playerData.y || 200
+                            };
+                            game.players.set(game.socket.id, currentPlayer);
+                        }
+                        // Ensure loadout is properly initialized
+                        if (!data.playerData.loadout || !Array.isArray(data.playerData.loadout)) {
+                            data.playerData.loadout = [];
+                            console.warn('[CLIENT] Transferred player had invalid loadout, initialized empty array');
+                        }
+                        // Ensure inventory is properly initialized
+                        if (!data.playerData.inventory || typeof data.playerData.inventory !== 'object') {
+                            data.playerData.inventory = {};
+                            console.warn('[CLIENT] Transferred player had invalid inventory, initialized empty object');
+                        }
+                        // Update current player with transferred data
+                        Object.assign(currentPlayer, data.playerData);
+                        console.log('[CLIENT] Player data updated after transfer');
+                    }
+                    // Clear pending transfer
+                    delete game.pendingTransfer;
+                }
+                else {
+                    console.error('[CLIENT] Failed to claim transferred player:', data.message);
+                    game.showTransferMessage('Transfer failed. Please try again.');
+                }
+            })
+                .catch(error => {
+                console.error('[CLIENT] Error claiming transferred player:', error);
+                game.showTransferMessage('Transfer failed. Please try again.');
+            });
+        }
+        else {
+            // Normal connection (not a transfer)
+            if (game.socket.id) {
+                game.socket.emit('chatMessage', `${game.players.get(game.socket.id)?.name} has joined the game`);
+            }
         }
         // Start heartbeat monitoring
         game.lastHeartbeat = performance.now();
@@ -43,6 +121,8 @@ function setupSocketListeners(game) {
     game.socket.on('playerTransferred', async (transferData) => {
         console.log(`[CLIENT] Player being transferred to server ${transferData.targetServer.name} on port ${transferData.targetServer.port}`);
         try {
+            // Hide teleporter UI since we're transferring
+            game.hideTeleporterUI();
             // Disconnect from current server
             game.socket.disconnect();
             // Clear heartbeat interval
@@ -60,62 +140,15 @@ function setupSocketListeners(game) {
                 rejectUnauthorized: false,
                 withCredentials: true
             });
-            // Set up listeners for new connection
-            setupSocketListeners(game);
             // Store transfer data for claiming after reconnect
             game.pendingTransfer = {
                 transferToken: transferData.transferToken,
                 targetX: transferData.targetX,
-                targetY: transferData.targetY
+                targetY: transferData.targetY,
+                newServerUrl: newServerUrl
             };
-            // Handle successful connection to new server
-            game.socket.on('connect', () => {
-                console.log(`[CLIENT] Connected to new server: ${transferData.targetServer.name}`);
-                // Claim transferred player
-                if (game.pendingTransfer) {
-                    fetch(newServerUrl + '/transfer/claim', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            transferToken: game.pendingTransfer.transferToken,
-                            newSocketId: game.socket.id
-                        })
-                    })
-                        .then(response => response.json())
-                        .then(data => {
-                        if (data.success) {
-                            console.log('[CLIENT] Successfully claimed transferred player');
-                            game.hideTransferMessage();
-                            // Ensure player data is properly initialized with defaults if needed
-                            if (data.playerData && game.socket.id) {
-                                const currentPlayer = game.players.get(game.socket.id);
-                                if (currentPlayer && data.playerData) {
-                                    // Ensure loadout is properly initialized
-                                    if (!data.playerData.loadout || !Array.isArray(data.playerData.loadout)) {
-                                        data.playerData.loadout = [];
-                                        console.warn('[CLIENT] Transferred player had invalid loadout, initialized empty array');
-                                    }
-                                    // Update current player with transferred data
-                                    Object.assign(currentPlayer, data.playerData);
-                                    console.log('[CLIENT] Player data updated after transfer');
-                                }
-                            }
-                            // Clear pending transfer
-                            delete game.pendingTransfer;
-                        }
-                        else {
-                            console.error('[CLIENT] Failed to claim transferred player:', data.message);
-                            game.showTransferMessage('Transfer failed. Please try again.');
-                        }
-                    })
-                        .catch(error => {
-                        console.error('[CLIENT] Error claiming transferred player:', error);
-                        game.showTransferMessage('Transfer failed. Please try again.');
-                    });
-                }
-            });
+            // Set up listeners for new connection (this will handle the connect event)
+            setupSocketListeners(game);
         }
         catch (error) {
             console.error('[CLIENT] Error during server transfer:', error);
@@ -256,6 +289,8 @@ function setupSocketListeners(game) {
             clearInterval(game.heartbeatInterval);
             game.heartbeatInterval = null;
         }
+        // Hide teleporter UI on disconnect to prevent UI from staying visible
+        game.hideTeleporterUI();
     });
     game.socket.on('pong', (serverTime) => {
         const now = performance.now();

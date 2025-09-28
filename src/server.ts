@@ -146,14 +146,23 @@ app.post('/transfer/player', (req, res) => {
         const tempSocketId = `transfer_${Date.now()}_${Math.random()}`;
         
         // Add the transferred player to this server
+        const transferToken = Math.random().toString(36).substr(2, 9);
         players[tempSocketId] = {
             ...playerData,
             id: tempSocketId,
             x: targetX || 200,
             y: targetY || WORLD_HEIGHT / 2,
             isTransferred: true, // Mark as transferred so client can reconnect
-            transferToken: Math.random().toString(36).substr(2, 9) // Token for client to claim this player
+            transferToken: transferToken // Token for client to claim this player
         };
+        
+        // Set a timeout to clean up unclaimed transfers after 30 seconds
+        setTimeout(() => {
+            if (players[tempSocketId] && players[tempSocketId].isTransferred) {
+                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Cleaning up unclaimed transfer: ${tempSocketId}`);
+                delete players[tempSocketId];
+            }
+        }, 30000);
         
         res.json({ 
             success: true, 
@@ -2125,12 +2134,10 @@ async function transferPlayerToServer(player: ServerPlayer, targetServerPort: nu
                                 targetY
                             });
                             
-                            // Remove player from current server after short delay
-                            setTimeout(() => {
-                                delete players[player.id];
-                                delete playerUserIds[player.id];
-                                io.emit('playerLeft', player.id);
-                            }, 1000);
+                            // Remove player from current server immediately
+                            delete players[player.id];
+                            delete playerUserIds[player.id];
+                            io.emit('playerLeft', player.id);
                             
                             resolve(true);
                         } else {
