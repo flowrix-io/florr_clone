@@ -4029,6 +4029,19 @@ class Chat {
         this.initialize();
         this.setupSocketListeners();
     }
+    // Method to update socket reference (for cross-server transfers)
+    updateSocket(newSocket) {
+        // Remove old listeners
+        this.socket.off('chatMessage');
+        this.socket.off('chatHistory');
+        // Update socket reference
+        this.socket = newSocket;
+        // Set up new listeners
+        this.setupSocketListeners();
+        // Request chat history from new server
+        this.socket.emit('requestChatHistory');
+        console.log('[CHAT] Socket updated for new server connection');
+    }
     setupSocketListeners() {
         this.socket.on('chatMessage', (message) => {
             this.addChatMessage(message);
@@ -8699,6 +8712,10 @@ function setupSocketListeners(game) {
                         game.players.set(game.socket.id, currentPlayer);
                         console.log('[CLIENT] Player data updated after transfer');
                     }
+                    // Update chat system to use new socket
+                    if (game.chat) {
+                        game.chat.updateSocket(game.socket);
+                    }
                     // Clear pending transfer
                     delete game.pendingTransfer;
                 }
@@ -8717,8 +8734,15 @@ function setupSocketListeners(game) {
             if (game.socket.id) {
                 game.socket.emit('chatMessage', `${game.players.get(game.socket.id)?.name} has joined the game`);
             }
+            // Update chat system to use new socket (for reconnections)
+            if (game.chat) {
+                game.chat.updateSocket(game.socket);
+            }
         }
-        // Start heartbeat monitoring
+        // Start heartbeat monitoring (clear any existing interval first)
+        if (game.heartbeatInterval) {
+            clearInterval(game.heartbeatInterval);
+        }
         game.lastHeartbeat = performance.now();
         game.heartbeatInterval = setInterval(() => {
             const now = performance.now();

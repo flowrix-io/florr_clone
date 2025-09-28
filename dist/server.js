@@ -130,14 +130,22 @@ app.post('/transfer/player', (req, res) => {
         // Create a temporary socket ID for the transferred player
         const tempSocketId = `transfer_${Date.now()}_${Math.random()}`;
         // Add the transferred player to this server
+        const transferToken = Math.random().toString(36).substr(2, 9);
         constants_1.players[tempSocketId] = {
             ...playerData,
             id: tempSocketId,
             x: targetX || 200,
             y: targetY || constants_1.WORLD_HEIGHT / 2,
             isTransferred: true, // Mark as transferred so client can reconnect
-            transferToken: Math.random().toString(36).substr(2, 9) // Token for client to claim this player
+            transferToken: transferToken // Token for client to claim this player
         };
+        // Set a timeout to clean up unclaimed transfers after 30 seconds
+        setTimeout(() => {
+            if (constants_1.players[tempSocketId] && constants_1.players[tempSocketId].isTransferred) {
+                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Cleaning up unclaimed transfer: ${tempSocketId}`);
+                delete constants_1.players[tempSocketId];
+            }
+        }, 30000);
         res.json({
             success: true,
             tempPlayerId: tempSocketId,
@@ -1078,6 +1086,10 @@ io.on('connection', (socket) => {
     socket.on('requestChatHistory', () => {
         socket.emit('chatHistory', chatHistory);
     });
+    // Handle ping/pong for heartbeat monitoring
+    socket.on('ping', (clientTime) => {
+        socket.emit('pong', clientTime);
+    });
     // Add to socket connection handler after other socket events
     socket.on('craftItems', (data) => {
         const player = constants_1.players[socket.id];
@@ -1816,12 +1828,10 @@ async function transferPlayerToServer(player, targetServerPort, targetX, targetY
                                 targetX,
                                 targetY
                             });
-                            // Remove player from current server after short delay
-                            setTimeout(() => {
-                                delete constants_1.players[player.id];
-                                delete playerUserIds[player.id];
-                                io.emit('playerLeft', player.id);
-                            }, 1000);
+                            // Remove player from current server immediately
+                            delete constants_1.players[player.id];
+                            delete playerUserIds[player.id];
+                            io.emit('playerLeft', player.id);
                             resolve(true);
                         }
                         else {

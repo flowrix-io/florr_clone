@@ -97,6 +97,11 @@ function setupSocketListeners(game: any) {
                         console.log('[CLIENT] Player data updated after transfer');
                     }
                     
+                    // Update chat system to use new socket
+                    if (game.chat) {
+                        game.chat.updateSocket(game.socket);
+                    }
+                    
                     // Clear pending transfer
                     delete game.pendingTransfer;
                 } else {
@@ -113,9 +118,17 @@ function setupSocketListeners(game: any) {
             if (game.socket.id) {
                 game.socket.emit('chatMessage', `${game.players.get(game.socket.id)?.name} has joined the game`);
             }
+            
+            // Update chat system to use new socket (for reconnections)
+            if (game.chat) {
+                game.chat.updateSocket(game.socket);
+            }
         }
 
-        // Start heartbeat monitoring
+        // Start heartbeat monitoring (clear any existing interval first)
+        if (game.heartbeatInterval) {
+            clearInterval(game.heartbeatInterval);
+        }
         game.lastHeartbeat = performance.now();
         game.heartbeatInterval = setInterval(() => {
             const now = performance.now();

@@ -1266,6 +1266,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         socket.emit('chatHistory', chatHistory);
     });
 
+    // Handle ping/pong for heartbeat monitoring
+    socket.on('ping', (clientTime: number) => {
+        socket.emit('pong', clientTime);
+    });
+
     // Add near other interfaces at the top
     interface CraftingRequest {
         items: Item[];

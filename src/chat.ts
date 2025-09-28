@@ -25,6 +25,24 @@ export class Chat {
         this.setupSocketListeners();
     }
 
+    // Method to update socket reference (for cross-server transfers)
+    public updateSocket(newSocket: Socket) {
+        // Remove old listeners
+        this.socket.off('chatMessage');
+        this.socket.off('chatHistory');
+        
+        // Update socket reference
+        this.socket = newSocket;
+        
+        // Set up new listeners
+        this.setupSocketListeners();
+        
+        // Request chat history from new server
+        this.socket.emit('requestChatHistory');
+        
+        console.log('[CHAT] Socket updated for new server connection');
+    }
+
     private setupSocketListeners() {
         this.socket.on('chatMessage', (message: { sender: string; content: string; timestamp: number }) => {
             this.addChatMessage(message);

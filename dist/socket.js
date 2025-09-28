@@ -45,34 +45,8 @@ function setupSocketListeners(game) {
                     game.hideTransferMessage();
                     // Ensure player data is properly initialized with defaults if needed
                     if (data.playerData && game.socket.id) {
-                        // Initialize or get current player
-                        let currentPlayer = game.players.get(game.socket.id);
-                        if (!currentPlayer) {
-                            // Create new player object if it doesn't exist
-                            currentPlayer = {
-                                id: game.socket.id,
-                                name: data.playerData.name || 'Anonymous',
-                                x: data.playerData.x || 200,
-                                y: data.playerData.y || 200,
-                                angle: data.playerData.angle || 0,
-                                score: data.playerData.score || 0,
-                                imageLoaded: false,
-                                image: new Image(),
-                                velocityX: 0,
-                                velocityY: 0,
-                                health: data.playerData.health || 100,
-                                maxHealth: data.playerData.maxHealth || 100,
-                                damage: data.playerData.damage || 10,
-                                inventory: data.playerData.inventory || {},
-                                loadout: data.playerData.loadout || [],
-                                level: data.playerData.level || 1,
-                                xp: data.playerData.xp || 0,
-                                xpToNextLevel: data.playerData.xpToNextLevel || 100,
-                                targetX: data.playerData.x || 200,
-                                targetY: data.playerData.y || 200
-                            };
-                            game.players.set(game.socket.id, currentPlayer);
-                        }
+                        // Clean up any existing player with the same ID to prevent duplicates
+                        game.players.delete(game.socket.id);
                         // Ensure loadout is properly initialized
                         if (!data.playerData.loadout || !Array.isArray(data.playerData.loadout)) {
                             data.playerData.loadout = [];
@@ -83,9 +57,36 @@ function setupSocketListeners(game) {
                             data.playerData.inventory = {};
                             console.warn('[CLIENT] Transferred player had invalid inventory, initialized empty object');
                         }
-                        // Update current player with transferred data
-                        Object.assign(currentPlayer, data.playerData);
+                        // Create new player object with transferred data
+                        const currentPlayer = {
+                            id: game.socket.id,
+                            name: data.playerData.name || 'Anonymous',
+                            x: data.playerData.x || 200,
+                            y: data.playerData.y || 200,
+                            angle: data.playerData.angle || 0,
+                            score: data.playerData.score || 0,
+                            imageLoaded: false,
+                            image: new Image(),
+                            velocityX: 0,
+                            velocityY: 0,
+                            health: data.playerData.health || 100,
+                            maxHealth: data.playerData.maxHealth || 100,
+                            damage: data.playerData.damage || 10,
+                            inventory: data.playerData.inventory || {},
+                            loadout: data.playerData.loadout || [],
+                            level: data.playerData.level || 1,
+                            xp: data.playerData.xp || 0,
+                            xpToNextLevel: data.playerData.xpToNextLevel || 100,
+                            targetX: data.playerData.x || 200,
+                            targetY: data.playerData.y || 200
+                        };
+                        // Set the new player data
+                        game.players.set(game.socket.id, currentPlayer);
                         console.log('[CLIENT] Player data updated after transfer');
+                    }
+                    // Update chat system to use new socket
+                    if (game.chat) {
+                        game.chat.updateSocket(game.socket);
                     }
                     // Clear pending transfer
                     delete game.pendingTransfer;
@@ -105,8 +106,15 @@ function setupSocketListeners(game) {
             if (game.socket.id) {
                 game.socket.emit('chatMessage', `${game.players.get(game.socket.id)?.name} has joined the game`);
             }
+            // Update chat system to use new socket (for reconnections)
+            if (game.chat) {
+                game.chat.updateSocket(game.socket);
+            }
         }
-        // Start heartbeat monitoring
+        // Start heartbeat monitoring (clear any existing interval first)
+        if (game.heartbeatInterval) {
+            clearInterval(game.heartbeatInterval);
+        }
         game.lastHeartbeat = performance.now();
         game.heartbeatInterval = setInterval(() => {
             const now = performance.now();
@@ -310,6 +318,11 @@ function setupSocketListeners(game) {
     game.socket.on('playerDisconnected', (playerId) => {
         const disconnectTime = performance.now();
         console.log(`[CLIENT] Player ${playerId} disconnected at ${disconnectTime.toFixed(0)}`);
+        game.players.delete(playerId);
+    });
+    // Handle player leaving (for cross-server transfers)
+    game.socket.on('playerLeft', (playerId) => {
+        console.log(`[CLIENT] Player ${playerId} left the server`);
         game.players.delete(playerId);
     });
     game.socket.on('dotCollected', (data) => {
