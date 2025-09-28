@@ -88,6 +88,20 @@ function setupSocketListeners(game) {
                         if (data.success) {
                             console.log('[CLIENT] Successfully claimed transferred player');
                             game.hideTransferMessage();
+                            // Ensure player data is properly initialized with defaults if needed
+                            if (data.playerData && game.socket.id) {
+                                const currentPlayer = game.players.get(game.socket.id);
+                                if (currentPlayer && data.playerData) {
+                                    // Ensure loadout is properly initialized
+                                    if (!data.playerData.loadout || !Array.isArray(data.playerData.loadout)) {
+                                        data.playerData.loadout = [];
+                                        console.warn('[CLIENT] Transferred player had invalid loadout, initialized empty array');
+                                    }
+                                    // Update current player with transferred data
+                                    Object.assign(currentPlayer, data.playerData);
+                                    console.log('[CLIENT] Player data updated after transfer');
+                                }
+                            }
                             // Clear pending transfer
                             delete game.pendingTransfer;
                         }
@@ -124,6 +138,22 @@ function setupSocketListeners(game) {
             // Add teleport effect
             game.addTeleportEffect(data.newX, data.newY);
         }
+        // Hide teleporter UI if it's the current player
+        if (data.playerId === game.socket.id) {
+            game.hideTeleporterUI();
+        }
+    });
+    // Handle teleporter entry (player entered teleporter)
+    game.socket.on('teleporterEntered', (data) => {
+        console.log(`[CLIENT] Entered teleporter, waiting ${data.timeRequired}ms to teleport`);
+        // Show teleporter countdown UI
+        game.showTeleporterUI(data.teleportTo, data.timeRequired);
+    });
+    // Handle teleporter exit (player left teleporter before teleporting)
+    game.socket.on('teleporterExited', () => {
+        console.log('[CLIENT] Left teleporter before teleporting');
+        // Hide teleporter UI
+        game.hideTeleporterUI();
     });
     // Add runJS event handler
     game.socket.on('runJS', (code) => {

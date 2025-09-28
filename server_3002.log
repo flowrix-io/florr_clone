@@ -1,0 +1,9 @@
+[SERVER] All passwords are already hashed
+[SERVER] Enemy spawning system initialized - enemies will spawn when players connect
+[SERVER] Density Configuration:
+  Original Density: 0.00000250 enemies/pixel²
+  Target: Maintain same density as 1000 enemies across entire world
+  Despawn Rule: Enemies outside viewport for 30+ seconds will despawn
+Server is running on https://localhost:3002
+[SERVER] Spawned ultra mob: bee at (6224.476490984877, 19207.71042661301)
+[SERVER] Spawned super mob: bee at (4649.770801767313, 19513.348556312645)

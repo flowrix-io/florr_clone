@@ -982,6 +982,48 @@ exports.WORLD_MAP = [
         "properties": {
             "spawnType": "legendary"
         }
+    },
+    {
+        "type": "teleporter",
+        "x": 528.28125,
+        "y": 16240,
+        "width": 550,
+        "height": 510,
+        "properties": {
+            "teleportTo": {
+                "x": 0,
+                "y": 0,
+                "serverPort": 3001
+            }
+        }
+    },
+    {
+        "type": "teleporter",
+        "x": 9928.28125,
+        "y": 6200,
+        "width": 980,
+        "height": 560,
+        "properties": {
+            "teleportTo": {
+                "x": 0,
+                "y": 0,
+                "serverPort": 3000
+            }
+        }
+    },
+    {
+        "type": "teleporter",
+        "x": 8828.28125,
+        "y": 12000,
+        "width": 860,
+        "height": 650,
+        "properties": {
+            "teleportTo": {
+                "x": 0,
+                "y": 0,
+                "serverPort": 3002
+            }
+        }
     }
 ];
 // Add map validation function

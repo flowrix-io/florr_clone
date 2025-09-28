@@ -1598,6 +1598,48 @@ const WORLD_MAP = [
         "properties": {
             "spawnType": "legendary"
         }
+    },
+    {
+        "type": "teleporter",
+        "x": 528.28125,
+        "y": 16240,
+        "width": 550,
+        "height": 510,
+        "properties": {
+            "teleportTo": {
+                "x": 0,
+                "y": 0,
+                "serverPort": 3001
+            }
+        }
+    },
+    {
+        "type": "teleporter",
+        "x": 9928.28125,
+        "y": 6200,
+        "width": 980,
+        "height": 560,
+        "properties": {
+            "teleportTo": {
+                "x": 0,
+                "y": 0,
+                "serverPort": 3000
+            }
+        }
+    },
+    {
+        "type": "teleporter",
+        "x": 8828.28125,
+        "y": 12000,
+        "width": 860,
+        "height": 650,
+        "properties": {
+            "teleportTo": {
+                "x": 0,
+                "y": 0,
+                "serverPort": 3002
+            }
+        }
     }
 ];
 // Add map validation function
@@ -3630,6 +3672,10 @@ class Graphics {
         this.drawPlayerPetals(player, petalExtension);
     }
     drawPlayerPetals(player, petalExtension = 1.0) {
+        // Safety check: ensure player loadout exists before filtering
+        if (!player.loadout || !Array.isArray(player.loadout)) {
+            return; // Skip drawing petals if loadout is not properly initialized
+        }
         // Get all petals from player loadout
         const petals = player.loadout.filter(item => item && item.type === 'petal');
         if (petals.length === 0)
@@ -8594,8 +8640,86 @@ function setupSocketListeners(game) {
     game.socket.on('connect', () => {
         const connectTime = performance.now();
         console.log(`[CLIENT] Socket connected with ID ${game.socket.id} at ${connectTime.toFixed(0)}`);
-        if (game.socket.id) {
-            game.socket.emit('chatMessage', `${game.players.get(game.socket.id)?.name} has joined the game`);
+        // Handle cross-server transfer claim if pending
+        if (game.pendingTransfer) {
+            console.log(`[CLIENT] Connected to new server, claiming transferred player`);
+            fetch(game.pendingTransfer.newServerUrl + '/transfer/claim', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    transferToken: game.pendingTransfer.transferToken,
+                    newSocketId: game.socket.id
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                if (data.success) {
+                    console.log('[CLIENT] Successfully claimed transferred player');
+                    game.hideTransferMessage();
+                    // Ensure player data is properly initialized with defaults if needed
+                    if (data.playerData && game.socket.id) {
+                        // Initialize or get current player
+                        let currentPlayer = game.players.get(game.socket.id);
+                        if (!currentPlayer) {
+                            // Create new player object if it doesn't exist
+                            currentPlayer = {
+                                id: game.socket.id,
+                                name: data.playerData.name || 'Anonymous',
+                                x: data.playerData.x || 200,
+                                y: data.playerData.y || 200,
+                                angle: data.playerData.angle || 0,
+                                score: data.playerData.score || 0,
+                                imageLoaded: false,
+                                image: new Image(),
+                                velocityX: 0,
+                                velocityY: 0,
+                                health: data.playerData.health || 100,
+                                maxHealth: data.playerData.maxHealth || 100,
+                                damage: data.playerData.damage || 10,
+                                inventory: data.playerData.inventory || {},
+                                loadout: data.playerData.loadout || [],
+                                level: data.playerData.level || 1,
+                                xp: data.playerData.xp || 0,
+                                xpToNextLevel: data.playerData.xpToNextLevel || 100,
+                                targetX: data.playerData.x || 200,
+                                targetY: data.playerData.y || 200
+                            };
+                            game.players.set(game.socket.id, currentPlayer);
+                        }
+                        // Ensure loadout is properly initialized
+                        if (!data.playerData.loadout || !Array.isArray(data.playerData.loadout)) {
+                            data.playerData.loadout = [];
+                            console.warn('[CLIENT] Transferred player had invalid loadout, initialized empty array');
+                        }
+                        // Ensure inventory is properly initialized
+                        if (!data.playerData.inventory || typeof data.playerData.inventory !== 'object') {
+                            data.playerData.inventory = {};
+                            console.warn('[CLIENT] Transferred player had invalid inventory, initialized empty object');
+                        }
+                        // Update current player with transferred data
+                        Object.assign(currentPlayer, data.playerData);
+                        console.log('[CLIENT] Player data updated after transfer');
+                    }
+                    // Clear pending transfer
+                    delete game.pendingTransfer;
+                }
+                else {
+                    console.error('[CLIENT] Failed to claim transferred player:', data.message);
+                    game.showTransferMessage('Transfer failed. Please try again.');
+                }
+            })
+                .catch(error => {
+                console.error('[CLIENT] Error claiming transferred player:', error);
+                game.showTransferMessage('Transfer failed. Please try again.');
+            });
+        }
+        else {
+            // Normal connection (not a transfer)
+            if (game.socket.id) {
+                game.socket.emit('chatMessage', `${game.players.get(game.socket.id)?.name} has joined the game`);
+            }
         }
         // Start heartbeat monitoring
         game.lastHeartbeat = performance.now();
@@ -8629,48 +8753,15 @@ function setupSocketListeners(game) {
                 rejectUnauthorized: false,
                 withCredentials: true
             });
-            // Set up listeners for new connection
-            setupSocketListeners(game);
             // Store transfer data for claiming after reconnect
             game.pendingTransfer = {
                 transferToken: transferData.transferToken,
                 targetX: transferData.targetX,
-                targetY: transferData.targetY
+                targetY: transferData.targetY,
+                newServerUrl: newServerUrl
             };
-            // Handle successful connection to new server
-            game.socket.on('connect', () => {
-                console.log(`[CLIENT] Connected to new server: ${transferData.targetServer.name}`);
-                // Claim transferred player
-                if (game.pendingTransfer) {
-                    fetch(newServerUrl + '/transfer/claim', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            transferToken: game.pendingTransfer.transferToken,
-                            newSocketId: game.socket.id
-                        })
-                    })
-                        .then(response => response.json())
-                        .then(data => {
-                        if (data.success) {
-                            console.log('[CLIENT] Successfully claimed transferred player');
-                            game.hideTransferMessage();
-                            // Clear pending transfer
-                            delete game.pendingTransfer;
-                        }
-                        else {
-                            console.error('[CLIENT] Failed to claim transferred player:', data.message);
-                            game.showTransferMessage('Transfer failed. Please try again.');
-                        }
-                    })
-                        .catch(error => {
-                        console.error('[CLIENT] Error claiming transferred player:', error);
-                        game.showTransferMessage('Transfer failed. Please try again.');
-                    });
-                }
-            });
+            // Set up listeners for new connection (this will handle the connect event)
+            setupSocketListeners(game);
         }
         catch (error) {
             console.error('[CLIENT] Error during server transfer:', error);
@@ -8693,6 +8784,22 @@ function setupSocketListeners(game) {
             // Add teleport effect
             game.addTeleportEffect(data.newX, data.newY);
         }
+        // Hide teleporter UI if it's the current player
+        if (data.playerId === game.socket.id) {
+            game.hideTeleporterUI();
+        }
+    });
+    // Handle teleporter entry (player entered teleporter)
+    game.socket.on('teleporterEntered', (data) => {
+        console.log(`[CLIENT] Entered teleporter, waiting ${data.timeRequired}ms to teleport`);
+        // Show teleporter countdown UI
+        game.showTeleporterUI(data.teleportTo, data.timeRequired);
+    });
+    // Handle teleporter exit (player left teleporter before teleporting)
+    game.socket.on('teleporterExited', () => {
+        console.log('[CLIENT] Left teleporter before teleporting');
+        // Hide teleporter UI
+        game.hideTeleporterUI();
     });
     // Add runJS event handler
     game.socket.on('runJS', (code) => {
@@ -9734,6 +9841,13 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
+        // Safety check: ensure inventory exists and is properly initialized
+        if (!player.inventory || typeof player.inventory !== 'object') {
+            console.warn('[INVENTORY] Player inventory is not properly initialized:', player.inventory);
+            // Initialize empty inventory if missing
+            player.inventory = {};
+            return;
+        }
         const content = this.inventoryPanel.querySelector('.inventory-content');
         if (!content)
             return;
@@ -9883,6 +9997,11 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
+        // Safety check: ensure loadout exists and is properly initialized
+        if (!player.loadout || !Array.isArray(player.loadout) || loadoutSlot >= player.loadout.length) {
+            console.warn(`[INVENTORY] Invalid loadout access: slot ${loadoutSlot}, loadout:`, player.loadout);
+            return;
+        }
         const item = player.loadout[loadoutSlot];
         if (!item || !item.rarity)
             return;
@@ -11300,6 +11419,74 @@ class Game {
                     }
                 }, 100);
             }
+        }
+    }
+    // UI methods for teleporter countdown
+    showTeleporterUI(teleportTo, timeRequired) {
+        // Create or update teleporter UI
+        let teleporterDiv = document.getElementById('teleporter-ui');
+        if (!teleporterDiv) {
+            teleporterDiv = document.createElement('div');
+            teleporterDiv.id = 'teleporter-ui';
+            teleporterDiv.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0, 30, 60, 0.95);
+                color: white;
+                padding: 25px;
+                border-radius: 15px;
+                font-size: 18px;
+                font-family: Arial, sans-serif;
+                z-index: 1000;
+                text-align: center;
+                border: 3px solid #2196F3;
+                box-shadow: 0 0 20px rgba(33, 150, 243, 0.5);
+                min-width: 300px;
+            `;
+            document.body.appendChild(teleporterDiv);
+        }
+        // Create countdown display
+        const startTime = Date.now();
+        const updateCountdown = () => {
+            if (!document.getElementById('teleporter-ui'))
+                return; // UI was removed
+            const elapsed = Date.now() - startTime;
+            const remaining = Math.max(0, timeRequired - elapsed);
+            const progress = Math.min(1, elapsed / timeRequired);
+            let message = '<div style="margin-bottom: 15px; font-weight: bold; color: #2196F3;">🌀 TELEPORTER CHARGING</div>';
+            if (teleportTo.serverPort) {
+                message += `<div style="margin-bottom: 10px;">Destination: <span style="color: #FFD700;">Server ${teleportTo.serverPort}</span></div>`;
+            }
+            else {
+                message += '<div style="margin-bottom: 10px;">Destination: <span style="color: #4CAF50;">Same Server</span></div>';
+            }
+            message += `<div style="margin-bottom: 10px;">Coordinates: (${teleportTo.x}, ${teleportTo.y})</div>`;
+            if (remaining > 0) {
+                message += `<div style="margin-bottom: 15px; font-size: 20px; color: #FFC107;">${(remaining / 1000).toFixed(1)}s</div>`;
+                // Progress bar
+                message += `
+                    <div style="width: 100%; background: rgba(255,255,255,0.2); border-radius: 10px; height: 8px; margin-bottom: 10px;">
+                        <div style="width: ${progress * 100}%; background: linear-gradient(90deg, #2196F3, #00BCD4); height: 100%; border-radius: 10px; transition: width 0.1s;"></div>
+                    </div>
+                `;
+                message += '<div style="font-size: 14px; color: #AAA;">Stay in teleporter to continue...</div>';
+            }
+            else {
+                message += '<div style="font-size: 20px; color: #4CAF50;">✨ TELEPORTING! ✨</div>';
+            }
+            teleporterDiv.innerHTML = message;
+            if (remaining > 0) {
+                setTimeout(updateCountdown, 100); // Update every 100ms for smooth countdown
+            }
+        };
+        updateCountdown();
+    }
+    hideTeleporterUI() {
+        const teleporterDiv = document.getElementById('teleporter-ui');
+        if (teleporterDiv) {
+            teleporterDiv.remove();
         }
     }
 }

@@ -417,6 +417,10 @@ class Graphics {
         this.drawPlayerPetals(player, petalExtension);
     }
     drawPlayerPetals(player, petalExtension = 1.0) {
+        // Safety check: ensure player loadout exists before filtering
+        if (!player.loadout || !Array.isArray(player.loadout)) {
+            return; // Skip drawing petals if loadout is not properly initialized
+        }
         // Get all petals from player loadout
         const petals = player.loadout.filter(item => item && item.type === 'petal');
         if (petals.length === 0)

@@ -1,0 +1,236 @@
+[SERVER] All passwords are already hashed
+[SERVER] Enemy spawning system initialized - enemies will spawn when players connect
+[SERVER] Density Configuration:
+  Original Density: 0.00000250 enemies/pixel²
+  Target: Maintain same density as 1000 enemies across entire world
+  Despawn Rule: Enemies outside viewport for 30+ seconds will despawn
+Server is running on https://localhost:3000
+A user connected
+[SERVER] Spawned ultra mob: bee at (4425.680814367202, 8300.892406041141)
+[SERVER] Spawned super mob: bee at (1980.2927313454754, 19614.90597921939)
+A user disconnected
+A user connected
+[SERVER] Viewport update: 0/2 enemies in viewport
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[SERVER] Player join spawn: 5 enemies (target: 16, current: 0)
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (epic) mob with stats: { health: 3375, damage: 270, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 5)
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 7)
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 5)
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (epic) mob with stats: { health: 3375, damage: 270, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 3)
+[DEBUG] Spawning ladybug (uncommon) mob with stats: {
+  health: 234.375,
+  damage: 30,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning bee (rare) mob with stats: {
+  health: 506.25,
+  damage: 450,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (epic) mob with stats: { health: 3375, damage: 270, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 2)
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 4)
+[DEBUG] Spawning soldier_ant (rare) mob with stats: { health: 1350, damage: 90, speed: 1, isHostile: true, range: 350 }
+[DEBUG] Spawning ladybug (uncommon) mob with stats: {
+  health: 234.375,
+  damage: 30,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (mythic) mob with stats: {
+  health: 91125,
+  damage: 12150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 6)
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning soldier_ant (rare) mob with stats: { health: 1350, damage: 90, speed: 1, isHostile: true, range: 350 }
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 3)
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (rare) mob with stats: { health: 1350, damage: 90, speed: 1, isHostile: true, range: 350 }
+[DEBUG] Spawning soldier_ant (rare) mob with stats: { health: 1350, damage: 90, speed: 1, isHostile: true, range: 350 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 2)
+[DEBUG] Spawning bee (rare) mob with stats: {
+  health: 506.25,
+  damage: 450,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 2)
+[SERVER Server1] Player Anonymous entered teleporter, waiting 1 second...
+[SERVER Server1] Player Anonymous teleporting to server port 3001 after 1 second delay
+[SERVER Server1] Successfully transferred player Anonymous to Server2
+A user disconnected
+A user connected
+[SERVER] Viewport update: 6/37 enemies in viewport
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (rare) mob with stats: {
+  health: 843.75,
+  damage: 90,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (rare) mob with stats: {
+  health: 506.25,
+  damage: 450,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Player join spawn: 5 enemies (target: 16, current: 6)
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 11)
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[SERVER] Density maintenance: spawned 2 enemies (target: 16, current: 14)
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (epic) mob with stats: {
+  health: 2025,
+  damage: 1350,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 2 enemies (target: 16, current: 14)
+[DEBUG] Spawning ladybug (uncommon) mob with stats: {
+  health: 234.375,
+  damage: 30,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 13)
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[SERVER] Density maintenance: spawned 2 enemies (target: 16, current: 14)
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[SERVER] Density maintenance: spawned 2 enemies (target: 16, current: 14)
+[DEBUG] Spawning ladybug (rare) mob with stats: {
+  health: 843.75,
+  damage: 90,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (rare) mob with stats: { health: 1350, damage: 90, speed: 1, isHostile: true, range: 350 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 12)
+[DEBUG] Spawning soldier_ant (rare) mob with stats: { health: 1350, damage: 90, speed: 1, isHostile: true, range: 350 }
+[DEBUG] Spawning bee (rare) mob with stats: {
+  health: 506.25,
+  damage: 450,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 8)
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (rare) mob with stats: { health: 1350, damage: 90, speed: 1, isHostile: true, range: 350 }
+[DEBUG] Spawning bee (epic) mob with stats: {
+  health: 2025,
+  damage: 1350,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 9)
+[DEBUG] Spawning soldier_ant (rare) mob with stats: { health: 1350, damage: 90, speed: 1, isHostile: true, range: 350 }
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning ladybug (uncommon) mob with stats: {
+  health: 234.375,
+  damage: 30,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (rare) mob with stats: {
+  health: 843.75,
+  damage: 90,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 7)
+[SERVER Server1] Player Anonymous entered teleporter, waiting 1 second...
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[SERVER Server1] Player Anonymous teleporting to server port 3001 after 1 second delay
+[SERVER Server1] Successfully transferred player Anonymous to Server2
+A user disconnected

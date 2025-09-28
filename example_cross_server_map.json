@@ -1,0 +1,119 @@
+[
+  {
+    "type": "wall",
+    "x": 0,
+    "y": 0,
+    "width": 20000,
+    "height": 100,
+    "properties": {}
+  },
+  {
+    "type": "wall", 
+    "x": 0,
+    "y": 19900,
+    "width": 20000,
+    "height": 100,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 0,
+    "y": 0,
+    "width": 100,
+    "height": 20000,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 19900,
+    "y": 0,
+    "width": 100,
+    "height": 20000,
+    "properties": {}
+  },
+  {
+    "type": "spawn",
+    "x": 1000,
+    "y": 1000,
+    "width": 1000,
+    "height": 1000,
+    "properties": {
+      "spawnType": "common"
+    }
+  },
+  {
+    "type": "teleporter",
+    "x": 2500,
+    "y": 2500,
+    "width": 600,
+    "height": 600,
+    "properties": {
+      "teleportTo": {
+        "x": 1500,
+        "y": 1500,
+        "serverPort": 3001
+      }
+    }
+  },
+  {
+    "type": "teleporter",
+    "x": 4000,
+    "y": 2500,
+    "width": 600,
+    "height": 600,
+    "properties": {
+      "teleportTo": {
+        "x": 2000,
+        "y": 2000,
+        "serverPort": 3002
+      }
+    }
+  },
+  {
+    "type": "teleporter",
+    "x": 6000,
+    "y": 2500,
+    "width": 600,
+    "height": 600,
+    "properties": {
+      "teleportTo": {
+        "x": 8000,
+        "y": 8000
+      }
+    }
+  },
+  {
+    "type": "teleporter",
+    "x": 8000,
+    "y": 7500,
+    "width": 1000,
+    "height": 1000,
+    "properties": {
+      "teleportTo": {
+        "x": 1500,
+        "y": 1500
+      }
+    }
+  },
+  {
+    "type": "spawn",
+    "x": 15000,
+    "y": 15000,
+    "width": 2000,
+    "height": 2000,
+    "properties": {
+      "spawnType": "rare"
+    }
+  },
+  {
+    "type": "safe_zone",
+    "x": 9000,
+    "y": 9000,
+    "width": 2000,
+    "height": 2000,
+    "properties": {
+      "isNoCombat": true,
+      "isSafeZone": true
+    }
+  }
+]

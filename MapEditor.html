@@ -142,6 +142,17 @@
                     <div id="teleporterProps" style="display: none;">
                         <input type="number" id="teleportX" placeholder="Teleport to X">
                         <input type="number" id="teleportY" placeholder="Teleport to Y">
+                        <select id="serverPortSelect">
+                            <option value="">Same Server (Local Teleport)</option>
+                            <option value="3000">Server 3000 (Server1)</option>
+                            <option value="3001">Server 3001 (Server2)</option>
+                            <option value="3002">Server 3002 (Server3)</option>
+                            <option value="custom">Custom Port...</option>
+                        </select>
+                        <input type="number" id="customServerPort" placeholder="Custom Server Port" style="display: none;" min="1" max="65535">
+                        <div id="serverPortInfo" style="font-size: 12px; color: #888; margin-top: 5px;">
+                            Leave empty for same-server teleportation
+                        </div>
                     </div>
                 </div>
             </div>
@@ -157,6 +168,24 @@
                 <button id="importMap">Import Map</button>
                 <button id="validateMap">Validate Map</button>
                 <button id="clearMap">Clear Map</button>
+            </div>
+
+            <div class="tool-section">
+                <h2>Legend</h2>
+                <div style="font-size: 12px; line-height: 1.4;">
+                    <div style="margin: 5px 0;">
+                        <span style="color: #4CAF50;">■</span> Same-server teleporter
+                    </div>
+                    <div style="margin: 5px 0;">
+                        <span style="color: #2196F3;">■</span> Cross-server teleporter
+                    </div>
+                    <div style="margin: 5px 0;">
+                        <span style="color: #FFD700;">♦</span> Cross-server indicator
+                    </div>
+                    <div style="margin: 10px 0; padding-top: 10px; border-top: 1px solid #444;">
+                        Cross-server teleporters transfer players between different server ports while preserving all progress.
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -194,6 +223,24 @@
         const ctx = canvas.getContext('2d');
         const minimap = document.getElementById('minimapCanvas');
         const minimapCtx = minimap.getContext('2d');
+
+        // Server port handling
+        document.getElementById('serverPortSelect').addEventListener('change', function() {
+            const customPortInput = document.getElementById('customServerPort');
+            const serverPortInfo = document.getElementById('serverPortInfo');
+            
+            if (this.value === 'custom') {
+                customPortInput.style.display = 'block';
+                serverPortInfo.textContent = 'Enter custom server port (1-65535)';
+            } else {
+                customPortInput.style.display = 'none';
+                if (this.value === '') {
+                    serverPortInfo.textContent = 'Same-server teleportation (no network transfer)';
+                } else {
+                    serverPortInfo.textContent = `Cross-server teleportation to port ${this.value}`;
+                }
+            }
+        });
 
         // Set canvas sizes
         canvas.width = WORLD_WIDTH * scale;
@@ -284,10 +331,31 @@
             if (currentTool === 'spawn') {
                 element.properties.spawnType = document.getElementById('spawnType').value;
             } else if (currentTool === 'teleporter') {
-                element.properties.teleportTo = {
+                const teleportTo = {
                     x: parseInt(document.getElementById('teleportX').value) || 0,
                     y: parseInt(document.getElementById('teleportY').value) || 0
                 };
+
+                // Handle server port configuration
+                const serverPortSelect = document.getElementById('serverPortSelect');
+                const customServerPort = document.getElementById('customServerPort');
+                
+                let serverPort = null;
+                if (serverPortSelect.value === 'custom') {
+                    const customPort = parseInt(customServerPort.value);
+                    if (customPort && customPort >= 1 && customPort <= 65535) {
+                        serverPort = customPort;
+                    }
+                } else if (serverPortSelect.value !== '') {
+                    serverPort = parseInt(serverPortSelect.value);
+                }
+
+                // Only add serverPort if it's different from current server
+                if (serverPort) {
+                    teleportTo.serverPort = serverPort;
+                }
+
+                element.properties.teleportTo = teleportTo;
             } else if (currentTool === 'safe_zone') {
                 element.properties.isNoCombat = true;
                 element.properties.isSafeZone = true;
@@ -352,6 +420,31 @@
                     element.height * scale
                 );
 
+                // Add special visual indicator for cross-server teleporters
+                if (element.type === 'teleporter' && element.properties.teleportTo?.serverPort) {
+                    // Draw cross-server indicator (small diamond in corner)
+                    const x = element.x * scale - cameraOffset.x;
+                    const y = element.y * scale - cameraOffset.y;
+                    const size = Math.min(element.width * scale, element.height * scale) * 0.3;
+                    
+                    ctx.fillStyle = '#FFD700'; // Gold color
+                    ctx.save();
+                    ctx.translate(x + size / 2, y + size / 2);
+                    ctx.rotate(Math.PI / 4); // 45 degrees
+                    ctx.fillRect(-size / 4, -size / 4, size / 2, size / 2);
+                    ctx.restore();
+                    
+                    // Add port number text
+                    ctx.fillStyle = '#fff';
+                    ctx.font = `${Math.max(10, element.width * scale * 0.1)}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.fillText(
+                        element.properties.teleportTo.serverPort.toString(),
+                        x + element.width * scale / 2,
+                        y + element.height * scale / 2 + 15
+                    );
+                }
+
                 // Draw on minimap
                 minimapCtx.fillStyle = COLORS[element.type];
                 minimapCtx.fillRect(
@@ -360,6 +453,17 @@
                     (element.width / WORLD_WIDTH) * minimap.width,
                     (element.height / WORLD_HEIGHT) * minimap.height
                 );
+                
+                // Add indicator on minimap for cross-server teleporters
+                if (element.type === 'teleporter' && element.properties.teleportTo?.serverPort) {
+                    minimapCtx.fillStyle = '#FFD700';
+                    minimapCtx.fillRect(
+                        (element.x / WORLD_WIDTH) * minimap.width,
+                        (element.y / WORLD_HEIGHT) * minimap.height,
+                        Math.max(2, (element.width / WORLD_WIDTH) * minimap.width),
+                        Math.max(2, (element.height / WORLD_HEIGHT) * minimap.height)
+                    );
+                }
             });
 
             // Draw selection
@@ -389,13 +493,68 @@
             elements.forEach((element, index) => {
                 const item = document.createElement('div');
                 item.className = 'element-item';
-                item.textContent = `${element.type} (${Math.round(element.x)}, ${Math.round(element.y)})`;
+                
+                let displayText = `${element.type} (${Math.round(element.x)}, ${Math.round(element.y)})`;
+                
+                // Add extra info for specific element types
+                if (element.type === 'spawn' && element.properties.spawnType) {
+                    displayText += ` - ${element.properties.spawnType}`;
+                } else if (element.type === 'teleporter' && element.properties.teleportTo) {
+                    const teleportTo = element.properties.teleportTo;
+                    displayText += ` -> (${teleportTo.x}, ${teleportTo.y})`;
+                    if (teleportTo.serverPort) {
+                        displayText += ` [Port: ${teleportTo.serverPort}]`;
+                        item.style.borderLeft = '3px solid #2196F3'; // Blue border for cross-server
+                        item.title = `Cross-server teleporter to port ${teleportTo.serverPort}`;
+                    } else {
+                        item.style.borderLeft = '3px solid #4CAF50'; // Green border for same-server
+                        item.title = 'Same-server teleporter';
+                    }
+                }
+                
+                item.textContent = displayText;
                 item.onclick = () => {
                     selectedElement = element;
+                    updatePropertiesFromElement(element);
                     render();
                 };
                 list.appendChild(item);
             });
+        }
+
+        // New function to update properties panel when selecting an element
+        function updatePropertiesFromElement(element) {
+            if (element.type === 'teleporter' && element.properties.teleportTo) {
+                const teleportTo = element.properties.teleportTo;
+                document.getElementById('teleportX').value = teleportTo.x || 0;
+                document.getElementById('teleportY').value = teleportTo.y || 0;
+                
+                const serverPortSelect = document.getElementById('serverPortSelect');
+                const customServerPort = document.getElementById('customServerPort');
+                
+                if (teleportTo.serverPort) {
+                    // Check if it's one of the predefined ports
+                    const predefinedPorts = ['3000', '3001', '3002'];
+                    if (predefinedPorts.includes(teleportTo.serverPort.toString())) {
+                        serverPortSelect.value = teleportTo.serverPort.toString();
+                        customServerPort.style.display = 'none';
+                    } else {
+                        // It's a custom port
+                        serverPortSelect.value = 'custom';
+                        customServerPort.value = teleportTo.serverPort;
+                        customServerPort.style.display = 'block';
+                    }
+                    document.getElementById('serverPortInfo').textContent = 
+                        `Cross-server teleportation to port ${teleportTo.serverPort}`;
+                } else {
+                    serverPortSelect.value = '';
+                    customServerPort.style.display = 'none';
+                    document.getElementById('serverPortInfo').textContent = 
+                        'Same-server teleportation (no network transfer)';
+                }
+            } else if (element.type === 'spawn' && element.properties.spawnType) {
+                document.getElementById('spawnType').value = element.properties.spawnType;
+            }
         }
 
         // Export/Import functionality
@@ -436,8 +595,149 @@
         };
 
         document.getElementById('validateMap').onclick = () => {
-            // Implement map validation logic here
-            alert('Map validation not implemented yet');
+            const validationResults = validateMap();
+            const issues = validationResults.filter(result => result.type === 'error');
+            const warnings = validationResults.filter(result => result.type === 'warning');
+            const info = validationResults.filter(result => result.type === 'info');
+            
+            let message = '';
+            
+            if (issues.length > 0) {
+                message += `❌ ERRORS (${issues.length}):\n`;
+                issues.forEach(issue => message += `• ${issue.message}\n`);
+                message += '\n';
+            }
+            
+            if (warnings.length > 0) {
+                message += `⚠️ WARNINGS (${warnings.length}):\n`;
+                warnings.forEach(warning => message += `• ${warning.message}\n`);
+                message += '\n';
+            }
+            
+            if (info.length > 0) {
+                message += `ℹ️ INFO (${info.length}):\n`;
+                info.forEach(infoItem => message += `• ${infoItem.message}\n`);
+                message += '\n';
+            }
+            
+            if (issues.length === 0 && warnings.length === 0) {
+                message = '✅ Map validation passed! No issues found.';
+            }
+            
+            alert(message);
+        };
+
+        function validateMap() {
+            const results = [];
+            let crossServerTeleporters = 0;
+            let sameServerTeleporters = 0;
+            let spawnPoints = 0;
+            const serverPorts = new Set();
+            
+            elements.forEach((element, index) => {
+                // Check for elements with invalid dimensions
+                if (element.width <= 0 || element.height <= 0) {
+                    results.push({
+                        type: 'error',
+                        message: `Element ${index + 1} (${element.type}) has invalid dimensions: ${element.width}x${element.height}`
+                    });
+                }
+                
+                // Validate teleporters
+                if (element.type === 'teleporter') {
+                    if (!element.properties.teleportTo) {
+                        results.push({
+                            type: 'error',
+                            message: `Teleporter ${index + 1} is missing teleportTo configuration`
+                        });
+                    } else {
+                        const teleportTo = element.properties.teleportTo;
+                        
+                        if (typeof teleportTo.x !== 'number' || typeof teleportTo.y !== 'number') {
+                            results.push({
+                                type: 'error',
+                                message: `Teleporter ${index + 1} has invalid coordinates: (${teleportTo.x}, ${teleportTo.y})`
+                            });
+                        }
+                        
+                        if (teleportTo.serverPort) {
+                            crossServerTeleporters++;
+                            serverPorts.add(teleportTo.serverPort);
+                            
+                            // Validate server port range
+                            if (teleportTo.serverPort < 1 || teleportTo.serverPort > 65535) {
+                                results.push({
+                                    type: 'error',
+                                    message: `Teleporter ${index + 1} has invalid server port: ${teleportTo.serverPort} (must be 1-65535)`
+                                });
+                            }
+                            
+                            // Warn about common development ports
+                            if (![3000, 3001, 3002].includes(teleportTo.serverPort)) {
+                                results.push({
+                                    type: 'warning',
+                                    message: `Teleporter ${index + 1} uses custom port ${teleportTo.serverPort}. Ensure this server is configured and running.`
+                                });
+                            }
+                        } else {
+                            sameServerTeleporters++;
+                        }
+                    }
+                }
+                
+                // Count spawn points
+                if (element.type === 'spawn') {
+                    spawnPoints++;
+                    if (!element.properties.spawnType) {
+                        results.push({
+                            type: 'warning',
+                            message: `Spawn point ${index + 1} has no spawn type specified`
+                        });
+                    }
+                }
+            });
+            
+            // Summary information
+            results.push({
+                type: 'info',
+                message: `Map contains ${elements.length} total elements`
+            });
+            
+            if (crossServerTeleporters > 0) {
+                results.push({
+                    type: 'info',
+                    message: `Found ${crossServerTeleporters} cross-server teleporter(s) targeting ${serverPorts.size} different server port(s): [${Array.from(serverPorts).join(', ')}]`
+                });
+            }
+            
+            if (sameServerTeleporters > 0) {
+                results.push({
+                    type: 'info',
+                    message: `Found ${sameServerTeleporters} same-server teleporter(s)`
+                });
+            }
+            
+            results.push({
+                type: 'info',
+                message: `Found ${spawnPoints} spawn point(s)`
+            });
+            
+            // Recommendations
+            if (crossServerTeleporters > 0) {
+                results.push({
+                    type: 'info',
+                    message: 'Remember to start all target servers before testing cross-server teleportation'
+                });
+            }
+            
+            if (spawnPoints === 0) {
+                results.push({
+                    type: 'warning',
+                    message: 'No spawn points found. Players may not spawn correctly.'
+                });
+            }
+            
+            return results;
         };
 
         // Initial render
