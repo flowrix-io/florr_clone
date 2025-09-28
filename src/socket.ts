@@ -6,9 +6,10 @@ import { Item, WorldItem } from './item';
 export { Socket };
 
 export function initMultiPlayerMode(game: any, serverIp: string) {
-    // Use current origin as default, or prompt if needed
-    const defaultUrl = serverIp || window.location.origin;
-    const serverUrl = prompt(`Enter the server URL (default: ${defaultUrl}):\n\nJoin a public server: https://54.151.123.177:3000/`) || defaultUrl;
+    // Use provided server IP or current origin as default
+    const serverUrl = serverIp || window.location.origin;
+    
+    console.log(`[CLIENT] Connecting to server: ${serverUrl}`);
     
     game.socket = io(serverUrl, {
         secure: true,

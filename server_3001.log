@@ -100,3 +100,359 @@ A user connected
 [SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 13)
 [DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
 [SERVER] Density maintenance: spawned 1 enemies (target: 16, current: 15)
+[SERVER] Despawned enemy w7xodowyp (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy kv5hks2vf (ladybug common) - outside viewport for 30+ seconds
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning soldier_ant (legendary) mob with stats: { health: 40500, damage: 810, speed: 1, isHostile: true, range: 600 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 6)
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 4)
+[SERVER] Despawned enemy zcb60fds3 (bee uncommon) - outside viewport for 30+ seconds
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 4)
+[SERVER] Despawned enemy ttnytmso3 (bee uncommon) - outside viewport for 30+ seconds
+[DEBUG] Spawning bee (legendary) mob with stats: {
+  health: 15187.5,
+  damage: 4050,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Despawned enemy 37y9elsgq (ladybug common) - outside viewport for 30+ seconds
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (legendary) mob with stats: { health: 40500, damage: 810, speed: 1, isHostile: true, range: 600 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 4)
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 7)
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (epic) mob with stats: {
+  health: 2025,
+  damage: 1350,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (epic) mob with stats: {
+  health: 2025,
+  damage: 1350,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 10)
+[DEBUG] Spawning soldier_ant (legendary) mob with stats: { health: 40500, damage: 810, speed: 1, isHostile: true, range: 600 }
+[DEBUG] Spawning bee (legendary) mob with stats: {
+  health: 15187.5,
+  damage: 4050,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 13)
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (legendary) mob with stats: {
+  health: 15187.5,
+  damage: 4050,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (legendary) mob with stats: { health: 40500, damage: 810, speed: 1, isHostile: true, range: 600 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 12)
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (legendary) mob with stats: {
+  health: 15187.5,
+  damage: 4050,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (legendary) mob with stats: {
+  health: 15187.5,
+  damage: 4050,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 11)
+[DEBUG] Spawning soldier_ant (legendary) mob with stats: { health: 40500, damage: 810, speed: 1, isHostile: true, range: 600 }
+[DEBUG] Spawning soldier_ant (legendary) mob with stats: { health: 40500, damage: 810, speed: 1, isHostile: true, range: 600 }
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 10)
+[SERVER] Despawned enemy wdeq8uzss (ladybug uncommon) - outside viewport for 30+ seconds
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning bee (legendary) mob with stats: {
+  health: 15187.5,
+  damage: 4050,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 11)
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning bee (rare) mob with stats: {
+  health: 506.25,
+  damage: 450,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 12)
+[DEBUG] Spawning ladybug (rare) mob with stats: {
+  health: 843.75,
+  damage: 90,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 1 enemies (target: 16, current: 15)
+[DEBUG] Spawning bee (common) mob with stats: { health: 37.5, damage: 50, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (legendary) mob with stats: {
+  health: 25312.5,
+  damage: 810,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 1 enemies (target: 16, current: 15)
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 10)
+[SERVER] Despawned enemy 5akm2gm3y (soldier_ant uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy ormv9k4um (bee common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy bhyl6xy1j (ladybug uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy y3dcbcyl1 (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 15y0jk4jy (soldier_ant epic) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy bs3mt9clo (ladybug uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 5nte53cd9 (ladybug common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 4w0dbhbcq (bee common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy yrenooimd (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 7kuadvaa0 (ladybug uncommon) - outside viewport for 30+ seconds
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (rare) mob with stats: {
+  health: 506.25,
+  damage: 450,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 6)
+[DEBUG] Spawning soldier_ant (legendary) mob with stats: { health: 40500, damage: 810, speed: 1, isHostile: true, range: 600 }
+[SERVER] Despawned enemy utmnnye4l (ladybug rare) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 1cie0k86s (bee common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy d84ns93xb (bee common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy aa80csk44 (bee common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 800ql8p08 (ladybug uncommon) - outside viewport for 30+ seconds
+[DEBUG] Spawning soldier_ant (epic) mob with stats: { health: 5400, damage: 270, speed: 1, isHostile: true, range: 500 }
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning ladybug (uncommon) mob with stats: {
+  health: 234.375,
+  damage: 30,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 5)
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[SERVER] Despawned enemy iidn6kwsb (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy i44hv6kmv (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 7ec6jchum (bee common) - outside viewport for 30+ seconds
+[DEBUG] Spawning ladybug (rare) mob with stats: {
+  health: 843.75,
+  damage: 90,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning ladybug (epic) mob with stats: { health: 3375, damage: 270, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (epic) mob with stats: { health: 3375, damage: 270, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 2)
+[SERVER] Despawned enemy njt8p7tva (ladybug common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 9bl8wo0sj (ladybug common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy dk5bo92zl (ladybug legendary) - outside viewport for 30+ seconds
+[DEBUG] Spawning bee (epic) mob with stats: {
+  health: 2025,
+  damage: 1350,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (rare) mob with stats: {
+  health: 506.25,
+  damage: 450,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (epic) mob with stats: {
+  health: 2025,
+  damage: 1350,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 3)
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (epic) mob with stats: { health: 3375, damage: 270, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 3)
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (epic) mob with stats: { health: 5400, damage: 270, speed: 1, isHostile: true, range: 500 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 4)
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning bee (epic) mob with stats: {
+  health: 2025,
+  damage: 1350,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 3)
+[SERVER] Despawned enemy hul1gg8ky (ladybug legendary) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 3yy2flpol (ladybug legendary) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy jpxumwog4 (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 7ctadhp46 (ladybug legendary) - outside viewport for 30+ seconds
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning ladybug (uncommon) mob with stats: {
+  health: 234.375,
+  damage: 30,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 4)
+[SERVER] Despawned enemy m1j28p45a (soldier_ant legendary) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy cy7lh68x7 (ladybug common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy a2884xtos (bee common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy u8lzuga5j (soldier_ant legendary) - outside viewport for 30+ seconds
+[DEBUG] Spawning ladybug (uncommon) mob with stats: {
+  health: 234.375,
+  damage: 30,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 5)
+[SERVER] Despawned enemy j58a28bnq (bee common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 64ojbrs6e (ladybug common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 8n5cshsho (bee epic) - outside viewport for 30+ seconds
+[SERVER Server2] Player Anonymous entered teleporter, waiting 1 second...
+[SERVER] Despawned enemy nxtbl3foe (bee legendary) - outside viewport for 30+ seconds
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning soldier_ant (uncommon) mob with stats: { health: 375, damage: 30, speed: 1, isHostile: true, range: 200 }
+[DEBUG] Spawning ladybug (epic) mob with stats: { health: 3375, damage: 270, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 7)
+[SERVER] Despawned enemy xe2j0bfxf (bee common) - outside viewport for 30+ seconds
+[SERVER Server2] Player Anonymous teleporting to server port 3000 after 1 second delay
+[SERVER Server2] Successfully transferred player Anonymous to Server1
+A user disconnected

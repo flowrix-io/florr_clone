@@ -157,3 +157,73 @@ A user connected
 [SERVER Server1] Player Anonymous entered teleporter, waiting 1 second...
 [SERVER Server1] Successfully transferred player Anonymous to Server2
 A user disconnected
+[SERVER Server1] Receiving transferred player: Anonymous
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 3 enemies (target: 16, current: 11)
+A user connected
+[SERVER Server1] Player transfer claimed: Anonymous -> rqoXjXCigpBLTtCjAAAD
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[DEBUG] Spawning ladybug (common) mob with stats: { health: 62.5, damage: 10, speed: 0.5, isHostile: false, range: 100 }
+[SERVER] Density maintenance: spawned 2 enemies (target: 16, current: 14)
+A user disconnected
+A user connected
+[SERVER] Viewport update: 16/45 enemies in viewport
+[SERVER] Despawned enemy rkzdttpk0 (bee common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy j7pahtnpj (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy n6sdv3o04 (ladybug common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy ndr97u8m6 (soldier_ant uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy v1izy3x0s (soldier_ant rare) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy q1d3as64d (ladybug uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy imwcjevzs (ladybug rare) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy jfo92oo92 (ladybug rare) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 5pswk3c7s (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy wf9c5uicq (soldier_ant uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy k7qw8a1zs (ladybug rare) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 4gqavzd5a (soldier_ant uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 01p5245i3 (ladybug uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy epat6mpvm (ladybug uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 0j2x7of8f (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy fvyal2sxg (bee legendary) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 4lsv1xke0 (soldier_ant uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy w783hqcye (ladybug uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy 5dc4bcu8t (soldier_ant uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy ee819ps5a (soldier_ant uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy vbcjymd6x (soldier_ant uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy ox5wv0l6d (bee uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy op0cdzxsx (bee rare) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy pimd2omku (bee uncommon) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy q4348affk (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy k7zuprpzt (bee common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy qqkqcru2e (bee common) - outside viewport for 30+ seconds
+[DEBUG] Spawning ladybug (uncommon) mob with stats: {
+  health: 234.375,
+  damage: 30,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 1 enemies (target: 16, current: 15)
+[SERVER] Despawned enemy 2zxmmktev (ladybug common) - outside viewport for 30+ seconds
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[SERVER] Density maintenance: spawned 1 enemies (target: 16, current: 15)
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[SERVER] Density maintenance: spawned 1 enemies (target: 16, current: 15)
+[SERVER] Despawned enemy po1zlwruj (soldier_ant common) - outside viewport for 30+ seconds
+[SERVER] Despawned enemy cq872lcbq (ladybug common) - outside viewport for 30+ seconds
+[DEBUG] Spawning soldier_ant (common) mob with stats: { health: 100, damage: 10, speed: 1, isHostile: true, range: 100 }
+[DEBUG] Spawning bee (uncommon) mob with stats: {
+  health: 140.625,
+  damage: 150,
+  speed: 0.5,
+  isHostile: false,
+  range: 100
+}
+[SERVER] Density maintenance: spawned 1 enemies (target: 16, current: 15)
+[SERVER] Spawned unique mob: bee at (10806.972102560712, 4390.233416179126)
+[SERVER] Despawned enemy egkz79con (soldier_ant common) - outside viewport for 30+ seconds
+A user disconnected
+A user connected
+[SERVER] Viewport update: 16/19 enemies in viewport
