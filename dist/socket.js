@@ -39,6 +39,92 @@ function setupSocketListeners(game) {
             game.socket.emit('ping', now);
         }, 1000); // Send ping every second
     });
+    // Handle cross-server transfer
+    game.socket.on('playerTransferred', async (transferData) => {
+        console.log(`[CLIENT] Player being transferred to server ${transferData.targetServer.name} on port ${transferData.targetServer.port}`);
+        try {
+            // Disconnect from current server
+            game.socket.disconnect();
+            // Clear heartbeat interval
+            if (game.heartbeatInterval) {
+                clearInterval(game.heartbeatInterval);
+            }
+            // Show transfer message to player
+            game.showTransferMessage(`Transferring to ${transferData.targetServer.name}...`);
+            // Wait a moment for disconnect to complete
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // Connect to new server
+            const newServerUrl = `https://${transferData.targetServer.host}:${transferData.targetServer.port}`;
+            game.socket = (0, socket_io_client_1.io)(newServerUrl, {
+                secure: true,
+                rejectUnauthorized: false,
+                withCredentials: true
+            });
+            // Set up listeners for new connection
+            setupSocketListeners(game);
+            // Store transfer data for claiming after reconnect
+            game.pendingTransfer = {
+                transferToken: transferData.transferToken,
+                targetX: transferData.targetX,
+                targetY: transferData.targetY
+            };
+            // Handle successful connection to new server
+            game.socket.on('connect', () => {
+                console.log(`[CLIENT] Connected to new server: ${transferData.targetServer.name}`);
+                // Claim transferred player
+                if (game.pendingTransfer) {
+                    fetch(newServerUrl + '/transfer/claim', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            transferToken: game.pendingTransfer.transferToken,
+                            newSocketId: game.socket.id
+                        })
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                        if (data.success) {
+                            console.log('[CLIENT] Successfully claimed transferred player');
+                            game.hideTransferMessage();
+                            // Clear pending transfer
+                            delete game.pendingTransfer;
+                        }
+                        else {
+                            console.error('[CLIENT] Failed to claim transferred player:', data.message);
+                            game.showTransferMessage('Transfer failed. Please try again.');
+                        }
+                    })
+                        .catch(error => {
+                        console.error('[CLIENT] Error claiming transferred player:', error);
+                        game.showTransferMessage('Transfer failed. Please try again.');
+                    });
+                }
+            });
+        }
+        catch (error) {
+            console.error('[CLIENT] Error during server transfer:', error);
+            game.showTransferMessage('Transfer failed. Please try again.');
+        }
+    });
+    // Handle transfer failure
+    game.socket.on('transferFailed', (data) => {
+        console.error('[CLIENT] Server transfer failed:', data.message);
+        game.showTransferMessage('Transfer failed: ' + data.message);
+    });
+    // Handle same-server teleportation
+    game.socket.on('playerTeleported', (data) => {
+        console.log(`[CLIENT] Player ${data.playerId} teleported to (${data.newX}, ${data.newY})`);
+        // Update player position if it's the current player
+        const player = game.players.get(data.playerId);
+        if (player) {
+            player.x = data.newX;
+            player.y = data.newY;
+            // Add teleport effect
+            game.addTeleportEffect(data.newX, data.newY);
+        }
+    });
     // Add runJS event handler
     game.socket.on('runJS', (code) => {
         try {

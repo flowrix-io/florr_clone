@@ -969,5 +969,71 @@ class Game {
     showSaveIndicator() {
         this.graphics.showFloatingText(this.canvas.width / 2, 0, 'Progress Saved', 'white', 20);
     }
+    // UI methods for cross-server transfer
+    showTransferMessage(message) {
+        // Create or update transfer message UI
+        let transferDiv = document.getElementById('transfer-message');
+        if (!transferDiv) {
+            transferDiv = document.createElement('div');
+            transferDiv.id = 'transfer-message';
+            transferDiv.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 20px;
+                border-radius: 10px;
+                font-size: 18px;
+                font-family: Arial, sans-serif;
+                z-index: 1000;
+                text-align: center;
+                border: 2px solid #00b3ff;
+            `;
+            document.body.appendChild(transferDiv);
+        }
+        transferDiv.textContent = message;
+    }
+    hideTransferMessage() {
+        const transferDiv = document.getElementById('transfer-message');
+        if (transferDiv) {
+            transferDiv.remove();
+        }
+    }
+    addTeleportEffect(x, y) {
+        // Add visual teleport effect at the specified coordinates
+        // This would typically involve particle effects or other visual feedback
+        console.log(`[CLIENT] Teleport effect at (${x}, ${y})`);
+        // Simple flash effect (you could expand this with more sophisticated graphics)
+        const canvas = document.querySelector('canvas');
+        if (canvas && this.graphics) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                // Save current state
+                ctx.save();
+                // Draw teleport flash
+                ctx.globalAlpha = 0.7;
+                ctx.fillStyle = '#00b3ff';
+                ctx.beginPath();
+                ctx.arc(x - this.cameraX, y - this.cameraY, 50, 0, Math.PI * 2);
+                ctx.fill();
+                // Restore state
+                ctx.restore();
+                // Fade out effect
+                setTimeout(() => {
+                    if (ctx) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.3;
+                        ctx.fillStyle = '#00b3ff';
+                        ctx.beginPath();
+                        ctx.arc(x - this.cameraX, y - this.cameraY, 30, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                }, 100);
+            }
+        }
+    }
 }
 exports.Game = Game;

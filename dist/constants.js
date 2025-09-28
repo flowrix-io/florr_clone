@@ -1,12 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = exports.KNOCKBACK_RECOVERY_SPEED = exports.KNOCKBACK_FORCE = exports.MAX_SPEED = exports.RESPAWN_INVULNERABILITY_TIME = exports.MAX_INVENTORY_SIZE = exports.ENEMY_TIERS = exports.MAX_SAND_RADIUS = exports.MIN_SAND_RADIUS = exports.SAND_COUNT = exports.DECORATION_COUNT = exports.ENEMY_DAMAGE = exports.PLAYER_DAMAGE = exports.ENEMY_MAX_HEALTH = exports.PLAYER_MAX_HEALTH = exports.ENEMY_CORAL_DAMAGE = exports.ENEMY_CORAL_HEALTH = exports.ENEMY_CORAL_PROBABILITY = exports.OBSTACLE_COUNT = exports.SCALE_FACTOR = exports.PVP_WORLD_HEIGHT = exports.PVP_WORLD_WIDTH = exports.OLD_WORLD_HEIGHT = exports.OLD_WORLD_WIDTH = exports.ENEMIES_PER_VIEWPORT = exports.VIEWPORT_WITH_BUFFER_AREA = exports.ORIGINAL_ENEMY_DENSITY = exports.ORIGINAL_ENEMY_COUNT = exports.TOTAL_WORLD_AREA = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.enemies = exports.dots = exports.players = exports.VIEWPORT_AREA = exports.VIEWPORT_HEIGHT = exports.VIEWPORT_WIDTH = exports.ENEMY_DESPAWN_TIME = exports.VIEWPORT_BUFFER = exports.FISH_RETURN_SPEED = exports.PLAYER_BASE_SPEED = exports.FISH_DETECTION_RADIUS = void 0;
-exports.WORLD_MAP = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.ZONE_BOUNDARIES = exports.ENEMY_SIZE = void 0;
+exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = exports.DEFAULT_SERVER_CONFIGS = exports.WORLD_MAP = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.ZONE_BOUNDARIES = exports.ENEMY_SIZE = void 0;
 exports.validateWorldMap = validateWorldMap;
 exports.isWall = isWall;
 exports.isSpawn = isSpawn;
 exports.isTeleporter = isTeleporter;
 exports.isSafeZone = isSafeZone;
+exports.getServerConfigs = getServerConfigs;
+exports.getServerConfigByPort = getServerConfigByPort;
 // Add these constants at the top with the others
 exports.FISH_DETECTION_RADIUS = 500; // How far fish can detect players
 exports.PLAYER_BASE_SPEED = 5; // Base player speed to match
@@ -1034,3 +1036,75 @@ function isTeleporter(element) {
 function isSafeZone(element) {
     return element.type === 'safe_zone';
 }
+// Default server configuration - can be overridden via environment variables or config file
+exports.DEFAULT_SERVER_CONFIGS = [
+    { port: 3000, host: 'localhost', name: 'Server1' },
+    { port: 3001, host: 'localhost', name: 'Server2' },
+    { port: 3002, host: 'localhost', name: 'Server3' }
+];
+// Get server configuration from environment or use defaults
+function getServerConfigs() {
+    const configStr = process.env.SERVER_CONFIGS;
+    if (configStr) {
+        try {
+            return JSON.parse(configStr);
+        }
+        catch (error) {
+            console.error('Failed to parse SERVER_CONFIGS environment variable:', error);
+        }
+    }
+    return exports.DEFAULT_SERVER_CONFIGS;
+}
+// Find server config by port
+function getServerConfigByPort(port) {
+    return getServerConfigs().find(config => config.port === port);
+}
+// Example cross-server teleporter configurations
+// Add these to your WORLD_MAP array to test cross-server teleportation
+exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = [
+    // Teleporter from Server 3000 to Server 3001
+    {
+        type: 'teleporter',
+        x: 2000,
+        y: 1000,
+        width: 300,
+        height: 300,
+        properties: {
+            teleportTo: {
+                x: 800,
+                y: 800,
+                serverPort: 3001
+            }
+        }
+    },
+    // Teleporter from Server 3001 to Server 3002
+    {
+        type: 'teleporter',
+        x: 1200,
+        y: 1200,
+        width: 300,
+        height: 300,
+        properties: {
+            teleportTo: {
+                x: 1500,
+                y: 1500,
+                serverPort: 3002
+            }
+        }
+    },
+    // Return teleporter from Server 3002 to Server 3000
+    {
+        type: 'teleporter',
+        x: 1500,
+        y: 2000,
+        width: 300,
+        height: 300,
+        properties: {
+            teleportTo: {
+                x: 2000,
+                y: 1000,
+                serverPort: 3000
+            }
+        }
+    }
+];

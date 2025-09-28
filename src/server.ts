@@ -3,6 +3,7 @@ import { createServer } from 'https';
 import { Server, Socket } from 'socket.io';
 import path from 'path';
 import fs from 'fs';
+import https from 'https';
 import { database } from './database';
 
 // Check for and migrate any plain text passwords on server startup
@@ -14,7 +15,7 @@ if (database.checkForPlainTextPasswords()) {
     console.log('[SERVER] All passwords are already hashed');
 }
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
-import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, ENEMY_SIZE_MULTIPLIERS, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, isWall, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA } from './constants';
+import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, ENEMY_SIZE_MULTIPLIERS, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy } from './server_utils';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getAllPetalTypes, getPetalStats } from './petals';
@@ -129,6 +130,73 @@ app.post('/auth/logout', (req, res) => {
     res.json({ message: 'Logged out successfully' });
 });
 
+// Cross-server player transfer endpoints
+app.post('/transfer/player', (req, res) => {
+    const { playerData, targetX, targetY } = req.body;
+    
+    if (!playerData) {
+        return res.status(400).json({ message: 'Player data is required' });
+    }
+    
+    try {
+        // Handle incoming player transfer from another server
+        console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Receiving transferred player: ${playerData.name}`);
+        
+        // Create a temporary socket ID for the transferred player
+        const tempSocketId = `transfer_${Date.now()}_${Math.random()}`;
+        
+        // Add the transferred player to this server
+        players[tempSocketId] = {
+            ...playerData,
+            id: tempSocketId,
+            x: targetX || 200,
+            y: targetY || WORLD_HEIGHT / 2,
+            isTransferred: true, // Mark as transferred so client can reconnect
+            transferToken: Math.random().toString(36).substr(2, 9) // Token for client to claim this player
+        };
+        
+        res.json({ 
+            success: true, 
+            tempPlayerId: tempSocketId,
+            transferToken: players[tempSocketId].transferToken,
+            serverInfo: CURRENT_SERVER_CONFIG
+        });
+        
+    } catch (error) {
+        console.error('Error handling player transfer:', error);
+        res.status(500).json({ message: 'Failed to transfer player' });
+    }
+});
+
+app.post('/transfer/claim', (req, res) => {
+    const { transferToken, newSocketId } = req.body;
+    
+    if (!transferToken || !newSocketId) {
+        return res.status(400).json({ message: 'Transfer token and new socket ID are required' });
+    }
+    
+    // Find the transferred player by token
+    const tempPlayerId = Object.keys(players).find(id => 
+        players[id].transferToken === transferToken && players[id].isTransferred
+    );
+    
+    if (!tempPlayerId) {
+        return res.status(404).json({ message: 'Invalid transfer token or player not found' });
+    }
+    
+    // Move player data to new socket ID
+    const playerData = players[tempPlayerId];
+    delete playerData.isTransferred;
+    delete playerData.transferToken;
+    playerData.id = newSocketId;
+    
+    players[newSocketId] = playerData;
+    delete players[tempPlayerId];
+    
+    console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Player transfer claimed: ${playerData.name} -> ${newSocketId}`);
+    res.json({ success: true, playerData });
+});
+
 // Serve static files from the dist directory
 app.use(express.static(path.join(__dirname, '../dist'), {
     setHeaders: (res, path) => {
@@ -157,7 +225,11 @@ const io = new Server(httpsServer, {
     }
 });
 
+// Get current server port and configuration
 const PORT = process.env.PORT || 3000;
+const CURRENT_SERVER_PORT = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
+const SERVER_CONFIGS = getServerConfigs();
+const CURRENT_SERVER_CONFIG = getServerConfigByPort(CURRENT_SERVER_PORT) || { port: CURRENT_SERVER_PORT, host: 'localhost', name: `Server${CURRENT_SERVER_PORT}` };
 
 // Remove or comment out these lines since we're not using grid generation anymore
 // const MAZE_CELL_SIZE = 1000;
@@ -1807,6 +1879,61 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         }
     }
 
+    // Check for teleporter collisions
+    for (const element of WORLD_MAP.filter(isTeleporter)) {
+        const teleporterX = element.x * SCALE_FACTOR;
+        const teleporterY = element.y * SCALE_FACTOR;
+        const teleporterWidth = element.width * SCALE_FACTOR;
+        const teleporterHeight = element.height * SCALE_FACTOR;
+
+        // Check if player is inside teleporter bounds
+        if (
+            newX >= teleporterX &&
+            newX <= teleporterX + teleporterWidth &&
+            newY >= teleporterY &&
+            newY <= teleporterY + teleporterHeight &&
+            element.properties?.teleportTo
+        ) {
+            const teleportTo = element.properties.teleportTo;
+            
+            // Check if this is a cross-server teleporter
+            if (teleportTo.serverPort && teleportTo.serverPort !== CURRENT_SERVER_PORT) {
+                // Cross-server teleportation
+                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Player ${player.name} attempting cross-server teleport to port ${teleportTo.serverPort}`);
+                
+                // Attempt to transfer player to target server
+                transferPlayerToServer(
+                    player,
+                    teleportTo.serverPort,
+                    teleportTo.x * SCALE_FACTOR,
+                    teleportTo.y * SCALE_FACTOR
+                ).catch(error => {
+                    console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player ${player.name}:`, error);
+                    // Optionally notify the player about the failed transfer
+                    io.to(player.id).emit('transferFailed', { message: 'Failed to connect to target server' });
+                });
+                
+                // Don't update player position this tick as they're being transferred
+                return;
+            } else {
+                // Same-server teleportation (existing functionality)
+                newX = teleportTo.x * SCALE_FACTOR;
+                newY = teleportTo.y * SCALE_FACTOR;
+                
+                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Player ${player.name} teleported to (${newX}, ${newY})`);
+                
+                // Emit teleport event to client for visual effects
+                io.to(player.id).emit('playerTeleported', {
+                    newX,
+                    newY,
+                    playerId: player.id
+                });
+            }
+            
+            break; // Only process one teleporter per update
+        }
+    }
+
     player.x = newX;
     player.y = newY;
 
@@ -1861,6 +1988,124 @@ httpsServer.listen(PORT, () => {
 // Add XP calculation functions
 function calculateXPRequirement(level: number): number {
     return Math.floor(BASE_XP_REQUIREMENT * Math.pow(XP_MULTIPLIER, level - 1));
+}
+
+// Cross-server player transfer functionality
+async function transferPlayerToServer(player: ServerPlayer, targetServerPort: number, targetX: number, targetY: number): Promise<boolean> {
+    const targetServerConfig = getServerConfigByPort(targetServerPort);
+    
+    if (!targetServerConfig) {
+        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Target server config not found for port ${targetServerPort}`);
+        return false;
+    }
+    
+    if (targetServerPort === CURRENT_SERVER_PORT) {
+        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Cannot transfer player to the same server`);
+        return false;
+    }
+    
+    try {
+        // Save player progress before transfer
+        const userId = playerUserIds[player.id];
+        if (userId) {
+            savePlayerProgress(player, userId);
+        }
+        
+        // Prepare player data for transfer (remove socket-specific data)
+        const playerDataForTransfer = {
+            name: player.name,
+            score: player.score,
+            health: player.health,
+            maxHealth: player.maxHealth,
+            damage: player.damage,
+            inventory: player.inventory,
+            loadout: player.loadout,
+            level: player.level,
+            xp: player.xp,
+            xpToNextLevel: player.xpToNextLevel,
+            angle: player.angle,
+            velocityX: 0,
+            velocityY: 0,
+            knockbackX: 0,
+            knockbackY: 0,
+            inputs: { keys: [] },
+            speed_boost: player.speed_boost
+        };
+        
+        // Create HTTPS request to target server
+        const postData = JSON.stringify({
+            playerData: playerDataForTransfer,
+            targetX,
+            targetY
+        });
+        
+        const options = {
+            hostname: targetServerConfig.host,
+            port: targetServerConfig.port,
+            path: '/transfer/player',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            },
+            // For self-signed certificates in development
+            rejectUnauthorized: false
+        };
+        
+        return new Promise((resolve) => {
+            const req = https.request(options, (res) => {
+                let responseData = '';
+                
+                res.on('data', (chunk) => {
+                    responseData += chunk;
+                });
+                
+                res.on('end', () => {
+                    try {
+                        const response = JSON.parse(responseData);
+                        if (response.success) {
+                            console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
+                            
+                            // Notify client about successful transfer
+                            io.to(player.id).emit('playerTransferred', {
+                                targetServer: targetServerConfig,
+                                transferToken: response.transferToken,
+                                targetX,
+                                targetY
+                            });
+                            
+                            // Remove player from current server after short delay
+                            setTimeout(() => {
+                                delete players[player.id];
+                                delete playerUserIds[player.id];
+                                io.emit('playerLeft', player.id);
+                            }, 1000);
+                            
+                            resolve(true);
+                        } else {
+                            console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player: ${response.message}`);
+                            resolve(false);
+                        }
+                    } catch (error) {
+                        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error parsing transfer response:`, error);
+                        resolve(false);
+                    }
+                });
+            });
+            
+            req.on('error', (error) => {
+                console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error transferring player:`, error);
+                resolve(false);
+            });
+            
+            req.write(postData);
+            req.end();
+        });
+        
+    } catch (error) {
+        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error during player transfer:`, error);
+        return false;
+    }
 }
 
 

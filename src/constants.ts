@@ -131,7 +131,7 @@ export interface MapElement {
     width: number;
     height: number;
     properties?: {
-        teleportTo?: { x: number; y: number };
+        teleportTo?: { x: number; y: number; serverPort?: number };
         spawnType?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
         isNoCombat?: boolean;
         isSafeZone?: boolean;
@@ -1078,3 +1078,85 @@ export function isTeleporter(element: MapElement): boolean {
 export function isSafeZone(element: MapElement): boolean {
     return element.type === 'safe_zone';
 }
+
+// Server configuration for cross-server teleportation
+export interface ServerConfig {
+    port: number;
+    host: string;
+    name: string;
+}
+
+// Default server configuration - can be overridden via environment variables or config file
+export const DEFAULT_SERVER_CONFIGS: ServerConfig[] = [
+    { port: 3000, host: 'localhost', name: 'Server1' },
+    { port: 3001, host: 'localhost', name: 'Server2' },
+    { port: 3002, host: 'localhost', name: 'Server3' }
+];
+
+// Get server configuration from environment or use defaults
+export function getServerConfigs(): ServerConfig[] {
+    const configStr = process.env.SERVER_CONFIGS;
+    if (configStr) {
+        try {
+            return JSON.parse(configStr);
+        } catch (error) {
+            console.error('Failed to parse SERVER_CONFIGS environment variable:', error);
+        }
+    }
+    return DEFAULT_SERVER_CONFIGS;
+}
+
+// Find server config by port
+export function getServerConfigByPort(port: number): ServerConfig | undefined {
+    return getServerConfigs().find(config => config.port === port);
+}
+
+// Example cross-server teleporter configurations
+// Add these to your WORLD_MAP array to test cross-server teleportation
+export const EXAMPLE_CROSS_SERVER_TELEPORTERS: MapElement[] = [
+    // Teleporter from Server 3000 to Server 3001
+    {
+        type: 'teleporter',
+        x: 2000,
+        y: 1000,
+        width: 300,
+        height: 300,
+        properties: {
+            teleportTo: { 
+                x: 800, 
+                y: 800, 
+                serverPort: 3001 
+            }
+        }
+    },
+    // Teleporter from Server 3001 to Server 3002
+    {
+        type: 'teleporter',
+        x: 1200,
+        y: 1200,
+        width: 300,
+        height: 300,
+        properties: {
+            teleportTo: { 
+                x: 1500, 
+                y: 1500, 
+                serverPort: 3002 
+            }
+        }
+    },
+    // Return teleporter from Server 3002 to Server 3000
+    {
+        type: 'teleporter',
+        x: 1500,
+        y: 2000,
+        width: 300,
+        height: 300,
+        properties: {
+            teleportTo: { 
+                x: 2000, 
+                y: 1000, 
+                serverPort: 3000 
+            }
+        }
+    }
+];

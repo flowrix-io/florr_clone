@@ -1652,6 +1652,78 @@ function isTeleporter(element) {
 function isSafeZone(element) {
     return element.type === 'safe_zone';
 }
+// Default server configuration - can be overridden via environment variables or config file
+const DEFAULT_SERVER_CONFIGS = [
+    { port: 3000, host: 'localhost', name: 'Server1' },
+    { port: 3001, host: 'localhost', name: 'Server2' },
+    { port: 3002, host: 'localhost', name: 'Server3' }
+];
+// Get server configuration from environment or use defaults
+function getServerConfigs() {
+    const configStr = process.env.SERVER_CONFIGS;
+    if (configStr) {
+        try {
+            return JSON.parse(configStr);
+        }
+        catch (error) {
+            console.error('Failed to parse SERVER_CONFIGS environment variable:', error);
+        }
+    }
+    return DEFAULT_SERVER_CONFIGS;
+}
+// Find server config by port
+function getServerConfigByPort(port) {
+    return getServerConfigs().find(config => config.port === port);
+}
+// Example cross-server teleporter configurations
+// Add these to your WORLD_MAP array to test cross-server teleportation
+const EXAMPLE_CROSS_SERVER_TELEPORTERS = [
+    // Teleporter from Server 3000 to Server 3001
+    {
+        type: 'teleporter',
+        x: 2000,
+        y: 1000,
+        width: 300,
+        height: 300,
+        properties: {
+            teleportTo: {
+                x: 800,
+                y: 800,
+                serverPort: 3001
+            }
+        }
+    },
+    // Teleporter from Server 3001 to Server 3002
+    {
+        type: 'teleporter',
+        x: 1200,
+        y: 1200,
+        width: 300,
+        height: 300,
+        properties: {
+            teleportTo: {
+                x: 1500,
+                y: 1500,
+                serverPort: 3002
+            }
+        }
+    },
+    // Return teleporter from Server 3002 to Server 3000
+    {
+        type: 'teleporter',
+        x: 1500,
+        y: 2000,
+        width: 300,
+        height: 300,
+        properties: {
+            teleportTo: {
+                x: 2000,
+                y: 1000,
+                serverPort: 3000
+            }
+        }
+    }
+];
 
 // EXTERNAL MODULE: ./src/petals.ts
 var src_petals = __webpack_require__(375);
@@ -8536,6 +8608,92 @@ function setupSocketListeners(game) {
             game.socket.emit('ping', now);
         }, 1000); // Send ping every second
     });
+    // Handle cross-server transfer
+    game.socket.on('playerTransferred', async (transferData) => {
+        console.log(`[CLIENT] Player being transferred to server ${transferData.targetServer.name} on port ${transferData.targetServer.port}`);
+        try {
+            // Disconnect from current server
+            game.socket.disconnect();
+            // Clear heartbeat interval
+            if (game.heartbeatInterval) {
+                clearInterval(game.heartbeatInterval);
+            }
+            // Show transfer message to player
+            game.showTransferMessage(`Transferring to ${transferData.targetServer.name}...`);
+            // Wait a moment for disconnect to complete
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // Connect to new server
+            const newServerUrl = `https://${transferData.targetServer.host}:${transferData.targetServer.port}`;
+            game.socket = esm_lookup(newServerUrl, {
+                secure: true,
+                rejectUnauthorized: false,
+                withCredentials: true
+            });
+            // Set up listeners for new connection
+            setupSocketListeners(game);
+            // Store transfer data for claiming after reconnect
+            game.pendingTransfer = {
+                transferToken: transferData.transferToken,
+                targetX: transferData.targetX,
+                targetY: transferData.targetY
+            };
+            // Handle successful connection to new server
+            game.socket.on('connect', () => {
+                console.log(`[CLIENT] Connected to new server: ${transferData.targetServer.name}`);
+                // Claim transferred player
+                if (game.pendingTransfer) {
+                    fetch(newServerUrl + '/transfer/claim', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            transferToken: game.pendingTransfer.transferToken,
+                            newSocketId: game.socket.id
+                        })
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                        if (data.success) {
+                            console.log('[CLIENT] Successfully claimed transferred player');
+                            game.hideTransferMessage();
+                            // Clear pending transfer
+                            delete game.pendingTransfer;
+                        }
+                        else {
+                            console.error('[CLIENT] Failed to claim transferred player:', data.message);
+                            game.showTransferMessage('Transfer failed. Please try again.');
+                        }
+                    })
+                        .catch(error => {
+                        console.error('[CLIENT] Error claiming transferred player:', error);
+                        game.showTransferMessage('Transfer failed. Please try again.');
+                    });
+                }
+            });
+        }
+        catch (error) {
+            console.error('[CLIENT] Error during server transfer:', error);
+            game.showTransferMessage('Transfer failed. Please try again.');
+        }
+    });
+    // Handle transfer failure
+    game.socket.on('transferFailed', (data) => {
+        console.error('[CLIENT] Server transfer failed:', data.message);
+        game.showTransferMessage('Transfer failed: ' + data.message);
+    });
+    // Handle same-server teleportation
+    game.socket.on('playerTeleported', (data) => {
+        console.log(`[CLIENT] Player ${data.playerId} teleported to (${data.newX}, ${data.newY})`);
+        // Update player position if it's the current player
+        const player = game.players.get(data.playerId);
+        if (player) {
+            player.x = data.newX;
+            player.y = data.newY;
+            // Add teleport effect
+            game.addTeleportEffect(data.newX, data.newY);
+        }
+    });
     // Add runJS event handler
     game.socket.on('runJS', (code) => {
         try {
@@ -11077,6 +11235,72 @@ class Game {
     }
     showSaveIndicator() {
         this.graphics.showFloatingText(this.canvas.width / 2, 0, 'Progress Saved', 'white', 20);
+    }
+    // UI methods for cross-server transfer
+    showTransferMessage(message) {
+        // Create or update transfer message UI
+        let transferDiv = document.getElementById('transfer-message');
+        if (!transferDiv) {
+            transferDiv = document.createElement('div');
+            transferDiv.id = 'transfer-message';
+            transferDiv.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 20px;
+                border-radius: 10px;
+                font-size: 18px;
+                font-family: Arial, sans-serif;
+                z-index: 1000;
+                text-align: center;
+                border: 2px solid #00b3ff;
+            `;
+            document.body.appendChild(transferDiv);
+        }
+        transferDiv.textContent = message;
+    }
+    hideTransferMessage() {
+        const transferDiv = document.getElementById('transfer-message');
+        if (transferDiv) {
+            transferDiv.remove();
+        }
+    }
+    addTeleportEffect(x, y) {
+        // Add visual teleport effect at the specified coordinates
+        // This would typically involve particle effects or other visual feedback
+        console.log(`[CLIENT] Teleport effect at (${x}, ${y})`);
+        // Simple flash effect (you could expand this with more sophisticated graphics)
+        const canvas = document.querySelector('canvas');
+        if (canvas && this.graphics) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                // Save current state
+                ctx.save();
+                // Draw teleport flash
+                ctx.globalAlpha = 0.7;
+                ctx.fillStyle = '#00b3ff';
+                ctx.beginPath();
+                ctx.arc(x - this.cameraX, y - this.cameraY, 50, 0, Math.PI * 2);
+                ctx.fill();
+                // Restore state
+                ctx.restore();
+                // Fade out effect
+                setTimeout(() => {
+                    if (ctx) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.3;
+                        ctx.fillStyle = '#00b3ff';
+                        ctx.beginPath();
+                        ctx.arc(x - this.cameraX, y - this.cameraY, 30, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                }, 100);
+            }
+        }
     }
 }
 

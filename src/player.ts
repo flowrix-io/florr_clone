@@ -71,4 +71,7 @@ export interface ServerPlayer {
     mouseY?: number;
     petalExtension?: number;
   };
+  // Cross-server transfer properties
+  isTransferred?: boolean;
+  transferToken?: string;
 }
