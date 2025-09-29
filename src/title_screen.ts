@@ -55,9 +55,14 @@ export class TitleScreen {
             flex-direction: column;
             gap: 15px;
             min-width: 300px;
-        `;
+            `;
+        const displayHTTPWarning = location.protocol === 'http:';
+        const httpWarning = displayHTTPWarning ? '<h3>WARNING: You are using HTTP. This is not secure. Do not use a shared password with other accounts.</h3>' : '';
         this.loginForm.innerHTML = `
             <h2>Login</h2>
+            <div class="register-warning">
+                ${httpWarning}
+            </div>
             <input type="text" id="loginUsername" placeholder="Username">
             <input type="password" id="loginPassword" placeholder="Password">
             <div class="advanced-settings">
@@ -85,7 +90,10 @@ export class TitleScreen {
         this.registerForm.innerHTML = `
             <h2>Register</h2>
             <br/>
-            <h3>Do not use your real name or any personal information as your username.</h3>
+            <div class="register-warning">
+                ${httpWarning}
+                <h3>Do not use your real name or any personal information as your username.</h3>
+            </div>
             <input type="text" id="registerUsername" placeholder="Username">
             <input type="password" id="registerPassword" placeholder="Password">
             <input type="password" id="registerConfirmPassword" placeholder="Confirm Password">
@@ -977,6 +985,10 @@ export const titleScreenStyles = `
         padding: 5px;
         border-radius: 3px;
         text-align: center;
+    }
+
+    .register-warning {
+        color: red;
     }
 `;
 

@@ -12,7 +12,7 @@ export function initMultiPlayerMode(game: any, serverIp: string) {
     console.log(`[CLIENT] Connecting to server: ${serverUrl}`);
     
     game.socket = io(serverUrl, {
-        secure: true,
+        secure: serverUrl.startsWith('https'),
         rejectUnauthorized: false,
         withCredentials: true
     });
@@ -164,9 +164,10 @@ function setupSocketListeners(game: any) {
             await new Promise(resolve => setTimeout(resolve, 500));
             
             // Connect to new server
-            const newServerUrl = `https://${transferData.targetServer.host}:${transferData.targetServer.port}`;
+            const protocol = transferData.targetServer.protocol || 'https';
+            const newServerUrl = `${protocol}://${transferData.targetServer.host}:${transferData.targetServer.port}`;
             game.socket = io(newServerUrl, {
-                secure: true,
+                secure: newServerUrl.startsWith('https'),
                 rejectUnauthorized: false,
                 withCredentials: true
             });

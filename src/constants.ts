@@ -9,6 +9,10 @@ export const FISH_DETECTION_RADIUS = 500;  // How far fish can detect players
 export const PLAYER_BASE_SPEED = 5;  // Base player speed to match
 export const FISH_RETURN_SPEED = 0.5;  // Speed at which fish return to their normal behavior
 
+// Server protocol configuration
+export const USE_HTTPS = typeof process !== 'undefined' && process.env ? process.env.USE_HTTPS !== 'false' : true;  // Default to HTTPS, set USE_HTTPS=false to use HTTP
+export const SERVER_PROTOCOL = USE_HTTPS ? 'https' : 'http';
+
 // Viewport optimization constants
 export const VIEWPORT_BUFFER = 500;  // Extra distance beyond viewport to keep enemies active
 export const ENEMY_DESPAWN_TIME = 30000;  // 30 seconds in milliseconds
@@ -1126,6 +1130,7 @@ export interface ServerConfig {
     port: number;
     host: string;
     name: string;
+    protocol?: string;  // Optional protocol, defaults to SERVER_PROTOCOL
 }
 
 // Default server configuration - can be overridden via environment variables or config file
@@ -1137,15 +1142,22 @@ export const DEFAULT_SERVER_CONFIGS: ServerConfig[] = [
 
 // Get server configuration from environment or use defaults
 export function getServerConfigs(): ServerConfig[] {
-    const configStr = process.env.SERVER_CONFIGS;
+    const configStr = typeof process !== 'undefined' && process.env ? process.env.SERVER_CONFIGS : undefined;
     if (configStr) {
         try {
-            return JSON.parse(configStr);
+            const configs = JSON.parse(configStr);
+            return configs.map((config: ServerConfig) => ({ 
+                ...config, 
+                protocol: config.protocol || SERVER_PROTOCOL 
+            }));
         } catch (error) {
             console.error('Failed to parse SERVER_CONFIGS environment variable:', error);
         }
     }
-    return DEFAULT_SERVER_CONFIGS;
+    return DEFAULT_SERVER_CONFIGS.map(config => ({ 
+        ...config, 
+        protocol: config.protocol || SERVER_PROTOCOL 
+    }));
 }
 
 // Find server config by port

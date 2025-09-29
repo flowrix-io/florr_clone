@@ -629,6 +629,9 @@ class SVGLoader {
 const FISH_DETECTION_RADIUS = 500; // How far fish can detect players
 const PLAYER_BASE_SPEED = 5; // Base player speed to match
 const FISH_RETURN_SPEED = 0.5; // Speed at which fish return to their normal behavior
+// Server protocol configuration
+const USE_HTTPS = typeof process !== 'undefined' && process.env ? process.env.USE_HTTPS !== 'false' : true; // Default to HTTPS, set USE_HTTPS=false to use HTTP
+const SERVER_PROTOCOL = (/* unused pure expression or super */ null && (USE_HTTPS ? 'https' : 'http'));
 // Viewport optimization constants
 const VIEWPORT_BUFFER = 500; // Extra distance beyond viewport to keep enemies active
 const ENEMY_DESPAWN_TIME = 30000; // 30 seconds in milliseconds
@@ -1702,16 +1705,23 @@ const DEFAULT_SERVER_CONFIGS = [
 ];
 // Get server configuration from environment or use defaults
 function getServerConfigs() {
-    const configStr = process.env.SERVER_CONFIGS;
+    const configStr = typeof process !== 'undefined' && process.env ? process.env.SERVER_CONFIGS : undefined;
     if (configStr) {
         try {
-            return JSON.parse(configStr);
+            const configs = JSON.parse(configStr);
+            return configs.map((config) => ({
+                ...config,
+                protocol: config.protocol || SERVER_PROTOCOL
+            }));
         }
         catch (error) {
             console.error('Failed to parse SERVER_CONFIGS environment variable:', error);
         }
     }
-    return DEFAULT_SERVER_CONFIGS;
+    return DEFAULT_SERVER_CONFIGS.map(config => ({
+        ...config,
+        protocol: config.protocol || SERVER_PROTOCOL
+    }));
 }
 // Find server config by port
 function getServerConfigByPort(port) {
@@ -8637,7 +8647,7 @@ function initMultiPlayerMode(game, serverIp) {
     const serverUrl = serverIp || window.location.origin;
     console.log(`[CLIENT] Connecting to server: ${serverUrl}`);
     game.socket = esm_lookup(serverUrl, {
-        secure: true,
+        secure: serverUrl.startsWith('https'),
         rejectUnauthorized: false,
         withCredentials: true
     });
@@ -8770,9 +8780,10 @@ function setupSocketListeners(game) {
             // Wait a moment for disconnect to complete
             await new Promise(resolve => setTimeout(resolve, 500));
             // Connect to new server
-            const newServerUrl = `https://${transferData.targetServer.host}:${transferData.targetServer.port}`;
+            const protocol = transferData.targetServer.protocol || 'https';
+            const newServerUrl = `${protocol}://${transferData.targetServer.host}:${transferData.targetServer.port}`;
             game.socket = esm_lookup(newServerUrl, {
-                secure: true,
+                secure: newServerUrl.startsWith('https'),
                 rejectUnauthorized: false,
                 withCredentials: true
             });
@@ -11824,9 +11835,14 @@ class TitleScreen {
             flex-direction: column;
             gap: 15px;
             min-width: 300px;
-        `;
+            `;
+        const displayHTTPWarning = location.protocol === 'http:';
+        const httpWarning = displayHTTPWarning ? '<h3>WARNING: You are using HTTP. This is not secure. Do not use a shared password with other accounts.</h3>' : '';
         this.loginForm.innerHTML = `
             <h2>Login</h2>
+            <div class="register-warning">
+                ${httpWarning}
+            </div>
             <input type="text" id="loginUsername" placeholder="Username">
             <input type="password" id="loginPassword" placeholder="Password">
             <div class="advanced-settings">
@@ -11853,7 +11869,10 @@ class TitleScreen {
         this.registerForm.innerHTML = `
             <h2>Register</h2>
             <br/>
-            <h3>Do not use your real name or any personal information as your username.</h3>
+            <div class="register-warning">
+                ${httpWarning}
+                <h3>Do not use your real name or any personal information as your username.</h3>
+            </div>
             <input type="text" id="registerUsername" placeholder="Username">
             <input type="password" id="registerPassword" placeholder="Password">
             <input type="password" id="registerConfirmPassword" placeholder="Confirm Password">
@@ -12666,6 +12685,10 @@ const titleScreenStyles = `
         padding: 5px;
         border-radius: 3px;
         text-align: center;
+    }
+
+    .register-warning {
+        color: red;
     }
 `;
 // Function to inject styles

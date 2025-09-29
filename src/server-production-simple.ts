@@ -1,13 +1,10 @@
 import express from 'express';
 import { createServer } from 'https';
-import { createServer as createHttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import path from 'path';
 import fs from 'fs';
 import https from 'https';
-import http from 'http';
 import { database } from './database';
-import { USE_HTTPS, SERVER_PROTOCOL } from './constants';
 
 // Check for and migrate any plain text passwords on server startup
 if (database.checkForPlainTextPasswords()) {
@@ -218,27 +215,12 @@ app.use(express.static(path.join(__dirname, '../dist'), {
     }
 }));
 
-// Create server based on protocol configuration
-let server: http.Server | https.Server;
+const httpsServer = createServer({
+    key: fs.readFileSync('cert.key'),
+    cert: fs.readFileSync('cert.crt')
+}, app);
 
-if (USE_HTTPS) {
-    try {
-        server = createServer({
-            key: fs.readFileSync('cert.key'),
-            cert: fs.readFileSync('cert.crt')
-        }, app);
-        console.log(`[SERVER] Using HTTPS protocol`);
-    } catch (error) {
-        console.warn(`[SERVER] HTTPS certificates not found, falling back to HTTP`);
-        server = createHttpServer(app);
-        console.log(`[SERVER] Using HTTP protocol (fallback)`);
-    }
-} else {
-    server = createHttpServer(app);
-    console.log(`[SERVER] Using HTTP protocol`);
-}
-
-const io = new Server(server, {
+const io = new Server(httpsServer, {
     cors: {
         origin: function (origin, callback) {
             // Allow requests with no origin (like mobile apps or curl requests)
@@ -2064,8 +2046,8 @@ function start_loop() {
     }, TICK_INTERVAL);
 }
 
-server.listen(PORT, () => {
-    console.log(`Server is running on ${SERVER_PROTOCOL}://localhost:${PORT}`);
+httpsServer.listen(PORT, () => {
+    console.log(`Server is running on https://localhost:${PORT}`);
 });
 
 // Add XP calculation functions
@@ -2131,20 +2113,19 @@ async function transferPlayerToServer(player: ServerPlayer, targetServerPort: nu
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(postData)
             },
-            // For self-signed certificates in development (only if using HTTPS)
-            rejectUnauthorized: USE_HTTPS ? false : undefined
+            // For self-signed certificates in development
+            rejectUnauthorized: false
         };
         
         return new Promise((resolve) => {
-            const req = USE_HTTPS ? 
-                https.request(options, (res) => {
-                    let responseData = '';
-                    
-                    res.on('data', (chunk) => {
-                        responseData += chunk;
-                    });
-                    
-                    res.on('end', () => {
+            const req = https.request(options, (res) => {
+                let responseData = '';
+                
+                res.on('data', (chunk) => {
+                    responseData += chunk;
+                });
+                
+                res.on('end', () => {
                     try {
                         const response = JSON.parse(responseData);
                         if (response.success) {
@@ -2173,44 +2154,7 @@ async function transferPlayerToServer(player: ServerPlayer, targetServerPort: nu
                         resolve(false);
                     }
                 });
-            }) :
-                http.request(options, (res) => {
-                    let responseData = '';
-                    
-                    res.on('data', (chunk) => {
-                        responseData += chunk;
-                    });
-                    
-                    res.on('end', () => {
-                        try {
-                            const response = JSON.parse(responseData);
-                            if (response.success) {
-                                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
-                                
-                                // Notify client about successful transfer
-                                io.to(player.id).emit('playerTransferred', {
-                                    targetServer: targetServerConfig,
-                                    transferToken: response.transferToken,
-                                    targetX,
-                                    targetY
-                                });
-                                
-                                // Remove player from current server immediately
-                                delete players[player.id];
-                                delete playerUserIds[player.id];
-                                io.emit('playerLeft', player.id);
-                                
-                                resolve(true);
-                            } else {
-                                console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player: ${response.message}`);
-                                resolve(false);
-                            }
-                        } catch (error) {
-                            console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error parsing transfer response:`, error);
-                            resolve(false);
-                        }
-                    });
-                });
+            });
             
             req.on('error', (error) => {
                 console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error transferring player:`, error);

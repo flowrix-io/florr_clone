@@ -5,11 +5,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const https_1 = require("https");
+const http_1 = require("http");
 const socket_io_1 = require("socket.io");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const https_2 = __importDefault(require("https"));
+const http_2 = __importDefault(require("http"));
 const database_1 = require("./database");
+const constants_1 = require("./constants");
 // Check for and migrate any plain text passwords on server startup
 if (database_1.database.checkForPlainTextPasswords()) {
     console.log('[SERVER] Detecting plain text passwords, running migration...');
@@ -19,7 +22,7 @@ if (database_1.database.checkForPlainTextPasswords()) {
 else {
     console.log('[SERVER] All passwords are already hashed');
 }
-const constants_1 = require("./constants");
+const constants_2 = require("./constants");
 const server_utils_1 = require("./server_utils");
 const petals_1 = require("./petals");
 const mobs_1 = require("./mobs");
@@ -131,25 +134,25 @@ app.post('/transfer/player', (req, res) => {
         const tempSocketId = `transfer_${Date.now()}_${Math.random()}`;
         // Add the transferred player to this server
         const transferToken = Math.random().toString(36).substr(2, 9);
-        constants_1.players[tempSocketId] = {
+        constants_2.players[tempSocketId] = {
             ...playerData,
             id: tempSocketId,
             x: targetX || 200,
-            y: targetY || constants_1.WORLD_HEIGHT / 2,
+            y: targetY || constants_2.WORLD_HEIGHT / 2,
             isTransferred: true, // Mark as transferred so client can reconnect
             transferToken: transferToken // Token for client to claim this player
         };
         // Set a timeout to clean up unclaimed transfers after 30 seconds
         setTimeout(() => {
-            if (constants_1.players[tempSocketId] && constants_1.players[tempSocketId].isTransferred) {
+            if (constants_2.players[tempSocketId] && constants_2.players[tempSocketId].isTransferred) {
                 console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Cleaning up unclaimed transfer: ${tempSocketId}`);
-                delete constants_1.players[tempSocketId];
+                delete constants_2.players[tempSocketId];
             }
         }, 30000);
         res.json({
             success: true,
             tempPlayerId: tempSocketId,
-            transferToken: constants_1.players[tempSocketId].transferToken,
+            transferToken: constants_2.players[tempSocketId].transferToken,
             serverInfo: CURRENT_SERVER_CONFIG
         });
     }
@@ -164,17 +167,17 @@ app.post('/transfer/claim', (req, res) => {
         return res.status(400).json({ message: 'Transfer token and new socket ID are required' });
     }
     // Find the transferred player by token
-    const tempPlayerId = Object.keys(constants_1.players).find(id => constants_1.players[id].transferToken === transferToken && constants_1.players[id].isTransferred);
+    const tempPlayerId = Object.keys(constants_2.players).find(id => constants_2.players[id].transferToken === transferToken && constants_2.players[id].isTransferred);
     if (!tempPlayerId) {
         return res.status(404).json({ message: 'Invalid transfer token or player not found' });
     }
     // Move player data to new socket ID
-    const playerData = constants_1.players[tempPlayerId];
+    const playerData = constants_2.players[tempPlayerId];
     delete playerData.isTransferred;
     delete playerData.transferToken;
     playerData.id = newSocketId;
-    constants_1.players[newSocketId] = playerData;
-    delete constants_1.players[tempPlayerId];
+    constants_2.players[newSocketId] = playerData;
+    delete constants_2.players[tempPlayerId];
     console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Player transfer claimed: ${playerData.name} -> ${newSocketId}`);
     res.json({ success: true, playerData });
 });
@@ -186,11 +189,27 @@ app.use(express_1.default.static(path_1.default.join(__dirname, '../dist'), {
         }
     }
 }));
-const httpsServer = (0, https_1.createServer)({
-    key: fs_1.default.readFileSync('cert.key'),
-    cert: fs_1.default.readFileSync('cert.crt')
-}, app);
-const io = new socket_io_1.Server(httpsServer, {
+// Create server based on protocol configuration
+let server;
+if (constants_1.USE_HTTPS) {
+    try {
+        server = (0, https_1.createServer)({
+            key: fs_1.default.readFileSync('cert.key'),
+            cert: fs_1.default.readFileSync('cert.crt')
+        }, app);
+        console.log(`[SERVER] Using HTTPS protocol`);
+    }
+    catch (error) {
+        console.warn(`[SERVER] HTTPS certificates not found, falling back to HTTP`);
+        server = (0, http_1.createServer)(app);
+        console.log(`[SERVER] Using HTTP protocol (fallback)`);
+    }
+}
+else {
+    server = (0, http_1.createServer)(app);
+    console.log(`[SERVER] Using HTTP protocol`);
+}
+const io = new socket_io_1.Server(server, {
     cors: {
         origin: function (origin, callback) {
             // Allow requests with no origin (like mobile apps or curl requests)
@@ -206,8 +225,8 @@ const io = new socket_io_1.Server(httpsServer, {
 // Get current server port and configuration
 const PORT = process.env.PORT || 3000;
 const CURRENT_SERVER_PORT = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
-const SERVER_CONFIGS = (0, constants_1.getServerConfigs)();
-const CURRENT_SERVER_CONFIG = (0, constants_1.getServerConfigByPort)(CURRENT_SERVER_PORT) || { port: CURRENT_SERVER_PORT, host: 'localhost', name: `Server${CURRENT_SERVER_PORT}` };
+const SERVER_CONFIGS = (0, constants_2.getServerConfigs)();
+const CURRENT_SERVER_CONFIG = (0, constants_2.getServerConfigByPort)(CURRENT_SERVER_PORT) || { port: CURRENT_SERVER_PORT, host: 'localhost', name: `Server${CURRENT_SERVER_PORT}` };
 // Remove or comment out these lines since we're not using grid generation anymore
 // const MAZE_CELL_SIZE = 1000;
 // const MAZE_WALL_THICKNESS = 100;
@@ -215,13 +234,13 @@ const CURRENT_SERVER_CONFIG = (0, constants_1.getServerConfigByPort)(CURRENT_SER
 function initializeMapObstacles() {
     const mapObstacles = [];
     // Convert wall elements from WORLD_MAP to obstacles
-    constants_1.WORLD_MAP.filter(constants_1.isWall).forEach(wall => {
+    constants_2.WORLD_MAP.filter(constants_2.isWall).forEach(wall => {
         mapObstacles.push({
             id: Math.random().toString(36).substr(2, 9),
-            x: wall.x * constants_1.SCALE_FACTOR,
-            y: wall.y * constants_1.SCALE_FACTOR,
-            width: wall.width * constants_1.SCALE_FACTOR,
-            height: wall.height * constants_1.SCALE_FACTOR,
+            x: wall.x * constants_2.SCALE_FACTOR,
+            y: wall.y * constants_2.SCALE_FACTOR,
+            width: wall.width * constants_2.SCALE_FACTOR,
+            height: wall.height * constants_2.SCALE_FACTOR,
             type: 'coral',
             isEnemy: false
         });
@@ -230,21 +249,21 @@ function initializeMapObstacles() {
 }
 // Update the server initialization code
 // Replace the old obstacle initialization with:
-constants_1.obstacles.push(...initializeMapObstacles());
+constants_2.obstacles.push(...initializeMapObstacles());
 // Viewport optimization functions
 function getPlayerViewports() {
     const viewports = [];
-    for (const playerId in constants_1.players) {
-        const player = constants_1.players[playerId];
+    for (const playerId in constants_2.players) {
+        const player = constants_2.players[playerId];
         if (player && player.x !== undefined && player.y !== undefined &&
             !isNaN(player.x) && !isNaN(player.y) &&
-            player.x >= 0 && player.x <= constants_1.ACTUAL_WORLD_WIDTH &&
-            player.y >= 0 && player.y <= constants_1.ACTUAL_WORLD_HEIGHT) {
+            player.x >= 0 && player.x <= constants_2.ACTUAL_WORLD_WIDTH &&
+            player.y >= 0 && player.y <= constants_2.ACTUAL_WORLD_HEIGHT) {
             viewports.push({
-                x: player.x - constants_1.VIEWPORT_WIDTH / 2,
-                y: player.y - constants_1.VIEWPORT_HEIGHT / 2,
-                width: constants_1.VIEWPORT_WIDTH,
-                height: constants_1.VIEWPORT_HEIGHT
+                x: player.x - constants_2.VIEWPORT_WIDTH / 2,
+                y: player.y - constants_2.VIEWPORT_HEIGHT / 2,
+                width: constants_2.VIEWPORT_WIDTH,
+                height: constants_2.VIEWPORT_HEIGHT
             });
         }
     }
@@ -258,10 +277,10 @@ function isPositionInAnyViewport(x, y) {
     }
     for (const viewport of viewports) {
         const extendedViewport = {
-            x: viewport.x - constants_1.VIEWPORT_BUFFER,
-            y: viewport.y - constants_1.VIEWPORT_BUFFER,
-            width: viewport.width + (constants_1.VIEWPORT_BUFFER * 2),
-            height: viewport.height + (constants_1.VIEWPORT_BUFFER * 2)
+            x: viewport.x - constants_2.VIEWPORT_BUFFER,
+            y: viewport.y - constants_2.VIEWPORT_BUFFER,
+            width: viewport.width + (constants_2.VIEWPORT_BUFFER * 2),
+            height: viewport.height + (constants_2.VIEWPORT_BUFFER * 2)
         };
         if (x >= extendedViewport.x && x <= extendedViewport.x + extendedViewport.width &&
             y >= extendedViewport.y && y <= extendedViewport.y + extendedViewport.height) {
@@ -274,10 +293,10 @@ function getEnemiesInViewportCount() {
     const viewports = getPlayerViewports();
     // If no players are connected, count all enemies (for initial server startup)
     if (viewports.length === 0) {
-        return constants_1.enemies.length;
+        return constants_2.enemies.length;
     }
     let count = 0;
-    for (const enemy of constants_1.enemies) {
+    for (const enemy of constants_2.enemies) {
         if (isPositionInAnyViewport(enemy.x, enemy.y)) {
             count++;
         }
@@ -286,7 +305,7 @@ function getEnemiesInViewportCount() {
 }
 function updateEnemyViewportStatus() {
     const currentTime = Date.now();
-    for (const enemy of constants_1.enemies) {
+    for (const enemy of constants_2.enemies) {
         if (isPositionInAnyViewport(enemy.x, enemy.y)) {
             enemy.lastViewportCheck = currentTime;
         }
@@ -294,17 +313,17 @@ function updateEnemyViewportStatus() {
 }
 function validatePlayerPositions() {
     // Clean up any invalid player positions that might affect viewport calculations
-    for (const playerId in constants_1.players) {
-        const player = constants_1.players[playerId];
+    for (const playerId in constants_2.players) {
+        const player = constants_2.players[playerId];
         if (player) {
             // Reset invalid positions to a safe default
             if (isNaN(player.x) || isNaN(player.y) ||
-                player.x < 0 || player.x > constants_1.ACTUAL_WORLD_WIDTH ||
-                player.y < 0 || player.y > constants_1.ACTUAL_WORLD_HEIGHT) {
+                player.x < 0 || player.x > constants_2.ACTUAL_WORLD_WIDTH ||
+                player.y < 0 || player.y > constants_2.ACTUAL_WORLD_HEIGHT) {
                 console.log(`[SERVER] Fixing invalid position for player ${playerId}: (${player.x}, ${player.y})`);
                 // Reset to center of world
-                player.x = constants_1.ACTUAL_WORLD_WIDTH / 2;
-                player.y = constants_1.ACTUAL_WORLD_HEIGHT / 2;
+                player.x = constants_2.ACTUAL_WORLD_WIDTH / 2;
+                player.y = constants_2.ACTUAL_WORLD_HEIGHT / 2;
                 // Notify client of position correction
                 io.to(playerId).emit('positionCorrected', { x: player.x, y: player.y });
             }
@@ -312,13 +331,13 @@ function validatePlayerPositions() {
     }
 }
 function calculateCurrentDensity() {
-    const playerCount = Object.keys(constants_1.players).length;
-    const totalEnemies = constants_1.enemies.length;
+    const playerCount = Object.keys(constants_2.players).length;
+    const totalEnemies = constants_2.enemies.length;
     const enemiesInViewport = getEnemiesInViewportCount();
     if (playerCount > 0) {
-        const totalViewportArea = constants_1.VIEWPORT_WITH_BUFFER_AREA * playerCount;
+        const totalViewportArea = constants_2.VIEWPORT_WITH_BUFFER_AREA * playerCount;
         const currentDensity = enemiesInViewport / totalViewportArea;
-        const densityRatio = currentDensity / constants_1.ORIGINAL_ENEMY_DENSITY;
+        const densityRatio = currentDensity / constants_2.ORIGINAL_ENEMY_DENSITY;
         // console.log(`[SERVER] Density Analysis:`);
         // console.log(`  Players: ${playerCount}`);
         // console.log(`  Total Enemies: ${totalEnemies}`);
@@ -350,20 +369,20 @@ function triggerViewportUpdate() {
         console.log(`[SERVER] Viewport update: ${densityInfo.enemiesInViewport}/${densityInfo.totalEnemies} enemies in viewport`);
     }
     // Try to spawn new enemies if we're below the target count
-    const playerCount = Object.keys(constants_1.players).length;
+    const playerCount = Object.keys(constants_2.players).length;
     if (playerCount > 0) {
         // Calculate target enemy count based on current viewport density
         const viewports = getPlayerViewports();
         const totalViewportArea = viewports.reduce((total, viewport) => {
             const extendedViewport = {
-                x: viewport.x - constants_1.VIEWPORT_BUFFER,
-                y: viewport.y - constants_1.VIEWPORT_BUFFER,
-                width: viewport.width + (constants_1.VIEWPORT_BUFFER * 2),
-                height: viewport.height + (constants_1.VIEWPORT_BUFFER * 2)
+                x: viewport.x - constants_2.VIEWPORT_BUFFER,
+                y: viewport.y - constants_2.VIEWPORT_BUFFER,
+                width: viewport.width + (constants_2.VIEWPORT_BUFFER * 2),
+                height: viewport.height + (constants_2.VIEWPORT_BUFFER * 2)
             };
             return total + (extendedViewport.width * extendedViewport.height);
         }, 0);
-        const targetDensity = constants_1.ORIGINAL_ENEMY_COUNT / constants_1.TOTAL_WORLD_AREA;
+        const targetDensity = constants_2.ORIGINAL_ENEMY_COUNT / constants_2.TOTAL_WORLD_AREA;
         const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
         const currentViewportEnemies = getEnemiesInViewportCount();
         if (currentViewportEnemies < targetEnemyCount) {
@@ -372,7 +391,7 @@ function triggerViewportUpdate() {
             for (let i = 0; i < enemiesToSpawn; i++) {
                 const newEnemy = createEnemy();
                 if (newEnemy) {
-                    constants_1.enemies.push(newEnemy);
+                    constants_2.enemies.push(newEnemy);
                     spawned++;
                 }
             }
@@ -385,8 +404,8 @@ function triggerViewportUpdate() {
 function despawnDistantEnemies() {
     const currentTime = Date.now();
     const enemiesToRemove = [];
-    for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
-        const enemy = constants_1.enemies[i];
+    for (let i = constants_2.enemies.length - 1; i >= 0; i--) {
+        const enemy = constants_2.enemies[i];
         // Special mobs (ultra, super, unique) never despawn
         if (enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique') {
             continue;
@@ -410,18 +429,18 @@ function despawnDistantEnemies() {
     }
     // Remove enemies and notify clients
     for (const index of enemiesToRemove) {
-        const enemy = constants_1.enemies[index];
-        constants_1.enemies.splice(index, 1);
+        const enemy = constants_2.enemies[index];
+        constants_2.enemies.splice(index, 1);
         io.emit('enemyDestroyed', enemy.id);
         console.log(`[SERVER] Despawned enemy ${enemy.id} (${enemy.type} ${enemy.tier}) - outside viewport for 30+ seconds`);
     }
 }
 // Helper function to get spawn zone type for a given position
 function getSpawnZoneType(x, y) {
-    for (const element of constants_1.WORLD_MAP) {
+    for (const element of constants_2.WORLD_MAP) {
         if (element.type === 'spawn' && element.properties?.spawnType) {
-            const scaledX = x / constants_1.SCALE_FACTOR;
-            const scaledY = y / constants_1.SCALE_FACTOR;
+            const scaledX = x / constants_2.SCALE_FACTOR;
+            const scaledY = y / constants_2.SCALE_FACTOR;
             if (scaledX >= element.x &&
                 scaledX <= element.x + element.width &&
                 scaledY >= element.y &&
@@ -434,16 +453,16 @@ function getSpawnZoneType(x, y) {
 }
 // Helper function to get random position in a specific zone type
 function getRandomPositionInZoneType(zoneType) {
-    const zones = constants_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
+    const zones = constants_2.WORLD_MAP.filter(element => element.type === 'spawn' &&
         element.properties?.spawnType === zoneType);
     if (zones.length === 0)
         return null;
     const zone = zones[Math.floor(Math.random() * zones.length)];
-    let x = (zone.x + Math.random() * zone.width) * constants_1.SCALE_FACTOR;
-    let y = (zone.y + Math.random() * zone.height) * constants_1.SCALE_FACTOR;
+    let x = (zone.x + Math.random() * zone.width) * constants_2.SCALE_FACTOR;
+    let y = (zone.y + Math.random() * zone.height) * constants_2.SCALE_FACTOR;
     // Ensure position is within world boundaries
-    x = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH, x));
-    y = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT, y));
+    x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
+    y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
     return { x, y };
 }
 // Function to create special mobs (ultra, super, unique)
@@ -494,9 +513,9 @@ function createSpecialMob(tier) {
 }
 // Function to update special mob counts
 function updateSpecialMobCounts() {
-    ultraMobCount = constants_1.enemies.filter(e => e.tier === 'ultra').length;
-    superMobCount = constants_1.enemies.filter(e => e.tier === 'super').length;
-    uniqueMobCount = constants_1.enemies.filter(e => e.tier === 'unique').length;
+    ultraMobCount = constants_2.enemies.filter(e => e.tier === 'ultra').length;
+    superMobCount = constants_2.enemies.filter(e => e.tier === 'super').length;
+    uniqueMobCount = constants_2.enemies.filter(e => e.tier === 'unique').length;
 }
 // Function to spawn special mobs
 function spawnSpecialMobs() {
@@ -506,7 +525,7 @@ function spawnSpecialMobs() {
     if (ultraMobCount === 0) {
         const ultraMob = createSpecialMob('ultra');
         if (ultraMob) {
-            constants_1.enemies.push(ultraMob);
+            constants_2.enemies.push(ultraMob);
             ultraMobCount = 1;
             io.emit('chatMessage', {
                 sender: 'System',
@@ -520,7 +539,7 @@ function spawnSpecialMobs() {
     if (superMobCount === 0) {
         const superMob = createSpecialMob('super');
         if (superMob) {
-            constants_1.enemies.push(superMob);
+            constants_2.enemies.push(superMob);
             superMobCount = 1;
             io.emit('chatMessage', {
                 sender: 'System',
@@ -534,7 +553,7 @@ function spawnSpecialMobs() {
     if (superMobCount > 0 && uniqueMobCount === 0 && Math.random() < 0.25) {
         const uniqueMob = createSpecialMob('unique');
         if (uniqueMob) {
-            constants_1.enemies.push(uniqueMob);
+            constants_2.enemies.push(uniqueMob);
             uniqueMobCount = 1;
             io.emit('chatMessage', {
                 sender: 'System',
@@ -547,7 +566,7 @@ function spawnSpecialMobs() {
 }
 // Update the createEnemy function to spawn only in player viewports
 function createEnemy() {
-    const playerCount = Object.keys(constants_1.players).length;
+    const playerCount = Object.keys(constants_2.players).length;
     // Don't spawn if no players are connected
     if (playerCount === 0) {
         return null;
@@ -556,15 +575,15 @@ function createEnemy() {
     const viewports = getPlayerViewports();
     const totalViewportArea = viewports.reduce((total, viewport) => {
         const extendedViewport = {
-            x: viewport.x - constants_1.VIEWPORT_BUFFER,
-            y: viewport.y - constants_1.VIEWPORT_BUFFER,
-            width: viewport.width + (constants_1.VIEWPORT_BUFFER * 2),
-            height: viewport.height + (constants_1.VIEWPORT_BUFFER * 2)
+            x: viewport.x - constants_2.VIEWPORT_BUFFER,
+            y: viewport.y - constants_2.VIEWPORT_BUFFER,
+            width: viewport.width + (constants_2.VIEWPORT_BUFFER * 2),
+            height: viewport.height + (constants_2.VIEWPORT_BUFFER * 2)
         };
         return total + (extendedViewport.width * extendedViewport.height);
     }, 0);
     // Calculate target density: same as 1000 enemies across the whole world
-    const targetDensity = constants_1.ORIGINAL_ENEMY_COUNT / constants_1.TOTAL_WORLD_AREA;
+    const targetDensity = constants_2.ORIGINAL_ENEMY_COUNT / constants_2.TOTAL_WORLD_AREA;
     const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
     // Don't spawn if we already have enough enemies in viewport
     if (getEnemiesInViewportCount() >= targetEnemyCount) {
@@ -577,31 +596,31 @@ function createEnemy() {
     while (!validPosition && attempts < MAX_ATTEMPTS) {
         attempts++;
         // Pick a random player and spawn near their viewport
-        const randomPlayerId = Object.keys(constants_1.players)[Math.floor(Math.random() * Object.keys(constants_1.players).length)];
-        const player = constants_1.players[randomPlayerId];
+        const randomPlayerId = Object.keys(constants_2.players)[Math.floor(Math.random() * Object.keys(constants_2.players).length)];
+        const player = constants_2.players[randomPlayerId];
         // Generate position within player's viewport (with buffer)
-        const viewportBuffer = constants_1.VIEWPORT_BUFFER;
-        const minX = player.x - constants_1.VIEWPORT_WIDTH / 2 - viewportBuffer;
-        const maxX = player.x + constants_1.VIEWPORT_WIDTH / 2 + viewportBuffer;
-        const minY = player.y - constants_1.VIEWPORT_HEIGHT / 2 - viewportBuffer;
-        const maxY = player.y + constants_1.VIEWPORT_HEIGHT / 2 + viewportBuffer;
+        const viewportBuffer = constants_2.VIEWPORT_BUFFER;
+        const minX = player.x - constants_2.VIEWPORT_WIDTH / 2 - viewportBuffer;
+        const maxX = player.x + constants_2.VIEWPORT_WIDTH / 2 + viewportBuffer;
+        const minY = player.y - constants_2.VIEWPORT_HEIGHT / 2 - viewportBuffer;
+        const maxY = player.y + constants_2.VIEWPORT_HEIGHT / 2 + viewportBuffer;
         x = minX + Math.random() * (maxX - minX);
         y = minY + Math.random() * (maxY - minY);
         // Clamp to world boundaries
-        x = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH, x));
-        y = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT, y));
+        x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
+        y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
         // Check if position is in a safe zone
-        const inSafeZone = constants_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
-            x >= element.x * constants_1.SCALE_FACTOR &&
-            x <= (element.x + element.width) * constants_1.SCALE_FACTOR &&
-            y >= element.y * constants_1.SCALE_FACTOR &&
-            y <= (element.y + element.height) * constants_1.SCALE_FACTOR);
+        const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+            x >= element.x * constants_2.SCALE_FACTOR &&
+            x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
+            y >= element.y * constants_2.SCALE_FACTOR &&
+            y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
         // Check if position collides with walls
-        const collidesWithWall = constants_1.WORLD_MAP.some(element => element.type === 'wall' &&
-            x >= element.x * constants_1.SCALE_FACTOR &&
-            x <= (element.x + element.width) * constants_1.SCALE_FACTOR &&
-            y >= element.y * constants_1.SCALE_FACTOR &&
-            y <= (element.y + element.height) * constants_1.SCALE_FACTOR);
+        const collidesWithWall = constants_2.WORLD_MAP.some(element => element.type === 'wall' &&
+            x >= element.x * constants_2.SCALE_FACTOR &&
+            x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
+            y >= element.y * constants_2.SCALE_FACTOR &&
+            y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
         if (!inSafeZone && !collidesWithWall) {
             validPosition = true;
         }
@@ -621,7 +640,7 @@ function createEnemy() {
         // Outside spawn zones - use normal probability distribution
         const tierRoll = Math.random();
         let cumulativeProbability = 0;
-        for (const [t, data] of Object.entries(constants_1.ENEMY_TIERS)) {
+        for (const [t, data] of Object.entries(constants_2.ENEMY_TIERS)) {
             cumulativeProbability += data.probability;
             if (tierRoll < cumulativeProbability) {
                 tier = t;
@@ -672,19 +691,19 @@ function createEnemy() {
 // Update respawnPlayer to use spawn points from the map
 function respawnPlayer(player) {
     // Find valid spawn points for player's level
-    const validSpawnPoints = constants_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
+    const validSpawnPoints = constants_2.WORLD_MAP.filter(element => element.type === 'spawn' &&
         element.properties?.spawnType === getSpawnTypeForLevel(player.level));
     if (validSpawnPoints.length > 0) {
         // Choose random spawn point
         const spawn = validSpawnPoints[Math.floor(Math.random() * validSpawnPoints.length)];
-        player.x = (spawn.x + Math.random() * spawn.width) * constants_1.SCALE_FACTOR;
-        player.y = (spawn.y + Math.random() * spawn.height) * constants_1.SCALE_FACTOR;
+        player.x = (spawn.x + Math.random() * spawn.width) * constants_2.SCALE_FACTOR;
+        player.y = (spawn.y + Math.random() * spawn.height) * constants_2.SCALE_FACTOR;
     }
     else {
         // Fallback to old spawn logic if no valid spawn points
         console.warn('No valid spawn points found for level', player.level);
-        player.x = Math.random() * constants_1.ACTUAL_WORLD_WIDTH;
-        player.y = Math.random() * constants_1.ACTUAL_WORLD_HEIGHT;
+        player.x = Math.random() * constants_2.ACTUAL_WORLD_WIDTH;
+        player.y = Math.random() * constants_2.ACTUAL_WORLD_HEIGHT;
     }
     // Rest of respawnPlayer remains the same
     player.health = player.maxHealth;
@@ -695,7 +714,7 @@ function respawnPlayer(player) {
         player.isInvulnerable = false;
         // Notify client that invulnerability has ended
         io.emit('playerInvulnerabilityEnded', { playerId: player.id });
-    }, constants_1.RESPAWN_INVULNERABILITY_TIME);
+    }, constants_2.RESPAWN_INVULNERABILITY_TIME);
 }
 // Helper function to determine spawn type based on level
 function getSpawnTypeForLevel(level) {
@@ -739,15 +758,15 @@ function hasItem(inventory, rarity, type, count) {
 // Initialize enemies - now only spawn when players connect
 console.log(`[SERVER] Enemy spawning system initialized - enemies will spawn when players connect`);
 console.log(`[SERVER] Density Configuration:`);
-console.log(`  Original Density: ${constants_1.ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
-console.log(`  Target: Maintain same density as ${constants_1.ORIGINAL_ENEMY_COUNT} enemies across entire world`);
+console.log(`  Original Density: ${constants_2.ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
+console.log(`  Target: Maintain same density as ${constants_2.ORIGINAL_ENEMY_COUNT} enemies across entire world`);
 console.log(`  Despawn Rule: Enemies outside viewport for 30+ seconds will despawn`);
 // Initialize decorations
-for (let i = 0; i < constants_1.DECORATION_COUNT; i++) {
+for (let i = 0; i < constants_2.DECORATION_COUNT; i++) {
     decorations.push((0, server_utils_1.createDecoration)());
 }
 // Initialize sands
-for (let i = 0; i < constants_1.SAND_COUNT; i++) {
+for (let i = 0; i < constants_2.SAND_COUNT; i++) {
     sands.push((0, server_utils_1.createSand)());
 }
 // XP and level management functions
@@ -779,9 +798,9 @@ function addXPToPlayer(player, xp, socketId) {
 io.on('connection', (socket) => {
     console.log('A user connected');
     // Send map data to the client
-    socket.emit('mapData', constants_1.WORLD_MAP);
+    socket.emit('mapData', constants_2.WORLD_MAP);
     socket.on('playerInput', (inputData) => {
-        const player = constants_1.players[socket.id];
+        const player = constants_2.players[socket.id];
         if (player) {
             player.inputs = inputData;
         }
@@ -796,18 +815,18 @@ io.on('connection', (socket) => {
             // console.log('User authenticated, loading saved progress for userId:', user.id);
             const savedProgress = database_1.database.getPlayerByUserId(user.id);
             // console.log('Loaded saved progress:', savedProgress);
-            constants_1.players[socket.id] = {
+            constants_2.players[socket.id] = {
                 id: socket.id,
                 name: credentials.playerName || 'Anonymous',
                 x: 200,
-                y: constants_1.WORLD_HEIGHT / 2,
+                y: constants_2.WORLD_HEIGHT / 2,
                 angle: 0,
                 score: 0,
                 velocityX: 0,
                 velocityY: 0,
-                health: savedProgress?.maxHealth || constants_1.PLAYER_MAX_HEALTH,
-                maxHealth: savedProgress?.maxHealth || constants_1.PLAYER_MAX_HEALTH,
-                damage: savedProgress?.damage || constants_1.PLAYER_DAMAGE,
+                health: savedProgress?.maxHealth || constants_2.PLAYER_MAX_HEALTH,
+                maxHealth: savedProgress?.maxHealth || constants_2.PLAYER_MAX_HEALTH,
+                damage: savedProgress?.damage || constants_2.PLAYER_DAMAGE,
                 inventory: savedProgress?.inventory || createInitialInventory(),
                 loadout: savedProgress?.loadout || createInitialBasicPetals().concat(Array(5).fill(null)),
                 isInvulnerable: true,
@@ -821,31 +840,31 @@ io.on('connection', (socket) => {
             };
             // Save initial state and log the result
             // console.log('Saving initial player state');
-            savePlayerProgress(constants_1.players[socket.id], user.id);
+            savePlayerProgress(constants_2.players[socket.id], user.id);
             // Trigger viewport update when new player joins
             triggerViewportUpdate();
             // Remove initial invulnerability after the specified time
             setTimeout(() => {
-                if (constants_1.players[socket.id]) {
-                    constants_1.players[socket.id].isInvulnerable = false;
+                if (constants_2.players[socket.id]) {
+                    constants_2.players[socket.id].isInvulnerable = false;
                     // Notify client that invulnerability has ended
                     io.emit('playerInvulnerabilityEnded', { playerId: socket.id });
                 }
-            }, constants_1.RESPAWN_INVULNERABILITY_TIME);
+            }, constants_2.RESPAWN_INVULNERABILITY_TIME);
             // Send success response and game state
             socket.emit('authenticated', {
                 success: true,
-                player: constants_1.players[socket.id]
+                player: constants_2.players[socket.id]
             });
             // Send current game state
-            socket.emit('currentPlayers', constants_1.players);
-            socket.emit('enemiesUpdate', constants_1.enemies);
-            socket.emit('obstaclesUpdate', constants_1.obstacles);
+            socket.emit('currentPlayers', constants_2.players);
+            socket.emit('enemiesUpdate', constants_2.enemies);
+            socket.emit('obstaclesUpdate', constants_2.obstacles);
             socket.emit('itemsUpdate', items);
             socket.emit('decorationsUpdate', decorations);
             socket.emit('sandsUpdate', sands);
             // Notify other players
-            socket.broadcast.emit('newPlayer', constants_1.players[socket.id]);
+            socket.broadcast.emit('newPlayer', constants_2.players[socket.id]);
         }
         else {
             socket.emit('authenticated', {
@@ -856,30 +875,30 @@ io.on('connection', (socket) => {
     });
     socket.on('disconnect', () => {
         console.log('A user disconnected');
-        if (constants_1.players[socket.id] && socket.userId) {
+        if (constants_2.players[socket.id] && socket.userId) {
             // console.log('Saving player progress for userId:', socket.userId);
-            savePlayerProgress(constants_1.players[socket.id], socket.userId);
+            savePlayerProgress(constants_2.players[socket.id], socket.userId);
         }
-        delete constants_1.players[socket.id];
+        delete constants_2.players[socket.id];
         delete playerUserIds[socket.id]; // Clean up the mapping
         io.emit('playerDisconnected', socket.id);
         // Trigger viewport update when player disconnects
         triggerViewportUpdate();
     });
     socket.on('collectDot', (dotIndex) => {
-        if (dotIndex >= 0 && dotIndex < constants_1.dots.length) {
-            constants_1.dots.splice(dotIndex, 1);
-            constants_1.players[socket.id].score++;
+        if (dotIndex >= 0 && dotIndex < constants_2.dots.length) {
+            constants_2.dots.splice(dotIndex, 1);
+            constants_2.players[socket.id].score++;
             io.emit('dotCollected', { playerId: socket.id, dotIndex });
             // Generate a new dot
-            constants_1.dots.push({
+            constants_2.dots.push({
                 x: Math.random() * 800,
                 y: Math.random() * 600
             });
         }
     });
     socket.on('useItem', (itemData) => {
-        const player = constants_1.players[socket.id];
+        const player = constants_2.players[socket.id];
         if (!player)
             return;
         // For now, we don't check if the item is in the loadout on the server,
@@ -915,8 +934,8 @@ io.on('connection', (socket) => {
                 io.emit('speedBoostActive', player.id);
                 // console.log('Applied speed boost effect');
                 setTimeout(() => {
-                    if (constants_1.players[socket.id]) {
-                        constants_1.players[socket.id].speed_boost = 1;
+                    if (constants_2.players[socket.id]) {
+                        constants_2.players[socket.id].speed_boost = 1;
                         // console.log('Speed boost wore off');
                     }
                 }, 5000 * multiplier);
@@ -925,8 +944,8 @@ io.on('connection', (socket) => {
                 player.isInvulnerable = true;
                 // console.log('Applied shield effect');
                 setTimeout(() => {
-                    if (constants_1.players[socket.id]) {
-                        constants_1.players[socket.id].isInvulnerable = false;
+                    if (constants_2.players[socket.id]) {
+                        constants_2.players[socket.id].isInvulnerable = false;
                         // console.log('Shield wore off');
                     }
                 }, 3000 * multiplier);
@@ -944,14 +963,14 @@ io.on('connection', (socket) => {
     // XP handling is now managed by the global addXPToPlayer function
     // Add a name update handler
     socket.on('updateName', (newName) => {
-        const player = constants_1.players[socket.id];
+        const player = constants_2.players[socket.id];
         if (player) {
             player.name = newName;
             io.emit('playerUpdated', player);
         }
     });
     socket.on('updateLoadout', (data) => {
-        const player = constants_1.players[socket.id];
+        const player = constants_2.players[socket.id];
         if (player) {
             player.loadout = data.loadout;
             player.inventory = data.inventory;
@@ -969,7 +988,7 @@ io.on('connection', (socket) => {
         if (message.startsWith('/')) {
             const command = message.substring(1).toLowerCase();
             if (command === 'list_ultra') {
-                const ultraMobs = constants_1.enemies.filter(e => e.tier === 'ultra');
+                const ultraMobs = constants_2.enemies.filter(e => e.tier === 'ultra');
                 if (ultraMobs.length === 0) {
                     io.emit('chatMessage', {
                         sender: 'System',
@@ -979,8 +998,8 @@ io.on('connection', (socket) => {
                 }
                 else {
                     ultraMobs.forEach((mob, index) => {
-                        const x = Math.round(mob.x / constants_1.SCALE_FACTOR);
-                        const y = Math.round(mob.y / constants_1.SCALE_FACTOR);
+                        const x = Math.round(mob.x / constants_2.SCALE_FACTOR);
+                        const y = Math.round(mob.y / constants_2.SCALE_FACTOR);
                         io.emit('chatMessage', {
                             sender: 'System',
                             content: `Ultra ${mob.type} at position (${x}, ${y})`,
@@ -1000,7 +1019,7 @@ io.on('connection', (socket) => {
                 return;
             }
             if (command === 'list_super') {
-                const superMobs = constants_1.enemies.filter(e => e.tier === 'super');
+                const superMobs = constants_2.enemies.filter(e => e.tier === 'super');
                 if (superMobs.length === 0) {
                     io.emit('chatMessage', {
                         sender: 'System',
@@ -1010,8 +1029,8 @@ io.on('connection', (socket) => {
                 }
                 else {
                     superMobs.forEach((mob, index) => {
-                        const x = Math.round(mob.x / constants_1.SCALE_FACTOR);
-                        const y = Math.round(mob.y / constants_1.SCALE_FACTOR);
+                        const x = Math.round(mob.x / constants_2.SCALE_FACTOR);
+                        const y = Math.round(mob.y / constants_2.SCALE_FACTOR);
                         io.emit('chatMessage', {
                             sender: 'System',
                             content: `Super ${mob.type} at position (${x}, ${y})`,
@@ -1031,7 +1050,7 @@ io.on('connection', (socket) => {
                 return;
             }
             if (command === 'list_unique') {
-                const uniqueMobs = constants_1.enemies.filter(e => e.tier === 'unique');
+                const uniqueMobs = constants_2.enemies.filter(e => e.tier === 'unique');
                 if (uniqueMobs.length === 0) {
                     io.emit('chatMessage', {
                         sender: 'System',
@@ -1041,8 +1060,8 @@ io.on('connection', (socket) => {
                 }
                 else {
                     uniqueMobs.forEach((mob, index) => {
-                        const x = Math.round(mob.x / constants_1.SCALE_FACTOR);
-                        const y = Math.round(mob.y / constants_1.SCALE_FACTOR);
+                        const x = Math.round(mob.x / constants_2.SCALE_FACTOR);
+                        const y = Math.round(mob.y / constants_2.SCALE_FACTOR);
                         io.emit('chatMessage', {
                             sender: 'System',
                             content: `Unique ${mob.type} at position (${x}, ${y})`,
@@ -1092,7 +1111,7 @@ io.on('connection', (socket) => {
     });
     // Add to socket connection handler after other socket events
     socket.on('craftItems', (data) => {
-        const player = constants_1.players[socket.id];
+        const player = constants_2.players[socket.id];
         if (!player)
             return;
         if (data.items.length < 5 || data.items.length % 5 !== 0) {
@@ -1157,16 +1176,16 @@ const ENEMY_CHASE_RANGE = 500;
 const ENEMY_WANDER_RANGE = 200;
 function moveEnemies() {
     const currentTime = Date.now();
-    constants_1.enemies.forEach(enemy => {
+    constants_2.enemies.forEach(enemy => {
         // Apply knockback if it exists
         if (enemy.knockbackX) {
-            enemy.knockbackX *= constants_1.KNOCKBACK_RECOVERY_SPEED;
+            enemy.knockbackX *= constants_2.KNOCKBACK_RECOVERY_SPEED;
             enemy.x += enemy.knockbackX;
             if (Math.abs(enemy.knockbackX) < 0.1)
                 enemy.knockbackX = 0;
         }
         if (enemy.knockbackY) {
-            enemy.knockbackY *= constants_1.KNOCKBACK_RECOVERY_SPEED;
+            enemy.knockbackY *= constants_2.KNOCKBACK_RECOVERY_SPEED;
             enemy.y += enemy.knockbackY;
             if (Math.abs(enemy.knockbackY) < 0.1)
                 enemy.knockbackY = 0;
@@ -1175,7 +1194,7 @@ function moveEnemies() {
         let closestPlayer;
         let closestDistance = Infinity;
         // Convert players object to array and explicitly type it
-        const playerArray = Object.values(constants_1.players);
+        const playerArray = Object.values(constants_2.players);
         closestPlayer = playerArray[0];
         playerArray.forEach(player => {
             const dx = player.x - enemy.x;
@@ -1221,18 +1240,18 @@ function moveEnemies() {
             }
         }
         // Get enemy size based on tier
-        const enemySize = constants_1.ENEMY_SIZE * constants_1.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
+        const enemySize = constants_2.ENEMY_SIZE * constants_2.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
         const halfSize = enemySize / 2;
         // Constrain to world boundaries (accounting for enemy size)
-        enemy.x = Math.max(halfSize, Math.min(constants_1.ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
-        enemy.y = Math.max(halfSize, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
+        enemy.x = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
+        enemy.y = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
         // Check for wall collisions with proper size consideration
-        constants_1.WORLD_MAP.filter(constants_1.isWall).forEach(wall => {
+        constants_2.WORLD_MAP.filter(constants_2.isWall).forEach(wall => {
             const scaledWall = {
-                x: wall.x * constants_1.SCALE_FACTOR,
-                y: wall.y * constants_1.SCALE_FACTOR,
-                width: wall.width * constants_1.SCALE_FACTOR,
-                height: wall.height * constants_1.SCALE_FACTOR
+                x: wall.x * constants_2.SCALE_FACTOR,
+                y: wall.y * constants_2.SCALE_FACTOR,
+                width: wall.width * constants_2.SCALE_FACTOR,
+                height: wall.height * constants_2.SCALE_FACTOR
             };
             // Check if enemy (with size) overlaps with wall
             const enemyLeft = enemy.x - halfSize;
@@ -1271,12 +1290,12 @@ function moveEnemies() {
                     enemy.y = wallBottom + halfSize + 5; // 5px buffer
                 }
                 // Ensure enemy stays within world boundaries after push
-                enemy.x = Math.max(halfSize, Math.min(constants_1.ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
-                enemy.y = Math.max(halfSize, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
+                enemy.x = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
+                enemy.y = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
             }
         });
     });
-    io.emit('enemiesUpdate', constants_1.enemies);
+    io.emit('enemiesUpdate', constants_2.enemies);
 }
 function updatePlayerState(player, deltaTime) {
     if (!player || !player.inputs) {
@@ -1289,7 +1308,7 @@ function updatePlayerState(player, deltaTime) {
         const dy = player.inputs.mouseY - player.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         if (distance > 5) {
-            const speed = constants_1.MAX_SPEED * player.speed_boost;
+            const speed = constants_2.MAX_SPEED * player.speed_boost;
             targetVelocityX = (dx / distance) * speed;
             targetVelocityY = (dy / distance) * speed;
             player.angle = Math.atan2(dy, dx);
@@ -1309,7 +1328,7 @@ function updatePlayerState(player, deltaTime) {
             targetVelocityX /= length;
             targetVelocityY /= length;
         }
-        const speed = constants_1.MAX_SPEED * player.speed_boost;
+        const speed = constants_2.MAX_SPEED * player.speed_boost;
         targetVelocityX *= speed;
         targetVelocityY *= speed;
         if (targetVelocityX !== 0 || targetVelocityY !== 0) {
@@ -1321,24 +1340,24 @@ function updatePlayerState(player, deltaTime) {
     let newX = player.x + player.velocityX * deltaTime;
     let newY = player.y + player.velocityY * deltaTime;
     const padding = 5;
-    const clampedX = Math.max(constants_1.PLAYER_SIZE / 2 + padding, Math.min(constants_1.ACTUAL_WORLD_WIDTH - constants_1.PLAYER_SIZE / 2 - padding, newX));
-    const clampedY = Math.max(constants_1.PLAYER_SIZE / 2 + padding, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - constants_1.PLAYER_SIZE / 2 - padding, newY));
+    const clampedX = Math.max(constants_2.PLAYER_SIZE / 2 + padding, Math.min(constants_2.ACTUAL_WORLD_WIDTH - constants_2.PLAYER_SIZE / 2 - padding, newX));
+    const clampedY = Math.max(constants_2.PLAYER_SIZE / 2 + padding, Math.min(constants_2.ACTUAL_WORLD_HEIGHT - constants_2.PLAYER_SIZE / 2 - padding, newY));
     newX = clampedX;
     newY = clampedY;
-    for (const element of constants_1.WORLD_MAP) {
+    for (const element of constants_2.WORLD_MAP) {
         if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-            const wallX = element.x * constants_1.SCALE_FACTOR;
-            const wallY = element.y * constants_1.SCALE_FACTOR;
-            const wallWidth = element.width * constants_1.SCALE_FACTOR;
-            const wallHeight = element.height * constants_1.SCALE_FACTOR;
+            const wallX = element.x * constants_2.SCALE_FACTOR;
+            const wallY = element.y * constants_2.SCALE_FACTOR;
+            const wallWidth = element.width * constants_2.SCALE_FACTOR;
+            const wallHeight = element.height * constants_2.SCALE_FACTOR;
             if (newX < wallX + wallWidth &&
-                newX + constants_1.PLAYER_SIZE > wallX &&
+                newX + constants_2.PLAYER_SIZE > wallX &&
                 newY < wallY + wallHeight &&
-                newY + constants_1.PLAYER_SIZE > wallY) {
-                const overlapX = (newX + constants_1.PLAYER_SIZE / 2) - (wallX + wallWidth / 2);
-                const overlapY = (newY + constants_1.PLAYER_SIZE / 2) - (wallY + wallHeight / 2);
-                const combinedHalfWidths = constants_1.PLAYER_SIZE / 2 + wallWidth / 2;
-                const combinedHalfHeights = constants_1.PLAYER_SIZE / 2 + wallHeight / 2;
+                newY + constants_2.PLAYER_SIZE > wallY) {
+                const overlapX = (newX + constants_2.PLAYER_SIZE / 2) - (wallX + wallWidth / 2);
+                const overlapY = (newY + constants_2.PLAYER_SIZE / 2) - (wallY + wallHeight / 2);
+                const combinedHalfWidths = constants_2.PLAYER_SIZE / 2 + wallWidth / 2;
+                const combinedHalfHeights = constants_2.PLAYER_SIZE / 2 + wallHeight / 2;
                 if (Math.abs(overlapX) < combinedHalfWidths && Math.abs(overlapY) < combinedHalfHeights) {
                     const penX = combinedHalfWidths - Math.abs(overlapX);
                     const penY = combinedHalfHeights - Math.abs(overlapY);
@@ -1363,12 +1382,12 @@ function updatePlayerState(player, deltaTime) {
         }
     }
     let collision = false;
-    for (const enemy of constants_1.enemies) {
-        const enemySize = constants_1.ENEMY_SIZE * constants_1.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
+    for (const enemy of constants_2.enemies) {
+        const enemySize = constants_2.ENEMY_SIZE * constants_2.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
         if (newX < enemy.x + enemySize &&
-            newX + constants_1.PLAYER_SIZE > enemy.x &&
+            newX + constants_2.PLAYER_SIZE > enemy.x &&
             newY < enemy.y + enemySize &&
-            newY + constants_1.PLAYER_SIZE > enemy.y) {
+            newY + constants_2.PLAYER_SIZE > enemy.y) {
             collision = true;
             // if (!player.isInvulnerable) {
             player.health -= enemy.damage;
@@ -1376,8 +1395,8 @@ function updatePlayerState(player, deltaTime) {
             player.isInvulnerable = true;
             // Set invulnerability timer (1 second after taking damage)
             setTimeout(() => {
-                if (constants_1.players[player.id]) {
-                    constants_1.players[player.id].isInvulnerable = false;
+                if (constants_2.players[player.id]) {
+                    constants_2.players[player.id].isInvulnerable = false;
                     // Notify client that invulnerability has ended
                     io.emit('playerInvulnerabilityEnded', { playerId: player.id });
                 }
@@ -1405,12 +1424,12 @@ function updatePlayerState(player, deltaTime) {
             enemy.health -= player.damage;
             io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
             if (enemy.health <= 0) {
-                const index = constants_1.enemies.findIndex(e => e.id === enemy.id);
+                const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
                 if (index !== -1) {
                     const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                     addXPToPlayer(player, xpGained, player.id);
                     // Check for item drop
-                    const dropChance = constants_1.DROP_CHANCES[enemy.tier];
+                    const dropChance = constants_2.DROP_CHANCES[enemy.tier];
                     if (Math.random() < dropChance) {
                         // Special mobs get multiple drops
                         const isSpecialMob = enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique';
@@ -1460,13 +1479,13 @@ function updatePlayerState(player, deltaTime) {
                             io.emit('itemSpawned', guaranteedPetal);
                         }
                     }
-                    constants_1.enemies.splice(index, 1);
+                    constants_2.enemies.splice(index, 1);
                     updateSpecialMobCounts();
                     io.emit('enemyDestroyed', enemy.id);
                     // Try to spawn a new enemy, but only if we can find a valid position
                     const newEnemy = createEnemy();
                     if (newEnemy) {
-                        constants_1.enemies.push(newEnemy);
+                        constants_2.enemies.push(newEnemy);
                     }
                 }
             }
@@ -1500,8 +1519,8 @@ function updatePlayerState(player, deltaTime) {
             const petalX = player.x + Math.cos(totalAngle) * baseRadius;
             const petalY = player.y + Math.sin(totalAngle) * baseRadius;
             // Check collision with enemies
-            for (const enemy of constants_1.enemies) {
-                const enemySize = constants_1.ENEMY_SIZE * constants_1.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
+            for (const enemy of constants_2.enemies) {
+                const enemySize = constants_2.ENEMY_SIZE * constants_2.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
                 const petalSize = 12 * petalStats.size;
                 if (petalX < enemy.x + enemySize &&
                     petalX + petalSize > enemy.x &&
@@ -1538,7 +1557,7 @@ function updatePlayerState(player, deltaTime) {
                         // Add cooldown (similar to other items)
                         const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
                         setTimeout(() => {
-                            if (constants_1.players[player.id] && player.loadout[i] && player.loadout[i].onCooldown) {
+                            if (constants_2.players[player.id] && player.loadout[i] && player.loadout[i].onCooldown) {
                                 // Restore petal after cooldown
                                 player.loadout[i] = {
                                     ...originalPetal,
@@ -1562,12 +1581,12 @@ function updatePlayerState(player, deltaTime) {
                     }
                     // Check if enemy dies
                     if (enemy.health <= 0) {
-                        const index = constants_1.enemies.findIndex(e => e.id === enemy.id);
+                        const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
                         if (index !== -1) {
                             const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                             addXPToPlayer(player, xpGained, player.id);
-                            if (Math.random() < constants_1.DROP_CHANCES[enemy.tier]) {
-                                const dropChance = constants_1.DROP_CHANCES[enemy.tier];
+                            if (Math.random() < constants_2.DROP_CHANCES[enemy.tier]) {
+                                const dropChance = constants_2.DROP_CHANCES[enemy.tier];
                                 if (Math.random() < dropChance) {
                                     // Determine item type - 60% chance for consumables, 40% chance for petals
                                     let itemType;
@@ -1594,13 +1613,13 @@ function updatePlayerState(player, deltaTime) {
                                     io.emit('itemSpawned', newItem);
                                 }
                             }
-                            constants_1.enemies.splice(index, 1);
+                            constants_2.enemies.splice(index, 1);
                             updateSpecialMobCounts();
                             io.emit('enemyDestroyed', enemy.id);
                             // Try to spawn a new enemy, but only if we can find a valid position
                             const newEnemy = createEnemy();
                             if (newEnemy) {
-                                constants_1.enemies.push(newEnemy);
+                                constants_2.enemies.push(newEnemy);
                             }
                         }
                     }
@@ -1612,7 +1631,7 @@ function updatePlayerState(player, deltaTime) {
     for (let i = items.length - 1; i >= 0; i--) {
         const item = items[i];
         const distance = Math.sqrt((newX - item.x) ** 2 + (newY - item.y) ** 2);
-        if (distance < constants_1.PLAYER_SIZE) {
+        if (distance < constants_2.PLAYER_SIZE) {
             // Add item to player's inventory instead of immediately activating it
             const rarity = item.rarity || 'common';
             const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
@@ -1633,16 +1652,16 @@ function updatePlayerState(player, deltaTime) {
     let currentTeleporter = null;
     const currentTime = Date.now();
     // Check if player is currently in a teleporter
-    for (const element of constants_1.WORLD_MAP.filter(constants_1.isTeleporter)) {
+    for (const element of constants_2.WORLD_MAP.filter(constants_2.isTeleporter)) {
         const teleporterId = `teleporter_${element.x}_${element.y}_${element.width}_${element.height}`;
-        const teleporterX = element.x * constants_1.SCALE_FACTOR;
-        const teleporterY = element.y * constants_1.SCALE_FACTOR;
-        const teleporterWidth = element.width * constants_1.SCALE_FACTOR;
-        const teleporterHeight = element.height * constants_1.SCALE_FACTOR;
+        const teleporterX = element.x * constants_2.SCALE_FACTOR;
+        const teleporterY = element.y * constants_2.SCALE_FACTOR;
+        const teleporterWidth = element.width * constants_2.SCALE_FACTOR;
+        const teleporterHeight = element.height * constants_2.SCALE_FACTOR;
         // Check if player is inside teleporter bounds (using proper collision detection)
-        if (newX + constants_1.PLAYER_SIZE > teleporterX &&
+        if (newX + constants_2.PLAYER_SIZE > teleporterX &&
             newX < teleporterX + teleporterWidth &&
-            newY + constants_1.PLAYER_SIZE > teleporterY &&
+            newY + constants_2.PLAYER_SIZE > teleporterY &&
             newY < teleporterY + teleporterHeight &&
             element.properties?.teleportTo) {
             currentTeleporter = teleporterId;
@@ -1673,7 +1692,7 @@ function updatePlayerState(player, deltaTime) {
                     player.currentTeleporter = undefined;
                     player.teleporterEnterTime = undefined;
                     // Attempt to transfer player to target server
-                    transferPlayerToServer(player, teleportTo.serverPort, teleportTo.x * constants_1.SCALE_FACTOR, teleportTo.y * constants_1.SCALE_FACTOR).catch(error => {
+                    transferPlayerToServer(player, teleportTo.serverPort, teleportTo.x * constants_2.SCALE_FACTOR, teleportTo.y * constants_2.SCALE_FACTOR).catch(error => {
                         console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player ${player.name}:`, error);
                         // Optionally notify the player about the failed transfer
                         io.to(player.id).emit('transferFailed', { message: 'Failed to connect to target server' });
@@ -1685,8 +1704,8 @@ function updatePlayerState(player, deltaTime) {
                 }
                 else {
                     // Same-server teleportation
-                    newX = teleportTo.x * constants_1.SCALE_FACTOR;
-                    newY = teleportTo.y * constants_1.SCALE_FACTOR;
+                    newX = teleportTo.x * constants_2.SCALE_FACTOR;
+                    newY = teleportTo.y * constants_2.SCALE_FACTOR;
                     // Reset teleporter state
                     player.currentTeleporter = undefined;
                     player.teleporterEnterTime = undefined;
@@ -1723,15 +1742,15 @@ function start_loop() {
     const TICK_INTERVAL = 1000 / TICK_RATE;
     const deltaTime = 1 / TICK_RATE;
     setInterval(() => {
-        for (const id in constants_1.players) {
-            updatePlayerState(constants_1.players[id], deltaTime);
+        for (const id in constants_2.players) {
+            updatePlayerState(constants_2.players[id], deltaTime);
         }
         moveEnemies();
         // Update viewport status for all enemies
         updateEnemyViewportStatus();
         // Despawn enemies that have been outside viewport for too long
         despawnDistantEnemies();
-        const playersForBroadcast = Object.values(constants_1.players).map(p => ({
+        const playersForBroadcast = Object.values(constants_2.players).map(p => ({
             id: p.id,
             name: p.name,
             x: p.x,
@@ -1744,20 +1763,20 @@ function start_loop() {
         }));
         io.emit('gameStateUpdate', {
             players: playersForBroadcast,
-            enemies: constants_1.enemies,
+            enemies: constants_2.enemies,
         });
     }, TICK_INTERVAL);
 }
-httpsServer.listen(PORT, () => {
-    console.log(`Server is running on https://localhost:${PORT}`);
+server.listen(PORT, () => {
+    console.log(`Server is running on ${constants_1.SERVER_PROTOCOL}://localhost:${PORT}`);
 });
 // Add XP calculation functions
 function calculateXPRequirement(level) {
-    return Math.floor(constants_1.BASE_XP_REQUIREMENT * Math.pow(constants_1.XP_MULTIPLIER, level - 1));
+    return Math.floor(constants_2.BASE_XP_REQUIREMENT * Math.pow(constants_2.XP_MULTIPLIER, level - 1));
 }
 // Cross-server player transfer functionality
 async function transferPlayerToServer(player, targetServerPort, targetX, targetY) {
-    const targetServerConfig = (0, constants_1.getServerConfigByPort)(targetServerPort);
+    const targetServerConfig = (0, constants_2.getServerConfigByPort)(targetServerPort);
     if (!targetServerConfig) {
         console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Target server config not found for port ${targetServerPort}`);
         return false;
@@ -1807,44 +1826,79 @@ async function transferPlayerToServer(player, targetServerPort, targetX, targetY
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(postData)
             },
-            // For self-signed certificates in development
-            rejectUnauthorized: false
+            // For self-signed certificates in development (only if using HTTPS)
+            rejectUnauthorized: constants_1.USE_HTTPS ? false : undefined
         };
         return new Promise((resolve) => {
-            const req = https_2.default.request(options, (res) => {
-                let responseData = '';
-                res.on('data', (chunk) => {
-                    responseData += chunk;
-                });
-                res.on('end', () => {
-                    try {
-                        const response = JSON.parse(responseData);
-                        if (response.success) {
-                            console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
-                            // Notify client about successful transfer
-                            io.to(player.id).emit('playerTransferred', {
-                                targetServer: targetServerConfig,
-                                transferToken: response.transferToken,
-                                targetX,
-                                targetY
-                            });
-                            // Remove player from current server immediately
-                            delete constants_1.players[player.id];
-                            delete playerUserIds[player.id];
-                            io.emit('playerLeft', player.id);
-                            resolve(true);
+            const req = constants_1.USE_HTTPS ?
+                https_2.default.request(options, (res) => {
+                    let responseData = '';
+                    res.on('data', (chunk) => {
+                        responseData += chunk;
+                    });
+                    res.on('end', () => {
+                        try {
+                            const response = JSON.parse(responseData);
+                            if (response.success) {
+                                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
+                                // Notify client about successful transfer
+                                io.to(player.id).emit('playerTransferred', {
+                                    targetServer: targetServerConfig,
+                                    transferToken: response.transferToken,
+                                    targetX,
+                                    targetY
+                                });
+                                // Remove player from current server immediately
+                                delete constants_2.players[player.id];
+                                delete playerUserIds[player.id];
+                                io.emit('playerLeft', player.id);
+                                resolve(true);
+                            }
+                            else {
+                                console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player: ${response.message}`);
+                                resolve(false);
+                            }
                         }
-                        else {
-                            console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player: ${response.message}`);
+                        catch (error) {
+                            console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error parsing transfer response:`, error);
                             resolve(false);
                         }
-                    }
-                    catch (error) {
-                        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error parsing transfer response:`, error);
-                        resolve(false);
-                    }
+                    });
+                }) :
+                http_2.default.request(options, (res) => {
+                    let responseData = '';
+                    res.on('data', (chunk) => {
+                        responseData += chunk;
+                    });
+                    res.on('end', () => {
+                        try {
+                            const response = JSON.parse(responseData);
+                            if (response.success) {
+                                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
+                                // Notify client about successful transfer
+                                io.to(player.id).emit('playerTransferred', {
+                                    targetServer: targetServerConfig,
+                                    transferToken: response.transferToken,
+                                    targetX,
+                                    targetY
+                                });
+                                // Remove player from current server immediately
+                                delete constants_2.players[player.id];
+                                delete playerUserIds[player.id];
+                                io.emit('playerLeft', player.id);
+                                resolve(true);
+                            }
+                            else {
+                                console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player: ${response.message}`);
+                                resolve(false);
+                            }
+                        }
+                        catch (error) {
+                            console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error parsing transfer response:`, error);
+                            resolve(false);
+                        }
+                    });
                 });
-            });
             req.on('error', (error) => {
                 console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error transferring player:`, error);
                 resolve(false);
@@ -1864,9 +1918,9 @@ async function transferPlayerToServer(player, targetServerPort, targetX, targetY
 // }, 24 * 60 * 60 * 1000); // Run once per day
 // Add this function near the other helper functions
 function handleLevelUp(player) {
-    player.maxHealth += constants_1.HEALTH_PER_LEVEL;
+    player.maxHealth += constants_2.HEALTH_PER_LEVEL;
     player.health = player.maxHealth; // Heal to full when leveling up
-    player.damage += constants_1.DAMAGE_PER_LEVEL;
+    player.damage += constants_2.DAMAGE_PER_LEVEL;
     io.emit('levelUp', {
         playerId: player.id,
         level: player.level,
@@ -1880,7 +1934,7 @@ const HEALTH_REGEN_INTERVAL = 1000; // Milliseconds between health regeneration 
 const HEALTH_REGEN_COMBAT_DELAY = 0; // Delay before health starts regenerating after taking damage
 // Add health regeneration interval
 setInterval(() => {
-    Object.values(constants_1.players).forEach(player => {
+    Object.values(constants_2.players).forEach(player => {
         // Check if enough time has passed since last damage
         const now = Date.now();
         if (player.lastDamageTime && now - player.lastDamageTime < HEALTH_REGEN_COMBAT_DELAY) {
@@ -1910,20 +1964,20 @@ setInterval(() => {
 }, 10000); // 10 seconds
 // Add density maintenance interval (every 2 seconds)
 setInterval(() => {
-    const playerCount = Object.keys(constants_1.players).length;
+    const playerCount = Object.keys(constants_2.players).length;
     if (playerCount > 0) {
         // Calculate target enemy count based on current viewport density
         const viewports = getPlayerViewports();
         const totalViewportArea = viewports.reduce((total, viewport) => {
             const extendedViewport = {
-                x: viewport.x - constants_1.VIEWPORT_BUFFER,
-                y: viewport.y - constants_1.VIEWPORT_BUFFER,
-                width: viewport.width + (constants_1.VIEWPORT_BUFFER * 2),
-                height: viewport.height + (constants_1.VIEWPORT_BUFFER * 2)
+                x: viewport.x - constants_2.VIEWPORT_BUFFER,
+                y: viewport.y - constants_2.VIEWPORT_BUFFER,
+                width: viewport.width + (constants_2.VIEWPORT_BUFFER * 2),
+                height: viewport.height + (constants_2.VIEWPORT_BUFFER * 2)
             };
             return total + (extendedViewport.width * extendedViewport.height);
         }, 0);
-        const targetDensity = constants_1.ORIGINAL_ENEMY_COUNT / constants_1.TOTAL_WORLD_AREA;
+        const targetDensity = constants_2.ORIGINAL_ENEMY_COUNT / constants_2.TOTAL_WORLD_AREA;
         const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
         const currentViewportEnemies = getEnemiesInViewportCount();
         if (currentViewportEnemies < targetEnemyCount) {
@@ -1932,7 +1986,7 @@ setInterval(() => {
             for (let i = 0; i < enemiesToSpawn; i++) {
                 const newEnemy = createEnemy();
                 if (newEnemy) {
-                    constants_1.enemies.push(newEnemy);
+                    constants_2.enemies.push(newEnemy);
                     spawned++;
                 }
             }
@@ -1944,7 +1998,7 @@ setInterval(() => {
 }, 2000); // 2 seconds
 // Add special mob spawning timer (every 1 minute)
 setInterval(() => {
-    const playerCount = Object.keys(constants_1.players).length;
+    const playerCount = Object.keys(constants_2.players).length;
     if (playerCount > 0) {
         spawnSpecialMobs();
     }
@@ -1978,7 +2032,7 @@ function savePlayerProgress(player, userId) {
 // Add periodic saving
 const SAVE_INTERVAL = 60000; // Save every minute
 setInterval(() => {
-    Object.entries(constants_1.players).forEach(([socketId, player]) => {
+    Object.entries(constants_2.players).forEach(([socketId, player]) => {
         const socket = io.sockets.sockets.get(socketId);
         if (socket && socket.userId) {
             socket.emit('savePlayerProgress', player);
@@ -1992,7 +2046,7 @@ app.post('/admin/save-progress', (req, res) => {
     if (!playerId) {
         return res.status(400).json({ message: 'Player ID is required' });
     }
-    const player = constants_1.players[playerId];
+    const player = constants_2.players[playerId];
     const socket = io.sockets.sockets.get(playerId);
     if (!player || !socket?.userId) {
         return res.status(404).json({ message: 'Player not found or not authenticated' });
@@ -2013,7 +2067,7 @@ process.stdin.on('data', (data) => {
         const parts = command.split(' ');
         if (parts.length === 2) {
             const playerId = parts[1];
-            const player = constants_1.players[playerId];
+            const player = constants_2.players[playerId];
             const socket = io.sockets.sockets.get(playerId);
             if (player && socket?.userId) {
                 savePlayerProgress(player, socket.userId);
@@ -2027,7 +2081,7 @@ process.stdin.on('data', (data) => {
         else if (parts.length === 1) {
             // Save all players
             let savedCount = 0;
-            Object.entries(constants_1.players).forEach(([socketId, player]) => {
+            Object.entries(constants_2.players).forEach(([socketId, player]) => {
                 const socket = io.sockets.sockets.get(socketId);
                 if (socket?.userId) {
                     savePlayerProgress(player, socket.userId);
@@ -2038,7 +2092,7 @@ process.stdin.on('data', (data) => {
         }
     }
     else if (command === 'list-players') {
-        Object.entries(constants_1.players).forEach(([socketId, player]) => {
+        Object.entries(constants_2.players).forEach(([socketId, player]) => {
             console.log(`Player ID: ${socketId}, Name: ${player.name}, Level: ${player.level}`);
         });
     }
@@ -2061,20 +2115,20 @@ process.stdin.on('data', (data) => {
 });
 // Add this function after the command handler
 function adjustEnemyCount() {
-    const playerCount = Object.keys(constants_1.players).length;
-    const targetEnemyCount = playerCount > 0 ? constants_1.ENEMIES_PER_VIEWPORT * playerCount : ENEMY_COUNT;
+    const playerCount = Object.keys(constants_2.players).length;
+    const targetEnemyCount = playerCount > 0 ? constants_2.ENEMIES_PER_VIEWPORT * playerCount : ENEMY_COUNT;
     // Remove excess enemies if current count is higher than target
-    while (constants_1.enemies.length > targetEnemyCount) {
-        const removedEnemy = constants_1.enemies.pop();
+    while (constants_2.enemies.length > targetEnemyCount) {
+        const removedEnemy = constants_2.enemies.pop();
         if (removedEnemy) {
             io.emit('enemyDestroyed', removedEnemy.id);
         }
     }
     // Add new enemies if current count is lower than target
-    while (constants_1.enemies.length < targetEnemyCount) {
+    while (constants_2.enemies.length < targetEnemyCount) {
         const enemy = createEnemy();
         if (enemy) {
-            constants_1.enemies.push(enemy);
+            constants_2.enemies.push(enemy);
         }
         else {
             // If we can't spawn more enemies (no valid positions), break the loop
@@ -2082,8 +2136,8 @@ function adjustEnemyCount() {
         }
     }
     // Update all clients with the new enemy state
-    io.emit('enemiesUpdate', constants_1.enemies);
-    console.log(`[SERVER] Adjusted enemy count to ${constants_1.enemies.length}/${targetEnemyCount} (${playerCount} players)`);
+    io.emit('enemiesUpdate', constants_2.enemies);
+    console.log(`[SERVER] Adjusted enemy count to ${constants_2.enemies.length}/${targetEnemyCount} (${playerCount} players)`);
 }
 // Add after other app.use declarations
 app.use('/assets', (req, res, next) => {

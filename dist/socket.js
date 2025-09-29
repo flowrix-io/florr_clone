@@ -5,11 +5,11 @@ exports.initMultiPlayerMode = initMultiPlayerMode;
 const socket_io_client_1 = require("socket.io-client");
 Object.defineProperty(exports, "Socket", { enumerable: true, get: function () { return socket_io_client_1.Socket; } });
 function initMultiPlayerMode(game, serverIp) {
-    // Use current origin as default, or prompt if needed
-    const defaultUrl = serverIp || window.location.origin;
-    const serverUrl = prompt(`Enter the server URL (default: ${defaultUrl}):\n\nJoin a public server: https://54.151.123.177:3000/`) || defaultUrl;
+    // Use provided server IP or current origin as default
+    const serverUrl = serverIp || window.location.origin;
+    console.log(`[CLIENT] Connecting to server: ${serverUrl}`);
     game.socket = (0, socket_io_client_1.io)(serverUrl, {
-        secure: true,
+        secure: serverUrl.startsWith('https'),
         rejectUnauthorized: false,
         withCredentials: true
     });
@@ -142,9 +142,10 @@ function setupSocketListeners(game) {
             // Wait a moment for disconnect to complete
             await new Promise(resolve => setTimeout(resolve, 500));
             // Connect to new server
-            const newServerUrl = `https://${transferData.targetServer.host}:${transferData.targetServer.port}`;
+            const protocol = transferData.targetServer.protocol || 'https';
+            const newServerUrl = `${protocol}://${transferData.targetServer.host}:${transferData.targetServer.port}`;
             game.socket = (0, socket_io_client_1.io)(newServerUrl, {
-                secure: true,
+                secure: newServerUrl.startsWith('https'),
                 rejectUnauthorized: false,
                 withCredentials: true
             });
