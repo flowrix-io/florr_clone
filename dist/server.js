@@ -1263,8 +1263,9 @@ function moveEnemies() {
                 }
             }
         }
-        // Get enemy size based on tier
-        const enemySize = constants_2.ENEMY_SIZE * constants_2.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
+        // Get enemy size based on mob stats
+        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+        const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
         const halfSize = enemySize / 2;
         // Constrain to world boundaries (accounting for enemy size)
         enemy.x = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
@@ -1407,7 +1408,9 @@ function updatePlayerState(player, deltaTime) {
     }
     let collision = false;
     for (const enemy of constants_2.enemies) {
-        const enemySize = constants_2.ENEMY_SIZE * constants_2.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
+        // Get enemy size based on mob stats
+        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+        const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
         if (newX < enemy.x + enemySize &&
             newX + constants_2.PLAYER_SIZE > enemy.x &&
             newY < enemy.y + enemySize &&
@@ -1495,8 +1498,10 @@ function updatePlayerState(player, deltaTime) {
             const petalY = player.y + Math.sin(totalAngle) * baseRadius;
             // Check collision with enemies
             for (const enemy of constants_2.enemies) {
-                const enemySize = constants_2.ENEMY_SIZE * constants_2.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
-                const petalSize = 12 * petalStats.size;
+                // Get mob stats to determine proper hitbox size
+                const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE; // Use mob size or fallback to base size
+                const petalSize = 40 * petalStats.size; // Use same base size as enemies for consistency
                 if (petalX < enemy.x + enemySize &&
                     petalX + petalSize > enemy.x &&
                     petalY < enemy.y + enemySize &&

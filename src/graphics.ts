@@ -608,15 +608,15 @@ export class Graphics {
     }
 
     public drawEnemy(enemy: Enemy) {
-        const sizeMultiplier = this.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
-        const enemySize = 40 * sizeMultiplier;
+        // Get enemy size from mob stats
+        const mobStats = getMobStats(enemy.type, enemy.tier);
+        const enemySize = mobStats ? mobStats.size * 40 : 40;
 
         this.ctx.save();
         this.ctx.translate(enemy.x, enemy.y);
         this.ctx.rotate(enemy.angle);
 
         // Draw enemy sprite using SVG from mob config
-        const mobStats = getMobStats(enemy.type, enemy.tier);
         const cacheKey = `${enemy.type}_${enemy.tier}`;
         
         if (mobStats && mobStats.image && this.mobImageCache.has(cacheKey)) {

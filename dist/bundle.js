@@ -1890,7 +1890,7 @@ const MOB_CONFIG = {
             name: "Uncommon Bee",
             damage: 150,
             health: 140.625,
-            size: 3.0,
+            size: 1.2,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -1953,7 +1953,7 @@ const MOB_CONFIG = {
             name: "Rare Bee",
             damage: 450,
             health: 506.25,
-            size: 9,
+            size: 1.6,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -2016,7 +2016,7 @@ const MOB_CONFIG = {
             name: "Epic Bee",
             damage: 1350,
             health: 2025,
-            size: 27,
+            size: 2.56,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -2079,7 +2079,7 @@ const MOB_CONFIG = {
             name: "Legendary Bee",
             damage: 4050,
             health: 15187.5,
-            size: 81,
+            size: 4.096,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -2142,7 +2142,7 @@ const MOB_CONFIG = {
             name: "Mythic Bee",
             damage: 12150,
             health: 91125,
-            size: 243,
+            size: 6.5536,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless bee that flies peacefully",
@@ -2205,7 +2205,7 @@ const MOB_CONFIG = {
             name: "Ultra Bee",
             damage: 36450,
             health: 1093500,
-            size: 729,
+            size: 10.48576,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "An ultra bee with cosmic power",
@@ -2268,7 +2268,7 @@ const MOB_CONFIG = {
             name: "Super Bee",
             damage: 109350,
             health: 49207500,
-            size: 2187,
+            size: 16.777216,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A super bee with divine energy",
@@ -2331,7 +2331,7 @@ const MOB_CONFIG = {
             name: "Unique Bee",
             damage: 328050,
             health: 737611250,
-            size: 6561,
+            size: 26.8435456,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A unique bee of ultimate power",
@@ -2441,7 +2441,7 @@ const MOB_CONFIG = {
             name: "Uncommon Ladybug",
             damage: 30,
             health: 234.375,
-            size: 3.0,
+            size: 1.2,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -2486,7 +2486,7 @@ const MOB_CONFIG = {
             name: "Rare Ladybug",
             damage: 90,
             health: 843.75,
-            size: 9,
+            size: 1.6,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -2531,7 +2531,7 @@ const MOB_CONFIG = {
             name: "Epic Ladybug",
             damage: 270,
             health: 3375,
-            size: 27,
+            size: 2.56,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -2576,7 +2576,7 @@ const MOB_CONFIG = {
             name: "Legendary Ladybug",
             damage: 810,
             health: 25312.5,
-            size: 81,
+            size: 4.096,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -2621,7 +2621,7 @@ const MOB_CONFIG = {
             name: "Mythic Ladybug",
             damage: 2430,
             health: 151875,
-            size: 243,
+            size: 6.5536,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -2666,7 +2666,7 @@ const MOB_CONFIG = {
             name: "Ultra Ladybug",
             damage: 7290,
             health: 1822500,
-            size: 729,
+            size: 10.48576,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "An ultra ladybug with cosmic power",
@@ -2711,7 +2711,7 @@ const MOB_CONFIG = {
             name: "Super Ladybug",
             damage: 21870,
             health: 82012500,
-            size: 2187,
+            size: 16.777216,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A super ladybug with divine energy",
@@ -2756,7 +2756,7 @@ const MOB_CONFIG = {
             name: "Unique Ladybug",
             damage: 65610,
             health: 1230187500,
-            size: 6561,
+            size: 26.8435456,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A unique ladybug of ultimate power",
@@ -2856,7 +2856,7 @@ const MOB_CONFIG = {
             name: "Uncommon Soldier Ant",
             damage: 30,
             health: 375,
-            size: 3.0,
+            size: 1.2,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -2909,7 +2909,7 @@ const MOB_CONFIG = {
             name: "Rare Soldier Ant",
             damage: 90,
             health: 1350,
-            size: 9,
+            size: 1.6,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -2962,7 +2962,7 @@ const MOB_CONFIG = {
             name: "Epic Soldier Ant",
             damage: 270,
             health: 5400,
-            size: 27,
+            size: 2.56,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -3015,7 +3015,7 @@ const MOB_CONFIG = {
             name: "Legendary Soldier Ant",
             damage: 810,
             health: 40500,
-            size: 81,
+            size: 4.096,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -3068,7 +3068,7 @@ const MOB_CONFIG = {
             name: "Mythic Soldier Ant",
             damage: 2430,
             health: 243000,
-            size: 243,
+            size: 6.5536,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A small, hostile soldier ant that flies aggressively",
@@ -3121,7 +3121,7 @@ const MOB_CONFIG = {
             name: "Ultra Soldier Ant",
             damage: 7290,
             health: 2916000,
-            size: 729,
+            size: 10.48576,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "An ultra soldier ant with cosmic power",
@@ -3174,7 +3174,7 @@ const MOB_CONFIG = {
             name: "Super Soldier Ant",
             damage: 21870,
             health: 131220000,
-            size: 2187,
+            size: 16.777216,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A super soldier ant with divine energy",
@@ -3227,7 +3227,7 @@ const MOB_CONFIG = {
             name: "Unique Soldier Ant",
             damage: 65610,
             health: 1968300000,
-            size: 6561,
+            size: 26.8435456,
             speed: 1.0,
             cooldown: 2000, // 2 seconds
             description: "A unique soldier ant of ultimate power",
@@ -3937,13 +3937,13 @@ class Graphics {
         });
     }
     drawEnemy(enemy) {
-        const sizeMultiplier = this.ENEMY_SIZE_MULTIPLIERS[enemy.tier];
-        const enemySize = 40 * sizeMultiplier;
+        // Get enemy size from mob stats
+        const mobStats = getMobStats(enemy.type, enemy.tier);
+        const enemySize = mobStats ? mobStats.size * 40 : 40;
         this.ctx.save();
         this.ctx.translate(enemy.x, enemy.y);
         this.ctx.rotate(enemy.angle);
         // Draw enemy sprite using SVG from mob config
-        const mobStats = getMobStats(enemy.type, enemy.tier);
         const cacheKey = `${enemy.type}_${enemy.tier}`;
         if (mobStats && mobStats.image && this.mobImageCache.has(cacheKey)) {
             // Use cached SVG image
