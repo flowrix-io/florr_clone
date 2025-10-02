@@ -1681,6 +1681,14 @@ export function calculateMobDrops(mobType: string, mobRarity: string): DropItem[
                 drops.push(adjustedDrop);
             }
         }
+        if (drops.length === 0 && dropTable.guaranteed) {
+            drops.push({
+                type: dropTable.drops[0].type,
+                itemType: dropTable.drops[0].itemType,
+                rarity: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'][rarityIndex - 1] as any,
+                probability: 1.0,
+            });
+        }
     } else {
         // For common mobs, use original probabilities
         for (const drop of dropTable.drops) {
@@ -1688,19 +1696,6 @@ export function calculateMobDrops(mobType: string, mobRarity: string): DropItem[
                 drops.push(drop);
             }
         }
-    }
-    
-    // Ensure at least one drop if guaranteed
-    if (dropTable.guaranteed && drops.length === 0) {
-        // Fallback: give a basic common petal
-        drops.push({
-            type: 'petal',
-            itemType: 'basic',
-            rarity: 'common',
-            probability: 1.0,
-            minQuantity: 1,
-            maxQuantity: 1
-        });
     }
     
     return drops;
