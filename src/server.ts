@@ -363,6 +363,44 @@ function isPositionInAnyViewport(x: number, y: number): boolean {
     return false;
 }
 
+function isPositionInPlayerPetalRange(x: number, y: number, mobSize: number): boolean {
+    // Check if the mob spawn position would overlap with any player's petal range
+    for (const playerId in players) {
+        const player = players[playerId];
+        if (!player || !player.loadout) continue;
+        
+        // Calculate player's maximum petal range
+        const petalExtension = player.inputs?.petalExtension || 1.0;
+        const baseRadius = 60 * petalExtension;
+        
+        // Find the largest petal size in the player's loadout
+        let maxPetalSize = 0;
+        for (const item of player.loadout) {
+            if (item && item.type === 'petal' && item.petalType && item.rarity) {
+                const petalStats = getPetalStats(item.petalType, item.rarity);
+                if (petalStats) {
+                    const petalSize = 40 * petalStats.size;
+                    maxPetalSize = Math.max(maxPetalSize, petalSize);
+                }
+            }
+        }
+        
+        // Calculate the maximum range from player center (base radius + half petal size + half mob size)
+        const maxRange = baseRadius + (maxPetalSize / 2) + (mobSize / 2);
+        
+        // Check if the mob spawn position is within this range
+        const dx = x - player.x;
+        const dy = y - player.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance <= maxRange) {
+            return true; // Position is within petal range
+        }
+    }
+    
+    return false; // Position is safe from petal range
+}
+
 function getEnemiesInViewportCount(): number {
     const viewports = getPlayerViewports();
     
@@ -610,6 +648,39 @@ function createSpecialMob(tier: 'ultra' | 'super' | 'unique'): Enemy | null {
         return null;
     }
     
+    // Check if the spawn position would overlap with any player's petal range
+    const mobSize = mobStats.size * 40;
+    if (isPositionInPlayerPetalRange(position.x, position.y, mobSize)) {
+        // Position is too close to player petal range, try to find a new position
+        let newValidPosition = false;
+        let newAttempts = 0;
+        const MAX_NEW_ATTEMPTS = 50;
+        
+        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
+            newAttempts++;
+            
+            // Try to find a new position in the same zone type
+            const newPosition = getRandomPositionInZoneType(zoneType);
+            if (!newPosition) {
+                continue; // Try again
+            }
+            
+            // Check if the new position is safe from petal range
+            const inPetalRange = isPositionInPlayerPetalRange(newPosition.x, newPosition.y, mobSize);
+            
+            if (!inPetalRange) {
+                position.x = newPosition.x;
+                position.y = newPosition.y;
+                newValidPosition = true;
+            }
+        }
+        
+        // If we still couldn't find a valid position, return null
+        if (!newValidPosition) {
+            return null;
+        }
+    }
+    
     const currentTime = Date.now();
     return {
         id: Math.random().toString(36).substr(2, 9),
@@ -806,6 +877,67 @@ function createEnemy(): Enemy {
     if (!mobStats) {
         console.error(`No mob stats found for ${mobType} ${tier}`);
         return null as any;
+    }
+
+    // Check if the spawn position would overlap with any player's petal range
+    const mobSize = mobStats.size * 40;
+    if (isPositionInPlayerPetalRange(x, y, mobSize)) {
+        // Position is too close to player petal range, try to find a new position
+        let newValidPosition = false;
+        let newAttempts = 0;
+        const MAX_NEW_ATTEMPTS = 50;
+        
+        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
+            newAttempts++;
+            
+            // Pick a random player and spawn near their viewport
+            const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
+            const player = players[randomPlayerId];
+            
+            // Generate position within player's viewport (with buffer)
+            const viewportBuffer = VIEWPORT_BUFFER;
+            const minX = player.x - VIEWPORT_WIDTH/2 - viewportBuffer;
+            const maxX = player.x + VIEWPORT_WIDTH/2 + viewportBuffer;
+            const minY = player.y - VIEWPORT_HEIGHT/2 - viewportBuffer;
+            const maxY = player.y + VIEWPORT_HEIGHT/2 + viewportBuffer;
+            
+            x = minX + Math.random() * (maxX - minX);
+            y = minY + Math.random() * (maxY - minY);
+            
+            // Clamp to world boundaries
+            x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
+            y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
+
+            // Check if position is in a safe zone
+            const inSafeZone = WORLD_MAP.some(element =>
+                element.type === 'safe_zone' &&
+                x >= element.x * SCALE_FACTOR &&
+                x <= (element.x + element.width) * SCALE_FACTOR &&
+                y >= element.y * SCALE_FACTOR &&
+                y <= (element.y + element.height) * SCALE_FACTOR
+            );
+
+            // Check if position collides with walls
+            const collidesWithWall = WORLD_MAP.some(element =>
+                element.type === 'wall' &&
+                x >= element.x * SCALE_FACTOR &&
+                x <= (element.x + element.width) * SCALE_FACTOR &&
+                y >= element.y * SCALE_FACTOR &&
+                y <= (element.y + element.height) * SCALE_FACTOR
+            );
+
+            // Check if position is safe from petal range
+            const inPetalRange = isPositionInPlayerPetalRange(x, y, mobSize);
+
+            if (!inSafeZone && !collidesWithWall && !inPetalRange) {
+                newValidPosition = true;
+            }
+        }
+        
+        // If we still couldn't find a valid position, return null
+        if (!newValidPosition) {
+            return null as any;
+        }
     }
 
     // console.log(`[DEBUG] Spawning ${mobType} (${tier}) mob with stats:`, {
