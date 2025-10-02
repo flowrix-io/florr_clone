@@ -1409,55 +1409,27 @@ function updatePlayerState(player, deltaTime) {
                 if (index !== -1) {
                     const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                     addXPToPlayer(player, xpGained, player.id);
-                    // Check for item drop
-                    const dropChance = constants_1.DROP_CHANCES[enemy.tier];
-                    if (Math.random() < dropChance) {
-                        // Special mobs get multiple drops
-                        const isSpecialMob = enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique';
-                        const dropCount = isSpecialMob ?
-                            (enemy.tier === 'ultra' ? 2 : enemy.tier === 'super' ? 3 : 4) : 1;
-                        for (let dropIndex = 0; dropIndex < dropCount; dropIndex++) {
-                            // Determine item type - 60% chance for consumables, 40% chance for petals
-                            let itemType;
-                            let petalType;
-                            if (Math.random() < 0.6) {
-                                // Drop consumable item
-                                itemType = ['health_potion', 'speed_boost', 'shield'][Math.floor(Math.random() * 3)];
-                            }
-                            else {
-                                // Drop petal
-                                itemType = 'petal';
-                                const petalTypes = (0, petals_1.getAllPetalTypes)();
-                                petalType = petalTypes[Math.floor(Math.random() * petalTypes.length)];
-                            }
-                            // Add some random offset for multiple drops
-                            const offsetX = isSpecialMob ? (Math.random() - 0.5) * 100 : 0;
-                            const offsetY = isSpecialMob ? (Math.random() - 0.5) * 100 : 0;
+                    // Use new drop table system
+                    const mobType = enemy.type || 'bee'; // Default to bee if type is not set
+                    const drops = (0, mobs_1.calculateMobDrops)(mobType, enemy.tier);
+                    for (const drop of drops) {
+                        // Determine quantity
+                        const quantity = drop.minQuantity && drop.maxQuantity ?
+                            Math.floor(Math.random() * (drop.maxQuantity - drop.minQuantity + 1)) + drop.minQuantity : 1;
+                        // Create items for each quantity
+                        for (let q = 0; q < quantity; q++) {
+                            const offsetX = (Math.random() - 0.5) * 100;
+                            const offsetY = (Math.random() - 0.5) * 100;
                             const newItem = {
                                 id: Math.random().toString(36).substr(2, 9),
-                                type: itemType,
+                                type: drop.type === 'consumable' ? drop.itemType : 'petal',
                                 x: enemy.x + offsetX,
                                 y: enemy.y + offsetY,
-                                rarity: enemy.tier,
-                                petalType: petalType
+                                rarity: drop.rarity,
+                                petalType: drop.type === 'petal' ? drop.itemType : undefined
                             };
                             items.push(newItem);
                             io.emit('itemSpawned', newItem);
-                        }
-                        // Special mobs also get a guaranteed petal drop
-                        if (isSpecialMob) {
-                            const petalTypes = (0, petals_1.getAllPetalTypes)();
-                            const petalType = petalTypes[Math.floor(Math.random() * petalTypes.length)];
-                            const guaranteedPetal = {
-                                id: Math.random().toString(36).substr(2, 9),
-                                type: 'petal',
-                                x: enemy.x + (Math.random() - 0.5) * 80,
-                                y: enemy.y + (Math.random() - 0.5) * 80,
-                                rarity: enemy.tier,
-                                petalType: petalType
-                            };
-                            items.push(guaranteedPetal);
-                            io.emit('itemSpawned', guaranteedPetal);
                         }
                     }
                     constants_1.enemies.splice(index, 1);

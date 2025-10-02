@@ -3287,6 +3287,175 @@ function getAllMobTypes() {
 function getMobRarities(mobType) {
     return Object.keys(MOB_CONFIG[mobType] || {});
 }
+// Drop table configuration for each mob type
+const MOB_DROP_TABLES = {
+    bee: {
+        guaranteed: true, // Bees always drop something
+        drops: [
+            // Specific drops
+            {
+                type: 'petal',
+                itemType: 'stinger',
+                rarity: 'common',
+                probability: 0.3, // 30% chance for stinger
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            // Rarity-based drops (50% common, 10% unusual for common mobs)
+            {
+                type: 'petal',
+                itemType: 'basic',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 2
+            },
+            {
+                type: 'petal',
+                itemType: 'basic',
+                rarity: 'uncommon',
+                probability: 0.1,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    ladybug: {
+        guaranteed: true, // Ladybugs always drop something
+        drops: [
+            // Specific drops
+            {
+                type: 'consumable',
+                itemType: 'health_potion',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for health potion
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            // Rarity-based drops
+            {
+                type: 'petal',
+                itemType: 'rose',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 2
+            },
+            {
+                type: 'petal',
+                itemType: 'rose',
+                rarity: 'uncommon',
+                probability: 0.1,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    soldier_ant: {
+        guaranteed: true, // Soldier ants always drop something
+        drops: [
+            // Specific drops
+            {
+                type: 'consumable',
+                itemType: 'speed_boost',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for basic petal
+                minQuantity: 1,
+                maxQuantity: 2
+            },
+            // Rarity-based drops
+            {
+                type: 'consumable',
+                itemType: 'shield',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 2
+            },
+            {
+                type: 'petal',
+                itemType: 'basic',
+                rarity: 'uncommon',
+                probability: 0.1,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    }
+};
+// Function to calculate drops for a mob based on its rarity
+function calculateMobDrops(mobType, mobRarity) {
+    const dropTable = MOB_DROP_TABLES[mobType];
+    if (!dropTable) {
+        return [];
+    }
+    const drops = [];
+    // For non-common mobs, adjust rarity probabilities
+    if (mobRarity !== 'common') {
+        const rarityIndex = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'].indexOf(mobRarity);
+        // Process each drop in the table
+        for (const drop of dropTable.drops) {
+            let adjustedDrop = { ...drop };
+            // Adjust rarity based on mob rarity
+            // if (drop.type === 'petal') {
+            // 90% chance for one rarity lower, 10% chance for same rarity
+            const random = Math.random();
+            if (random < 0.9 && rarityIndex > 0) {
+                // One rarity lower
+                const lowerRarityIndex = rarityIndex - 1;
+                adjustedDrop.rarity = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'][lowerRarityIndex];
+            }
+            // Otherwise keep same rarity (10% chance)
+            // }
+            console.log('adjustedDrop', adjustedDrop);
+            // Check if this drop should occur
+            if (Math.random() < adjustedDrop.probability) {
+                drops.push(adjustedDrop);
+            }
+        }
+    }
+    else {
+        // For common mobs, use original probabilities
+        for (const drop of dropTable.drops) {
+            if (Math.random() < drop.probability) {
+                drops.push(drop);
+            }
+        }
+    }
+    // Ensure at least one drop if guaranteed
+    if (dropTable.guaranteed && drops.length === 0) {
+        // Fallback: give a basic common petal
+        drops.push({
+            type: 'petal',
+            itemType: 'basic',
+            rarity: 'common',
+            probability: 1.0,
+            minQuantity: 1,
+            maxQuantity: 1
+        });
+    }
+    return drops;
+}
+// Function to get drop table for a specific mob type
+function getMobDropTable(mobType) {
+    return MOB_DROP_TABLES[mobType] || null;
+}
+// Test function to verify drop system
+function testDropSystem() {
+    console.log('Testing drop system...');
+    const mobTypes = ['bee', 'ladybug', 'soldier_ant'];
+    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    for (const mobType of mobTypes) {
+        console.log(`\nTesting ${mobType}:`);
+        for (const rarity of rarities) {
+            const drops = calculateMobDrops(mobType, rarity);
+            console.log(`  ${rarity}: ${drops.length} drops`);
+            for (const drop of drops) {
+                console.log(`    - ${drop.type} ${drop.itemType} (${drop.rarity})`);
+            }
+        }
+    }
+}
 
 ;// ./src/graphics.ts
 
