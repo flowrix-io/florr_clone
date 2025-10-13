@@ -421,14 +421,24 @@ class Graphics {
         if (!player.loadout || !Array.isArray(player.loadout)) {
             return; // Skip drawing petals if loadout is not properly initialized
         }
-        // Get all petals from player loadout
-        const petals = player.loadout.filter(item => item && item.type === 'petal');
-        if (petals.length === 0)
+        // Get all petals from player loadout and expand based on count property
+        const petalInstances = [];
+        player.loadout.forEach(item => {
+            if (item && item.type === 'petal' && item.petalType && item.rarity) {
+                const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+                const count = stats?.count || 1; // Use count from stats, default to 1
+                // Create multiple instances based on count
+                for (let i = 0; i < count; i++) {
+                    petalInstances.push({ petal: item, instanceIndex: i });
+                }
+            }
+        });
+        if (petalInstances.length === 0)
             return;
         const currentTime = Date.now();
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
-        const angleStep = (Math.PI * 2) / petals.length; // Evenly space petals
-        petals.forEach((petal, index) => {
+        const angleStep = (Math.PI * 2) / petalInstances.length; // Evenly space petals
+        petalInstances.forEach(({ petal, instanceIndex }, index) => {
             if (!petal || !petal.petalType || !petal.rarity)
                 return;
             const stats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);

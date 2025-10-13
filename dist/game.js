@@ -125,6 +125,7 @@ class Game {
         this.healthPotionSprite = new Image();
         this.speedBoostSprite = new Image();
         this.shieldSprite = new Image();
+        this.backgroundLoadAttempted = false;
         this.lastDeathTime = 0;
         this.deathCooldown = 3000; // 3 seconds
         this.lastMessageTime = 0; // Add this line
@@ -896,26 +897,34 @@ class Game {
         return `./assets/${filename}`;
     }
     async loadBackgroundFromSVG() {
+        if (this.backgroundLoadAttempted) {
+            return; // Prevent infinite loop
+        }
+        this.backgroundLoadAttempted = true;
         try {
             // Load the land.svg file
             const response = await fetch('./land.svg');
+            if (!response.ok) {
+                throw new Error(`Failed to fetch land.svg: ${response.status}`);
+            }
             const svgText = await response.text();
-            // Convert SVG to data URL
-            const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-            const url = URL.createObjectURL(svgBlob);
-            // Load into image element
-            const img = new Image();
-            img.onload = () => {
-                this.backgroundTexture.src = img.src;
+            // Convert SVG to data URL (base64) so it's persistent
+            const base64 = btoa(unescape(encodeURIComponent(svgText)));
+            const dataUrl = `data:image/svg+xml;base64,${base64}`;
+            // Load directly into backgroundTexture
+            this.backgroundTexture.onload = () => {
                 console.log('Background SVG loaded successfully');
-                URL.revokeObjectURL(url); // Clean up
+                // Remove error handler after successful load
+                this.backgroundTexture.onerror = null;
             };
-            img.onerror = (error) => {
+            this.backgroundTexture.onerror = (error) => {
                 console.error('Failed to load background SVG:', error);
+                // Remove error handler to prevent infinite loop
+                this.backgroundTexture.onerror = null;
                 // Create a fallback programmatic SVG if loading fails
                 this.createFallbackBackground();
             };
-            img.src = url;
+            this.backgroundTexture.src = dataUrl;
         }
         catch (error) {
             console.error('Error loading background SVG:', error);
@@ -924,11 +933,11 @@ class Game {
         }
     }
     createFallbackBackground() {
-        // Create a simple green background with grass triangles as fallback
-        const svg = `
-            <svg width="400" height="400">
+        console.log('Using fallback background');
+        try {
+            // Create a simple green background with grass triangles as fallback
+            const svg = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
   <rect width="400" height="400" x="0" y="0" fill="#00d885"/>
-
   <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(60, 60) rotate(45)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
   <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(180, 80) rotate(-20)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
   <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(300, 70) rotate(120)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
@@ -936,21 +945,36 @@ class Game {
   <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(250, 280) rotate(210)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
   <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(340, 230) rotate(-90)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
   <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(80, 300) rotate(75)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-
   <circle cx="150" cy="50" r="18" fill="#00f295"/>
   <circle cx="280" cy="180" r="18" fill="#00f295"/>
   <circle cx="50" cy="150" r="18" fill="#00f295"/>
   <circle cx="200" cy="350" r="18" fill="#00f295"/>
   <circle cx="360" cy="320" r="18" fill="#00f295"/>
-</svg>
-        `;
-        const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
-        this.backgroundTexture.src = url;
-        this.backgroundTexture.onload = () => {
-            console.log('Fallback background loaded');
-            URL.revokeObjectURL(url);
-        };
+</svg>`;
+            // Convert to persistent base64 data URL
+            const base64 = btoa(unescape(encodeURIComponent(svg)));
+            const dataUrl = `data:image/svg+xml;base64,${base64}`;
+            // Clear any existing handlers to prevent loops
+            this.backgroundTexture.onload = () => {
+                console.log('Fallback background loaded successfully');
+                this.backgroundTexture.onload = null;
+                this.backgroundTexture.onerror = null;
+            };
+            // If even the fallback fails, don't try again - just log it
+            this.backgroundTexture.onerror = (error) => {
+                console.error('Fallback background also failed to load:', error);
+                this.backgroundTexture.onerror = null;
+                this.backgroundTexture.onload = null;
+                // Don't throw or retry - just let the graphics system use the fallback color
+            };
+            this.backgroundTexture.src = dataUrl;
+        }
+        catch (error) {
+            console.error('Error creating fallback background:', error);
+            // Clear handlers to prevent any further errors
+            this.backgroundTexture.onerror = null;
+            this.backgroundTexture.onload = null;
+        }
     }
     async loadAssets() {
         try {

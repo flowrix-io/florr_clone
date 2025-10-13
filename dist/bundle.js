@@ -23,6 +23,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A simple petal that provides basic protection",
             color: "#90EE90",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
@@ -37,6 +38,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "An improved basic petal with better stats",
             color: "#32CD32",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
@@ -51,6 +53,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A superior basic petal with enhanced capabilities",
             color: "#228B22",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
@@ -65,6 +68,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "An elite basic petal with impressive power",
             color: "#006400",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
@@ -79,6 +83,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A legendary basic petal of immense strength",
             color: "#8B4513",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
@@ -93,6 +98,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A mythic basic petal with otherworldly power",
             color: "#4B0082",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
@@ -107,6 +113,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "An ultra basic petal with cosmic power",
             color: "#de1f65",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
@@ -121,6 +128,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A super basic petal with divine energy",
             color: "#2bffa4",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
@@ -135,6 +143,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A unique basic petal of ultimate power",
             color: "#bf00ff",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="16" fill="white"/>
 </svg>`
@@ -151,6 +160,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A thorny petal that deals extra damage",
             color: "#FF69B4",
+            count: 3, // Spawns 3 petals per equipped item
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -165,6 +175,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A crimson petal with sharp thorns",
             color: "#DC143C",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -179,6 +190,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A majestic rose petal fit for royalty",
             color: "#8B0000",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -193,6 +205,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A divine rose petal blessed with power",
             color: "#B22222",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -207,6 +220,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "An eternal rose petal that never wilts",
             color: "#FF1493",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -221,6 +235,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A celestial rose petal from the heavens",
             color: "#FF6347",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -235,6 +250,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "An ultra rose petal with cosmic beauty",
             color: "#de1f65",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -249,6 +265,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A super rose petal with divine elegance",
             color: "#2bffa4",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -263,6 +280,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A unique rose petal of ultimate perfection",
             color: "#bf00ff",
+            count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -279,6 +297,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A fast, sharp petal that prioritizes offense",
             color: "#FFD700",
+            count: 2, // Spawns 2 petals per equipped item
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <polygon points="16,0 32,32 0,32" fill="black" />
 </svg>
@@ -294,6 +313,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A poisonous stinger with deadly precision",
             color: "#FFA500",
+            count: 1,
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <polygon points="16,0 32,32 0,32" fill="black" />
 </svg>
@@ -309,6 +329,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A barbed stinger that tears through enemies",
             color: "#FF8C00",
+            count: 1,
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <polygon points="16,0 32,32 0,32" fill="black" />
 </svg>
@@ -324,6 +345,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A razor-sharp stinger of incredible lethality",
             color: "#FF7F50",
+            count: 1,
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <polygon points="16,0 32,32 0,32" fill="black" />
 </svg>
@@ -339,6 +361,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "An infernal stinger wreathed in flames",
             color: "#FF4500",
+            count: 1,
             image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <polygon points="16,0 32,32 0,32" fill="black" />
 </svg>
@@ -354,6 +377,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A void stinger that pierces reality itself",
             color: "#800080",
+            count: 1,
             image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
 
   <!-- Top triangle (Blue) -->
@@ -385,6 +409,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "An ultra stinger with cosmic precision",
             color: "#de1f65",
+            count: 1,
             image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
 
   <!-- Top triangle (Blue) -->
@@ -416,6 +441,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A super stinger with divine lethality",
             color: "#2bffa4",
+            count: 1,
             image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
 
   <!-- Top triangle (Blue) -->
@@ -447,6 +473,7 @@ const PETAL_CONFIG = {
             knockback: 1,
             description: "A unique stinger of ultimate destruction",
             color: "#bf00ff",
+            count: 1,
             image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
 
   <!-- Top triangle (Blue) -->
@@ -1778,7 +1805,7 @@ const EXAMPLE_CROSS_SERVER_TELEPORTERS = [
 ];
 
 // EXTERNAL MODULE: ./src/petals.ts
-var src_petals = __webpack_require__(375);
+var petals = __webpack_require__(375);
 ;// ./src/mobs.ts
 // Scaling multipliers for mob stats
 const HEALTH_SCALING = {
@@ -3851,17 +3878,27 @@ class Graphics {
         if (!player.loadout || !Array.isArray(player.loadout)) {
             return; // Skip drawing petals if loadout is not properly initialized
         }
-        // Get all petals from player loadout
-        const petals = player.loadout.filter(item => item && item.type === 'petal');
-        if (petals.length === 0)
+        // Get all petals from player loadout and expand based on count property
+        const petalInstances = [];
+        player.loadout.forEach(item => {
+            if (item && item.type === 'petal' && item.petalType && item.rarity) {
+                const stats = (0,petals/* getPetalStats */.q)(item.petalType, item.rarity);
+                const count = stats?.count || 1; // Use count from stats, default to 1
+                // Create multiple instances based on count
+                for (let i = 0; i < count; i++) {
+                    petalInstances.push({ petal: item, instanceIndex: i });
+                }
+            }
+        });
+        if (petalInstances.length === 0)
             return;
         const currentTime = Date.now();
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
-        const angleStep = (Math.PI * 2) / petals.length; // Evenly space petals
-        petals.forEach((petal, index) => {
+        const angleStep = (Math.PI * 2) / petalInstances.length; // Evenly space petals
+        petalInstances.forEach(({ petal, instanceIndex }, index) => {
             if (!petal || !petal.petalType || !petal.rarity)
                 return;
-            const stats = (0,src_petals/* getPetalStats */.q)(petal.petalType, petal.rarity);
+            const stats = (0,petals/* getPetalStats */.q)(petal.petalType, petal.rarity);
             if (!stats)
                 return;
             // Skip drawing if petal is on cooldown
@@ -4031,7 +4068,7 @@ class Graphics {
     drawWorldPetal(item) {
         if (!item.petalType || !item.rarity)
             return;
-        const stats = (0,src_petals/* getPetalStats */.q)(item.petalType, item.rarity);
+        const stats = (0,petals/* getPetalStats */.q)(item.petalType, item.rarity);
         if (!stats)
             return;
         // Draw petal using cached image
@@ -9537,7 +9574,7 @@ class InventoryManager {
         };
         this.game = game;
         this.chat = chat;
-        this.allPetalTypes = (0,src_petals/* getAllPetalTypes */.tn)();
+        this.allPetalTypes = (0,petals/* getAllPetalTypes */.tn)();
         // Create loadout bar
         const loadoutBar = document.createElement('div');
         loadoutBar.id = 'loadoutBar';
@@ -9784,7 +9821,7 @@ class InventoryManager {
         };
         // Initialize health for petals
         if (itemType === 'petal' && petalType && rarity) {
-            const stats = (0,src_petals/* getPetalStats */.q)(petalType, rarity);
+            const stats = (0,petals/* getPetalStats */.q)(petalType, rarity);
             if (stats) {
                 item.health = stats.health;
                 item.maxHealth = stats.health;
@@ -9888,7 +9925,7 @@ class InventoryManager {
                     petalDiv.style.justifyContent = 'center';
                     // Get petal SVG from stats
                     if (item.petalType && item.rarity) {
-                        const stats = (0,src_petals/* getPetalStats */.q)(item.petalType, item.rarity);
+                        const stats = (0,petals/* getPetalStats */.q)(item.petalType, item.rarity);
                         if (stats && stats.image) {
                             // Create an image element with the SVG data
                             const img = document.createElement('img');
@@ -10161,7 +10198,7 @@ class InventoryManager {
                     if (type.startsWith('petal_')) {
                         // Handle petal items with SVG
                         const petalType = type.replace('petal_', '');
-                        const stats = (0,src_petals/* getPetalStats */.q)(petalType, rarity);
+                        const stats = (0,petals/* getPetalStats */.q)(petalType, rarity);
                         if (stats && stats.image) {
                             const img = document.createElement('img');
                             img.alt = type;
@@ -10384,7 +10421,7 @@ class InventoryManager {
                 slot.innerHTML = '';
                 slot.style.borderColor = this.ITEM_RARITY_COLORS[firstItem.rarity];
                 if (firstItem.type === 'petal' && firstItem.petalType && firstItem.rarity) {
-                    const stats = (0,src_petals/* getPetalStats */.q)(firstItem.petalType, firstItem.rarity);
+                    const stats = (0,petals/* getPetalStats */.q)(firstItem.petalType, firstItem.rarity);
                     if (stats && stats.image) {
                         const img = document.createElement('img');
                         img.style.width = '100%';
@@ -10506,7 +10543,7 @@ class InventoryManager {
                             petalDiv.style.alignItems = 'center';
                             petalDiv.style.justifyContent = 'center';
                             // Get petal SVG from stats
-                            const stats = (0,src_petals/* getPetalStats */.q)(itemType.replace('petal_', ''), rarity);
+                            const stats = (0,petals/* getPetalStats */.q)(itemType.replace('petal_', ''), rarity);
                             if (stats && stats.image) {
                                 // Create an image element with the SVG data
                                 const img = document.createElement('img');

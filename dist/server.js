@@ -1581,22 +1581,33 @@ function updatePlayerState(player, deltaTime) {
     }
     // Check for petal-enemy collisions
     if (player.loadout) {
+        // Build array of petal instances considering count property
+        const petalInstances = [];
         for (let i = 0; i < player.loadout.length; i++) {
             const petal = player.loadout[i];
-            if (!petal || petal.type !== 'petal' || !petal.petalType || !petal.rarity || !petal.health || petal.health <= 0) {
+            if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
+                const petalStats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
+                const count = petalStats?.count || 1; // Use count from stats, default to 1
+                // Create multiple instances based on count
+                for (let j = 0; j < count; j++) {
+                    petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i });
+                }
+            }
+        }
+        const currentTime = Date.now();
+        const petalExtension = player.inputs.petalExtension || 1.0;
+        const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
+        const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
+        for (let idx = 0; idx < petalInstances.length; idx++) {
+            const { petal, instanceIndex, loadoutIndex } = petalInstances[idx];
+            if (!petal || !petal.health || petal.health <= 0) {
                 continue;
             }
             const petalStats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
             if (!petalStats)
                 continue;
-            // Calculate petal position around player
-            const currentTime = Date.now();
-            const petalExtension = player.inputs.petalExtension || 1.0;
-            const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
-            const angleStep = (Math.PI * 2) / player.loadout.filter(p => p && p.type === 'petal').length;
-            const petalIndex = player.loadout.filter(p => p && p.type === 'petal').indexOf(petal);
             const rotationSpeed = petalStats.speed * 0.002; // Convert to radians per ms
-            const baseAngle = petalIndex * angleStep;
+            const baseAngle = idx * angleStep;
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             const totalAngle = baseAngle + rotationAngle;
             const petalX = player.x + Math.cos(totalAngle) * baseRadius;
@@ -1642,24 +1653,24 @@ function updatePlayerState(player, deltaTime) {
                         // Add cooldown (similar to other items)
                         const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
                         setTimeout(() => {
-                            if (constants_2.players[player.id] && player.loadout[i] && player.loadout[i].onCooldown) {
+                            if (constants_2.players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex].onCooldown) {
                                 // Restore petal after cooldown
-                                player.loadout[i] = {
+                                player.loadout[loadoutIndex] = {
                                     ...originalPetal,
                                     health: originalPetal.maxHealth, // Restore full health
                                     onCooldown: false
                                 };
                                 io.emit('petalRestored', {
                                     playerId: player.id,
-                                    slotIndex: i,
-                                    petal: player.loadout[i]
+                                    slotIndex: loadoutIndex,
+                                    petal: player.loadout[loadoutIndex]
                                 });
                                 // console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
                             }
                         }, cooldownTime);
                         io.emit('petalBroken', {
                             playerId: player.id,
-                            slotIndex: i,
+                            slotIndex: loadoutIndex,
                             petalType: petal.petalType,
                             rarity: petal.rarity
                         });
