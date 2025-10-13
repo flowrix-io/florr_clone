@@ -1575,6 +1575,14 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.1,
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'light',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },

@@ -32,7 +32,7 @@ export const PETAL_CONFIG: PetalConfig = {
             color: "#90EE90",
             count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="16" fill="white"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
         },
         uncommon: {
@@ -47,7 +47,7 @@ export const PETAL_CONFIG: PetalConfig = {
             color: "#32CD32",
             count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="16" fill="white"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
         },
         rare: {
@@ -62,7 +62,7 @@ export const PETAL_CONFIG: PetalConfig = {
             color: "#228B22",
             count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="16" fill="white"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
         },
         epic: {
@@ -77,7 +77,7 @@ export const PETAL_CONFIG: PetalConfig = {
             color: "#006400",
             count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="16" fill="white"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
         },
         legendary: {
@@ -92,7 +92,7 @@ export const PETAL_CONFIG: PetalConfig = {
             color: "#8B4513",
             count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="16" fill="white"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
         },
         mythic: {
@@ -107,7 +107,7 @@ export const PETAL_CONFIG: PetalConfig = {
             color: "#4B0082",
             count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="16" fill="white"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
         },
         ultra: {
@@ -122,7 +122,7 @@ export const PETAL_CONFIG: PetalConfig = {
             color: "#de1f65",
             count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="16" fill="white"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
         },
         super: {
@@ -137,7 +137,7 @@ export const PETAL_CONFIG: PetalConfig = {
             color: "#2bffa4",
             count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="16" fill="white"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
         },
         unique: {
@@ -152,7 +152,7 @@ export const PETAL_CONFIG: PetalConfig = {
             color: "#bf00ff",
             count: 1,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="16" fill="white"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
         }
     },
@@ -501,6 +501,143 @@ export const PETAL_CONFIG: PetalConfig = {
 </svg>
 
 `
+        }
+    },
+    light: {
+        common: {
+            name: "Light Petal",
+            damage: 5,
+            health: 5,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A light petal that provides basic protection",
+            color: "#90EE90",
+            count: 1,
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`
+        },
+        uncommon: {
+            name: "Enhanced Light Petal",
+            damage: 15,
+            health: 15,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "An improved light petal with better stats",
+            color: "#32CD32",
+            count: 2,
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`
+        },
+        rare: {
+            name: "Royal Light Petal",
+            damage: 45,
+            health: 45,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A majestic light petal fit for royalty",
+            color: "#8B0000",
+            count: 2,
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`
+        },
+        epic: {
+            name: "Divine Light Petal",
+            damage: 135,
+            health: 135,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A divine light petal blessed with power",
+            color: "#B22222",
+            count: 3,
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`
+        },
+        legendary: {
+            name: "Eternal Light Petal",
+            damage: 405,
+            health: 405,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "An eternal light petal that never wilts",
+            color: "#FF1493",
+            count: 3,
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`
+        },
+        mythic: {
+            name: "Celestial Light Petal",
+            damage: 1215,
+            health: 1215,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A celestial light petal from the heavens",
+            color: "#FF6347",
+            count: 5,
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`
+        },
+        ultra: {
+            name: "Ultra Light Petal",
+            damage: 3645,
+            health: 3645,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "An ultra light petal with cosmic power",
+            color: "#de1f65",
+            count: 5,
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`
+        },
+        super: {
+            name: "Super Light Petal",
+            damage: 10935,
+            health: 10935,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A super light petal with divine energy",
+            color: "#2bffa4",
+            count: 5,
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`
+        },
+        unique: {
+            name: "Unique Light Petal",
+            damage: 32805,
+            health: 32805,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A unique light petal of ultimate power",
+            color: "#bf00ff",
+            count: 5,
+            image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`
         }
     }
 };

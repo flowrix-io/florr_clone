@@ -506,18 +506,31 @@ export class Graphics {
         }
         
         // Get all petals from player loadout and expand based on count property
-        const petalInstances: Array<{petal: typeof player.loadout[0], instanceIndex: number}> = [];
-        player.loadout.forEach(item => {
-            if (item && item.type === 'petal' && item.petalType && item.rarity) {
-                const stats = getPetalStats(item.petalType, item.rarity);
-                const count = stats?.count || 1; // Use count from stats, default to 1
-                
-                // Create multiple instances based on count
-                for (let i = 0; i < count; i++) {
-                    petalInstances.push({ petal: item, instanceIndex: i });
+        const petalInstances: Array<{petal: any, instanceIndex: number}> = [];
+        try {
+            player.loadout.forEach(item => {
+                if (item && item.type === 'petal' && item.petalType && item.rarity) {
+                    const stats = getPetalStats(item.petalType, item.rarity);
+                    if (!stats) return;
+                    
+                    const count = stats.count || 1; // Use count from stats, default to 1
+                    
+                    // Validate count is a valid number
+                    if (typeof count !== 'number' || count < 1 || !isFinite(count)) {
+                        console.warn('Invalid petal count:', count, 'for', item.petalType, item.rarity);
+                        return;
+                    }
+                    
+                    // Create multiple instances based on count
+                    for (let i = 0; i < count; i++) {
+                        petalInstances.push({ petal: item, instanceIndex: i });
+                    }
                 }
-            }
-        });
+            });
+        } catch (error) {
+            console.error('Error building petal instances:', error);
+            return;
+        }
         
         if (petalInstances.length === 0) return;
 
