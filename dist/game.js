@@ -300,11 +300,8 @@ class Game {
         this.socket.on('animateViewportToMob', (data) => {
             this.startViewportAnimation(data.x, data.y);
         });
-        // Load background image
-        this.backgroundImage.src = imageAssets_1.IMAGE_ASSETS["background"];
-        this.backgroundImage.onload = () => {
-            console.log('Background image loaded successfully');
-        };
+        // Load background image from land.svg
+        this.loadBackgroundFromSVG();
         // Load wall texture
         this.wallTexture.src = imageAssets_1.IMAGE_ASSETS["wall"];
         this.wallTexture.onload = () => {
@@ -897,6 +894,63 @@ class Game {
         }
         // Otherwise use normal URL
         return `./assets/${filename}`;
+    }
+    async loadBackgroundFromSVG() {
+        try {
+            // Load the land.svg file
+            const response = await fetch('./land.svg');
+            const svgText = await response.text();
+            // Convert SVG to data URL
+            const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(svgBlob);
+            // Load into image element
+            const img = new Image();
+            img.onload = () => {
+                this.backgroundTexture.src = img.src;
+                console.log('Background SVG loaded successfully');
+                URL.revokeObjectURL(url); // Clean up
+            };
+            img.onerror = (error) => {
+                console.error('Failed to load background SVG:', error);
+                // Create a fallback programmatic SVG if loading fails
+                this.createFallbackBackground();
+            };
+            img.src = url;
+        }
+        catch (error) {
+            console.error('Error loading background SVG:', error);
+            // Create a fallback programmatic SVG if loading fails
+            this.createFallbackBackground();
+        }
+    }
+    createFallbackBackground() {
+        // Create a simple green background with grass triangles as fallback
+        const svg = `
+            <svg width="400" height="400">
+  <rect width="400" height="400" x="0" y="0" fill="#00d885"/>
+
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(60, 60) rotate(45)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(180, 80) rotate(-20)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(300, 70) rotate(120)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(100, 200) rotate(180)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(250, 280) rotate(210)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(340, 230) rotate(-90)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(80, 300) rotate(75)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+
+  <circle cx="150" cy="50" r="18" fill="#00f295"/>
+  <circle cx="280" cy="180" r="18" fill="#00f295"/>
+  <circle cx="50" cy="150" r="18" fill="#00f295"/>
+  <circle cx="200" cy="350" r="18" fill="#00f295"/>
+  <circle cx="360" cy="320" r="18" fill="#00f295"/>
+</svg>
+        `;
+        const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        this.backgroundTexture.src = url;
+        this.backgroundTexture.onload = () => {
+            console.log('Fallback background loaded');
+            URL.revokeObjectURL(url);
+        };
     }
     async loadAssets() {
         try {

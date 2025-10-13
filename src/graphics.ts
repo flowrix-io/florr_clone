@@ -845,6 +845,46 @@ export class Graphics {
         this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     }
 
+    private drawScrollingBackground() {
+        // If background texture is not loaded, just fill with a color
+        if (!this.backgroundTexture || !this.backgroundTexture.complete) {
+            this.ctx.fillStyle = '#00d885'; // Default green color from the SVG
+            this.ctx.fillRect(
+                this.cameraX,
+                this.cameraY,
+                this.canvas.width / this.zoomLevel,
+                this.canvas.height / this.zoomLevel
+            );
+            return;
+        }
+
+        // Get the size of the background texture (400x400 from the SVG)
+        const bgWidth = this.backgroundTexture.width;
+        const bgHeight = this.backgroundTexture.height;
+
+        // Calculate the visible area in world coordinates
+        const visibleWidth = this.canvas.width / this.zoomLevel;
+        const visibleHeight = this.canvas.height / this.zoomLevel;
+
+        // Calculate the starting position for tiling (offset by camera position)
+        // Use modulo to create seamless scrolling
+        const startX = Math.floor(this.cameraX / bgWidth) * bgWidth;
+        const startY = Math.floor(this.cameraY / bgHeight) * bgHeight;
+
+        // Calculate how many tiles we need to draw
+        const tilesX = Math.ceil(visibleWidth / bgWidth) + 1;
+        const tilesY = Math.ceil(visibleHeight / bgHeight) + 1;
+
+        // Draw the tiled background
+        for (let i = 0; i <= tilesX; i++) {
+            for (let j = 0; j <= tilesY; j++) {
+                const x = startX + (i * bgWidth);
+                const y = startY + (j * bgHeight);
+                this.ctx.drawImage(this.backgroundTexture, x, y, bgWidth, bgHeight);
+            }
+        }
+    }
+
     public drawGameObjects(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, currentPlayerId: string, petalExtension: number = 1.0) {
         const viewport = {
             left: this.cameraX,
@@ -886,17 +926,8 @@ export class Graphics {
         // Translate the context by the camera position
         this.ctx.translate(-this.cameraX, -this.cameraY);
         
-        // Draw background pattern
-        const pattern = this.ctx.createPattern(this.backgroundTexture, 'repeat');
-        if (pattern) {
-            this.ctx.fillStyle = pattern;
-            this.ctx.fillRect(
-                this.cameraX,
-                this.cameraY,
-                this.canvas.width + this.cameraX * 0.5,
-                this.canvas.height + this.cameraY * 0.5
-            );
-        }
+        // Draw scrolling background
+        this.drawScrollingBackground();
 
 
         // Draw the map

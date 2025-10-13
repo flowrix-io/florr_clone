@@ -4116,6 +4116,35 @@ class Graphics {
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     }
+    drawScrollingBackground() {
+        // If background texture is not loaded, just fill with a color
+        if (!this.backgroundTexture || !this.backgroundTexture.complete) {
+            this.ctx.fillStyle = '#00d885'; // Default green color from the SVG
+            this.ctx.fillRect(this.cameraX, this.cameraY, this.canvas.width / this.zoomLevel, this.canvas.height / this.zoomLevel);
+            return;
+        }
+        // Get the size of the background texture (400x400 from the SVG)
+        const bgWidth = this.backgroundTexture.width;
+        const bgHeight = this.backgroundTexture.height;
+        // Calculate the visible area in world coordinates
+        const visibleWidth = this.canvas.width / this.zoomLevel;
+        const visibleHeight = this.canvas.height / this.zoomLevel;
+        // Calculate the starting position for tiling (offset by camera position)
+        // Use modulo to create seamless scrolling
+        const startX = Math.floor(this.cameraX / bgWidth) * bgWidth;
+        const startY = Math.floor(this.cameraY / bgHeight) * bgHeight;
+        // Calculate how many tiles we need to draw
+        const tilesX = Math.ceil(visibleWidth / bgWidth) + 1;
+        const tilesY = Math.ceil(visibleHeight / bgHeight) + 1;
+        // Draw the tiled background
+        for (let i = 0; i <= tilesX; i++) {
+            for (let j = 0; j <= tilesY; j++) {
+                const x = startX + (i * bgWidth);
+                const y = startY + (j * bgHeight);
+                this.ctx.drawImage(this.backgroundTexture, x, y, bgWidth, bgHeight);
+            }
+        }
+    }
     drawGameObjects(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
         const viewport = {
             left: this.cameraX,
@@ -4149,12 +4178,8 @@ class Graphics {
         this.ctx.scale(this.zoomLevel, this.zoomLevel);
         // Translate the context by the camera position
         this.ctx.translate(-this.cameraX, -this.cameraY);
-        // Draw background pattern
-        const pattern = this.ctx.createPattern(this.backgroundTexture, 'repeat');
-        if (pattern) {
-            this.ctx.fillStyle = pattern;
-            this.ctx.fillRect(this.cameraX, this.cameraY, this.canvas.width + this.cameraX * 0.5, this.canvas.height + this.cameraY * 0.5);
-        }
+        // Draw scrolling background
+        this.drawScrollingBackground();
         // Draw the map
         this.drawMap(this.mapData);
         // Draw game objects
@@ -10717,6 +10742,7 @@ class Game {
         this.healthPotionSprite = new Image();
         this.speedBoostSprite = new Image();
         this.shieldSprite = new Image();
+        this.backgroundLoadAttempted = false;
         this.lastDeathTime = 0;
         this.deathCooldown = 3000; // 3 seconds
         this.lastMessageTime = 0; // Add this line
@@ -10892,11 +10918,8 @@ class Game {
         this.socket.on('animateViewportToMob', (data) => {
             this.startViewportAnimation(data.x, data.y);
         });
-        // Load background image
-        this.backgroundImage.src = IMAGE_ASSETS["background"];
-        this.backgroundImage.onload = () => {
-            console.log('Background image loaded successfully');
-        };
+        // Load background image from land.svg
+        this.loadBackgroundFromSVG();
         // Load wall texture
         this.wallTexture.src = IMAGE_ASSETS["wall"];
         this.wallTexture.onload = () => {
@@ -11489,6 +11512,86 @@ class Game {
         }
         // Otherwise use normal URL
         return `./assets/${filename}`;
+    }
+    async loadBackgroundFromSVG() {
+        if (this.backgroundLoadAttempted) {
+            return; // Prevent infinite loop
+        }
+        this.backgroundLoadAttempted = true;
+        try {
+            // Load the land.svg file
+            const response = await fetch('./land.svg');
+            if (!response.ok) {
+                throw new Error(`Failed to fetch land.svg: ${response.status}`);
+            }
+            const svgText = await response.text();
+            // Convert SVG to data URL (base64) so it's persistent
+            const base64 = btoa(unescape(encodeURIComponent(svgText)));
+            const dataUrl = `data:image/svg+xml;base64,${base64}`;
+            // Load directly into backgroundTexture
+            this.backgroundTexture.onload = () => {
+                console.log('Background SVG loaded successfully');
+                // Remove error handler after successful load
+                this.backgroundTexture.onerror = null;
+            };
+            this.backgroundTexture.onerror = (error) => {
+                console.error('Failed to load background SVG:', error);
+                // Remove error handler to prevent infinite loop
+                this.backgroundTexture.onerror = null;
+                // Create a fallback programmatic SVG if loading fails
+                this.createFallbackBackground();
+            };
+            this.backgroundTexture.src = dataUrl;
+        }
+        catch (error) {
+            console.error('Error loading background SVG:', error);
+            // Create a fallback programmatic SVG if loading fails
+            this.createFallbackBackground();
+        }
+    }
+    createFallbackBackground() {
+        console.log('Using fallback background');
+        try {
+            // Create a simple green background with grass triangles as fallback
+            const svg = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="400" x="0" y="0" fill="#00d885"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(60, 60) rotate(45)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(180, 80) rotate(-20)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(300, 70) rotate(120)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(100, 200) rotate(180)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(250, 280) rotate(210)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(340, 230) rotate(-90)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(80, 300) rotate(75)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <circle cx="150" cy="50" r="18" fill="#00f295"/>
+  <circle cx="280" cy="180" r="18" fill="#00f295"/>
+  <circle cx="50" cy="150" r="18" fill="#00f295"/>
+  <circle cx="200" cy="350" r="18" fill="#00f295"/>
+  <circle cx="360" cy="320" r="18" fill="#00f295"/>
+</svg>`;
+            // Convert to persistent base64 data URL
+            const base64 = btoa(unescape(encodeURIComponent(svg)));
+            const dataUrl = `data:image/svg+xml;base64,${base64}`;
+            // Clear any existing handlers to prevent loops
+            this.backgroundTexture.onload = () => {
+                console.log('Fallback background loaded successfully');
+                this.backgroundTexture.onload = null;
+                this.backgroundTexture.onerror = null;
+            };
+            // If even the fallback fails, don't try again - just log it
+            this.backgroundTexture.onerror = (error) => {
+                console.error('Fallback background also failed to load:', error);
+                this.backgroundTexture.onerror = null;
+                this.backgroundTexture.onload = null;
+                // Don't throw or retry - just let the graphics system use the fallback color
+            };
+            this.backgroundTexture.src = dataUrl;
+        }
+        catch (error) {
+            console.error('Error creating fallback background:', error);
+            // Clear handlers to prevent any further errors
+            this.backgroundTexture.onerror = null;
+            this.backgroundTexture.onload = null;
+        }
     }
     async loadAssets() {
         try {
