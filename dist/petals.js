@@ -533,7 +533,7 @@ exports.PETAL_CONFIG = {
             count: 2,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
-</svg>>`
+</svg>`
         },
         epic: {
             name: "Divine Light Petal",

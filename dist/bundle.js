@@ -3870,27 +3870,49 @@ class Graphics {
         // Draw player stats
         const player = players.get(socket);
         if (player) {
-            // Draw health bar
+            // Draw flower in top left
+            const flowerCenterX = 50;
+            const flowerCenterY = 50;
+            const flowerEye = { x: 2, y: 0 }; // Centered eyes for UI flower
+            this.ctx.save();
+            this.drawFlower({ x: flowerCenterX, y: flowerCenterY }, flowerEye);
+            this.ctx.restore();
+            // Position bars to the right of the flower
             const healthBarWidth = 200;
             const healthBarHeight = 20;
-            const healthX = 20;
-            const healthY = 20;
-            // Health bar background
+            const healthX = flowerCenterX + 40; // Offset from flower center
+            const healthY = 30;
+            // Draw health bar with rounded ends
+            const healthFillWidth = (player.health / player.maxHealth) * healthBarWidth;
+            const radius = healthBarHeight / 2;
+            // Health bar background (rounded)
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            this.ctx.fillRect(healthX, healthY, healthBarWidth, healthBarHeight);
-            // Health bar fill
+            this.ctx.beginPath();
+            this.ctx.roundRect(healthX, healthY, healthBarWidth, healthBarHeight, radius);
+            this.ctx.fill();
+            // Health bar fill (rounded)
             this.ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
-            this.ctx.fillRect(healthX, healthY, (player.health / player.maxHealth) * healthBarWidth, healthBarHeight);
+            this.ctx.beginPath();
+            this.ctx.roundRect(healthX, healthY, healthFillWidth, healthBarHeight, radius);
+            this.ctx.fill();
             // Health text
             this.ctx.fillStyle = 'white';
             this.ctx.font = '14px Arial';
             this.ctx.fillText(`Health: ${Math.round(player.health)}/${player.maxHealth}`, healthX + 5, healthY + 15);
-            // Draw XP bar
+            // Draw XP bar with rounded ends
             const xpBarY = healthY + healthBarHeight + 5;
+            const xpFillWidth = (player.xp / player.xpToNextLevel) * healthBarWidth;
+            // XP bar background (rounded)
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            this.ctx.fillRect(healthX, xpBarY, healthBarWidth, healthBarHeight);
-            this.ctx.fillStyle = 'rgba(0, 128, 255, 0.7)';
-            this.ctx.fillRect(healthX, xpBarY, (player.xp / player.xpToNextLevel) * healthBarWidth, healthBarHeight);
+            this.ctx.beginPath();
+            this.ctx.roundRect(healthX, xpBarY, healthBarWidth, healthBarHeight, radius);
+            this.ctx.fill();
+            // XP bar fill (rounded) with new color
+            this.ctx.fillStyle = '#faffc9';
+            this.ctx.beginPath();
+            this.ctx.roundRect(healthX, xpBarY, xpFillWidth, healthBarHeight, radius);
+            this.ctx.fill();
+            // XP text
             this.ctx.fillStyle = 'white';
             this.ctx.fillText(`Level ${player.level} - XP: ${player.xp}/${player.xpToNextLevel}`, healthX + 5, xpBarY + 15);
         }

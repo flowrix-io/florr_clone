@@ -1583,16 +1583,28 @@ function updatePlayerState(player, deltaTime) {
     if (player.loadout) {
         // Build array of petal instances considering count property
         const petalInstances = [];
-        for (let i = 0; i < player.loadout.length; i++) {
-            const petal = player.loadout[i];
-            if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
-                const petalStats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
-                const count = petalStats?.count || 1; // Use count from stats, default to 1
-                // Create multiple instances based on count
-                for (let j = 0; j < count; j++) {
-                    petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i });
+        try {
+            for (let i = 0; i < player.loadout.length; i++) {
+                const petal = player.loadout[i];
+                if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
+                    const petalStats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
+                    if (!petalStats)
+                        continue;
+                    const count = petalStats.count || 1; // Use count from stats, default to 1
+                    // Validate count is a valid number
+                    if (typeof count !== 'number' || count < 1 || !isFinite(count)) {
+                        console.warn('Invalid petal count:', count, 'for', petal.petalType, petal.rarity);
+                        continue;
+                    }
+                    // Create multiple instances based on count
+                    for (let j = 0; j < count; j++) {
+                        petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i });
+                    }
                 }
             }
+        }
+        catch (error) {
+            console.error('Error building petal instances:', error);
         }
         const currentTime = Date.now();
         const petalExtension = player.inputs.petalExtension || 1.0;
