@@ -268,9 +268,9 @@ class Graphics {
         // Draw player stats
         const player = players.get(socket);
         if (player) {
-            // Draw flower in top left
+            // Draw flower in top left (moved down for exit button)
             const flowerCenterX = 50;
-            const flowerCenterY = 50;
+            const flowerCenterY = 120; // 50 + 70 pixels down
             const flowerEye = { x: 2, y: 0 }; // Centered eyes for UI flower
             this.ctx.save();
             this.drawFlower({ x: flowerCenterX, y: flowerCenterY }, flowerEye);
@@ -279,7 +279,7 @@ class Graphics {
             const healthBarWidth = 200;
             const healthBarHeight = 20;
             const healthX = flowerCenterX + 40; // Offset from flower center
-            const healthY = 30;
+            const healthY = 100; // 30 + 70 pixels down
             // Draw health bar with rounded ends
             const healthFillWidth = (player.health / player.maxHealth) * healthBarWidth;
             const radius = healthBarHeight / 2;
