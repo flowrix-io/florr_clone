@@ -4408,6 +4408,11 @@ class Graphics {
     setupItemSprites(itemSprites) {
         this.itemSprites = itemSprites;
     }
+    setPetalImagesFromPreloaded(imageCache) {
+        console.log('[Graphics] Setting petal images from preloaded cache');
+        this.petalImageCache = imageCache;
+        console.log('[Graphics] Petal images set:', Object.keys(this.petalImageCache).length, 'images');
+    }
     async preloadPetalImages() {
         const { PETAL_CONFIG } = await Promise.resolve(/* import() */).then(__webpack_require__.bind(__webpack_require__, 375));
         const loadPromises = [];
@@ -10843,7 +10848,7 @@ class InventoryManager {
 
 
 class Game {
-    constructor(showHitboxes, serverIp) {
+    constructor(showHitboxes, serverIp, preloadedAssets) {
         this.speedBoostActive = false;
         this.shieldActive = false;
         this.debugCollision = false; // Toggle for collision debugging
@@ -10969,25 +10974,29 @@ class Game {
         this.chat = null;
         this.showHitboxes = showHitboxes;
         this.loadControls();
-        //console.log('Game constructor called');
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets);
         this.canvas = document.getElementById('gameCanvas');
+        // Use preloaded assets if available
+        if (preloadedAssets) {
+            console.log('[Game] Using preloaded assets');
+            this.playerSprite = preloadedAssets.sprites.player;
+            this.octopusSprite = preloadedAssets.sprites.octopus;
+            this.fishSprite = preloadedAssets.sprites.fish;
+            this.coralSprite = preloadedAssets.sprites.coral;
+            this.palmSprite = preloadedAssets.sprites.palm;
+            this.healthPotionSprite = preloadedAssets.sprites.healthPotion;
+            this.speedBoostSprite = preloadedAssets.sprites.speedBoost;
+            this.shieldSprite = preloadedAssets.sprites.shield;
+            this.wallTexture = preloadedAssets.sprites.wall;
+            this.backgroundTexture = preloadedAssets.backgroundTexture;
+        }
         this.graphics = new Graphics(this.canvas, this.playerSprite, this.wallTexture, this.octopusSprite, this.fishSprite, this.healthPotionSprite, this.speedBoostSprite, this.shieldSprite, this.backgroundTexture);
         this.graphics.showHitboxes = this.showHitboxes;
         // Set initial canvas size
         this.resizeCanvas();
         // Add resize listener
         window.addEventListener('resize', () => this.resizeCanvas());
-        // Initialize sprites with CORS settings and wait for them to load
-        Promise.all([
-            this.initializeSprites(),
-            this.setupItemSprites(),
-            this.graphics.preloadPetalImages()
-        ]).then(() => {
-            console.log('All sprites loaded successfully');
-            this.updateColorPreview();
-            this.gameLoop();
-        }).catch(console.error);
-        // Create and set up preview canvas
+        // Create and set up preview canvas BEFORE using it
         this.colorPreviewCanvas = document.createElement('canvas');
         this.colorPreviewCanvas.width = 64; // Set fixed size for preview
         this.colorPreviewCanvas.height = 64;
@@ -11001,6 +11010,36 @@ class Game {
         previewContainer.style.marginTop = '10px';
         previewContainer.appendChild(this.colorPreviewCanvas);
         document.querySelector('.color-picker')?.appendChild(previewContainer);
+        // Initialize sprites and start game
+        if (preloadedAssets) {
+            // Assets already loaded, just set up item sprites and start
+            console.log('[Game] Sprites already loaded, starting game immediately');
+            this.setupItemSpritesFromPreloaded(preloadedAssets);
+            // Only set petal images if they were loaded
+            if (Object.keys(preloadedAssets.petalImages).length > 0) {
+                this.graphics.setPetalImagesFromPreloaded(preloadedAssets.petalImages);
+            }
+            else {
+                // Fallback: load petal images dynamically
+                console.log('[Game] Petal images not preloaded, loading dynamically');
+                this.graphics.preloadPetalImages().catch(console.error);
+            }
+            this.updateColorPreview();
+            this.gameLoop();
+        }
+        else {
+            // Load sprites dynamically (fallback)
+            console.log('[Game] Loading sprites dynamically');
+            Promise.all([
+                this.initializeSprites(),
+                this.setupItemSprites(),
+                this.graphics.preloadPetalImages()
+            ]).then(() => {
+                console.log('[Game] All sprites loaded successfully');
+                this.updateColorPreview();
+                this.gameLoop();
+            }).catch(console.error);
+        }
         // Set up color picker functionality
         const hueSlider = document.getElementById('hueSlider');
         const colorPreview = document.getElementById('colorPreview');
@@ -11465,6 +11504,16 @@ class Game {
         // Store the map data and render it
         this.world_map_data = mapData;
         this.graphics.drawMap(mapData);
+    }
+    setupItemSpritesFromPreloaded(preloadedAssets) {
+        console.log('[Game] Setting up item sprites from preloaded assets');
+        this.itemSprites = {
+            health_potion: preloadedAssets.sprites.healthPotion,
+            speed_boost: preloadedAssets.sprites.speedBoost,
+            shield: preloadedAssets.sprites.shield,
+        };
+        this.graphics.setupItemSprites(this.itemSprites);
+        console.log('[Game] Item sprites set up successfully');
     }
     async setupItemSprites() {
         this.itemSprites = {};
@@ -13183,23 +13232,362 @@ function injectTitleScreenStyles() {
     document.head.appendChild(styleElement);
 }
 
+;// ./src/preloader.ts
+/**
+ * Preloader - Handles loading all game assets and systems before showing the title screen
+ */
+
+class Preloader {
+    constructor(onProgress) {
+        this.progress = 0;
+        this.totalAssets = 0;
+        this.loadedAssets = 0;
+        this.onProgressCallback = onProgress;
+    }
+    /**
+     * Load all game assets
+     */
+    async loadAssets() {
+        console.log('[Preloader] Starting asset loading...');
+        const assets = {
+            sprites: {
+                player: new Image(),
+                octopus: new Image(),
+                fish: new Image(),
+                coral: new Image(),
+                palm: new Image(),
+                healthPotion: new Image(),
+                speedBoost: new Image(),
+                shield: new Image(),
+                wall: new Image(),
+                exit: new Image(),
+            },
+            backgroundTexture: new Image(),
+            petalImages: {},
+        };
+        // Calculate total assets to load - we'll update this after loading petal config
+        this.totalAssets = Object.keys(assets.sprites).length + 1; // sprites + background
+        this.loadedAssets = 0;
+        try {
+            // Load all sprites in parallel
+            await Promise.all([
+                this.loadSprite(assets.sprites.player, 'player.png'),
+                this.loadSprite(assets.sprites.octopus, 'octopus.png'),
+                this.loadSprite(assets.sprites.fish, 'fish.png'),
+                this.loadSprite(assets.sprites.coral, 'coral.png'),
+                this.loadSprite(assets.sprites.palm, 'palm.png'),
+                this.loadSprite(assets.sprites.healthPotion, 'health_potion.png'),
+                this.loadSprite(assets.sprites.speedBoost, 'speed_boost.png'),
+                this.loadSprite(assets.sprites.shield, 'shield.png'),
+                this.loadSprite(assets.sprites.wall, 'wall.png'),
+                this.loadSprite(assets.sprites.exit, 'exit.png'),
+            ]);
+            // Load background
+            await this.loadBackground(assets.backgroundTexture);
+            // Load petal images
+            await this.loadPetalImages(assets);
+            console.log('[Preloader] All assets loaded successfully');
+            this.updateProgress(100);
+            return assets;
+        }
+        catch (error) {
+            console.error('[Preloader] Error loading assets:', error);
+            throw error;
+        }
+    }
+    /**
+     * Load a single sprite
+     */
+    async loadSprite(sprite, filename) {
+        try {
+            sprite.crossOrigin = "anonymous";
+            sprite.src = await this.getAssetUrl(filename);
+            return new Promise((resolve, reject) => {
+                sprite.onload = () => {
+                    this.loadedAssets++;
+                    this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+                    console.log(`[Preloader] Loaded ${filename} (${this.loadedAssets}/${this.totalAssets})`);
+                    resolve();
+                };
+                sprite.onerror = (e) => {
+                    console.error(`[Preloader] Failed to load sprite: ${filename}`, e);
+                    // Don't reject, just resolve to continue loading other assets
+                    this.loadedAssets++;
+                    this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+                    resolve();
+                };
+            });
+        }
+        catch (error) {
+            console.error(`[Preloader] Error loading sprite ${filename}:`, error);
+            this.loadedAssets++;
+            this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+        }
+    }
+    /**
+     * Load background texture from SVG
+     */
+    async loadBackground(backgroundTexture) {
+        try {
+            const response = await fetch('./land.svg');
+            if (!response.ok) {
+                throw new Error(`Failed to fetch land.svg: ${response.status}`);
+            }
+            const svgText = await response.text();
+            // Convert SVG to data URL
+            const base64 = btoa(unescape(encodeURIComponent(svgText)));
+            const dataUrl = `data:image/svg+xml;base64,${base64}`;
+            return new Promise((resolve, reject) => {
+                backgroundTexture.onload = () => {
+                    this.loadedAssets++;
+                    this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+                    console.log('[Preloader] Background loaded');
+                    resolve();
+                };
+                backgroundTexture.onerror = (error) => {
+                    console.error('[Preloader] Failed to load background, using fallback');
+                    this.createFallbackBackground(backgroundTexture);
+                    this.loadedAssets++;
+                    this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+                    resolve();
+                };
+                backgroundTexture.src = dataUrl;
+            });
+        }
+        catch (error) {
+            console.error('[Preloader] Error loading background:', error);
+            this.createFallbackBackground(backgroundTexture);
+            this.loadedAssets++;
+            this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+        }
+    }
+    /**
+     * Create fallback background if SVG fails to load
+     */
+    createFallbackBackground(backgroundTexture) {
+        const svg = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
+            <rect width="400" height="400" x="0" y="0" fill="#00d885"/>
+            <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(60, 60) rotate(45)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+            <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(180, 80) rotate(-20)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+            <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(300, 70) rotate(120)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+            <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(100, 200) rotate(180)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+            <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(250, 280) rotate(210)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+            <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(340, 230) rotate(-90)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+            <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(80, 300) rotate(75)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+            <circle cx="150" cy="50" r="18" fill="#00f295"/>
+            <circle cx="280" cy="180" r="18" fill="#00f295"/>
+            <circle cx="50" cy="150" r="18" fill="#00f295"/>
+            <circle cx="200" cy="350" r="18" fill="#00f295"/>
+            <circle cx="360" cy="320" r="18" fill="#00f295"/>
+        </svg>`;
+        const base64 = btoa(unescape(encodeURIComponent(svg)));
+        const dataUrl = `data:image/svg+xml;base64,${base64}`;
+        backgroundTexture.src = dataUrl;
+    }
+    /**
+     * Load petal images from PETAL_CONFIG
+     */
+    async loadPetalImages(assets) {
+        try {
+            const { PETAL_CONFIG } = await Promise.resolve(/* import() */).then(__webpack_require__.bind(__webpack_require__, 375));
+            // Count total petal images to load
+            let petalCount = 0;
+            Object.entries(PETAL_CONFIG).forEach(([petalType, rarities]) => {
+                petalCount += Object.keys(rarities).length;
+            });
+            // Update total assets count
+            this.totalAssets += petalCount;
+            const loadPromises = [];
+            Object.entries(PETAL_CONFIG).forEach(([petalType, rarities]) => {
+                Object.entries(rarities).forEach(([rarity, stats]) => {
+                    const key = `${petalType}_${rarity}`;
+                    const img = new Image();
+                    const promise = new Promise((resolve, reject) => {
+                        img.onload = () => {
+                            assets.petalImages[key] = img;
+                            this.loadedAssets++;
+                            this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+                            console.log(`[Preloader] Loaded petal: ${key}`);
+                            resolve();
+                        };
+                        img.onerror = (error) => {
+                            console.error(`[Preloader] Failed to load petal ${key}:`, error);
+                            // Don't reject, just continue
+                            this.loadedAssets++;
+                            this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+                            resolve();
+                        };
+                        // Convert SVG string to data URL
+                        const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                        const url = URL.createObjectURL(svgBlob);
+                        img.src = url;
+                    });
+                    loadPromises.push(promise);
+                });
+            });
+            await Promise.all(loadPromises);
+            console.log(`[Preloader] Loaded ${Object.keys(assets.petalImages).length} petal images`);
+        }
+        catch (error) {
+            console.error('[Preloader] Error loading petal images:', error);
+        }
+    }
+    /**
+     * Get asset URL (handles file:// protocol)
+     */
+    async getAssetUrl(filename) {
+        const assetKey = filename.replace('.png', '');
+        // If running from file:// protocol, use base64 data
+        if (window.location.protocol === 'file:') {
+            const base64Data = IMAGE_ASSETS[assetKey];
+            if (base64Data) {
+                return base64Data;
+            }
+            console.error(`[Preloader] No base64 data found for asset: ${filename}`);
+        }
+        // Otherwise use normal URL
+        return `./assets/${filename}`;
+    }
+    /**
+     * Update progress and call callback
+     */
+    updateProgress(progress) {
+        this.progress = Math.min(100, Math.max(0, progress));
+        if (this.onProgressCallback) {
+            this.onProgressCallback(this.progress);
+        }
+    }
+    /**
+     * Get current progress
+     */
+    getProgress() {
+        return this.progress;
+    }
+}
+
 ;// ./src/index.ts
 // ... (keep the existing imports and Player class)
+
 
 
 
 let currentGame = null;
 let titleScreen = null;
 let authUI = null;
-window.onload = () => {
-    // Initialize title screen first
-    injectTitleScreenStyles();
-    titleScreen = new TitleScreen();
-    titleScreen.appendToBody();
-    // Initialize auth UI after title screen is created
-    authUI = new AuthUI();
-    // Set up game event listeners
-    setupGameEventListeners();
+let preloadedAssets = null;
+// Create and show loading screen
+function createLoadingScreen() {
+    const loadingScreen = document.createElement('div');
+    loadingScreen.id = 'preloadScreen';
+    loadingScreen.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #00d885 0%, #02c278 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        font-family: Arial, sans-serif;
+    `;
+    loadingScreen.innerHTML = `
+        <div style="text-align: center;">
+            <h1 style="color: white; font-size: 48px; margin-bottom: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+                florr.io clone
+            </h1>
+            <p style="color: rgba(255,255,255,0.9); font-size: 20px; margin-bottom: 30px;">
+                Loading assets...
+            </p>
+            <div style="width: 300px; height: 30px; background: rgba(255,255,255,0.3); border-radius: 15px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.2);">
+                <div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%); transition: width 0.3s ease; border-radius: 15px;"></div>
+            </div>
+            <p id="progressText" style="color: white; font-size: 16px; margin-top: 15px;">0%</p>
+            <div style="margin-top: 30px; color: rgba(255,255,255,0.7); font-size: 14px;">
+                <p>Loading sprites, textures, and game systems...</p>
+            </div>
+        </div>
+    `;
+    // document.body.appendChild(loadingScreen);
+    return loadingScreen;
+}
+// Update loading screen progress
+function updateLoadingProgress(progress) {
+    // const progressBar = document.getElementById('progressBar');
+    // const progressText = document.getElementById('progressText');
+    // if (progressBar) {
+    //     progressBar.style.width = `${progress}%`;
+    // }
+    // if (progressText) {
+    //     progressText.textContent = `${Math.round(progress)}%`;
+    // }
+}
+// Remove loading screen
+function removeLoadingScreen() {
+    const loadingScreen = document.getElementById('preloadScreen');
+    if (loadingScreen) {
+        loadingScreen.style.opacity = '0';
+        loadingScreen.style.transition = 'opacity 0.5s ease';
+        setTimeout(() => {
+            loadingScreen.remove();
+        }, 500);
+    }
+}
+window.onload = async () => {
+    console.log('[Index] Starting application initialization...');
+    // Show loading screen
+    const loadingScreen = createLoadingScreen();
+    try {
+        // Create preloader
+        const preloader = new Preloader((progress) => {
+            updateLoadingProgress(progress);
+        });
+        // Load all assets
+        console.log('[Index] Loading assets...');
+        preloadedAssets = await preloader.loadAssets();
+        console.log('[Index] Assets loaded successfully');
+        // Small delay to show 100% completion
+        await new Promise(resolve => setTimeout(resolve, 300));
+        // Remove loading screen
+        removeLoadingScreen();
+        // Initialize title screen
+        console.log('[Index] Initializing title screen...');
+        injectTitleScreenStyles();
+        titleScreen = new TitleScreen();
+        titleScreen.appendToBody();
+        // Initialize auth UI after title screen is created
+        authUI = new AuthUI();
+        // Set up game event listeners
+        setupGameEventListeners();
+        console.log('[Index] Application initialized successfully');
+    }
+    catch (error) {
+        console.error('[Index] Error during initialization:', error);
+        // Show error message
+        const errorMsg = document.createElement('div');
+        errorMsg.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255,0,0,0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 10001;
+            text-align: center;
+        `;
+        errorMsg.innerHTML = `
+            <h2>Loading Error</h2>
+            <p>Failed to load game assets. Please refresh the page.</p>
+            <button onclick="location.reload()" style="margin-top: 10px; padding: 10px 20px; cursor: pointer;">
+                Reload
+            </button>
+        `;
+        document.body.appendChild(errorMsg);
+    }
 };
 function setupGameEventListeners() {
     if (!titleScreen)
@@ -13214,7 +13602,7 @@ function setupGameEventListeners() {
             }
             const showHitboxes = titleScreen?.getShowHitboxes() || false;
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
-            currentGame = new Game(showHitboxes, serverIp);
+            currentGame = new Game(showHitboxes, serverIp, preloadedAssets);
             // Hide menus and show game
             titleScreen?.hideAuthContainer();
             titleScreen?.hideCenterText();

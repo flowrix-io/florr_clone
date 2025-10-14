@@ -986,6 +986,12 @@ export class Graphics {
         this.itemSprites = itemSprites;
     }
 
+    public setPetalImagesFromPreloaded(imageCache: Record<string, HTMLImageElement>) {
+        console.log('[Graphics] Setting petal images from preloaded cache');
+        this.petalImageCache = imageCache;
+        console.log('[Graphics] Petal images set:', Object.keys(this.petalImageCache).length, 'images');
+    }
+
     public async preloadPetalImages() {
         const { PETAL_CONFIG } = await import('./petals');
         

@@ -2,7 +2,7 @@
   "players": {
     "t9pyo2soj": {
       "level": 40,
-      "xp": 54916,
+      "xp": 56317,
       "maxHealth": 690,
       "damage": 123,
       "inventory": {
@@ -125,7 +125,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32802,
+          "health": 32799,
           "maxHealth": 32805
         },
         {

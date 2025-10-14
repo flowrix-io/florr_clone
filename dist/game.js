@@ -9,7 +9,7 @@ const chat_1 = require("./chat");
 const socket_1 = require("./socket");
 const inventory_1 = require("./inventory");
 class Game {
-    constructor(showHitboxes, serverIp) {
+    constructor(showHitboxes, serverIp, preloadedAssets) {
         this.speedBoostActive = false;
         this.shieldActive = false;
         this.debugCollision = false; // Toggle for collision debugging
@@ -135,25 +135,29 @@ class Game {
         this.chat = null;
         this.showHitboxes = showHitboxes;
         this.loadControls();
-        //console.log('Game constructor called');
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets);
         this.canvas = document.getElementById('gameCanvas');
+        // Use preloaded assets if available
+        if (preloadedAssets) {
+            console.log('[Game] Using preloaded assets');
+            this.playerSprite = preloadedAssets.sprites.player;
+            this.octopusSprite = preloadedAssets.sprites.octopus;
+            this.fishSprite = preloadedAssets.sprites.fish;
+            this.coralSprite = preloadedAssets.sprites.coral;
+            this.palmSprite = preloadedAssets.sprites.palm;
+            this.healthPotionSprite = preloadedAssets.sprites.healthPotion;
+            this.speedBoostSprite = preloadedAssets.sprites.speedBoost;
+            this.shieldSprite = preloadedAssets.sprites.shield;
+            this.wallTexture = preloadedAssets.sprites.wall;
+            this.backgroundTexture = preloadedAssets.backgroundTexture;
+        }
         this.graphics = new graphics_1.Graphics(this.canvas, this.playerSprite, this.wallTexture, this.octopusSprite, this.fishSprite, this.healthPotionSprite, this.speedBoostSprite, this.shieldSprite, this.backgroundTexture);
         this.graphics.showHitboxes = this.showHitboxes;
         // Set initial canvas size
         this.resizeCanvas();
         // Add resize listener
         window.addEventListener('resize', () => this.resizeCanvas());
-        // Initialize sprites with CORS settings and wait for them to load
-        Promise.all([
-            this.initializeSprites(),
-            this.setupItemSprites(),
-            this.graphics.preloadPetalImages()
-        ]).then(() => {
-            console.log('All sprites loaded successfully');
-            this.updateColorPreview();
-            this.gameLoop();
-        }).catch(console.error);
-        // Create and set up preview canvas
+        // Create and set up preview canvas BEFORE using it
         this.colorPreviewCanvas = document.createElement('canvas');
         this.colorPreviewCanvas.width = 64; // Set fixed size for preview
         this.colorPreviewCanvas.height = 64;
@@ -167,6 +171,36 @@ class Game {
         previewContainer.style.marginTop = '10px';
         previewContainer.appendChild(this.colorPreviewCanvas);
         document.querySelector('.color-picker')?.appendChild(previewContainer);
+        // Initialize sprites and start game
+        if (preloadedAssets) {
+            // Assets already loaded, just set up item sprites and start
+            console.log('[Game] Sprites already loaded, starting game immediately');
+            this.setupItemSpritesFromPreloaded(preloadedAssets);
+            // Only set petal images if they were loaded
+            if (Object.keys(preloadedAssets.petalImages).length > 0) {
+                this.graphics.setPetalImagesFromPreloaded(preloadedAssets.petalImages);
+            }
+            else {
+                // Fallback: load petal images dynamically
+                console.log('[Game] Petal images not preloaded, loading dynamically');
+                this.graphics.preloadPetalImages().catch(console.error);
+            }
+            this.updateColorPreview();
+            this.gameLoop();
+        }
+        else {
+            // Load sprites dynamically (fallback)
+            console.log('[Game] Loading sprites dynamically');
+            Promise.all([
+                this.initializeSprites(),
+                this.setupItemSprites(),
+                this.graphics.preloadPetalImages()
+            ]).then(() => {
+                console.log('[Game] All sprites loaded successfully');
+                this.updateColorPreview();
+                this.gameLoop();
+            }).catch(console.error);
+        }
         // Set up color picker functionality
         const hueSlider = document.getElementById('hueSlider');
         const colorPreview = document.getElementById('colorPreview');
@@ -631,6 +665,16 @@ class Game {
         // Store the map data and render it
         this.world_map_data = mapData;
         this.graphics.drawMap(mapData);
+    }
+    setupItemSpritesFromPreloaded(preloadedAssets) {
+        console.log('[Game] Setting up item sprites from preloaded assets');
+        this.itemSprites = {
+            health_potion: preloadedAssets.sprites.healthPotion,
+            speed_boost: preloadedAssets.sprites.speedBoost,
+            shield: preloadedAssets.sprites.shield,
+        };
+        this.graphics.setupItemSprites(this.itemSprites);
+        console.log('[Game] Item sprites set up successfully');
     }
     async setupItemSprites() {
         this.itemSprites = {};

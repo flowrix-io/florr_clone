@@ -806,6 +806,11 @@ class Graphics {
     setupItemSprites(itemSprites) {
         this.itemSprites = itemSprites;
     }
+    setPetalImagesFromPreloaded(imageCache) {
+        console.log('[Graphics] Setting petal images from preloaded cache');
+        this.petalImageCache = imageCache;
+        console.log('[Graphics] Petal images set:', Object.keys(this.petalImageCache).length, 'images');
+    }
     async preloadPetalImages() {
         const { PETAL_CONFIG } = await Promise.resolve().then(() => __importStar(require('./petals')));
         const loadPromises = [];

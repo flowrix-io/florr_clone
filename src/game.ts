@@ -8,6 +8,7 @@ import { Graphics } from './graphics';
 import { Chat } from './chat';
 import { initMultiPlayerMode, Socket } from './socket';
 import { InventoryManager } from './inventory';
+import { PreloadedAssets } from './preloader';
 
 // Add these interfaces at the top of the file
 interface SandboxedScript {
@@ -204,11 +205,27 @@ export class Game {
     private inventoryManager!: InventoryManager;
     private controls!: { [key: string]: string };
 
-    constructor(showHitboxes: boolean, serverIp: string) {
+    constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null) {
         this.showHitboxes = showHitboxes;
         this.loadControls();
-        //console.log('Game constructor called');
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets);
         this.canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
+
+        // Use preloaded assets if available
+        if (preloadedAssets) {
+            console.log('[Game] Using preloaded assets');
+            this.playerSprite = preloadedAssets.sprites.player;
+            this.octopusSprite = preloadedAssets.sprites.octopus;
+            this.fishSprite = preloadedAssets.sprites.fish;
+            this.coralSprite = preloadedAssets.sprites.coral;
+            this.palmSprite = preloadedAssets.sprites.palm;
+            this.healthPotionSprite = preloadedAssets.sprites.healthPotion;
+            this.speedBoostSprite = preloadedAssets.sprites.speedBoost;
+            this.shieldSprite = preloadedAssets.sprites.shield;
+            this.wallTexture = preloadedAssets.sprites.wall;
+            this.backgroundTexture = preloadedAssets.backgroundTexture;
+        }
+
         this.graphics = new Graphics(
             this.canvas, 
             this.playerSprite, 
@@ -228,19 +245,7 @@ export class Game {
         // Add resize listener
         window.addEventListener('resize', () => this.resizeCanvas());
 
-
-        // Initialize sprites with CORS settings and wait for them to load
-        Promise.all([
-            this.initializeSprites(),
-            this.setupItemSprites(),
-            this.graphics.preloadPetalImages()
-        ]).then(() => {
-            console.log('All sprites loaded successfully');
-            this.updateColorPreview();
-            this.gameLoop();
-        }).catch(console.error);
-
-        // Create and set up preview canvas
+        // Create and set up preview canvas BEFORE using it
         this.colorPreviewCanvas = document.createElement('canvas');
         this.colorPreviewCanvas.width = 64;  // Set fixed size for preview
         this.colorPreviewCanvas.height = 64;
@@ -255,6 +260,35 @@ export class Game {
         previewContainer.style.marginTop = '10px';
         previewContainer.appendChild(this.colorPreviewCanvas);
         document.querySelector('.color-picker')?.appendChild(previewContainer);
+
+        // Initialize sprites and start game
+        if (preloadedAssets) {
+            // Assets already loaded, just set up item sprites and start
+            console.log('[Game] Sprites already loaded, starting game immediately');
+            this.setupItemSpritesFromPreloaded(preloadedAssets);
+            // Only set petal images if they were loaded
+            if (Object.keys(preloadedAssets.petalImages).length > 0) {
+                this.graphics.setPetalImagesFromPreloaded(preloadedAssets.petalImages);
+            } else {
+                // Fallback: load petal images dynamically
+                console.log('[Game] Petal images not preloaded, loading dynamically');
+                this.graphics.preloadPetalImages().catch(console.error);
+            }
+            this.updateColorPreview();
+            this.gameLoop();
+        } else {
+            // Load sprites dynamically (fallback)
+            console.log('[Game] Loading sprites dynamically');
+            Promise.all([
+                this.initializeSprites(),
+                this.setupItemSprites(),
+                this.graphics.preloadPetalImages()
+            ]).then(() => {
+                console.log('[Game] All sprites loaded successfully');
+                this.updateColorPreview();
+                this.gameLoop();
+            }).catch(console.error);
+        }
 
         // Set up color picker functionality
         const hueSlider = document.getElementById('hueSlider') as HTMLInputElement;
@@ -827,6 +861,17 @@ export class Game {
         // Store the map data and render it
         this.world_map_data = mapData;
         this.graphics.drawMap(mapData);
+    }
+
+    private setupItemSpritesFromPreloaded(preloadedAssets: PreloadedAssets) {
+        console.log('[Game] Setting up item sprites from preloaded assets');
+        this.itemSprites = {
+            health_potion: preloadedAssets.sprites.healthPotion,
+            speed_boost: preloadedAssets.sprites.speedBoost,
+            shield: preloadedAssets.sprites.shield,
+        };
+        this.graphics.setupItemSprites(this.itemSprites);
+        console.log('[Game] Item sprites set up successfully');
     }
 
     private async setupItemSprites() {
