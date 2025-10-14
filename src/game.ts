@@ -9,6 +9,7 @@ import { Chat } from './chat';
 import { initMultiPlayerMode, Socket } from './socket';
 import { InventoryManager } from './inventory';
 import { PreloadedAssets } from './preloader';
+import { Tutorial } from './tutorial';
 
 // Add these interfaces at the top of the file
 interface SandboxedScript {
@@ -204,6 +205,7 @@ export class Game {
     // Add property
     private inventoryManager!: InventoryManager;
     private controls!: { [key: string]: string };
+    private tutorial: Tutorial;
 
     constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null) {
         this.showHitboxes = showHitboxes;
@@ -479,6 +481,9 @@ export class Game {
         // });
 
         this.chat = new Chat(this.socket);
+        
+        // Initialize tutorial
+        this.tutorial = new Tutorial();
     }
 
     private async initializeSprites(): Promise<void> {
@@ -536,6 +541,11 @@ export class Game {
                         }
                     }
                 }
+                
+                // Start tutorial for new users after a short delay
+                setTimeout(() => {
+                    this.tutorial.start();
+                }, 1000);
             } else {
                 console.error('Authentication failed:', response.error);
                 alert('Authentication failed: ' + response.error);

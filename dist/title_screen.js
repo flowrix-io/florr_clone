@@ -136,7 +136,7 @@ class TitleScreen {
         `;
         this.centerText.innerHTML = `
             <p class="title">florr.io clone</p>
-            <p class="instructions">Use arrow keys to move. Touch enemies to attack.</p>
+            <!-- <p class="instructions">Use arrow keys to move. Hold space to extend petals.</p> -->
             <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
             <div class="color-picker">
                 <label for="hueSlider">Player Color:</label>
@@ -146,6 +146,10 @@ class TitleScreen {
             </div>
             <div class="controls">
                 <p>Controls:</p>
+                <br/>
+                <p>Arrow keys to move</p>
+                <br/>
+                <p>Hold space to extend petals</p>
                 <br/>
                 <p>Press I to open the inventory.</p>
                 <br/>
@@ -184,6 +188,9 @@ class TitleScreen {
                             <input type="checkbox" id="showHitboxesCheckbox">
                             Show Hitboxes
                         </label>
+                        <br/><br/>
+                        <h3>Tutorial</h3>
+                        <button id="resetTutorialButton">Reset Tutorial</button>
                     </div>
                     <div id="advanced-tab" class="tab-content">
                         <h3>Advanced Settings</h3>
@@ -280,6 +287,17 @@ class TitleScreen {
         if (showHitboxesCheckbox) {
             showHitboxesCheckbox.addEventListener('change', () => {
                 localStorage.setItem('showHitboxes', showHitboxesCheckbox.checked.toString());
+            });
+        }
+        // Reset tutorial button
+        const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
+        if (resetTutorialButton) {
+            resetTutorialButton.addEventListener('click', () => {
+                if (confirm('This will restart the tutorial on your next game. Continue?')) {
+                    localStorage.removeItem('tutorial_completed');
+                    localStorage.removeItem('tutorial_step');
+                    alert('Tutorial will restart on your next game!');
+                }
             });
         }
         const serverIPInput = this.settingsMenu.querySelector('#serverIP-settings');

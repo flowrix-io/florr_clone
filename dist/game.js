@@ -8,6 +8,7 @@ const graphics_1 = require("./graphics");
 const chat_1 = require("./chat");
 const socket_1 = require("./socket");
 const inventory_1 = require("./inventory");
+const tutorial_1 = require("./tutorial");
 class Game {
     constructor(showHitboxes, serverIp, preloadedAssets) {
         this.speedBoostActive = false;
@@ -352,6 +353,8 @@ class Game {
         //     randomizationFactor: 0.5
         // });
         this.chat = new chat_1.Chat(this.socket);
+        // Initialize tutorial
+        this.tutorial = new tutorial_1.Tutorial();
     }
     async initializeSprites() {
         const loadSprite = async (sprite, filename) => {
@@ -405,6 +408,10 @@ class Game {
                         }
                     }
                 }
+                // Start tutorial for new users after a short delay
+                setTimeout(() => {
+                    this.tutorial.start();
+                }, 1000);
             }
             else {
                 console.error('Authentication failed:', response.error);
