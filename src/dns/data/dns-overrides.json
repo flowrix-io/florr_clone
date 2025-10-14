@@ -1,0 +1,71 @@
+{
+  "overrides": [
+    {
+      "domain": "example.local",
+      "records": [
+        {
+          "type": "A",
+          "name": "example.local",
+          "data": "127.0.0.1",
+          "ttl": 300
+        }
+      ]
+    },
+    {
+      "domain": "test.local",
+      "records": [
+        {
+          "type": "A",
+          "name": "test.local",
+          "data": "192.168.1.100",
+          "ttl": 300
+        },
+        {
+          "type": "AAAA",
+          "name": "test.local",
+          "data": "::1",
+          "ttl": 300
+        }
+      ]
+    },
+    {
+      "domain": "*.dev.local",
+      "records": [
+        {
+          "type": "A",
+          "name": "*.dev.local",
+          "data": "127.0.0.1",
+          "ttl": 300
+        }
+      ]
+    },
+    {
+      "domain": "api.example.com",
+      "records": [
+        {
+          "type": "A",
+          "name": "api.example.com",
+          "data": "10.0.0.5",
+          "ttl": 600
+        },
+        {
+          "type": "CNAME",
+          "name": "www.api.example.com",
+          "data": "api.example.com",
+          "ttl": 600
+        }
+      ]
+    },
+    {
+      "domain": "flowerclone.io",
+      "records": [
+        {
+          "type": "A",
+          "name": "flowerclone.io",
+          "data": "54.151.123.177",
+          "ttl": 600
+        }
+      ]
+    }
+  ]
+}
