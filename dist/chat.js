@@ -72,7 +72,7 @@ class Chat {
           display: flex;
           flex-direction: column;
           z-index: 200;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
       `;
         // Create messages container with transparent background
         this.chatMessages = document.createElement('div');
@@ -85,7 +85,7 @@ class Chat {
           text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
           background: transparent;
           z-index: 200;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
       `;
         // Create input container
         const inputContainer = document.createElement('div');
@@ -93,7 +93,7 @@ class Chat {
         inputContainer.style.cssText = `
           padding: 5px;
           background: transparent;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
           z-index: 200;
       `;
         // Create input field with semi-transparent background
@@ -109,7 +109,7 @@ class Chat {
           background: rgba(0, 0, 0, 0.3);
           color: white;
           outline: none;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
           z-index: 200;
       `;
         // Add event listeners
@@ -249,7 +249,7 @@ class Chat {
           border: 1px solid orange;
           color: white;
           z-index: 2000;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
           max-width: 80%;
       `;
         const content = document.createElement('div');
@@ -367,7 +367,7 @@ class Chat {
           margin: 2px 0;
           font-size: 14px;
           word-wrap: break-word;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
       `;
         const time = new Date(message.timestamp).toLocaleTimeString();
         // Update pending scripts with sender information

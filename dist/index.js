@@ -25,7 +25,7 @@ function createLoadingScreen() {
         align-items: center;
         justify-content: center;
         z-index: 10000;
-        font-family: Arial, sans-serif;
+        font-family: Ubuntu, sans-serif;
     `;
     loadingScreen.innerHTML = `
         <div style="text-align: center;">

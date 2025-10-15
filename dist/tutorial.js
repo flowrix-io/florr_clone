@@ -148,7 +148,7 @@ class Tutorial {
             max-width: 500px;
             z-index: 9999;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-            font-family: Arial, sans-serif;
+            font-family: Ubuntu, sans-serif;
             animation: slideIn 0.3s ease-out;
             pointer-events: auto;
         `;

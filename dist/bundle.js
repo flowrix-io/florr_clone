@@ -3795,7 +3795,7 @@ class Graphics {
                     this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
                     this.ctx.strokeRect(x, y, width, height);
                     this.ctx.fillStyle = 'white';
-                    this.ctx.font = '12px Arial';
+                    this.ctx.font = '12px Ubuntu, sans-serif';
                     this.ctx.fillText(`${Math.round(x)},${Math.round(y)}`, x, y - 5);
                 }
             }
@@ -3861,7 +3861,7 @@ class Graphics {
         // // Add tier label
         // if (type) {
         //     this.ctx.fillStyle = 'white';
-        //     this.ctx.font = '20px Arial';
+        //     this.ctx.font = '20px Ubuntu, sans-serif';
         //     this.ctx.textAlign = 'center';
         //     this.ctx.fillText(type.toUpperCase(), x + width / 2, y + height / 2);
         // }
@@ -3897,7 +3897,7 @@ class Graphics {
             this.ctx.fill();
             // Health text
             this.ctx.fillStyle = 'white';
-            this.ctx.font = '14px Arial';
+            this.ctx.font = '14px Ubuntu, sans-serif';
             this.ctx.fillText(`Health: ${Math.round(player.health)}/${player.maxHealth}`, healthX + 5, healthY + 15);
             // Draw XP bar with rounded ends
             const xpBarY = healthY + healthBarHeight + 5;
@@ -4034,7 +4034,7 @@ class Graphics {
         // Draw player name
         this.ctx.fillStyle = 'white';
         this.ctx.textAlign = 'center';
-        this.ctx.font = '14px Arial';
+        this.ctx.font = '14px Ubuntu, sans-serif';
         this.ctx.fillText(player.name || 'Anonymous', 0, -30);
         this.ctx.restore();
         // Draw petals around player (outside of transform context)
@@ -4200,7 +4200,7 @@ class Graphics {
         // Draw enemy tier with tier color
         this.ctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
         this.ctx.textAlign = 'center';
-        this.ctx.font = '12px Arial'; // Made text bold for better visibility
+        this.ctx.font = '12px Ubuntu, sans-serif'; // Made text bold for better visibility
         // Add black outline to text for better visibility
         this.ctx.strokeStyle = 'white';
         this.ctx.lineWidth = 1;
@@ -4286,7 +4286,7 @@ class Graphics {
             this.ctx.save();
             this.ctx.globalAlpha = text.alpha;
             this.ctx.fillStyle = text.color;
-            this.ctx.font = `${text.fontSize}px Arial`;
+            this.ctx.font = `${text.fontSize}px Ubuntu, sans-serif`;
             this.ctx.textAlign = 'center';
             this.ctx.fillText(text.text, text.x, text.y);
             this.ctx.restore();
@@ -4511,7 +4511,7 @@ class Chat {
           display: flex;
           flex-direction: column;
           z-index: 200;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
       `;
         // Create messages container with transparent background
         this.chatMessages = document.createElement('div');
@@ -4524,7 +4524,7 @@ class Chat {
           text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
           background: transparent;
           z-index: 200;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
       `;
         // Create input container
         const inputContainer = document.createElement('div');
@@ -4532,7 +4532,7 @@ class Chat {
         inputContainer.style.cssText = `
           padding: 5px;
           background: transparent;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
           z-index: 200;
       `;
         // Create input field with semi-transparent background
@@ -4548,7 +4548,7 @@ class Chat {
           background: rgba(0, 0, 0, 0.3);
           color: white;
           outline: none;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
           z-index: 200;
       `;
         // Add event listeners
@@ -4688,7 +4688,7 @@ class Chat {
           border: 1px solid orange;
           color: white;
           z-index: 2000;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
           max-width: 80%;
       `;
         const content = document.createElement('div');
@@ -4806,7 +4806,7 @@ class Chat {
           margin: 2px 0;
           font-size: 14px;
           word-wrap: break-word;
-          font-family: Arial, sans-serif;
+          font-family: Ubuntu, sans-serif;
       `;
         const time = new Date(message.timestamp).toLocaleTimeString();
         // Update pending scripts with sender information
@@ -10987,7 +10987,7 @@ class Tutorial {
             max-width: 500px;
             z-index: 9999;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-            font-family: Arial, sans-serif;
+            font-family: Ubuntu, sans-serif;
             animation: slideIn 0.3s ease-out;
             pointer-events: auto;
         `;
@@ -12404,7 +12404,7 @@ class Game {
                 padding: 20px;
                 border-radius: 10px;
                 font-size: 18px;
-                font-family: Arial, sans-serif;
+                font-family: Ubuntu, sans-serif;
                 z-index: 1000;
                 text-align: center;
                 border: 2px solid #00b3ff;
@@ -12470,7 +12470,7 @@ class Game {
                 padding: 25px;
                 border-radius: 15px;
                 font-size: 18px;
-                font-family: Arial, sans-serif;
+                font-family: Ubuntu, sans-serif;
                 z-index: 1000;
                 text-align: center;
                 border: 3px solid #2196F3;
@@ -13966,7 +13966,7 @@ function createLoadingScreen() {
         align-items: center;
         justify-content: center;
         z-index: 10000;
-        font-family: Arial, sans-serif;
+        font-family: Ubuntu, sans-serif;
     `;
     loadingScreen.innerHTML = `
         <div style="text-align: center;">

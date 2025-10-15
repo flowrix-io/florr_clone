@@ -207,7 +207,7 @@ export class Graphics {
                     this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
                     this.ctx.strokeRect(x, y, width, height);
                     this.ctx.fillStyle = 'white';
-                    this.ctx.font = '12px Arial';
+                    this.ctx.font = '12px Ubuntu, sans-serif';
                     this.ctx.fillText(`${Math.round(x)},${Math.round(y)}`, x, y - 5);
                 }
             }
@@ -297,7 +297,7 @@ export class Graphics {
         // // Add tier label
         // if (type) {
         //     this.ctx.fillStyle = 'white';
-        //     this.ctx.font = '20px Arial';
+        //     this.ctx.font = '20px Ubuntu, sans-serif';
         //     this.ctx.textAlign = 'center';
         //     this.ctx.fillText(type.toUpperCase(), x + width / 2, y + height / 2);
         // }
@@ -340,7 +340,7 @@ export class Graphics {
 
             // Health text
             this.ctx.fillStyle = 'white';
-            this.ctx.font = '14px Arial';
+            this.ctx.font = '14px Ubuntu, sans-serif';
             this.ctx.fillText(
                 `Health: ${Math.round(player.health)}/${player.maxHealth}`,
                 healthX + 5,
@@ -506,7 +506,7 @@ export class Graphics {
         // Draw player name
         this.ctx.fillStyle = 'white';
         this.ctx.textAlign = 'center';
-        this.ctx.font = '14px Arial';
+        this.ctx.font = '14px Ubuntu, sans-serif';
         this.ctx.fillText(player.name || 'Anonymous', 0, -30);
 
         this.ctx.restore();
@@ -724,7 +724,7 @@ export class Graphics {
         // Draw enemy tier with tier color
         this.ctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
         this.ctx.textAlign = 'center';
-        this.ctx.font = '12px Arial'; // Made text bold for better visibility
+        this.ctx.font = '12px Ubuntu, sans-serif'; // Made text bold for better visibility
 
         // Add black outline to text for better visibility
         this.ctx.strokeStyle = 'white';
@@ -821,7 +821,7 @@ export class Graphics {
             this.ctx.save();
             this.ctx.globalAlpha = text.alpha;
             this.ctx.fillStyle = text.color;
-            this.ctx.font = `${text.fontSize}px Arial`;
+            this.ctx.font = `${text.fontSize}px Ubuntu, sans-serif`;
             this.ctx.textAlign = 'center';
             this.ctx.fillText(text.text, text.x, text.y);
             this.ctx.restore();

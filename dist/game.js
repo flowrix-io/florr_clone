@@ -1115,7 +1115,7 @@ class Game {
                 padding: 20px;
                 border-radius: 10px;
                 font-size: 18px;
-                font-family: Arial, sans-serif;
+                font-family: Ubuntu, sans-serif;
                 z-index: 1000;
                 text-align: center;
                 border: 2px solid #00b3ff;
@@ -1181,7 +1181,7 @@ class Game {
                 padding: 25px;
                 border-radius: 15px;
                 font-size: 18px;
-                font-family: Arial, sans-serif;
+                font-family: Ubuntu, sans-serif;
                 z-index: 1000;
                 text-align: center;
                 border: 3px solid #2196F3;
