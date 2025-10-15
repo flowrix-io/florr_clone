@@ -483,7 +483,7 @@ class Graphics {
             if (petal.onCooldown)
                 return;
             // Calculate rotation angle
-            const rotationSpeed = stats.speed * 0.002; // Convert to radians per ms
+            const rotationSpeed = (stats.speed ?? 1.0) * 0.002; // Convert to radians per ms
             const baseAngle = index * angleStep;
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             const totalAngle = baseAngle + rotationAngle;
@@ -825,7 +825,7 @@ class Graphics {
                     };
                     img.onerror = reject;
                     // Convert SVG string to data URL
-                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                    const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
                     const url = URL.createObjectURL(svgBlob);
                     img.src = url;
                 });

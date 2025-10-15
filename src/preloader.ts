@@ -223,7 +223,7 @@ export class Preloader {
                         };
                         
                         // Convert SVG string to data URL
-                        const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                        const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
                         const url = URL.createObjectURL(svgBlob);
                         img.src = url;
                     });

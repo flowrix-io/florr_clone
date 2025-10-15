@@ -475,7 +475,7 @@ export class InventoryManager {
                             img.style.objectFit = 'contain';
                             
                             // Convert SVG string to blob URL (same as graphics system)
-                            const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                            const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
                             const url = URL.createObjectURL(svgBlob);
                             img.src = url;
                             
@@ -789,7 +789,7 @@ export class InventoryManager {
                           `;
                             
                             // Convert SVG string to blob URL (same as loadout display)
-                            const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                            const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
                             const url = URL.createObjectURL(svgBlob);
                             img.src = url;
                             
@@ -1059,7 +1059,7 @@ export class InventoryManager {
                         img.style.width = '100%';
                         img.style.height = '100%';
                         img.style.objectFit = 'contain';
-                        const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                        const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
                         img.src = URL.createObjectURL(svgBlob);
                         slot.appendChild(img);
                     }
@@ -1199,7 +1199,7 @@ export class InventoryManager {
                                 img.style.objectFit = 'contain';
                                 
                                 // Convert SVG string to blob URL (same as graphics system)
-                                const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                                const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
                                 const url = URL.createObjectURL(svgBlob);
                                 img.src = url;
                                 

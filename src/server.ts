@@ -1902,7 +1902,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
             const petalStats = getPetalStats(petal.petalType, petal.rarity);
             if (!petalStats) continue;
             
-            const rotationSpeed = petalStats.speed * 0.002; // Convert to radians per ms
+            const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002; // Convert to radians per ms
             const baseAngle = idx * angleStep;
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             const totalAngle = baseAngle + rotationAngle;
