@@ -946,7 +946,7 @@ io.on('connection', (socket) => {
             // console.log('Loaded saved progress:', savedProgress);
             constants_2.players[socket.id] = {
                 id: socket.id,
-                name: credentials.playerName || 'Anonymous',
+                name: credentials.playerName || 'Unnamed',
                 x: 200,
                 y: constants_2.WORLD_HEIGHT / 2,
                 angle: 0,

@@ -393,7 +393,7 @@ class Game {
         const credentials = {
             username: localStorage.getItem('username') || 'player1',
             password: localStorage.getItem('password') || 'password123',
-            playerName: this.nameInput?.value || 'Anonymous'
+            playerName: this.nameInput?.value || 'Unnamed'
         };
         this.socket.emit('authenticate', credentials);
         this.socket.on('authenticated', (response) => {

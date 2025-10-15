@@ -362,6 +362,28 @@ class Graphics {
     drawPlayer(player, socket, petalExtension = 1.0) {
         this.ctx.save();
         this.ctx.translate(player.x, player.y);
+        // Draw hitbox if enabled
+        if (this.showHitboxes) {
+            this.ctx.save();
+            this.ctx.strokeStyle = 'red';
+            this.ctx.lineWidth = 2;
+            this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
+            this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
+            this.ctx.strokeRect(-constants_1.PLAYER_SIZE / 2, -constants_1.PLAYER_SIZE / 2, constants_1.PLAYER_SIZE, constants_1.PLAYER_SIZE);
+            this.ctx.restore();
+        }
+        // Draw player name
+        // Reset any effects that might interfere with text rendering
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.fillStyle = 'black';
+        this.ctx.textAlign = 'center';
+        this.ctx.font = '14px Ubuntu, sans-serif';
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeText(player.name || 'Unnamed', 0, -50);
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillText(player.name || 'Unnamed', 0, -50);
         // Apply invulnerability visual effect
         if (player.isInvulnerable) {
             const flashRate = 200; // Flash every 200ms
@@ -419,21 +441,6 @@ class Graphics {
             this.ctx.globalAlpha = 1.0;
             this.ctx.shadowBlur = 0;
         }
-        // Draw hitbox if enabled
-        if (this.showHitboxes) {
-            this.ctx.save();
-            this.ctx.strokeStyle = 'red';
-            this.ctx.lineWidth = 2;
-            this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
-            this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
-            this.ctx.strokeRect(-constants_1.PLAYER_SIZE / 2, -constants_1.PLAYER_SIZE / 2, constants_1.PLAYER_SIZE, constants_1.PLAYER_SIZE);
-            this.ctx.restore();
-        }
-        // Draw player name
-        this.ctx.fillStyle = 'white';
-        this.ctx.textAlign = 'center';
-        this.ctx.font = '14px Ubuntu, sans-serif';
-        this.ctx.fillText(player.name || 'Anonymous', 0, -30);
         this.ctx.restore();
         // Draw petals around player (outside of transform context)
         this.drawPlayerPetals(player, petalExtension);

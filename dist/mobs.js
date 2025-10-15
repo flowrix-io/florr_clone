@@ -1793,14 +1793,6 @@ exports.MOB_DROP_TABLES = {
                 minQuantity: 1,
                 maxQuantity: 1
             },
-            {
-                type: 'petal',
-                itemType: 'sand',
-                rarity: 'common',
-                probability: 0.3,
-                minQuantity: 1,
-                maxQuantity: 2
-            }
         ]
     },
     soldier_ant: {
@@ -1829,14 +1821,6 @@ exports.MOB_DROP_TABLES = {
                 itemType: 'basic',
                 rarity: 'uncommon',
                 probability: 0.1,
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'sand',
-                rarity: 'common',
-                probability: 0.4,
                 minQuantity: 1,
                 maxQuantity: 1
             }

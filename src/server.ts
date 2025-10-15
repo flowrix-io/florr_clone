@@ -1120,7 +1120,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
             players[socket.id] = {
                 id: socket.id,
-                name: credentials.playerName || 'Anonymous',
+                name: credentials.playerName || 'Unnamed',
                 x: 200,
                 y: WORLD_HEIGHT / 2,
                 angle: 0,
