@@ -636,8 +636,8 @@ const PETAL_CONFIG = {
     rock: {
         common: {
             name: "Rock Petal",
-            damage: 5,
-            health: 5,
+            damage: 15,
+            health: 45,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -658,8 +658,8 @@ const PETAL_CONFIG = {
         },
         uncommon: {
             name: "Enhanced Rock Petal",
-            damage: 15,
-            health: 15,
+            damage: 45,
+            health: 135,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -680,8 +680,8 @@ const PETAL_CONFIG = {
         },
         rare: {
             name: "Royal Rock Petal",
-            damage: 45,
-            health: 45,
+            damage: 135,
+            health: 405,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -702,8 +702,8 @@ const PETAL_CONFIG = {
         },
         epic: {
             name: "Divine Rock Petal",
-            damage: 135,
-            health: 135,
+            damage: 405,
+            health: 1215,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -724,8 +724,8 @@ const PETAL_CONFIG = {
         },
         legendary: {
             name: "Eternal Rock Petal",
-            damage: 405,
-            health: 405,
+            damage: 1215,
+            health: 3645,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -746,8 +746,8 @@ const PETAL_CONFIG = {
         },
         mythic: {
             name: "Celestial Rock Petal",
-            damage: 1215,
-            health: 1215,
+            damage: 3645,
+            health: 10935,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -768,8 +768,8 @@ const PETAL_CONFIG = {
         },
         ultra: {
             name: "Ultra Rock Petal",
-            damage: 3645,
-            health: 3645,
+            damage: 10935,
+            health: 32805,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -790,8 +790,8 @@ const PETAL_CONFIG = {
         },
         super: {
             name: "Super Rock Petal",
-            damage: 10935,
-            health: 10935,
+            damage: 32805,
+            health: 98415,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -812,8 +812,8 @@ const PETAL_CONFIG = {
         },
         unique: {
             name: "Unique Rock Petal",
-            damage: 32805,
-            health: 32805,
+            damage: 98415,
+            health: 295245,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -3644,8 +3644,8 @@ const MOB_CONFIG = {
     rock: {
         common: {
             name: "Rock",
-            damage: 5,
-            health: 5,
+            damage: 10,
+            health: 75,
             size: 1.0,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -3667,8 +3667,8 @@ const MOB_CONFIG = {
         },
         uncommon: {
             name: "Enhanced Rock",
-            damage: 15,
-            health: 15,
+            damage: 30,
+            health: 225,
             size: 1.2,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -3690,8 +3690,8 @@ const MOB_CONFIG = {
         },
         rare: {
             name: "Royal Rock",
-            damage: 45,
-            health: 45,
+            damage: 90,
+            health: 675,
             size: 1.6,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -3713,8 +3713,8 @@ const MOB_CONFIG = {
         },
         epic: {
             name: "Epic Rock",
-            damage: 135,
-            health: 135,
+            damage: 270,
+            health: 2025,
             size: 2.56,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -3736,8 +3736,8 @@ const MOB_CONFIG = {
         },
         legendary: {
             name: "Legendary Rock",
-            damage: 405,
-            health: 405,
+            damage: 810,
+            health: 6075,
             size: 4.096,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -3759,8 +3759,8 @@ const MOB_CONFIG = {
         },
         mythic: {
             name: "Mythic Rock",
-            damage: 1215,
-            health: 1215,
+            damage: 2430,
+            health: 18225,
             size: 6.5536,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -3782,8 +3782,8 @@ const MOB_CONFIG = {
         },
         ultra: {
             name: "Ultra Rock",
-            damage: 3645,
-            health: 3645,
+            damage: 7290,
+            health: 164025,
             size: 10.48576,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -3805,8 +3805,8 @@ const MOB_CONFIG = {
         },
         super: {
             name: "Super Rock",
-            damage: 10935,
-            health: 10935,
+            damage: 21870,
+            health: 492075,
             size: 16.777216,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -3828,8 +3828,8 @@ const MOB_CONFIG = {
         },
         unique: {
             name: "Unique Rock",
-            damage: 32805,
-            health: 32805,
+            damage: 65610,
+            health: 1476225,
             size: 26.8435456,
             speed: 0.0,
             cooldown: 2000, // 2 seconds

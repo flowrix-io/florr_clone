@@ -1538,8 +1538,8 @@ export const MOB_CONFIG: MobConfig = {
     rock: {
         common: {
             name: "Rock",
-            damage: 5,
-            health: 5,
+            damage: 10,
+            health: 75,
             size: 1.0,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -1561,8 +1561,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         uncommon: {
             name: "Enhanced Rock",
-            damage: 15,
-            health: 15,
+            damage: 30,
+            health: 225,
             size: 1.2,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -1584,8 +1584,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         rare: {
             name: "Royal Rock",
-            damage: 45,
-            health: 45,
+            damage: 90,
+            health: 675,
             size: 1.6,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -1607,8 +1607,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         epic: {
             name: "Epic Rock",
-            damage: 135,
-            health: 135,
+            damage: 270,
+            health: 2025,
             size: 2.56,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -1630,8 +1630,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         legendary: {
             name: "Legendary Rock",
-            damage: 405,
-            health: 405,
+            damage: 810,
+            health: 6075,
             size: 4.096,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -1653,8 +1653,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         mythic: {
             name: "Mythic Rock",
-            damage: 1215,
-            health: 1215,
+            damage: 2430,
+            health: 18225,
             size: 6.5536,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -1676,8 +1676,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         ultra: {
             name: "Ultra Rock",
-            damage: 3645,
-            health: 3645,
+            damage: 7290,
+            health: 164025,
             size: 10.48576,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -1699,8 +1699,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         super: {
             name: "Super Rock",
-            damage: 10935,
-            health: 10935,
+            damage: 21870,
+            health: 492075,
             size: 16.777216,
             speed: 0.0,
             cooldown: 2000, // 2 seconds
@@ -1722,8 +1722,8 @@ export const MOB_CONFIG: MobConfig = {
         },
         unique: {
             name: "Unique Rock",
-            damage: 32805,
-            health: 32805,
+            damage: 65610,
+            health: 1476225,
             size: 26.8435456,
             speed: 0.0,
             cooldown: 2000, // 2 seconds

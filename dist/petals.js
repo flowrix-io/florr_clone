@@ -629,8 +629,8 @@ exports.PETAL_CONFIG = {
     rock: {
         common: {
             name: "Rock Petal",
-            damage: 5,
-            health: 5,
+            damage: 15,
+            health: 45,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -651,8 +651,8 @@ exports.PETAL_CONFIG = {
         },
         uncommon: {
             name: "Enhanced Rock Petal",
-            damage: 15,
-            health: 15,
+            damage: 45,
+            health: 135,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -673,8 +673,8 @@ exports.PETAL_CONFIG = {
         },
         rare: {
             name: "Royal Rock Petal",
-            damage: 45,
-            health: 45,
+            damage: 135,
+            health: 405,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -695,8 +695,8 @@ exports.PETAL_CONFIG = {
         },
         epic: {
             name: "Divine Rock Petal",
-            damage: 135,
-            health: 135,
+            damage: 405,
+            health: 1215,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -717,8 +717,8 @@ exports.PETAL_CONFIG = {
         },
         legendary: {
             name: "Eternal Rock Petal",
-            damage: 405,
-            health: 405,
+            damage: 1215,
+            health: 3645,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -739,8 +739,8 @@ exports.PETAL_CONFIG = {
         },
         mythic: {
             name: "Celestial Rock Petal",
-            damage: 1215,
-            health: 1215,
+            damage: 3645,
+            health: 10935,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -761,8 +761,8 @@ exports.PETAL_CONFIG = {
         },
         ultra: {
             name: "Ultra Rock Petal",
-            damage: 3645,
-            health: 3645,
+            damage: 10935,
+            health: 32805,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -783,8 +783,8 @@ exports.PETAL_CONFIG = {
         },
         super: {
             name: "Super Rock Petal",
-            damage: 10935,
-            health: 10935,
+            damage: 32805,
+            health: 98415,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
@@ -805,8 +805,8 @@ exports.PETAL_CONFIG = {
         },
         unique: {
             name: "Unique Rock Petal",
-            damage: 32805,
-            health: 32805,
+            damage: 98415,
+            health: 295245,
             size: 1.0,
             speed: 1.0,
             cooldown: 400,
