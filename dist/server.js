@@ -1344,7 +1344,10 @@ function moveEnemies() {
                 const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
                 enemy.x += (dx / distance) * speed;
                 enemy.y += (dy / distance) * speed;
-                enemy.angle = Math.atan2(dy, dx);
+                // Only update angle if mob has speed > 0
+                if (enemy.speed > 0) {
+                    enemy.angle = Math.atan2(dy, dx);
+                }
             }
         }
         else {
@@ -1364,7 +1367,10 @@ function moveEnemies() {
                     const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5; // Slower wandering
                     enemy.x += (dx / distance) * speed;
                     enemy.y += (dy / distance) * speed;
-                    enemy.angle = Math.atan2(dy, dx);
+                    // Only update angle if mob has speed > 0
+                    if (enemy.speed > 0) {
+                        enemy.angle = Math.atan2(dy, dx);
+                    }
                 }
             }
         }
