@@ -2,7 +2,7 @@
   "players": {
     "t9pyo2soj": {
       "level": 40,
-      "xp": 388991,
+      "xp": 423964,
       "maxHealth": 690,
       "damage": 123,
       "inventory": {
@@ -12,8 +12,9 @@
           "speed_boost": 35,
           "health_potion": 42,
           "petal_rose": 26,
-          "shield": 30,
-          "petal_light": 17
+          "shield": 31,
+          "petal_light": 18,
+          "petal_rock": 2
         },
         "uncommon": {
           "health_potion": 12,
@@ -22,7 +23,8 @@
           "shield": 6,
           "speed_boost": 12,
           "petal_rose": 10,
-          "petal_light": 1
+          "petal_light": 1,
+          "petal_rock": 1
         },
         "rare": {
           "petal_stinger": 9,
@@ -39,7 +41,7 @@
           "speed_boost": 28,
           "health_potion": 23,
           "petal_stinger": 20,
-          "shield": 37,
+          "shield": 38,
           "petal_light": 6
         },
         "mythic": {
@@ -67,7 +69,7 @@
           "petal_rose": 9,
           "petal_basic": 8,
           "shield": 8,
-          "petal_stinger": 10,
+          "petal_stinger": 11,
           "petal_light": 1
         },
         "unique": {
@@ -92,34 +94,6 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32798,
-          "maxHealth": 32805
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32799,
-          "maxHealth": 32805
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32797,
-          "maxHealth": 32805
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32793,
-          "maxHealth": 32805
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
           "health": 32795,
           "maxHealth": 32805
         },
@@ -127,7 +101,35 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32783,
+          "health": 32796,
+          "maxHealth": 32805
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "light",
+          "health": 32794,
+          "maxHealth": 32805
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "light",
+          "health": 32792,
+          "maxHealth": 32805
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "light",
+          "health": 32794,
+          "maxHealth": 32805
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "light",
+          "health": 32779,
           "maxHealth": 32805
         },
         {

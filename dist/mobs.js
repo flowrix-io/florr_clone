@@ -623,7 +623,7 @@ exports.MOB_CONFIG = {
             name: "Common Ladybug",
             damage: 10,
             health: 62.5,
-            size: 1.0,
+            size: 0.667,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -668,7 +668,7 @@ exports.MOB_CONFIG = {
             name: "Uncommon Ladybug",
             damage: 30,
             health: 234.375,
-            size: 1.2,
+            size: 0.8,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -713,7 +713,7 @@ exports.MOB_CONFIG = {
             name: "Rare Ladybug",
             damage: 90,
             health: 843.75,
-            size: 1.6,
+            size: 1.067,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -758,7 +758,7 @@ exports.MOB_CONFIG = {
             name: "Epic Ladybug",
             damage: 270,
             health: 3375,
-            size: 2.56,
+            size: 1.707,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -803,7 +803,7 @@ exports.MOB_CONFIG = {
             name: "Legendary Ladybug",
             damage: 810,
             health: 25312.5,
-            size: 4.096,
+            size: 2.731,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -848,7 +848,7 @@ exports.MOB_CONFIG = {
             name: "Mythic Ladybug",
             damage: 2430,
             health: 151875,
-            size: 6.5536,
+            size: 4.369,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A small, harmless ladybug that flies peacefully",
@@ -893,7 +893,7 @@ exports.MOB_CONFIG = {
             name: "Ultra Ladybug",
             damage: 7290,
             health: 1822500,
-            size: 10.48576,
+            size: 6.991,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "An ultra ladybug with cosmic power",
@@ -938,7 +938,7 @@ exports.MOB_CONFIG = {
             name: "Super Ladybug",
             damage: 21870,
             health: 82012500,
-            size: 16.777216,
+            size: 11.185,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A super ladybug with divine energy",
@@ -983,7 +983,7 @@ exports.MOB_CONFIG = {
             name: "Unique Ladybug",
             damage: 65610,
             health: 1230187500,
-            size: 26.8435456,
+            size: 17.896,
             speed: 0.5,
             cooldown: 2000, // 2 seconds
             description: "A unique ladybug of ultimate power",
@@ -1503,6 +1503,215 @@ exports.MOB_CONFIG = {
             range: 750,
             xp: 6800000
         }
+    },
+    rock: {
+        common: {
+            name: "Rock",
+            damage: 5,
+            health: 5,
+            size: 1.0,
+            speed: 0.0,
+            cooldown: 2000, // 2 seconds
+            description: "A rock that provides basic protection",
+            color: "#8B0000",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`,
+            is_hostile: false,
+            range: 100,
+            xp: 1
+        },
+        uncommon: {
+            name: "Enhanced Rock",
+            damage: 15,
+            health: 15,
+            size: 1.2,
+            speed: 0.0,
+            cooldown: 2000, // 2 seconds
+            description: "An enhanced rock that provides basic protection",
+            color: "#32CD32",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`,
+            is_hostile: false,
+            range: 100,
+            xp: 1
+        },
+        rare: {
+            name: "Royal Rock",
+            damage: 45,
+            health: 45,
+            size: 1.6,
+            speed: 0.0,
+            cooldown: 2000, // 2 seconds
+            description: "A royal rock that provides basic protection",
+            color: "#8B0000",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`,
+            is_hostile: false,
+            range: 100,
+            xp: 2
+        },
+        epic: {
+            name: "Epic Rock",
+            damage: 135,
+            health: 135,
+            size: 2.56,
+            speed: 0.0,
+            cooldown: 2000, // 2 seconds
+            description: "An epic rock that provides basic protection",
+            color: "#8B0000",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`,
+            is_hostile: false,
+            range: 100,
+            xp: 22
+        },
+        legendary: {
+            name: "Legendary Rock",
+            damage: 405,
+            health: 405,
+            size: 4.096,
+            speed: 0.0,
+            cooldown: 2000, // 2 seconds
+            description: "A legendary rock that provides basic protection",
+            color: "#8B0000",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`,
+            is_hostile: false,
+            range: 100,
+            xp: 206
+        },
+        mythic: {
+            name: "Mythic Rock",
+            damage: 1215,
+            health: 1215,
+            size: 6.5536,
+            speed: 0.0,
+            cooldown: 2000, // 2 seconds
+            description: "A mythic rock that provides basic protection",
+            color: "#8B0000",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`,
+            is_hostile: false,
+            range: 100,
+            xp: 3100
+        },
+        ultra: {
+            name: "Ultra Rock",
+            damage: 3645,
+            health: 3645,
+            size: 10.48576,
+            speed: 0.0,
+            cooldown: 2000, // 2 seconds
+            description: "An ultra rock that provides basic protection",
+            color: "#8B0000",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`,
+            is_hostile: false,
+            range: 100,
+            xp: 19800
+        },
+        super: {
+            name: "Super Rock",
+            damage: 10935,
+            health: 10935,
+            size: 16.777216,
+            speed: 0.0,
+            cooldown: 2000, // 2 seconds
+            description: "A super rock that provides basic protection",
+            color: "#8B0000",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`,
+            is_hostile: false,
+            range: 100,
+            xp: 2100000
+        },
+        unique: {
+            name: "Unique Rock",
+            damage: 32805,
+            health: 32805,
+            size: 26.8435456,
+            speed: 0.0,
+            cooldown: 2000, // 2 seconds
+            description: "A unique rock that provides basic protection",
+            color: "#8B0000",
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`,
+            is_hostile: false,
+            range: 100,
+            xp: 6800000
+        }
     }
 };
 function getMobStats(mobType, rarity) {
@@ -1612,6 +1821,20 @@ exports.MOB_DROP_TABLES = {
                 itemType: 'basic',
                 rarity: 'uncommon',
                 probability: 0.1,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    rock: {
+        guaranteed: true, // Rock always drop something
+        drops: [
+            // Specific drops
+            {
+                type: 'petal',
+                itemType: 'rock',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for rock
                 minQuantity: 1,
                 maxQuantity: 1
             }

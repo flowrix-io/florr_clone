@@ -639,6 +639,206 @@ export const PETAL_CONFIG: PetalConfig = {
 <circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
 </svg>`
         }
+    },
+    rock: {
+        common: {
+            name: "Rock Petal",
+            damage: 5,
+            health: 5,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A rock petal that provides basic protection",
+            color: "#8B0000",
+            count: 1,
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`
+        },
+        uncommon: {
+            name: "Enhanced Rock Petal",
+            damage: 15,
+            health: 15,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "An improved rock petal with better stats",
+            color: "#32CD32",
+            count: 1,
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`
+        },
+        rare: {
+            name: "Royal Rock Petal",
+            damage: 45,
+            health: 45,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A majestic rock petal fit for royalty",
+            color: "#8B0000",
+            count: 1,
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`
+        },
+        epic: {
+            name: "Divine Rock Petal",
+            damage: 135,
+            health: 135,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A divine rock petal blessed with power",
+            color: "#B22222",
+            count: 1,
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`
+        },
+        legendary: {
+            name: "Eternal Rock Petal",
+            damage: 405,
+            health: 405,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "An eternal rock petal that never wilts",
+            color: "#FF1493",
+            count: 1,
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`
+        },
+        mythic: {
+            name: "Celestial Rock Petal",
+            damage: 1215,
+            health: 1215,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A celestial rock petal from the heavens",
+            color: "#FF6347",
+            count: 1,
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`
+        },
+        ultra: {
+            name: "Ultra Rock Petal",
+            damage: 3645,
+            health: 3645,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "An ultra rock petal with cosmic power",
+            color: "#de1f65",
+            count: 1,
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`
+        },
+        super: {
+            name: "Super Rock Petal",
+            damage: 10935,
+            health: 10935,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A super rock petal with divine energy",
+            color: "#2bffa4",
+            count: 1,
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`
+        },
+        unique: {
+            name: "Unique Rock Petal",
+            damage: 32805,
+            health: 32805,
+            size: 1.0,
+            speed: 1.0,
+            cooldown: 400,
+            knockback: 1,
+            description: "A unique rock petal of ultimate power",
+            color: "#bf00ff",
+            count: 1,
+            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon
+    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
+    fill="#777777"
+    stroke="#606060"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
+`
+        }
     }
 };
 
