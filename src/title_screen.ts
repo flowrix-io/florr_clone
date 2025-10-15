@@ -249,6 +249,9 @@ export class TitleScreen {
 
         this.axolotlContainer = this.createElement('div', '');
         this.axolotlContainer.id = 'axolotl-container';
+
+        // Name input persistence will be handled in setupEventListeners
+        
     }
 
     private createElement(tagName: string, className: string): HTMLElement {
@@ -355,6 +358,9 @@ export class TitleScreen {
                 this.showLoginForm();
             });
         }
+
+        // Setup name input persistence
+        this.setupNameInputPersistence();
     }
 
     public appendToBody(): void {
@@ -604,6 +610,28 @@ export class TitleScreen {
                         // Reset to default when collapsed
                         registerServerInput.value = currentOrigin;
                     }
+                });
+            }
+        }, 100); // 100ms delay to ensure DOM is ready
+    }
+
+    private setupNameInputPersistence(): void {
+        // Use setTimeout to ensure DOM is ready
+        setTimeout(() => {
+            const nameInput = document.getElementById('nameInput') as HTMLInputElement;
+            if (nameInput) {
+                // Load saved name from localStorage
+                const savedName = localStorage.getItem('playerName') || '';
+                nameInput.value = savedName;
+                
+                // Save name to localStorage when it changes
+                nameInput.addEventListener('input', () => {
+                    localStorage.setItem('playerName', nameInput.value);
+                });
+                
+                // Also save on blur (when user clicks away)
+                nameInput.addEventListener('blur', () => {
+                    localStorage.setItem('playerName', nameInput.value);
                 });
             }
         }, 100); // 100ms delay to ensure DOM is ready
