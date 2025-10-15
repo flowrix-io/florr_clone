@@ -227,19 +227,20 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
     sand: {
             name: "Sand Petal",
             damage: 10,
-            health: 10,
-            size: 1.0,
-            cooldown: 400,
+            health: 3,
+            size: 0.8,
+            cooldown: 800,
             description: "A sand petal that provides basic protection",
             color: "#8B0000",
-            count: 1,
-            image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <polygon
-    points="16,1.4 30.6,12.3 25,29.6 7,29.6 1.4,12.3"
-    fill="#777777"
-    stroke="#606060"
-    stroke-width="2"
+            count: 4,
+            image: `<svg width="20" height="20" viewBox="-10 -10 20 20" xmlns="http://www.w3.org/2000/svg">
+  <path
+    d="M 7 0 L 3.5 6.062 L -3.5 6.062 L -7 0 L -3.5 -6.062 L 3.5 -6.062 Z"
+    fill="#e0c85c"
+    stroke="#b5a24b"
+    stroke-width="3"
     stroke-linecap="round"
+    stroke-linejoin="round"
   />
 </svg>`
     }

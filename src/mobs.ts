@@ -1828,7 +1828,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 probability: 0.5,
                 minQuantity: 1,
                 maxQuantity: 1
-            }
+            },
         ]
     },
     soldier_ant: {
@@ -1873,6 +1873,14 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 probability: 0.4, // 40% chance for rock
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'sand',
+                rarity: 'common',
+                probability: 0.6, // 60% chance for sand (higher since it's a rock mob)
+                minQuantity: 1,
+                maxQuantity: 3
             }
         ]
     }

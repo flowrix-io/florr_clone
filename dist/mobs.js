@@ -1792,6 +1792,14 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.5,
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'sand',
+                rarity: 'common',
+                probability: 0.3,
+                minQuantity: 1,
+                maxQuantity: 2
             }
         ]
     },
@@ -1823,6 +1831,14 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.1,
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'sand',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
@@ -1837,6 +1853,14 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.4, // 40% chance for rock
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'sand',
+                rarity: 'common',
+                probability: 0.6, // 60% chance for sand (higher since it's a rock mob)
+                minQuantity: 1,
+                maxQuantity: 3
             }
         ]
     }
