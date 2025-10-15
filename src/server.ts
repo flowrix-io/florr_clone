@@ -1778,11 +1778,17 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         const mobStats = getMobStats(enemy.type, enemy.tier);
         const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
 
+        // Calculate enemy hitbox bounds (enemy.x, enemy.y is center point)
+        const enemyLeft = enemy.x - enemySize / 2;
+        const enemyRight = enemy.x + enemySize / 2;
+        const enemyTop = enemy.y - enemySize / 2;
+        const enemyBottom = enemy.y + enemySize / 2;
+
         if (
-            newX < enemy.x + enemySize &&
-            newX + PLAYER_SIZE > enemy.x &&
-            newY < enemy.y + enemySize &&
-            newY + PLAYER_SIZE > enemy.y
+            newX < enemyRight &&
+            newX + PLAYER_SIZE > enemyLeft &&
+            newY < enemyBottom &&
+            newY + PLAYER_SIZE > enemyTop
         ) {
             collision = true;
             // if (!player.isInvulnerable) {
@@ -1911,11 +1917,17 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                 const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE; // Use mob size or fallback to base size
                 const petalSize = 40 * petalStats.size; // Use same base size as enemies for consistency
 
+                // Calculate enemy hitbox bounds (enemy.x, enemy.y is center point)
+                const enemyLeft = enemy.x - enemySize / 2;
+                const enemyRight = enemy.x + enemySize / 2;
+                const enemyTop = enemy.y - enemySize / 2;
+                const enemyBottom = enemy.y + enemySize / 2;
+
                 if (
-                    petalX < enemy.x + enemySize &&
-                    petalX + petalSize > enemy.x &&
-                    petalY < enemy.y + enemySize &&
-                    petalY + petalSize > enemy.y
+                    petalX < enemyRight &&
+                    petalX + petalSize > enemyLeft &&
+                    petalY < enemyBottom &&
+                    petalY + petalSize > enemyTop
                 ) {
                     // Petal hits enemy - deal damage to both
                     enemy.health -= petalStats.damage;
