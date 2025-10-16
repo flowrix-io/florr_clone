@@ -360,7 +360,7 @@ export class InventoryManager {
         const item = player.loadout[slot] as ItemWithRarity;
         if ((item as any).onCooldown) return;
 
-        // Petals cannot be used as consumables (except yggdrasil)
+        // Petals cannot be used as consumables (except yggdrasil which is always active)
         if (item.type === 'petal' && item.petalType !== 'yggdrasil') {
             this.game.showFloatingText(
                 this.game.canvas.width / 2,
@@ -370,6 +370,18 @@ export class InventoryManager {
                 16
             );
             return;
+        }
+
+        // Yggdrasil petals are always active - no need to emit useItem
+        if (item.type === 'petal' && item.petalType === 'yggdrasil') {
+            this.game.showFloatingText(
+                player.x,
+                player.y - 30,
+                'Yggdrasil Petal - Always active! Will revive nearby corpses.',
+                '#FFD700',
+                20
+            );
+            return; // Don't emit useItem since it's always active
         }
 
         this.game.getSocket()?.emit('useItem', { 
@@ -418,17 +430,6 @@ export class InventoryManager {
                     '#FFD700',
                     20
                 );
-                break;
-            case 'petal':
-                if (item.petalType === 'yggdrasil') {
-                    this.game.showFloatingText(
-                        player.x,
-                        player.y - 30,
-                        'Yggdrasil Petal - Will automatically revive nearby corpses!',
-                        '#FFD700',
-                        20
-                    );
-                }
                 break;
         }
 

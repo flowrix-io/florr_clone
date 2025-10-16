@@ -84,15 +84,21 @@
           "petal_basic": 1001,
           "petal_rose": 1001,
           "petal_stinger": 1000,
-          "petal_light": 1000,
+          "petal_light": 999,
           "petal_sand": 1000,
           "health_potion": 1000,
           "shield": 1,
-          "petal_yggdrasil": 998
+          "petal_yggdrasil": 999
         }
       },
       "loadout": [
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "light",
+          "health": 32805,
+          "maxHealth": 32805
+        },
         null,
         null,
         null,
@@ -100,11 +106,10 @@
         null,
         {
           "type": "petal",
-          "petalType": "yggdrasil",
           "rarity": "unique",
-          "maxHealth": 1,
-          "health": 1,
-          "onCooldown": false
+          "petalType": "yggdrasil",
+          "health": 0,
+          "maxHealth": 1
         },
         {
           "type": "speed_boost",

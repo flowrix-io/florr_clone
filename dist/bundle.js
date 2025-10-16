@@ -9813,22 +9813,6 @@ function setupSocketListeners(game) {
             game.hideDeathScreen();
         }
     });
-    // Revival mode events
-    game.socket.on('revivalModeActivated', (data) => {
-        game.showFloatingText(game.canvas.width / 2, 100, data.message, '#FFD700', 20);
-        // Enable revival mode on the game instance
-        game.revivalMode = true;
-        game.revivalModeEndTime = Date.now() + data.duration;
-        // Change cursor to indicate revival mode (optional visual indicator)
-        document.body.style.cursor = 'help';
-    });
-    game.socket.on('revivalModeDeactivated', () => {
-        game.revivalMode = false;
-        game.revivalModeEndTime = 0;
-        // Reset cursor
-        document.body.style.cursor = 'default';
-        game.showFloatingText(game.canvas.width / 2, 100, 'Revival mode ended', '#FFA500', 16);
-    });
     game.socket.on('playerRevived', (data) => {
         // Update the revived player's state
         const revivedPlayer = game.players.get(data.revivedPlayerId);
@@ -10150,10 +10134,15 @@ class InventoryManager {
         const item = player.loadout[slot];
         if (item.onCooldown)
             return;
-        // Petals cannot be used as consumables (except yggdrasil)
+        // Petals cannot be used as consumables (except yggdrasil which is always active)
         if (item.type === 'petal' && item.petalType !== 'yggdrasil') {
             this.game.showFloatingText(this.game.canvas.width / 2, 50, 'Petals cannot be used - they provide passive protection!', '#FFA500', 16);
             return;
+        }
+        // Yggdrasil petals are always active - no need to emit useItem
+        if (item.type === 'petal' && item.petalType === 'yggdrasil') {
+            this.game.showFloatingText(player.x, player.y - 30, 'Yggdrasil Petal - Always active! Will revive nearby corpses.', '#FFD700', 20);
+            return; // Don't emit useItem since it's always active
         }
         this.game.getSocket()?.emit('useItem', {
             type: item.type,
@@ -10181,11 +10170,6 @@ class InventoryManager {
                 break;
             case 'shield':
                 this.game.showFloatingText(player.x, player.y - 30, `Shield (${Math.floor(3 * multiplier)}s)`, '#FFD700', 20);
-                break;
-            case 'petal':
-                if (item.petalType === 'yggdrasil') {
-                    this.game.showFloatingText(player.x, player.y - 30, 'Yggdrasil Petal - Will automatically revive nearby corpses!', '#FFD700', 20);
-                }
                 break;
         }
         const slot_element = document.querySelector(`.loadout-slot[data-slot="${slot}"]`);
@@ -11553,9 +11537,6 @@ class Game {
         this.gameStartTime = 0;
         // Add chat property
         this.chat = null;
-        // Revival mode properties
-        this.revivalMode = false;
-        this.revivalModeEndTime = 0;
         this.showHitboxes = showHitboxes;
         this.loadControls();
         console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets);

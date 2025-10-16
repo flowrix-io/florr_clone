@@ -134,9 +134,6 @@ class Game {
         this.gameStartTime = 0;
         // Add chat property
         this.chat = null;
-        // Revival mode properties
-        this.revivalMode = false;
-        this.revivalModeEndTime = 0;
         this.showHitboxes = showHitboxes;
         this.loadControls();
         console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets);

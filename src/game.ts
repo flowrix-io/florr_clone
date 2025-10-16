@@ -206,10 +206,6 @@ export class Game {
     private inventoryManager!: InventoryManager;
     private controls!: { [key: string]: string };
     private tutorial: Tutorial;
-    
-    // Revival mode properties
-    public revivalMode: boolean = false;
-    public revivalModeEndTime: number = 0;
 
     constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null) {
         this.showHitboxes = showHitboxes;

@@ -1089,24 +1089,8 @@ io.on('connection', (socket) => {
                 break;
             case 'petal':
                 if (item.petalType === 'yggdrasil') {
-                    // Set player in revival mode - petals will automatically revive nearby corpses
-                    player.revivalMode = true;
-                    player.revivalItem = item;
-                    console.log(`Player ${player.name} activated yggdrasil revival mode`);
-                    // Notify client that revival mode is active
-                    io.to(player.id).emit('revivalModeActivated', {
-                        message: 'Yggdrasil petals will automatically revive nearby corpses!',
-                        duration: 10000 // 10 seconds of revival mode
-                    });
-                    // Auto-disable revival mode after 10 seconds
-                    setTimeout(() => {
-                        if (constants_2.players[socket.id] && constants_2.players[socket.id].revivalMode) {
-                            constants_2.players[socket.id].revivalMode = false;
-                            constants_2.players[socket.id].revivalItem = undefined;
-                            io.to(player.id).emit('revivalModeDeactivated');
-                            console.log(`Player ${player.name} revival mode expired`);
-                        }
-                    }, 10000);
+                    // Yggdrasil petals are now always active - no activation needed
+                    console.log(`Player ${player.name} used yggdrasil petal (always active)`);
                 }
                 break;
         }
@@ -1774,32 +1758,20 @@ function updatePlayerState(player, deltaTime) {
                     }
                 }
             }
-            // Check for corpse revival if this is a yggdrasil petal and player is in revival mode
-            if (petal.petalType === 'yggdrasil' && player.revivalMode && player.revivalItem) {
+            // Check for corpse revival if this is a yggdrasil petal (always active)
+            if (petal.petalType === 'yggdrasil') {
                 const revivalRange = 80; // Range for automatic revival
                 for (const [otherPlayerId, otherPlayer] of Object.entries(constants_2.players)) {
                     if (otherPlayerId !== player.id && otherPlayer.isDead) {
                         const distance = Math.sqrt((petalX - otherPlayer.x) ** 2 + (petalY - otherPlayer.y) ** 2);
                         if (distance <= revivalRange) {
-                            // Consume the yggdrasil petal
-                            const revivalItem = player.revivalItem;
-                            const itemKey = `petal_${revivalItem.petalType}`;
-                            const rarity = revivalItem.rarity;
-                            // Remove one yggdrasil petal from inventory
-                            if (player.inventory[rarity] && player.inventory[rarity][itemKey]) {
-                                player.inventory[rarity][itemKey]--;
-                                if (player.inventory[rarity][itemKey] <= 0) {
-                                    delete player.inventory[rarity][itemKey];
-                                }
-                            }
+                            // Break the yggdrasil petal when it revives someone
+                            petal.health = 0; // This will trigger the petal breaking logic below
                             // Revive the target player
                             otherPlayer.isDead = false;
                             otherPlayer.health = otherPlayer.maxHealth;
                             otherPlayer.isInvulnerable = true;
                             otherPlayer.lastDamageTime = 0;
-                            // Disable revival mode
-                            player.revivalMode = false;
-                            player.revivalItem = undefined;
                             // Notify all clients about the revival
                             io.emit('playerRevived', {
                                 revivedPlayerId: otherPlayerId,
@@ -1807,8 +1779,6 @@ function updatePlayerState(player, deltaTime) {
                                 revivedPlayerName: otherPlayer.name,
                                 revivingPlayerName: player.name
                             });
-                            // Notify reviving player that revival mode is deactivated
-                            io.to(player.id).emit('revivalModeDeactivated');
                             // Give revived player temporary invulnerability
                             setTimeout(() => {
                                 if (constants_2.players[otherPlayerId]) {
@@ -1816,14 +1786,7 @@ function updatePlayerState(player, deltaTime) {
                                     io.emit('playerInvulnerabilityEnded', { playerId: otherPlayerId });
                                 }
                             }, constants_2.RESPAWN_INVULNERABILITY_TIME);
-                            // Update inventories
-                            io.to(player.id).emit('inventoryUpdated', player.inventory);
-                            // Save progress
-                            const userId = playerUserIds[player.id];
-                            if (userId) {
-                                savePlayerProgress(player, userId);
-                            }
-                            console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal`);
+                            console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal (petal broke)`);
                             // Break out of the loop since we've used the petal
                             break;
                         }
