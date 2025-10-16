@@ -2,14 +2,14 @@
   "players": {
     "t9pyo2soj": {
       "level": 44,
-      "xp": 413387,
+      "xp": 413397,
       "maxHealth": 730,
       "damage": 131,
       "inventory": {
         "common": {
           "petal_basic": 2013,
-          "petal_stinger": 24,
-          "speed_boost": 41,
+          "petal_stinger": 25,
+          "speed_boost": 43,
           "health_potion": 50,
           "petal_rose": 33,
           "shield": 36,
@@ -44,7 +44,7 @@
           "speed_boost": 40,
           "health_potion": 27,
           "petal_stinger": 26,
-          "shield": 46,
+          "shield": 48,
           "petal_light": 12,
           "petal_rock": 10,
           "petal_sand": 4,
@@ -106,7 +106,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32387,
+          "health": 32386,
           "maxHealth": 32805
         },
         {
@@ -120,7 +120,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32565,
+          "health": 32564,
           "maxHealth": 32805
         },
         {
@@ -134,7 +134,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32472,
+          "health": 32470,
           "maxHealth": 32805
         },
         {
