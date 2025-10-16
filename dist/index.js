@@ -91,7 +91,7 @@ window.onload = async () => {
         console.log('[Index] Initializing title screen...');
         (0, title_screen_1.injectTitleScreenStyles)();
         titleScreen = new title_screen_1.TitleScreen();
-        titleScreen.appendToBody();
+        await titleScreen.appendToBody();
         // Initialize auth UI after title screen is created
         authUI = new auth_ui_1.AuthUI();
         // Set up game event listeners
@@ -139,10 +139,8 @@ function setupGameEventListeners() {
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
             currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets);
             window.currentGame = currentGame;
-            // Hide menus and show game
-            titleScreen?.hideAuthContainer();
-            titleScreen?.hideCenterText();
-            titleScreen?.hideGameMenu();
+            // Hide title screen and show game
+            titleScreen?.hideTitleScreen();
             titleScreen?.showExitButton();
         });
     }
@@ -155,10 +153,8 @@ function setupGameEventListeners() {
                 currentGame = null;
                 window.currentGame = null;
             }
-            // Show menus and hide game
-            titleScreen?.showAuthContainer();
-            titleScreen?.showCenterText();
-            titleScreen?.showGameMenu();
+            // Show title screen and hide game
+            titleScreen?.showTitleScreen();
             titleScreen?.hideExitButton();
         });
     }

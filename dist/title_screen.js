@@ -114,6 +114,7 @@ class FloatingPetalManager {
 }
 class TitleScreen {
     constructor() {
+        this.backgroundTime = 0;
         this.initializeElements();
         this.setupEventListeners();
     }
@@ -359,6 +360,20 @@ class TitleScreen {
             z-index: 50;
             overflow: hidden;
         `;
+        // Create background canvas
+        this.backgroundCanvas = document.createElement('canvas');
+        this.backgroundCanvas.id = 'title-background-canvas';
+        this.backgroundCanvas.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        `;
+        this.backgroundCtx = this.backgroundCanvas.getContext('2d');
+        this.backgroundTexture = new Image();
         // Name input persistence will be handled in setupEventListeners
     }
     createElement(tagName, className) {
@@ -474,7 +489,8 @@ class TitleScreen {
         // Setup name input persistence
         this.setupNameInputPersistence();
     }
-    appendToBody() {
+    async appendToBody() {
+        document.body.appendChild(this.backgroundCanvas);
         document.body.appendChild(this.authContainer);
         this.authContainer.appendChild(this.loginForm);
         this.authContainer.appendChild(this.registerForm);
@@ -489,6 +505,9 @@ class TitleScreen {
         document.body.appendChild(this.settingsMenu);
         // Initialize floating petals manager
         this.floatingPetalManager = new FloatingPetalManager(this.floatingPetalsContainer);
+        // Load and start background animation
+        await this.loadBackgroundTexture();
+        this.startBackgroundAnimation();
         // Add CSS for advanced settings
         this.addAdvancedSettingsStyles();
         // Debug: Check if forms are in DOM
@@ -755,6 +774,22 @@ class TitleScreen {
     showCenterText() {
         this.centerText.style.display = 'block';
     }
+    hideTitleScreen() {
+        this.hideAuthContainer();
+        this.hideGameMenu();
+        this.hideCenterText();
+        this.hideFloatingPetals();
+        this.stopBackgroundAnimation();
+        this.hideBackgroundCanvas();
+    }
+    showTitleScreen() {
+        this.showAuthContainer();
+        this.showGameMenu();
+        this.showCenterText();
+        this.showFloatingPetals();
+        this.showBackgroundCanvas();
+        this.startBackgroundAnimation();
+    }
     showExitButton() {
         this.exitButtonContainer.style.display = 'block';
     }
@@ -862,6 +897,157 @@ class TitleScreen {
     destroyFloatingPetals() {
         if (this.floatingPetalManager) {
             this.floatingPetalManager.destroy();
+        }
+    }
+    async loadBackgroundTexture() {
+        return new Promise((resolve) => {
+            this.backgroundTexture.onload = () => {
+                console.log('Title screen background loaded successfully');
+                resolve();
+            };
+            this.backgroundTexture.onerror = (error) => {
+                console.error('Failed to load title screen background:', error);
+                // Create a fallback image to prevent broken state
+                this.createFallbackImage();
+                resolve();
+            };
+            // Use the hardcoded SVG directly with proper encoding
+            const svgText = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="400" x="0" y="0" fill="#00d885"/>
+
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(60, 60) rotate(45)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(180, 80) rotate(-20)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(300, 70) rotate(120)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(100, 200) rotate(180)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(250, 280) rotate(210)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(340, 230) rotate(-90)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(80, 300) rotate(75)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
+
+  <circle cx="150" cy="50" r="18" fill="#00f295"/>
+  <circle cx="280" cy="180" r="18" fill="#00f295"/>
+  <circle cx="50" cy="150" r="18" fill="#00f295"/>
+  <circle cx="200" cy="350" r="18" fill="#00f295"/>
+  <circle cx="360" cy="320" r="18" fill="#00f295"/>
+</svg>`;
+            try {
+                const base64 = btoa(unescape(encodeURIComponent(svgText)));
+                const dataUrl = `data:image/svg+xml;base64,${base64}`;
+                this.backgroundTexture.src = dataUrl;
+            }
+            catch (error) {
+                console.error('Error encoding SVG:', error);
+                this.createFallbackImage();
+                resolve();
+            }
+        });
+    }
+    createFallbackImage() {
+        // Create a simple colored rectangle as fallback
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 400;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#00d885';
+        ctx.fillRect(0, 0, 400, 400);
+        this.backgroundTexture.src = canvas.toDataURL();
+    }
+    createFallbackBackground() {
+        console.log('Using fallback background for title screen');
+        // Create a programmatic SVG that matches land.svg
+        const svgContent = `
+            <svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
+                <rect width="400" height="400" fill="#00d885"/>
+                <polygon points="200,50 300,150 200,250 100,150" fill="#02c278"/>
+                <polygon points="200,100 250,200 200,300 150,200" fill="#02c278"/>
+                <polygon points="200,150 275,225 200,300 125,225" fill="#02c278"/>
+                <polygon points="200,200 300,250 200,300 100,250" fill="#02c278"/>
+                <polygon points="200,250 275,275 200,300 125,275" fill="#02c278"/>
+                <polygon points="200,300 250,325 200,350 150,325" fill="#02c278"/>
+                <polygon points="200,350 300,375 200,400 100,375" fill="#02c278"/>
+            </svg>
+        `;
+        const base64 = btoa(unescape(encodeURIComponent(svgContent)));
+        const dataUrl = `data:image/svg+xml;base64,${base64}`;
+        this.backgroundTexture.src = dataUrl;
+    }
+    drawScrollingBackground() {
+        // Resize canvas to match window size
+        this.backgroundCanvas.width = window.innerWidth;
+        this.backgroundCanvas.height = window.innerHeight;
+        // If background texture is not loaded or is broken, just fill with a color
+        if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
+            this.backgroundCtx.fillStyle = '#00d885'; // Default green color from the SVG
+            this.backgroundCtx.fillRect(0, 0, this.backgroundCanvas.width, this.backgroundCanvas.height);
+            return;
+        }
+        // Get the size of the background texture (400x400 from the SVG)
+        const bgWidth = this.backgroundTexture.width;
+        const bgHeight = this.backgroundTexture.height;
+        // Create circular scrolling effect
+        const radius = 2000; // Large radius for slow circular movement
+        const centerX = this.backgroundCanvas.width / 2;
+        const centerY = this.backgroundCanvas.height / 2;
+        // Calculate camera position based on circular motion (much slower)
+        const cameraX = centerX + Math.cos(this.backgroundTime * 0.00002) * radius;
+        const cameraY = centerY + Math.sin(this.backgroundTime * 0.00002) * radius;
+        // Calculate the visible area
+        const visibleWidth = this.backgroundCanvas.width;
+        const visibleHeight = this.backgroundCanvas.height;
+        // Calculate the starting position for tiling (offset by camera position)
+        const startX = Math.floor(cameraX / bgWidth) * bgWidth;
+        const startY = Math.floor(cameraY / bgHeight) * bgHeight;
+        // Calculate how many tiles we need to draw
+        const tilesX = Math.ceil(visibleWidth / bgWidth) + 2;
+        const tilesY = Math.ceil(visibleHeight / bgHeight) + 2;
+        // Draw the tiled background
+        for (let i = 0; i <= tilesX; i++) {
+            for (let j = 0; j <= tilesY; j++) {
+                const x = startX + (i * bgWidth) - cameraX;
+                const y = startY + (j * bgHeight) - cameraY;
+                this.backgroundCtx.drawImage(this.backgroundTexture, x, y, bgWidth, bgHeight);
+            }
+        }
+    }
+    animateBackground() {
+        this.backgroundTime += 16; // ~60fps
+        this.drawScrollingBackground();
+        this.backgroundAnimationId = requestAnimationFrame(() => this.animateBackground());
+    }
+    startBackgroundAnimation() {
+        if (!this.backgroundAnimationId) {
+            this.animateBackground();
+        }
+    }
+    stopBackgroundAnimation() {
+        if (this.backgroundAnimationId) {
+            cancelAnimationFrame(this.backgroundAnimationId);
+            this.backgroundAnimationId = 0;
+        }
+    }
+    hideFloatingPetals() {
+        if (this.floatingPetalManager) {
+            this.floatingPetalManager.stopAnimation();
+        }
+        if (this.floatingPetalsContainer) {
+            this.floatingPetalsContainer.style.display = 'none';
+        }
+    }
+    showFloatingPetals() {
+        if (this.floatingPetalManager) {
+            this.floatingPetalManager.startAnimation();
+        }
+        if (this.floatingPetalsContainer) {
+            this.floatingPetalsContainer.style.display = 'block';
+        }
+    }
+    hideBackgroundCanvas() {
+        if (this.backgroundCanvas) {
+            this.backgroundCanvas.style.display = 'none';
+        }
+    }
+    showBackgroundCanvas() {
+        if (this.backgroundCanvas) {
+            this.backgroundCanvas.style.display = 'block';
         }
     }
 }
@@ -1175,6 +1361,16 @@ exports.titleScreenStyles = `
         pointer-events: none;
         z-index: 50;
         overflow: hidden;
+    }
+
+    #title-background-canvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 1;
     }
 `;
 // Function to inject styles
