@@ -1349,11 +1349,39 @@ export class Game {
     }
     public savePlayerProgress() {}
     public hideTitleScreen() {}
-    public showDeathScreen() {
-        document.getElementById('deathScreen')?.classList.remove('hidden');
+    public showDeathScreen(killedBy?: { type: string; tier: string }) {
+        const deathScreen = document.getElementById('deathScreen');
+        if (deathScreen) {
+            deathScreen.classList.remove('hidden');
+            
+            // Update the death message with killer information
+            const deathMessage = deathScreen.querySelector('.death-screen-content p');
+            if (deathMessage && killedBy) {
+                const mobName = this.getMobDisplayName(killedBy.type, killedBy.tier);
+                deathMessage.textContent = `You were destroyed by: ${mobName}`;
+            } else if (deathMessage) {
+                deathMessage.textContent = 'Your adventure has come to an end...';
+            }
+        }
     }
     public hideDeathScreen() {
         document.getElementById('deathScreen')?.classList.add('hidden');
+    }
+
+    public requestRespawn() {
+        if (this.isPlayerDead) {
+            this.socket.emit('requestRespawn');
+        }
+    }
+
+    private getMobDisplayName(type: string, tier: string): string {
+        // Capitalize the first letter of the type
+        const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
+        
+        // Capitalize the first letter of the tier
+        const capitalizedTier = tier.charAt(0).toUpperCase() + tier.slice(1);
+        
+        return `${capitalizedTier} ${capitalizedType}`;
     }
     public showTitleScreen() {
         document.getElementById('titleScreen')?.classList.remove('hidden');

@@ -1815,6 +1815,11 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                 player.health -= enemy.damage;
                 player.lastDamageTime = Date.now();
                 player.isInvulnerable = true;
+                
+                // Track which enemy dealt the killing blow
+                if (player.health <= 0) {
+                    player.killedBy = { type: enemy.type, tier: enemy.tier };
+                }
 
                 // Set invulnerability timer (1 second after taking damage)
                 setTimeout(() => {
@@ -2174,16 +2179,15 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         player.isDead = true;
         // Set random rotation for the corpse
         player.angle = Math.random() * Math.PI * 2;
-        io.emit('playerDied', { playerId: player.id, x: player.x, y: player.y, angle: player.angle });
+        io.emit('playerDied', { 
+            playerId: player.id, 
+            x: player.x, 
+            y: player.y, 
+            angle: player.angle,
+            killedBy: player.killedBy
+        });
         
-        // Set up respawn timer (5 seconds)
-        setTimeout(() => {
-            if (player.isDead) {
-                respawnPlayer(player);
-                player.isDead = false;
-                io.emit('playerRespawned', player);
-            }
-        }, 5000);
+        // No automatic respawn - player must manually respawn via continue button
     }
 }
 

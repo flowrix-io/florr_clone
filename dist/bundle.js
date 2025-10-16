@@ -9662,7 +9662,22 @@ function setupSocketListeners(game) {
         }
         if (data.playerId === game.socket.id) {
             game.isPlayerDead = true;
-            game.showDeathScreen();
+            game.showDeathScreen(data.killedBy);
+        }
+    });
+    game.socket.on('playerRespawned', (player) => {
+        // Update the player's state to mark them as alive
+        const gamePlayer = game.players.get(player.id);
+        if (gamePlayer) {
+            gamePlayer.isDead = false;
+            gamePlayer.health = player.health;
+            gamePlayer.maxHealth = player.maxHealth;
+            gamePlayer.x = player.x;
+            gamePlayer.y = player.y;
+        }
+        if (player.id === game.socket.id) {
+            game.isPlayerDead = false;
+            game.hideDeathScreen();
         }
     });
 }
@@ -12314,11 +12329,35 @@ class Game {
     }
     savePlayerProgress() { }
     hideTitleScreen() { }
-    showDeathScreen() {
-        document.getElementById('deathScreen')?.classList.remove('hidden');
+    showDeathScreen(killedBy) {
+        const deathScreen = document.getElementById('deathScreen');
+        if (deathScreen) {
+            deathScreen.classList.remove('hidden');
+            // Update the death message with killer information
+            const deathMessage = deathScreen.querySelector('.death-screen-content p');
+            if (deathMessage && killedBy) {
+                const mobName = this.getMobDisplayName(killedBy.type, killedBy.tier);
+                deathMessage.textContent = `You were destroyed by: ${mobName}`;
+            }
+            else if (deathMessage) {
+                deathMessage.textContent = 'Your adventure has come to an end...';
+            }
+        }
     }
     hideDeathScreen() {
         document.getElementById('deathScreen')?.classList.add('hidden');
+    }
+    requestRespawn() {
+        if (this.isPlayerDead) {
+            this.socket.emit('requestRespawn');
+        }
+    }
+    getMobDisplayName(type, tier) {
+        // Capitalize the first letter of the type
+        const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
+        // Capitalize the first letter of the tier
+        const capitalizedTier = tier.charAt(0).toUpperCase() + tier.slice(1);
+        return `${capitalizedTier} ${capitalizedType}`;
     }
     showTitleScreen() {
         document.getElementById('titleScreen')?.classList.remove('hidden');
@@ -12939,7 +12978,13 @@ class TitleScreen {
         // Create death screen
         this.deathScreen = this.createElement('div', 'hidden');
         this.deathScreen.id = 'deathScreen';
-        this.deathScreen.innerHTML = `<p>You died!</p>`;
+        this.deathScreen.innerHTML = `
+            <div class="death-screen-content">
+                <h2>You Died!</h2>
+                <p>Your adventure has come to an end...</p>
+                <button id="continueButton" class="continue-button">Continue</button>
+            </div>
+        `;
         // Create loading screen
         this.loadingScreen = this.createElement('div', 'hidden');
         this.loadingScreen.id = 'loadingScreen';
@@ -12996,6 +13041,17 @@ class TitleScreen {
         });
         // Controls settings
         this.populateControlsTab();
+        // Death screen continue button event listener
+        const continueButton = this.deathScreen.querySelector('#continueButton');
+        if (continueButton) {
+            continueButton.addEventListener('click', () => {
+                // Request respawn through the game instance
+                if (window.currentGame) {
+                    window.currentGame.requestRespawn();
+                }
+                this.hideDeathScreen();
+            });
+        }
         const saveControlsButton = this.settingsMenu.querySelector('#saveControlsButton');
         if (saveControlsButton) {
             saveControlsButton.addEventListener('click', () => this.saveControls());
@@ -13329,11 +13385,27 @@ class TitleScreen {
     hideExitButton() {
         this.exitButtonContainer.style.display = 'none';
     }
-    showDeathScreen() {
+    showDeathScreen(killedBy) {
         this.deathScreen.classList.remove('hidden');
+        // Update the death message with killer information
+        const deathMessage = this.deathScreen.querySelector('.death-screen-content p');
+        if (deathMessage && killedBy) {
+            const mobName = this.getMobDisplayName(killedBy.type, killedBy.tier);
+            deathMessage.textContent = `You were destroyed by: ${mobName}`;
+        }
+        else if (deathMessage) {
+            deathMessage.textContent = 'Your adventure has come to an end...';
+        }
     }
     hideDeathScreen() {
         this.deathScreen.classList.add('hidden');
+    }
+    getMobDisplayName(type, tier) {
+        // Capitalize the first letter of the type
+        const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
+        // Capitalize the first letter of the tier
+        const capitalizedTier = tier.charAt(0).toUpperCase() + tier.slice(1);
+        return `${capitalizedTier} ${capitalizedType}`;
     }
     showLoadingScreen() {
         this.loadingScreen.classList.remove('hidden');
@@ -13908,6 +13980,7 @@ class Preloader {
 
 
 let currentGame = null;
+window.currentGame = currentGame;
 let titleScreen = null;
 let authUI = null;
 let preloadedAssets = null;
@@ -14039,6 +14112,7 @@ function setupGameEventListeners() {
             const showHitboxes = titleScreen?.getShowHitboxes() || false;
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
             currentGame = new Game(showHitboxes, serverIp, preloadedAssets);
+            window.currentGame = currentGame;
             // Hide menus and show game
             titleScreen?.hideAuthContainer();
             titleScreen?.hideCenterText();
@@ -14053,6 +14127,7 @@ function setupGameEventListeners() {
             if (currentGame) {
                 currentGame.cleanup();
                 currentGame = null;
+                window.currentGame = null;
             }
             // Show menus and hide game
             titleScreen?.showAuthContainer();

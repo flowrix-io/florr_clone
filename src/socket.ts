@@ -840,7 +840,7 @@ function setupSocketListeners(game: any) {
         });
     });
 
-    game.socket.on('playerDied', (data: { playerId: string, x: number, y: number, angle: number }) => {
+    game.socket.on('playerDied', (data: { playerId: string, x: number, y: number, angle: number, killedBy?: { type: string; tier: string } }) => {
         // Update the player's state to mark them as dead
         const player = game.players.get(data.playerId);
         if (player) {
@@ -850,7 +850,24 @@ function setupSocketListeners(game: any) {
         
         if (data.playerId === game.socket.id) {
             game.isPlayerDead = true;
-            game.showDeathScreen();
+            game.showDeathScreen(data.killedBy);
+        }
+    });
+
+    game.socket.on('playerRespawned', (player: any) => {
+        // Update the player's state to mark them as alive
+        const gamePlayer = game.players.get(player.id);
+        if (gamePlayer) {
+            gamePlayer.isDead = false;
+            gamePlayer.health = player.health;
+            gamePlayer.maxHealth = player.maxHealth;
+            gamePlayer.x = player.x;
+            gamePlayer.y = player.y;
+        }
+        
+        if (player.id === game.socket.id) {
+            game.isPlayerDead = false;
+            game.hideDeathScreen();
         }
     });
 }

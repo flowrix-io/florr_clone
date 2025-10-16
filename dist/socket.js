@@ -681,7 +681,22 @@ function setupSocketListeners(game) {
         }
         if (data.playerId === game.socket.id) {
             game.isPlayerDead = true;
-            game.showDeathScreen();
+            game.showDeathScreen(data.killedBy);
+        }
+    });
+    game.socket.on('playerRespawned', (player) => {
+        // Update the player's state to mark them as alive
+        const gamePlayer = game.players.get(player.id);
+        if (gamePlayer) {
+            gamePlayer.isDead = false;
+            gamePlayer.health = player.health;
+            gamePlayer.maxHealth = player.maxHealth;
+            gamePlayer.x = player.x;
+            gamePlayer.y = player.y;
+        }
+        if (player.id === game.socket.id) {
+            game.isPlayerDead = false;
+            game.hideDeathScreen();
         }
     });
 }

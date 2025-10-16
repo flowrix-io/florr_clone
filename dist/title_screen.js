@@ -218,7 +218,13 @@ class TitleScreen {
         // Create death screen
         this.deathScreen = this.createElement('div', 'hidden');
         this.deathScreen.id = 'deathScreen';
-        this.deathScreen.innerHTML = `<p>You died!</p>`;
+        this.deathScreen.innerHTML = `
+            <div class="death-screen-content">
+                <h2>You Died!</h2>
+                <p>Your adventure has come to an end...</p>
+                <button id="continueButton" class="continue-button">Continue</button>
+            </div>
+        `;
         // Create loading screen
         this.loadingScreen = this.createElement('div', 'hidden');
         this.loadingScreen.id = 'loadingScreen';
@@ -275,6 +281,17 @@ class TitleScreen {
         });
         // Controls settings
         this.populateControlsTab();
+        // Death screen continue button event listener
+        const continueButton = this.deathScreen.querySelector('#continueButton');
+        if (continueButton) {
+            continueButton.addEventListener('click', () => {
+                // Request respawn through the game instance
+                if (window.currentGame) {
+                    window.currentGame.requestRespawn();
+                }
+                this.hideDeathScreen();
+            });
+        }
         const saveControlsButton = this.settingsMenu.querySelector('#saveControlsButton');
         if (saveControlsButton) {
             saveControlsButton.addEventListener('click', () => this.saveControls());
@@ -608,11 +625,27 @@ class TitleScreen {
     hideExitButton() {
         this.exitButtonContainer.style.display = 'none';
     }
-    showDeathScreen() {
+    showDeathScreen(killedBy) {
         this.deathScreen.classList.remove('hidden');
+        // Update the death message with killer information
+        const deathMessage = this.deathScreen.querySelector('.death-screen-content p');
+        if (deathMessage && killedBy) {
+            const mobName = this.getMobDisplayName(killedBy.type, killedBy.tier);
+            deathMessage.textContent = `You were destroyed by: ${mobName}`;
+        }
+        else if (deathMessage) {
+            deathMessage.textContent = 'Your adventure has come to an end...';
+        }
     }
     hideDeathScreen() {
         this.deathScreen.classList.add('hidden');
+    }
+    getMobDisplayName(type, tier) {
+        // Capitalize the first letter of the type
+        const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
+        // Capitalize the first letter of the tier
+        const capitalizedTier = tier.charAt(0).toUpperCase() + tier.slice(1);
+        return `${capitalizedTier} ${capitalizedType}`;
     }
     showLoadingScreen() {
         this.loadingScreen.classList.remove('hidden');

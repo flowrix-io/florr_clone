@@ -6,6 +6,7 @@ const auth_ui_1 = require("./auth_ui");
 const title_screen_1 = require("./title_screen");
 const preloader_1 = require("./preloader");
 let currentGame = null;
+window.currentGame = currentGame;
 let titleScreen = null;
 let authUI = null;
 let preloadedAssets = null;
@@ -137,6 +138,7 @@ function setupGameEventListeners() {
             const showHitboxes = titleScreen?.getShowHitboxes() || false;
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
             currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets);
+            window.currentGame = currentGame;
             // Hide menus and show game
             titleScreen?.hideAuthContainer();
             titleScreen?.hideCenterText();
@@ -151,6 +153,7 @@ function setupGameEventListeners() {
             if (currentGame) {
                 currentGame.cleanup();
                 currentGame = null;
+                window.currentGame = null;
             }
             // Show menus and hide game
             titleScreen?.showAuthContainer();

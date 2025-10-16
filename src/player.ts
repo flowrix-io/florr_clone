@@ -80,4 +80,5 @@ export interface ServerPlayer {
   teleporterEnterTime?: number; // Timestamp when player entered teleporter
   teleportCooldown?: number; // Cooldown to prevent rapid teleportations
   isDead?: boolean;
+  killedBy?: { type: string; tier: string }; // Track which enemy killed the player
 }

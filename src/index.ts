@@ -13,6 +13,15 @@ interface Decoration {
 }
 
 let currentGame: Game | null = null;
+
+// Make currentGame globally accessible
+declare global {
+    interface Window {
+        currentGame: Game | null;
+    }
+}
+
+window.currentGame = currentGame;
 let titleScreen: TitleScreen | null = null;
 let authUI: AuthUI | null = null;
 let preloadedAssets: PreloadedAssets | null = null;
@@ -161,6 +170,7 @@ function setupGameEventListeners() {
             const showHitboxes = titleScreen?.getShowHitboxes() || false;
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
             currentGame = new Game(showHitboxes, serverIp, preloadedAssets);
+            window.currentGame = currentGame;
             
             // Hide menus and show game
             titleScreen?.hideAuthContainer();
@@ -177,6 +187,7 @@ function setupGameEventListeners() {
             if (currentGame) {
                 currentGame.cleanup();
                 currentGame = null;
+                window.currentGame = null;
             }
             
             // Show menus and hide game
