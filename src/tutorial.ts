@@ -24,7 +24,7 @@ export class Tutorial {
     private readonly steps: TutorialStep[] = [
         {
             id: 'welcome',
-            title: '🌸 Welcome to florr.io!',
+            title: '🌸 Welcome to florr.io clone!',
             description: 'Let\'s learn the basics! You\'ll learn how to move, use petals, equip items, and craft upgrades.',
             position: 'center',
             skipButton: true
