@@ -839,6 +839,7 @@ function respawnPlayer(player) {
     player.score = Math.max(0, player.score - 10);
     player.isInvulnerable = true;
     player.lastDamageTime = 0;
+    player.isDead = false;
     setTimeout(() => {
         player.isInvulnerable = false;
         // Notify client that invulnerability has ended
@@ -1238,6 +1239,15 @@ io.on('connection', (socket) => {
     socket.on('ping', (clientTime) => {
         socket.emit('pong', clientTime);
     });
+    // Handle respawn request
+    socket.on('requestRespawn', () => {
+        const player = constants_2.players[socket.id];
+        if (player && player.isDead) {
+            respawnPlayer(player);
+            player.isDead = false;
+            io.emit('playerRespawned', player);
+        }
+    });
     // Add to socket connection handler after other socket events
     socket.on('craftItems', (data) => {
         const player = constants_2.players[socket.id];
@@ -1435,6 +1445,10 @@ function moveEnemies() {
 }
 function updatePlayerState(player, deltaTime) {
     if (!player || !player.inputs) {
+        return;
+    }
+    // Don't update movement for dead players
+    if (player.isDead) {
         return;
     }
     let targetVelocityX = 0;
@@ -1829,10 +1843,20 @@ function updatePlayerState(player, deltaTime) {
     }
     player.x = newX;
     player.y = newY;
-    if (player.health <= 0) {
-        respawnPlayer(player);
-        io.emit('playerDied', player.id);
-        io.emit('playerRespawned', player);
+    if (player.health <= 0 && !player.isDead) {
+        // Mark player as dead instead of respawning immediately
+        player.isDead = true;
+        // Set random rotation for the corpse
+        player.angle = Math.random() * Math.PI * 2;
+        io.emit('playerDied', { playerId: player.id, x: player.x, y: player.y, angle: player.angle });
+        // Set up respawn timer (5 seconds)
+        setTimeout(() => {
+            if (player.isDead) {
+                respawnPlayer(player);
+                player.isDead = false;
+                io.emit('playerRespawned', player);
+            }
+        }, 5000);
     }
 }
 function start_loop() {

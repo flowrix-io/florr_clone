@@ -34,6 +34,7 @@ export interface Player {
   targetY: number;
   eye?: {x: number, y: number};
   targetEye?: {x: number, y: number};
+  isDead?: boolean;
 }
 export interface PlayerProgress {
   level: number;
@@ -78,4 +79,5 @@ export interface ServerPlayer {
   currentTeleporter?: string; // ID of teleporter player is in
   teleporterEnterTime?: number; // Timestamp when player entered teleporter
   teleportCooldown?: number; // Cooldown to prevent rapid teleportations
+  isDead?: boolean;
 }

@@ -3761,7 +3761,8 @@ class Graphics {
             const healthX = flowerCenterX + 40; // Offset from flower center
             const healthY = 100; // 30 + 70 pixels down
             // Draw health bar with rounded ends
-            const healthFillWidth = (player.health / player.maxHealth) * healthBarWidth;
+            const clampedHealth = Math.max(0, player.health); // Cap health at 0
+            const healthFillWidth = (clampedHealth / player.maxHealth) * healthBarWidth;
             const radius = healthBarHeight / 2;
             // Health bar background (rounded)
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -3776,7 +3777,7 @@ class Graphics {
             // Health text
             this.ctx.fillStyle = 'white';
             this.ctx.font = '14px Ubuntu, sans-serif';
-            this.ctx.fillText(`Health: ${Math.round(player.health)}/${player.maxHealth}`, healthX + 5, healthY + 15);
+            this.ctx.fillText(`Health: ${Math.round(clampedHealth)}/${player.maxHealth}`, healthX + 5, healthY + 15);
             // Draw XP bar with rounded ends
             const xpBarY = healthY + healthBarHeight + 5;
             const xpFillWidth = (player.xp / player.xpToNextLevel) * healthBarWidth;
@@ -4258,7 +4259,14 @@ class Graphics {
         for (const player of players.values()) {
             if (player.x > viewport.left - PLAYER_SIZE && player.x < viewport.right + PLAYER_SIZE &&
                 player.y > viewport.top - PLAYER_SIZE && player.y < viewport.bottom + PLAYER_SIZE) {
-                this.drawPlayer(player, currentPlayerId, petalExtension);
+                if (player.isDead) {
+                    // Draw corpse for dead players
+                    this.drawCorpse(player.x, player.y, player.angle);
+                }
+                else {
+                    // Draw normal player
+                    this.drawPlayer(player, currentPlayerId, petalExtension);
+                }
             }
         }
         // Draw enemies
@@ -4321,6 +4329,44 @@ class Graphics {
         });
         await Promise.all(loadPromises);
         console.log('All petal images preloaded');
+    }
+    drawCorpse(x, y, angle) {
+        this.ctx.save();
+        this.ctx.translate(x, y);
+        this.ctx.rotate(angle);
+        // Draw the corpse SVG
+        this.ctx.fillStyle = '#ffe763';
+        this.ctx.strokeStyle = '#cfbb50';
+        this.ctx.lineWidth = 3;
+        // Draw the main circle (face)
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 25, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        // Draw the X eyes
+        this.ctx.strokeStyle = '#222222';
+        this.ctx.lineWidth = 1.5;
+        this.ctx.lineCap = 'round';
+        // Left eye X
+        this.ctx.beginPath();
+        this.ctx.moveTo(-10, -8);
+        this.ctx.lineTo(-4, -2);
+        this.ctx.moveTo(-4, -8);
+        this.ctx.lineTo(-10, -2);
+        this.ctx.stroke();
+        // Right eye X
+        this.ctx.beginPath();
+        this.ctx.moveTo(10, -8);
+        this.ctx.lineTo(4, -2);
+        this.ctx.moveTo(4, -8);
+        this.ctx.lineTo(10, -2);
+        this.ctx.stroke();
+        // Draw the sad mouth
+        this.ctx.beginPath();
+        this.ctx.moveTo(-6, 10);
+        this.ctx.quadraticCurveTo(0, 15, 6, 10);
+        this.ctx.stroke();
+        this.ctx.restore();
     }
 }
 
@@ -9454,18 +9500,14 @@ function setupSocketListeners(game) {
         const existingPlayer = game.players.get(player.id);
         if (existingPlayer) {
             Object.assign(existingPlayer, player);
+            // Reset the isDead flag
+            existingPlayer.isDead = false;
             if (player.id === game.socket.id) {
                 game.isPlayerDead = false;
                 game.hideDeathScreen();
             }
             // Show respawn message
             game.showFloatingText(player.x, player.y - 50, 'Respawned!', '#FFFFFF', 20);
-        }
-    });
-    game.socket.on('playerDied', (playerId) => {
-        if (playerId === game.socket.id) {
-            game.isPlayerDead = true;
-            game.showDeathScreen();
         }
     });
     game.socket.on('decorationsUpdate', (decorations) => {
@@ -9612,6 +9654,12 @@ function setupSocketListeners(game) {
         });
     });
     game.socket.on('playerDied', (data) => {
+        // Update the player's state to mark them as dead
+        const player = game.players.get(data.playerId);
+        if (player) {
+            player.isDead = true;
+            player.angle = data.angle; // Set the random rotation
+        }
         if (data.playerId === game.socket.id) {
             game.isPlayerDead = true;
             game.showDeathScreen();
@@ -10031,7 +10079,8 @@ class InventoryManager {
                         healthBar.style.height = '3px';
                         healthBar.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
                         const healthFill = document.createElement('div');
-                        const healthPercentage = item.health / item.maxHealth;
+                        const clampedHealth = Math.max(0, item.health); // Cap health at 0
+                        const healthPercentage = clampedHealth / item.maxHealth;
                         healthFill.style.width = `${healthPercentage * 100}%`;
                         healthFill.style.height = '100%';
                         healthFill.style.backgroundColor = 'rgba(0, 255, 0, 0.7)';
@@ -11638,6 +11687,11 @@ class Game {
                 this.showHitboxes = !this.showHitboxes;
                 this.graphics.showHitboxes = this.showHitboxes;
                 this.showFloatingText(this.canvas.width / 2, 50, `Hitboxes: ${this.showHitboxes ? 'ON' : 'OFF'}`, '#FFFFFF', 20);
+                return;
+            }
+            // Handle respawn when dead
+            if (event.key === ' ' && this.isPlayerDead) {
+                this.socket.emit('requestRespawn');
                 return;
             }
             const key = event.key;

@@ -994,6 +994,7 @@ function respawnPlayer(player: ServerPlayer) {
     player.score = Math.max(0, player.score - 10);
     player.isInvulnerable = true;
     player.lastDamageTime = 0;
+    player.isDead = false;
 
     setTimeout(() => {
         player.isInvulnerable = false;
@@ -1450,6 +1451,16 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         socket.emit('pong', clientTime);
     });
 
+    // Handle respawn request
+    socket.on('requestRespawn', () => {
+        const player = players[socket.id];
+        if (player && player.isDead) {
+            respawnPlayer(player);
+            player.isDead = false;
+            io.emit('playerRespawned', player);
+        }
+    });
+
     // Add near other interfaces at the top
     interface CraftingRequest {
         items: Item[];
@@ -1685,6 +1696,10 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         return;
     }
 
+    // Don't update movement for dead players
+    if (player.isDead) {
+        return;
+    }
 
     let targetVelocityX = 0;
     let targetVelocityY = 0;
@@ -2149,10 +2164,21 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
     player.x = newX;
     player.y = newY;
 
-    if (player.health <= 0) {
-        respawnPlayer(player);
-        io.emit('playerDied', player.id);
-        io.emit('playerRespawned', player);
+    if (player.health <= 0 && !player.isDead) {
+        // Mark player as dead instead of respawning immediately
+        player.isDead = true;
+        // Set random rotation for the corpse
+        player.angle = Math.random() * Math.PI * 2;
+        io.emit('playerDied', { playerId: player.id, x: player.x, y: player.y, angle: player.angle });
+        
+        // Set up respawn timer (5 seconds)
+        setTimeout(() => {
+            if (player.isDead) {
+                respawnPlayer(player);
+                player.isDead = false;
+                io.emit('playerRespawned', player);
+            }
+        }, 5000);
     }
 }
 

@@ -621,6 +621,12 @@ export class Game {
                 return;
             }
 
+            // Handle respawn when dead
+            if (event.key === ' ' && this.isPlayerDead) {
+                this.socket.emit('requestRespawn');
+                return;
+            }
+
             const key = event.key;
             const slotIndex = this.inventoryManager.getLoadoutKeyBindings().indexOf(key);
             if (slotIndex !== -1) {

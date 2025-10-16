@@ -412,7 +412,8 @@ class InventoryManager {
                         healthBar.style.height = '3px';
                         healthBar.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
                         const healthFill = document.createElement('div');
-                        const healthPercentage = item.health / item.maxHealth;
+                        const clampedHealth = Math.max(0, item.health); // Cap health at 0
+                        const healthPercentage = clampedHealth / item.maxHealth;
                         healthFill.style.width = `${healthPercentage * 100}%`;
                         healthFill.style.height = '100%';
                         healthFill.style.backgroundColor = 'rgba(0, 255, 0, 0.7)';

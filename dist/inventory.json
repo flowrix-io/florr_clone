@@ -2,17 +2,17 @@
   "players": {
     "t9pyo2soj": {
       "level": 42,
-      "xp": 872337,
+      "xp": 904341,
       "maxHealth": 710,
       "damage": 127,
       "inventory": {
         "common": {
-          "petal_basic": 2005,
+          "petal_basic": 2007,
           "petal_stinger": 23,
-          "speed_boost": 37,
+          "speed_boost": 38,
           "health_potion": 48,
           "petal_rose": 30,
-          "shield": 34,
+          "shield": 35,
           "petal_light": 25,
           "petal_rock": 9,
           "petal_sand": 4
@@ -77,7 +77,7 @@
           "petal_stinger": 13,
           "petal_light": 3,
           "petal_rock": 5,
-          "petal_sand": 3
+          "petal_sand": 4
         },
         "unique": {
           "speed_boost": 1,
@@ -85,81 +85,25 @@
           "petal_rose": 1001,
           "petal_stinger": 1000,
           "petal_light": 1000,
-          "petal_sand": 994,
+          "petal_sand": 1000,
           "health_potion": 1000,
           "shield": 1
         }
       },
       "loadout": [
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sand",
-          "health": 19680,
-          "maxHealth": 19683
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sand",
-          "health": 19681,
-          "maxHealth": 19683
-        },
-        {
-          "type": "petal",
-          "rarity": "legendary",
-          "petalType": "sand",
-          "health": 45,
-          "maxHealth": 243
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sand",
-          "health": 19683,
-          "maxHealth": 19683
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sand",
-          "health": 19681,
-          "maxHealth": 19683
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sand",
-          "health": 19683,
-          "maxHealth": 19683
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sand",
-          "health": 19675,
-          "maxHealth": 19683
-        },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
         {
           "type": "speed_boost",
           "rarity": "mythic"
         },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 6,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 2,
-          "onCooldown": false
-        }
+        null,
+        null
       ]
     }
   },

@@ -646,6 +646,8 @@ function setupSocketListeners(game: any) {
         const existingPlayer = game.players.get(player.id);
         if (existingPlayer) {
             Object.assign(existingPlayer, player);
+            // Reset the isDead flag
+            existingPlayer.isDead = false;
             if (player.id === game.socket.id) {
                 game.isPlayerDead = false;
                 game.hideDeathScreen();
@@ -658,13 +660,6 @@ function setupSocketListeners(game: any) {
                 '#FFFFFF',
                 20
             );
-        }
-    });
-
-    game.socket.on('playerDied', (playerId: string) => {
-        if (playerId === game.socket.id) {
-            game.isPlayerDead = true;
-            game.showDeathScreen();
         }
     });
 
@@ -845,7 +840,14 @@ function setupSocketListeners(game: any) {
         });
     });
 
-    game.socket.on('playerDied', (data: { playerId: string }) => {
+    game.socket.on('playerDied', (data: { playerId: string, x: number, y: number, angle: number }) => {
+        // Update the player's state to mark them as dead
+        const player = game.players.get(data.playerId);
+        if (player) {
+            player.isDead = true;
+            player.angle = data.angle; // Set the random rotation
+        }
+        
         if (data.playerId === game.socket.id) {
             game.isPlayerDead = true;
             game.showDeathScreen();

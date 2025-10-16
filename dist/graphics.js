@@ -281,7 +281,8 @@ class Graphics {
             const healthX = flowerCenterX + 40; // Offset from flower center
             const healthY = 100; // 30 + 70 pixels down
             // Draw health bar with rounded ends
-            const healthFillWidth = (player.health / player.maxHealth) * healthBarWidth;
+            const clampedHealth = Math.max(0, player.health); // Cap health at 0
+            const healthFillWidth = (clampedHealth / player.maxHealth) * healthBarWidth;
             const radius = healthBarHeight / 2;
             // Health bar background (rounded)
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -296,7 +297,7 @@ class Graphics {
             // Health text
             this.ctx.fillStyle = 'white';
             this.ctx.font = '14px Ubuntu, sans-serif';
-            this.ctx.fillText(`Health: ${Math.round(player.health)}/${player.maxHealth}`, healthX + 5, healthY + 15);
+            this.ctx.fillText(`Health: ${Math.round(clampedHealth)}/${player.maxHealth}`, healthX + 5, healthY + 15);
             // Draw XP bar with rounded ends
             const xpBarY = healthY + healthBarHeight + 5;
             const xpFillWidth = (player.xp / player.xpToNextLevel) * healthBarWidth;
@@ -778,7 +779,14 @@ class Graphics {
         for (const player of players.values()) {
             if (player.x > viewport.left - constants_1.PLAYER_SIZE && player.x < viewport.right + constants_1.PLAYER_SIZE &&
                 player.y > viewport.top - constants_1.PLAYER_SIZE && player.y < viewport.bottom + constants_1.PLAYER_SIZE) {
-                this.drawPlayer(player, currentPlayerId, petalExtension);
+                if (player.isDead) {
+                    // Draw corpse for dead players
+                    this.drawCorpse(player.x, player.y, player.angle);
+                }
+                else {
+                    // Draw normal player
+                    this.drawPlayer(player, currentPlayerId, petalExtension);
+                }
             }
         }
         // Draw enemies
@@ -841,6 +849,44 @@ class Graphics {
         });
         await Promise.all(loadPromises);
         console.log('All petal images preloaded');
+    }
+    drawCorpse(x, y, angle) {
+        this.ctx.save();
+        this.ctx.translate(x, y);
+        this.ctx.rotate(angle);
+        // Draw the corpse SVG
+        this.ctx.fillStyle = '#ffe763';
+        this.ctx.strokeStyle = '#cfbb50';
+        this.ctx.lineWidth = 3;
+        // Draw the main circle (face)
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 25, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        // Draw the X eyes
+        this.ctx.strokeStyle = '#222222';
+        this.ctx.lineWidth = 1.5;
+        this.ctx.lineCap = 'round';
+        // Left eye X
+        this.ctx.beginPath();
+        this.ctx.moveTo(-10, -8);
+        this.ctx.lineTo(-4, -2);
+        this.ctx.moveTo(-4, -8);
+        this.ctx.lineTo(-10, -2);
+        this.ctx.stroke();
+        // Right eye X
+        this.ctx.beginPath();
+        this.ctx.moveTo(10, -8);
+        this.ctx.lineTo(4, -2);
+        this.ctx.moveTo(4, -8);
+        this.ctx.lineTo(10, -2);
+        this.ctx.stroke();
+        // Draw the sad mouth
+        this.ctx.beginPath();
+        this.ctx.moveTo(-6, 10);
+        this.ctx.quadraticCurveTo(0, 15, 6, 10);
+        this.ctx.stroke();
+        this.ctx.restore();
     }
 }
 exports.Graphics = Graphics;
