@@ -662,3 +662,17 @@ label {
     transform: translateY(0);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
+
+.ready-button {
+    /* padding: 12px 25px; */
+    font-size: 18px;
+    background: #1dd129;
+    color: white;
+    border: none;
+    border-radius: 0px;
+    border: 5px solid #159a1c;
+    border-style: solid;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    height: 32px;
+}

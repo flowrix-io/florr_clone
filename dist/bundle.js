@@ -10969,7 +10969,7 @@ class Tutorial {
         this.steps = [
             {
                 id: 'welcome',
-                title: '🌸 Welcome to florr.io!',
+                title: '🌸 Welcome to florr.io clone!',
                 description: 'Let\'s learn the basics! You\'ll learn how to move, use petals, equip items, and craft upgrades.',
                 position: 'center',
                 skipButton: true
@@ -13046,7 +13046,7 @@ class TitleScreen {
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
         `;
         this.gameMenu.innerHTML = `
-            <button id="multiPlayerButton" class="buttons">Start Game</button>
+            <!-- <button id="multiPlayerButton" class="buttons">Start Game</button> -->
             <button id="settingsButton" class="buttons">Settings</button>
         `;
         // Create center text
@@ -13067,7 +13067,10 @@ class TitleScreen {
         this.centerText.innerHTML = `
             <p class="title">florr.io clone</p>
             <!-- <p class="instructions">Use arrow keys to move. Hold space to extend petals.</p> -->
-            <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
+            <div class="name-input-container">
+                <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
+                <button id="multiPlayerButton" class="ready-button">Ready▶︎</button>
+            </div>
             <div class="color-picker">
                 <label for="hueSlider">Player Color:</label>
                 <input type="range" id="hueSlider" min="0" max="360" value="0" class="hue-slider">
@@ -13626,7 +13629,7 @@ class TitleScreen {
         return this.registerForm.querySelector('#registerOfflineButton');
     }
     getMultiPlayerButton() {
-        return this.gameMenu.querySelector('#multiPlayerButton');
+        return this.centerText.querySelector('#multiPlayerButton');
     }
     getSettingsButton() {
         return this.gameMenu.querySelector('#settingsButton');
@@ -13728,6 +13731,29 @@ const titleScreenStyles = `
         color: #ffffff;
     }
 
+    .name-input-container {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 10px;
+        margin: 10px 0;
+    }
+
+    .name-input-container .ready-button {
+        height: 42px;
+        padding: 10px 20px;
+        font-size: 18px;
+        box-sizing: border-box;
+        margin-top: 0;
+        vertical-align: top;
+    }
+
+    .name-input-container .ready-button:hover {
+        background: #1dd129 !important;
+        color: white !important;
+        transform: scale(1.05);
+    }
+
     .name-input {
         background: rgba(255, 255, 255, 0.9);
         border: 2px solid rgba(255, 255, 255, 0.5);
@@ -13735,7 +13761,6 @@ const titleScreenStyles = `
         font-size: 18px;
         padding: 10px;
         width: 300px;
-        margin: 10px 0;
         border-radius: 5px;
     }
 
