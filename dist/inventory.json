@@ -1,97 +1,44 @@
 {
   "players": {
-    "t9pyo2soj": {
-      "level": 44,
-      "xp": 588019,
-      "maxHealth": 730,
-      "damage": 131,
+    "ocu977p98": {
+      "level": 19,
+      "xp": 2736,
+      "maxHealth": 280,
+      "damage": 41,
       "inventory": {
         "common": {
-          "petal_basic": 2021,
-          "petal_stinger": 29,
-          "speed_boost": 45,
-          "health_potion": 54,
-          "petal_rose": 42,
-          "shield": 37,
-          "petal_light": 37,
-          "petal_rock": 15,
-          "petal_sand": 10
-        },
-        "uncommon": {
-          "health_potion": 13,
-          "petal_basic": 19,
-          "petal_stinger": 8,
-          "shield": 7,
-          "speed_boost": 15,
-          "petal_rose": 16,
-          "petal_light": 2,
-          "petal_rock": 3
-        },
-        "rare": {
-          "petal_stinger": 13,
-          "speed_boost": 14,
+          "petal_basic": 10,
           "health_potion": 2,
-          "petal_rose": 11,
-          "shield": 15,
-          "petal_basic": 9,
-          "petal_light": 4,
-          "petal_rock": 2,
-          "petal_sand": 2,
-          "petal_yggdrasil": 2
-        },
-        "epic": {
-          "petal_basic": 43,
-          "petal_rose": 46,
-          "speed_boost": 47,
-          "health_potion": 40,
-          "petal_stinger": 31,
-          "shield": 51,
-          "petal_light": 18,
-          "petal_rock": 13,
-          "petal_sand": 9
-        },
-        "mythic": {
-          "petal_basic": 930,
-          "petal_rose": 6,
-          "health_potion": 9,
-          "speed_boost": 6,
-          "petal_stinger": 6,
-          "shield": 6
-        },
-        "ultra": {
-          "speed_boost": 4,
-          "petal_rose": 3,
-          "petal_stinger": 1,
-          "petal_basic": 1,
-          "health_potion": 1,
-          "petal_light": 1
-        },
-        "super": {
-          "speed_boost": 2,
-          "petal_basic": 1,
-          "petal_rose": 1
-        },
-        "legendary": {
-          "speed_boost": 20,
-          "health_potion": 16,
-          "petal_rose": 17,
-          "petal_basic": 13,
-          "shield": 12,
-          "petal_stinger": 14,
-          "petal_light": 4,
-          "petal_rock": 6,
-          "petal_sand": 5
+          "petal_rose": 1,
+          "shield": 1
         },
         "unique": {
-          "speed_boost": 1,
-          "petal_basic": 1001,
-          "petal_rose": 1001,
           "petal_stinger": 1000,
-          "petal_light": 992,
-          "petal_sand": 1000,
-          "health_potion": 1000,
-          "shield": 1,
-          "petal_yggdrasil": 1000
+          "petal_basic": 1000,
+          "petal_rose": 1000,
+          "petal_light": 993,
+          "petal_rock": 1000,
+          "petal_yggdrasil": 1000,
+          "speed_boost": 1000,
+          "health_potion": 1000
+        },
+        "mythic": {
+          "speed_boost": 999
+        },
+        "uncommon": {
+          "petal_rose": 1
+        },
+        "epic": {
+          "petal_stinger": 2,
+          "speed_boost": 3,
+          "petal_basic": 2,
+          "petal_rose": 3,
+          "petal_sand": 2,
+          "petal_yggdrasil": 1,
+          "health_potion": 1,
+          "petal_light": 2,
+          "petal_rock": 3,
+          "shield": 1
         }
       },
       "loadout": [
@@ -99,84 +46,65 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32777,
-          "maxHealth": 32805
-        },
-        {
-          "type": "petal",
-          "rarity": "epic",
-          "petalType": "yggdrasil",
-          "health": 0,
-          "maxHealth": 1
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32796,
+          "health": 32799,
           "maxHealth": 32805
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32790,
+          "health": 32800,
           "maxHealth": 32805
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32787,
+          "health": 32803,
           "maxHealth": 32805
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32788,
+          "health": 32802,
           "maxHealth": 32805
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32783,
+          "health": 32802,
+          "maxHealth": 32805
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "light",
+          "health": 32800,
+          "maxHealth": 32805
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "light",
+          "health": 32798,
           "maxHealth": 32805
         },
         {
           "type": "speed_boost",
           "rarity": "mythic"
         },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32789,
-          "maxHealth": 32805
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32789,
-          "maxHealth": 32805
-        }
+        null,
+        null
       ]
     }
   },
   "users": {
     "sussy": {
-      "id": "t9pyo2soj",
+      "id": "ocu977p98",
       "username": "sussy",
-      "password": "$2b$12$ZHbLp2Tf8QyPT7R4CcVZJuWDaJoT6wWS9b4gODg3Di3peWbYuaAuS",
-      "isPlainText": false
-    },
-    "q": {
-      "id": "ux9dtcbf4",
-      "username": "q",
-      "password": "$2b$12$Iwkhn9vDWN6MCeDMEqxKv.uYBlS6F0g5cLni48dRl2mfl7PiqF8O.",
-      "isPlainText": false
+      "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6"
     }
   }
 }
