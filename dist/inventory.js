@@ -304,12 +304,16 @@ class InventoryManager {
         const item = player.loadout[slot];
         if (item.onCooldown)
             return;
-        // Petals cannot be used as consumables
-        if (item.type === 'petal') {
+        // Petals cannot be used as consumables (except yggdrasil)
+        if (item.type === 'petal' && item.petalType !== 'yggdrasil') {
             this.game.showFloatingText(this.game.canvas.width / 2, 50, 'Petals cannot be used - they provide passive protection!', '#FFA500', 16);
             return;
         }
-        this.game.getSocket()?.emit('useItem', { type: item.type, rarity: item.rarity });
+        this.game.getSocket()?.emit('useItem', {
+            type: item.type,
+            rarity: item.rarity,
+            petalType: item.petalType
+        });
         const rarityMultipliers = {
             common: 1,
             uncommon: 1.5,
@@ -332,11 +336,24 @@ class InventoryManager {
             case 'shield':
                 this.game.showFloatingText(player.x, player.y - 30, `Shield (${Math.floor(3 * multiplier)}s)`, '#FFD700', 20);
                 break;
+            case 'petal':
+                if (item.petalType === 'yggdrasil') {
+                    this.game.showFloatingText(player.x, player.y - 30, 'Yggdrasil Petal - Will automatically revive nearby corpses!', '#FFD700', 20);
+                }
+                break;
         }
         const slot_element = document.querySelector(`.loadout-slot[data-slot="${slot}"]`);
         if (slot_element) {
             slot_element.classList.add('on-cooldown');
-            const cooldownTime = 10000 * (1 / multiplier);
+            let cooldownTime = 10000 * (1 / multiplier);
+            // Special cooldown for yggdrasil petals
+            if (item.type === 'petal' && item.petalType === 'yggdrasil') {
+                // Get the petal stats to use the correct cooldown
+                const petalStats = this.game.getPetalStats?.(item.petalType, item.rarity);
+                if (petalStats) {
+                    cooldownTime = petalStats.cooldown;
+                }
+            }
             setTimeout(() => {
                 slot_element.classList.remove('on-cooldown');
             }, cooldownTime);

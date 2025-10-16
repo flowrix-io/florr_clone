@@ -134,6 +134,9 @@ class Game {
         this.gameStartTime = 0;
         // Add chat property
         this.chat = null;
+        // Revival mode properties
+        this.revivalMode = false;
+        this.revivalModeEndTime = 0;
         this.showHitboxes = showHitboxes;
         this.loadControls();
         console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets);
@@ -1062,6 +1065,11 @@ class Game {
     }
     getSocket() {
         return this.socket;
+    }
+    getPetalStats(petalType, rarity) {
+        // Import the petals module dynamically to avoid circular dependencies
+        const { getPetalStats } = require('./petals');
+        return getPetalStats(petalType, rarity);
     }
     loadControls() {
         const savedControls = localStorage.getItem('controls');

@@ -870,4 +870,67 @@ function setupSocketListeners(game: any) {
             game.hideDeathScreen();
         }
     });
+
+    // Revival mode events
+    game.socket.on('revivalModeActivated', (data: { message: string, duration: number }) => {
+        game.showFloatingText(
+            game.canvas.width / 2,
+            100,
+            data.message,
+            '#FFD700',
+            20
+        );
+        
+        // Enable revival mode on the game instance
+        game.revivalMode = true;
+        game.revivalModeEndTime = Date.now() + data.duration;
+        
+        // Change cursor to indicate revival mode (optional visual indicator)
+        document.body.style.cursor = 'help';
+    });
+
+    game.socket.on('revivalModeDeactivated', () => {
+        game.revivalMode = false;
+        game.revivalModeEndTime = 0;
+        
+        // Reset cursor
+        document.body.style.cursor = 'default';
+        
+        game.showFloatingText(
+            game.canvas.width / 2,
+            100,
+            'Revival mode ended',
+            '#FFA500',
+            16
+        );
+    });
+
+    game.socket.on('playerRevived', (data: { 
+        revivedPlayerId: string, 
+        revivingPlayerId: string, 
+        revivedPlayerName: string, 
+        revivingPlayerName: string 
+    }) => {
+        // Update the revived player's state
+        const revivedPlayer = game.players.get(data.revivedPlayerId);
+        if (revivedPlayer) {
+            revivedPlayer.isDead = false;
+            revivedPlayer.health = revivedPlayer.maxHealth;
+        }
+        
+        // Show revival message
+        game.showFloatingText(
+            game.canvas.width / 2,
+            200,
+            `${data.revivingPlayerName} revived ${data.revivedPlayerName}!`,
+            '#32CD32',
+            20
+        );
+        
+        // If the revived player is the local player, hide death screen
+        if (data.revivedPlayerId === game.socket.id) {
+            game.isPlayerDead = false;
+            game.hideDeathScreen();
+        }
+    });
 }

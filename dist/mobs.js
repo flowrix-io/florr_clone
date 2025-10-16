@@ -1793,6 +1793,79 @@ exports.MOB_DROP_TABLES = {
                 minQuantity: 1,
                 maxQuantity: 1
             },
+            // Yggdrasil petal drops (rare)
+            {
+                type: 'petal',
+                itemType: 'yggdrasil',
+                rarity: 'common',
+                probability: 0.01, // 1% chance for common yggdrasil
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yggdrasil',
+                rarity: 'uncommon',
+                probability: 0.005, // 0.5% chance for uncommon yggdrasil
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yggdrasil',
+                rarity: 'rare',
+                probability: 0.002, // 0.2% chance for rare yggdrasil
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yggdrasil',
+                rarity: 'epic',
+                probability: 0.001, // 0.1% chance for epic yggdrasil
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yggdrasil',
+                rarity: 'legendary',
+                probability: 0.0005, // 0.05% chance for legendary yggdrasil
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yggdrasil',
+                rarity: 'mythic',
+                probability: 0.0002, // 0.02% chance for mythic yggdrasil
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yggdrasil',
+                rarity: 'ultra',
+                probability: 0.0001, // 0.01% chance for ultra yggdrasil
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yggdrasil',
+                rarity: 'super',
+                probability: 0.00005, // 0.005% chance for super yggdrasil
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yggdrasil',
+                rarity: 'unique',
+                probability: 0.00001, // 0.001% chance for unique yggdrasil
+                minQuantity: 1,
+                maxQuantity: 1
+            },
         ]
     },
     soldier_ant: {

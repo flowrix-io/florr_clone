@@ -9,7 +9,7 @@
         "common": {
           "petal_basic": 2007,
           "petal_stinger": 23,
-          "speed_boost": 38,
+          "speed_boost": 39,
           "health_potion": 48,
           "petal_rose": 30,
           "shield": 35,
@@ -87,7 +87,8 @@
           "petal_light": 1000,
           "petal_sand": 1000,
           "health_potion": 1000,
-          "shield": 1
+          "shield": 1,
+          "petal_yggdrasil": 998
         }
       },
       "loadout": [
@@ -97,7 +98,14 @@
         null,
         null,
         null,
-        null,
+        {
+          "type": "petal",
+          "petalType": "yggdrasil",
+          "rarity": "unique",
+          "maxHealth": 1,
+          "health": 1,
+          "onCooldown": false
+        },
         {
           "type": "speed_boost",
           "rarity": "mythic"

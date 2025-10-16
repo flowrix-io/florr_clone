@@ -1,4 +1,4 @@
-import {Item} from './item';
+import {Item, ItemWithRarity} from './item';
 
 export interface PlayerInventory {
     [rarity: string]: {
@@ -81,4 +81,6 @@ export interface ServerPlayer {
   teleportCooldown?: number; // Cooldown to prevent rapid teleportations
   isDead?: boolean;
   killedBy?: { type: string; tier: string }; // Track which enemy killed the player
+  revivalMode?: boolean; // Whether player is in revival mode (using yggdrasil petal)
+  revivalItem?: ItemWithRarity; // The yggdrasil petal being used for revival
 }

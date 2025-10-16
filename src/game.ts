@@ -206,6 +206,10 @@ export class Game {
     private inventoryManager!: InventoryManager;
     private controls!: { [key: string]: string };
     private tutorial: Tutorial;
+    
+    // Revival mode properties
+    public revivalMode: boolean = false;
+    public revivalModeEndTime: number = 0;
 
     constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null) {
         this.showHitboxes = showHitboxes;
@@ -1319,6 +1323,12 @@ export class Game {
 
     public getSocket() {
         return this.socket;
+    }
+
+    public getPetalStats(petalType: string, rarity: string): any {
+        // Import the petals module dynamically to avoid circular dependencies
+        const { getPetalStats } = require('./petals');
+        return getPetalStats(petalType, rarity);
     }
 
     private loadControls() {
