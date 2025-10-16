@@ -12982,7 +12982,10 @@ class TitleScreen {
             <div class="death-screen-content">
                 <h2>You Died!</h2>
                 <p>Your adventure has come to an end...</p>
-                <button id="continueButton" class="continue-button">Continue</button>
+                <div class="death-screen-buttons">
+                    <button id="continueButton" class="continue-button">Continue</button>
+                    <button id="closeDeathButton" class="close-button">Close</button>
+                </div>
             </div>
         `;
         // Create loading screen
@@ -13049,6 +13052,14 @@ class TitleScreen {
                 if (window.currentGame) {
                     window.currentGame.requestRespawn();
                 }
+                this.hideDeathScreen();
+            });
+        }
+        // Death screen close button event listener
+        const closeDeathButton = this.deathScreen.querySelector('#closeDeathButton');
+        if (closeDeathButton) {
+            closeDeathButton.addEventListener('click', () => {
+                // Just close the death screen without respawning
                 this.hideDeathScreen();
             });
         }
