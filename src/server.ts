@@ -1563,15 +1563,19 @@ function moveEnemies() {
             if (Math.abs(enemy.knockbackY) < 0.1) enemy.knockbackY = 0;
         }
 
-        // Find closest player
-        let closestPlayer: ServerPlayer;
+        // Find closest living player
+        let closestPlayer: ServerPlayer | undefined;
         let closestDistance = Infinity;
 
         // Convert players object to array and explicitly type it
         const playerArray: ServerPlayer[] = Object.values(players);
-        closestPlayer = playerArray[0];
 
         playerArray.forEach(player => {
+            // Skip dead players (corpses)
+            if (player.isDead) {
+                return;
+            }
+            
             const dx = player.x - enemy.x;
             const dy = player.y - enemy.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1806,7 +1810,8 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
             newY + PLAYER_SIZE > enemyTop
         ) {
             collision = true;
-            // if (!player.isInvulnerable) {
+            // Don't damage dead players (corpses)
+            if (!player.isDead) {
                 player.health -= enemy.damage;
                 player.lastDamageTime = Date.now();
                 player.isInvulnerable = true;
@@ -1868,7 +1873,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                 if (player.health <= 0) {
                     break;
                 }
-            // }
+            }
             break;
         }
     }
