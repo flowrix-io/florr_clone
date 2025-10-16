@@ -112,31 +112,31 @@ const RARITY_OVERRIDES = {
     },
     yggdrasil: {
         common: {
-            cooldown: 2048000
-        },
-        uncommon: {
-            cooldown: 1024000
-        },
-        rare: {
             cooldown: 512000
         },
-        epic: {
+        uncommon: {
             cooldown: 256000
         },
-        legendary: {
+        rare: {
             cooldown: 128000
         },
-        mythic: {
+        epic: {
             cooldown: 64000
         },
-        ultra: {
+        legendary: {
             cooldown: 32000
         },
-        super: {
+        mythic: {
             cooldown: 16000
         },
-        unique: {
+        ultra: {
             cooldown: 8000
+        },
+        super: {
+            cooldown: 4000
+        },
+        unique: {
+            cooldown: 2000
         }
     }
 };

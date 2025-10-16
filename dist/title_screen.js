@@ -44,7 +44,7 @@ class FloatingPetalManager {
             height: ${size * 32}px;
             pointer-events: none;
             z-index: 100;
-            opacity: 0.7;
+            opacity: 1.0;
             transform-origin: center center;
         `;
         return {

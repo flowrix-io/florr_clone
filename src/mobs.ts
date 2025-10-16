@@ -1834,7 +1834,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 type: 'petal',
                 itemType: 'yggdrasil',
                 rarity: 'common',
-                probability: 0.01, // 1% chance for common yggdrasil
+                probability: 0.05, // 5% chance for common yggdrasil
                 minQuantity: 1,
                 maxQuantity: 1
             },
@@ -1842,7 +1842,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 type: 'petal',
                 itemType: 'yggdrasil',
                 rarity: 'uncommon',
-                probability: 0.005, // 0.5% chance for uncommon yggdrasil
+                probability: 0.002, // 0.2% chance for uncommon yggdrasil
                 minQuantity: 1,
                 maxQuantity: 1
             },

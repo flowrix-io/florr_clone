@@ -1798,7 +1798,7 @@ exports.MOB_DROP_TABLES = {
                 type: 'petal',
                 itemType: 'yggdrasil',
                 rarity: 'common',
-                probability: 0.01, // 1% chance for common yggdrasil
+                probability: 0.05, // 5% chance for common yggdrasil
                 minQuantity: 1,
                 maxQuantity: 1
             },
@@ -1806,7 +1806,7 @@ exports.MOB_DROP_TABLES = {
                 type: 'petal',
                 itemType: 'yggdrasil',
                 rarity: 'uncommon',
-                probability: 0.005, // 0.5% chance for uncommon yggdrasil
+                probability: 0.002, // 0.2% chance for uncommon yggdrasil
                 minQuantity: 1,
                 maxQuantity: 1
             },
