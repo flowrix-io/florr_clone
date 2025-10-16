@@ -590,11 +590,11 @@ label {
 
 .death-screen-content {
     text-align: center;
-    background: rgba(0, 0, 0, 0.9);
-    padding: 40px;
-    border-radius: 10px;
-    border: 2px solid #ff4444;
-    box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+    /* background: rgba(0, 0, 0, 0.9); */
+    /* padding: 40px; */
+    /* border-radius: 10px; */
+    /* border: 2px solid #ff4444; */
+    /* box-shadow: 0 0 20px rgba(255, 68, 68, 0.5); */
 }
 
 .death-screen-content h2 {

@@ -1360,7 +1360,7 @@ export class Game {
                 const mobName = this.getMobDisplayName(killedBy.type, killedBy.tier);
                 deathMessage.textContent = `You were destroyed by: ${mobName}`;
             } else if (deathMessage) {
-                deathMessage.textContent = 'Your adventure has come to an end...';
+                deathMessage.textContent = 'You were destroyed by: A mysterious entity';
             }
         }
     }
