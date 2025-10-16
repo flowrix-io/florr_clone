@@ -1704,6 +1704,42 @@ function moveEnemies() {
                 enemy.y = Math.max(halfSize, Math.min(ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
             }
         });
+
+        // Check for mob-to-mob collisions (only check enemies that come after this one to avoid double-processing)
+        const currentIndex = enemies.indexOf(enemy);
+        for (let i = currentIndex + 1; i < enemies.length; i++) {
+            const otherEnemy = enemies[i];
+            
+            // Get other enemy's size
+            const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
+            const otherEnemySize = otherMobStats ? otherMobStats.size * 40 : ENEMY_SIZE;
+            const otherHalfSize = otherEnemySize / 2;
+
+            // Calculate distance between mobs
+            const dx = otherEnemy.x - enemy.x;
+            const dy = otherEnemy.y - enemy.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minDistance = halfSize + otherHalfSize + 5; // 5px buffer between mobs
+
+            // Check if mobs are colliding
+            if (distance < minDistance && distance > 0) {
+                // Calculate push direction (away from each other)
+                const pushX = (dx / distance) * (minDistance - distance) / 2;
+                const pushY = (dy / distance) * (minDistance - distance) / 2;
+
+                // Push both mobs away from each other
+                enemy.x -= pushX;
+                enemy.y -= pushY;
+                otherEnemy.x += pushX;
+                otherEnemy.y += pushY;
+
+                // Ensure both mobs stay within world boundaries after push
+                enemy.x = Math.max(halfSize, Math.min(ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
+                enemy.y = Math.max(halfSize, Math.min(ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
+                otherEnemy.x = Math.max(otherHalfSize, Math.min(ACTUAL_WORLD_WIDTH - otherHalfSize, otherEnemy.x));
+                otherEnemy.y = Math.max(otherHalfSize, Math.min(ACTUAL_WORLD_HEIGHT - otherHalfSize, otherEnemy.y));
+            }
+        }
     });
 
     io.emit('enemiesUpdate', enemies);
