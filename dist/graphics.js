@@ -33,6 +33,8 @@ class Graphics {
         this.cameraY = 0;
         this.zoomLevel = 1.0;
         this.floatingTexts = [];
+        this.explosionEffects = [];
+        this.petalBreakEffects = [];
         this.mapData = [];
         this.MINIMAP_WIDTH = 200;
         this.MINIMAP_HEIGHT = 200;
@@ -152,6 +154,30 @@ class Graphics {
             alpha: 1.0,
             yOffset: 0,
             lifetime: 1000
+        });
+    }
+    showExplosionEffect(x, y, radius) {
+        // Create explosion effect
+        this.explosionEffects.push({
+            x,
+            y,
+            radius,
+            maxRadius: radius,
+            alpha: 1.0,
+            lifetime: 500,
+            startTime: Date.now()
+        });
+    }
+    showPetalBreakEffect(x, y, petalType) {
+        // Create petal break effect
+        this.petalBreakEffects.push({
+            x,
+            y,
+            petalType,
+            alpha: 1.0,
+            scale: 1.0,
+            lifetime: 300,
+            startTime: Date.now()
         });
     }
     drawMap(world_map_data) {
@@ -319,6 +345,8 @@ class Graphics {
         this.drawMinimap(players, socket);
         // Draw floating texts
         this.drawFloatingTexts();
+        this.drawExplosionEffects();
+        this.drawPetalBreakEffects();
     }
     s(size) {
         return 1 * size;
@@ -695,6 +723,55 @@ class Graphics {
             this.ctx.font = `${text.fontSize}px Ubuntu, sans-serif`;
             this.ctx.textAlign = 'center';
             this.ctx.fillText(text.text, text.x, text.y);
+            this.ctx.restore();
+            return true;
+        });
+    }
+    drawExplosionEffects() {
+        this.explosionEffects = this.explosionEffects.filter(effect => {
+            const elapsed = Date.now() - effect.startTime;
+            const progress = elapsed / effect.lifetime;
+            if (progress >= 1)
+                return false;
+            this.ctx.save();
+            this.ctx.globalAlpha = effect.alpha * (1 - progress);
+            // Draw expanding circle
+            const currentRadius = effect.radius * progress;
+            this.ctx.strokeStyle = '#FF4500';
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            this.ctx.arc(effect.x, effect.y, currentRadius, 0, Math.PI * 2);
+            this.ctx.stroke();
+            // Draw inner circle
+            this.ctx.strokeStyle = '#FFD700';
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            this.ctx.arc(effect.x, effect.y, currentRadius * 0.5, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.restore();
+            return true;
+        });
+    }
+    drawPetalBreakEffects() {
+        this.petalBreakEffects = this.petalBreakEffects.filter(effect => {
+            const elapsed = Date.now() - effect.startTime;
+            const progress = elapsed / effect.lifetime;
+            if (progress >= 1)
+                return false;
+            this.ctx.save();
+            this.ctx.globalAlpha = effect.alpha * (1 - progress);
+            // Draw petal fragments
+            const fragmentCount = 6;
+            for (let i = 0; i < fragmentCount; i++) {
+                const angle = (i / fragmentCount) * Math.PI * 2;
+                const distance = progress * 30;
+                const fragmentX = effect.x + Math.cos(angle) * distance;
+                const fragmentY = effect.y + Math.sin(angle) * distance;
+                this.ctx.fillStyle = '#FF69B4';
+                this.ctx.beginPath();
+                this.ctx.arc(fragmentX, fragmentY, 3, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
             this.ctx.restore();
             return true;
         });

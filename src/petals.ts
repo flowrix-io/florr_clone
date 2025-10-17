@@ -10,6 +10,7 @@ export interface PetalStats {
     color: string;
     image?: string; // 32x32 SVG image (optional)
     count: number; // Number of petals to spawn per equipped item (default 1)
+    actions?: string; // Action sequence string like "heal 20; break;" (optional)
 }
 
 export interface PetalConfig {
@@ -33,6 +34,16 @@ export const RARITY_LEVELS = [
 
 export type Rarity = typeof RARITY_LEVELS[number];
 
+// Petal action types
+export interface PetalAction {
+    type: 'heal' | 'break' | 'damage_boost' | 'speed_boost' | 'shield' | 'explode' | 'delay' | 'restart' | 'wait_until_collision';
+    value?: number; // Optional numeric parameter for the action
+    duration?: number; // Optional duration for temporary effects (in milliseconds)
+}
+
+// Action trigger conditions
+export type ActionTrigger = 'on_hit' | 'on_break' | 'on_equip' | 'on_timer' | 'on_low_health';
+
 // Base petal configurations - only common rarity stats
 interface BasePetalConfig {
     name: string;
@@ -46,6 +57,7 @@ interface BasePetalConfig {
     count: number;
     speed?: number;
     knockback?: number;
+    actions?: string; // Action sequence string like "heal 20; break;"
 }
 
 // Special rarity overrides for specific petals
@@ -56,6 +68,7 @@ interface RarityOverride {
     cooldown?: number;
     damage?: number;
     health?: number;
+    actions?: string; // Action sequence string like "heal 20; break;"
 }
 
 // Rarity-specific overrides for special cases
@@ -302,6 +315,66 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         count: 1,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="300 270 400 400" version="1.1"><path d="M 502 414.084 C 479.881 416.255, 458.437 426.472, 442.455 442.455 C 404.085 480.824, 404.085 543.176, 442.455 581.545 C 480.824 619.915, 543.176 619.915, 581.545 581.545 C 619.915 543.176, 619.915 480.824, 581.545 442.455 C 566.244 427.153, 544.357 416.370, 524.848 414.519 C 511.962 413.297, 510.330 413.266, 502 414.084" stroke="none" fill="#ffffff" fill-rule="evenodd"/><path d="M 387.265 289.475 C 375.100 292.905, 363.007 302.031, 357.747 311.751 C 351.060 324.107, 350.046 340.963, 355.303 352.383 C 356.793 355.619, 367.945 373.712, 380.086 392.589 L 402.161 426.912 413.331 415.648 C 430.397 398.436, 448.887 387.064, 470.735 380.342 C 475.814 378.779, 479.977 377.191, 479.985 376.813 C 480.010 375.690, 436.991 308.877, 433.216 304.175 C 423.467 292.033, 402.258 285.248, 387.265 289.475" stroke="none" fill="#343434" fill-rule="evenodd"/><path d="M 502.500 373.602 C 486.120 375.150, 464.288 381.305, 450.437 388.280 C 430.609 398.265, 408.255 417.790, 396.606 435.298 C 373.700 469.723, 367.539 512.446, 379.631 553 C 390.185 588.393, 417.442 620.069, 451.500 636.521 C 471.575 646.218, 489.516 650.306, 512 650.306 C 549.430 650.306, 583.633 636.197, 609.915 609.915 C 636.197 583.633, 650.306 549.430, 650.306 512 C 650.306 489.516, 646.218 471.575, 636.521 451.500 C 617.370 411.853, 580.183 383.647, 536.500 375.636 C 528.065 374.090, 509.255 372.964, 502.500 373.602 M 502 414.084 C 479.881 416.255, 458.437 426.472, 442.455 442.455 C 404.085 480.824, 404.085 543.176, 442.455 581.545 C 480.824 619.915, 543.176 619.915, 581.545 581.545 C 619.915 543.176, 619.915 480.824, 581.545 442.455 C 566.244 427.153, 544.357 416.370, 524.848 414.519 C 511.962 413.297, 510.330 413.266, 502 414.084" stroke="none" fill="#e4e4e4" fill-rule="evenodd"/></svg>`
     },
+    healing: {// test petal
+        name: "Healing Petal",
+        damage: 5,
+        health: 15,
+        size: 1.2,
+        cooldown: 2000,
+        description: "A petal that heals the player when spawned",
+        color: "#FF69B4",
+        count: 1,
+        actions: "heal 20; delay 2000; restart;",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+<path d="M16 8 L16 24 M8 16 L24 16" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+</svg>`
+    },
+    explosive: {// test petal
+        name: "Explosive Petal",
+        damage: 25,
+        health: 5,
+        size: 1.0,
+        cooldown: 3000,
+        description: "A petal that explodes when it hits an enemy",
+        color: "#FF4500",
+        count: 1,
+        actions: "wait_until_collision; explode 30; break;",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff6b35" stroke="#d63031" stroke-width="4"/>
+<path d="M12 12 L20 20 M20 12 L12 20" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+</svg>`
+    },
+    test_explosive: {// test petal for immediate explosion
+        name: "Test Explosive Petal",
+        damage: 15,
+        health: 10,
+        size: 1.0,
+        cooldown: 2000,
+        description: "A test petal that explodes immediately",
+        color: "#FF0000",
+        count: 1,
+        actions: "explode 50; delay 3000; restart;",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff0000" stroke="#cc0000" stroke-width="4"/>
+<path d="M8 8 L24 24 M24 8 L8 24" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+</svg>`
+    },
+    shield: {
+        name: "Shield Petal",
+        damage: 10,
+        health: 20,
+        size: 1.1,
+        cooldown: 5000,
+        description: "A petal that provides shield when spawned",
+        color: "#4169E1",
+        count: 1,
+        actions: "shield 50 10000; delay 10000; restart;",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#6495ed" stroke="#4169e1" stroke-width="4"/>
+<path d="M16 6 L20 12 L16 18 L12 12 Z" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none"/>
+</svg>`
+    },
 };
 
 // Rarity color mappings
@@ -385,7 +458,8 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         description: overrides.description ?? baseConfig.description,
         color: RARITY_COLORS[rarity],
         image: overrides.image ?? baseConfig.image ?? findSvgFallback(petalType, rarity),
-        count: overrides.count ?? baseConfig.count
+        count: overrides.count ?? baseConfig.count,
+        actions: overrides.actions ?? baseConfig.actions
     };
 }
 
@@ -410,4 +484,61 @@ export function getAllPetalTypes(): string[] {
 
 export function getPetalRarities(petalType: string): string[] {
     return Object.keys(PETAL_CONFIG[petalType] || {});
+}
+
+// Action parser function
+export function parsePetalActions(actionString: string): PetalAction[] {
+    if (!actionString || typeof actionString !== 'string') {
+        return [];
+    }
+
+    const actions: PetalAction[] = [];
+    const actionParts = actionString.split(';').map(part => part.trim()).filter(part => part.length > 0);
+
+    for (const part of actionParts) {
+        const [actionType, ...params] = part.split(' ').map(p => p.trim());
+        
+        switch (actionType.toLowerCase()) {
+            case 'heal':
+                const healValue = params.length > 0 ? parseFloat(params[0]) : 10;
+                actions.push({ type: 'heal', value: healValue });
+                break;
+            case 'break':
+                actions.push({ type: 'break' });
+                break;
+            case 'damage_boost':
+                const damageValue = params.length > 0 ? parseFloat(params[0]) : 1.5;
+                const damageDuration = params.length > 1 ? parseFloat(params[1]) * 1000 : 5000; // Convert seconds to ms
+                actions.push({ type: 'damage_boost', value: damageValue, duration: damageDuration });
+                break;
+            case 'speed_boost':
+                const speedValue = params.length > 0 ? parseFloat(params[0]) : 1.5;
+                const speedDuration = params.length > 1 ? parseFloat(params[1]) * 1000 : 5000; // Convert seconds to ms
+                actions.push({ type: 'speed_boost', value: speedValue, duration: speedDuration });
+                break;
+            case 'shield':
+                const shieldValue = params.length > 0 ? parseFloat(params[0]) : 50;
+                const shieldDuration = params.length > 1 ? parseFloat(params[1]) * 1000 : 3000; // Convert seconds to ms
+                actions.push({ type: 'shield', value: shieldValue, duration: shieldDuration });
+                break;
+            case 'explode':
+                const explodeValue = params.length > 0 ? parseFloat(params[0]) : 30;
+                actions.push({ type: 'explode', value: explodeValue });
+                break;
+            case 'delay':
+                const delayValue = params.length > 0 ? parseFloat(params[0]) : 1000;
+                actions.push({ type: 'delay', value: delayValue });
+                break;
+            case 'restart':
+                actions.push({ type: 'restart' });
+                break;
+            case 'wait_until_collision':
+                actions.push({ type: 'wait_until_collision' });
+                break;
+            default:
+                console.warn(`Unknown petal action type: ${actionType}`);
+        }
+    }
+
+    return actions;
 }

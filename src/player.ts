@@ -1,4 +1,5 @@
 import {Item, ItemWithRarity} from './item';
+import { PlayerEffect } from './petal_actions';
 
 export interface PlayerInventory {
     [rarity: string]: {
@@ -81,4 +82,5 @@ export interface ServerPlayer {
   teleportCooldown?: number; // Cooldown to prevent rapid teleportations
   isDead?: boolean;
   killedBy?: { type: string; tier: string }; // Track which enemy killed the player
+  effects?: PlayerEffect[]; // Active petal effects
 }

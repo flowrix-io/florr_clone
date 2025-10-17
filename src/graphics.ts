@@ -16,6 +16,26 @@ export interface FloatingText {
     lifetime: number;
 }
 
+export interface ExplosionEffect {
+    x: number;
+    y: number;
+    radius: number;
+    maxRadius: number;
+    alpha: number;
+    lifetime: number;
+    startTime: number;
+}
+
+export interface PetalBreakEffect {
+    x: number;
+    y: number;
+    petalType: string;
+    alpha: number;
+    scale: number;
+    lifetime: number;
+    startTime: number;
+}
+
 export class Graphics {
     public canvas: HTMLCanvasElement;
     public ctx: CanvasRenderingContext2D;
@@ -24,6 +44,8 @@ export class Graphics {
     private zoomLevel: number = 1.0;
     private playerSprite: HTMLImageElement;
     private floatingTexts: FloatingText[] = [];
+    private explosionEffects: ExplosionEffect[] = [];
+    private petalBreakEffects: PetalBreakEffect[] = [];
     private mapData: MapElement[] = [];
 
     private readonly MINIMAP_WIDTH = 200;
@@ -162,6 +184,32 @@ export class Graphics {
             alpha: 1.0,
             yOffset: 0,
             lifetime: 1000
+        });
+    }
+
+    public showExplosionEffect(x: number, y: number, radius: number) {
+        // Create explosion effect
+        this.explosionEffects.push({
+            x,
+            y,
+            radius,
+            maxRadius: radius,
+            alpha: 1.0,
+            lifetime: 500,
+            startTime: Date.now()
+        });
+    }
+
+    public showPetalBreakEffect(x: number, y: number, petalType: string) {
+        // Create petal break effect
+        this.petalBreakEffects.push({
+            x,
+            y,
+            petalType,
+            alpha: 1.0,
+            scale: 1.0,
+            lifetime: 300,
+            startTime: Date.now()
         });
     }
 
@@ -378,6 +426,8 @@ export class Graphics {
 
         // Draw floating texts
         this.drawFloatingTexts();
+        this.drawExplosionEffects();
+        this.drawPetalBreakEffects();
     }
 
     private s(size: number): number {
@@ -839,6 +889,66 @@ export class Graphics {
             return true;
         });
     }
+
+    private drawExplosionEffects() {
+        this.explosionEffects = this.explosionEffects.filter(effect => {
+            const elapsed = Date.now() - effect.startTime;
+            const progress = elapsed / effect.lifetime;
+            
+            if (progress >= 1) return false;
+
+            this.ctx.save();
+            this.ctx.globalAlpha = effect.alpha * (1 - progress);
+            
+            // Draw expanding circle
+            const currentRadius = effect.radius * progress;
+            this.ctx.strokeStyle = '#FF4500';
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            this.ctx.arc(effect.x, effect.y, currentRadius, 0, Math.PI * 2);
+            this.ctx.stroke();
+            
+            // Draw inner circle
+            this.ctx.strokeStyle = '#FFD700';
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            this.ctx.arc(effect.x, effect.y, currentRadius * 0.5, 0, Math.PI * 2);
+            this.ctx.stroke();
+            
+            this.ctx.restore();
+            return true;
+        });
+    }
+
+    private drawPetalBreakEffects() {
+        this.petalBreakEffects = this.petalBreakEffects.filter(effect => {
+            const elapsed = Date.now() - effect.startTime;
+            const progress = elapsed / effect.lifetime;
+            
+            if (progress >= 1) return false;
+
+            this.ctx.save();
+            this.ctx.globalAlpha = effect.alpha * (1 - progress);
+            
+            // Draw petal fragments
+            const fragmentCount = 6;
+            for (let i = 0; i < fragmentCount; i++) {
+                const angle = (i / fragmentCount) * Math.PI * 2;
+                const distance = progress * 30;
+                const fragmentX = effect.x + Math.cos(angle) * distance;
+                const fragmentY = effect.y + Math.sin(angle) * distance;
+                
+                this.ctx.fillStyle = '#FF69B4';
+                this.ctx.beginPath();
+                this.ctx.arc(fragmentX, fragmentY, 3, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            
+            this.ctx.restore();
+            return true;
+        });
+    }
+
     // Add minimap drawing
     private drawMinimap(players: Map<string, Player>, socket: string) {
         const minimapX = this.canvas.width - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;

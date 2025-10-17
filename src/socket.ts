@@ -497,6 +497,57 @@ function setupSocketListeners(game: any) {
         game.items.set(item.id, item);
     });
 
+    // Petal action event handlers
+    game.socket.on('playerHealed', (data: { playerId: string, health: number, healAmount: number }) => {
+        const player = game.players.get(data.playerId);
+        if (player) {
+            const oldHealth = player.health;
+            player.health = data.health;
+            
+            // Show healing effect
+            if (data.healAmount > 0) {
+                game.showFloatingText(
+                    player.x,
+                    player.y - 20,
+                    `+${data.healAmount}`,
+                    '#00FF00',
+                    20
+                );
+            }
+            
+            console.log(`[CLIENT] Player ${data.playerId} healed for ${data.healAmount} HP`);
+        }
+    });
+
+    game.socket.on('petalExplosion', (data: { x: number, y: number, radius: number, damage: number }) => {
+        // Show explosion effect
+        game.showExplosionEffect(data.x, data.y, data.radius);
+        console.log(`[CLIENT] Petal explosion at (${data.x}, ${data.y}) with radius ${data.radius}`);
+    });
+
+    game.socket.on('petalBroken', (data: { playerId: string, slotIndex: number, petalType: string, rarity: string }) => {
+        const player = game.players.get(data.playerId);
+        if (player && player.loadout[data.slotIndex]) {
+            const petal = player.loadout[data.slotIndex];
+            if (petal) {
+                petal.health = 0;
+                petal.onCooldown = true;
+                
+                // Show petal break effect
+                game.showPetalBreakEffect(player.x, player.y, data.petalType);
+                console.log(`[CLIENT] Petal ${data.petalType} (${data.rarity}) broke for player ${data.playerId}`);
+            }
+        }
+    });
+
+    game.socket.on('petalRestored', (data: { playerId: string, slotIndex: number, petal: any }) => {
+        const player = game.players.get(data.playerId);
+        if (player && player.loadout[data.slotIndex]) {
+            player.loadout[data.slotIndex] = data.petal;
+            console.log(`[CLIENT] Petal restored for player ${data.playerId} in slot ${data.slotIndex}`);
+        }
+    });
+
     game.socket.on('itemPickedUp', (itemId: string) => {
         console.log('Item picked up:', itemId);
         game.items.delete(itemId);

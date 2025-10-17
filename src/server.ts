@@ -18,6 +18,7 @@ if (database.checkForPlainTextPasswords()) {
     console.log('[SERVER] All passwords are already hashed');
 }
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
+import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition } from './petal_actions';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy } from './server_utils';
 import { Item, ItemWithRarity, WorldItem } from './item';
@@ -1755,6 +1756,9 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         return;
     }
 
+    // Update player effects
+    updatePlayerEffects(player, deltaTime);
+
     let targetVelocityX = 0;
     let targetVelocityY = 0;
 
@@ -1764,7 +1768,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance > 5) {
-            const speed = MAX_SPEED * player.speed_boost;
+            const speed = MAX_SPEED * player.speed_boost * getSpeedMultiplier(player);
             targetVelocityX = (dx / distance) * speed;
             targetVelocityY = (dy / distance) * speed;
             player.angle = Math.atan2(dy, dx);
@@ -1781,7 +1785,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
             targetVelocityY /= length;
         }
 
-        const speed = MAX_SPEED * player.speed_boost;
+        const speed = MAX_SPEED * player.speed_boost * getSpeedMultiplier(player);
         targetVelocityX *= speed;
         targetVelocityY *= speed;
 
@@ -1862,7 +1866,10 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
             collision = true;
             // Don't damage dead players (corpses)
             if (!player.isDead) {
-                player.health -= enemy.damage;
+                const shieldAmount = getShieldAmount(player);
+                const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
+                
+                player.health -= damageToPlayer;
                 player.lastDamageTime = Date.now();
                 player.isInvulnerable = true;
                 
@@ -1955,6 +1962,23 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                     // Create multiple instances based on count
                     for (let j = 0; j < count; j++) {
                         petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i });
+                        
+                        // Execute petal actions immediately when spawned
+                        if (petalStats.actions) {
+                            const petalId = `${player.id}_${i}_${j}`;
+                            const actionContext = {
+                                player: player,
+                                petalX: player.x, // Will be updated with actual position
+                                petalY: player.y, // Will be updated with actual position
+                                petalSize: petalStats.size * 40,
+                                enemies: enemies,
+                                io: io,
+                                petalId: petalId,
+                                loadoutIndex: i,
+                                instanceIndex: j
+                            };
+                            executePetalActionsOnSpawn(petalStats.actions, actionContext);
+                        }
                     }
                 }
             }
@@ -1984,6 +2008,10 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
 
             const petalX = player.x + Math.cos(totalAngle) * baseRadius;
             const petalY = player.y + Math.sin(totalAngle) * baseRadius;
+            
+            // Update petal position in action context
+            const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
+            updatePetalPosition(petalId, petalX, petalY);
 
             // Check collision with enemies
             for (const enemy of enemies) {
@@ -2011,7 +2039,9 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                     petalBottom > enemyTop
                 ) {
                     // Petal hits enemy - deal damage to both
-                    enemy.health -= petalStats.damage;
+                    const damageMultiplier = getDamageMultiplier(player);
+                    const finalDamage = petalStats.damage * damageMultiplier;
+                    enemy.health -= finalDamage;
                     petal.health -= mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
 
                     // Apply knockback to enemy
@@ -2031,8 +2061,36 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
 
                     io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
 
+                    // Handle petal collision for wait_until_collision actions
+                    const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
+                    const collisionContext = {
+                        player: player,
+                        petalX: petalX,
+                        petalY: petalY,
+                        petalSize: petalSize,
+                        enemies: enemies,
+                        io: io,
+                        petalId: petalId,
+                        loadoutIndex: loadoutIndex,
+                        instanceIndex: instanceIndex
+                    };
+                    handlePetalCollision(petalId, collisionContext);
+
                     // Check if petal breaks
                     if (petal.health <= 0) {
+                        // Execute petal actions before breaking
+                        if (petalStats.actions) {
+                            const actionContext = {
+                                player: player,
+                                petalX: petalX,
+                                petalY: petalY,
+                                petalSize: petalSize,
+                                enemies: enemies,
+                                io: io
+                            };
+                            executePetalActions(petalStats.actions, actionContext, 'on_break');
+                        }
+
                         // Petal breaks - set on cooldown instead of removing
                         petal.onCooldown = true;
                         
@@ -2301,6 +2359,9 @@ function start_loop() {
         for (const id in players) {
             updatePlayerState(players[id], deltaTime);
         }
+
+        // Update petal actions
+        updatePetalActions(deltaTime);
 
         moveEnemies();
 

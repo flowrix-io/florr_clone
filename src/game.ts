@@ -873,6 +873,14 @@ export class Game {
         this.graphics.showFloatingText(x, y, text, color, fontSize);
     }
 
+    public showExplosionEffect(x: number, y: number, radius: number) {
+        this.graphics.showExplosionEffect(x, y, radius);
+    }
+
+    public showPetalBreakEffect(x: number, y: number, petalType: string) {
+        this.graphics.showPetalBreakEffect(x, y, petalType);
+    }
+
     private renderMap(mapData: MapElement[]) {
         // Store the map data and render it
         this.world_map_data = mapData;

@@ -673,6 +673,12 @@ class Game {
     showFloatingText(x, y, text, color, fontSize) {
         this.graphics.showFloatingText(x, y, text, color, fontSize);
     }
+    showExplosionEffect(x, y, radius) {
+        this.graphics.showExplosionEffect(x, y, radius);
+    }
+    showPetalBreakEffect(x, y, petalType) {
+        this.graphics.showPetalBreakEffect(x, y, petalType);
+    }
     renderMap(mapData) {
         // Store the map data and render it
         this.world_map_data = mapData;

@@ -1,0 +1,456 @@
+import { PetalAction, parsePetalActions } from './petals';
+import { ServerPlayer } from './player';
+import { Enemy } from './server_utils';
+
+// Action execution context
+export interface ActionContext {
+    player: ServerPlayer;
+    petalX: number;
+    petalY: number;
+    petalSize: number;
+    enemies: Enemy[];
+    io: any; // Socket.IO instance
+    petalId?: string; // Unique ID for the petal instance
+    loadoutIndex?: number; // Index in player loadout
+    instanceIndex?: number; // Instance index for multi-count petals
+}
+
+// Petal action state for tracking execution
+export interface PetalActionState {
+    petalId: string;
+    playerId: string;
+    loadoutIndex: number;
+    instanceIndex: number;
+    actions: PetalAction[];
+    currentActionIndex: number;
+    isWaitingForCollision: boolean;
+    isDelayed: boolean;
+    delayEndTime: number;
+    isActive: boolean;
+    context: ActionContext; // Store the context for delayed actions
+}
+
+// Player effect tracking
+export interface PlayerEffect {
+    type: 'damage_boost' | 'speed_boost' | 'shield';
+    value: number;
+    duration: number;
+    startTime: number;
+}
+
+// Global state for tracking petal actions
+const petalActionStates: Map<string, PetalActionState> = new Map();
+
+// Execute petal actions
+export function executePetalActions(actionString: string, context: ActionContext, trigger: 'on_hit' | 'on_break' = 'on_break'): void {
+    if (!actionString) return;
+
+    const actions = parsePetalActions(actionString);
+    
+    for (const action of actions) {
+        executeAction(action, context, trigger);
+    }
+}
+
+// Execute a single action
+function executeAction(action: PetalAction, context: ActionContext, trigger: 'on_hit' | 'on_break'): void {
+    const { player, petalX, petalY, petalSize, enemies, io } = context;
+
+    switch (action.type) {
+        case 'heal':
+            // if (trigger === 'on_break') {
+                healPlayer(player, action.value || 10, io);
+            // }
+            break;
+
+        case 'break':
+            // This action is handled by the petal breaking logic in the server
+            // We don't need to do anything here as the petal will be marked as broken
+            break;
+
+        case 'damage_boost':
+            // if (trigger === 'on_break') {
+                applyDamageBoost(player, action.value || 1.5, action.duration || 5000);
+            // }
+            break;
+
+        case 'speed_boost':
+            // if (trigger === 'on_break') {
+                applySpeedBoost(player, action.value || 1.5, action.duration || 5000);
+            // }
+            break;
+
+        case 'shield':
+            // if (trigger === 'on_break') {
+                applyShield(player, action.value || 50, action.duration || 3000);
+            // }
+            break;
+
+        case 'explode':
+            // if (trigger === 'on_break') {
+                explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io);
+            // }
+            break;
+
+        default:
+            console.warn(`Unknown action type: ${action.type}`);
+    }
+}
+
+// Heal the player
+function healPlayer(player: ServerPlayer, healAmount: number, io: any): void {
+    const oldHealth = player.health;
+    player.health = Math.min(player.maxHealth, player.health + healAmount);
+    
+    if (player.health !== oldHealth) {
+        io.emit('playerHealed', { 
+            playerId: player.id, 
+            health: player.health,
+            healAmount: player.health - oldHealth
+        });
+        console.log(`Player ${player.id} healed for ${player.health - oldHealth} HP`);
+    }
+}
+
+// Apply damage boost to player
+function applyDamageBoost(player: ServerPlayer, multiplier: number, duration: number): void {
+    const effect: PlayerEffect = {
+        type: 'damage_boost',
+        value: multiplier,
+        duration: duration,
+        startTime: Date.now()
+    };
+
+    // Initialize effects array if it doesn't exist
+    if (!player.effects) {
+        player.effects = [];
+    }
+
+    // Remove existing damage boost effects
+    player.effects = player.effects.filter(e => e.type !== 'damage_boost');
+    
+    // Add new effect
+    player.effects.push(effect);
+    
+    console.log(`Player ${player.id} gained damage boost: ${multiplier}x for ${duration}ms`);
+}
+
+// Apply speed boost to player
+function applySpeedBoost(player: ServerPlayer, multiplier: number, duration: number): void {
+    const effect: PlayerEffect = {
+        type: 'speed_boost',
+        value: multiplier,
+        duration: duration,
+        startTime: Date.now()
+    };
+
+    // Initialize effects array if it doesn't exist
+    if (!player.effects) {
+        player.effects = [];
+    }
+
+    // Remove existing speed boost effects
+    player.effects = player.effects.filter(e => e.type !== 'speed_boost');
+    
+    // Add new effect
+    player.effects.push(effect);
+    
+    console.log(`Player ${player.id} gained speed boost: ${multiplier}x for ${duration}ms`);
+}
+
+// Apply shield to player
+function applyShield(player: ServerPlayer, shieldAmount: number, duration: number): void {
+    const effect: PlayerEffect = {
+        type: 'shield',
+        value: shieldAmount,
+        duration: duration,
+        startTime: Date.now()
+    };
+
+    // Initialize effects array if it doesn't exist
+    if (!player.effects) {
+        player.effects = [];
+    }
+
+    // Remove existing shield effects
+    player.effects = player.effects.filter(e => e.type !== 'shield');
+    
+    // Add new effect
+    player.effects.push(effect);
+    
+    console.log(`Player ${player.id} gained shield: ${shieldAmount} for ${duration}ms`);
+}
+
+// Explode petal and deal area damage
+function explodePetal(x: number, y: number, petalSize: number, damage: number, enemies: Enemy[], io: any): void {
+    const explosionRadius = petalSize * 40 * 3; // Convert petal size to pixels and make explosion 3x larger
+    
+    console.log(`[EXPLOSION] Starting explosion at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
+    
+    for (const enemy of enemies) {
+        const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
+        
+        if (distance <= explosionRadius) {
+            console.log(`[EXPLOSION] Enemy ${enemy.id} hit! Distance: ${distance}, Damage: ${damage}`);
+            enemy.health -= damage;
+            
+            // Apply knockback
+            const knockbackForce = 10;
+            const dx = enemy.x - x;
+            const dy = enemy.y - y;
+            const normalizedDx = dx / (distance || 1);
+            const normalizedDy = dy / (distance || 1);
+            
+            enemy.knockbackX = normalizedDx * knockbackForce;
+            enemy.knockbackY = normalizedDy * knockbackForce;
+            
+            io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+        }
+    }
+    
+    // Emit explosion effect to clients
+    io.emit('petalExplosion', {
+        x: x,
+        y: y,
+        radius: explosionRadius,
+        damage: damage
+    });
+    
+    console.log(`[EXPLOSION] Explosion complete at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
+}
+
+// Update player effects (call this in the game loop)
+export function updatePlayerEffects(player: ServerPlayer, deltaTime: number): void {
+    if (!player.effects) return;
+
+    const currentTime = Date.now();
+    const expiredEffects: number[] = [];
+
+    // Check for expired effects
+    for (let i = 0; i < player.effects.length; i++) {
+        const effect = player.effects[i];
+        if (currentTime - effect.startTime >= effect.duration) {
+            expiredEffects.push(i);
+        }
+    }
+
+    // Remove expired effects
+    for (let i = expiredEffects.length - 1; i >= 0; i--) {
+        const effectIndex = expiredEffects[i];
+        const effect = player.effects[effectIndex];
+        console.log(`Player ${player.id} effect expired: ${effect.type}`);
+        player.effects.splice(effectIndex, 1);
+    }
+}
+
+// Get current damage multiplier from effects
+export function getDamageMultiplier(player: ServerPlayer): number {
+    if (!player.effects) return 1.0;
+
+    let multiplier = 1.0;
+    for (const effect of player.effects) {
+        if (effect.type === 'damage_boost') {
+            multiplier *= effect.value;
+        }
+    }
+    return multiplier;
+}
+
+// Get current speed multiplier from effects
+export function getSpeedMultiplier(player: ServerPlayer): number {
+    if (!player.effects) return 1.0;
+
+    let multiplier = 1.0;
+    for (const effect of player.effects) {
+        if (effect.type === 'speed_boost') {
+            multiplier *= effect.value;
+        }
+    }
+    return multiplier;
+}
+
+// Get current shield amount from effects
+export function getShieldAmount(player: ServerPlayer): number {
+    if (!player.effects) return 0;
+
+    let shield = 0;
+    for (const effect of player.effects) {
+        if (effect.type === 'shield') {
+            shield += effect.value;
+        }
+    }
+    return shield;
+}
+
+// Execute petal actions immediately when spawned
+export function executePetalActionsOnSpawn(actionString: string, context: ActionContext): string {
+    if (!actionString || !context.petalId) return '';
+
+    const actions = parsePetalActions(actionString);
+    const petalId = context.petalId;
+    
+    // Create action state for this petal
+    const actionState: PetalActionState = {
+        petalId,
+        playerId: context.player.id,
+        loadoutIndex: context.loadoutIndex || 0,
+        instanceIndex: context.instanceIndex || 0,
+        actions,
+        currentActionIndex: 0,
+        isWaitingForCollision: false,
+        isDelayed: false,
+        delayEndTime: 0,
+        isActive: true,
+        context: context
+    };
+    
+    petalActionStates.set(petalId, actionState);
+    
+    // Start executing actions immediately
+    executeNextAction(petalId, context);
+    
+    return petalId;
+}
+
+// Execute the next action in the sequence
+function executeNextAction(petalId: string, context: ActionContext): void {
+    const actionState = petalActionStates.get(petalId);
+    if (!actionState || !actionState.isActive) return;
+
+    const { actions, currentActionIndex } = actionState;
+    
+    if (currentActionIndex >= actions.length) {
+        // Actions completed, clean up
+        petalActionStates.delete(petalId);
+        return;
+    }
+
+    const action = actions[currentActionIndex];
+    const { player, petalX, petalY, petalSize, enemies, io } = context;
+
+    switch (action.type) {
+        case 'heal':
+            healPlayer(player, action.value || 10, io);
+            advanceAction(petalId, context);
+            break;
+
+        case 'damage_boost':
+            applyDamageBoost(player, action.value || 1.5, action.duration || 5000);
+            advanceAction(petalId, context);
+            break;
+
+        case 'speed_boost':
+            applySpeedBoost(player, action.value || 1.5, action.duration || 5000);
+            advanceAction(petalId, context);
+            break;
+
+        case 'shield':
+            applyShield(player, action.value || 50, action.duration || 3000);
+            advanceAction(petalId, context);
+            break;
+
+        case 'explode':
+            explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io);
+            advanceAction(petalId, context);
+            break;
+
+        case 'break':
+            // Mark petal for breaking
+            markPetalForBreak(petalId, context);
+            advanceAction(petalId, context);
+            break;
+
+        case 'delay':
+            // Set delay state
+            actionState.isDelayed = true;
+            actionState.delayEndTime = Date.now() + (action.value || 1000);
+            // Don't advance action yet, it will be handled in updatePetalActions
+            break;
+
+        case 'restart':
+            // Restart from beginning
+            actionState.currentActionIndex = 0;
+            executeNextAction(petalId, context);
+            break;
+
+        case 'wait_until_collision':
+            // Set waiting state
+            actionState.isWaitingForCollision = true;
+            // Don't advance action yet, it will be handled when collision occurs
+            break;
+
+        default:
+            console.warn(`Unknown action type: ${action.type}`);
+            advanceAction(petalId, context);
+    }
+}
+
+// Advance to the next action
+function advanceAction(petalId: string, context: ActionContext): void {
+    const actionState = petalActionStates.get(petalId);
+    if (!actionState) return;
+
+    actionState.currentActionIndex++;
+    actionState.isDelayed = false;
+    actionState.isWaitingForCollision = false;
+    
+    // Execute next action after a small delay to prevent infinite loops
+    setTimeout(() => {
+        executeNextAction(petalId, context);
+    }, 10);
+}
+
+// Mark petal for breaking
+function markPetalForBreak(petalId: string, context: ActionContext): void {
+    const { player, loadoutIndex } = context;
+    if (loadoutIndex !== undefined && player.loadout[loadoutIndex]) {
+        player.loadout[loadoutIndex]!.health = 0;
+    }
+}
+
+// Update all active petal actions (call this in game loop)
+export function updatePetalActions(deltaTime: number): void {
+    const currentTime = Date.now();
+    
+    for (const [petalId, actionState] of petalActionStates) {
+        if (!actionState.isActive) continue;
+
+        // Handle delayed actions
+        if (actionState.isDelayed && currentTime >= actionState.delayEndTime) {
+            actionState.isDelayed = false;
+            // Continue with next action
+            const context = getActionContext(actionState);
+            if (context) {
+                executeNextAction(petalId, context);
+            }
+        }
+    }
+}
+
+// Handle petal collision for wait_until_collision actions
+export function handlePetalCollision(petalId: string, context: ActionContext): void {
+    const actionState = petalActionStates.get(petalId);
+    if (!actionState || !actionState.isWaitingForCollision) return;
+
+    actionState.isWaitingForCollision = false;
+    advanceAction(petalId, context);
+}
+
+// Get action context from state
+function getActionContext(actionState: PetalActionState): ActionContext | null {
+    return actionState.context;
+}
+
+// Clean up petal action state
+export function cleanupPetalActions(petalId: string): void {
+    petalActionStates.delete(petalId);
+}
+
+// Update petal position in action context
+export function updatePetalPosition(petalId: string, x: number, y: number): void {
+    const actionState = petalActionStates.get(petalId);
+    if (actionState) {
+        actionState.context.petalX = x;
+        actionState.context.petalY = y;
+    }
+}
