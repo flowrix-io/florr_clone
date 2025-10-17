@@ -1,6 +1,7 @@
 import { PetalAction, parsePetalActions } from './petals';
 import { ServerPlayer } from './player';
-import { Enemy } from './server_utils';
+import { Enemy, getXPFromEnemy } from './server_utils';
+import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts } from './server';
 
 // Action execution context
 export interface ActionContext {
@@ -88,7 +89,7 @@ function executeAction(action: PetalAction, context: ActionContext, trigger: 'on
 
         case 'explode':
             // if (trigger === 'on_break') {
-                explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io);
+                explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
             // }
             break;
 
@@ -182,12 +183,14 @@ function applyShield(player: ServerPlayer, shieldAmount: number, duration: numbe
 }
 
 // Explode petal and deal area damage
-function explodePetal(x: number, y: number, petalSize: number, damage: number, enemies: Enemy[], io: any): void {
+function explodePetal(x: number, y: number, petalSize: number, damage: number, enemies: Enemy[], io: any, player?: ServerPlayer): void {
     const explosionRadius = petalSize * 40 * 3; // Convert petal size to pixels and make explosion 3x larger
     
     console.log(`[EXPLOSION] Starting explosion at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
     
-    for (const enemy of enemies) {
+    // Process enemies in reverse order to avoid index issues when removing
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
         
         if (distance <= explosionRadius) {
@@ -205,6 +208,24 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
             enemy.knockbackY = normalizedDy * knockbackForce;
             
             io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+            
+            // Check if enemy dies
+            if (enemy.health <= 0) {
+                console.log(`[EXPLOSION] Enemy ${enemy.id} killed by explosion!`);
+                
+                // Handle XP and drops if player is provided
+                if (player) {
+                    const xpGained = getXPFromEnemy(enemy);
+                    addXPToPlayer(player, xpGained, player.id);
+                    handleMobDrops(enemy);
+                    updateSpecialMobCounts();
+                }
+                
+                // Remove enemy from array
+                enemies.splice(i, 1);
+                // Emit enemy destroyed event
+                io.emit('enemyDestroyed', enemy.id);
+            }
         }
     }
     
@@ -353,7 +374,7 @@ function executeNextAction(petalId: string, context: ActionContext): void {
 
         case 'explode':
             console.log(`[EXPLODE ACTION] Exploding at petal position (${petalX}, ${petalY}), player position (${player.x}, ${player.y})`);
-            explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io);
+            explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
             advanceAction(petalId, context);
             break;
 

@@ -39,7 +39,7 @@ let ENEMY_COUNT = 1000;
 const playerUserIds: Record<string, string> = {}; // Maps player ID to user ID
 
 // Function to handle mob drops when a mob dies
-function handleMobDrops(enemy: Enemy) {
+export function handleMobDrops(enemy: Enemy) {
     const mobType = enemy.type || 'bee'; // Default to bee if type is not set
     const drops = calculateMobDrops(mobType, enemy.tier);
     
@@ -702,7 +702,7 @@ function createSpecialMob(tier: 'ultra' | 'super' | 'unique'): Enemy | null {
 }
 
 // Function to update special mob counts
-function updateSpecialMobCounts() {
+export function updateSpecialMobCounts() {
     ultraMobCount = enemies.filter(e => e.tier === 'ultra').length;
     superMobCount = enemies.filter(e => e.tier === 'super').length;
     uniqueMobCount = enemies.filter(e => e.tier === 'unique').length;
@@ -1066,7 +1066,7 @@ interface AuthenticatedSocket extends Socket {
 }
 
 // XP and level management functions
-function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: string): void {
+export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: string): void {
     player.xp += xp;
     while (player.xp >= player.xpToNextLevel) {
         player.xp -= player.xpToNextLevel;

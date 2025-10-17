@@ -1,23 +1,23 @@
 {
   "players": {
     "ocu977p98": {
-      "level": 23,
-      "xp": 8809,
-      "maxHealth": 320,
-      "damage": 49,
+      "level": 24,
+      "xp": 3864,
+      "maxHealth": 330,
+      "damage": 51,
       "inventory": {
         "common": {
-          "petal_basic": 17,
+          "petal_basic": 18,
           "health_potion": 6,
-          "petal_rose": 4,
+          "petal_rose": 5,
           "shield": 5,
           "petal_light": 6,
           "petal_dandelion": 3,
-          "petal_stinger": 4,
+          "petal_stinger": 5,
           "petal_yggdrasil": 1,
           "speed_boost": 6,
           "petal_sand": 8,
-          "petal_rock": 2
+          "petal_rock": 3
         },
         "unique": {
           "petal_stinger": 1000,
@@ -29,8 +29,8 @@
           "speed_boost": 1000,
           "health_potion": 1000,
           "petal_healing": 1000,
-          "petal_explosive": 1000,
-          "petal_test_explosive": 998,
+          "petal_explosive": 999,
+          "petal_test_explosive": 999,
           "petal_shield": 999
         },
         "mythic": {
@@ -42,20 +42,20 @@
           "petal_basic": 6
         },
         "epic": {
-          "petal_stinger": 2,
+          "petal_stinger": 3,
           "speed_boost": 3,
           "petal_basic": 2,
           "petal_rose": 3,
           "petal_sand": 2,
           "petal_yggdrasil": 1,
-          "health_potion": 1,
+          "health_potion": 2,
           "petal_light": 2,
-          "petal_rock": 3,
+          "petal_rock": 4,
           "shield": 1,
           "petal_dandelion": 2
         },
         "rare": {
-          "petal_dandelion": 1,
+          "petal_dandelion": 2,
           "petal_rock": 1,
           "petal_rose": 2,
           "petal_light": 2,
@@ -72,10 +72,11 @@
         null,
         {
           "type": "petal",
+          "petalType": "explosive",
           "rarity": "unique",
-          "petalType": "test_explosive",
-          "health": 64925,
-          "maxHealth": 65610
+          "maxHealth": 32805,
+          "health": -13089195,
+          "onCooldown": false
         },
         null,
         null,

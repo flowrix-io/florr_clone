@@ -11,6 +11,8 @@ exports.handlePetalCollision = handlePetalCollision;
 exports.cleanupPetalActions = cleanupPetalActions;
 exports.updatePetalPosition = updatePetalPosition;
 const petals_1 = require("./petals");
+const server_utils_1 = require("./server_utils");
+const server_1 = require("./server");
 // Global state for tracking petal actions
 const petalActionStates = new Map();
 // Execute petal actions
@@ -52,7 +54,7 @@ function executeAction(action, context, trigger) {
             break;
         case 'explode':
             // if (trigger === 'on_break') {
-            explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io);
+            explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
             // }
             break;
         default:
@@ -127,10 +129,12 @@ function applyShield(player, shieldAmount, duration) {
     console.log(`Player ${player.id} gained shield: ${shieldAmount} for ${duration}ms`);
 }
 // Explode petal and deal area damage
-function explodePetal(x, y, petalSize, damage, enemies, io) {
+function explodePetal(x, y, petalSize, damage, enemies, io, player) {
     const explosionRadius = petalSize * 40 * 3; // Convert petal size to pixels and make explosion 3x larger
     console.log(`[EXPLOSION] Starting explosion at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
-    for (const enemy of enemies) {
+    // Process enemies in reverse order to avoid index issues when removing
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
         if (distance <= explosionRadius) {
             console.log(`[EXPLOSION] Enemy ${enemy.id} hit! Distance: ${distance}, Damage: ${damage}`);
@@ -144,6 +148,21 @@ function explodePetal(x, y, petalSize, damage, enemies, io) {
             enemy.knockbackX = normalizedDx * knockbackForce;
             enemy.knockbackY = normalizedDy * knockbackForce;
             io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+            // Check if enemy dies
+            if (enemy.health <= 0) {
+                console.log(`[EXPLOSION] Enemy ${enemy.id} killed by explosion!`);
+                // Handle XP and drops if player is provided
+                if (player) {
+                    const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
+                    (0, server_1.addXPToPlayer)(player, xpGained, player.id);
+                    (0, server_1.handleMobDrops)(enemy);
+                    (0, server_1.updateSpecialMobCounts)();
+                }
+                // Remove enemy from array
+                enemies.splice(i, 1);
+                // Emit enemy destroyed event
+                io.emit('enemyDestroyed', enemy.id);
+            }
         }
     }
     // Emit explosion effect to clients
@@ -271,7 +290,7 @@ function executeNextAction(petalId, context) {
             break;
         case 'explode':
             console.log(`[EXPLODE ACTION] Exploding at petal position (${petalX}, ${petalY}), player position (${player.x}, ${player.y})`);
-            explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io);
+            explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
             advanceAction(petalId, context);
             break;
         case 'break':

@@ -3,6 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.handleMobDrops = handleMobDrops;
+exports.updateSpecialMobCounts = updateSpecialMobCounts;
+exports.addXPToPlayer = addXPToPlayer;
 const express_1 = __importDefault(require("express"));
 const https_1 = require("https");
 const http_1 = require("http");
