@@ -480,8 +480,8 @@ export function updatePetalPosition(petalId: string, x: number, y: number): void
         actionState.context.petalY = y;
         
         // Debug logging for position updates
-        if (Math.abs(oldX - x) > 1 || Math.abs(oldY - y) > 1) {
-            console.log(`[POSITION UPDATE] Petal ${petalId}: (${oldX}, ${oldY}) -> (${x}, ${y})`);
-        }
+        // if (Math.abs(oldX - x) > 1 || Math.abs(oldY - y) > 1) {
+        //     console.log(`[POSITION UPDATE] Petal ${petalId}: (${oldX}, ${oldY}) -> (${x}, ${y})`);
+        // }
     }
 }

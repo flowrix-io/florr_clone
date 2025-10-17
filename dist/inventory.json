@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 24,
-      "xp": 3864,
+      "xp": 4404,
       "maxHealth": 330,
       "damage": 51,
       "inventory": {
@@ -75,7 +75,7 @@
           "petalType": "explosive",
           "rarity": "unique",
           "maxHealth": 32805,
-          "health": -13089195,
+          "health": 31725,
           "onCooldown": false
         },
         null,
