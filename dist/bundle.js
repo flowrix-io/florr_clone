@@ -2647,6 +2647,24 @@ class Graphics {
         });
     }
     showExplosionEffect(x, y, radius) {
+        // Create particles for the explosion
+        const particles = [];
+        const particleCount = Math.min(50, Math.max(10, radius / 5)); // Scale particle count with radius
+        for (let i = 0; i < particleCount; i++) {
+            const angle = (Math.PI * 2 * i) / particleCount + Math.random() * 0.5;
+            const speed = 2 + Math.random() * 3;
+            const particleLife = 800 + Math.random() * 400;
+            particles.push({
+                x: x + (Math.random() - 0.5) * 10,
+                y: y + (Math.random() - 0.5) * 10,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: particleLife,
+                maxLife: particleLife,
+                size: 2 + Math.random() * 3,
+                color: Math.random() > 0.5 ? '#FF4500' : '#FFD700'
+            });
+        }
         // Create explosion effect
         this.explosionEffects.push({
             x,
@@ -2654,9 +2672,11 @@ class Graphics {
             radius,
             maxRadius: radius,
             alpha: 1.0,
-            lifetime: 500,
-            startTime: Date.now()
+            lifetime: 1000,
+            startTime: Date.now(),
+            particles
         });
+        console.log(`[GRAPHICS] Created explosion effect at (${x}, ${y}) with ${particles.length} particles`);
     }
     showPetalBreakEffect(x, y, petalType) {
         // Create petal break effect
@@ -2831,12 +2851,10 @@ class Graphics {
             this.ctx.fillStyle = 'white';
             this.ctx.fillText(`Level ${player.level} - XP: ${player.xp}/${player.xpToNextLevel}`, healthX + 5, xpBarY + 15);
         }
-        // Draw minimap
-        this.drawMinimap(players, socket);
         // Draw floating texts
         this.drawFloatingTexts();
-        this.drawExplosionEffects();
-        this.drawPetalBreakEffects();
+        // Draw minimap
+        this.drawMinimap(players, socket);
     }
     s(size) {
         return 1 * size;
@@ -3238,6 +3256,23 @@ class Graphics {
             this.ctx.beginPath();
             this.ctx.arc(effect.x, effect.y, currentRadius * 0.5, 0, Math.PI * 2);
             this.ctx.stroke();
+            // Draw particles
+            effect.particles = effect.particles.filter(particle => {
+                const particleProgress = particle.life / particle.maxLife;
+                if (particleProgress <= 0)
+                    return false;
+                // Update particle position
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.life -= 16; // Assuming 60fps, reduce by ~16ms per frame
+                // Draw particle
+                this.ctx.globalAlpha = particleProgress * effect.alpha;
+                this.ctx.fillStyle = particle.color;
+                this.ctx.beginPath();
+                this.ctx.arc(particle.x, particle.y, particle.size * particleProgress, 0, Math.PI * 2);
+                this.ctx.fill();
+                return true;
+            });
             this.ctx.restore();
             return true;
         });
@@ -3381,6 +3416,9 @@ class Graphics {
         this.drawMap(this.mapData);
         // Draw game objects
         this.drawGameObjects(players, enemies, items, currentPlayerId, petalExtension);
+        // Draw explosion effects (in world coordinates, before camera restore)
+        this.drawExplosionEffects();
+        this.drawPetalBreakEffects();
         this.ctx.restore();
         // Draw UI elements (not affected by camera)
         this.drawUI(players, currentPlayerId);

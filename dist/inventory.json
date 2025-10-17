@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 23,
-      "xp": 8755,
+      "xp": 8809,
       "maxHealth": 320,
       "damage": 49,
       "inventory": {
@@ -15,8 +15,8 @@
           "petal_dandelion": 3,
           "petal_stinger": 4,
           "petal_yggdrasil": 1,
-          "speed_boost": 4,
-          "petal_sand": 7,
+          "speed_boost": 6,
+          "petal_sand": 8,
           "petal_rock": 2
         },
         "unique": {
@@ -30,7 +30,7 @@
           "health_potion": 1000,
           "petal_healing": 1000,
           "petal_explosive": 1000,
-          "petal_test_explosive": 999,
+          "petal_test_explosive": 998,
           "petal_shield": 999
         },
         "mythic": {
@@ -39,7 +39,7 @@
         "uncommon": {
           "petal_rose": 2,
           "petal_dandelion": 5,
-          "petal_basic": 5
+          "petal_basic": 6
         },
         "epic": {
           "petal_stinger": 2,
@@ -70,7 +70,13 @@
       "loadout": [
         null,
         null,
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "test_explosive",
+          "health": 64925,
+          "maxHealth": 65610
+        },
         null,
         null,
         null,

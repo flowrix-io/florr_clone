@@ -306,8 +306,10 @@ export function executePetalActionsOnSpawn(actionString: string, context: Action
     
     petalActionStates.set(petalId, actionState);
     
-    // Start executing actions immediately
-    executeNextAction(petalId, context);
+    // Start executing actions after a small delay to allow position update
+    setTimeout(() => {
+        executeNextAction(petalId, context);
+    }, 50); // 50ms delay to allow first position update
     
     return petalId;
 }
@@ -350,6 +352,7 @@ function executeNextAction(petalId: string, context: ActionContext): void {
             break;
 
         case 'explode':
+            console.log(`[EXPLODE ACTION] Exploding at petal position (${petalX}, ${petalY}), player position (${player.x}, ${player.y})`);
             explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io);
             advanceAction(petalId, context);
             break;
@@ -450,7 +453,14 @@ export function cleanupPetalActions(petalId: string): void {
 export function updatePetalPosition(petalId: string, x: number, y: number): void {
     const actionState = petalActionStates.get(petalId);
     if (actionState) {
+        const oldX = actionState.context.petalX;
+        const oldY = actionState.context.petalY;
         actionState.context.petalX = x;
         actionState.context.petalY = y;
+        
+        // Debug logging for position updates
+        if (Math.abs(oldX - x) > 1 || Math.abs(oldY - y) > 1) {
+            console.log(`[POSITION UPDATE] Petal ${petalId}: (${oldX}, ${oldY}) -> (${x}, ${y})`);
+        }
     }
 }

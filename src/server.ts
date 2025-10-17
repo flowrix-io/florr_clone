@@ -1968,8 +1968,8 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                             const petalId = `${player.id}_${i}_${j}`;
                             const actionContext = {
                                 player: player,
-                                petalX: player.x, // Will be updated with actual position
-                                petalY: player.y, // Will be updated with actual position
+                                petalX: player.x, // Will be updated with actual position in game loop
+                                petalY: player.y, // Will be updated with actual position in game loop
                                 petalSize: petalStats.size * 40,
                                 enemies: enemies,
                                 io: io,
