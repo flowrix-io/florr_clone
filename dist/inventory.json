@@ -2,24 +2,28 @@
   "players": {
     "ocu977p98": {
       "level": 20,
-      "xp": 205,
+      "xp": 1109,
       "maxHealth": 290,
       "damage": 43,
       "inventory": {
         "common": {
-          "petal_basic": 11,
-          "health_potion": 2,
-          "petal_rose": 1,
-          "shield": 2,
-          "petal_light": 3,
+          "petal_basic": 8,
+          "health_potion": 5,
+          "petal_rose": 2,
+          "shield": 3,
+          "petal_light": 5,
           "petal_dandelion": 3,
-          "petal_stinger": 1
+          "petal_stinger": 3,
+          "petal_yggdrasil": 1,
+          "speed_boost": 2,
+          "petal_sand": 2,
+          "petal_rock": 1
         },
         "unique": {
           "petal_stinger": 1000,
           "petal_basic": 1000,
           "petal_rose": 1000,
-          "petal_light": 993,
+          "petal_light": 1000,
           "petal_rock": 1000,
           "petal_yggdrasil": 1000,
           "speed_boost": 1000,
@@ -29,7 +33,9 @@
           "speed_boost": 999
         },
         "uncommon": {
-          "petal_rose": 1
+          "petal_rose": 1,
+          "petal_dandelion": 3,
+          "petal_basic": 4
         },
         "epic": {
           "petal_stinger": 2,
@@ -42,77 +48,72 @@
           "petal_light": 2,
           "petal_rock": 3,
           "shield": 1,
-          "petal_dandelion": 1
+          "petal_dandelion": 2
         }
       },
       "loadout": [
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32797,
-          "maxHealth": 32805
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32797,
-          "maxHealth": 32805
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32796,
-          "maxHealth": 32805
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32797,
-          "maxHealth": 32805
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 0,
+          "onCooldown": true
         },
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32797,
-          "maxHealth": 32805
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32800,
-          "maxHealth": 32805
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "light",
-          "health": 32795,
-          "maxHealth": 32805
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
         },
         {
           "type": "speed_boost",
           "rarity": "mythic"
         },
-        {
-          "type": "petal",
-          "rarity": "uncommon",
-          "petalType": "dandelion",
-          "health": 24,
-          "maxHealth": 24
-        },
-        {
-          "type": "petal",
-          "rarity": "uncommon",
-          "petalType": "dandelion",
-          "health": 24,
-          "maxHealth": 24
-        }
+        null,
+        null
       ]
     }
   },

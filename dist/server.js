@@ -1711,13 +1711,18 @@ function updatePlayerState(player, deltaTime) {
                 const enemyRight = enemy.x + enemySize / 2;
                 const enemyTop = enemy.y - enemySize / 2;
                 const enemyBottom = enemy.y + enemySize / 2;
-                if (petalX < enemyRight &&
-                    petalX + petalSize > enemyLeft &&
-                    petalY < enemyBottom &&
-                    petalY + petalSize > enemyTop) {
+                // Calculate petal hitbox bounds (petalX, petalY is center point)
+                const petalLeft = petalX - petalSize / 2;
+                const petalRight = petalX + petalSize / 2;
+                const petalTop = petalY - petalSize / 2;
+                const petalBottom = petalY + petalSize / 2;
+                if (petalLeft < enemyRight &&
+                    petalRight > enemyLeft &&
+                    petalTop < enemyBottom &&
+                    petalBottom > enemyTop) {
                     // Petal hits enemy - deal damage to both
                     enemy.health -= petalStats.damage;
-                    petal.health -= 1; // Petal loses 1 health per hit
+                    petal.health -= mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
                     // Apply knockback to enemy
                     const knockbackForce = petalStats.knockback || 0;
                     if (knockbackForce > 0) {

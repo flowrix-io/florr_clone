@@ -160,6 +160,7 @@ const BASE_PETAL_CONFIGS = {
         description: "A simple petal that provides basic protection",
         color: "#90EE90",
         count: 1,
+        knockback: 5,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
@@ -336,7 +337,7 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         size: baseConfig.size, // Size stays the same for each petal type
         speed: baseConfig.speed ?? 1.0, // Default speed
         cooldown,
-        knockback: baseConfig.knockback ?? 1, // Default knockback
+        knockback: baseConfig.knockback ?? 5, // Default knockback
         description: overrides.description ?? baseConfig.description,
         color: RARITY_COLORS[rarity],
         image: overrides.image ?? baseConfig.image ?? findSvgFallback(petalType, rarity),
