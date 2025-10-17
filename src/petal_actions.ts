@@ -109,7 +109,7 @@ function healPlayer(player: ServerPlayer, healAmount: number, io: any): void {
             health: player.health,
             healAmount: player.health - oldHealth
         });
-        console.log(`Player ${player.id} healed for ${player.health - oldHealth} HP`);
+        // console.log(`Player ${player.id} healed for ${player.health - oldHealth} HP`);
     }
 }
 
@@ -186,7 +186,7 @@ function applyShield(player: ServerPlayer, shieldAmount: number, duration: numbe
 function explodePetal(x: number, y: number, petalSize: number, damage: number, enemies: Enemy[], io: any, player?: ServerPlayer): void {
     const explosionRadius = petalSize * 40 * 3; // Convert petal size to pixels and make explosion 3x larger
     
-    console.log(`[EXPLOSION] Starting explosion at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
+    // console.log(`[EXPLOSION] Starting explosion at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
     
     // Process enemies in reverse order to avoid index issues when removing
     for (let i = enemies.length - 1; i >= 0; i--) {
@@ -194,7 +194,7 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
         
         if (distance <= explosionRadius) {
-            console.log(`[EXPLOSION] Enemy ${enemy.id} hit! Distance: ${distance}, Damage: ${damage}`);
+            // console.log(`[EXPLOSION] Enemy ${enemy.id} hit! Distance: ${distance}, Damage: ${damage}`);
             enemy.health -= damage;
             
             // Apply knockback
@@ -211,7 +211,7 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
             
             // Check if enemy dies
             if (enemy.health <= 0) {
-                console.log(`[EXPLOSION] Enemy ${enemy.id} killed by explosion!`);
+                // console.log(`[EXPLOSION] Enemy ${enemy.id} killed by explosion!`);
                 
                 // Handle XP and drops if player is provided
                 if (player) {
@@ -237,7 +237,7 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
         damage: damage
     });
     
-    console.log(`[EXPLOSION] Explosion complete at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
+    // console.log(`[EXPLOSION] Explosion complete at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
 }
 
 // Update player effects (call this in the game loop)
@@ -373,7 +373,7 @@ function executeNextAction(petalId: string, context: ActionContext): void {
             break;
 
         case 'explode':
-            console.log(`[EXPLODE ACTION] Exploding at petal position (${petalX}, ${petalY}), player position (${player.x}, ${player.y})`);
+            // console.log(`[EXPLODE ACTION] Exploding at petal position (${petalX}, ${petalY}), player position (${player.x}, ${player.y})`);
             explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
             advanceAction(petalId, context);
             break;
