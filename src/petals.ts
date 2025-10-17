@@ -11,6 +11,7 @@ export interface PetalStats {
     image?: string; // 32x32 SVG image (optional)
     count: number; // Number of petals to spawn per equipped item (default 1)
     actions?: string; // Action sequence string like "heal 20; break;" (optional)
+    isAdminPetal?: boolean; // Whether the petal is an admin petal (default false)
 }
 
 export interface PetalConfig {
@@ -58,6 +59,7 @@ interface BasePetalConfig {
     speed?: number;
     knockback?: number;
     actions?: string; // Action sequence string like "heal 20; break;"
+    isAdminPetal?: boolean; // Whether the petal is an admin petal (default false)
 }
 
 // Special rarity overrides for specific petals
@@ -328,7 +330,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 <path d="M16 8 L16 24 M8 16 L24 16" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
     explosive: {// test petal
         name: "Explosive Petal",
@@ -343,7 +346,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff6b35" stroke="#d63031" stroke-width="4"/>
 <path d="M12 12 L20 20 M20 12 L12 20" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
     test_explosive: {// test petal for immediate explosion
         name: "Test Explosive Petal",
@@ -358,7 +362,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff0000" stroke="#cc0000" stroke-width="4"/>
 <path d="M8 8 L24 24 M24 8 L8 24" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
     shield: {
         name: "Shield Petal",
@@ -373,7 +378,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#6495ed" stroke="#4169e1" stroke-width="4"/>
 <path d="M16 6 L20 12 L16 18 L12 12 Z" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none"/>
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
 };
 
@@ -459,7 +465,8 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         color: RARITY_COLORS[rarity],
         image: overrides.image ?? baseConfig.image ?? findSvgFallback(petalType, rarity),
         count: overrides.count ?? baseConfig.count,
-        actions: overrides.actions ?? baseConfig.actions
+        actions: overrides.actions ?? baseConfig.actions,
+        isAdminPetal: baseConfig.isAdminPetal ?? false
     };
 }
 

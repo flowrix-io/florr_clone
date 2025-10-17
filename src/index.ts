@@ -4,6 +4,7 @@ import { Game } from './game';
 import { AuthUI } from './auth_ui';
 import { TitleScreen, injectTitleScreenStyles } from './title_screen';
 import { Preloader, PreloadedAssets } from './preloader';
+import { PETAL_CONFIG } from './petals';
 
 // Add interfaces before the workerCode string
 interface Decoration {
@@ -109,6 +110,13 @@ window.onload = async () => {
         console.log('[Index] Loading assets...');
         preloadedAssets = await preloader.loadAssets();
         console.log('[Index] Assets loaded successfully');
+
+        //debug
+        Object.defineProperty(window, 'petalConfig', {
+            value: PETAL_CONFIG,
+            writable: false,
+            configurable: false
+        });
         
         // Small delay to show 100% completion
         await new Promise(resolve => setTimeout(resolve, 300));

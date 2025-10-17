@@ -19,7 +19,8 @@ class FloatingPetalManager {
         petal.className = 'floating-petal';
         // Get random petal type and rarity from actual petals.ts
         const petalTypes = Object.keys(petals_1.PETAL_CONFIG);
-        const petalType = petalTypes[Math.floor(Math.random() * petalTypes.length)];
+        const nonAdminPetalTypes = petalTypes.filter(type => !petals_1.PETAL_CONFIG[type]['common']?.isAdminPetal);
+        const petalType = nonAdminPetalTypes.length > 0 ? nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)] : 'basic';
         const rarity = petals_1.RARITY_LEVELS[Math.floor(Math.random() * petals_1.RARITY_LEVELS.length)];
         // Get petal stats from actual petals.ts
         const petalStats = petals_1.PETAL_CONFIG[petalType]?.[rarity];

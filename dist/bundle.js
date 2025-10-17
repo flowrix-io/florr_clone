@@ -282,7 +282,8 @@ const BASE_PETAL_CONFIGS = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 <path d="M16 8 L16 24 M8 16 L24 16" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
     explosive: {
         name: "Explosive Petal",
@@ -297,7 +298,8 @@ const BASE_PETAL_CONFIGS = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff6b35" stroke="#d63031" stroke-width="4"/>
 <path d="M12 12 L20 20 M20 12 L12 20" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
     test_explosive: {
         name: "Test Explosive Petal",
@@ -312,7 +314,8 @@ const BASE_PETAL_CONFIGS = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff0000" stroke="#cc0000" stroke-width="4"/>
 <path d="M8 8 L24 24 M24 8 L8 24" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
     shield: {
         name: "Shield Petal",
@@ -327,7 +330,8 @@ const BASE_PETAL_CONFIGS = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#6495ed" stroke="#4169e1" stroke-width="4"/>
 <path d="M16 6 L20 12 L16 18 L12 12 Z" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none"/>
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
 };
 // Rarity color mappings
@@ -403,7 +407,8 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         color: RARITY_COLORS[rarity],
         image: overrides.image ?? baseConfig.image ?? findSvgFallback(petalType, rarity),
         count: overrides.count ?? baseConfig.count,
-        actions: overrides.actions ?? baseConfig.actions
+        actions: overrides.actions ?? baseConfig.actions,
+        isAdminPetal: baseConfig.isAdminPetal ?? false
     };
 }
 // Generate the full petal configuration
@@ -11985,7 +11990,8 @@ class FloatingPetalManager {
         petal.className = 'floating-petal';
         // Get random petal type and rarity from actual petals.ts
         const petalTypes = Object.keys(petals.PETAL_CONFIG);
-        const petalType = petalTypes[Math.floor(Math.random() * petalTypes.length)];
+        const nonAdminPetalTypes = petalTypes.filter(type => !petals.PETAL_CONFIG[type]['common']?.isAdminPetal);
+        const petalType = nonAdminPetalTypes.length > 0 ? nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)] : 'basic';
         const rarity = petals.RARITY_LEVELS[Math.floor(Math.random() * petals.RARITY_LEVELS.length)];
         // Get petal stats from actual petals.ts
         const petalStats = petals.PETAL_CONFIG[petalType]?.[rarity];
@@ -13584,6 +13590,7 @@ class Preloader {
 
 
 
+
 let currentGame = null;
 window.currentGame = currentGame;
 let titleScreen = null;
@@ -13662,6 +13669,12 @@ window.onload = async () => {
         console.log('[Index] Loading assets...');
         preloadedAssets = await preloader.loadAssets();
         console.log('[Index] Assets loaded successfully');
+        //debug
+        Object.defineProperty(window, 'petalConfig', {
+            value: petals.PETAL_CONFIG,
+            writable: false,
+            configurable: false
+        });
         // Small delay to show 100% completion
         await new Promise(resolve => setTimeout(resolve, 300));
         // Remove loading screen

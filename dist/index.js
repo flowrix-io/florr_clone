@@ -5,6 +5,7 @@ const game_1 = require("./game");
 const auth_ui_1 = require("./auth_ui");
 const title_screen_1 = require("./title_screen");
 const preloader_1 = require("./preloader");
+const petals_1 = require("./petals");
 let currentGame = null;
 window.currentGame = currentGame;
 let titleScreen = null;
@@ -83,6 +84,12 @@ window.onload = async () => {
         console.log('[Index] Loading assets...');
         preloadedAssets = await preloader.loadAssets();
         console.log('[Index] Assets loaded successfully');
+        //debug
+        Object.defineProperty(window, 'petalConfig', {
+            value: petals_1.PETAL_CONFIG,
+            writable: false,
+            configurable: false
+        });
         // Small delay to show 100% completion
         await new Promise(resolve => setTimeout(resolve, 300));
         // Remove loading screen
