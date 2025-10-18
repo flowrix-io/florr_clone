@@ -13,6 +13,7 @@ export interface WorldItem extends Item {
   y: number;
   eligiblePlayers?: string[];  // List of player IDs eligible to pick up this drop
   pickedUpBy?: Set<string>;  // Set of player IDs who have already picked this up
+  spawnTime?: number;  // Timestamp when item was spawned
 }
 
 export interface ItemWithRarity extends Item {

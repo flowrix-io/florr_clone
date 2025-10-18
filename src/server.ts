@@ -38,6 +38,19 @@ const sands: Sand[] = [];
 let ENEMY_COUNT = 1000;
 const playerUserIds: Record<string, string> = {}; // Maps player ID to user ID
 
+// Item expiration times based on rarity (in milliseconds)
+const ITEM_EXPIRATION_TIMES: Record<string, number> = {
+    common: 10000,      // 10 seconds
+    uncommon: 20000,    // 20 seconds
+    rare: 30000,        // 30 seconds
+    epic: 40000,        // 40 seconds
+    legendary: 50000,   // 50 seconds
+    mythic: 60000,      // 60 seconds
+    ultra: 80000,       // 80 seconds
+    super: 120000,      // 120 seconds
+    unique: 300000      // 300 seconds (5 minutes)
+};
+
 // Helper function to track damage dealt to an enemy
 export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
     if (!enemy.damageContributors) {
@@ -92,15 +105,19 @@ export function handleMobDrops(enemy: Enemy) {
             const offsetX = (Math.random() - 0.5) * 100;
             const offsetY = (Math.random() - 0.5) * 100;
             
+            const itemId = Math.random().toString(36).substr(2, 9);
+            const spawnTime = Date.now();
+            
             const newItem: WorldItem = {
-                id: Math.random().toString(36).substr(2, 9),
+                id: itemId,
                 type: drop.type === 'consumable' ? drop.itemType as Item['type'] : 'petal',
                 x: enemy.x + offsetX,
                 y: enemy.y + offsetY,
                 rarity: drop.rarity,
                 petalType: drop.type === 'petal' ? drop.itemType : undefined,
                 eligiblePlayers: eligiblePlayers,
-                pickedUpBy: new Set()
+                pickedUpBy: new Set(),
+                spawnTime: spawnTime
             };
             
             items.push(newItem);
@@ -109,6 +126,25 @@ export function handleMobDrops(enemy: Enemy) {
             for (const playerId of eligiblePlayers) {
                 io.to(playerId).emit('itemSpawned', newItem);
             }
+            
+            // Schedule automatic removal after expiration time
+            const expirationTime = ITEM_EXPIRATION_TIMES[drop.rarity] || 10000;
+            setTimeout(() => {
+                const itemIndex = items.findIndex(item => item.id === itemId);
+                if (itemIndex !== -1) {
+                    const expiredItem = items[itemIndex];
+                    items.splice(itemIndex, 1);
+                    
+                    // Notify eligible players that item expired
+                    if (expiredItem.eligiblePlayers) {
+                        for (const playerId of expiredItem.eligiblePlayers) {
+                            io.to(playerId).emit('itemRemoved', itemId);
+                        }
+                    }
+                    
+                    console.log(`[DROP] Item ${itemId} (${drop.rarity}) expired after ${expirationTime}ms`);
+                }
+            }, expirationTime);
         }
     }
 }
