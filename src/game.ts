@@ -211,6 +211,9 @@ export class Game {
         this.showHitboxes = showHitboxes;
         this.loadControls();
         console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets);
+        
+        // Wait for canvas to be ready before proceeding
+        this.waitForCanvas();
         this.canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
 
         // Use preloaded assets if available
@@ -484,6 +487,33 @@ export class Game {
         
         // Initialize tutorial
         this.tutorial = new Tutorial();
+        document.getElementById('connectingDiv')?.remove();
+    }
+
+    /**
+     * Waits for the canvas element to be ready in the DOM
+     * Uses a synchronous polling approach to avoid async constructor issues
+     */
+    private waitForCanvas(): void {
+        const startTime = Date.now();
+        const timeout = 5000; // 5 second timeout
+        const pollInterval = 50; // Check every 50ms
+        
+        while (!document.getElementById('gameCanvas')) {
+            const elapsed = Date.now() - startTime;
+            
+            if (elapsed > timeout) {
+                throw new Error('Canvas element not found after 5 seconds. Make sure the gameCanvas element exists in the DOM.');
+            }
+            
+            // Synchronous wait using busy-waiting (not ideal but necessary for constructor)
+            const waitUntil = Date.now() + pollInterval;
+            while (Date.now() < waitUntil) {
+                // Busy wait
+            }
+        }
+        
+        console.log('[Game] Canvas element found and ready');
     }
 
     private async initializeSprites(): Promise<void> {
