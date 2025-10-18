@@ -40,6 +40,10 @@ export interface PlayerEffect {
 // Global state for tracking petal actions
 const petalActionStates: Map<string, PetalActionState> = new Map();
 
+// Explosion throttle state
+let lastExplosionTime: number = 0;
+const EXPLOSION_THROTTLE_MS: number = 20;
+
 // Execute petal actions
 export function executePetalActions(actionString: string, context: ActionContext, trigger: 'on_hit' | 'on_break' = 'on_break'): void {
     if (!actionString) return;
@@ -182,6 +186,14 @@ function applyShield(player: ServerPlayer, shieldAmount: number, duration: numbe
 
 // Explode petal and deal area damage
 function explodePetal(x: number, y: number, petalSize: number, damage: number, enemies: Enemy[], io: any, player?: ServerPlayer): void {
+    // Throttle explosions to 1 per 20ms
+    const currentTime = Date.now();
+    if (currentTime - lastExplosionTime < EXPLOSION_THROTTLE_MS) {
+        // console.log(`[EXPLOSION] Throttled explosion at (${x}, ${y})`);
+        return;
+    }
+    lastExplosionTime = currentTime;
+    
     const explosionRadius = petalSize * 40 * 3; // Convert petal size to pixels and make explosion 3x larger
     
     // console.log(`[EXPLOSION] Starting explosion at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);

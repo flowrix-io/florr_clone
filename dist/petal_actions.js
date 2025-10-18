@@ -15,6 +15,9 @@ const server_utils_1 = require("./server_utils");
 const server_1 = require("./server");
 // Global state for tracking petal actions
 const petalActionStates = new Map();
+// Explosion throttle state
+let lastExplosionTime = 0;
+const EXPLOSION_THROTTLE_MS = 20;
 // Execute petal actions
 function executePetalActions(actionString, context, trigger = 'on_break') {
     if (!actionString)
@@ -130,6 +133,13 @@ function applyShield(player, shieldAmount, duration) {
 }
 // Explode petal and deal area damage
 function explodePetal(x, y, petalSize, damage, enemies, io, player) {
+    // Throttle explosions to 1 per 20ms
+    const currentTime = Date.now();
+    if (currentTime - lastExplosionTime < EXPLOSION_THROTTLE_MS) {
+        // console.log(`[EXPLOSION] Throttled explosion at (${x}, ${y})`);
+        return;
+    }
+    lastExplosionTime = currentTime;
     const explosionRadius = petalSize * 40 * 3; // Convert petal size to pixels and make explosion 3x larger
     // console.log(`[EXPLOSION] Starting explosion at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
     // Process enemies in reverse order to avoid index issues when removing
