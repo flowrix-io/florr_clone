@@ -1164,12 +1164,16 @@ export class TitleScreen {
         const tilesY = Math.ceil(visibleHeight / bgHeight) + 2;
 
         // Draw the tiled background
-        for (let i = 0; i <= tilesX; i++) {
-            for (let j = 0; j <= tilesY; j++) {
-                const x = startX + (i * bgWidth) - cameraX;
-                const y = startY + (j * bgHeight) - cameraY;
-                this.backgroundCtx.drawImage(this.backgroundTexture, x, y, bgWidth, bgHeight);
-            }
+        try {
+            for (let i = 0; i <= tilesX; i++) {
+                for (let j = 0; j <= tilesY; j++) {
+                    const x = startX + (i * bgWidth) - cameraX;
+                    const y = startY + (j * bgHeight) - cameraY;
+                    this.backgroundCtx.drawImage(this.backgroundTexture, x, y, bgWidth, bgHeight);
+                }
+            } 
+        } catch (error) {
+                console.log('Error drawing background:', error);
         }
     }
 
