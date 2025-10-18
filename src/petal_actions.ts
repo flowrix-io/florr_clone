@@ -25,8 +25,6 @@ export interface PetalActionState {
     actions: PetalAction[];
     currentActionIndex: number;
     isWaitingForCollision: boolean;
-    isDelayed: boolean;
-    delayEndTime: number;
     isActive: boolean;
     context: ActionContext; // Store the context for delayed actions
 }
@@ -109,7 +107,7 @@ function healPlayer(player: ServerPlayer, healAmount: number, io: any): void {
             health: player.health,
             healAmount: player.health - oldHealth
         });
-        // console.log(`Player ${player.id} healed for ${player.health - oldHealth} HP`);
+        console.log(`Player ${player.id} healed for ${player.health - oldHealth} HP`);
     }
 }
 
@@ -319,8 +317,6 @@ export function executePetalActionsOnSpawn(actionString: string, context: Action
         actions,
         currentActionIndex: 0,
         isWaitingForCollision: false,
-        isDelayed: false,
-        delayEndTime: 0,
         isActive: true,
         context: context
     };
@@ -339,6 +335,11 @@ export function executePetalActionsOnSpawn(actionString: string, context: Action
 function executeNextAction(petalId: string, context: ActionContext): void {
     const actionState = petalActionStates.get(petalId);
     if (!actionState || !actionState.isActive) return;
+
+    // Don't execute if we're waiting for collision
+    if (actionState.isWaitingForCollision) {
+        return;
+    }
 
     const { actions, currentActionIndex } = actionState;
     
@@ -385,16 +386,16 @@ function executeNextAction(petalId: string, context: ActionContext): void {
             break;
 
         case 'delay':
-            // Set delay state
-            actionState.isDelayed = true;
-            actionState.delayEndTime = Date.now() + (action.value || 1000);
-            // Don't advance action yet, it will be handled in updatePetalActions
+            // Use setTimeout to delay execution
+            setTimeout(() => {
+                advanceAction(petalId, context);
+            }, action.value || 1000);
             break;
 
         case 'restart':
             // Restart from beginning
-            actionState.currentActionIndex = 0;
-            executeNextAction(petalId, context);
+            actionState.currentActionIndex = -1; // Set to -1 so advanceAction increments to 0
+            advanceAction(petalId, context);
             break;
 
         case 'wait_until_collision':
@@ -415,7 +416,6 @@ function advanceAction(petalId: string, context: ActionContext): void {
     if (!actionState) return;
 
     actionState.currentActionIndex++;
-    actionState.isDelayed = false;
     actionState.isWaitingForCollision = false;
     
     // Execute next action after a small delay to prevent infinite loops
@@ -426,29 +426,73 @@ function advanceAction(petalId: string, context: ActionContext): void {
 
 // Mark petal for breaking
 function markPetalForBreak(petalId: string, context: ActionContext): void {
-    const { player, loadoutIndex } = context;
+    const { player, loadoutIndex, io } = context;
     if (loadoutIndex !== undefined && player.loadout[loadoutIndex]) {
-        player.loadout[loadoutIndex]!.health = 0;
+        const petal = player.loadout[loadoutIndex];
+        if (!petal) return;
+        
+        // Set health to 0
+        petal.health = 0;
+        
+        // Mark as on cooldown
+        petal.onCooldown = true;
+        
+        // Store original petal data for restoration
+        const originalPetal = {
+            type: petal.type,
+            petalType: petal.petalType,
+            rarity: petal.rarity,
+            maxHealth: petal.maxHealth
+        };
+        
+        // Emit petal broken event to clients
+        io.emit('petalBroken', {
+            playerId: player.id,
+            loadoutIndex: loadoutIndex,
+            petalType: petal.petalType
+        });
+        
+        // Get cooldown time from petal stats
+        const PETAL_CONFIG = require('./petals').PETAL_CONFIG;
+        const petalStats = (petal.petalType && petal.rarity) ? PETAL_CONFIG[petal.petalType]?.[petal.rarity] : undefined;
+        const cooldownTime = petalStats?.cooldown || 10000;
+        
+        // Schedule petal restoration
+        setTimeout(() => {
+            // Check if player and petal still exist
+            if (player.loadout[loadoutIndex] && player.loadout[loadoutIndex]!.onCooldown) {
+                // Restore petal after cooldown
+                player.loadout[loadoutIndex] = {
+                    ...originalPetal,
+                    health: originalPetal.maxHealth,
+                    onCooldown: false
+                };
+                
+                // Emit restoration event
+                io.emit('petalRestored', {
+                    playerId: player.id,
+                    loadoutIndex: loadoutIndex,
+                    petal: player.loadout[loadoutIndex]
+                });
+                
+                // Clean up action state
+                cleanupPetalActions(petalId);
+            }
+        }, cooldownTime);
+        
+        // Deactivate action state
+        const actionState = petalActionStates.get(petalId);
+        if (actionState) {
+            actionState.isActive = false;
+        }
     }
 }
 
 // Update all active petal actions (call this in game loop)
+// Currently only used for cleanup, as delays are handled by setTimeout
 export function updatePetalActions(deltaTime: number): void {
-    const currentTime = Date.now();
-    
-    for (const [petalId, actionState] of petalActionStates) {
-        if (!actionState.isActive) continue;
-
-        // Handle delayed actions
-        if (actionState.isDelayed && currentTime >= actionState.delayEndTime) {
-            actionState.isDelayed = false;
-            // Continue with next action
-            const context = getActionContext(actionState);
-            if (context) {
-                executeNextAction(petalId, context);
-            }
-        }
-    }
+    // Delays are now handled by setTimeout in executeNextAction
+    // This function is kept for potential future use (e.g., cleanup, state updates)
 }
 
 // Handle petal collision for wait_until_collision actions

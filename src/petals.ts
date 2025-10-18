@@ -223,6 +223,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
             description: "A thorny petal that deals extra damage",
             color: "#FF69B4",
         count: 1,
+            actions: "delay 1500; heal 100; break;",
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
