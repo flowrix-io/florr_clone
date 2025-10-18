@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
+  <rect x="-0.321" y="0.086" width="500.537" height="499.997" style="fill: rgb(0, 190, 79); stroke: rgb(83, 218, 0);"/>
+  <rect x="74.734" y="177.475" width="11.136" height="52.367" style="stroke: rgb(60, 255, 0); fill: rgb(0, 255, 7); transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(0.93358, -0.358368, 0.358368, 0.93358, -0.000019, -0.000091)"/>
+  <rect x="106.888" y="175.841" width="11.136" height="52.367" style="stroke: rgb(60, 255, 0); fill: rgb(0, 255, 7); transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(0.978148, 0.207912, -0.207912, 0.978148, -0.000017, 0.000115)"/>
+  <rect x="91.068" y="175.528" width="11.136" height="52.367" style="stroke: rgb(60, 255, 0); fill: rgb(0, 255, 7);"/>
+  <rect x="327.631" y="250.073" width="11.136" height="52.367" style="stroke: rgb(60, 255, 0); fill: rgb(0, 255, 7); transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(0.992546, -0.12187, 0.12187, 0.992546, 0.000147, -0.000371)"/>
+  <rect x="342.89" y="251.487" width="11.136" height="52.367" style="stroke: rgb(60, 255, 0); fill: rgb(0, 255, 7);"/>
+  <rect x="358.674" y="251.104" width="11.136" height="52.367" style="stroke: rgb(60, 255, 0); fill: rgb(0, 255, 7); transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(0.990268, 0.139173, -0.139173, 0.990268, 0.00002, -0.000057)"/>
+  <rect x="98.616" y="344.646" width="11.136" height="52.367" style="stroke: rgb(60, 255, 0); fill: rgb(0, 255, 7); transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(0.927184, -0.374607, 0.374607, 0.927184, 0.000158, 0.000025)"/>
+  <rect x="114.716" y="333.245" width="11.136" height="52.367" style="stroke: rgb(60, 255, 0); fill: rgb(0, 255, 7);"/>
+  <rect x="130.12" y="345.015" width="11.136" height="52.367" style="stroke: rgb(60, 255, 0); fill: rgb(0, 255, 7); transform-box: fill-box; transform-origin: 50% 50%;" transform="matrix(0.939693, 0.34202, -0.34202, 0.939693, 0.000108, 0.000111)"/>
+</svg>
