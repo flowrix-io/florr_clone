@@ -172,6 +172,65 @@
         null,
         null
       ]
+    },
+    "ebrlykqz6": {
+      "level": 1,
+      "xp": 3,
+      "maxHealth": 100,
+      "damage": 5,
+      "inventory": {
+        "common": {
+          "petal_basic": 5,
+          "petal_stinger": 1
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "common",
+          "maxHealth": 10,
+          "health": 10,
+          "onCooldown": false
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
     }
   },
   "users": {
@@ -184,6 +243,11 @@
       "id": "1g99g1gfk",
       "username": "dev",
       "password": "$2b$12$Xs7mqEPcCz8DP47/3KI38.VqcIsdZh/I3KpcjVJkr8ldwj4SdDu8S"
+    },
+    "User06617766": {
+      "id": "ebrlykqz6",
+      "username": "User06617766",
+      "password": "$2b$12$y6mBNBi873G7GRqGk7AJI.vKGect1m0qdMHizhcK12LgbsHKjXNoy"
     }
   }
 }

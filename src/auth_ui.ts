@@ -10,6 +10,7 @@ export class AuthUI {
     private registerForm: HTMLElement;
     private loginButton: HTMLElement;
     private registerButton: HTMLElement;
+    private guestButton: HTMLElement;
     private showRegisterLink: HTMLElement;
     private showLoginLink: HTMLElement;
     private serverUrl: string;
@@ -33,6 +34,7 @@ export class AuthUI {
         
         // Login elements
         this.loginButton = document.getElementById('loginButton')!;
+        this.guestButton = document.getElementById('guestButton')!;
         this.loginUsername = document.getElementById('loginUsername') as HTMLInputElement;
         this.loginPassword = document.getElementById('loginPassword') as HTMLInputElement;
         
@@ -55,6 +57,7 @@ export class AuthUI {
 
         // Bind event listeners
         this.loginButton.addEventListener('click', () => this.handleLogin());
+        this.guestButton.addEventListener('click', () => this.handleGuestLogin());
         this.registerButton.addEventListener('click', () => this.handleRegister());
         this.registerOfflineButton.addEventListener('click', () => this.handleOfflineRegister());
         this.showRegisterLink.addEventListener('click', () => this.toggleForms());
@@ -141,6 +144,67 @@ export class AuthUI {
             } else {
                 alert('Invalid username or password');
             }
+        }
+    }
+
+    private generateRandomDigits(length: number): string {
+        let result = '';
+        for (let i = 0; i < length; i++) {
+            result += Math.floor(Math.random() * 10);
+        }
+        return result;
+    }
+
+    private async handleGuestLogin() {
+        // Generate random guest credentials
+        const guestUsername = `User${this.generateRandomDigits(8)}`;
+        const guestPassword = `password${this.generateRandomDigits(10)}`;
+        
+        const serverUrl = this.serverIPInput.value || this.serverUrl;
+
+        try {
+            // Try server registration first
+            const response = await fetch(`${serverUrl}/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username: guestUsername, password: guestPassword }),
+                credentials: 'include'
+            });
+
+            if (response.ok) {
+                // Store credentials locally
+                localStorage.setItem('username', guestUsername);
+                localStorage.setItem('password', guestPassword);
+                localStorage.setItem('currentUser', guestUsername);
+                localStorage.setItem('serverUrl', serverUrl);
+                sessionStorage.removeItem('isOffline');
+                this.hideAuthForm();
+                alert(`Guest account created!\nUsername: ${guestUsername}\nPassword: ${guestPassword}\n\nSave these credentials if you want to log in again!`);
+            } else {
+                const errorData = await response.json();
+                // If username collision, try again
+                if (errorData.message && errorData.message.includes('already exists')) {
+                    this.handleGuestLogin(); // Retry with new random credentials
+                } else {
+                    alert('Failed to create guest account: ' + (errorData.message || 'Unknown error'));
+                }
+            }
+        } catch (error) {
+            console.error('Guest registration error:', error);
+            // Fallback to offline registration
+            const offlineCredentials = {
+                username: guestUsername,
+                password: guestPassword,
+                isOffline: true
+            };
+            
+            sessionStorage.setItem('offlineCredentials', JSON.stringify(offlineCredentials));
+            sessionStorage.setItem('currentUser', guestUsername);
+            sessionStorage.setItem('isOffline', 'true');
+            this.hideAuthForm();
+            alert(`Guest account created (Offline Mode)!\nUsername: ${guestUsername}\nPassword: ${guestPassword}\n\nNote: This account is temporary and will be lost when you close the browser.`);
         }
     }
 

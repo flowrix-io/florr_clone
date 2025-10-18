@@ -221,6 +221,7 @@ export class TitleScreen {
                 </div>
             </div>
             <button id="loginButton">Login</button>
+            <button id="guestButton" style="background-color: #6c757d;">Play As Guest</button>
             <p class="form-switch" id="showRegister">Need an account? Register</p>
         `;
 
