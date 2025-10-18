@@ -21,8 +21,7 @@
     "bcryptjs": "^3.0.2",
     "better-sqlite3": "^11.5.0",
     "express": "^4.21.1",
-    "socket.io": "^4.8.0",
-    "sqlite3": "^5.1.7"
+    "socket.io": "^4.8.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
