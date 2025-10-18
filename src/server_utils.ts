@@ -26,6 +26,7 @@ export interface Enemy {
   lastWanderTime?: number;
   spawnTime?: number;  // Timestamp when enemy was spawned
   lastViewportCheck?: number;  // Last time this enemy was in any player's viewport
+  damageContributors?: Map<string, number>;  // Map of player ID to damage dealt
 }
 
 export interface Obstacle {

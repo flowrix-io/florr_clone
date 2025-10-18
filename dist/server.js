@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.trackDamage = trackDamage;
 exports.handleMobDrops = handleMobDrops;
 exports.updateSpecialMobCounts = updateSpecialMobCounts;
 exports.addXPToPlayer = addXPToPlayer;
@@ -40,10 +41,42 @@ const decorations = [];
 const sands = [];
 let ENEMY_COUNT = 1000;
 const playerUserIds = {}; // Maps player ID to user ID
+// Helper function to track damage dealt to an enemy
+function trackDamage(enemy, playerId, damage) {
+    if (!enemy.damageContributors) {
+        enemy.damageContributors = new Map();
+    }
+    const currentDamage = enemy.damageContributors.get(playerId) || 0;
+    enemy.damageContributors.set(playerId, currentDamage + damage);
+    // console.log(`[DAMAGE] Player ${playerId} dealt ${damage} to ${enemy.type} (${enemy.tier}) - total: ${currentDamage + damage}`);
+}
+// Helper function to get eligible players for a drop based on damage ranking
+function getEligiblePlayers(enemy) {
+    if (!enemy.damageContributors || enemy.damageContributors.size === 0) {
+        return [];
+    }
+    // Sort players by damage dealt (highest first)
+    const sortedPlayers = Array.from(enemy.damageContributors.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(entry => entry[0]);
+    // Determine placement requirement based on mob rarity
+    const isUltraOrAbove = ['ultra', 'super', 'unique'].includes(enemy.tier);
+    const placementRequirement = isUltraOrAbove ? 15 : 4;
+    // Return top N players who qualify
+    return sortedPlayers.slice(0, placementRequirement);
+}
 // Function to handle mob drops when a mob dies
 function handleMobDrops(enemy) {
     const mobType = enemy.type || 'bee'; // Default to bee if type is not set
     const drops = (0, mobs_1.calculateMobDrops)(mobType, enemy.tier);
+    // Get list of eligible players based on damage ranking
+    const eligiblePlayers = getEligiblePlayers(enemy);
+    // If no players dealt damage, don't drop anything
+    if (eligiblePlayers.length === 0) {
+        console.log(`[DROP] Mob ${enemy.type} (${enemy.tier}) died with no damage contributors - no drops`);
+        return;
+    }
+    console.log(`[DROP] Mob ${enemy.type} (${enemy.tier}) drops for ${eligiblePlayers.length} eligible players`);
     for (const drop of drops) {
         // Determine quantity
         const quantity = 1; // Simplified to always drop 1 item
@@ -57,10 +90,15 @@ function handleMobDrops(enemy) {
                 x: enemy.x + offsetX,
                 y: enemy.y + offsetY,
                 rarity: drop.rarity,
-                petalType: drop.type === 'petal' ? drop.itemType : undefined
+                petalType: drop.type === 'petal' ? drop.itemType : undefined,
+                eligiblePlayers: eligiblePlayers,
+                pickedUpBy: new Set()
             };
             items.push(newItem);
-            io.emit('itemSpawned', newItem);
+            // Only send itemSpawned event to eligible players
+            for (const playerId of eligiblePlayers) {
+                io.to(playerId).emit('itemSpawned', newItem);
+            }
         }
     }
 }
@@ -994,7 +1032,21 @@ io.on('connection', (socket) => {
             socket.emit('currentPlayers', constants_2.players);
             socket.emit('enemiesUpdate', constants_2.enemies);
             socket.emit('obstaclesUpdate', constants_2.obstacles);
-            socket.emit('itemsUpdate', items);
+            // Filter items to only send ones this player is eligible for and hasn't picked up yet
+            const eligibleItems = items.filter(item => {
+                // If item has eligibility list, check if this player is eligible
+                if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+                    if (!item.eligiblePlayers.includes(socket.id)) {
+                        return false; // Not eligible
+                    }
+                }
+                // Check if this player has already picked up this item
+                if (item.pickedUpBy && item.pickedUpBy.has(socket.id)) {
+                    return false; // Already picked up
+                }
+                return true;
+            });
+            socket.emit('itemsUpdate', eligibleItems);
             socket.emit('decorationsUpdate', decorations);
             socket.emit('sandsUpdate', sands);
             // Notify other players
@@ -1637,6 +1689,8 @@ function updatePlayerState(player, deltaTime) {
                     knockbackX: knockbackX,
                     knockbackY: knockbackY
                 });
+                // Track damage dealt by this player
+                trackDamage(enemy, player.id, player.damage);
                 enemy.health -= player.damage;
                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
                 if (enemy.health <= 0) {
@@ -1750,6 +1804,8 @@ function updatePlayerState(player, deltaTime) {
                     // Petal hits enemy - deal damage to both
                     const damageMultiplier = (0, petal_actions_1.getDamageMultiplier)(player);
                     const finalDamage = petalStats.damage * damageMultiplier;
+                    // Track damage dealt by this player
+                    trackDamage(enemy, player.id, finalDamage);
                     enemy.health -= finalDamage;
                     petal.health -= mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
                     // Apply knockback to enemy
@@ -1890,19 +1946,45 @@ function updatePlayerState(player, deltaTime) {
         const item = items[i];
         const distance = Math.sqrt((newX - item.x) ** 2 + (newY - item.y) ** 2);
         if (distance < constants_2.PLAYER_SIZE) {
-            // Add item to player's inventory instead of immediately activating it
+            // Check if player has already picked up this item
+            if (item.pickedUpBy && item.pickedUpBy.has(player.id)) {
+                continue; // Skip if already picked up by this player
+            }
+            // Check if player is eligible to pick up this item
+            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+                if (!item.eligiblePlayers.includes(player.id)) {
+                    // Player is not eligible - skip this item
+                    continue;
+                }
+            }
+            // Add item to player's inventory
             const rarity = item.rarity || 'common';
             const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
             addItem(player.inventory, rarity, itemKey, 1);
-            // Remove item from world
-            items.splice(i, 1);
+            // Mark as picked up by this player (don't remove from world)
+            if (!item.pickedUpBy) {
+                item.pickedUpBy = new Set();
+            }
+            item.pickedUpBy.add(player.id);
             // Emit events to update client
-            io.emit('itemPickedUp', item.id);
+            // Only send itemPickedUp to the player who picked it up, not to everyone
+            io.to(player.id).emit('itemPickedUp', item.id);
             io.to(player.id).emit('inventoryUpdated', player.inventory);
             // Save player progress to persist inventory changes
             const userId = playerUserIds[player.id];
             if (userId) {
                 savePlayerProgress(player, userId);
+            }
+            // Remove item from world if all eligible players have picked it up
+            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+                const allPickedUp = item.eligiblePlayers.every(playerId => item.pickedUpBy && item.pickedUpBy.has(playerId));
+                if (allPickedUp) {
+                    items.splice(i, 1);
+                    // Notify only eligible players that the item is gone
+                    for (const playerId of item.eligiblePlayers) {
+                        io.to(playerId).emit('itemRemoved', item.id);
+                    }
+                }
             }
         }
     }

@@ -148,6 +148,11 @@ function explodePetal(x, y, petalSize, damage, enemies, io, player) {
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
         if (distance <= explosionRadius) {
             // console.log(`[EXPLOSION] Enemy ${enemy.id} hit! Distance: ${distance}, Damage: ${damage}`);
+            // Track damage if player is provided
+            if (player) {
+                const { trackDamage } = require('./server');
+                trackDamage(enemy, player.id, damage);
+            }
             enemy.health -= damage;
             // Apply knockback
             const knockbackForce = 10;

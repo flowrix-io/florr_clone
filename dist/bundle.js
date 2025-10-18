@@ -8592,7 +8592,13 @@ function setupSocketListeners(game) {
         }
     });
     game.socket.on('itemPickedUp', (itemId) => {
-        console.log('Item picked up:', itemId);
+        console.log('Item picked up by me:', itemId);
+        // Don't remove the item visually - it stays for other players to pick up
+        // The item will only be removed when itemRemoved event is received
+    });
+    game.socket.on('itemRemoved', (itemId) => {
+        console.log('Item removed from world:', itemId);
+        // Remove the item from the game when all eligible players have picked it up
         game.items.delete(itemId);
     });
     game.socket.on('petalBroken', (data) => {
