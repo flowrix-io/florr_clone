@@ -706,26 +706,6 @@ exports.WORLD_MAP = [
     },
     {
         "type": "spawn",
-        "x": 12558.28125,
-        "y": 10190,
-        "width": 5100,
-        "height": 4540,
-        "properties": {
-            "spawnType": "rare"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 15518.28125,
-        "y": 15120,
-        "width": 3800,
-        "height": 3930,
-        "properties": {
-            "spawnType": "epic"
-        }
-    },
-    {
-        "type": "spawn",
         "x": 5088.28125,
         "y": 19000,
         "width": 1300,
@@ -1030,13 +1010,214 @@ exports.WORLD_MAP = [
     },
     {
         "type": "biome",
-        "x": 10958.28125,
-        "y": 15060,
-        "width": 3860,
-        "height": 4680,
+        "x": 17378.28125,
+        "y": 320,
+        "width": 2330,
+        "height": 2830,
         "properties": {
             "biomeName": "desert",
             "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 5,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 17388.28125,
+        "y": 3330,
+        "width": 2300,
+        "height": 3290,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 5,
+                    "mobType": "dark_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 4738.28125,
+        "y": 14250,
+        "width": 1290,
+        "height": 1000,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "background.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "fish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6058.28125,
+        "y": 14980,
+        "width": 1480,
+        "height": 290,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "background.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "fish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 4748.28125,
+        "y": 15640,
+        "width": 2280,
+        "height": 950,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "background.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "fish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 14558.28125,
+        "y": 5070,
+        "width": 1420,
+        "height": 1530,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 16018.28125,
+        "y": 5800,
+        "width": 560,
+        "height": 2070,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 16648.28125,
+        "y": 6010,
+        "width": 740,
+        "height": 1920,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12478.28125,
+        "y": 9780,
+        "width": 7240,
+        "height": 5100,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 10788.28125,
+        "y": 14980,
+        "width": 2730,
+        "height": 2310,
+        "properties": {
+            "biomeName": "swamp",
+            "backgroundTexture": "background.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 16138.28125,
+        "y": 17100,
+        "width": 3630,
+        "height": 2740,
+        "properties": {
+            "biomeName": "swamp",
+            "backgroundTexture": "background.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 19768.28125,
+        "y": 19840,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "swamp",
+            "backgroundTexture": "background.svg",
             "spawnTable": [
                 {
                     "tier": "common",

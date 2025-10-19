@@ -436,7 +436,8 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 
 </svg>`,
         is_hostile: true,
-        range: 300
+        range: 300,
+        biomeOnly: true
     },
     shiny_ladybug: {
         name: "Shiny Ladybug",
@@ -470,7 +471,8 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 
 </svg>`,
         is_hostile: true,
-        range: 200
+        range: 200,
+        biomeOnly: true
     },
     dark_ladybug: {
         name: "Dark Ladybug",
