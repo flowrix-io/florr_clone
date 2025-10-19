@@ -801,80 +801,7 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.5,
                 minQuantity: 1,
                 maxQuantity: 1
-            },
-            // Yggdrasil petal drops (rare)
-            {
-                type: 'petal',
-                itemType: 'yggdrasil',
-                rarity: 'common',
-                probability: 0.05, // 5% chance for common yggdrasil
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'yggdrasil',
-                rarity: 'uncommon',
-                probability: 0.002, // 0.2% chance for uncommon yggdrasil
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'yggdrasil',
-                rarity: 'rare',
-                probability: 0.002, // 0.2% chance for rare yggdrasil
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'yggdrasil',
-                rarity: 'epic',
-                probability: 0.001, // 0.1% chance for epic yggdrasil
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'yggdrasil',
-                rarity: 'legendary',
-                probability: 0.0005, // 0.05% chance for legendary yggdrasil
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'yggdrasil',
-                rarity: 'mythic',
-                probability: 0.0002, // 0.02% chance for mythic yggdrasil
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'yggdrasil',
-                rarity: 'ultra',
-                probability: 0.0001, // 0.01% chance for ultra yggdrasil
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'yggdrasil',
-                rarity: 'super',
-                probability: 0.00005, // 0.005% chance for super yggdrasil
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'yggdrasil',
-                rarity: 'unique',
-                probability: 0.00001, // 0.001% chance for unique yggdrasil
-                minQuantity: 1,
-                maxQuantity: 1
-            },
+            }
         ]
     },
     soldier_ant: {
@@ -935,14 +862,6 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.4, // 40% chance for rock
                 minQuantity: 1,
                 maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'sand',
-                rarity: 'common',
-                probability: 0.6, // 60% chance for sand (higher since it's a rock mob)
-                minQuantity: 1,
-                maxQuantity: 3
             }
         ]
     },
@@ -965,9 +884,25 @@ exports.MOB_DROP_TABLES = {
         drops: [
             {
                 type: 'petal',
-                itemType: 'rock',
+                itemType: 'bone',
                 rarity: 'common',
-                probability: 0.4, // 40% chance for rock
+                probability: 0.4, // 40% chance for bone
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'bone',
+                rarity: 'uncommon',
+                probability: 0.2, // 20% chance for bone
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'consumable',
+                itemType: 'speed_boost',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for speed boost
                 minQuantity: 1,
                 maxQuantity: 1
             }
@@ -991,6 +926,22 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.2, // 20% chance for rose
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'consumable',
+                itemType: 'health_potion',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for health potion
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'light',
+                rarity: 'common',
+                probability: 0.5, // 50% chance for light
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
@@ -1002,6 +953,22 @@ exports.MOB_DROP_TABLES = {
                 itemType: 'rose',
                 rarity: 'common',
                 probability: 0.4, // 40% chance for rose
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'bone',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for bone
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'consumable',
+                itemType: 'shield',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for shield
                 minQuantity: 1,
                 maxQuantity: 1
             }
