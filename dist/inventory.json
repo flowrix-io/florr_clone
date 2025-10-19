@@ -1,10 +1,10 @@
 {
   "players": {
     "ocu977p98": {
-      "level": 36,
-      "xp": 216443,
-      "maxHealth": 450,
-      "damage": 75,
+      "level": 37,
+      "xp": 11781,
+      "maxHealth": 460,
+      "damage": 77,
       "inventory": {
         "common": {
           "petal_basic": 32,
@@ -31,7 +31,7 @@
           "health_potion": 1000,
           "petal_healing": 1000,
           "petal_explosive": 1000,
-          "petal_test_explosive": 998,
+          "petal_test_explosive": 999,
           "petal_shield": 999
         },
         "mythic": {
@@ -94,13 +94,7 @@
         }
       },
       "loadout": [
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "test_explosive",
-          "health": 65610,
-          "maxHealth": 65610
-        },
+        null,
         null,
         null,
         null,

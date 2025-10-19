@@ -2,6 +2,35 @@
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ({
 
+/***/ 354:
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   GAME_ICONS_NET_ICONS: () => (/* binding */ GAME_ICONS_NET_ICONS)
+/* harmony export */ });
+const GAME_ICONS_NET_ICONS = [
+    {
+        name: 'settings',
+        value: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="height: 512px; width: 512px;"><g class="" transform="translate(0,0)" style=""><path d="M234.875 18.78c-26.087 2.367-51.557 8.56-74.875 18.782 15.37 32.763 14.222 66.706-6.72 82.407-20.835 15.617-54.055 7.965-81.124-15.69-16.246 19.452-29.336 41.36-38.875 65.626 33.83 12.333 56.635 37.665 52.94 63.5-3.698 25.835-32.697 43.74-68.626 46.094 2.338 25.796 8.91 50.778 18.937 73.875 17.81-8.182 35.793-11.09 51.095-8.938 13.032 1.87 23.927 7.015 31.156 16.657 15.817 21.097 7.603 54.713-16.78 81.97 19.516 16.35 42.216 29.444 66.594 39.03 12.33-33.828 37.655-56.634 63.5-52.938 25.844 3.697 43.74 32.696 46.094 68.625 26.087-2.365 51.557-8.555 74.875-18.78-15.766-32.997-14.26-67.588 6.843-83.406 9.64-7.23 22.568-9.022 35.594-7.125 15.112 2.16 31.19 10.25 45.563 22.78 16.088-19.345 29.4-41.51 38.875-65.594-33.83-12.332-56.635-37.653-52.938-63.5 3.697-25.846 32.665-43.772 68.594-46.125-2.36-25.944-8.774-50.663-18.906-73.874-32.612 15.117-66.66 13.145-82.282-7.687-15.696-20.944-7.252-53.86 16.688-81-19.52-16.352-42.248-29.447-66.625-39.032-12.332 33.828-37.657 56.66-63.5 52.968-25.846-3.693-43.744-32.696-46.095-68.625zm21.656 95.126c79.626 0 144.376 64.752 144.376 144.375 0 79.626-64.75 144.376-144.375 144.376-79.624 0-144.374-64.75-144.374-144.375 0-79.624 64.75-144.374 144.375-144.374zm0 18.688c-69.524 0-125.686 56.162-125.686 125.687 0 69.526 56.162 125.69 125.687 125.69 69.526 0 125.69-56.164 125.69-125.69 0-69.522-56.164-125.686-125.69-125.686zm.033 15.125c61.094 0 110.625 49.53 110.625 110.624 0 61.095-49.53 110.625-110.625 110.625s-110.625-49.53-110.625-110.626c0-61.095 49.53-110.625 110.625-110.625z" fill="#fff" fill-opacity="1"></path></g></svg>'
+    },
+    {
+        name: 'inventory',
+        value: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="height: 512px; width: 512px;"><g class="" transform="translate(0,0)" style=""><path d="M256 18.365 50.14 136 256 253.635 461.86 136 256 18.365zm-154 168L50.14 216 256 333.635 461.86 216 410 186.365l-154 88-154-88zm0 80L50.14 296 256 413.635 461.86 296 410 266.365l-154 88-154-88zm0 80L50.14 376 256 493.635 461.86 376 410 346.365l-154 88-154-88z" fill="#fff" fill-opacity="1"></path></g></svg>'
+    },
+    {
+        name: 'exit_button',
+        value: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="height: 512px; width: 512px;"><g class="" transform="translate(0,0)" style=""><path d="M256 16C123.45 16 16 123.45 16 256s107.45 240 240 240 240-107.45 240-240S388.55 16 256 16zm0 60c99.41 0 180 80.59 180 180s-80.59 180-180 180S76 355.41 76 256 156.59 76 256 76zm-80.625 60c-.97-.005-2.006.112-3.063.313v-.032c-18.297 3.436-45.264 34.743-33.375 46.626l73.157 73.125-73.156 73.126c-14.63 14.625 29.275 58.534 43.906 43.906L256 299.906l73.156 73.156c14.63 14.628 58.537-29.28 43.906-43.906l-73.156-73.125 73.156-73.124c14.63-14.625-29.275-58.5-43.906-43.875L256 212.157l-73.156-73.125c-2.06-2.046-4.56-3.015-7.47-3.03z" fill="#fff" fill-opacity="1"></path></g></svg>'
+    },
+    {
+        name: 'craft',
+        value: '<svg version="1.1" id="Uploaded to svgrepo.com" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512px" height="512px" style="font-size: 0.9em" viewBox="0 0 32 32" xml:space="preserve"><path d="M22,28.744V30c0,0.55-0.45,1-1,1H11c-0.55,0-1-0.45-1-1v-1.256C4.704,26.428,1,21.149,1,15 c0-0.552,0.448-1,1-1h28c0.552,0,1,0.448,1,1C31,21.149,27.296,26.428,22,28.744z M29,12c0-3.756-2.961-6.812-6.675-6.984 C21.204,2.645,18.797,1,16,1s-5.204,1.645-6.325,4.016C5.961,5.188,3,8.244,3,12v1h26V12z"></path></svg>'
+    }
+];
+
+
+/***/ }),
+
 /***/ 375:
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
@@ -12296,7 +12325,7 @@ class TitleScreen {
             <button id="registerOfflineButton">Register Offline</button>
             <p class="form-switch" id="showLogin">Already have an account? Login</p>
         `;
-        // Create game menu
+        // Create game menu (keeping for future buttons if needed)
         this.gameMenu = this.createElement('div', '');
         this.gameMenu.id = 'gameMenu';
         this.gameMenu.style.cssText = `
@@ -12306,7 +12335,7 @@ class TitleScreen {
             transform: translateX(-50%);
             z-index: 3000;
             text-align: center;
-            display: flex;
+            display: none;
             gap: 10px;
             padding: 15px;
             border-radius: 10px;
@@ -12314,8 +12343,7 @@ class TitleScreen {
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
         `;
         this.gameMenu.innerHTML = `
-            <!-- <button id="multiPlayerButton" class="buttons">Start Game</button> -->
-            <button id="settingsButton" class="buttons">Settings</button>
+            <!-- Settings button moved to exit button container -->
         `;
         // Create center text
         this.centerText = this.createElement('div', 'center_text');
@@ -12403,7 +12431,7 @@ class TitleScreen {
                 </div>
             </div>
         `;
-        // Create exit button container
+        // Create exit button container (now contains settings and exit buttons)
         this.exitButtonContainer = this.createElement('div', '');
         this.exitButtonContainer.id = 'exitButtonContainer';
         this.exitButtonContainer.style.cssText = `
@@ -12411,11 +12439,56 @@ class TitleScreen {
             top: 20px;
             left: 20px;
             z-index: 3000;
-            display: none;
+            display: flex;
+            gap: 10px;
         `;
+        // Import game icons
+        const { GAME_ICONS_NET_ICONS } = __webpack_require__(354);
+        const settingsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'settings')?.value || '';
+        const exitIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'exit_button')?.value || '';
+        // Update the SVG to be 32x32
+        const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
-            <img id="exitButton" src="./assets/exit.png" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px;" alt="Exit">
+            <div id="settingsButton" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center;" title="Settings">
+                ${formattedSettingsIcon}
+            </div>
+            <div id="exitButton" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center;" title="Exit to Menu">
+                ${formattedExitIcon}
+            </div>
         `;
+        // Create bottom left buttons container (craft and inventory)
+        const bottomLeftButtons = this.createElement('div', '');
+        bottomLeftButtons.id = 'bottomLeftButtons';
+        bottomLeftButtons.style.cssText = `
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 3000;
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        `;
+        const craftIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'craft')?.value || '';
+        const inventoryIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'inventory')?.value || '';
+        // Update SVGs to be 32x32 - craft icon has different attributes than inventory
+        const formattedCraftIcon = craftIcon
+            .replace('width="512px"', 'width="32"')
+            .replace('height="512px"', 'height="32"')
+            .replace('fill="#000"', 'fill="#fff"'); // Ensure white fill
+        const formattedInventoryIcon = inventoryIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        console.log('Craft icon HTML:', formattedCraftIcon.substring(0, 100));
+        console.log('Inventory icon HTML:', formattedInventoryIcon.substring(0, 100));
+        // With column-reverse, inventory first (displays at bottom), craft second (displays at top)
+        bottomLeftButtons.innerHTML = `
+            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Inventory (I)">
+                ${formattedInventoryIcon}
+            </div>
+            <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Craft (R)">
+                ${formattedCraftIcon}
+            </div>
+        `;
+        document.body.appendChild(bottomLeftButtons);
         // Create death screen
         this.deathScreen = this.createElement('div', 'hidden');
         this.deathScreen.id = 'deathScreen';
@@ -12475,21 +12548,60 @@ class TitleScreen {
         return element;
     }
     setupEventListeners() {
-        // Exit button event listener
+        // Settings button event listener (now in exitButtonContainer)
+        const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
-        if (exitButton) {
-            exitButton.addEventListener('click', () => {
-                window.location.reload();
-            });
-        }
-        // Settings menu event listeners
-        const settingsButton = this.gameMenu.querySelector('#settingsButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
         if (settingsButton) {
             settingsButton.addEventListener('click', () => {
                 this.settingsMenu.classList.remove('hidden');
             });
         }
+        if (exitButton) {
+            exitButton.addEventListener('click', () => {
+                window.location.reload();
+            });
+        }
+        // Craft and Inventory button event listeners
+        // Using setTimeout to ensure these run after the DOM is fully ready
+        setTimeout(() => {
+            const craftButtonIcon = document.getElementById('craftButtonIcon');
+            const inventoryButtonIcon = document.getElementById('inventoryButtonIcon');
+            if (craftButtonIcon) {
+                // Remove any existing listeners by cloning
+                const newCraftButton = craftButtonIcon.cloneNode(true);
+                craftButtonIcon.parentNode?.replaceChild(newCraftButton, craftButtonIcon);
+                newCraftButton.addEventListener('click', (e) => {
+                    console.log('Craft button clicked');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Get the controls from localStorage or use default
+                    const savedControls = localStorage.getItem('controls');
+                    const controls = savedControls ? JSON.parse(savedControls) : { crafting: 'r' };
+                    const event = new KeyboardEvent('keydown', { key: controls.crafting || 'r' });
+                    document.dispatchEvent(event);
+                    return false;
+                }, true);
+            }
+            if (inventoryButtonIcon) {
+                // Remove any existing listeners by cloning
+                const newInventoryButton = inventoryButtonIcon.cloneNode(true);
+                inventoryButtonIcon.parentNode?.replaceChild(newInventoryButton, inventoryButtonIcon);
+                newInventoryButton.addEventListener('click', (e) => {
+                    console.log('Inventory button clicked');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Get the controls from localStorage or use default
+                    const savedControls = localStorage.getItem('controls');
+                    const controls = savedControls ? JSON.parse(savedControls) : { inventory: 'i' };
+                    const event = new KeyboardEvent('keydown', { key: controls.inventory || 'i' });
+                    document.dispatchEvent(event);
+                    return false;
+                }, true);
+            }
+        }, 100);
         if (closeSettingsButton) {
             closeSettingsButton.addEventListener('click', () => {
                 this.settingsMenu.classList.add('hidden');
@@ -12882,10 +12994,30 @@ class TitleScreen {
         this.startBackgroundAnimation();
     }
     showExitButton() {
-        this.exitButtonContainer.style.display = 'block';
+        this.exitButtonContainer.style.display = 'flex';
+        // Show the exit button when in game
+        const exitButton = this.exitButtonContainer.querySelector('#exitButton');
+        if (exitButton) {
+            exitButton.style.display = 'flex';
+        }
+        // Also show bottom left buttons
+        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
+        if (bottomLeftButtons) {
+            bottomLeftButtons.style.display = 'flex';
+        }
     }
     hideExitButton() {
-        this.exitButtonContainer.style.display = 'none';
+        // Don't hide the container completely, just hide the exit button
+        // Keep settings button visible on title screen
+        const exitButton = this.exitButtonContainer.querySelector('#exitButton');
+        if (exitButton) {
+            exitButton.style.display = 'none';
+        }
+        // Also hide bottom left buttons
+        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
+        if (bottomLeftButtons) {
+            bottomLeftButtons.style.display = 'none';
+        }
     }
     showDeathScreen(killedBy) {
         this.deathScreen.classList.remove('hidden');
@@ -12950,7 +13082,7 @@ class TitleScreen {
         return this.centerText.querySelector('#multiPlayerButton');
     }
     getSettingsButton() {
-        return this.gameMenu.querySelector('#settingsButton');
+        return this.exitButtonContainer.querySelector('#settingsButton');
     }
     getShowHitboxes() {
         const checkbox = this.settingsMenu.querySelector('#showHitboxesCheckbox');

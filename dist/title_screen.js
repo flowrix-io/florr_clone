@@ -207,7 +207,7 @@ class TitleScreen {
             <button id="registerOfflineButton">Register Offline</button>
             <p class="form-switch" id="showLogin">Already have an account? Login</p>
         `;
-        // Create game menu
+        // Create game menu (keeping for future buttons if needed)
         this.gameMenu = this.createElement('div', '');
         this.gameMenu.id = 'gameMenu';
         this.gameMenu.style.cssText = `
@@ -217,7 +217,7 @@ class TitleScreen {
             transform: translateX(-50%);
             z-index: 3000;
             text-align: center;
-            display: flex;
+            display: none;
             gap: 10px;
             padding: 15px;
             border-radius: 10px;
@@ -225,8 +225,7 @@ class TitleScreen {
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
         `;
         this.gameMenu.innerHTML = `
-            <!-- <button id="multiPlayerButton" class="buttons">Start Game</button> -->
-            <button id="settingsButton" class="buttons">Settings</button>
+            <!-- Settings button moved to exit button container -->
         `;
         // Create center text
         this.centerText = this.createElement('div', 'center_text');
@@ -314,7 +313,7 @@ class TitleScreen {
                 </div>
             </div>
         `;
-        // Create exit button container
+        // Create exit button container (now contains settings and exit buttons)
         this.exitButtonContainer = this.createElement('div', '');
         this.exitButtonContainer.id = 'exitButtonContainer';
         this.exitButtonContainer.style.cssText = `
@@ -322,11 +321,56 @@ class TitleScreen {
             top: 20px;
             left: 20px;
             z-index: 3000;
-            display: none;
+            display: flex;
+            gap: 10px;
         `;
+        // Import game icons
+        const { GAME_ICONS_NET_ICONS } = require('./game-icons-net-icons');
+        const settingsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'settings')?.value || '';
+        const exitIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'exit_button')?.value || '';
+        // Update the SVG to be 32x32
+        const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
-            <img id="exitButton" src="./assets/exit.png" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px;" alt="Exit">
+            <div id="settingsButton" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center;" title="Settings">
+                ${formattedSettingsIcon}
+            </div>
+            <div id="exitButton" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center;" title="Exit to Menu">
+                ${formattedExitIcon}
+            </div>
         `;
+        // Create bottom left buttons container (craft and inventory)
+        const bottomLeftButtons = this.createElement('div', '');
+        bottomLeftButtons.id = 'bottomLeftButtons';
+        bottomLeftButtons.style.cssText = `
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 3000;
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        `;
+        const craftIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'craft')?.value || '';
+        const inventoryIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'inventory')?.value || '';
+        // Update SVGs to be 32x32 - craft icon has different attributes than inventory
+        const formattedCraftIcon = craftIcon
+            .replace('width="512px"', 'width="32"')
+            .replace('height="512px"', 'height="32"')
+            .replace('fill="#000"', 'fill="#fff"'); // Ensure white fill
+        const formattedInventoryIcon = inventoryIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        console.log('Craft icon HTML:', formattedCraftIcon.substring(0, 100));
+        console.log('Inventory icon HTML:', formattedInventoryIcon.substring(0, 100));
+        // With column-reverse, inventory first (displays at bottom), craft second (displays at top)
+        bottomLeftButtons.innerHTML = `
+            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Inventory (I)">
+                ${formattedInventoryIcon}
+            </div>
+            <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Craft (R)">
+                ${formattedCraftIcon}
+            </div>
+        `;
+        document.body.appendChild(bottomLeftButtons);
         // Create death screen
         this.deathScreen = this.createElement('div', 'hidden');
         this.deathScreen.id = 'deathScreen';
@@ -386,21 +430,60 @@ class TitleScreen {
         return element;
     }
     setupEventListeners() {
-        // Exit button event listener
+        // Settings button event listener (now in exitButtonContainer)
+        const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
-        if (exitButton) {
-            exitButton.addEventListener('click', () => {
-                window.location.reload();
-            });
-        }
-        // Settings menu event listeners
-        const settingsButton = this.gameMenu.querySelector('#settingsButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
         if (settingsButton) {
             settingsButton.addEventListener('click', () => {
                 this.settingsMenu.classList.remove('hidden');
             });
         }
+        if (exitButton) {
+            exitButton.addEventListener('click', () => {
+                window.location.reload();
+            });
+        }
+        // Craft and Inventory button event listeners
+        // Using setTimeout to ensure these run after the DOM is fully ready
+        setTimeout(() => {
+            const craftButtonIcon = document.getElementById('craftButtonIcon');
+            const inventoryButtonIcon = document.getElementById('inventoryButtonIcon');
+            if (craftButtonIcon) {
+                // Remove any existing listeners by cloning
+                const newCraftButton = craftButtonIcon.cloneNode(true);
+                craftButtonIcon.parentNode?.replaceChild(newCraftButton, craftButtonIcon);
+                newCraftButton.addEventListener('click', (e) => {
+                    console.log('Craft button clicked');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Get the controls from localStorage or use default
+                    const savedControls = localStorage.getItem('controls');
+                    const controls = savedControls ? JSON.parse(savedControls) : { crafting: 'r' };
+                    const event = new KeyboardEvent('keydown', { key: controls.crafting || 'r' });
+                    document.dispatchEvent(event);
+                    return false;
+                }, true);
+            }
+            if (inventoryButtonIcon) {
+                // Remove any existing listeners by cloning
+                const newInventoryButton = inventoryButtonIcon.cloneNode(true);
+                inventoryButtonIcon.parentNode?.replaceChild(newInventoryButton, inventoryButtonIcon);
+                newInventoryButton.addEventListener('click', (e) => {
+                    console.log('Inventory button clicked');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Get the controls from localStorage or use default
+                    const savedControls = localStorage.getItem('controls');
+                    const controls = savedControls ? JSON.parse(savedControls) : { inventory: 'i' };
+                    const event = new KeyboardEvent('keydown', { key: controls.inventory || 'i' });
+                    document.dispatchEvent(event);
+                    return false;
+                }, true);
+            }
+        }, 100);
         if (closeSettingsButton) {
             closeSettingsButton.addEventListener('click', () => {
                 this.settingsMenu.classList.add('hidden');
@@ -793,10 +876,30 @@ class TitleScreen {
         this.startBackgroundAnimation();
     }
     showExitButton() {
-        this.exitButtonContainer.style.display = 'block';
+        this.exitButtonContainer.style.display = 'flex';
+        // Show the exit button when in game
+        const exitButton = this.exitButtonContainer.querySelector('#exitButton');
+        if (exitButton) {
+            exitButton.style.display = 'flex';
+        }
+        // Also show bottom left buttons
+        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
+        if (bottomLeftButtons) {
+            bottomLeftButtons.style.display = 'flex';
+        }
     }
     hideExitButton() {
-        this.exitButtonContainer.style.display = 'none';
+        // Don't hide the container completely, just hide the exit button
+        // Keep settings button visible on title screen
+        const exitButton = this.exitButtonContainer.querySelector('#exitButton');
+        if (exitButton) {
+            exitButton.style.display = 'none';
+        }
+        // Also hide bottom left buttons
+        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
+        if (bottomLeftButtons) {
+            bottomLeftButtons.style.display = 'none';
+        }
     }
     showDeathScreen(killedBy) {
         this.deathScreen.classList.remove('hidden');
@@ -861,7 +964,7 @@ class TitleScreen {
         return this.centerText.querySelector('#multiPlayerButton');
     }
     getSettingsButton() {
-        return this.gameMenu.querySelector('#settingsButton');
+        return this.exitButtonContainer.querySelector('#settingsButton');
     }
     getShowHitboxes() {
         const checkbox = this.settingsMenu.querySelector('#showHitboxesCheckbox');
