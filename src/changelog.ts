@@ -1,3 +1,5 @@
+// This file should not be updated every time
+// It should only be updated when there are major changes
 export interface ChangelogEntry {
     date: string;
     changes: string[];
