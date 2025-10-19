@@ -172,12 +172,41 @@ Different mob types with different rarities:
 }
 ```
 
+## Biome-Only Mobs
+
+You can configure mobs to **only spawn in biomes** by setting the `biomeOnly` property:
+
+```typescript
+// In src/mobs.ts
+const BASE_MOB_CONFIGS = {
+    kraken: {
+        name: "Common Kraken",
+        // ... other properties
+        biomeOnly: true  // This mob ONLY spawns in biomes
+    }
+};
+```
+
+**Benefits**:
+- Create exclusive mobs for special biomes
+- Make certain mob types only appear in designated areas
+- Enhance exploration and biome uniqueness
+- Control mob distribution across the world
+
+**See**: `BIOME_ONLY_MOBS_GUIDE.md` for complete documentation on this feature.
+
 ## Technical Implementation
 
 ### Server-Side (src/server.ts)
 - `getBiomeAtPosition(x, y)` - Finds biome at position
 - `selectSpawnFromBiomeTable(spawnTable)` - Weighted random selection
 - `createEnemy()` - Modified to check for biomes and use their spawn tables
+- Filters out biome-only mobs when spawning in regular zones
+
+### Mob Configuration (src/mobs.ts)
+- `MobStats.biomeOnly` - Property indicating if mob is biome-only
+- `BaseMobConfig.biomeOnly` - Optional property for base mob configuration
+- Biome-only mobs are excluded from regular zone spawning
 
 ### Client-Side (src/graphics.ts)
 - `setBiomeTexture(biomeName, texture)` - Registers biome texture

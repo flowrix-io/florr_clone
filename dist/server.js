@@ -876,12 +876,22 @@ function createEnemy() {
             }
         }
         // Select mob type (fish, octopus, or shark)
+        // Filter out biome-only mobs when spawning outside biomes
         const allMobTypes = (0, mobs_1.getAllMobTypes)();
         if (allMobTypes.length === 0) {
             console.error("No mob types found in MOB_CONFIG.");
             return null;
         }
-        mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)];
+        // Filter to only allow non-biome-only mobs in regular spawn zones
+        const eligibleMobTypes = allMobTypes.filter(type => {
+            const stats = (0, mobs_1.getMobStats)(type, tier);
+            return stats && !stats.biomeOnly;
+        });
+        if (eligibleMobTypes.length === 0) {
+            // No eligible mobs for this tier outside biomes
+            return null;
+        }
+        mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
     }
     // Get mob stats from config
     const mobStats = (0, mobs_1.getMobStats)(mobType, tier);

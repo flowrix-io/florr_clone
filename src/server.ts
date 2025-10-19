@@ -1024,12 +1024,25 @@ function createEnemy(): Enemy {
         }
 
         // Select mob type (fish, octopus, or shark)
+        // Filter out biome-only mobs when spawning outside biomes
         const allMobTypes = getAllMobTypes();
         if (allMobTypes.length === 0) {
             console.error("No mob types found in MOB_CONFIG.");
             return null as any;
         }
-        mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
+        
+        // Filter to only allow non-biome-only mobs in regular spawn zones
+        const eligibleMobTypes = allMobTypes.filter(type => {
+            const stats = getMobStats(type, tier);
+            return stats && !stats.biomeOnly;
+        });
+        
+        if (eligibleMobTypes.length === 0) {
+            // No eligible mobs for this tier outside biomes
+            return null as any;
+        }
+        
+        mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
     }
 
     // Get mob stats from config
