@@ -1,0 +1,219 @@
+[
+  {
+    "type": "wall",
+    "x": 0,
+    "y": 0,
+    "width": 20000,
+    "height": 100,
+    "properties": {}
+  },
+  {
+    "type": "wall", 
+    "x": 0,
+    "y": 19900,
+    "width": 20000,
+    "height": 100,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 0,
+    "y": 0,
+    "width": 100,
+    "height": 20000,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 19900,
+    "y": 0,
+    "width": 100,
+    "height": 20000,
+    "properties": {}
+  },
+  {
+    "type": "biome",
+    "x": 2000,
+    "y": 2000,
+    "width": 3000,
+    "height": 3000,
+    "properties": {
+      "biomeName": "coral_reef",
+      "backgroundTexture": "coral.png",
+      "spawnTable": [
+        {
+          "mobType": "fish",
+          "tier": "common",
+          "weight": 10
+        },
+        {
+          "mobType": "fish",
+          "tier": "uncommon",
+          "weight": 7
+        },
+        {
+          "mobType": "fish",
+          "tier": "rare",
+          "weight": 3
+        }
+      ]
+    }
+  },
+  {
+    "type": "biome",
+    "x": 8000,
+    "y": 2000,
+    "width": 3500,
+    "height": 3500,
+    "properties": {
+      "biomeName": "deep_ocean",
+      "backgroundTexture": "land.svg",
+      "spawnTable": [
+        {
+          "mobType": "octopus",
+          "tier": "rare",
+          "weight": 5
+        },
+        {
+          "mobType": "octopus",
+          "tier": "epic",
+          "weight": 4
+        },
+        {
+          "mobType": "octopus",
+          "tier": "legendary",
+          "weight": 2
+        },
+        {
+          "tier": "mythic",
+          "weight": 1
+        }
+      ]
+    }
+  },
+  {
+    "type": "biome",
+    "x": 14000,
+    "y": 2000,
+    "width": 4000,
+    "height": 4000,
+    "properties": {
+      "biomeName": "mixed_zone",
+      "backgroundTexture": "land.svg",
+      "spawnTable": [
+        {
+          "tier": "uncommon",
+          "weight": 8
+        },
+        {
+          "tier": "rare",
+          "weight": 5
+        },
+        {
+          "tier": "epic",
+          "weight": 3
+        },
+        {
+          "tier": "legendary",
+          "weight": 1
+        }
+      ]
+    }
+  },
+  {
+    "type": "biome",
+    "x": 2000,
+    "y": 8000,
+    "width": 2500,
+    "height": 2500,
+    "properties": {
+      "biomeName": "peaceful_waters",
+      "backgroundTexture": "land.svg",
+      "spawnTable": [
+        {
+          "tier": "common",
+          "weight": 20
+        },
+        {
+          "tier": "uncommon",
+          "weight": 5
+        }
+      ]
+    }
+  },
+  {
+    "type": "biome",
+    "x": 8000,
+    "y": 8000,
+    "width": 3000,
+    "height": 3000,
+    "properties": {
+      "biomeName": "danger_zone",
+      "backgroundTexture": "land.svg",
+      "spawnTable": [
+        {
+          "tier": "epic",
+          "weight": 5
+        },
+        {
+          "tier": "legendary",
+          "weight": 4
+        },
+        {
+          "tier": "mythic",
+          "weight": 2
+        }
+      ]
+    }
+  },
+  {
+    "type": "biome",
+    "x": 14000,
+    "y": 8000,
+    "width": 3000,
+    "height": 3000,
+    "properties": {
+      "biomeName": "shark_territory",
+      "backgroundTexture": "land.svg",
+      "spawnTable": [
+        {
+          "mobType": "shark",
+          "tier": "rare",
+          "weight": 6
+        },
+        {
+          "mobType": "shark",
+          "tier": "epic",
+          "weight": 4
+        },
+        {
+          "mobType": "shark",
+          "tier": "legendary",
+          "weight": 2
+        }
+      ]
+    }
+  },
+  {
+    "type": "spawn",
+    "x": 1000,
+    "y": 14000,
+    "width": 2000,
+    "height": 2000,
+    "properties": {
+      "spawnType": "common"
+    }
+  },
+  {
+    "type": "safe_zone",
+    "x": 9000,
+    "y": 14000,
+    "width": 2000,
+    "height": 2000,
+    "properties": {
+      "isNoCombat": true,
+      "isSafeZone": true
+    }
+  }
+]
+

@@ -1690,6 +1690,23 @@ const WORLD_MAP = [
                 "serverPort": 3002
             }
         }
+    },
+    {
+        "type": "biome",
+        "x": 10958.28125,
+        "y": 15060,
+        "width": 3860,
+        "height": 4680,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1
+                }
+            ]
+        }
     }
 ];
 // Add map validation function
@@ -2603,11 +2620,13 @@ class Graphics {
         this.speedBoostSprite = new Image();
         this.shieldSprite = new Image();
         this.backgroundTexture = new Image();
+        this.biomeTextures = new Map(); // Store biome-specific background textures
         this.MAP_COLORS = {
             wall: 'rgba(102, 102, 102, 0.8)',
             spawn: 'rgba(76, 175, 80, 0.3)',
             teleporter: 'rgba(33, 150, 243, 0.5)',
-            safe_zone: 'rgba(255, 193, 7, 0.2)'
+            safe_zone: 'rgba(255, 193, 7, 0.2)',
+            biome: 'rgba(128, 64, 192, 0.0)' // Purple tint for biomes on minimap
         };
         this.ENEMY_COLORS = {
             common: '#7eef6d',
@@ -2688,6 +2707,22 @@ class Graphics {
                 }
             }
         }
+    }
+    // Method to set a biome texture
+    setBiomeTexture(biomeName, texture) {
+        this.biomeTextures.set(biomeName, texture);
+    }
+    // Method to get biome at a position
+    getBiomeAtPosition(x, y) {
+        for (const element of this.mapData) {
+            if (element.type === 'biome') {
+                if (x >= element.x && x <= element.x + element.width &&
+                    y >= element.y && y <= element.y + element.height) {
+                    return element;
+                }
+            }
+        }
+        return null;
     }
     clear() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -3414,25 +3449,42 @@ class Graphics {
             this.ctx.fillRect(this.cameraX, this.cameraY, this.canvas.width / this.zoomLevel, this.canvas.height / this.zoomLevel);
             return;
         }
-        // Get the size of the background texture (400x400 from the SVG)
-        const bgWidth = this.backgroundTexture.width;
-        const bgHeight = this.backgroundTexture.height;
         // Calculate the visible area in world coordinates
         const visibleWidth = this.canvas.width / this.zoomLevel;
         const visibleHeight = this.canvas.height / this.zoomLevel;
+        // Get the size of the background texture (400x400 from the SVG)
+        const defaultBgWidth = this.backgroundTexture.width;
+        const defaultBgHeight = this.backgroundTexture.height;
         // Calculate the starting position for tiling (offset by camera position)
-        // Use modulo to create seamless scrolling
-        const startX = Math.floor(this.cameraX / bgWidth) * bgWidth;
-        const startY = Math.floor(this.cameraY / bgHeight) * bgHeight;
+        const startX = Math.floor(this.cameraX / defaultBgWidth) * defaultBgWidth;
+        const startY = Math.floor(this.cameraY / defaultBgHeight) * defaultBgHeight;
         // Calculate how many tiles we need to draw
-        const tilesX = Math.ceil(visibleWidth / bgWidth) + 1;
-        const tilesY = Math.ceil(visibleHeight / bgHeight) + 1;
+        const tilesX = Math.ceil(visibleWidth / defaultBgWidth) + 1;
+        const tilesY = Math.ceil(visibleHeight / defaultBgHeight) + 1;
         // Draw the tiled background
         for (let i = 0; i <= tilesX; i++) {
             for (let j = 0; j <= tilesY; j++) {
-                const x = startX + (i * bgWidth);
-                const y = startY + (j * bgHeight);
-                this.ctx.drawImage(this.backgroundTexture, x, y, bgWidth, bgHeight);
+                const tileX = startX + (i * defaultBgWidth);
+                const tileY = startY + (j * defaultBgHeight);
+                // Check if this tile overlaps with any biome
+                const biome = this.getBiomeAtPosition(tileX + defaultBgWidth / 2, tileY + defaultBgHeight / 2);
+                if (biome && biome.properties?.biomeName && biome.properties?.backgroundTexture) {
+                    // Use biome-specific texture if available
+                    const biomeTexture = this.biomeTextures.get(biome.properties.biomeName);
+                    if (biomeTexture && biomeTexture.complete) {
+                        const biomeWidth = biomeTexture.width;
+                        const biomeHeight = biomeTexture.height;
+                        this.ctx.drawImage(biomeTexture, tileX, tileY, biomeWidth, biomeHeight);
+                    }
+                    else {
+                        // Fallback to default texture if biome texture not loaded
+                        this.ctx.drawImage(this.backgroundTexture, tileX, tileY, defaultBgWidth, defaultBgHeight);
+                    }
+                }
+                else {
+                    // Use default texture
+                    this.ctx.drawImage(this.backgroundTexture, tileX, tileY, defaultBgWidth, defaultBgHeight);
+                }
             }
         }
     }
@@ -10835,6 +10887,8 @@ class Game {
             this.world_map_data = mapData;
             this.graphics.setMap(mapData);
             this.renderMap(mapData);
+            // Load biome textures
+            this.loadBiomeTextures(mapData);
         });
         this.socket.on('zoneUpdate', (zones) => {
             // ... existing code ...
@@ -11565,6 +11619,62 @@ class Game {
             // Clear handlers to prevent any further errors
             this.backgroundTexture.onerror = null;
             this.backgroundTexture.onload = null;
+        }
+    }
+    // Method to load biome-specific background textures
+    async loadBiomeTextures(mapData) {
+        // Find all biomes in the map data
+        const biomes = mapData.filter(element => element.type === 'biome' && element.properties?.biomeName && element.properties?.backgroundTexture);
+        // Track which textures we've already loaded to avoid duplicates
+        const loadedTextures = new Set();
+        for (const biome of biomes) {
+            const biomeName = biome.properties.biomeName;
+            const textureFile = biome.properties.backgroundTexture;
+            // Skip if we've already loaded this texture
+            if (loadedTextures.has(biomeName)) {
+                continue;
+            }
+            loadedTextures.add(biomeName);
+            try {
+                // Load the texture file (could be SVG or image)
+                const response = await fetch(`./${textureFile}`);
+                if (!response.ok) {
+                    console.error(`Failed to fetch biome texture ${textureFile}: ${response.status}`);
+                    continue;
+                }
+                // Check if it's an SVG file
+                if (textureFile.endsWith('.svg')) {
+                    const svgText = await response.text();
+                    // Convert SVG to data URL (base64)
+                    const base64 = btoa(unescape(encodeURIComponent(svgText)));
+                    const dataUrl = `data:image/svg+xml;base64,${base64}`;
+                    // Create an image element for the biome texture
+                    const biomeTexture = new Image();
+                    biomeTexture.onload = () => {
+                        console.log(`Biome texture '${biomeName}' loaded successfully from ${textureFile}`);
+                        this.graphics.setBiomeTexture(biomeName, biomeTexture);
+                    };
+                    biomeTexture.onerror = (error) => {
+                        console.error(`Failed to load biome texture '${biomeName}' from ${textureFile}:`, error);
+                    };
+                    biomeTexture.src = dataUrl;
+                }
+                else {
+                    // For non-SVG images, load directly
+                    const biomeTexture = new Image();
+                    biomeTexture.onload = () => {
+                        console.log(`Biome texture '${biomeName}' loaded successfully from ${textureFile}`);
+                        this.graphics.setBiomeTexture(biomeName, biomeTexture);
+                    };
+                    biomeTexture.onerror = (error) => {
+                        console.error(`Failed to load biome texture '${biomeName}' from ${textureFile}:`, error);
+                    };
+                    biomeTexture.src = `./${textureFile}`;
+                }
+            }
+            catch (error) {
+                console.error(`Error loading biome texture '${biomeName}' from ${textureFile}:`, error);
+            }
         }
     }
     async loadAssets() {

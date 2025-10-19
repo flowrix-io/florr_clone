@@ -19,7 +19,7 @@ if (database.checkForPlainTextPasswords()) {
 }
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition } from './petal_actions';
-import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig } from './constants';
+import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy } from './server_utils';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getAllPetalTypes, getPetalStats } from './petals';
@@ -679,6 +679,51 @@ function getSpawnZoneType(x: number, y: number): string | null {
     return null; // Not in any spawn zone
 }
 
+// Helper function to get biome at a given position
+function getBiomeAtPosition(x: number, y: number): MapElement | null {
+    for (const element of WORLD_MAP) {
+        if (element.type === 'biome') {
+            const scaledX = x / SCALE_FACTOR;
+            const scaledY = y / SCALE_FACTOR;
+            
+            if (scaledX >= element.x && 
+                scaledX <= element.x + element.width && 
+                scaledY >= element.y && 
+                scaledY <= element.y + element.height) {
+                return element;
+            }
+        }
+    }
+    return null; // Not in any biome
+}
+
+// Helper function to select a spawn from a biome's spawn table
+function selectSpawnFromBiomeTable(spawnTable: BiomeSpawnEntry[]): { mobType: string | undefined, tier: Enemy['tier'] } | null {
+    if (!spawnTable || spawnTable.length === 0) return null;
+    
+    // Calculate total weight
+    const totalWeight = spawnTable.reduce((sum, entry) => sum + entry.weight, 0);
+    
+    // Random selection based on weights
+    let random = Math.random() * totalWeight;
+    
+    for (const entry of spawnTable) {
+        random -= entry.weight;
+        if (random <= 0) {
+            return {
+                mobType: entry.mobType,
+                tier: entry.tier
+            };
+        }
+    }
+    
+    // Fallback to first entry
+    return {
+        mobType: spawnTable[0].mobType,
+        tier: spawnTable[0].tier
+    };
+}
+
 // Helper function to get random position in a specific zone type
 function getRandomPositionInZoneType(zoneType: string): { x: number, y: number } | null {
     const zones = WORLD_MAP.filter(element => 
@@ -925,35 +970,67 @@ function createEnemy(): Enemy {
         return null as any;
     }
 
-    // Check if position is in a spawn zone
-    const spawnZoneType = getSpawnZoneType(x, y);
+    // Check if position is in a biome first
+    const biome = getBiomeAtPosition(x, y);
     let tier: Enemy['tier'] = 'common';
+    let mobType: Enemy['type'];
 
-    if (spawnZoneType) {
-        // In a spawn zone - only spawn the specific rarity for this zone
-        tier = spawnZoneType as Enemy['tier'];
+    if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
+        // In a biome - use the biome's spawn table
+        const spawnSelection = selectSpawnFromBiomeTable(biome.properties.spawnTable);
+        
+        if (spawnSelection) {
+            tier = spawnSelection.tier;
+            
+            // If spawn table specifies a mob type, use it; otherwise pick randomly
+            if (spawnSelection.mobType) {
+                mobType = spawnSelection.mobType as Enemy['type'];
+            } else {
+                const allMobTypes = getAllMobTypes();
+                if (allMobTypes.length === 0) {
+                    console.error("No mob types found in MOB_CONFIG.");
+                    return null as any;
+                }
+                mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
+            }
+        } else {
+            // Fallback if spawn table selection fails
+            const allMobTypes = getAllMobTypes();
+            if (allMobTypes.length === 0) {
+                console.error("No mob types found in MOB_CONFIG.");
+                return null as any;
+            }
+            mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
+        }
     } else {
-        // Outside spawn zones - use normal probability distribution
-        const tierRoll = Math.random();
-        let cumulativeProbability = 0;
+        // Check if position is in a spawn zone
+        const spawnZoneType = getSpawnZoneType(x, y);
 
-        for (const [t, data] of Object.entries(ENEMY_TIERS)) {
-            cumulativeProbability += data.probability;
-            if (tierRoll < cumulativeProbability) {
-                tier = t as Enemy['tier'];
-                break;
+        if (spawnZoneType) {
+            // In a spawn zone - only spawn the specific rarity for this zone
+            tier = spawnZoneType as Enemy['tier'];
+        } else {
+            // Outside spawn zones and biomes - use normal probability distribution
+            const tierRoll = Math.random();
+            let cumulativeProbability = 0;
+
+            for (const [t, data] of Object.entries(ENEMY_TIERS)) {
+                cumulativeProbability += data.probability;
+                if (tierRoll < cumulativeProbability) {
+                    tier = t as Enemy['tier'];
+                    break;
+                }
             }
         }
-    }
 
-
-    // Select mob type (fish, octopus, or shark)
-    const allMobTypes = getAllMobTypes();
-    if (allMobTypes.length === 0) {
-        console.error("No mob types found in MOB_CONFIG.");
-        return null as any;
+        // Select mob type (fish, octopus, or shark)
+        const allMobTypes = getAllMobTypes();
+        if (allMobTypes.length === 0) {
+            console.error("No mob types found in MOB_CONFIG.");
+            return null as any;
+        }
+        mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
     }
-    const mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
 
     // Get mob stats from config
     const mobStats = getMobStats(mobType, tier);

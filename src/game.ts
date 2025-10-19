@@ -452,6 +452,8 @@ export class Game {
             this.world_map_data = mapData;
             this.graphics.setMap(mapData);
             this.renderMap(mapData);
+            // Load biome textures
+            this.loadBiomeTextures(mapData);
         });
 
         this.socket.on('zoneUpdate', (zones: any) => {
@@ -1320,6 +1322,68 @@ export class Game {
             // Clear handlers to prevent any further errors
             this.backgroundTexture.onerror = null;
             this.backgroundTexture.onload = null;
+        }
+    }
+
+    // Method to load biome-specific background textures
+    private async loadBiomeTextures(mapData: MapElement[]) {
+        // Find all biomes in the map data
+        const biomes = mapData.filter(element => element.type === 'biome' && element.properties?.biomeName && element.properties?.backgroundTexture);
+        
+        // Track which textures we've already loaded to avoid duplicates
+        const loadedTextures = new Set<string>();
+        
+        for (const biome of biomes) {
+            const biomeName = biome.properties!.biomeName!;
+            const textureFile = biome.properties!.backgroundTexture!;
+            
+            // Skip if we've already loaded this texture
+            if (loadedTextures.has(biomeName)) {
+                continue;
+            }
+            loadedTextures.add(biomeName);
+            
+            try {
+                // Load the texture file (could be SVG or image)
+                const response = await fetch(`./${textureFile}`);
+                if (!response.ok) {
+                    console.error(`Failed to fetch biome texture ${textureFile}: ${response.status}`);
+                    continue;
+                }
+                
+                // Check if it's an SVG file
+                if (textureFile.endsWith('.svg')) {
+                    const svgText = await response.text();
+                    
+                    // Convert SVG to data URL (base64)
+                    const base64 = btoa(unescape(encodeURIComponent(svgText)));
+                    const dataUrl = `data:image/svg+xml;base64,${base64}`;
+                    
+                    // Create an image element for the biome texture
+                    const biomeTexture = new Image();
+                    biomeTexture.onload = () => {
+                        console.log(`Biome texture '${biomeName}' loaded successfully from ${textureFile}`);
+                        this.graphics.setBiomeTexture(biomeName, biomeTexture);
+                    };
+                    biomeTexture.onerror = (error) => {
+                        console.error(`Failed to load biome texture '${biomeName}' from ${textureFile}:`, error);
+                    };
+                    biomeTexture.src = dataUrl;
+                } else {
+                    // For non-SVG images, load directly
+                    const biomeTexture = new Image();
+                    biomeTexture.onload = () => {
+                        console.log(`Biome texture '${biomeName}' loaded successfully from ${textureFile}`);
+                        this.graphics.setBiomeTexture(biomeName, biomeTexture);
+                    };
+                    biomeTexture.onerror = (error) => {
+                        console.error(`Failed to load biome texture '${biomeName}' from ${textureFile}:`, error);
+                    };
+                    biomeTexture.src = `./${textureFile}`;
+                }
+            } catch (error) {
+                console.error(`Error loading biome texture '${biomeName}' from ${textureFile}:`, error);
+            }
         }
     }
 

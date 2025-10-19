@@ -580,6 +580,45 @@ function getSpawnZoneType(x, y) {
     }
     return null; // Not in any spawn zone
 }
+// Helper function to get biome at a given position
+function getBiomeAtPosition(x, y) {
+    for (const element of constants_2.WORLD_MAP) {
+        if (element.type === 'biome') {
+            const scaledX = x / constants_2.SCALE_FACTOR;
+            const scaledY = y / constants_2.SCALE_FACTOR;
+            if (scaledX >= element.x &&
+                scaledX <= element.x + element.width &&
+                scaledY >= element.y &&
+                scaledY <= element.y + element.height) {
+                return element;
+            }
+        }
+    }
+    return null; // Not in any biome
+}
+// Helper function to select a spawn from a biome's spawn table
+function selectSpawnFromBiomeTable(spawnTable) {
+    if (!spawnTable || spawnTable.length === 0)
+        return null;
+    // Calculate total weight
+    const totalWeight = spawnTable.reduce((sum, entry) => sum + entry.weight, 0);
+    // Random selection based on weights
+    let random = Math.random() * totalWeight;
+    for (const entry of spawnTable) {
+        random -= entry.weight;
+        if (random <= 0) {
+            return {
+                mobType: entry.mobType,
+                tier: entry.tier
+            };
+        }
+    }
+    // Fallback to first entry
+    return {
+        mobType: spawnTable[0].mobType,
+        tier: spawnTable[0].tier
+    };
+}
 // Helper function to get random position in a specific zone type
 function getRandomPositionInZoneType(zoneType) {
     const zones = constants_2.WORLD_MAP.filter(element => element.type === 'spawn' &&
@@ -785,32 +824,65 @@ function createEnemy() {
     if (!validPosition) {
         return null;
     }
-    // Check if position is in a spawn zone
-    const spawnZoneType = getSpawnZoneType(x, y);
+    // Check if position is in a biome first
+    const biome = getBiomeAtPosition(x, y);
     let tier = 'common';
-    if (spawnZoneType) {
-        // In a spawn zone - only spawn the specific rarity for this zone
-        tier = spawnZoneType;
-    }
-    else {
-        // Outside spawn zones - use normal probability distribution
-        const tierRoll = Math.random();
-        let cumulativeProbability = 0;
-        for (const [t, data] of Object.entries(constants_2.ENEMY_TIERS)) {
-            cumulativeProbability += data.probability;
-            if (tierRoll < cumulativeProbability) {
-                tier = t;
-                break;
+    let mobType;
+    if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
+        // In a biome - use the biome's spawn table
+        const spawnSelection = selectSpawnFromBiomeTable(biome.properties.spawnTable);
+        if (spawnSelection) {
+            tier = spawnSelection.tier;
+            // If spawn table specifies a mob type, use it; otherwise pick randomly
+            if (spawnSelection.mobType) {
+                mobType = spawnSelection.mobType;
+            }
+            else {
+                const allMobTypes = (0, mobs_1.getAllMobTypes)();
+                if (allMobTypes.length === 0) {
+                    console.error("No mob types found in MOB_CONFIG.");
+                    return null;
+                }
+                mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)];
             }
         }
+        else {
+            // Fallback if spawn table selection fails
+            const allMobTypes = (0, mobs_1.getAllMobTypes)();
+            if (allMobTypes.length === 0) {
+                console.error("No mob types found in MOB_CONFIG.");
+                return null;
+            }
+            mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)];
+        }
     }
-    // Select mob type (fish, octopus, or shark)
-    const allMobTypes = (0, mobs_1.getAllMobTypes)();
-    if (allMobTypes.length === 0) {
-        console.error("No mob types found in MOB_CONFIG.");
-        return null;
+    else {
+        // Check if position is in a spawn zone
+        const spawnZoneType = getSpawnZoneType(x, y);
+        if (spawnZoneType) {
+            // In a spawn zone - only spawn the specific rarity for this zone
+            tier = spawnZoneType;
+        }
+        else {
+            // Outside spawn zones and biomes - use normal probability distribution
+            const tierRoll = Math.random();
+            let cumulativeProbability = 0;
+            for (const [t, data] of Object.entries(constants_2.ENEMY_TIERS)) {
+                cumulativeProbability += data.probability;
+                if (tierRoll < cumulativeProbability) {
+                    tier = t;
+                    break;
+                }
+            }
+        }
+        // Select mob type (fish, octopus, or shark)
+        const allMobTypes = (0, mobs_1.getAllMobTypes)();
+        if (allMobTypes.length === 0) {
+            console.error("No mob types found in MOB_CONFIG.");
+            return null;
+        }
+        mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)];
     }
-    const mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)];
     // Get mob stats from config
     const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
     if (!mobStats) {

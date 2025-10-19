@@ -122,6 +122,7 @@
                 <button id="spawnTool">Spawn</button>
                 <button id="teleporterTool">Teleporter</button>
                 <button id="safeZoneTool">Safe Zone</button>
+                <button id="biomeTool">Biome</button>
                 <button id="selectTool">Select</button>
                 <button id="deleteTool">Delete</button>
             </div>
@@ -154,6 +155,23 @@
                             Leave empty for same-server teleportation
                         </div>
                     </div>
+                    <div id="biomeProps" style="display: none;">
+                        <input type="text" id="biomeName" placeholder="Biome Name (e.g. coral_reef)">
+                        <input type="text" id="backgroundTexture" placeholder="Texture File (e.g. coral.svg)">
+                        <div style="font-size: 12px; color: #888; margin: 10px 0;">
+                            <strong>Spawn Table:</strong><br>
+                            Add spawn entries below (format: mobType,tier,weight)<br>
+                            mobType is optional (leave empty for any mob)
+                        </div>
+                        <textarea id="spawnTableEditor" placeholder="fish,rare,5&#10;octopus,epic,3&#10;,legendary,2" 
+                            style="height: 100px; font-family: monospace; resize: vertical;"></textarea>
+                        <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                            Example entries:<br>
+                            • fish,rare,5 (fish mobs, rare tier, weight 5)<br>
+                            • ,legendary,2 (any mob, legendary tier, weight 2)<br>
+                            • octopus,mythic,1 (octopus only, mythic tier, weight 1)
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -174,16 +192,25 @@
                 <h2>Legend</h2>
                 <div style="font-size: 12px; line-height: 1.4;">
                     <div style="margin: 5px 0;">
-                        <span style="color: #4CAF50;">■</span> Same-server teleporter
+                        <span style="color: #666;">■</span> Wall
+                    </div>
+                    <div style="margin: 5px 0;">
+                        <span style="color: #4CAF50;">■</span> Spawn Zone / Same-server teleporter
                     </div>
                     <div style="margin: 5px 0;">
                         <span style="color: #2196F3;">■</span> Cross-server teleporter
                     </div>
                     <div style="margin: 5px 0;">
+                        <span style="color: #FFC107;">■</span> Safe Zone
+                    </div>
+                    <div style="margin: 5px 0;">
+                        <span style="color: #8040C0;">■</span> Biome (custom spawn table)
+                    </div>
+                    <div style="margin: 5px 0;">
                         <span style="color: #FFD700;">♦</span> Cross-server indicator
                     </div>
                     <div style="margin: 10px 0; padding-top: 10px; border-top: 1px solid #444;">
-                        Cross-server teleporters transfer players between different server ports while preserving all progress.
+                        <strong>Biomes</strong> allow custom mob spawns and background textures. Use CSV format in spawn table editor.
                     </div>
                 </div>
             </div>
@@ -205,7 +232,8 @@
             wall: '#666',
             spawn: '#4CAF50',
             teleporter: '#2196F3',
-            safe_zone: '#FFC107'
+            safe_zone: '#FFC107',
+            biome: '#8040C0'
         };
 
         // Editor state
@@ -330,6 +358,43 @@
 
             if (currentTool === 'spawn') {
                 element.properties.spawnType = document.getElementById('spawnType').value;
+            } else if (currentTool === 'biome') {
+                element.properties.biomeName = document.getElementById('biomeName').value || 'unnamed_biome';
+                element.properties.backgroundTexture = document.getElementById('backgroundTexture').value || 'land.svg';
+                
+                // Parse spawn table from textarea
+                const spawnTableText = document.getElementById('spawnTableEditor').value;
+                const spawnTable = [];
+                
+                if (spawnTableText.trim()) {
+                    const lines = spawnTableText.split('\n');
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed) continue;
+                        
+                        const parts = trimmed.split(',').map(p => p.trim());
+                        if (parts.length >= 2) {
+                            const entry = {
+                                tier: parts[1] || 'common',
+                                weight: parseFloat(parts[2]) || 1
+                            };
+                            
+                            // Only add mobType if it's specified
+                            if (parts[0]) {
+                                entry.mobType = parts[0];
+                            }
+                            
+                            spawnTable.push(entry);
+                        }
+                    }
+                }
+                
+                // If no spawn table provided, use a default
+                if (spawnTable.length === 0) {
+                    spawnTable.push({ tier: 'common', weight: 1 });
+                }
+                
+                element.properties.spawnTable = spawnTable;
             } else if (currentTool === 'teleporter') {
                 const teleportTo = {
                     x: parseInt(document.getElementById('teleportX').value) || 0,
@@ -482,9 +547,11 @@
         function updatePropertiesPanel() {
             const spawnType = document.getElementById('spawnType');
             const teleporterProps = document.getElementById('teleporterProps');
+            const biomeProps = document.getElementById('biomeProps');
 
             spawnType.style.display = currentTool === 'spawn' ? 'block' : 'none';
             teleporterProps.style.display = currentTool === 'teleporter' ? 'block' : 'none';
+            biomeProps.style.display = currentTool === 'biome' ? 'block' : 'none';
         }
 
         function updateElementList() {
@@ -510,6 +577,11 @@
                         item.style.borderLeft = '3px solid #4CAF50'; // Green border for same-server
                         item.title = 'Same-server teleporter';
                     }
+                } else if (element.type === 'biome' && element.properties.biomeName) {
+                    displayText += ` - ${element.properties.biomeName}`;
+                    item.style.borderLeft = '3px solid #8040C0'; // Purple border for biomes
+                    const entryCount = element.properties.spawnTable ? element.properties.spawnTable.length : 0;
+                    item.title = `Biome: ${element.properties.biomeName}\nTexture: ${element.properties.backgroundTexture || 'none'}\nSpawn entries: ${entryCount}`;
                 }
                 
                 item.textContent = displayText;
@@ -554,6 +626,18 @@
                 }
             } else if (element.type === 'spawn' && element.properties.spawnType) {
                 document.getElementById('spawnType').value = element.properties.spawnType;
+            } else if (element.type === 'biome' && element.properties.biomeName) {
+                document.getElementById('biomeName').value = element.properties.biomeName || '';
+                document.getElementById('backgroundTexture').value = element.properties.backgroundTexture || '';
+                
+                // Convert spawn table back to text format
+                const spawnTable = element.properties.spawnTable || [];
+                const spawnTableText = spawnTable.map(entry => {
+                    const mobType = entry.mobType || '';
+                    return `${mobType},${entry.tier},${entry.weight}`;
+                }).join('\n');
+                
+                document.getElementById('spawnTableEditor').value = spawnTableText;
             }
         }
 
@@ -632,6 +716,7 @@
             let crossServerTeleporters = 0;
             let sameServerTeleporters = 0;
             let spawnPoints = 0;
+            let biomes = 0;
             const serverPorts = new Set();
             
             elements.forEach((element, index) => {
@@ -695,6 +780,49 @@
                         });
                     }
                 }
+                
+                // Validate biomes
+                if (element.type === 'biome') {
+                    biomes++;
+                    if (!element.properties.biomeName) {
+                        results.push({
+                            type: 'error',
+                            message: `Biome ${index + 1} is missing biomeName property`
+                        });
+                    }
+                    
+                    if (!element.properties.backgroundTexture) {
+                        results.push({
+                            type: 'warning',
+                            message: `Biome ${index + 1} (${element.properties.biomeName || 'unnamed'}) has no background texture specified`
+                        });
+                    }
+                    
+                    if (!element.properties.spawnTable || element.properties.spawnTable.length === 0) {
+                        results.push({
+                            type: 'warning',
+                            message: `Biome ${index + 1} (${element.properties.biomeName || 'unnamed'}) has empty spawn table`
+                        });
+                    } else {
+                        // Validate spawn table entries
+                        const validTiers = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+                        element.properties.spawnTable.forEach((entry, entryIndex) => {
+                            if (!entry.tier || !validTiers.includes(entry.tier)) {
+                                results.push({
+                                    type: 'error',
+                                    message: `Biome ${index + 1} spawn table entry ${entryIndex + 1} has invalid tier: ${entry.tier}`
+                                });
+                            }
+                            
+                            if (typeof entry.weight !== 'number' || entry.weight <= 0) {
+                                results.push({
+                                    type: 'error',
+                                    message: `Biome ${index + 1} spawn table entry ${entryIndex + 1} has invalid weight: ${entry.weight}`
+                                });
+                            }
+                        });
+                    }
+                }
             });
             
             // Summary information
@@ -721,6 +849,13 @@
                 type: 'info',
                 message: `Found ${spawnPoints} spawn point(s)`
             });
+            
+            if (biomes > 0) {
+                results.push({
+                    type: 'info',
+                    message: `Found ${biomes} biome(s) with custom spawn tables`
+                });
+            }
             
             // Recommendations
             if (crossServerTeleporters > 0) {

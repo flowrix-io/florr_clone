@@ -1027,6 +1027,23 @@ exports.WORLD_MAP = [
                 "serverPort": 3002
             }
         }
+    },
+    {
+        "type": "biome",
+        "x": 10958.28125,
+        "y": 15060,
+        "width": 3860,
+        "height": 4680,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1
+                }
+            ]
+        }
     }
 ];
 // Add map validation function

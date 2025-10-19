@@ -71,11 +71,13 @@ export class Graphics {
     private speedBoostSprite: HTMLImageElement = new Image();
     private shieldSprite: HTMLImageElement = new Image();
     private backgroundTexture: HTMLImageElement = new Image();
+    private biomeTextures: Map<string, HTMLImageElement> = new Map(); // Store biome-specific background textures
     private readonly MAP_COLORS = {
         wall: 'rgba(102, 102, 102, 0.8)',
         spawn: 'rgba(76, 175, 80, 0.3)',
         teleporter: 'rgba(33, 150, 243, 0.5)',
-        safe_zone: 'rgba(255, 193, 7, 0.2)'
+        safe_zone: 'rgba(255, 193, 7, 0.2)',
+        biome: 'rgba(128, 64, 192, 0.0)' // Purple tint for biomes on minimap
     };
     private readonly ENEMY_COLORS = {
         common: '#7eef6d',
@@ -170,6 +172,24 @@ export class Graphics {
                 }
             }
         }
+    }
+
+    // Method to set a biome texture
+    public setBiomeTexture(biomeName: string, texture: HTMLImageElement) {
+        this.biomeTextures.set(biomeName, texture);
+    }
+
+    // Method to get biome at a position
+    private getBiomeAtPosition(x: number, y: number): MapElement | null {
+        for (const element of this.mapData) {
+            if (element.type === 'biome') {
+                if (x >= element.x && x <= element.x + element.width && 
+                    y >= element.y && y <= element.y + element.height) {
+                    return element;
+                }
+            }
+        }
+        return null;
     }
 
     public clear() {
@@ -1073,29 +1093,47 @@ export class Graphics {
             return;
         }
 
-        // Get the size of the background texture (400x400 from the SVG)
-        const bgWidth = this.backgroundTexture.width;
-        const bgHeight = this.backgroundTexture.height;
-
         // Calculate the visible area in world coordinates
         const visibleWidth = this.canvas.width / this.zoomLevel;
         const visibleHeight = this.canvas.height / this.zoomLevel;
 
+        // Get the size of the background texture (400x400 from the SVG)
+        const defaultBgWidth = this.backgroundTexture.width;
+        const defaultBgHeight = this.backgroundTexture.height;
+
         // Calculate the starting position for tiling (offset by camera position)
-        // Use modulo to create seamless scrolling
-        const startX = Math.floor(this.cameraX / bgWidth) * bgWidth;
-        const startY = Math.floor(this.cameraY / bgHeight) * bgHeight;
+        const startX = Math.floor(this.cameraX / defaultBgWidth) * defaultBgWidth;
+        const startY = Math.floor(this.cameraY / defaultBgHeight) * defaultBgHeight;
 
         // Calculate how many tiles we need to draw
-        const tilesX = Math.ceil(visibleWidth / bgWidth) + 1;
-        const tilesY = Math.ceil(visibleHeight / bgHeight) + 1;
+        const tilesX = Math.ceil(visibleWidth / defaultBgWidth) + 1;
+        const tilesY = Math.ceil(visibleHeight / defaultBgHeight) + 1;
 
         // Draw the tiled background
         for (let i = 0; i <= tilesX; i++) {
             for (let j = 0; j <= tilesY; j++) {
-                const x = startX + (i * bgWidth);
-                const y = startY + (j * bgHeight);
-                this.ctx.drawImage(this.backgroundTexture, x, y, bgWidth, bgHeight);
+                const tileX = startX + (i * defaultBgWidth);
+                const tileY = startY + (j * defaultBgHeight);
+                
+                // Check if this tile overlaps with any biome
+                const biome = this.getBiomeAtPosition(tileX + defaultBgWidth / 2, tileY + defaultBgHeight / 2);
+                
+                if (biome && biome.properties?.biomeName && biome.properties?.backgroundTexture) {
+                    // Use biome-specific texture if available
+                    const biomeTexture = this.biomeTextures.get(biome.properties.biomeName);
+                    
+                    if (biomeTexture && biomeTexture.complete) {
+                        const biomeWidth = biomeTexture.width;
+                        const biomeHeight = biomeTexture.height;
+                        this.ctx.drawImage(biomeTexture, tileX, tileY, biomeWidth, biomeHeight);
+                    } else {
+                        // Fallback to default texture if biome texture not loaded
+                        this.ctx.drawImage(this.backgroundTexture, tileX, tileY, defaultBgWidth, defaultBgHeight);
+                    }
+                } else {
+                    // Use default texture
+                    this.ctx.drawImage(this.backgroundTexture, tileX, tileY, defaultBgWidth, defaultBgHeight);
+                }
             }
         }
     }

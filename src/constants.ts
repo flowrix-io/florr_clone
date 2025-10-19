@@ -128,8 +128,16 @@ export const MAZE_CELL_SIZE = 1000;  // Size of each maze cell
 export const MAZE_WALL_THICKNESS = 100;  // Thickness of maze walls
 
 // Add map configuration
+
+// Define spawn table entry for biomes
+export interface BiomeSpawnEntry {
+    mobType?: string;  // If not specified, uses any mob type
+    tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+    weight: number;  // Relative probability (higher = more common)
+}
+
 export interface MapElement {
-    type: 'wall' | 'spawn' | 'teleporter' | 'safe_zone';
+    type: 'wall' | 'spawn' | 'teleporter' | 'safe_zone' | 'biome';
     x: number;
     y: number;
     width: number;
@@ -139,6 +147,10 @@ export interface MapElement {
         spawnType?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
         isNoCombat?: boolean;
         isSafeZone?: boolean;
+        // Biome-specific properties
+        biomeName?: string;  // Unique identifier for the biome
+        spawnTable?: BiomeSpawnEntry[];  // Spawn table for this biome
+        backgroundTexture?: string;  // Path to background texture (e.g., "land.svg", "desert.svg")
     };
 }
 
@@ -1054,6 +1066,23 @@ export const WORLD_MAP: MapElement[] = [
         "y": 0,
         "serverPort": 3002
       }
+    }
+  },
+  {
+    "type": "biome",
+    "x": 10958.28125,
+    "y": 15060,
+    "width": 3860,
+    "height": 4680,
+    "properties": {
+      "biomeName": "desert",
+      "backgroundTexture": "desert.svg",
+      "spawnTable": [
+        {
+          "tier": "common",
+          "weight": 1
+        }
+      ]
     }
   }
 ];
