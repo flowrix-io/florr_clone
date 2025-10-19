@@ -471,6 +471,40 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 200
+    },
+    dark_ladybug: {
+        name: "Dark Ladybug",
+        health: 35,
+        damage: 10,
+        size: 1.0,
+        speed: 1.5,
+        cooldown: 2000,
+        description: "Dark",
+        color: "#000000",
+        image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="ladybug-body-clip-dark">
+      <path d="M 24.76 16.94 Q 17.74 27.2 5.53 29.49 Q -6.68 31.78 -16.94 24.76 Q -27.2 17.74 -29.49 5.53 Q -31.78 -6.68 -24.76 -16.94 Q -17.74 -27.2 -5.53 -29.49 Q 6.68 -31.78 16.94 -24.76 Q 19.24 -23.19 21.21 -21.21 Q 23.19 -19.24 24.76 -16.94 Q 10 0 24.76 16.94 Z" />
+    </clipPath>
+  </defs>
+
+  <circle cx="15" cy="0" r="18.5" fill="#111111" />
+
+  <path d="M 24.76 16.94 Q 17.74 27.2 5.53 29.49 Q -6.68 31.78 -16.94 24.76 Q -27.2 17.74 -29.49 5.53 Q -31.78 -6.68 -24.76 -16.94 Q -17.74 -27.2 -5.53 -29.49 Q 6.68 -31.78 16.94 -24.76 Q 19.24 -23.19 21.21 -21.21 Q 23.19 -19.24 24.76 -16.94 Q 10 0 24.76 16.94 Z" fill="#962921" />
+
+  <g clip-path="url(#ladybug-body-clip-dark)">
+    <circle cx="-10" cy="10" r="6" fill="#b52f25"/>
+    <circle cx="5" cy="18" r="4" fill="#b52f25"/>
+    <circle cx="-18" cy="-8" r="7" fill="#b52f25"/>
+    <circle cx="8" cy="-15" r="5" fill="#b52f25"/>
+    <circle cx="12" cy="-10" r="6.5" fill="#b52f25"/>
+  </g>
+  
+  <path d="M 27.65 18.92 Q 19.81 30.37 6.18 32.93 Q -7.46 35.48 -18.92 27.65 Q -30.37 19.81 -32.93 6.18 Q -35.48 -7.46 -27.65 -18.92 Q -19.81 -30.37 -6.18 -32.93 Q 7.46 -35.48 18.92 -27.65 Q 24.1 -24.1 27.65 -18.92 Q 28.32 -17.93 28.25 -16.74 Q 28.18 -15.54 27.4 -14.64 Q 14.64 0 27.4 14.64 Q 28.18 15.54 28.25 16.74 Q 28.32 17.93 27.65 18.92 Z M 21.87 14.96 L 24.76 16.94 L 22.12 19.24 Q 5.36 0 22.12 -19.24 L 24.76 -16.94 L 21.87 -14.96 Q 19.07 -19.07 14.96 -21.87 Q 5.9 -28.07 -4.88 -26.05 Q -15.67 -24.02 -21.87 -14.96 Q -28.07 -5.9 -26.05 4.88 Q -24.02 15.67 -14.96 21.87 Q -5.9 28.07 4.88 26.05 Q 15.67 24.02 21.87 14.96 Z" fill="#7a201a" />
+
+</svg>`,
+        is_hostile: false,
+        range: 100
     }
 };
 
@@ -964,6 +998,19 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 itemType: 'rose',
                 rarity: 'uncommon',
                 probability: 0.2, // 20% chance for rose
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    dark_ladybug: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'rose',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for rose
                 minQuantity: 1,
                 maxQuantity: 1
             }
