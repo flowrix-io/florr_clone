@@ -16,6 +16,6 @@ exports.GAME_ICONS_NET_ICONS = [
     },
     {
         name: 'craft',
-        value: '<svg version="1.1" id="Uploaded to svgrepo.com" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512px" height="512px" style="font-size: 0.9em" viewBox="0 0 32 32" xml:space="preserve"><path d="M22,28.744V30c0,0.55-0.45,1-1,1H11c-0.55,0-1-0.45-1-1v-1.256C4.704,26.428,1,21.149,1,15 c0-0.552,0.448-1,1-1h28c0.552,0,1,0.448,1,1C31,21.149,27.296,26.428,22,28.744z M29,12c0-3.756-2.961-6.812-6.675-6.984 C21.204,2.645,18.797,1,16,1s-5.204,1.645-6.325,4.016C5.961,5.188,3,8.244,3,12v1h26V12z"></path></svg>'
+        value: '<svg version="1.1" id="Uploaded to svgrepo.com" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512px" height="512px" style="font-size: 0.9em" viewBox="0 0 32 32" xml:space="preserve"><path d="M22,28.744V30c0,0.55-0.45,1-1,1H11c-0.55,0-1-0.45-1-1v-1.256C4.704,26.428,1,21.149,1,15 c0-0.552,0.448-1,1-1h28c0.552,0,1,0.448,1,1C31,21.149,27.296,26.428,22,28.744z M29,12c0-3.756-2.961-6.812-6.675-6.984 C21.204,2.645,18.797,1,16,1s-5.204,1.645-6.325,4.016C5.961,5.188,3,8.244,3,12v1h26V12z" fill="#fff" fill-opacity="1"></path></svg>'
     }
 ];

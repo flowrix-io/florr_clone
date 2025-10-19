@@ -332,10 +332,10 @@ class TitleScreen {
         const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
-            <div id="settingsButton" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center;" title="Settings">
+            <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center;" title="Settings">
                 ${formattedSettingsIcon}
             </div>
-            <div id="exitButton" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center;" title="Exit to Menu">
+            <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center;" title="Exit to Menu">
                 ${formattedExitIcon}
             </div>
         `;
@@ -363,10 +363,10 @@ class TitleScreen {
         console.log('Inventory icon HTML:', formattedInventoryIcon.substring(0, 100));
         // With column-reverse, inventory first (displays at bottom), craft second (displays at top)
         bottomLeftButtons.innerHTML = `
-            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Inventory (I)">
+            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #00b3ff; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Inventory (I)">
                 ${formattedInventoryIcon}
             </div>
-            <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Craft (R)">
+            <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #ff9d00; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Craft (R)">
                 ${formattedCraftIcon}
             </div>
         `;

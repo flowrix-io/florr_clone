@@ -24,7 +24,7 @@ const GAME_ICONS_NET_ICONS = [
     },
     {
         name: 'craft',
-        value: '<svg version="1.1" id="Uploaded to svgrepo.com" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512px" height="512px" style="font-size: 0.9em" viewBox="0 0 32 32" xml:space="preserve"><path d="M22,28.744V30c0,0.55-0.45,1-1,1H11c-0.55,0-1-0.45-1-1v-1.256C4.704,26.428,1,21.149,1,15 c0-0.552,0.448-1,1-1h28c0.552,0,1,0.448,1,1C31,21.149,27.296,26.428,22,28.744z M29,12c0-3.756-2.961-6.812-6.675-6.984 C21.204,2.645,18.797,1,16,1s-5.204,1.645-6.325,4.016C5.961,5.188,3,8.244,3,12v1h26V12z"></path></svg>'
+        value: '<svg version="1.1" id="Uploaded to svgrepo.com" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512px" height="512px" style="font-size: 0.9em" viewBox="0 0 32 32" xml:space="preserve"><path d="M22,28.744V30c0,0.55-0.45,1-1,1H11c-0.55,0-1-0.45-1-1v-1.256C4.704,26.428,1,21.149,1,15 c0-0.552,0.448-1,1-1h28c0.552,0,1,0.448,1,1C31,21.149,27.296,26.428,22,28.744z M29,12c0-3.756-2.961-6.812-6.675-6.984 C21.204,2.645,18.797,1,16,1s-5.204,1.645-6.325,4.016C5.961,5.188,3,8.244,3,12v1h26V12z" fill="#fff" fill-opacity="1"></path></svg>'
     }
 ];
 
@@ -12450,10 +12450,10 @@ class TitleScreen {
         const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
-            <div id="settingsButton" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center;" title="Settings">
+            <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center;" title="Settings">
                 ${formattedSettingsIcon}
             </div>
-            <div id="exitButton" style="width: 32px; height: 32px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center;" title="Exit to Menu">
+            <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center;" title="Exit to Menu">
                 ${formattedExitIcon}
             </div>
         `;
@@ -12481,10 +12481,10 @@ class TitleScreen {
         console.log('Inventory icon HTML:', formattedInventoryIcon.substring(0, 100));
         // With column-reverse, inventory first (displays at bottom), craft second (displays at top)
         bottomLeftButtons.innerHTML = `
-            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Inventory (I)">
+            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #00b3ff; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Inventory (I)">
                 ${formattedInventoryIcon}
             </div>
-            <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: rgba(0, 0, 0, 0.5); padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Craft (R)">
+            <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #ff9d00; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Craft (R)">
                 ${formattedCraftIcon}
             </div>
         `;
