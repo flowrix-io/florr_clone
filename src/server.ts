@@ -3000,6 +3000,8 @@ process.stdin.on('data', (data) => {
         } else {
             console.log('Invalid enemy count. Please provide a valid number.');
         }
+    } else if (command === 'spawn_special_mobs') {
+        spawnSpecialMobs();
     }
 });
 

@@ -2576,6 +2576,9 @@ process.stdin.on('data', (data) => {
             console.log('Invalid enemy count. Please provide a valid number.');
         }
     }
+    else if (command === 'spawn_special_mobs') {
+        spawnSpecialMobs();
+    }
 });
 // Add this function after the command handler
 function adjustEnemyCount() {

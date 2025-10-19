@@ -1222,6 +1222,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1245,6 +1250,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1268,6 +1278,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1291,6 +1306,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1314,6 +1334,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1337,6 +1362,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1360,6 +1390,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1383,6 +1418,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1406,6 +1446,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1429,6 +1474,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1452,6 +1502,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1507,6 +1562,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }
@@ -1530,6 +1590,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 1,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "sandstorm"
                 }
             ]
         }

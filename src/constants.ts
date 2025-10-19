@@ -1262,6 +1262,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1285,6 +1290,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1308,6 +1318,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1331,6 +1346,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1354,6 +1374,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1377,6 +1402,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1400,6 +1430,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1423,6 +1458,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1446,6 +1486,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1469,6 +1514,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1492,6 +1542,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1547,6 +1602,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
@@ -1570,6 +1630,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 1,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "sandstorm"
         }
       ]
     }
