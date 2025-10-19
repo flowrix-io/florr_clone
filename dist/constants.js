@@ -1154,29 +1154,6 @@ exports.WORLD_MAP = [
     },
     {
         "type": "biome",
-        "x": 12478.28125,
-        "y": 9780,
-        "width": 7240,
-        "height": 5100,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "shiny_ladybug"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
         "x": 10788.28125,
         "y": 14980,
         "width": 2730,
@@ -1222,6 +1199,409 @@ exports.WORLD_MAP = [
                 {
                     "tier": "common",
                     "weight": 1
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12478.28125,
+        "y": 9800,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 16858.28125,
+        "y": 15010,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12308.28125,
+        "y": 9720,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12968.28125,
+        "y": 10050,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12438.28125,
+        "y": 9910,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12518.28125,
+        "y": 10070,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 19408.28125,
+        "y": 15100,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 14498.28125,
+        "y": 10230,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 14498.28125,
+        "y": 10280,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 16108.28125,
+        "y": 9020,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 16908.28125,
+        "y": 8560,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 11398.28125,
+        "y": 19330,
+        "width": 0,
+        "height": 0,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 13778.28125,
+        "y": 14570,
+        "width": 0,
+        "height": 0,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 13918.28125,
+        "y": 14760,
+        "width": 0,
+        "height": 0,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 13948.28125,
+        "y": 14880,
+        "width": 0,
+        "height": 0,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 12408.28125,
+        "y": 9780,
+        "width": 7250,
+        "height": 5090,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 15328.28125,
+        "y": 14900,
+        "width": 4470,
+        "height": 2190,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12878.28125,
+        "y": 310,
+        "width": 4490,
+        "height": 630,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "shiny_ladybug"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6198.28125,
+        "y": 230,
+        "width": 2690,
+        "height": 1110,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6218.28125,
+        "y": 1370,
+        "width": 1070,
+        "height": 1420,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 7288.28125,
+        "y": 1630,
+        "width": 1610,
+        "height": 1130,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
                 }
             ]
         }
