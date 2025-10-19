@@ -13232,6 +13232,14 @@ const CHANGELOG = [
         changes: [
             'Added changelog'
         ]
+    },
+    {
+        date: 'October 19, 2025',
+        changes: [
+            'Added 3 new biomes',
+            'New admin petal: Sparkle',
+            'New admin command: spawn_special_mobs',
+        ]
     }
 ];
 class ChangelogManager {
