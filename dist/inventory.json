@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 37,
-      "xp": 11781,
+      "xp": 11782,
       "maxHealth": 460,
       "damage": 77,
       "inventory": {
@@ -15,7 +15,7 @@
           "petal_dandelion": 10,
           "petal_stinger": 18,
           "petal_yggdrasil": 6,
-          "speed_boost": 13,
+          "speed_boost": 14,
           "petal_sand": 22,
           "petal_rock": 16,
           "petal_clover": 5

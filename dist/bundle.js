@@ -25,6 +25,10 @@ const GAME_ICONS_NET_ICONS = [
     {
         name: 'craft',
         value: '<svg version="1.1" id="Uploaded to svgrepo.com" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512px" height="512px" style="font-size: 0.9em" viewBox="0 0 32 32" xml:space="preserve"><path d="M22,28.744V30c0,0.55-0.45,1-1,1H11c-0.55,0-1-0.45-1-1v-1.256C4.704,26.428,1,21.149,1,15 c0-0.552,0.448-1,1-1h28c0.552,0,1,0.448,1,1C31,21.149,27.296,26.428,22,28.744z M29,12c0-3.756-2.961-6.812-6.675-6.984 C21.204,2.645,18.797,1,16,1s-5.204,1.645-6.325,4.016C5.961,5.188,3,8.244,3,12v1h26V12z" fill="#fff" fill-opacity="1"></path></svg>'
+    },
+    {
+        name: 'changelog',
+        value: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="height: 512px; width: 512px;"><g class="" transform="translate(0,0)" style=""><path d="M319.61 20.654c13.145 33.114 13.144 33.115-5.46 63.5 33.114-13.145 33.116-13.146 63.5 5.457-13.145-33.114-13.146-33.113 5.457-63.498-33.114 13.146-33.113 13.145-63.498-5.459zM113.024 38.021c-11.808 21.04-11.808 21.04-35.724 24.217 21.04 11.809 21.04 11.808 24.217 35.725 11.808-21.04 11.808-21.04 35.724-24.217-21.04-11.808-21.04-11.808-24.217-35.725zm76.55 56.184c-.952 50.588-.95 50.588-41.991 80.18 50.587.95 50.588.95 80.18 41.99.95-50.588.95-50.588 41.99-80.18-50.588-.95-50.588-.95-80.18-41.99zm191.177 55.885c-.046 24.127-.048 24.125-19.377 38.564 24.127.047 24.127.046 38.566 19.375.047-24.126.046-24.125 19.375-38.564-24.126-.047-24.125-.046-38.564-19.375zm-184.086 83.88a96.38 96.38 0 0 0-3.492.134c-18.591 1.064-41.868 8.416-77.445 22.556L76.012 433.582c78.487-20.734 132.97-21.909 170.99-4.615V247.71c-18.076-8.813-31.79-13.399-46.707-13.737a91.166 91.166 0 0 0-3.629-.002zm122.686 11.42a209.3 209.3 0 0 0-8.514.098c-12.81.417-27.638 2.215-45.84 4.522v177.135c43.565-7.825 106.85-4.2 171.244 7.566l-39.78-177.197c-35.904-8.37-56.589-11.91-77.11-12.123zm2.289 16.95c18.889.204 36.852 2.768 53.707 5.02l4.437 16.523c-23.78-3.75-65.966-4.906-92.467-.98l-.636-17.805c11.959-2.154 23.625-2.88 34.959-2.758zm-250.483 4.658L60.54 313.002h24.094l10.326-46.004H71.158zm345.881 0 39.742 177.031 2.239 9.973 22.591-.152-40.855-186.852h-23.717zm-78.857 57.82c16.993.026 33.67.791 49.146 2.223l3.524 17.174c-32.645-3.08-72.58-2.889-102.995 0l-.709-17.174c16.733-1.533 34.04-2.248 51.034-2.223zm-281.793 6.18-6.924 30.004h24.394l6.735-30.004H56.389zm274.418 27.244c4.656.021 9.487.085 14.716.203l2.555 17.498c-19.97-.471-47.115.56-59.728 1.05l-.7-17.985c16.803-.493 29.189-.828 43.157-.766zm41.476.447c8.268.042 16.697.334 24.121.069l2.58 17.74c-8.653-.312-24.87-.83-32.064-.502l-2.807-17.234a257.25 257.25 0 0 1 8.17-.073zm-326.97 20.309-17.985 77.928 25.035-.17 17.455-77.758H45.313zm303.164 11.848c19.608-.01 38.66.774 56.449 2.572l2.996 20.787c-34.305-4.244-85.755-7.697-119.1-3.244l-.14-17.922c20.02-1.379 40.186-2.183 59.795-2.193zm-166.606 44.05c-30.112.09-67.916 6.25-115.408 19.76l-7.22 2.053 187.759-1.27v-6.347c-16.236-9.206-37.42-14.278-65.13-14.196zm134.41 6.174c-19.63.067-37.112 1.439-51.283 4.182v10.064l177.594-1.203c-44.322-8.634-89.137-13.17-126.31-13.043zM26 475v18h460v-18H26z" fill="#fff" fill-opacity="1"></path></g></svg>'
     }
 ];
 
@@ -12119,11 +12123,152 @@ class AuthUI {
     }
 }
 
+;// ./src/changelog.ts
+const CHANGELOG = [
+    {
+        date: 'October 18, 2025',
+        changes: [
+            'Added changelog'
+        ]
+    }
+];
+class ChangelogManager {
+    constructor() {
+        this.changelogPanel = null;
+        this.isOpen = false;
+        this.createChangelogPanel();
+    }
+    createChangelogPanel() {
+        this.changelogPanel = document.createElement('div');
+        this.changelogPanel.className = 'changelog-panel';
+        this.changelogPanel.style.cssText = `
+            position: absolute;
+            top: 72px;
+            left: 20px;
+            width: 600px;
+            max-height: 500px;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid #4CAF50;
+            border-radius: 10px;
+            padding: 20px;
+            z-index: 4000;
+            display: none;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        `;
+        const content = document.createElement('div');
+        content.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="color: #4CAF50; margin: 0; font-family: Arial, sans-serif;">Changelog</h2>
+                <button id="closeChangelogButton" style="background: #ff4444; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 16px;">✕</button>
+            </div>
+            <div id="changelogContent"></div>
+        `;
+        this.changelogPanel.appendChild(content);
+        document.body.appendChild(this.changelogPanel);
+        this.populateChangelog();
+        // Add close button listener
+        const closeButton = this.changelogPanel.querySelector('#closeChangelogButton');
+        if (closeButton) {
+            closeButton.addEventListener('click', () => this.hide());
+        }
+        // Close on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.isOpen) {
+                this.hide();
+            }
+        });
+        // Add custom scrollbar styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .changelog-panel::-webkit-scrollbar {
+                width: 10px;
+            }
+            .changelog-panel::-webkit-scrollbar-track {
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 5px;
+            }
+            .changelog-panel::-webkit-scrollbar-thumb {
+                background: #4CAF50;
+                border-radius: 5px;
+            }
+            .changelog-panel::-webkit-scrollbar-thumb:hover {
+                background: #45a049;
+            }
+            .changelog-entry {
+                margin-bottom: 25px;
+                padding: 15px;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 8px;
+                border-left: 4px solid #4CAF50;
+            }
+            .changelog-date {
+                font-size: 20px;
+                font-weight: bold;
+                color: #4CAF50;
+                margin-bottom: 10px;
+            }
+            .changelog-change {
+                margin: 8px 0;
+                padding-left: 20px;
+                position: relative;
+                color: #ddd;
+                line-height: 1.6;
+            }
+            .changelog-change::before {
+                content: '•';
+                position: absolute;
+                left: 5px;
+                font-size: 20px;
+                color: #4CAF50;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    populateChangelog() {
+        const contentDiv = this.changelogPanel?.querySelector('#changelogContent');
+        if (!contentDiv)
+            return;
+        contentDiv.innerHTML = CHANGELOG.map(entry => `
+            <div class="changelog-entry">
+                <div class="changelog-date">${entry.date}</div>
+                ${entry.changes.map(change => `
+                    <div class="changelog-change">${change}</div>
+                `).join('')}
+            </div>
+        `).join('');
+    }
+    toggle() {
+        if (this.isOpen) {
+            this.hide();
+        }
+        else {
+            this.show();
+        }
+    }
+    show() {
+        if (this.changelogPanel) {
+            this.changelogPanel.style.display = 'block';
+            this.isOpen = true;
+        }
+    }
+    hide() {
+        if (this.changelogPanel) {
+            this.changelogPanel.style.display = 'none';
+            this.isOpen = false;
+        }
+    }
+    isChangelogOpen() {
+        return this.isOpen;
+    }
+}
+
 ;// ./src/title_screen.ts
 /**
  * Title Screen Menu Management
  * Handles all menu-related DOM elements and interactions
  */
+
 
 class FloatingPetalManager {
     constructor(container) {
@@ -12236,6 +12381,7 @@ class TitleScreen {
         this.backgroundTime = 0;
         this.initializeElements();
         this.setupEventListeners();
+        this.changelogManager = new ChangelogManager();
     }
     initializeElements() {
         // Create authentication container
@@ -12445,15 +12591,20 @@ class TitleScreen {
         // Import game icons
         const { GAME_ICONS_NET_ICONS } = __webpack_require__(354);
         const settingsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'settings')?.value || '';
+        const changelogIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'changelog')?.value || '';
         const exitIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'exit_button')?.value || '';
         // Update the SVG to be 32x32
         const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        const formattedChangelogIcon = changelogIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
-            <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center;" title="Settings">
+            <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Settings">
                 ${formattedSettingsIcon}
             </div>
-            <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center;" title="Exit to Menu">
+            <div id="changelogButton" style="width: 42px; height: 42px; cursor: pointer; background: #00db3e; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Changelog">
+                ${formattedChangelogIcon}
+            </div>
+            <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center; box-sizing: border-box;" title="Exit to Menu">
                 ${formattedExitIcon}
             </div>
         `;
@@ -12550,11 +12701,17 @@ class TitleScreen {
     setupEventListeners() {
         // Settings button event listener (now in exitButtonContainer)
         const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
+        const changelogButton = this.exitButtonContainer.querySelector('#changelogButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
         if (settingsButton) {
             settingsButton.addEventListener('click', () => {
                 this.settingsMenu.classList.remove('hidden');
+            });
+        }
+        if (changelogButton) {
+            changelogButton.addEventListener('click', () => {
+                this.changelogManager.toggle();
             });
         }
         if (exitButton) {

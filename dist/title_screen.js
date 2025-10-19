@@ -7,6 +7,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.titleScreenStyles = exports.TitleScreen = void 0;
 exports.injectTitleScreenStyles = injectTitleScreenStyles;
 const petals_1 = require("./petals");
+const changelog_1 = require("./changelog");
 class FloatingPetalManager {
     constructor(container) {
         this.petals = [];
@@ -118,6 +119,7 @@ class TitleScreen {
         this.backgroundTime = 0;
         this.initializeElements();
         this.setupEventListeners();
+        this.changelogManager = new changelog_1.ChangelogManager();
     }
     initializeElements() {
         // Create authentication container
@@ -327,15 +329,20 @@ class TitleScreen {
         // Import game icons
         const { GAME_ICONS_NET_ICONS } = require('./game-icons-net-icons');
         const settingsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'settings')?.value || '';
+        const changelogIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'changelog')?.value || '';
         const exitIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'exit_button')?.value || '';
         // Update the SVG to be 32x32
         const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        const formattedChangelogIcon = changelogIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
-            <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center;" title="Settings">
+            <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Settings">
                 ${formattedSettingsIcon}
             </div>
-            <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center;" title="Exit to Menu">
+            <div id="changelogButton" style="width: 42px; height: 42px; cursor: pointer; background: #00db3e; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Changelog">
+                ${formattedChangelogIcon}
+            </div>
+            <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center; box-sizing: border-box;" title="Exit to Menu">
                 ${formattedExitIcon}
             </div>
         `;
@@ -432,11 +439,17 @@ class TitleScreen {
     setupEventListeners() {
         // Settings button event listener (now in exitButtonContainer)
         const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
+        const changelogButton = this.exitButtonContainer.querySelector('#changelogButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
         if (settingsButton) {
             settingsButton.addEventListener('click', () => {
                 this.settingsMenu.classList.remove('hidden');
+            });
+        }
+        if (changelogButton) {
+            changelogButton.addEventListener('click', () => {
+                this.changelogManager.toggle();
             });
         }
         if (exitButton) {
