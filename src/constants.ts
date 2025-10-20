@@ -1062,6 +1062,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 5,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1267,6 +1272,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1295,6 +1305,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1323,6 +1338,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1351,6 +1371,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1379,6 +1404,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1407,6 +1437,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1435,6 +1470,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1463,6 +1503,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1491,6 +1536,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1519,6 +1569,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1547,6 +1602,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1607,6 +1667,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1635,6 +1700,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "sandstorm"
+        },
+        {
+          "tier": "mythic",
+          "weight": 0.5,
+          "mobType": "cactus"
         }
       ]
     }
@@ -1653,6 +1723,11 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "common",
           "weight": 10,
           "mobType": "shiny_ladybug"
+        },
+        {
+          "tier": "common",
+          "weight": 5,
+          "mobType": "cactus"
         }
       ]
     }

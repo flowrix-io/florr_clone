@@ -1022,6 +1022,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 5,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1227,6 +1232,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1255,6 +1265,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1283,6 +1298,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1311,6 +1331,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1339,6 +1364,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1367,6 +1397,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1395,6 +1430,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1423,6 +1463,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1451,6 +1496,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1479,6 +1529,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1507,6 +1562,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1567,6 +1627,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1595,6 +1660,11 @@ exports.WORLD_MAP = [
                     "tier": "mythic",
                     "weight": 2,
                     "mobType": "sandstorm"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 0.5,
+                    "mobType": "cactus"
                 }
             ]
         }
@@ -1613,6 +1683,11 @@ exports.WORLD_MAP = [
                     "tier": "common",
                     "weight": 10,
                     "mobType": "shiny_ladybug"
+                },
+                {
+                    "tier": "common",
+                    "weight": 5,
+                    "mobType": "cactus"
                 }
             ]
         }

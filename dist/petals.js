@@ -303,6 +303,52 @@ const BASE_PETAL_CONFIGS = {
   </g>
 </svg>`
     },
+    cactus: {
+        name: "Cactus Petal",
+        damage: 15,
+        health: 15,
+        size: 1.0,
+        cooldown: 1000,
+        description: "A cactus petal",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="40" height="40" viewBox="-20 -20 40 40" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 15 0 Q 11.087 4.592 10.607 10.607 Q 4.592 11.087 0 15 Q -4.592 11.087 -10.607 10.607 Q -11.087 4.592 -15 0 Q -11.087 -4.592 -10.607 -10.607 Q -4.592 -11.087 0 -15 Q 4.592 -11.087 10.607 -10.607 Q 11.087 -4.592 15 0 Z"
+        fill="#38c75f"
+        stroke="#2d9f4c"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round" />
+  <circle cx="0"
+          cy="0"
+          r="8"
+          fill="#74d68f" />
+</svg>`,
+        isAdminPetal: false
+    },
+    poison_cactus: {
+        name: "Poison Cactus Petal",
+        damage: 15,
+        health: 15,
+        size: 1.0,
+        cooldown: 600,
+        description: "A poison cactus petal",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="40" height="40" viewBox="-20 -20 40 40" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 15 0 Q 11.087 4.592 10.607 10.607 Q 4.592 11.087 0 15 Q -4.592 11.087 -10.607 10.607 Q -11.087 4.592 -15 0 Q -11.087 -4.592 -10.607 -10.607 Q -4.592 -11.087 0 -15 Q 4.592 -11.087 10.607 -10.607 Q 11.087 -4.592 15 0 Z"
+        fill="#ce76db"
+        stroke="#a760b1"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round" />
+  <circle cx="0"
+          cy="0"
+          r="8"
+          fill="#cea0db" />
+</svg>`,
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 99999,

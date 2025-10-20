@@ -512,6 +512,24 @@ const BASE_MOB_CONFIGS = {
         is_hostile: false,
         range: 100,
         biomeOnly: true
+    },
+    cactus: {
+        name: "Cactus",
+        health: 30,
+        damage: 30,
+        size: 1.0,
+        speed: 0.0,
+        cooldown: 2000,
+        description: "Spiky",
+        color: "#000000",
+        image: `<svg width="150" height="150" viewBox="-75 -75 150 150" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#222222" d="M 60.00 0.00 L 50.50 3.00 L 50.50 -3.00 Z M 48.54 35.27 L 39.09 32.11 L 42.62 27.26 Z M 18.54 57.06 L 12.75 48.96 L 18.23 45.19 Z M -18.54 57.06 L -18.23 45.19 L -12.75 48.96 Z M -48.54 35.27 L -42.62 27.26 L -39.09 32.11 Z M -60.00 0.00 L -50.50 -3.00 L -50.50 3.00 Z M -48.54 -35.27 L -39.09 -32.11 L -42.62 -27.26 Z M -18.54 -57.06 L -12.75 -48.96 L -18.23 -45.19 Z M 18.54 -57.06 L 18.23 -45.19 L 12.75 -48.96 Z M 48.54 -35.27 L 42.62 -27.26 L 39.09 -32.11 Z"/>
+
+  <path fill="#32a852" stroke="#217337" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" d="M 50.00 0.00 Q 42.80 13.92 40.45 29.39 Q 26.45 36.41 15.45 47.55 Q 0.00 45.00 -15.45 47.55 Q -26.45 36.41 -40.45 29.39 Q -42.80 13.92 -50.00 0.00 Q -42.80 -13.92 -40.45 -29.39 Q -26.45 -36.41 -15.45 -47.55 Q 0.00 -45.00 15.45 -47.55 Q 26.45 -36.41 40.45 -29.39 Q 42.80 -13.92 50.00 0.00 Z"/>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true
     }
 };
 // Rarity-specific overrides for special cases
@@ -998,6 +1016,27 @@ exports.MOB_DROP_TABLES = {
                 itemType: 'rock',
                 rarity: 'common',
                 probability: 0.6, // 60% chance for rock
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    cactus: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'cactus',
+                rarity: 'common',
+                probability: 0.7, // 70% chance for cactus
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'poison_cactus',
+                rarity: 'common',
+                probability: 0.3, // 40% chance for poison cactus
                 minQuantity: 1,
                 maxQuantity: 1
             }
