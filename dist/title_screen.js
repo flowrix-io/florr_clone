@@ -252,14 +252,24 @@ class TitleScreen {
                 <button id="multiPlayerButton" class="ready-button">Ready▶︎</button>
             </div>
             <div class="biome-selector-container">
-                <label for="biomeSelector">Spawn Biome:</label>
-                <select id="biomeSelector" class="biome-selector">
-                    <option value="default">Default (Common Spawn)</option>
-                    <option value="desert">Desert</option>
-                    <option value="ocean">Ocean</option>
-                    <option value="swamp">Swamp</option>
-                    <option value="ant_hell">Ant Hell</option>
-                </select>
+                <label>Spawn Biome:</label>
+                <div class="biome-buttons">
+                    <button class="biome-button" data-biome="default" style="background-color: rgb(0, 190, 79);" title="Default (Common Spawn)">
+                        Default
+                    </button>
+                    <button class="biome-button" data-biome="desert" style="background-color: #ffff9c;" title="Desert">
+                        Desert
+                    </button>
+                    <button class="biome-button" data-biome="ocean" style="background-color: rgb(200,255,250);" title="Ocean">
+                        Ocean
+                    </button>
+                    <button class="biome-button" data-biome="swamp" style="background-color: rgb(200,255,250);" title="Swamp">
+                        Swamp
+                    </button>
+                    <button class="biome-button" data-biome="ant_hell" style="background-color: #c9904f;" title="Ant Hell">
+                        Ant Hell
+                    </button>
+                </div>
             </div>
             <div class="color-picker">
                 <label for="hueSlider">Player Color:</label>
@@ -850,16 +860,27 @@ class TitleScreen {
                     localStorage.setItem('playerName', nameInput.value);
                 });
             }
-            // Setup biome selector persistence
-            const biomeSelector = document.getElementById('biomeSelector');
-            if (biomeSelector) {
+            // Setup biome button persistence
+            const biomeButtons = document.querySelectorAll('.biome-button');
+            if (biomeButtons.length > 0) {
                 // Load saved biome selection from localStorage
                 const savedBiome = localStorage.getItem('spawnBiome') || 'default';
-                biomeSelector.value = savedBiome;
-                // Save biome selection to localStorage when it changes
-                biomeSelector.addEventListener('change', () => {
-                    localStorage.setItem('spawnBiome', biomeSelector.value);
-                    console.log('Selected spawn biome:', biomeSelector.value);
+                // Set initial selected button
+                biomeButtons.forEach(button => {
+                    const biome = button.getAttribute('data-biome');
+                    if (biome === savedBiome) {
+                        button.classList.add('selected');
+                    }
+                    // Add click handler
+                    button.addEventListener('click', () => {
+                        // Remove selected class from all buttons
+                        biomeButtons.forEach(btn => btn.classList.remove('selected'));
+                        // Add selected class to clicked button
+                        button.classList.add('selected');
+                        // Save to localStorage
+                        localStorage.setItem('spawnBiome', biome || 'default');
+                        console.log('Selected spawn biome:', biome);
+                    });
                 });
             }
         }, 100); // 100ms delay to ensure DOM is ready
@@ -1317,26 +1338,44 @@ exports.titleScreenStyles = `
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
     }
 
-    .biome-selector {
-        background: rgba(255, 255, 255, 0.9);
-        border: 2px solid rgba(255, 255, 255, 0.5);
-        color: #000;
-        font-size: 16px;
-        padding: 8px 15px;
-        border-radius: 5px;
+    .biome-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        max-width: 400px;
+    }
+
+    .biome-button {
+        padding: 8px 16px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 8px;
         cursor: pointer;
-        min-width: 250px;
-        text-align: center;
-    }
-
-    .biome-selector:hover {
-        background: rgba(255, 255, 255, 1);
-        transform: scale(1.02);
-    }
-
-    .biome-selector option {
-        background: white;
+        font-size: 14px;
+        font-weight: bold;
         color: #000;
+        transition: all 0.3s ease;
+        min-width: 70px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .biome-button:hover {
+        transform: scale(1.05);
+        border-color: rgba(255, 255, 255, 0.6);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .biome-button.selected {
+        border-color: #fff;
+        border-width: 3px;
+        transform: scale(1.1);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    .biome-button.selected::after {
+        content: " ✓";
+        font-weight: bold;
     }
 
     .color-picker {
