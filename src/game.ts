@@ -454,6 +454,9 @@ export class Game {
             this.renderMap(mapData);
             // Load biome textures
             this.loadBiomeTextures(mapData);
+            
+            // Update title screen with available biomes
+            this.updateTitleScreenBiomes(mapData);
         });
 
         this.socket.on('zoneUpdate', (zones: any) => {
@@ -1377,6 +1380,15 @@ export class Game {
     }
 
     // Method to load biome-specific background textures
+    /**
+     * Updates the title screen with available biomes from map data
+     */
+    private updateTitleScreenBiomes(mapData: MapElement[]): void {
+        if (window.titleScreen && typeof window.titleScreen.updateBiomesFromMapData === 'function') {
+            window.titleScreen.updateBiomesFromMapData(mapData);
+        }
+    }
+
     private async loadBiomeTextures(mapData: MapElement[]) {
         // Find all biomes in the map data
         const biomes = mapData.filter(element => element.type === 'biome' && element.properties?.biomeName && element.properties?.backgroundTexture);

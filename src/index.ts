@@ -19,11 +19,13 @@ let currentGame: Game | null = null;
 declare global {
     interface Window {
         currentGame: Game | null;
+        titleScreen: TitleScreen | null;
     }
 }
 
 window.currentGame = currentGame;
 let titleScreen: TitleScreen | null = null;
+window.titleScreen = titleScreen;
 let authUI: AuthUI | null = null;
 let preloadedAssets: PreloadedAssets | null = null;
 
@@ -128,6 +130,7 @@ window.onload = async () => {
         console.log('[Index] Initializing title screen...');
         injectTitleScreenStyles();
         titleScreen = new TitleScreen();
+        window.titleScreen = titleScreen;
         await titleScreen.appendToBody();
         
         // Initialize auth UI after title screen is created

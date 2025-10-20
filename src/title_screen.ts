@@ -5,6 +5,7 @@
 
 import { PETAL_CONFIG, RARITY_LEVELS, PetalStats } from './petals';
 import { ChangelogManager } from './changelog';
+import { WORLD_MAP } from './constants';
 
 interface FloatingPetal {
     element: HTMLElement;
@@ -157,6 +158,7 @@ export class TitleScreen {
     private settingsMenu!: HTMLElement;
     private floatingPetalsContainer!: HTMLElement;
     private floatingPetalManager!: FloatingPetalManager;
+    private availableBiomes: string[] = [];
     private backgroundCanvas!: HTMLCanvasElement;
     private backgroundCtx!: CanvasRenderingContext2D;
     private backgroundTexture!: HTMLImageElement;
@@ -168,6 +170,158 @@ export class TitleScreen {
         this.initializeElements();
         this.setupEventListeners();
         this.changelogManager = new ChangelogManager();
+        
+        // Initialize biome selector with local map data
+        this.updateBiomesFromMapData(WORLD_MAP);
+    }
+
+    /**
+     * Scans map data for available biomes and updates the biome selector
+     */
+    public updateBiomesFromMapData(mapData: any[]): void {
+        // Extract unique biome names from map data
+        const biomeNames = new Set<string>();
+        
+        // Add default biome
+        biomeNames.add('default');
+        
+        // Scan map data for biome elements
+        if (mapData && Array.isArray(mapData)) {
+            console.log('Scanning map data for biomes, total elements:', mapData.length);
+            mapData.forEach(element => {
+                if (element.type === 'biome' && element.properties?.biomeName) {
+                    console.log('Found biome:', element.properties.biomeName);
+                    biomeNames.add(element.properties.biomeName);
+                }
+            });
+        }
+        
+        // Update available biomes
+        this.availableBiomes = Array.from(biomeNames);
+        console.log('Available biomes detected:', this.availableBiomes);
+        
+        // Update the biome selector UI
+        this.updateBiomeSelector();
+    }
+
+    /**
+     * Updates the biome selector UI with available biomes
+     */
+    private updateBiomeSelector(): void {
+        // Use setTimeout to ensure DOM is ready
+        setTimeout(() => {
+            const biomeButtonsContainer = document.querySelector('.biome-buttons');
+            if (!biomeButtonsContainer) {
+                console.warn('Biome buttons container not found, retrying...');
+                // Retry after a short delay
+                setTimeout(() => this.updateBiomeSelector(), 100);
+                return;
+            }
+            
+            // Clear existing buttons
+            biomeButtonsContainer.innerHTML = '';
+            
+            // Create biome buttons dynamically
+            this.availableBiomes.forEach(biomeName => {
+                const button = this.createBiomeButton(biomeName);
+                biomeButtonsContainer.appendChild(button);
+            });
+            
+            // Re-setup event listeners for the new buttons
+            this.setupBiomeButtonListeners();
+            
+            console.log('Biome selector updated with biomes:', this.availableBiomes);
+        }, 100);
+    }
+
+    /**
+     * Creates a biome button element
+     */
+    private createBiomeButton(biomeName: string): HTMLElement {
+        const button = document.createElement('button');
+        button.className = 'biome-button';
+        button.setAttribute('data-biome', biomeName);
+        
+        // Set biome-specific styling
+        const biomeConfig = this.getBiomeConfig(biomeName);
+        button.style.backgroundColor = biomeConfig.color;
+        button.title = biomeConfig.title;
+        button.textContent = biomeConfig.displayName;
+        
+        return button;
+    }
+
+    /**
+     * Gets configuration for a biome (colors, display names, etc.)
+     */
+    private getBiomeConfig(biomeName: string): { color: string; title: string; displayName: string } {
+        const configs: { [key: string]: { color: string; title: string; displayName: string } } = {
+            'default': {
+                color: 'rgb(0, 190, 79)',
+                title: 'Default (Common Spawn)',
+                displayName: 'Default'
+            },
+            'desert': {
+                color: '#ffff9c',
+                title: 'Desert',
+                displayName: 'Desert'
+            },
+            'ocean': {
+                color: 'rgb(200,255,250)',
+                title: 'Ocean',
+                displayName: 'Ocean'
+            },
+            'swamp': {
+                color: 'rgb(200,255,250)',
+                title: 'Swamp',
+                displayName: 'Swamp'
+            },
+            'ant_hell': {
+                color: '#c9904f',
+                title: 'Ant Hell',
+                displayName: 'Ant Hell'
+            }
+        };
+        
+        // Return config for known biome or create a default one
+        return configs[biomeName] || {
+            color: '#cccccc',
+            title: biomeName.charAt(0).toUpperCase() + biomeName.slice(1),
+            displayName: biomeName.charAt(0).toUpperCase() + biomeName.slice(1)
+        };
+    }
+
+    /**
+     * Sets up event listeners for biome buttons
+     */
+    private setupBiomeButtonListeners(): void {
+        const biomeButtons = document.querySelectorAll('.biome-button');
+        
+        biomeButtons.forEach(button => {
+            const biome = button.getAttribute('data-biome');
+            
+            // Add click handler
+            button.addEventListener('click', () => {
+                // Remove selected class from all buttons
+                biomeButtons.forEach(btn => btn.classList.remove('selected'));
+                
+                // Add selected class to clicked button
+                button.classList.add('selected');
+                
+                // Save to localStorage
+                localStorage.setItem('spawnBiome', biome || 'default');
+                console.log('Selected spawn biome:', biome);
+            });
+        });
+        
+        // Load saved biome selection from localStorage
+        const savedBiome = localStorage.getItem('spawnBiome') || 'default';
+        biomeButtons.forEach(button => {
+            const biome = button.getAttribute('data-biome');
+            if (biome === savedBiome) {
+                button.classList.add('selected');
+            }
+        });
     }
 
     private initializeElements(): void {
@@ -307,21 +461,7 @@ export class TitleScreen {
             <div class="biome-selector-container">
                 <label>Spawn Biome:</label>
                 <div class="biome-buttons">
-                    <button class="biome-button" data-biome="default" style="background-color: rgb(0, 190, 79);" title="Default (Common Spawn)">
-                        Default
-                    </button>
-                    <button class="biome-button" data-biome="desert" style="background-color: #ffff9c;" title="Desert">
-                        Desert
-                    </button>
-                    <button class="biome-button" data-biome="ocean" style="background-color: rgb(200,255,250);" title="Ocean">
-                        Ocean
-                    </button>
-                    <button class="biome-button" data-biome="swamp" style="background-color: rgb(200,255,250);" title="Swamp">
-                        Swamp
-                    </button>
-                    <button class="biome-button" data-biome="ant_hell" style="background-color: #c9904f;" title="Ant Hell">
-                        Ant Hell
-                    </button>
+                    <!-- Biome buttons will be dynamically generated here -->
                 </div>
             </div>
             <div class="color-picker">
@@ -978,33 +1118,6 @@ export class TitleScreen {
                 });
             }
 
-            // Setup biome button persistence
-            const biomeButtons = document.querySelectorAll('.biome-button');
-            if (biomeButtons.length > 0) {
-                // Load saved biome selection from localStorage
-                const savedBiome = localStorage.getItem('spawnBiome') || 'default';
-                
-                // Set initial selected button
-                biomeButtons.forEach(button => {
-                    const biome = button.getAttribute('data-biome');
-                    if (biome === savedBiome) {
-                        button.classList.add('selected');
-                    }
-                    
-                    // Add click handler
-                    button.addEventListener('click', () => {
-                        // Remove selected class from all buttons
-                        biomeButtons.forEach(btn => btn.classList.remove('selected'));
-                        
-                        // Add selected class to clicked button
-                        button.classList.add('selected');
-                        
-                        // Save to localStorage
-                        localStorage.setItem('spawnBiome', biome || 'default');
-                        console.log('Selected spawn biome:', biome);
-                    });
-                });
-            }
         }, 100); // 100ms delay to ensure DOM is ready
     }
 
@@ -1523,10 +1636,12 @@ export const titleScreenStyles = `
 
     .biome-buttons {
         display: flex;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         gap: 8px;
         justify-content: center;
-        max-width: 400px;
+        max-width: 100%;
+        overflow-x: auto;
+        padding: 5px;
     }
 
     .biome-button {

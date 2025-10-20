@@ -9,6 +9,7 @@ const petals_1 = require("./petals");
 let currentGame = null;
 window.currentGame = currentGame;
 let titleScreen = null;
+window.titleScreen = titleScreen;
 let authUI = null;
 let preloadedAssets = null;
 // Create and show loading screen
@@ -98,6 +99,7 @@ window.onload = async () => {
         console.log('[Index] Initializing title screen...');
         (0, title_screen_1.injectTitleScreenStyles)();
         titleScreen = new title_screen_1.TitleScreen();
+        window.titleScreen = titleScreen;
         await titleScreen.appendToBody();
         // Initialize auth UI after title screen is created
         authUI = new auth_ui_1.AuthUI();
