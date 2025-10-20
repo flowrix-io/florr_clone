@@ -395,7 +395,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         health: 15,
         size: 1.0,
         cooldown: 600,
-        poison: 0.01, // 0.01 damage per millisecond (10 damage per second)
+        poison: 0.005, // 0.005 damage per millisecond (5 damage per second)
         poisonDuration: 3000, // Poison lasts for 3 seconds after contact
         description: "A poison cactus petal that deals damage over time",
         color: "#000000",
@@ -555,6 +555,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
     // Special handling for yggdrasil - always 1 damage and 1 health
     let damage = baseConfig.damage * multiplier;
     let health = baseConfig.health * multiplier;
+    let poison = baseConfig.poison ? baseConfig.poison * multiplier : undefined; // Scale poison with rarity
     let cooldown = baseConfig.cooldown;
     
     if (petalType === 'yggdrasil') {
@@ -565,6 +566,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         // Apply overrides for other petals
         damage = overrides.damage ?? damage;
         health = overrides.health ?? health;
+        poison = overrides.poison ?? poison; // Apply override or use scaled value
         cooldown = overrides.cooldown ?? cooldown;
     }
     
@@ -576,7 +578,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         speed: baseConfig.speed ?? 1.0, // Default speed
         cooldown,
         knockback: baseConfig.knockback ?? 5, // Default knockback
-        poison: overrides.poison ?? baseConfig.poison, // Poison damage per millisecond
+        poison: poison, // Scaled poison damage per millisecond
         poisonDuration: overrides.poisonDuration ?? baseConfig.poisonDuration, // Poison duration in milliseconds
         description: overrides.description ?? baseConfig.description,
         color: RARITY_COLORS[rarity],
