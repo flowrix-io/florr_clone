@@ -15,10 +15,10 @@ exports.dots = [];
 exports.enemies = [];
 exports.obstacles = [];
 exports.items = [];
-exports.WORLD_WIDTH = 20000;
-exports.WORLD_HEIGHT = 20000;
-exports.ACTUAL_WORLD_WIDTH = 20000;
-exports.ACTUAL_WORLD_HEIGHT = 20000;
+exports.WORLD_WIDTH = 60000;
+exports.WORLD_HEIGHT = 60000;
+exports.ACTUAL_WORLD_WIDTH = 60000;
+exports.ACTUAL_WORLD_HEIGHT = 60000;
 exports.SCALE_FACTOR = 1;
 //export let ENEMY_COUNT = 200;
 exports.OBSTACLE_COUNT = 20;
@@ -55,12 +55,12 @@ exports.PLAYER_SIZE = 40;
 exports.ENEMY_SIZE = 40;
 // Define zone boundaries for different tiers
 exports.ZONE_BOUNDARIES = {
-    common: { start: 0, end: 4000 },
-    uncommon: { start: 4000, end: 8000 },
-    rare: { start: 8000, end: 12000 },
-    epic: { start: 12000, end: 16000 },
-    legendary: { start: 16000, end: 18000 },
-    mythic: { start: 18000, end: exports.WORLD_WIDTH }
+    common: { start: 0, end: 12000 },
+    uncommon: { start: 12000, end: 24000 },
+    rare: { start: 24000, end: 36000 },
+    epic: { start: 36000, end: 48000 },
+    legendary: { start: 48000, end: 54000 },
+    mythic: { start: 54000, end: exports.WORLD_WIDTH }
 };
 // Add enemy size multipliers like in singleplayer
 exports.ENEMY_SIZE_MULTIPLIERS = {

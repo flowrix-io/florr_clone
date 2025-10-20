@@ -28,10 +28,10 @@ export const enemies: Enemy[] = [];
 export const obstacles: Obstacle[] = [];
 export const items: Item[] = [];
 
-export const WORLD_WIDTH = 20000;
-export const WORLD_HEIGHT = 20000;
-export const ACTUAL_WORLD_WIDTH = 20000;
-export const ACTUAL_WORLD_HEIGHT = 20000;
+export const WORLD_WIDTH = 60000;
+export const WORLD_HEIGHT = 60000;
+export const ACTUAL_WORLD_WIDTH = 60000;
+export const ACTUAL_WORLD_HEIGHT = 60000;
 
 // Density calculation constants (defined after world dimensions)
 export const TOTAL_WORLD_AREA = ACTUAL_WORLD_WIDTH * ACTUAL_WORLD_HEIGHT;  // 400,000,000 pixels²
@@ -41,8 +41,8 @@ export const VIEWPORT_WITH_BUFFER_AREA = (VIEWPORT_WIDTH + VIEWPORT_BUFFER * 2) 
 export const ENEMIES_PER_VIEWPORT = Math.ceil(ORIGINAL_ENEMY_DENSITY * VIEWPORT_WITH_BUFFER_AREA);  // ~15 enemies per viewport
 export const OLD_WORLD_WIDTH = 10000;
 export const OLD_WORLD_HEIGHT = 2000;
-export const PVP_WORLD_WIDTH = 10000;
-export const PVP_WORLD_HEIGHT = 10000;
+export const PVP_WORLD_WIDTH = 30000;
+export const PVP_WORLD_HEIGHT = 30000;
 export const SCALE_FACTOR = 1;
 //export let ENEMY_COUNT = 200;
 export const OBSTACLE_COUNT = 20;
@@ -89,12 +89,12 @@ export const ENEMY_SIZE = 40;
 
 // Define zone boundaries for different tiers
 export const ZONE_BOUNDARIES = {
-    common: { start: 0, end: 4000 },
-    uncommon: { start: 4000, end: 8000 },
-    rare: { start: 8000, end: 12000 },
-    epic: { start: 12000, end: 16000 },
-    legendary: { start: 16000, end: 18000 },
-    mythic: { start: 18000, end: WORLD_WIDTH }
+    common: { start: 0, end: 12000 },
+    uncommon: { start: 12000, end: 24000 },
+    rare: { start: 24000, end: 36000 },
+    epic: { start: 36000, end: 48000 },
+    legendary: { start: 48000, end: 54000 },
+    mythic: { start: 54000, end: WORLD_WIDTH }
 };
 
 // Add enemy size multipliers like in singleplayer

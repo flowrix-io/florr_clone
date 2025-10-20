@@ -63,6 +63,12 @@ export class Graphics {
     private readonly MINIMAP_WIDTH = 200;
     private readonly MINIMAP_HEIGHT = 200;
     private readonly MINIMAP_PADDING = 10;
+    private minimapScrollX = 0; // Scroll offset for minimap X
+    private minimapScrollY = 0; // Scroll offset for minimap Y
+    private minimapZoom = 1.0; // Zoom level for minimap (1.0 = 20000x20000 area)
+    private readonly MINIMAP_MIN_ZOOM = 0.5; // Show 40000x40000 area
+    private readonly MINIMAP_MAX_ZOOM = 3.0; // Show 6667x6667 area
+    private readonly MINIMAP_ZOOM_STEP = 0.2;
     private playerEye: { x: number, y: number } = { x: 0, y: 0 };
     private wallTexture: HTMLImageElement = new Image();
     private octopusSprite: HTMLImageElement = new Image();
@@ -1023,55 +1029,119 @@ export class Graphics {
         });
     }
 
+    // Minimap scrolling methods
+    public scrollMinimap(deltaX: number, deltaY: number) {
+        const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
+        const MAX_SCROLL_X = ACTUAL_WORLD_WIDTH - MINIMAP_AREA_SIZE;
+        const MAX_SCROLL_Y = ACTUAL_WORLD_HEIGHT - MINIMAP_AREA_SIZE;
+        
+        this.minimapScrollX = Math.max(0, Math.min(MAX_SCROLL_X, this.minimapScrollX + deltaX));
+        this.minimapScrollY = Math.max(0, Math.min(MAX_SCROLL_Y, this.minimapScrollY + deltaY));
+    }
+
+    public setMinimapScroll(x: number, y: number) {
+        const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
+        const MAX_SCROLL_X = ACTUAL_WORLD_WIDTH - MINIMAP_AREA_SIZE;
+        const MAX_SCROLL_Y = ACTUAL_WORLD_HEIGHT - MINIMAP_AREA_SIZE;
+        
+        this.minimapScrollX = Math.max(0, Math.min(MAX_SCROLL_X, x));
+        this.minimapScrollY = Math.max(0, Math.min(MAX_SCROLL_Y, y));
+    }
+
+    public centerMinimapOnPlayer(playerX: number, playerY: number) {
+        const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
+        const HALF_AREA = MINIMAP_AREA_SIZE / 2;
+        
+        this.setMinimapScroll(
+            playerX - HALF_AREA,
+            playerY - HALF_AREA
+        );
+    }
+
+    public zoomInMinimap() {
+        this.minimapZoom = Math.min(this.minimapZoom + this.MINIMAP_ZOOM_STEP, this.MINIMAP_MAX_ZOOM);
+    }
+
+    public zoomOutMinimap() {
+        this.minimapZoom = Math.max(this.minimapZoom - this.MINIMAP_ZOOM_STEP, this.MINIMAP_MIN_ZOOM);
+    }
+
+    public setMinimapZoom(zoom: number) {
+        this.minimapZoom = Math.max(this.MINIMAP_MIN_ZOOM, Math.min(this.MINIMAP_MAX_ZOOM, zoom));
+    }
+
+    public getMinimapZoom(): number {
+        return this.minimapZoom;
+    }
+
+    public followPlayerOnMinimap(playerX: number, playerY: number) {
+        // Automatically center minimap on player
+        this.centerMinimapOnPlayer(playerX, playerY);
+    }
+
     // Add minimap drawing
     private drawMinimap(players: Map<string, Player>, socket: string) {
         const minimapX = this.canvas.width - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
         const minimapY = this.MINIMAP_PADDING;
+        
+        // Define the area to show on minimap (scaled by zoom level)
+        const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
         const minimapScale = {
-            x: this.MINIMAP_WIDTH / ACTUAL_WORLD_WIDTH,
-            y: this.MINIMAP_HEIGHT / ACTUAL_WORLD_HEIGHT
+            x: this.MINIMAP_WIDTH / MINIMAP_AREA_SIZE,
+            y: this.MINIMAP_HEIGHT / MINIMAP_AREA_SIZE
         };
 
         // Draw minimap background (white instead of black)
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         this.ctx.fillRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
 
-        // Draw only walls on minimap
+        // Draw only walls on minimap (with scroll offset)
         this.mapData.forEach(element => {
             // Only draw walls
             if (element.type === 'wall') {
-                const scaledX = minimapX + (element.x * minimapScale.x);
-                const scaledY = minimapY + (element.y * minimapScale.y);
+                const scaledX = minimapX + ((element.x - this.minimapScrollX) * minimapScale.x);
+                const scaledY = minimapY + ((element.y - this.minimapScrollY) * minimapScale.y);
                 const scaledWidth = element.width * minimapScale.x;
                 const scaledHeight = element.height * minimapScale.y;
 
-                this.ctx.fillStyle = '#000000'; // Black for walls
-                this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+                // Only draw if the element is within the visible minimap area
+                if (scaledX + scaledWidth > minimapX && scaledX < minimapX + this.MINIMAP_WIDTH &&
+                    scaledY + scaledHeight > minimapY && scaledY < minimapY + this.MINIMAP_HEIGHT) {
+                    this.ctx.fillStyle = '#000000'; // Black for walls
+                    this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+                }
             }
         });
 
-        // Draw all players on minimap with solid colors
+        // Draw all players on minimap with solid colors (with scroll offset)
         players.forEach(player => {
-            this.ctx.fillStyle = player.id === socket ? '#FF0000' : '#000000'; // Red for current player, black for others
-            this.ctx.beginPath();
-            this.ctx.arc(
-                minimapX + (player.x * minimapScale.x),
-                minimapY + (player.y * minimapScale.y),
-                4, // Slightly larger dots
-                0,
-                Math.PI * 2
-            );
-            this.ctx.fill();
+            const playerMinimapX = minimapX + ((player.x - this.minimapScrollX) * minimapScale.x);
+            const playerMinimapY = minimapY + ((player.y - this.minimapScrollY) * minimapScale.y);
+            
+            // Only draw if player is within the visible minimap area
+            if (playerMinimapX > minimapX && playerMinimapX < minimapX + this.MINIMAP_WIDTH &&
+                playerMinimapY > minimapY && playerMinimapY < minimapY + this.MINIMAP_HEIGHT) {
+                this.ctx.fillStyle = player.id === socket ? '#FF0000' : '#000000'; // Red for current player, black for others
+                this.ctx.beginPath();
+                this.ctx.arc(
+                    playerMinimapX,
+                    playerMinimapY,
+                    4, // Slightly larger dots
+                    0,
+                    Math.PI * 2
+                );
+                this.ctx.fill();
+            }
         });
 
-        // Draw viewport rectangle in black
+        // Draw viewport rectangle in black (with scroll offset)
         this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(
-            minimapX + (this.cameraX * minimapScale.x),
-            minimapY + (this.cameraY * minimapScale.y),
-            (this.canvas.width * minimapScale.x),
-            (this.canvas.height * minimapScale.y)
+            minimapX + ((this.cameraX - this.minimapScrollX) * minimapScale.x),
+            minimapY + ((this.cameraY - this.minimapScrollY) * minimapScale.y),
+            (this.canvas.width / this.zoomLevel) * minimapScale.x,
+            (this.canvas.height / this.zoomLevel) * minimapScale.y
         );
 
         // Draw border

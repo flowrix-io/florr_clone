@@ -226,8 +226,8 @@
 
     <script>
         // Constants from your game
-        const WORLD_WIDTH = 20000;
-        const WORLD_HEIGHT = 20000;
+        const WORLD_WIDTH = 60000;
+        const WORLD_HEIGHT = 60000;
         const COLORS = {
             wall: '#666',
             spawn: '#4CAF50',
@@ -510,23 +510,24 @@
                     );
                 }
 
-                // Draw on minimap
+                // Draw on minimap (showing 20000x20000 area instead of full map)
+                const MINIMAP_AREA_SIZE = 20000;
                 minimapCtx.fillStyle = COLORS[element.type];
                 minimapCtx.fillRect(
-                    (element.x / WORLD_WIDTH) * minimap.width,
-                    (element.y / WORLD_HEIGHT) * minimap.height,
-                    (element.width / WORLD_WIDTH) * minimap.width,
-                    (element.height / WORLD_HEIGHT) * minimap.height
+                    (element.x / MINIMAP_AREA_SIZE) * minimap.width,
+                    (element.y / MINIMAP_AREA_SIZE) * minimap.height,
+                    (element.width / MINIMAP_AREA_SIZE) * minimap.width,
+                    (element.height / MINIMAP_AREA_SIZE) * minimap.height
                 );
                 
                 // Add indicator on minimap for cross-server teleporters
                 if (element.type === 'teleporter' && element.properties.teleportTo?.serverPort) {
                     minimapCtx.fillStyle = '#FFD700';
                     minimapCtx.fillRect(
-                        (element.x / WORLD_WIDTH) * minimap.width,
-                        (element.y / WORLD_HEIGHT) * minimap.height,
-                        Math.max(2, (element.width / WORLD_WIDTH) * minimap.width),
-                        Math.max(2, (element.height / WORLD_HEIGHT) * minimap.height)
+                        (element.x / MINIMAP_AREA_SIZE) * minimap.width,
+                        (element.y / MINIMAP_AREA_SIZE) * minimap.height,
+                        Math.max(2, (element.width / MINIMAP_AREA_SIZE) * minimap.width),
+                        Math.max(2, (element.height / MINIMAP_AREA_SIZE) * minimap.height)
                     );
                 }
             });

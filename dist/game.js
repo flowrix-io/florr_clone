@@ -493,6 +493,40 @@ class Game {
                 this.showFloatingText(this.canvas.width / 2, 50, `Hitboxes: ${this.showHitboxes ? 'ON' : 'OFF'}`, '#FFFFFF', 20);
                 return;
             }
+            // Minimap scroll controls
+            if (event.key === this.controls.minimap_scroll_up) {
+                this.graphics.scrollMinimap(0, -1000);
+                return;
+            }
+            if (event.key === this.controls.minimap_scroll_down) {
+                this.graphics.scrollMinimap(0, 1000);
+                return;
+            }
+            if (event.key === this.controls.minimap_scroll_left) {
+                this.graphics.scrollMinimap(-1000, 0);
+                return;
+            }
+            if (event.key === this.controls.minimap_scroll_right) {
+                this.graphics.scrollMinimap(1000, 0);
+                return;
+            }
+            if (event.key === this.controls.minimap_center_player) {
+                const currentPlayer = this.socket?.id ? this.players.get(this.socket.id) : null;
+                if (currentPlayer) {
+                    this.graphics.centerMinimapOnPlayer(currentPlayer.x, currentPlayer.y);
+                }
+                return;
+            }
+            if (event.key === this.controls.minimap_zoom_in) {
+                this.graphics.zoomInMinimap();
+                this.showFloatingText(this.canvas.width / 2, 50, `Minimap Zoom: ${Math.round(this.graphics.getMinimapZoom() * 100)}%`, '#FFFFFF', 20);
+                return;
+            }
+            if (event.key === this.controls.minimap_zoom_out) {
+                this.graphics.zoomOutMinimap();
+                this.showFloatingText(this.canvas.width / 2, 50, `Minimap Zoom: ${Math.round(this.graphics.getMinimapZoom() * 100)}%`, '#FFFFFF', 20);
+                return;
+            }
             // Handle respawn when dead
             if (event.key === ' ' && this.isPlayerDead) {
                 this.socket.emit('requestRespawn');
@@ -546,6 +580,8 @@ class Game {
         this.cameraX = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH - scaledWidth, targetX));
         this.cameraY = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - scaledHeight, targetY));
         this.graphics.setCamera(this.cameraX, this.cameraY, this.zoomLevel);
+        // Automatically follow player on minimap
+        this.graphics.followPlayerOnMinimap(player.x, player.y);
     }
     startViewportAnimation(mobX, mobY) {
         const localPlayer = this.getLocalPlayer();
@@ -1181,6 +1217,13 @@ class Game {
             chat: 'Enter',
             extend_petals: ' ',
             retract_petals: 'Shift',
+            minimap_scroll_up: 'q',
+            minimap_scroll_down: 'e',
+            minimap_scroll_left: 'z',
+            minimap_scroll_right: 'x',
+            minimap_center_player: 'm',
+            minimap_zoom_in: 'PageUp',
+            minimap_zoom_out: 'PageDown',
         };
     }
     savePlayerProgress() { }
