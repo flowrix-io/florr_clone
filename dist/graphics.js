@@ -870,8 +870,8 @@ class Graphics {
         this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     }
     drawScrollingBackground() {
-        // If background texture is not loaded, just fill with a color
-        if (!this.backgroundTexture || !this.backgroundTexture.complete) {
+        // If background texture is not loaded or is broken, just fill with a color
+        if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
             this.ctx.fillStyle = '#00d885'; // Default green color from the SVG
             this.ctx.fillRect(this.cameraX, this.cameraY, this.canvas.width / this.zoomLevel, this.canvas.height / this.zoomLevel);
             return;
@@ -898,7 +898,7 @@ class Graphics {
                 if (biome && biome.properties?.biomeName && biome.properties?.backgroundTexture) {
                     // Use biome-specific texture if available
                     const biomeTexture = this.biomeTextures.get(biome.properties.biomeName);
-                    if (biomeTexture && biomeTexture.complete) {
+                    if (biomeTexture && biomeTexture.complete && biomeTexture.naturalWidth > 0) {
                         const biomeWidth = biomeTexture.width;
                         const biomeHeight = biomeTexture.height;
                         this.ctx.drawImage(biomeTexture, tileX, tileY, biomeWidth, biomeHeight);
