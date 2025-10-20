@@ -6,6 +6,8 @@ export interface PetalStats {
     speed?: number; // Rotation speed multiplier (default 1.0)
     cooldown: number; // Cooldown time in milliseconds
     knockback?: number; // Knockback force applied to enemies (default 1)
+    poison?: number; // Poison damage per millisecond applied to units (optional)
+    poisonDuration?: number; // Duration in milliseconds that poison effect lasts (optional)
     description: string;
     color: string;
     image?: string; // 32x32 SVG image (optional)
@@ -58,6 +60,8 @@ interface BasePetalConfig {
     count: number;
     speed?: number;
     knockback?: number;
+    poison?: number; // Poison damage per millisecond applied to units (optional)
+    poisonDuration?: number; // Duration in milliseconds that poison effect lasts (optional)
     actions?: string; // Action sequence string like "heal 20; break;"
     isAdminPetal?: boolean; // Whether the petal is an admin petal (default false)
 }
@@ -70,6 +74,8 @@ interface RarityOverride {
     cooldown?: number;
     damage?: number;
     health?: number;
+    poison?: number; // Poison damage per millisecond applied to units (optional)
+    poisonDuration?: number; // Duration in milliseconds that poison effect lasts (optional)
     actions?: string; // Action sequence string like "heal 20; break;"
 }
 
@@ -389,7 +395,9 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         health: 15,
         size: 1.0,
         cooldown: 600,
-        description: "A poison cactus petal",
+        poison: 0.01, // 0.01 damage per millisecond (10 damage per second)
+        poisonDuration: 3000, // Poison lasts for 3 seconds after contact
+        description: "A poison cactus petal that deals damage over time",
         color: "#000000",
         count: 1,
         image: `<svg width="40" height="40" viewBox="-20 -20 40 40" xmlns="http://www.w3.org/2000/svg">
@@ -568,6 +576,8 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         speed: baseConfig.speed ?? 1.0, // Default speed
         cooldown,
         knockback: baseConfig.knockback ?? 5, // Default knockback
+        poison: overrides.poison ?? baseConfig.poison, // Poison damage per millisecond
+        poisonDuration: overrides.poisonDuration ?? baseConfig.poisonDuration, // Poison duration in milliseconds
         description: overrides.description ?? baseConfig.description,
         color: RARITY_COLORS[rarity],
         image: overrides.image ?? baseConfig.image ?? findSvgFallback(petalType, rarity),

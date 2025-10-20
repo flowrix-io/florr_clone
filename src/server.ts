@@ -20,7 +20,7 @@ if (database.checkForPlainTextPasswords()) {
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition } from './petal_actions';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig } from './constants';
-import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy } from './server_utils';
+import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect } from './server_utils';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getAllPetalTypes, getPetalStats } from './petals';
 import { MOB_CONFIG, getMobStats, getAllMobTypes, calculateMobDrops, DropItem } from './mobs';
@@ -1752,6 +1752,83 @@ const ENEMY_SPEED_MULTIPLIER = 2;
 const ENEMY_CHASE_RANGE = 500;
 const ENEMY_WANDER_RANGE = 200;
 
+function updatePoisonEffects(deltaTime: number) {
+    const currentTime = Date.now();
+    
+    enemies.forEach(enemy => {
+        if (!enemy.poisonEffects || enemy.poisonEffects.length === 0) {
+            return;
+        }
+        
+        // Calculate total poison damage from all active effects
+        let totalPoisonDamage = 0;
+        const activePoisons: typeof enemy.poisonEffects = [];
+        
+        enemy.poisonEffects.forEach(poison => {
+            if (currentTime < poison.endTime) {
+                // Poison is still active
+                totalPoisonDamage += poison.damage;
+                activePoisons.push(poison);
+            }
+        });
+        
+        // Update the enemy's poison effects list to only include active ones
+        enemy.poisonEffects = activePoisons;
+        
+        // Apply poison damage
+        if (totalPoisonDamage > 0) {
+            const poisonDamageThisTick = totalPoisonDamage * deltaTime * 1000; // Convert deltaTime (seconds) to milliseconds
+            enemy.health -= poisonDamageThisTick;
+            
+            // Track poison damage for all contributing players
+            activePoisons.forEach(poison => {
+                trackDamage(enemy, poison.playerId, poison.damage * deltaTime * 1000);
+            });
+            
+            io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+            
+            // Check if enemy dies from poison
+            if (enemy.health <= 0) {
+                const index = enemies.findIndex(e => e.id === enemy.id);
+                if (index !== -1) {
+                    // Award XP to all players who contributed poison damage
+                    const xpGained = getXPFromEnemy(enemy);
+                    
+                    // Find the player who dealt the most damage (including poison)
+                    let topContributor: string | undefined;
+                    let maxDamage = 0;
+                    
+                    if (enemy.damageContributors) {
+                        enemy.damageContributors.forEach((damage, playerId) => {
+                            if (damage > maxDamage) {
+                                maxDamage = damage;
+                                topContributor = playerId;
+                            }
+                        });
+                    }
+                    
+                    // Award XP to the top contributor
+                    if (topContributor && players[topContributor]) {
+                        addXPToPlayer(players[topContributor], xpGained, topContributor);
+                    }
+                    
+                    // Handle mob drops
+                    handleMobDrops(enemy);
+                    enemies.splice(index, 1);
+                    updateSpecialMobCounts();
+                    io.emit('enemyDestroyed', enemy.id);
+                    
+                    // Try to spawn a new enemy
+                    const newEnemy = createEnemy();
+                    if (newEnemy) {
+                        enemies.push(newEnemy);
+                    }
+                }
+            }
+        }
+    });
+}
+
 function moveEnemies() {
     const currentTime = Date.now();
 
@@ -2239,6 +2316,35 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                     enemy.health -= finalDamage;
                     petal.health -= mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
 
+                    // Apply poison effect if the petal has poison
+                    if (petalStats.poison && petalStats.poison > 0 && petalStats.poisonDuration && petalStats.poisonDuration > 0) {
+                        if (!enemy.poisonEffects) {
+                            enemy.poisonEffects = [];
+                        }
+                        
+                        // Add or refresh poison effect
+                        const currentTime = Date.now();
+                        const endTime = currentTime + petalStats.poisonDuration;
+                        
+                        // Check if there's already a poison effect from this player
+                        const existingPoisonIndex = enemy.poisonEffects.findIndex(p => p.playerId === player.id);
+                        if (existingPoisonIndex >= 0) {
+                            // Refresh the existing poison effect with the new damage and duration
+                            enemy.poisonEffects[existingPoisonIndex] = {
+                                damage: petalStats.poison,
+                                endTime: endTime,
+                                playerId: player.id
+                            };
+                        } else {
+                            // Add a new poison effect
+                            enemy.poisonEffects.push({
+                                damage: petalStats.poison,
+                                endTime: endTime,
+                                playerId: player.id
+                            });
+                        }
+                    }
+
                     // Apply knockback to enemy
                     const knockbackForce = petalStats.knockback || 0;
                     if (knockbackForce > 0) {
@@ -2588,6 +2694,9 @@ function start_loop() {
 
         // Update petal actions
         updatePetalActions(deltaTime);
+
+        // Update poison effects
+        updatePoisonEffects(deltaTime);
 
         moveEnemies();
 

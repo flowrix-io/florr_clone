@@ -3,6 +3,12 @@ export interface Dot {
   y: number;
 }
 
+export interface PoisonEffect {
+  damage: number;  // Damage per millisecond
+  endTime: number;  // Timestamp when the poison effect ends
+  playerId: string;  // ID of the player who applied the poison
+}
+
 export interface Enemy {
   id: string;
   type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant';
@@ -19,6 +25,7 @@ export interface Enemy {
   wanderTarget?: { x: number; y: number };
   lastWanderTime?: number;
   isHostile?: boolean;
+  poisonEffects?: PoisonEffect[];  // Active poison effects on this enemy
   range?: number;
 }
 
