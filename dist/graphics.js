@@ -884,6 +884,11 @@ class Graphics {
         // Draw minimap background (white instead of black)
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         this.ctx.fillRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
+        // Set up clipping region for minimap to prevent drawing outside bounds
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
+        this.ctx.clip();
         // Draw only walls on minimap (with scroll offset)
         this.mapData.forEach(element => {
             // Only draw walls
@@ -918,6 +923,8 @@ class Graphics {
         this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(minimapX + ((this.cameraX - this.minimapScrollX) * minimapScale.x), minimapY + ((this.cameraY - this.minimapScrollY) * minimapScale.y), (this.canvas.width / this.zoomLevel) * minimapScale.x, (this.canvas.height / this.zoomLevel) * minimapScale.y);
+        // Restore context to remove clipping region
+        this.ctx.restore();
         // Draw border
         this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = 2;

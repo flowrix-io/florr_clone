@@ -1095,6 +1095,12 @@ export class Graphics {
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         this.ctx.fillRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
 
+        // Set up clipping region for minimap to prevent drawing outside bounds
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
+        this.ctx.clip();
+
         // Draw only walls on minimap (with scroll offset)
         this.mapData.forEach(element => {
             // Only draw walls
@@ -1143,6 +1149,9 @@ export class Graphics {
             (this.canvas.width / this.zoomLevel) * minimapScale.x,
             (this.canvas.height / this.zoomLevel) * minimapScale.y
         );
+
+        // Restore context to remove clipping region
+        this.ctx.restore();
 
         // Draw border
         this.ctx.strokeStyle = '#000000';

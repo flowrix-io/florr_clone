@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 42,
-      "xp": 286996,
+      "xp": 287057,
       "maxHealth": 510,
       "damage": 87,
       "inventory": {
@@ -15,9 +15,9 @@
           "petal_dandelion": 11,
           "petal_stinger": 21,
           "petal_yggdrasil": 6,
-          "speed_boost": 24,
+          "speed_boost": 25,
           "petal_sand": 36,
-          "petal_rock": 38,
+          "petal_rock": 39,
           "petal_clover": 9,
           "petal_bone": 5,
           "petal_cactus": 1,
@@ -50,7 +50,7 @@
           "petal_basic": 24,
           "petal_sand": 4,
           "speed_boost": 5,
-          "petal_stinger": 8,
+          "petal_stinger": 9,
           "shield": 6,
           "petal_clover": 7,
           "petal_light": 6,
@@ -110,7 +110,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 98377.5,
+          "health": 98340,
           "onCooldown": false
         },
         {
@@ -134,7 +134,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 4988.75,
+          "health": 4313.75,
           "onCooldown": false
         },
         {
@@ -158,7 +158,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 74115,
+          "health": 74105,
           "onCooldown": false
         },
         {
