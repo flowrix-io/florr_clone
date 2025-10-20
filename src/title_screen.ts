@@ -304,6 +304,16 @@ export class TitleScreen {
                 <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
                 <button id="multiPlayerButton" class="ready-button">Ready▶︎</button>
             </div>
+            <div class="biome-selector-container">
+                <label for="biomeSelector">Spawn Biome:</label>
+                <select id="biomeSelector" class="biome-selector">
+                    <option value="default">Default (Common Spawn)</option>
+                    <option value="desert">Desert</option>
+                    <option value="ocean">Ocean</option>
+                    <option value="swamp">Swamp</option>
+                    <option value="ant_hell">Ant Hell</option>
+                </select>
+            </div>
             <div class="color-picker">
                 <label for="hueSlider">Player Color:</label>
                 <input type="range" id="hueSlider" min="0" max="360" value="0" class="hue-slider">
@@ -957,6 +967,20 @@ export class TitleScreen {
                     localStorage.setItem('playerName', nameInput.value);
                 });
             }
+
+            // Setup biome selector persistence
+            const biomeSelector = document.getElementById('biomeSelector') as HTMLSelectElement;
+            if (biomeSelector) {
+                // Load saved biome selection from localStorage
+                const savedBiome = localStorage.getItem('spawnBiome') || 'default';
+                biomeSelector.value = savedBiome;
+                
+                // Save biome selection to localStorage when it changes
+                biomeSelector.addEventListener('change', () => {
+                    localStorage.setItem('spawnBiome', biomeSelector.value);
+                    console.log('Selected spawn biome:', biomeSelector.value);
+                });
+            }
         }, 100); // 100ms delay to ensure DOM is ready
     }
 
@@ -1457,6 +1481,42 @@ export const titleScreenStyles = `
         padding: 10px;
         width: 300px;
         border-radius: 5px;
+    }
+
+    .biome-selector-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        margin: 15px 0;
+    }
+
+    .biome-selector-container label {
+        color: white;
+        font-size: 18px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    .biome-selector {
+        background: rgba(255, 255, 255, 0.9);
+        border: 2px solid rgba(255, 255, 255, 0.5);
+        color: #000;
+        font-size: 16px;
+        padding: 8px 15px;
+        border-radius: 5px;
+        cursor: pointer;
+        min-width: 250px;
+        text-align: center;
+    }
+
+    .biome-selector:hover {
+        background: rgba(255, 255, 255, 1);
+        transform: scale(1.02);
+    }
+
+    .biome-selector option {
+        background: white;
+        color: #000;
     }
 
     .color-picker {

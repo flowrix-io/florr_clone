@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 42,
-      "xp": 147485,
+      "xp": 149916,
       "maxHealth": 510,
       "damage": 87,
       "inventory": {
@@ -134,7 +134,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 29288.75,
+          "health": 4988.75,
           "onCooldown": false
         },
         {
@@ -178,7 +178,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 98415,
+          "health": 98405,
           "onCooldown": false
         }
       ]

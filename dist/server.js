@@ -1015,6 +1015,26 @@ function getSpawnTypeForLevel(level) {
         return 'legendary';
     return 'mythic';
 }
+// Helper function to find a spawn position within a specific biome
+function getSpawnPositionInBiome(biomeName) {
+    // Find all biome elements with the specified name
+    const biomes = constants_2.WORLD_MAP.filter(element => element.type === 'biome' &&
+        element.properties?.biomeName === biomeName &&
+        element.width > 0 &&
+        element.height > 0);
+    if (biomes.length === 0) {
+        console.warn(`No valid biomes found with name: ${biomeName}`);
+        return null;
+    }
+    // Choose a random biome from the available ones
+    const biome = biomes[Math.floor(Math.random() * biomes.length)];
+    // Generate a random position within the biome, with some padding from edges
+    const padding = 50; // Padding from biome edges
+    const x = biome.x + padding + Math.random() * Math.max(0, biome.width - padding * 2);
+    const y = biome.y + padding + Math.random() * Math.max(0, biome.height - padding * 2);
+    console.log(`Spawning in ${biomeName} biome at (${x.toFixed(0)}, ${y.toFixed(0)})`);
+    return { x: x * constants_2.SCALE_FACTOR, y: y * constants_2.SCALE_FACTOR };
+}
 function addItem(inventory, rarity, type, count) {
     if (!inventory[rarity]) {
         inventory[rarity] = {};
@@ -1100,11 +1120,35 @@ io.on('connection', (socket) => {
             // console.log('User authenticated, loading saved progress for userId:', user.id);
             const savedProgress = database_1.database.getPlayerByUserId(user.id);
             // console.log('Loaded saved progress:', savedProgress);
+            // Determine spawn position based on selected biome
+            let spawnX = 200;
+            let spawnY = constants_2.WORLD_HEIGHT / 2;
+            if (credentials.spawnBiome && credentials.spawnBiome !== 'default') {
+                const biomeSpawn = getSpawnPositionInBiome(credentials.spawnBiome);
+                if (biomeSpawn) {
+                    spawnX = biomeSpawn.x;
+                    spawnY = biomeSpawn.y;
+                    console.log(`Player ${credentials.playerName} spawning in ${credentials.spawnBiome} biome`);
+                }
+                else {
+                    console.log(`Failed to find biome ${credentials.spawnBiome}, using default spawn`);
+                }
+            }
+            else {
+                // Use default spawn logic for common spawn zones
+                const validSpawnPoints = constants_2.WORLD_MAP.filter(element => element.type === 'spawn' &&
+                    element.properties?.spawnType === 'common');
+                if (validSpawnPoints.length > 0) {
+                    const spawn = validSpawnPoints[Math.floor(Math.random() * validSpawnPoints.length)];
+                    spawnX = (spawn.x + Math.random() * spawn.width) * constants_2.SCALE_FACTOR;
+                    spawnY = (spawn.y + Math.random() * spawn.height) * constants_2.SCALE_FACTOR;
+                }
+            }
             constants_2.players[socket.id] = {
                 id: socket.id,
                 name: credentials.playerName || 'Unnamed',
-                x: 200,
-                y: constants_2.WORLD_HEIGHT / 2,
+                x: spawnX,
+                y: spawnY,
                 angle: 0,
                 score: 0,
                 velocityX: 0,

@@ -419,7 +419,8 @@ class Game {
         const credentials = {
             username: localStorage.getItem('username') || 'player1',
             password: localStorage.getItem('password') || 'password123',
-            playerName: this.nameInput?.value || 'Unnamed'
+            playerName: this.nameInput?.value || 'Unnamed',
+            spawnBiome: localStorage.getItem('spawnBiome') || 'default'
         };
         this.socket.emit('authenticate', credentials);
         this.socket.on('authenticated', (response) => {
