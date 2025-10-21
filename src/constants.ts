@@ -630,6 +630,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "epic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -648,6 +663,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "epic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -666,6 +696,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "epic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -684,6 +729,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "epic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -702,6 +762,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "epic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -720,6 +795,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "epic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -738,6 +828,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "epic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -756,6 +861,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "epic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "epic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -774,6 +894,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "legendary",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -792,6 +927,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "legendary",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -810,6 +960,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "legendary",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -828,6 +993,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "legendary",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "legendary",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -846,6 +1026,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -864,6 +1059,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
@@ -882,6 +1092,21 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "mythic",
           "weight": 2,
           "mobType": "soldier_fire_ant"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "beetle"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "cactus"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "shiny_ladybug"
         }
       ]
     }
