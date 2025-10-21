@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 42,
-      "xp": 576168,
+      "xp": 593988,
       "maxHealth": 510,
       "damage": 87,
       "inventory": {
@@ -19,7 +19,7 @@
           "petal_sand": 36,
           "petal_rock": 39,
           "petal_clover": 9,
-          "petal_bone": 6,
+          "petal_bone": 7,
           "petal_cactus": 1,
           "petal_poison_cactus": 1000
         },
@@ -57,7 +57,7 @@
           "health_potion": 8,
           "petal_rock": 6,
           "petal_yggdrasil": 2,
-          "petal_bone": 1
+          "petal_bone": 2
         },
         "legendary": {
           "speed_boost": 23,
@@ -74,7 +74,8 @@
           "petal_yggdrasil": 4,
           "petal_cactus": 7,
           "petal_poison_cactus": 2,
-          "petal_bone": 15
+          "petal_bone": 23,
+          "petal_iris": 1
         },
         "epic": {
           "petal_stinger": 13,
@@ -82,7 +83,7 @@
           "petal_basic": 12,
           "petal_rose": 17,
           "petal_sand": 12,
-          "petal_yggdrasil": 1,
+          "petal_yggdrasil": 2,
           "health_potion": 11,
           "petal_light": 11,
           "petal_rock": 46,
@@ -114,23 +115,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": -98010,
-          "onCooldown": true
-        },
-        {
-          "type": "petal",
-          "petalType": "poison_cactus",
-          "rarity": "unique",
-          "maxHealth": 98415,
-          "health": 74115,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "poison_cactus",
-          "rarity": "unique",
-          "maxHealth": 98415,
-          "health": 82215,
+          "health": 98415,
           "onCooldown": false
         },
         {
@@ -146,7 +131,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 40635,
+          "health": 98415,
           "onCooldown": false
         },
         {
@@ -154,7 +139,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 61965,
+          "health": 98415,
           "onCooldown": false
         },
         {
@@ -162,7 +147,23 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 82165,
+          "health": 94365,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "poison_cactus",
+          "rarity": "unique",
+          "maxHealth": 98415,
+          "health": 98415,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "poison_cactus",
+          "rarity": "unique",
+          "maxHealth": 98415,
+          "health": 33565,
           "onCooldown": false
         },
         {
@@ -174,7 +175,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 84240,
+          "health": 98415,
           "onCooldown": false
         },
         {

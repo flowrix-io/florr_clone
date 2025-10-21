@@ -351,6 +351,22 @@ const BASE_PETAL_CONFIGS = {
 </svg>`,
         isAdminPetal: false
     },
+    iris: {
+        name: "Iris Petal",
+        damage: 0,
+        health: 1,
+        size: 0.7,
+        cooldown: 1000,
+        poison: 0.009,
+        poisonDuration: 1000,
+        description: "Very Poisonous",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ce76db" stroke-width="4" stroke="#a760b1"/>
+</svg>`,
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 99999,

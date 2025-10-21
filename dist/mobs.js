@@ -1219,6 +1219,22 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.2, // 20% chance for bone
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'iris',
+                rarity: 'common',
+                probability: 0.5, // 50% chance for iris
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'iris',
+                rarity: 'uncommon',
+                probability: 0.1, // 10% chance for iris
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
