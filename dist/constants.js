@@ -118,301 +118,2362 @@ exports.MAZE_WALL_THICKNESS = 100; // Thickness of maze walls
 exports.WORLD_MAP = [
     {
         "type": "wall",
-        "x": 28.28125,
+        "x": 12.8125,
         "y": 80,
         "width": 20,
-        "height": 19890,
+        "height": 59900,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 48.28125,
-        "y": 100,
-        "width": 19840,
-        "height": 40,
+        "x": 32.8125,
+        "y": 59940,
+        "width": 59960,
+        "height": 20,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 19818.28125,
-        "y": 130,
-        "width": 40,
-        "height": 19830,
+        "x": 59942.8125,
+        "y": 10,
+        "width": 10,
+        "height": 59940,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 38.28125,
-        "y": 19880,
-        "width": 19790,
+        "x": 59942.8125,
+        "y": 10,
+        "width": 0,
+        "height": 0,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 32.8125,
+        "y": 60,
+        "width": 59930,
+        "height": 60,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 72.8125,
+        "y": 230,
+        "width": 610,
+        "height": 500,
+        "properties": {
+            "spawnType": "common"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 782.8125,
+        "y": 270,
+        "width": 500,
+        "height": 570,
+        "properties": {
+            "spawnType": "common"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 142.8125,
+        "y": 1000,
+        "width": 890,
+        "height": 550,
+        "properties": {
+            "spawnType": "common"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 282.8125,
+        "y": 1740,
+        "width": 1000,
+        "height": 480,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 1268.4375,
+        "y": 1010,
+        "width": 530,
+        "height": 630,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 1428.4375,
+        "y": 280,
+        "width": 580,
+        "height": 510,
+        "properties": {
+            "spawnType": "uncommon"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 2208.4375,
+        "y": 300,
+        "width": 70,
+        "height": 2010,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 2228.4375,
+        "y": 2210,
+        "width": 1740,
         "height": 50,
         "properties": {}
     },
     {
-        "type": "spawn",
-        "x": 178.28125,
-        "y": 9290,
-        "width": 1550,
-        "height": 1730,
-        "properties": {
-            "spawnType": "common"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 248.28125,
-        "y": 7820,
-        "width": 2780,
-        "height": 1430,
-        "properties": {
-            "spawnType": "common"
-        }
-    },
-    {
         "type": "wall",
-        "x": 2308.28125,
-        "y": 9670,
-        "width": 200,
-        "height": 2860,
+        "x": 18.4375,
+        "y": 2610,
+        "width": 2050,
+        "height": 70,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 428.28125,
-        "y": 6650,
-        "width": 3590,
-        "height": 270,
+        "x": 1948.4375,
+        "y": 2680,
+        "width": 90,
+        "height": 820,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 1128.4375,
+        "y": 3470,
+        "width": 840,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 1148.4375,
+        "y": 3130,
+        "width": 90,
+        "height": 370,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 3678.4375,
+        "y": 2240,
+        "width": 100,
+        "height": 1630,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 2968.4375,
+        "y": 3730,
+        "width": 770,
+        "height": 100,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 2998.4375,
+        "y": 3820,
+        "width": 110,
+        "height": 1550,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 1088.4375,
+        "y": 4430,
+        "width": 580,
+        "height": 540,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 28.4375,
+        "y": 6160,
+        "width": 2970,
+        "height": 100,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4008.4375,
+        "y": 5150,
+        "width": 760,
+        "height": 180,
         "properties": {}
     },
     {
         "type": "spawn",
-        "x": 468.28125,
-        "y": 11270,
-        "width": 1510,
-        "height": 1490,
+        "x": 38.4375,
+        "y": 2720,
+        "width": 1020,
+        "height": 2390,
         "properties": {
             "spawnType": "uncommon"
         }
     },
     {
         "type": "spawn",
-        "x": 1228.28125,
-        "y": 13030,
-        "width": 4250,
-        "height": 1150,
+        "x": 48.4375,
+        "y": 5130,
+        "width": 2910,
+        "height": 970,
         "properties": {
-            "spawnType": "uncommon"
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 1718.4375,
+        "y": 3630,
+        "width": 1240,
+        "height": 1450,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 1058.4375,
+        "y": 3660,
+        "width": 660,
+        "height": 740,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 2128.4375,
+        "y": 2380,
+        "width": 1520,
+        "height": 1220,
+        "properties": {
+            "spawnType": "rare"
         }
     },
     {
         "type": "wall",
-        "x": 4368.28125,
-        "y": 13890,
-        "width": 310,
-        "height": 2890,
+        "x": 2968.4375,
+        "y": 6280,
+        "width": 80,
+        "height": 2980,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 4558.28125,
-        "y": 13870,
-        "width": 5680,
-        "height": 260,
+        "x": 2908.4375,
+        "y": 6220,
+        "width": 140,
+        "height": 110,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 5858.28125,
-        "y": 8830,
-        "width": 250,
-        "height": 3980,
+        "x": 3108.4375,
+        "y": 5320,
+        "width": 100,
+        "height": 90,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 1078.28125,
-        "y": 1760,
-        "width": 270,
-        "height": 390,
+        "x": 3078.4375,
+        "y": 5300,
+        "width": 100,
+        "height": 90,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 2848.28125,
-        "y": 3610,
-        "width": 350,
-        "height": 450,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 4448.28125,
-        "y": 820,
-        "width": 340,
-        "height": 270,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 528.28125,
-        "y": 5380,
-        "width": 170,
-        "height": 210,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 18.28125,
-        "y": 6670,
-        "width": 510,
-        "height": 190,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 3978.28125,
-        "y": 6390,
-        "width": 2540,
-        "height": 320,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 6138.28125,
-        "y": 4290,
-        "width": 260,
-        "height": 2150,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 6748.28125,
-        "y": 7470,
-        "width": 2560,
-        "height": 170,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 7588.28125,
-        "y": 8670,
-        "width": 200,
-        "height": 1080,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 7728.28125,
-        "y": 9610,
-        "width": 3070,
+        "x": 3178.4375,
+        "y": 5400,
+        "width": 160,
         "height": 140,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 8368.28125,
-        "y": 9760,
-        "width": 150,
-        "height": 1580,
+        "x": 3308.4375,
+        "y": 5530,
+        "width": 140,
+        "height": 150,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 8488.28125,
-        "y": 11270,
-        "width": 1540,
-        "height": 140,
+        "x": 3428.4375,
+        "y": 5670,
+        "width": 130,
+        "height": 580,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 9048.28125,
-        "y": 9730,
+        "x": 3028.4375,
+        "y": 6970,
+        "width": 1230,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 3098.4375,
+        "y": 4410,
+        "width": 2980,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4598.4375,
+        "y": 3900,
         "width": 180,
-        "height": 1050,
+        "height": 550,
         "properties": {}
     },
     {
-        "type": "spawn",
-        "x": 318.28125,
-        "y": 490,
-        "width": 2960,
-        "height": 5540,
+        "type": "wall",
+        "x": 3938.4375,
+        "y": 60,
+        "width": 130,
+        "height": 2170,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 3120,
+        "y": 4560,
+        "width": 2930,
+        "height": 570,
         "properties": {
-            "spawnType": "uncommon"
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 5,
+                    "mobType": "bee"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 4880,
+        "y": 5130,
+        "width": 1120,
+        "height": 1620,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 5,
+                    "mobType": "bee"
+                }
+            ]
         }
     },
     {
         "type": "spawn",
-        "x": 3428.28125,
-        "y": 530,
-        "width": 2670,
-        "height": 5460,
+        "x": 3608.4375,
+        "y": 5470,
+        "width": 1250,
+        "height": 1440,
         "properties": {
-            "spawnType": "mythic"
+            "spawnType": "epic"
         }
     },
     {
         "type": "wall",
-        "x": 6178.28125,
-        "y": 2820,
-        "width": 1380,
+        "x": 6158.4375,
+        "y": 4460,
+        "width": 40,
+        "height": 3440,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6018.4375,
+        "y": 4430,
+        "width": 180,
+        "height": 90,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 4228.4375,
+        "y": 8060,
+        "width": 800,
+        "height": 820,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6958.4375,
+        "y": 4410,
+        "width": 130,
+        "height": 3460,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6838.4375,
+        "y": 3930,
+        "width": 190,
+        "height": 480,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6988.4375,
+        "y": 3440,
+        "width": 130,
+        "height": 520,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 7118.4375,
+        "y": 2690,
+        "width": 250,
+        "height": 790,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 5998.4375,
+        "y": 3530,
+        "width": 110,
+        "height": 900,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6088.4375,
+        "y": 2980,
+        "width": 170,
+        "height": 600,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 6208.4375,
+        "y": 2090,
+        "width": 110,
+        "height": 940,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 6230,
+        "y": 4490,
+        "width": 690,
+        "height": 3340,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6170,
+        "y": 3680,
+        "width": 620,
+        "height": 680,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6240,
+        "y": 4290,
+        "width": 590,
+        "height": 220,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6120,
+        "y": 3630,
+        "width": 130,
+        "height": 790,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6260,
+        "y": 3030,
+        "width": 710,
+        "height": 680,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6780,
+        "y": 3670,
+        "width": 190,
+        "height": 210,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6360,
+        "y": 1360,
+        "width": 750,
+        "height": 1720,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6990,
+        "y": 2970,
+        "width": 130,
+        "height": 470,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 4100,
+        "y": 160,
+        "width": 2210,
+        "height": 1870,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 4120,
+        "y": 2050,
+        "width": 2050,
+        "height": 910,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 3780,
+        "y": 3040,
+        "width": 2300,
+        "height": 440,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 3800,
+        "y": 2300,
+        "width": 2290,
+        "height": 760,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 3800,
+        "y": 3490,
+        "width": 2190,
+        "height": 400,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 3120,
+        "y": 3890,
+        "width": 1480,
+        "height": 510,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 4810,
+        "y": 3880,
+        "width": 1180,
+        "height": 530,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 7338.4375,
+        "y": 2740,
+        "width": 5640,
         "height": 120,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 6958.28125,
-        "y": 2920,
-        "width": 170,
-        "height": 1370,
+        "x": 12978.4375,
+        "y": 2840,
+        "width": 1930,
+        "height": 20,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 8878.28125,
-        "y": 4620,
-        "width": 3370,
-        "height": 190,
+        "x": 8738.4375,
+        "y": 730,
+        "width": 80,
+        "height": 2020,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 8918.28125,
-        "y": 120,
+        "x": 7568.4375,
+        "y": 1300,
+        "width": 1220,
+        "height": 130,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 7588.4375,
+        "y": 210,
+        "width": 80,
+        "height": 1100,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 8798.4375,
+        "y": 260,
+        "width": 80,
+        "height": 520,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 8868.4375,
+        "y": 740,
+        "width": 1580,
+        "height": 70,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 8808.4375,
+        "y": 1810,
+        "width": 1770,
+        "height": 120,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 10538.4375,
+        "y": 1190,
+        "width": 70,
+        "height": 680,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 10928.4375,
+        "y": 320,
+        "width": 90,
+        "height": 2430,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 10978.4375,
+        "y": 1160,
+        "width": 1880,
+        "height": 80,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 12088.4375,
+        "y": 1230,
+        "width": 110,
+        "height": 1330,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 11668.4375,
+        "y": 360,
+        "width": 50,
+        "height": 790,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 11668.4375,
+        "y": 1090,
+        "width": 10,
+        "height": 130,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 12838.4375,
+        "y": 1220,
+        "width": 1320,
+        "height": 120,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 11030,
+        "y": 160,
+        "width": 3890,
+        "height": 2560,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "cactus"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 7220,
+        "y": 200,
+        "width": 3700,
+        "height": 2490,
+        "properties": {
+            "biomeName": "desert",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "cactus"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 7048.4375,
+        "y": 7740,
+        "width": 5590,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "teleporter",
+        "x": 1458.4375,
+        "y": 1860,
+        "width": 460,
+        "height": 370,
+        "properties": {
+            "teleportTo": {
+                "x": 50000,
+                "y": 50000
+            }
+        }
+    },
+    {
+        "type": "wall",
+        "x": 48518.4375,
+        "y": 48040,
+        "width": 3940,
+        "height": 100,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 48508.4375,
+        "y": 48090,
+        "width": 40,
+        "height": 3910,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 48518.4375,
+        "y": 51960,
+        "width": 4120,
+        "height": 60,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 52358.4375,
+        "y": 48070,
+        "width": 80,
+        "height": 3790,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 48570,
+        "y": 48190,
+        "width": 3760,
+        "height": 3740,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 8,
+                    "mobType": "firefly"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 52408.4375,
+        "y": 51680,
+        "width": 1750,
+        "height": 70,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 54088.4375,
+        "y": 48450,
+        "width": 80,
+        "height": 3270,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 54168.4375,
+        "y": 48420,
+        "width": 3690,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 52368.4375,
+        "y": 52000,
+        "width": 80,
+        "height": 6420,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 47878.4375,
+        "y": 58080,
+        "width": 4530,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 55618.4375,
+        "y": 53260,
+        "width": 1320,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 54808.4375,
+        "y": 54880,
+        "width": 120,
+        "height": 1110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 56658.4375,
+        "y": 55930,
+        "width": 1070,
+        "height": 120,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 55868.4375,
+        "y": 49700,
+        "width": 150,
+        "height": 90,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 55968.4375,
+        "y": 49780,
+        "width": 320,
+        "height": 290,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 48588.4375,
+        "y": 53240,
+        "width": 60,
+        "height": 930,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 49888.4375,
+        "y": 55050,
+        "width": 1170,
+        "height": 100,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 43518.4375,
+        "y": 51960,
+        "width": 5080,
+        "height": 50,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 45998.4375,
+        "y": 51990,
+        "width": 40,
+        "height": 3960,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 39228.4375,
+        "y": 55580,
+        "width": 6780,
+        "height": 60,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 45518.4375,
+        "y": 55270,
+        "width": 490,
+        "height": 350,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 45918.4375,
+        "y": 54850,
+        "width": 160,
+        "height": 510,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 45778.4375,
+        "y": 51700,
+        "width": 490,
+        "height": 440,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 43538.4375,
+        "y": 46810,
         "width": 140,
-        "height": 4510,
+        "height": 5150,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 7308.28125,
-        "y": 1380,
-        "width": 1670,
-        "height": 170,
+        "x": 43638.4375,
+        "y": 38590,
+        "width": 90,
+        "height": 8260,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 6358.28125,
-        "y": 5550,
-        "width": 3390,
+        "x": 42038.4375,
+        "y": 56700,
+        "width": 60,
+        "height": 2100,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 50118.4375,
+        "y": 58910,
+        "width": 80,
+        "height": 50,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 52188.4375,
+        "y": 59210,
+        "width": 140,
         "height": 160,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 9258.28125,
-        "y": 6470,
-        "width": 150,
-        "height": 1030,
+        "x": 52838.4375,
+        "y": 56060,
+        "width": 160,
+        "height": 110,
         "properties": {}
     },
     {
+        "type": "wall",
+        "x": 53068.4375,
+        "y": 53770,
+        "width": 150,
+        "height": 170,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 47368.4375,
+        "y": 55910,
+        "width": 200,
+        "height": 180,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 42588.4375,
+        "y": 53470,
+        "width": 150,
+        "height": 150,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 43018.4375,
+        "y": 57700,
+        "width": 150,
+        "height": 140,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 39768.4375,
+        "y": 57580,
+        "width": 160,
+        "height": 80,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 39228.4375,
+        "y": 50310,
+        "width": 80,
+        "height": 5320,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 40228.4375,
+        "y": 50580,
+        "width": 130,
+        "height": 120,
+        "properties": {}
+    },
+    {
+        "type": "teleporter",
+        "x": 48728.4375,
+        "y": 48400,
+        "width": 530,
+        "height": 490,
+        "properties": {
+            "teleportTo": {
+                "x": 500,
+                "y": 500
+            }
+        }
+    },
+    {
+        "type": "wall",
+        "x": 57478.4375,
+        "y": 41550,
+        "width": 110,
+        "height": 6930,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 57558.4375,
+        "y": 41590,
+        "width": 2180,
+        "height": 60,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 43718.4375,
+        "y": 42160,
+        "width": 6520,
+        "height": 70,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 52378.4375,
+        "y": 44970,
+        "width": 100,
+        "height": 3090,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 50208.4375,
+        "y": 42080,
+        "width": 3310,
+        "height": 80,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 53458.4375,
+        "y": 34860,
+        "width": 90,
+        "height": 7240,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 45998.4375,
+        "y": 13500,
+        "width": 1530,
+        "height": 8720,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 46008.4375,
+        "y": 20700,
+        "width": 12610,
+        "height": 1740,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 57208.4375,
+        "y": 13480,
+        "width": 1270,
+        "height": 8020,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 46008.4375,
+        "y": 13520,
+        "width": 11580,
+        "height": 1250,
+        "properties": {}
+    },
+    {
+        "type": "teleporter",
+        "x": 6468.4375,
+        "y": 220,
+        "width": 340,
+        "height": 290,
+        "properties": {
+            "teleportTo": {
+                "x": 50000,
+                "y": 20000
+            }
+        }
+    },
+    {
+        "type": "biome",
+        "x": 47500,
+        "y": 14750,
+        "width": 9760,
+        "height": 5990,
+        "properties": {
+            "biomeName": "hel",
+            "backgroundTexture": "hel.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "hel_beetle"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6320,
+        "y": 520,
+        "width": 580,
+        "height": 90,
+        "properties": {
+            "biomeName": "hel",
+            "backgroundTexture": "hel.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "hel_beetle"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6850,
+        "y": 170,
+        "width": 40,
+        "height": 400,
+        "properties": {
+            "biomeName": "hel",
+            "backgroundTexture": "hel.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "hel_beetle"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6390,
+        "y": 180,
+        "width": 500,
+        "height": 40,
+        "properties": {
+            "biomeName": "hel",
+            "backgroundTexture": "hel.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "hel_beetle"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 6390,
+        "y": 200,
+        "width": 50,
+        "height": 350,
+        "properties": {
+            "biomeName": "hel",
+            "backgroundTexture": "hel.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "hel_beetle"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12450,
+        "y": 6270,
+        "width": 1510,
+        "height": 1360,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 9640,
+        "y": 5900,
+        "width": 2790,
+        "height": 1750,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12310,
+        "y": 4880,
+        "width": 2640,
+        "height": 1370,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 9500,
+        "y": 4560,
+        "width": 2810,
+        "height": 1330,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 7140,
+        "y": 5670,
+        "width": 2470,
+        "height": 1960,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 7120,
+        "y": 4280,
+        "width": 2350,
+        "height": 1360,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 8860,
+        "y": 3510,
+        "width": 3930,
+        "height": 1030,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12310,
+        "y": 4320,
+        "width": 2720,
+        "height": 530,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 7410,
+        "y": 2950,
+        "width": 1440,
+        "height": 1320,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12800,
+        "y": 2890,
+        "width": 2200,
+        "height": 1420,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 8880,
+        "y": 2930,
+        "width": 3900,
+        "height": 570,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "ocean.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 3,
+                    "mobType": "jellyfish"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 14828.4375,
+        "y": 2800,
+        "width": 1490,
+        "height": 40,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 14948.4375,
+        "y": 100,
+        "width": 50,
+        "height": 2740,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 33958.4375,
+        "y": 51540,
+        "width": 50,
+        "height": 8440,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 35648.4375,
+        "y": 54580,
+        "width": 170,
+        "height": 130,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 37078.4375,
+        "y": 52840,
+        "width": 130,
+        "height": 120,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 36098.4375,
+        "y": 56640,
+        "width": 170,
+        "height": 200,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 7100,
+        "y": 7910,
+        "width": 2370,
+        "height": 2990,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 4680,
+        "y": 10300,
+        "width": 2990,
+        "height": 1930,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 7700,
+        "y": 10940,
+        "width": 2880,
+        "height": 2130,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 9840,
+        "y": 7890,
+        "width": 1140,
+        "height": 3110,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 4448.4375,
+        "y": 13210,
+        "width": 3690,
+        "height": 300,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 8048.4375,
+        "y": 13430,
+        "width": 2940,
+        "height": 330,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 11378.4375,
+        "y": 10380,
+        "width": 270,
+        "height": 1450,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 11628.4375,
+        "y": 9340,
+        "width": 350,
+        "height": 1050,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 11428.4375,
+        "y": 7810,
+        "width": 260,
+        "height": 1580,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 9430,
+        "y": 7920,
+        "width": 450,
+        "height": 3030,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 7350,
+        "y": 10730,
+        "width": 2160,
+        "height": 1670,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 10420,
+        "y": 11940,
+        "width": 2130,
+        "height": 1480,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 11000,
+        "y": 7910,
+        "width": 1560,
+        "height": 4030,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 10590,
+        "y": 11030,
+        "width": 400,
+        "height": 940,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 10430,
+        "y": 10730,
+        "width": 650,
+        "height": 1310,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 10888.4375,
+        "y": 13640,
+        "width": 290,
+        "height": 1870,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 10128.4375,
+        "y": 13710,
+        "width": 210,
+        "height": 2270,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 10298.4375,
+        "y": 15890,
+        "width": 1030,
+        "height": 300,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 11078.4375,
+        "y": 15450,
+        "width": 160,
+        "height": 480,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 7950,
+        "y": 13790,
+        "width": 2160,
+        "height": 2340,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 9140,
+        "y": 16030,
+        "width": 3880,
+        "height": 2070,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 11400,
+        "y": 12670,
+        "width": 1760,
+        "height": 3480,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 8170,
+        "y": 12870,
+        "width": 2320,
+        "height": 480,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 12618.4375,
+        "y": 7810,
+        "width": 2210,
+        "height": 130,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 14758.4375,
+        "y": 7920,
+        "width": 2000,
+        "height": 200,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 11298.4375,
+        "y": 18260,
+        "width": 5470,
+        "height": 80,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 16758.4375,
+        "y": 18340,
+        "width": 1250,
+        "height": 80,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 17988.4375,
+        "y": 18430,
+        "width": 3330,
+        "height": 290,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 17928.4375,
+        "y": 18380,
+        "width": 150,
+        "height": 80,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 21268.4375,
+        "y": 18270,
+        "width": 2060,
+        "height": 230,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 23238.4375,
+        "y": 13520,
+        "width": 220,
+        "height": 4790,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 23138.4375,
+        "y": 10560,
+        "width": 140,
+        "height": 3010,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 23038.4375,
+        "y": 9670,
+        "width": 130,
+        "height": 920,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 16718.4375,
+        "y": 8050,
+        "width": 4780,
+        "height": 140,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 15448.4375,
+        "y": 8070,
+        "width": 60,
+        "height": 60,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 12788.4375,
+        "y": 7930,
+        "width": 120,
+        "height": 1230,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 12878.4375,
+        "y": 9060,
+        "width": 940,
+        "height": 160,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 13758.4375,
+        "y": 9200,
+        "width": 140,
+        "height": 1510,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 13858.4375,
+        "y": 10670,
+        "width": 1290,
+        "height": 150,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 15098.4375,
+        "y": 10800,
+        "width": 120,
+        "height": 2780,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 14998.4375,
+        "y": 13550,
+        "width": 120,
+        "height": 1650,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 12890,
+        "y": 7940,
+        "width": 1910,
+        "height": 1150,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 13860,
+        "y": 8200,
+        "width": 5260,
+        "height": 2500,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 14730,
+        "y": 8040,
+        "width": 2010,
+        "height": 340,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 15130,
+        "y": 10690,
+        "width": 4070,
+        "height": 3610,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 15120,
+        "y": 13610,
+        "width": 1410,
+        "height": 2670,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12540,
+        "y": 7970,
+        "width": 260,
+        "height": 4750,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 12710,
+        "y": 9180,
+        "width": 1050,
+        "height": 7310,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 13670,
+        "y": 10730,
+        "width": 1430,
+        "height": 4630,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 16530,
+        "y": 14320,
+        "width": 6560,
+        "height": 3930,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 19410,
+        "y": 8210,
+        "width": 3590,
+        "height": 6190,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 19050,
+        "y": 8240,
+        "width": 670,
+        "height": 6110,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
         "type": "spawn",
-        "x": 3078.28125,
-        "y": 7680,
-        "width": 2710,
+        "x": 21658.4375,
+        "y": 5940,
+        "width": 2330,
+        "height": 2290,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 23088.4375,
+        "y": 7460,
+        "width": 2740,
+        "height": 2140,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 23988.4375,
+        "y": 3990,
+        "width": 2130,
+        "height": 3560,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 19928.4375,
+        "y": 2070,
+        "width": 4250,
+        "height": 4000,
+        "properties": {
+            "spawnType": "epic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 24098.4375,
+        "y": 180,
+        "width": 2050,
         "height": 1460,
         "properties": {
             "spawnType": "legendary"
@@ -420,1308 +2481,220 @@ exports.WORLD_MAP = [
     },
     {
         "type": "spawn",
-        "x": 5948.28125,
-        "y": 6950,
-        "width": 750,
-        "height": 1780,
-        "properties": {
-            "spawnType": "rare"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 7168.28125,
-        "y": 6090,
-        "width": 1970,
-        "height": 1230,
-        "properties": {
-            "spawnType": "epic"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 7228.28125,
-        "y": 3080,
-        "width": 1610,
-        "height": 2370,
-        "properties": {
-            "spawnType": "epic"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 6248.28125,
-        "y": 3100,
-        "width": 610,
-        "height": 1040,
-        "properties": {
-            "spawnType": "epic"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 6498.28125,
-        "y": 4350,
-        "width": 560,
-        "height": 1010,
+        "x": 24578.4375,
+        "y": 1450,
+        "width": 1640,
+        "height": 2500,
         "properties": {
             "spawnType": "legendary"
         }
     },
     {
         "type": "spawn",
-        "x": 2628.28125,
-        "y": 9420,
-        "width": 3090,
-        "height": 3400,
-        "properties": {
-            "spawnType": "legendary"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 398.28125,
-        "y": 14250,
-        "width": 3950,
-        "height": 1510,
-        "properties": {
-            "spawnType": "rare"
-        }
-    },
-    {
-        "type": "wall",
-        "x": 2208.28125,
-        "y": 13980,
-        "width": 220,
-        "height": 4680,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 1078.28125,
-        "y": 18340,
-        "width": 1160,
-        "height": 240,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 2358.28125,
-        "y": 18550,
-        "width": 8030,
-        "height": 270,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 4648.28125,
-        "y": 15320,
-        "width": 2140,
-        "height": 220,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 6078.28125,
-        "y": 14080,
-        "width": 210,
-        "height": 830,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 4628.28125,
-        "y": 16670,
-        "width": 3110,
-        "height": 140,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 7128.28125,
-        "y": 15830,
-        "width": 160,
-        "height": 880,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 8818.28125,
-        "y": 14130,
-        "width": 200,
-        "height": 3440,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 10178.28125,
-        "y": 14060,
-        "width": 160,
-        "height": 3350,
-        "properties": {}
-    },
-    {
-        "type": "spawn",
-        "x": 2638.28125,
-        "y": 16950,
-        "width": 5990,
-        "height": 1450,
-        "properties": {
-            "spawnType": "rare"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 6398.28125,
-        "y": 9070,
-        "width": 1080,
-        "height": 4560,
-        "properties": {
-            "spawnType": "rare"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 8578.28125,
-        "y": 8010,
+        "x": 18438.4375,
+        "y": 280,
         "width": 6480,
-        "height": 1540,
-        "properties": {
-            "spawnType": "rare"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 9088.28125,
-        "y": 14210,
-        "width": 1010,
-        "height": 4030,
-        "properties": {
-            "spawnType": "rare"
-        }
-    },
-    {
-        "type": "wall",
-        "x": 11908.28125,
-        "y": 9630,
-        "width": 250,
-        "height": 5120,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 10978.28125,
-        "y": 14410,
-        "width": 980,
-        "height": 200,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 10618.28125,
-        "y": 7630,
-        "width": 2610,
-        "height": 230,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 15008.28125,
-        "y": 15060,
-        "width": 260,
-        "height": 3420,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 14368.28125,
-        "y": 10860,
-        "width": 330,
-        "height": 360,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 16248.28125,
-        "y": 11320,
-        "width": 320,
-        "height": 400,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 13328.28125,
-        "y": 13280,
-        "width": 290,
-        "height": 290,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 17128.28125,
-        "y": 13410,
-        "width": 300,
-        "height": 310,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 14798.28125,
-        "y": 12820,
-        "width": 260,
-        "height": 200,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 17118.28125,
-        "y": 9130,
-        "width": 370,
-        "height": 310,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 15498.28125,
-        "y": 9660,
-        "width": 320,
-        "height": 220,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 13598.28125,
-        "y": 8540,
-        "width": 200,
-        "height": 240,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 12658.28125,
-        "y": 10610,
-        "width": 320,
-        "height": 260,
-        "properties": {}
-    },
-    {
-        "type": "spawn",
-        "x": 5088.28125,
-        "y": 19000,
-        "width": 1300,
-        "height": 810,
+        "height": 1740,
         "properties": {
             "spawnType": "legendary"
         }
     },
     {
         "type": "spawn",
-        "x": 8348.28125,
-        "y": 19080,
-        "width": 1230,
-        "height": 700,
-        "properties": {
-            "spawnType": "legendary"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 6538.28125,
-        "y": 19050,
-        "width": 1550,
-        "height": 730,
-        "properties": {
-            "spawnType": "legendary"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 388.28125,
-        "y": 18910,
-        "width": 4400,
-        "height": 840,
-        "properties": {
-            "spawnType": "mythic"
-        }
-    },
-    {
-        "type": "wall",
-        "x": 11448.28125,
-        "y": 1810,
-        "width": 200,
-        "height": 2810,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 12188.28125,
-        "y": 4780,
-        "width": 3860,
-        "height": 200,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 11998.28125,
-        "y": 5620,
-        "width": 220,
-        "height": 2030,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 14218.28125,
-        "y": 5010,
-        "width": 300,
-        "height": 2280,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 14228.28125,
-        "y": 4930,
-        "width": 280,
-        "height": 150,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 12998.28125,
-        "y": 6020,
-        "width": 1260,
-        "height": 210,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 14468.28125,
-        "y": 6660,
-        "width": 1420,
-        "height": 290,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 12858.28125,
-        "y": 1030,
-        "width": 4230,
-        "height": 190,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 16948.28125,
-        "y": 1190,
-        "width": 190,
-        "height": 4520,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 13008.28125,
-        "y": 1690,
-        "width": 3450,
-        "height": 210,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 16348.28125,
-        "y": 2010,
-        "width": 210,
-        "height": 3700,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 13078.28125,
-        "y": 2460,
-        "width": 2880,
-        "height": 160,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 15758.28125,
-        "y": 2800,
-        "width": 210,
-        "height": 1720,
-        "properties": {}
-    },
-    {
-        "type": "spawn",
-        "x": 12928.28125,
-        "y": 1280,
-        "width": 3880,
-        "height": 330,
+        "x": 17338.4375,
+        "y": 2100,
+        "width": 2900,
+        "height": 1000,
         "properties": {
             "spawnType": "epic"
         }
     },
     {
         "type": "spawn",
-        "x": 16668.28125,
-        "y": 1620,
-        "width": 260,
-        "height": 4260,
+        "x": 16138.4375,
+        "y": 3200,
+        "width": 3750,
+        "height": 3650,
         "properties": {
             "spawnType": "rare"
         }
     },
     {
         "type": "spawn",
-        "x": 12948.28125,
-        "y": 2050,
-        "width": 3280,
-        "height": 320,
+        "x": 19808.4375,
+        "y": 6170,
+        "width": 1770,
+        "height": 1860,
         "properties": {
             "spawnType": "rare"
         }
     },
     {
         "type": "spawn",
-        "x": 16048.28125,
-        "y": 2370,
-        "width": 260,
-        "height": 3260,
+        "x": 15948.4375,
+        "y": 6970,
+        "width": 3830,
+        "height": 920,
         "properties": {
             "spawnType": "uncommon"
         }
     },
     {
-        "type": "spawn",
-        "x": 14978.28125,
-        "y": 2650,
-        "width": 700,
-        "height": 2000,
-        "properties": {
-            "spawnType": "common"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 13078.28125,
-        "y": 2690,
-        "width": 1800,
-        "height": 1900,
-        "properties": {
-            "spawnType": "legendary"
-        }
-    },
-    {
-        "type": "wall",
-        "x": 10028.28125,
-        "y": 110,
-        "width": 390,
-        "height": 3940,
-        "properties": {}
-    },
-    {
-        "type": "spawn",
-        "x": 9108.28125,
-        "y": 230,
-        "width": 840,
-        "height": 4260,
-        "properties": {
-            "spawnType": "mythic"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 10088.28125,
-        "y": 4210,
-        "width": 1260,
-        "height": 250,
-        "properties": {
-            "spawnType": "mythic"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 10578.28125,
-        "y": 380,
-        "width": 450,
-        "height": 3840,
-        "properties": {
-            "spawnType": "legendary"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 10978.28125,
-        "y": 610,
-        "width": 1770,
-        "height": 950,
-        "properties": {
-            "spawnType": "legendary"
-        }
-    },
-    {
-        "type": "spawn",
-        "x": 12038.28125,
-        "y": 1410,
-        "width": 800,
-        "height": 3000,
-        "properties": {
-            "spawnType": "legendary"
-        }
-    },
-    {
-        "type": "teleporter",
-        "x": 528.28125,
-        "y": 16240,
-        "width": 550,
-        "height": 510,
-        "properties": {
-            "teleportTo": {
-                "x": 0,
-                "y": 0,
-                "serverPort": 3001
-            }
-        }
-    },
-    {
-        "type": "teleporter",
-        "x": 9928.28125,
-        "y": 6200,
-        "width": 980,
-        "height": 560,
-        "properties": {
-            "teleportTo": {
-                "x": 0,
-                "y": 0,
-                "serverPort": 3000
-            }
-        }
-    },
-    {
-        "type": "teleporter",
-        "x": 8828.28125,
-        "y": 12000,
-        "width": 860,
-        "height": 650,
-        "properties": {
-            "teleportTo": {
-                "x": 0,
-                "y": 0,
-                "serverPort": 3002
-            }
-        }
-    },
-    {
         "type": "biome",
-        "x": 17378.28125,
-        "y": 320,
-        "width": 2330,
-        "height": 2830,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "mythic",
-                    "weight": 5,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 17388.28125,
-        "y": 3330,
-        "width": 2300,
-        "height": 3290,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "mythic",
-                    "weight": 5,
-                    "mobType": "dark_ladybug"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 4738.28125,
-        "y": 14250,
-        "width": 1290,
-        "height": 1000,
+        "x": 15020,
+        "y": 2910,
+        "width": 1090,
+        "height": 3850,
         "properties": {
             "biomeName": "ocean",
-            "backgroundTexture": "background.svg",
+            "backgroundTexture": "desert.svg",
             "spawnTable": [
                 {
-                    "tier": "epic",
+                    "tier": "uncommon",
                     "weight": 10,
-                    "mobType": "fish"
+                    "mobType": "crab"
                 }
             ]
         }
     },
     {
         "type": "biome",
-        "x": 6058.28125,
-        "y": 14980,
-        "width": 1480,
-        "height": 290,
-        "properties": {
-            "biomeName": "ocean",
-            "backgroundTexture": "background.svg",
-            "spawnTable": [
-                {
-                    "tier": "epic",
-                    "weight": 10,
-                    "mobType": "fish"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 4748.28125,
-        "y": 15640,
-        "width": 2280,
-        "height": 950,
-        "properties": {
-            "biomeName": "ocean",
-            "backgroundTexture": "background.svg",
-            "spawnTable": [
-                {
-                    "tier": "epic",
-                    "weight": 10,
-                    "mobType": "fish"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 14558.28125,
-        "y": 5070,
-        "width": 1420,
-        "height": 1530,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 10,
-                    "mobType": "soldier_fire_ant"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 16018.28125,
-        "y": 5800,
-        "width": 560,
-        "height": 2070,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 10,
-                    "mobType": "soldier_fire_ant"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 16648.28125,
-        "y": 6010,
-        "width": 740,
-        "height": 1920,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 10,
-                    "mobType": "soldier_fire_ant"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 10788.28125,
-        "y": 14980,
-        "width": 2730,
-        "height": 2310,
-        "properties": {
-            "biomeName": "swamp",
-            "backgroundTexture": "background.svg",
-            "spawnTable": [
-                {
-                    "tier": "common",
-                    "weight": 1
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 16138.28125,
-        "y": 17100,
-        "width": 3630,
-        "height": 2740,
-        "properties": {
-            "biomeName": "swamp",
-            "backgroundTexture": "background.svg",
-            "spawnTable": [
-                {
-                    "tier": "common",
-                    "weight": 1
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 19768.28125,
-        "y": 19840,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "swamp",
-            "backgroundTexture": "background.svg",
-            "spawnTable": [
-                {
-                    "tier": "common",
-                    "weight": 1
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 12478.28125,
-        "y": 9800,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 16858.28125,
-        "y": 15010,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 12308.28125,
-        "y": 9720,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 12968.28125,
-        "y": 10050,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 12438.28125,
-        "y": 9910,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 12518.28125,
-        "y": 10070,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 19408.28125,
-        "y": 15100,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 14498.28125,
-        "y": 10230,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 14498.28125,
-        "y": 10280,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 16108.28125,
-        "y": 9020,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 16908.28125,
-        "y": 8560,
-        "width": 0,
-        "height": 0,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "wall",
-        "x": 11398.28125,
-        "y": 19330,
-        "width": 0,
-        "height": 0,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 13778.28125,
-        "y": 14570,
-        "width": 0,
-        "height": 0,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 13918.28125,
-        "y": 14760,
-        "width": 0,
-        "height": 0,
-        "properties": {}
-    },
-    {
-        "type": "wall",
-        "x": 13948.28125,
-        "y": 14880,
-        "width": 0,
-        "height": 0,
-        "properties": {}
-    },
-    {
-        "type": "biome",
-        "x": 12408.28125,
-        "y": 9780,
-        "width": 7250,
-        "height": 5090,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 15328.28125,
-        "y": 14900,
-        "width": 4470,
-        "height": 2190,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "legendary",
-                    "weight": 2,
-                    "mobType": "soldier_fire_ant"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 2,
-                    "mobType": "sandstorm"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 0.5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 12878.28125,
-        "y": 310,
-        "width": 4490,
-        "height": 630,
-        "properties": {
-            "biomeName": "desert",
-            "backgroundTexture": "desert.svg",
-            "spawnTable": [
-                {
-                    "tier": "common",
-                    "weight": 10,
-                    "mobType": "shiny_ladybug"
-                },
-                {
-                    "tier": "common",
-                    "weight": 5,
-                    "mobType": "cactus"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 6198.28125,
-        "y": 230,
-        "width": 2690,
-        "height": 1110,
-        "properties": {
-            "biomeName": "ant_hell",
-            "backgroundTexture": "ant_hell.svg",
-            "spawnTable": [
-                {
-                    "tier": "mythic",
-                    "weight": 10,
-                    "mobType": "soldier_ant"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 6218.28125,
-        "y": 1370,
-        "width": 1070,
+        "x": 13980,
+        "y": 6290,
+        "width": 1020,
         "height": 1420,
         "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "crab"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 14980,
+        "y": 6860,
+        "width": 950,
+        "height": 1030,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "crab"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 15970,
+        "y": 2900,
+        "width": 1340,
+        "height": 250,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "crab"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 16510,
+        "y": 870,
+        "width": 790,
+        "height": 2060,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "crab"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 17320,
+        "y": 140,
+        "width": 1060,
+        "height": 1900,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "crab"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 16050,
+        "y": 190,
+        "width": 1250,
+        "height": 670,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "crab"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 15030,
+        "y": 160,
+        "width": 1470,
+        "height": 2600,
+        "properties": {
+            "biomeName": "ocean",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "crab"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 23230,
+        "y": 9680,
+        "width": 2960,
+        "height": 870,
+        "properties": {
             "biomeName": "ant_hell",
             "backgroundTexture": "ant_hell.svg",
             "spawnTable": [
                 {
-                    "tier": "legendary",
+                    "tier": "mythic",
                     "weight": 10,
                     "mobType": "soldier_ant"
                 }
@@ -1730,10 +2703,472 @@ exports.WORLD_MAP = [
     },
     {
         "type": "biome",
-        "x": 7288.28125,
-        "y": 1630,
+        "x": 23670,
+        "y": 10500,
+        "width": 7570,
+        "height": 7330,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 23270,
+        "y": 10460,
+        "width": 480,
+        "height": 3070,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 23430,
+        "y": 13480,
+        "width": 270,
+        "height": 4780,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 23140,
+        "y": 9700,
+        "width": 280,
+        "height": 880,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 25908.4375,
+        "y": 9440,
+        "width": 710,
+        "height": 230,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 26448.4375,
+        "y": 9630,
+        "width": 5180,
+        "height": 910,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 26128.4375,
+        "y": 9620,
+        "width": 390,
+        "height": 930,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 31238.4375,
+        "y": 10350,
+        "width": 450,
+        "height": 7680,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 23388.4375,
+        "y": 18140,
+        "width": 4910,
+        "height": 210,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 23308.4375,
+        "y": 17670,
+        "width": 0,
+        "height": 0,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 23378.4375,
+        "y": 17320,
+        "width": 2820,
+        "height": 60,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 26168.4375,
+        "y": 17190,
+        "width": 2700,
+        "height": 170,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 28828.4375,
+        "y": 17070,
+        "width": 1950,
+        "height": 160,
+        "properties": {}
+    },
+    {
+        "type": "spawn",
+        "x": 26158.4375,
+        "y": 210,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 26208.4375,
+        "y": 250,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 26338.4375,
+        "y": 220,
         "width": 1610,
-        "height": 1130,
+        "height": 1360,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 27948.4375,
+        "y": 1580,
+        "width": 3380,
+        "height": 4670,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 26368.4375,
+        "y": 1530,
+        "width": 2070,
+        "height": 6090,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "spawn",
+        "x": 31298.4375,
+        "y": 170,
+        "width": 3640,
+        "height": 1460,
+        "properties": {
+            "spawnType": "mythic"
+        }
+    },
+    {
+        "type": "wall",
+        "x": 26178.4375,
+        "y": 170,
+        "width": 110,
+        "height": 7850,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 26268.4375,
+        "y": 7710,
+        "width": 5060,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 31268.4375,
+        "y": 7650,
+        "width": 1630,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 31718.4375,
+        "y": 1780,
+        "width": 170,
+        "height": 5870,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 28008.4375,
+        "y": 140,
+        "width": 130,
+        "height": 1220,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 29448.4375,
+        "y": 650,
+        "width": 190,
+        "height": 160,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 30218.4375,
+        "y": 780,
+        "width": 240,
+        "height": 200,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 25910,
+        "y": 8050,
+        "width": 5740,
+        "height": 1350,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 31610,
+        "y": 8220,
+        "width": 4150,
+        "height": 1360,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 32340,
+        "y": 9550,
+        "width": 3460,
+        "height": 8020,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 31750,
+        "y": 9580,
+        "width": 800,
+        "height": 8790,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 32550,
+        "y": 17510,
+        "width": 3380,
+        "height": 5370,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 32878.4375,
+        "y": 7720,
+        "width": 5150,
+        "height": 110,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 35798.4375,
+        "y": 7810,
+        "width": 420,
+        "height": 15760,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 30230,
+        "y": 22700,
+        "width": 2360,
+        "height": 7040,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_fire_ant"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 32588.4375,
+        "y": 22870,
+        "width": 3310,
+        "height": 700,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 32448.4375,
+        "y": 23400,
+        "width": 280,
+        "height": 6430,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 31578.4375,
+        "y": 18000,
+        "width": 1030,
+        "height": 4710,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 27720,
+        "y": 18400,
+        "width": 3840,
+        "height": 4270,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 10,
+                    "mobType": "soldier_termite"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 27770,
+        "y": 22660,
+        "width": 2440,
+        "height": 9410,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 10,
+                    "mobType": "soldier_termite"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 30230,
+        "y": 29950,
+        "width": 6180,
+        "height": 4120,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "soldier_termite"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 30220,
+        "y": 34110,
+        "width": 9750,
+        "height": 4100,
         "properties": {
             "biomeName": "ant_hell",
             "backgroundTexture": "ant_hell.svg",
@@ -1741,7 +3176,97 @@ exports.WORLD_MAP = [
                 {
                     "tier": "epic",
                     "weight": 10,
-                    "mobType": "soldier_ant"
+                    "mobType": "soldier_termite"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 36470,
+        "y": 30030,
+        "width": 5310,
+        "height": 4010,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_termite"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 39980,
+        "y": 34080,
+        "width": 13440,
+        "height": 4340,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_termite"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 53420,
+        "y": 38420,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "soldier_termite"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 43770,
+        "y": 38480,
+        "width": 9630,
+        "height": 3510,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "soldier_termite"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 53670,
+        "y": 34110,
+        "width": 3750,
+        "height": 14160,
+        "properties": {
+            "biomeName": "ant_hell",
+            "backgroundTexture": "ant_hell.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "soldier_termite"
                 }
             ]
         }

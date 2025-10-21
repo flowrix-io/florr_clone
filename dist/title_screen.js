@@ -8,6 +8,7 @@ exports.titleScreenStyles = exports.TitleScreen = void 0;
 exports.injectTitleScreenStyles = injectTitleScreenStyles;
 const petals_1 = require("./petals");
 const changelog_1 = require("./changelog");
+const constants_1 = require("./constants");
 class FloatingPetalManager {
     constructor(container) {
         this.petals = [];
@@ -121,6 +122,8 @@ class TitleScreen {
         this.initializeElements();
         this.setupEventListeners();
         this.changelogManager = new changelog_1.ChangelogManager();
+        // Initialize biome selector with local map data
+        this.updateBiomesFromMapData(constants_1.WORLD_MAP);
     }
     /**
      * Scans map data for available biomes and updates the biome selector
@@ -132,14 +135,17 @@ class TitleScreen {
         biomeNames.add('default');
         // Scan map data for biome elements
         if (mapData && Array.isArray(mapData)) {
+            console.log('Scanning map data for biomes, total elements:', mapData.length);
             mapData.forEach(element => {
                 if (element.type === 'biome' && element.properties?.biomeName) {
+                    console.log('Found biome:', element.properties.biomeName);
                     biomeNames.add(element.properties.biomeName);
                 }
             });
         }
         // Update available biomes
         this.availableBiomes = Array.from(biomeNames);
+        console.log('Available biomes detected:', this.availableBiomes);
         // Update the biome selector UI
         this.updateBiomeSelector();
     }
@@ -147,18 +153,26 @@ class TitleScreen {
      * Updates the biome selector UI with available biomes
      */
     updateBiomeSelector() {
-        const biomeButtonsContainer = document.querySelector('.biome-buttons');
-        if (!biomeButtonsContainer)
-            return;
-        // Clear existing buttons
-        biomeButtonsContainer.innerHTML = '';
-        // Create biome buttons dynamically
-        this.availableBiomes.forEach(biomeName => {
-            const button = this.createBiomeButton(biomeName);
-            biomeButtonsContainer.appendChild(button);
-        });
-        // Re-setup event listeners for the new buttons
-        this.setupBiomeButtonListeners();
+        // Use setTimeout to ensure DOM is ready
+        setTimeout(() => {
+            const biomeButtonsContainer = document.querySelector('.biome-buttons');
+            if (!biomeButtonsContainer) {
+                console.warn('Biome buttons container not found, retrying...');
+                // Retry after a short delay
+                setTimeout(() => this.updateBiomeSelector(), 100);
+                return;
+            }
+            // Clear existing buttons
+            biomeButtonsContainer.innerHTML = '';
+            // Create biome buttons dynamically
+            this.availableBiomes.forEach(biomeName => {
+                const button = this.createBiomeButton(biomeName);
+                biomeButtonsContainer.appendChild(button);
+            });
+            // Re-setup event listeners for the new buttons
+            this.setupBiomeButtonListeners();
+            console.log('Biome selector updated with biomes:', this.availableBiomes);
+        }, 100);
     }
     /**
      * Creates a biome button element
