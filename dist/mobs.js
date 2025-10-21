@@ -530,6 +530,116 @@ const BASE_MOB_CONFIGS = {
         is_hostile: false,
         range: 100,
         biomeOnly: true
+    },
+    beetle: {
+        name: "Beetle",
+        health: 40,
+        damage: 35,
+        size: 1.0,
+        speed: 0.0,
+        cooldown: 2000,
+        description: "Beetle",
+        color: "#000000",
+        image: `<svg width="32" height="32" viewBox="-50 -50 125 100" xmlns="http://www.w3.org/2000/svg">
+
+  <g id="pincers" transform="translate(35, 0)" fill="#333333" stroke="#333333" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    
+    <g id="top-pincer">
+      <animateTransform 
+        attributeName="transform"
+        type="rotate"
+        values="10; -10; 10"
+        dur="0.8s"
+        repeatCount="indefinite" />
+      <path d="M -10,15 Q 15,30 35,15 Q 15,20 -10,5 Z" />
+    </g>
+    
+    <g id="bottom-pincer">
+      <animateTransform 
+        attributeName="transform"
+        type="rotate"
+        values="-10; 10; -10"
+        dur="0.8s"
+        repeatCount="indefinite" />
+      <path d="M -10,-15 Q 15,-30 35,-15 Q 15,-20 -10,-5 Z" />
+    </g>
+  </g>
+
+  <g id="body">
+    <path d="M 0,-30 Q 40,-30 40,0 Q 40,30 0,30 Q -40,30 -40,0 Q -40,-30 0,-30 Z" fill="#905db0" />
+    
+    <path d="M 0,-33.5 Q 43.5,-33.5 43.5,0 Q 43.5,33.5 0,33.5 Q -43.5,33.5 -43.5,0 Q -43.5,-33.5 0,-33.5 Z M 0,-26.5 Q -36.5,-26.5 -36.5,0 Q -36.5,26.5 0,26.5 Q 36.5,26.5 36.5,0 Q 36.5,-26.5 0,-26.5 Z" fill="#734a8d" fill-rule="evenodd" />
+    
+    <path d="M -20,0 Q 0,-3 20,0" stroke="#734a8d" stroke-width="7" fill="none" stroke-linecap="round" />
+    
+    <g id="spots" fill="#734a8d">
+      <circle cx="-17" cy="-12" r="5" />
+      <circle cx="-17" cy="12" r="5" />
+      <circle cx="0" cy="-15" r="5" />
+      <circle cx="0" cy="15" r="5" />
+      <circle cx="17" cy="-12" r="5" />
+      <circle cx="17" cy="12" r="5" />
+    </g>
+  </g>
+</svg>`,
+        is_hostile: true,
+        range: 100,
+        biomeOnly: true
+    },
+    hel_beetle: {
+        name: "Hel Beetle",
+        health: 40,
+        damage: 50,
+        size: 1.0,
+        speed: 0.0,
+        cooldown: 2000,
+        description: "Hel Beetle",
+        color: "#000000",
+        image: `<svg width="32" height="32" viewBox="-50 -50 125 100" xmlns="http://www.w3.org/2000/svg">
+
+  <g id="pincers" transform="translate(35, 0)" fill="#333333" stroke="#333333" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    
+    <g id="top-pincer">
+      <animateTransform 
+        attributeName="transform"
+        type="rotate"
+        values="10; -10; 10"
+        dur="0.8s"
+        repeatCount="indefinite" />
+      <path d="M -10,15 Q 15,30 35,15 Q 15,20 -10,5 Z" />
+    </g>
+    
+    <g id="bottom-pincer">
+      <animateTransform 
+        attributeName="transform"
+        type="rotate"
+        values="-10; 10; -10"
+        dur="0.8s"
+        repeatCount="indefinite" />
+      <path d="M -10,-15 Q 15,-30 35,-15 Q 15,-20 -10,-5 Z" />
+    </g>
+  </g>
+
+  <g id="body">
+    <path d="M 0,-30 Q 40,-30 40,0 Q 40,30 0,30 Q -40,30 -40,0 Q -40,-30 0,-30 Z" fill="#831013" />
+    
+    <path d="M 0,-33.5 Q 43.5,-33.5 43.5,0 Q 43.5,33.5 0,33.5 Q -43.5,33.5 -43.5,0 Q -43.5,-33.5 0,-33.5 Z M 0,-26.5 Q -36.5,-26.5 -36.5,0 Q -36.5,26.5 0,26.5 Q 36.5,26.5 36.5,0 Q 36.5,-26.5 0,-26.5 Z" fill="#691010" fill-rule="evenodd" />
+    
+    <path d="M -20,0 Q 0,-3 20,0" stroke="#691010" stroke-width="7" fill="none" stroke-linecap="round" />
+    
+    <g id="spots" fill="#691010">
+      <circle cx="-17" cy="-12" r="5" />
+      <circle cx="-17" cy="12" r="5" />
+      <circle cx="0" cy="-15" r="5" />
+      <circle cx="0" cy="15" r="5" />
+      <circle cx="17" cy="-12" r="5" />
+      <circle cx="17" cy="12" r="5" />
+    </g>
+  </g>
+</svg>`,
+        is_hostile: true,
+        range: 100,
+        biomeOnly: true
     }
 };
 // Rarity-specific overrides for special cases
@@ -674,6 +784,55 @@ const RARITY_OVERRIDES = {
         },
         unique: {
             range: 2500
+        }
+    },
+    hel_beetle: {
+        uncommon: {
+            range: 500
+        },
+        rare: {
+            range: 700
+        },
+        epic: {
+            range: 900
+        },
+        legendary: {
+            range: 1100
+        },
+        mythic: {
+            range: 1300
+        },
+        super: {
+            range: 1500
+        },
+        unique: {
+            range: 1700
+        }
+    },
+    beetle: {
+        uncommon: {
+            range: 200
+        },
+        rare: {
+            range: 350
+        },
+        epic: {
+            range: 500
+        },
+        legendary: {
+            range: 700
+        },
+        mythic: {
+            range: 900
+        },
+        ultra: {
+            range: 1100
+        },
+        super: {
+            range: 1300
+        },
+        unique: {
+            range: 1500
         }
     }
 };
@@ -1037,6 +1196,48 @@ exports.MOB_DROP_TABLES = {
                 itemType: 'poison_cactus',
                 rarity: 'common',
                 probability: 0.3, // 40% chance for poison cactus
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    beetle: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'bone',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for bone
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'bone',
+                rarity: 'uncommon',
+                probability: 0.2, // 20% chance for bone
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    hel_beetle: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'bone',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for bone
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'bone',
+                rarity: 'uncommon',
+                probability: 0.2, // 20% chance for bone
                 minQuantity: 1,
                 maxQuantity: 1
             }

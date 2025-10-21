@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 42,
-      "xp": 517307,
+      "xp": 537557,
       "maxHealth": 510,
       "damage": 87,
       "inventory": {
@@ -73,7 +73,8 @@
           "petal_rock": 1,
           "petal_yggdrasil": 4,
           "petal_cactus": 5,
-          "petal_poison_cactus": 1
+          "petal_poison_cactus": 1,
+          "petal_bone": 8
         },
         "epic": {
           "petal_stinger": 13,
@@ -110,7 +111,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 1130,
+          "health": 98415,
           "onCooldown": false
         },
         {
@@ -118,7 +119,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 74077.5,
+          "health": 98415,
           "onCooldown": false
         },
         {
@@ -126,7 +127,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 25515,
+          "health": 98415,
           "onCooldown": false
         },
         {
@@ -134,7 +135,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 90315,
+          "health": 98415,
           "onCooldown": false
         },
         {
@@ -142,7 +143,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 69717.5,
+          "health": 98415,
           "onCooldown": false
         },
         {
@@ -150,7 +151,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 69390,
+          "health": 98415,
           "onCooldown": false
         },
         {
@@ -170,7 +171,7 @@
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 33615,
+          "health": 98415,
           "onCooldown": false
         },
         {
