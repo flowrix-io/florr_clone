@@ -141,6 +141,32 @@ const RARITY_OVERRIDES = {
         unique: {
             cooldown: 2000
         }
+    },
+    lightning: {
+        uncommon: {
+            health: 10
+        },
+        rare: {
+            health: 10
+        },
+        epic: {
+            health: 10
+        },
+        legendary: {
+            health: 10
+        },
+        mythic: {
+            health: 10
+        },
+        ultra: {
+            health: 10
+        },
+        super: {
+            health: 10
+        },
+        unique: {
+            health: 10
+        }
     }
 };
 // Base petal configurations - only common rarity stats
