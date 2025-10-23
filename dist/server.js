@@ -777,7 +777,7 @@ function createEnemy() {
         };
         return total + (extendedViewport.width * extendedViewport.height);
     }, 0);
-    // Calculate target density: same as 1000 enemies across the whole world
+    // Calculate target density: same as 9000 enemies across the whole world (9x density)
     const targetDensity = constants_2.ORIGINAL_ENEMY_COUNT / constants_2.TOTAL_WORLD_AREA;
     const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
     // Don't spawn if we already have enough enemies in viewport
@@ -1064,7 +1064,7 @@ function hasItem(inventory, rarity, type, count) {
 console.log(`[SERVER] Enemy spawning system initialized - enemies will spawn when players connect`);
 console.log(`[SERVER] Density Configuration:`);
 console.log(`  Original Density: ${constants_2.ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
-console.log(`  Target: Maintain same density as ${constants_2.ORIGINAL_ENEMY_COUNT} enemies across entire world`);
+console.log(`  Target: Maintain same density as ${constants_2.ORIGINAL_ENEMY_COUNT} enemies across entire world (9x density)`);
 console.log(`  Despawn Rule: Enemies outside viewport for 30+ seconds will despawn`);
 // Initialize decorations
 for (let i = 0; i < constants_2.DECORATION_COUNT; i++) {

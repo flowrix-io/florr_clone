@@ -907,7 +907,7 @@ function createEnemy(): Enemy {
         return total + (extendedViewport.width * extendedViewport.height);
     }, 0);
     
-    // Calculate target density: same as 1000 enemies across the whole world
+    // Calculate target density: same as 9000 enemies across the whole world (9x density)
     const targetDensity = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;
     const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
     
@@ -1246,7 +1246,7 @@ function hasItem(inventory: PlayerInventory, rarity: string, type: string, count
 console.log(`[SERVER] Enemy spawning system initialized - enemies will spawn when players connect`);
 console.log(`[SERVER] Density Configuration:`);
 console.log(`  Original Density: ${ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
-console.log(`  Target: Maintain same density as ${ORIGINAL_ENEMY_COUNT} enemies across entire world`);
+console.log(`  Target: Maintain same density as ${ORIGINAL_ENEMY_COUNT} enemies across entire world (9x density)`);
 console.log(`  Despawn Rule: Enemies outside viewport for 30+ seconds will despawn`);
 
 // Initialize decorations

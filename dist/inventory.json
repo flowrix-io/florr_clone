@@ -150,7 +150,15 @@
           "petalType": "lightning",
           "rarity": "unique",
           "maxHealth": 6561,
-          "health": 6561,
+          "health": 6491,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "lightning",
+          "rarity": "unique",
+          "maxHealth": 6561,
+          "health": 6511,
           "onCooldown": false
         },
         {
@@ -162,22 +170,16 @@
           "onCooldown": false
         },
         {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "lightning",
-          "health": 6321,
-          "maxHealth": 6561
-        },
-        {
           "type": "speed_boost",
           "rarity": "mythic"
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "lightning",
-          "health": 6401,
-          "maxHealth": 6561
+          "rarity": "unique",
+          "maxHealth": 6561,
+          "health": 6561,
+          "onCooldown": false
         },
         {
           "type": "petal",

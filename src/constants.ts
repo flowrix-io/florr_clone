@@ -35,10 +35,10 @@ export const ACTUAL_WORLD_HEIGHT = 60000;
 
 // Density calculation constants (defined after world dimensions)
 export const TOTAL_WORLD_AREA = ACTUAL_WORLD_WIDTH * ACTUAL_WORLD_HEIGHT;  // 400,000,000 pixels²
-export const ORIGINAL_ENEMY_COUNT = 1000;
-export const ORIGINAL_ENEMY_DENSITY = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;  // 0.0000025 enemies per pixel²
+export const ORIGINAL_ENEMY_COUNT = 9000;
+export const ORIGINAL_ENEMY_DENSITY = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;  // 0.0000225 enemies per pixel² (9x density)
 export const VIEWPORT_WITH_BUFFER_AREA = (VIEWPORT_WIDTH + VIEWPORT_BUFFER * 2) * (VIEWPORT_HEIGHT + VIEWPORT_BUFFER * 2);  // 6,073,600 pixels²
-export const ENEMIES_PER_VIEWPORT = Math.ceil(ORIGINAL_ENEMY_DENSITY * VIEWPORT_WITH_BUFFER_AREA);  // ~15 enemies per viewport
+export const ENEMIES_PER_VIEWPORT = Math.ceil(ORIGINAL_ENEMY_DENSITY * VIEWPORT_WITH_BUFFER_AREA);  // ~135 enemies per viewport (9x density)
 export const OLD_WORLD_WIDTH = 10000;
 export const OLD_WORLD_HEIGHT = 2000;
 export const PVP_WORLD_WIDTH = 30000;
