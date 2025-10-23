@@ -2294,6 +2294,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                                 petalX: player.x, // Will be updated with actual position in game loop
                                 petalY: player.y, // Will be updated with actual position in game loop
                                 petalSize: petalStats.size * 40,
+                                petalDamage: petalStats.damage, // Include petal damage for rarity scaling
                                 enemies: enemies,
                                 io: io,
                                 petalId: petalId,
@@ -2423,6 +2424,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                         petalX: petalX,
                         petalY: petalY,
                         petalSize: petalSize,
+                        petalDamage: petalStats.damage, // Include petal damage for rarity scaling
                         enemies: enemies,
                         io: io,
                         petalId: petalId,
@@ -2440,6 +2442,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                                 petalX: petalX,
                                 petalY: petalY,
                                 petalSize: petalSize,
+                                petalDamage: petalStats.damage, // Include petal damage for rarity scaling
                                 enemies: enemies,
                                 io: io
                             };

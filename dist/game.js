@@ -342,6 +342,10 @@ class Game {
         this.socket.on('animateViewportToMob', (data) => {
             this.startViewportAnimation(data.x, data.y);
         });
+        // Handle lightning strike effects
+        this.socket.on('lightningStrike', (data) => {
+            this.showLightningEffect(data.x, data.y, data.targets, data.damage);
+        });
         // Load background image from land.svg
         this.loadBackgroundFromSVG();
         // Load wall texture
@@ -740,6 +744,9 @@ class Game {
     }
     showExplosionEffect(x, y, radius) {
         this.graphics.showExplosionEffect(x, y, radius);
+    }
+    showLightningEffect(x, y, targets, damage) {
+        this.graphics.showLightningEffect(x, y, targets, damage);
     }
     showPetalBreakEffect(x, y, petalType) {
         this.graphics.showPetalBreakEffect(x, y, petalType);

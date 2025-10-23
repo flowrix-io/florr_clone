@@ -38,6 +38,16 @@ export interface ExplosionParticle {
     color: string;
 }
 
+export interface LightningEffect {
+    x: number;
+    y: number;
+    targets: { x: number; y: number; enemyId: string }[];
+    damage: number;
+    lifetime: number;
+    startTime: number;
+    alpha: number;
+}
+
 export interface PetalBreakEffect {
     x: number;
     y: number;
@@ -58,6 +68,7 @@ export class Graphics {
     private floatingTexts: FloatingText[] = [];
     private explosionEffects: ExplosionEffect[] = [];
     private petalBreakEffects: PetalBreakEffect[] = [];
+    private lightningEffects: LightningEffect[] = [];
     private mapData: MapElement[] = [];
 
     private readonly MINIMAP_WIDTH = 200;
@@ -273,6 +284,21 @@ export class Graphics {
             lifetime: 300,
             startTime: Date.now()
         });
+    }
+
+    public showLightningEffect(x: number, y: number, targets: { x: number; y: number; enemyId: string }[], damage: number) {
+        // Create lightning effect
+        this.lightningEffects.push({
+            x,
+            y,
+            targets,
+            damage,
+            lifetime: 500, // Lightning effect lasts 500ms
+            startTime: Date.now(),
+            alpha: 1.0
+        });
+        
+        console.log(`[GRAPHICS] Created lightning effect at (${x}, ${y}) with ${targets.length} targets`);
     }
 
     public drawMap(world_map_data: MapElement[]) {
@@ -1029,6 +1055,61 @@ export class Graphics {
         });
     }
 
+    private drawLightningEffects() {
+        this.lightningEffects = this.lightningEffects.filter(effect => {
+            const elapsed = Date.now() - effect.startTime;
+            const progress = elapsed / effect.lifetime;
+            
+            if (progress >= 1) return false;
+
+            this.ctx.save();
+            this.ctx.globalAlpha = effect.alpha * (1 - progress);
+            
+            // Draw lightning bolts as white lines between targets
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = 2;
+            this.ctx.lineCap = 'round';
+            
+            // Draw lines from origin to each target
+            effect.targets.forEach(target => {
+                this.ctx.beginPath();
+                this.ctx.moveTo(effect.x, effect.y);
+                this.ctx.lineTo(target.x, target.y);
+                this.ctx.stroke();
+            });
+            
+            // Draw lines between targets to create a web effect
+            for (let i = 0; i < effect.targets.length; i++) {
+                for (let j = i + 1; j < effect.targets.length; j++) {
+                    const target1 = effect.targets[i];
+                    const target2 = effect.targets[j];
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(target1.x, target1.y);
+                    this.ctx.lineTo(target2.x, target2.y);
+                    this.ctx.stroke();
+                }
+            }
+            
+            // Draw bright center point
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.beginPath();
+            this.ctx.arc(effect.x, effect.y, 5, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            // Draw target points
+            effect.targets.forEach(target => {
+                this.ctx.fillStyle = '#FFFFFF';
+                this.ctx.beginPath();
+                this.ctx.arc(target.x, target.y, 3, 0, Math.PI * 2);
+                this.ctx.fill();
+            });
+            
+            this.ctx.restore();
+            return true;
+        });
+    }
+
     // Minimap scrolling methods
     public scrollMinimap(deltaX: number, deltaY: number) {
         const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
@@ -1278,6 +1359,7 @@ export class Graphics {
         // Draw explosion effects (in world coordinates, before camera restore)
         this.drawExplosionEffects();
         this.drawPetalBreakEffects();
+        this.drawLightningEffects();
 
         this.ctx.restore();
 

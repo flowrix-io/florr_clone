@@ -9,6 +9,7 @@ export interface ActionContext {
     petalX: number;
     petalY: number;
     petalSize: number;
+    petalDamage: number; // Add petal damage for rarity scaling
     enemies: Enemy[];
     io: any; // Socket.IO instance
     petalId?: string; // Unique ID for the petal instance
@@ -92,6 +93,12 @@ function executeAction(action: PetalAction, context: ActionContext, trigger: 'on
         case 'explode':
             // if (trigger === 'on_break') {
                 explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
+            // }
+            break;
+
+        case 'lightning':
+            // if (trigger === 'on_break') {
+                strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, context.petalDamage);
             // }
             break;
 
@@ -257,6 +264,74 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
     // console.log(`[EXPLOSION] Explosion complete at (${x}, ${y}) with radius ${explosionRadius} and damage ${damage}`);
 }
 
+// Strike lightning and deal damage to multiple targets in radius
+function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[], io: any, player?: ServerPlayer, petalDamage?: number): void {
+    const targets: { x: number; y: number; enemyId: string }[] = [];
+    
+    // Find all enemies within the lightning radius
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
+        
+        if (distance <= radius) {
+            targets.push({
+                x: enemy.x,
+                y: enemy.y,
+                enemyId: enemy.id
+            });
+            
+            // Deal damage to the enemy - use petal damage for rarity scaling
+            const damage = petalDamage || 25; // Use petal damage if available, fallback to 25
+            
+            // Track damage if player is provided
+            if (player) {
+                const { trackDamage } = require('./server');
+                trackDamage(enemy, player.id, damage);
+            }
+            
+            enemy.health -= damage;
+            
+            // Apply slight knockback
+            const knockbackForce = 5;
+            const dx = enemy.x - x;
+            const dy = enemy.y - y;
+            const normalizedDx = dx / (distance || 1);
+            const normalizedDy = dy / (distance || 1);
+            
+            enemy.knockbackX = normalizedDx * knockbackForce;
+            enemy.knockbackY = normalizedDy * knockbackForce;
+            
+            io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+            
+            // Check if enemy dies
+            if (enemy.health <= 0) {
+                // Handle XP and drops if player is provided
+                if (player) {
+                    const xpGained = getXPFromEnemy(enemy);
+                    addXPToPlayer(player, xpGained, player.id);
+                    handleMobDrops(enemy);
+                    updateSpecialMobCounts();
+                }
+                
+                // Remove enemy from array
+                enemies.splice(i, 1);
+                // Emit enemy destroyed event
+                io.emit('enemyDestroyed', enemy.id);
+            }
+        }
+    }
+    
+    // Emit lightning effect to clients
+    io.emit('lightningStrike', {
+        x: x,
+        y: y,
+        targets: targets,
+        damage: petalDamage || 25
+    });
+    
+    console.log(`[LIGHTNING] Lightning struck at (${x}, ${y}) with radius ${radius}, hit ${targets.length} targets`);
+}
+
 // Update player effects (call this in the game loop)
 export function updatePlayerEffects(player: ServerPlayer, deltaTime: number): void {
     if (!player.effects) return;
@@ -395,6 +470,12 @@ function executeNextAction(petalId: string, context: ActionContext): void {
         case 'explode':
             // console.log(`[EXPLODE ACTION] Exploding at petal position (${petalX}, ${petalY}), player position (${player.x}, ${player.y})`);
             explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
+            advanceAction(petalId, context);
+            break;
+
+        case 'lightning':
+            // console.log(`[LIGHTNING ACTION] Striking lightning at petal position (${petalX}, ${petalY})`);
+            strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, context.petalDamage);
             advanceAction(petalId, context);
             break;
 

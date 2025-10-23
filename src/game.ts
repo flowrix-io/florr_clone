@@ -468,6 +468,11 @@ export class Game {
             this.startViewportAnimation(data.x, data.y);
         });
 
+        // Handle lightning strike effects
+        this.socket.on('lightningStrike', (data: { x: number, y: number, targets: { x: number; y: number; enemyId: string }[], damage: number }) => {
+            this.showLightningEffect(data.x, data.y, data.targets, data.damage);
+        });
+
         // Load background image from land.svg
         this.loadBackgroundFromSVG();
 
@@ -961,6 +966,10 @@ export class Game {
 
     public showExplosionEffect(x: number, y: number, radius: number) {
         this.graphics.showExplosionEffect(x, y, radius);
+    }
+
+    public showLightningEffect(x: number, y: number, targets: { x: number; y: number; enemyId: string }[], damage: number) {
+        this.graphics.showLightningEffect(x, y, targets, damage);
     }
 
     public showPetalBreakEffect(x: number, y: number, petalType: string) {

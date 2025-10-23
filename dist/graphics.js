@@ -35,6 +35,7 @@ class Graphics {
         this.floatingTexts = [];
         this.explosionEffects = [];
         this.petalBreakEffects = [];
+        this.lightningEffects = [];
         this.mapData = [];
         this.MINIMAP_WIDTH = 200;
         this.MINIMAP_HEIGHT = 200;
@@ -223,6 +224,19 @@ class Graphics {
             lifetime: 300,
             startTime: Date.now()
         });
+    }
+    showLightningEffect(x, y, targets, damage) {
+        // Create lightning effect
+        this.lightningEffects.push({
+            x,
+            y,
+            targets,
+            damage,
+            lifetime: 500, // Lightning effect lasts 500ms
+            startTime: Date.now(),
+            alpha: 1.0
+        });
+        console.log(`[GRAPHICS] Created lightning effect at (${x}, ${y}) with ${targets.length} targets`);
     }
     drawMap(world_map_data) {
         // Draw all map elements
@@ -835,6 +849,52 @@ class Graphics {
             return true;
         });
     }
+    drawLightningEffects() {
+        this.lightningEffects = this.lightningEffects.filter(effect => {
+            const elapsed = Date.now() - effect.startTime;
+            const progress = elapsed / effect.lifetime;
+            if (progress >= 1)
+                return false;
+            this.ctx.save();
+            this.ctx.globalAlpha = effect.alpha * (1 - progress);
+            // Draw lightning bolts as white lines between targets
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = 2;
+            this.ctx.lineCap = 'round';
+            // Draw lines from origin to each target
+            effect.targets.forEach(target => {
+                this.ctx.beginPath();
+                this.ctx.moveTo(effect.x, effect.y);
+                this.ctx.lineTo(target.x, target.y);
+                this.ctx.stroke();
+            });
+            // Draw lines between targets to create a web effect
+            for (let i = 0; i < effect.targets.length; i++) {
+                for (let j = i + 1; j < effect.targets.length; j++) {
+                    const target1 = effect.targets[i];
+                    const target2 = effect.targets[j];
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(target1.x, target1.y);
+                    this.ctx.lineTo(target2.x, target2.y);
+                    this.ctx.stroke();
+                }
+            }
+            // Draw bright center point
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.beginPath();
+            this.ctx.arc(effect.x, effect.y, 5, 0, Math.PI * 2);
+            this.ctx.fill();
+            // Draw target points
+            effect.targets.forEach(target => {
+                this.ctx.fillStyle = '#FFFFFF';
+                this.ctx.beginPath();
+                this.ctx.arc(target.x, target.y, 3, 0, Math.PI * 2);
+                this.ctx.fill();
+            });
+            this.ctx.restore();
+            return true;
+        });
+    }
     // Minimap scrolling methods
     scrollMinimap(deltaX, deltaY) {
         const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
@@ -1025,6 +1085,7 @@ class Graphics {
         // Draw explosion effects (in world coordinates, before camera restore)
         this.drawExplosionEffects();
         this.drawPetalBreakEffects();
+        this.drawLightningEffects();
         this.ctx.restore();
         // Draw UI elements (not affected by camera)
         this.drawUI(players, currentPlayerId);
