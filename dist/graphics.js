@@ -676,7 +676,9 @@ class Graphics {
             this.ctx.lineWidth = 2;
             this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
             this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
-            this.ctx.strokeRect(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, enemySize / 2, 0, Math.PI * 2);
+            this.ctx.stroke();
             this.ctx.restore();
         }
         // Draw health bar
