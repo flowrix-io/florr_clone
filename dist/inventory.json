@@ -117,43 +117,49 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "lightning",
-          "health": 6391,
-          "maxHealth": 6561
+          "health": -1709,
+          "maxHealth": 6561,
+          "onCooldown": true
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "lightning",
-          "health": 6391,
-          "maxHealth": 6561
+          "rarity": "unique",
+          "maxHealth": 6561,
+          "health": 6561,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "lightning",
-          "health": 6401,
-          "maxHealth": 6561
+          "rarity": "unique",
+          "maxHealth": 6561,
+          "health": 6561,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "lightning",
-          "health": 6501,
-          "maxHealth": 6561
+          "rarity": "unique",
+          "maxHealth": 6561,
+          "health": 6561,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "lightning",
-          "health": 6431,
-          "maxHealth": 6561
+          "rarity": "unique",
+          "maxHealth": 6561,
+          "health": 6561,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "lightning",
-          "health": 6511,
-          "maxHealth": 6561
+          "rarity": "unique",
+          "maxHealth": 6561,
+          "health": 6561,
+          "onCooldown": false
         },
         {
           "type": "petal",
@@ -177,8 +183,9 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "lightning",
-          "health": 6491,
-          "maxHealth": 6561
+          "health": -1609,
+          "maxHealth": 6561,
+          "onCooldown": true
         }
       ]
     },
