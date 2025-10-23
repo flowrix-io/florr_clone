@@ -341,6 +341,21 @@ class TitleScreen {
             <button id="registerOfflineButton">Register Offline</button>
             <p class="form-switch" id="showLogin">Already have an account? Login</p>
         `;
+        if (localStorage.getItem('username')) {
+            this.loginForm.style.display = 'none';
+            this.registerForm.style.display = 'none';
+            this.authContainer.style.cssText = `
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                z-index: 2000;
+                background: transparent;
+            `;
+            this.authContainer.innerHTML = `
+                <h1 style="text-align: center; color: white; -webkit-text-stroke: 2px black;">Logging in...</h1>
+            `;
+        }
         // Create game menu (keeping for future buttons if needed)
         this.gameMenu = this.createElement('div', '');
         this.gameMenu.id = 'gameMenu';
