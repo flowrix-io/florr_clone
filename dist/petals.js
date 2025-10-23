@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PETAL_CONFIG = exports.RARITY_LEVELS = void 0;
+exports.getLightningDamage = getLightningDamage;
+exports.getLightningScalingInfo = getLightningScalingInfo;
 exports.getPetalStats = getPetalStats;
 exports.getAllPetalTypes = getAllPetalTypes;
 exports.getPetalRarities = getPetalRarities;
@@ -369,7 +371,7 @@ const BASE_PETAL_CONFIGS = {
     },
     lightning: {
         name: "Lightning Petal",
-        damage: 0,
+        damage: 25, // Base damage that will scale with rarity (25 × rarity multiplier)
         health: 10, // Increased health so it doesn't break immediately
         cooldown: 700,
         size: 1.0,
@@ -486,6 +488,44 @@ const RARITY_PREFIXES = {
     super: "Super",
     unique: "Unique"
 };
+// Lightning damage scaling table by rarity
+// Shows how lightning damage scales with the 3x multiplier per rarity level
+// 
+// Usage Examples:
+// - Common lightning petal with base damage 10: 10 damage
+// - Uncommon lightning petal with base damage 10: 30 damage  
+// - Rare lightning petal with base damage 10: 90 damage
+// - Epic lightning petal with base damage 10: 270 damage
+// - Legendary lightning petal with base damage 10: 810 damage
+// - Mythic lightning petal with base damage 10: 2,430 damage
+// - Ultra lightning petal with base damage 10: 7,290 damage
+// - Super lightning petal with base damage 10: 21,870 damage
+// - Unique lightning petal with base damage 10: 65,610 damage
+//
+// Formula: Final Damage = Base Damage × (3^rarity_index)
+const LIGHTNING_SCALING_TABLE = {
+    common: { multiplier: 1, damageAt10Base: 10, damageAt25Base: 25, damageAt50Base: 50 },
+    uncommon: { multiplier: 3, damageAt10Base: 30, damageAt25Base: 75, damageAt50Base: 150 },
+    rare: { multiplier: 9, damageAt10Base: 90, damageAt25Base: 225, damageAt50Base: 450 },
+    epic: { multiplier: 27, damageAt10Base: 270, damageAt25Base: 675, damageAt50Base: 1350 },
+    legendary: { multiplier: 81, damageAt10Base: 810, damageAt25Base: 2025, damageAt50Base: 4050 },
+    mythic: { multiplier: 243, damageAt10Base: 2430, damageAt25Base: 6075, damageAt50Base: 12150 },
+    ultra: { multiplier: 729, damageAt10Base: 7290, damageAt25Base: 18225, damageAt50Base: 36450 },
+    super: { multiplier: 2187, damageAt10Base: 21870, damageAt25Base: 54675, damageAt50Base: 109350 },
+    unique: { multiplier: 6561, damageAt10Base: 65610, damageAt25Base: 164025, damageAt50Base: 328050 }
+};
+// Helper function to get lightning damage for a given base damage and rarity
+function getLightningDamage(baseDamage, rarity) {
+    const scaling = LIGHTNING_SCALING_TABLE[rarity];
+    return baseDamage * scaling.multiplier;
+}
+// Helper function to get lightning scaling info for a rarity
+function getLightningScalingInfo(rarity) {
+    return LIGHTNING_SCALING_TABLE[rarity];
+}
+// Example usage:
+// const epicLightningDamage = getLightningDamage(25, 'epic'); // Returns 675 (25 × 27)
+// const scalingInfo = getLightningScalingInfo('legendary'); // Returns multiplier: 81, damageAt10Base: 810, etc.
 // Function to find SVG fallback for higher rarities
 function findSvgFallback(petalType, rarity) {
     const rarityIndex = exports.RARITY_LEVELS.indexOf(rarity);
