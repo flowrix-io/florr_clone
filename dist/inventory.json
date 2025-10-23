@@ -184,16 +184,16 @@
           "petalType": "rock",
           "rarity": "common",
           "maxHealth": 45,
-          "health": -60705,
-          "onCooldown": true
+          "health": 45,
+          "onCooldown": false
         },
         {
           "type": "petal",
           "petalType": "rock",
           "rarity": "common",
           "maxHealth": 45,
-          "health": -60705,
-          "onCooldown": true
+          "health": 45,
+          "onCooldown": false
         }
       ]
     },

@@ -19,6 +19,14 @@ export const CHANGELOG: ChangelogEntry[] = [
             'New admin petal: Sparkle',
             'New admin command: spawn_special_mobs',
         ]
+    },
+    {
+        date: 'October 22, 2025',
+        changes: [
+            'New petal: Lightning',
+            'New petal: Iris',
+            'It is discovered that mobs have round hitboxes, so the setting is now more accurate'
+        ]
     }
 ];
 
