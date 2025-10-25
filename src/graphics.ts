@@ -90,10 +90,10 @@ export class Graphics {
     private backgroundTexture: HTMLImageElement = new Image();
     private biomeTextures: Map<string, HTMLImageElement> = new Map(); // Store biome-specific background textures
     private readonly MAP_COLORS = {
-        wall: 'rgba(102, 102, 102, 0.8)',
-        spawn: 'rgba(76, 175, 80, 0.3)',
-        teleporter: 'rgba(33, 150, 243, 0.5)',
-        safe_zone: 'rgba(255, 193, 7, 0.2)',
+        wall: 'rgba(102, 102, 102, 0.0)', // handled elsewhere
+        spawn: 'rgba(76, 175, 80, 0.0)',
+        teleporter: 'rgba(33, 150, 243, 0.0)', // handled elsewhere
+        safe_zone: 'rgba(255, 193, 7, 0.0)', // No safe zone tint(invalid zone, not used)
         biome: 'rgba(128, 64, 192, 0.0)' // Purple tint for biomes on minimap
     };
     private readonly ENEMY_COLORS = {
