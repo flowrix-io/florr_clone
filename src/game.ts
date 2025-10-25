@@ -273,6 +273,7 @@ export class Game {
             // Assets already loaded, just set up item sprites and start
             console.log('[Game] Sprites already loaded, starting game immediately');
             this.assetLoader.setupItemSpritesFromPreloaded(preloadedAssets);
+            this.graphics.setupItemSprites(this.assetLoader.itemSprites);
             // Only set petal images if they were loaded
             if (Object.keys(preloadedAssets.petalImages).length > 0) {
                 this.graphics.setPetalImagesFromPreloaded(preloadedAssets.petalImages);
@@ -292,6 +293,7 @@ export class Game {
                 this.graphics.preloadPetalImages()
             ]).then(() => {
                 console.log('[Game] All sprites loaded successfully');
+                this.graphics.setupItemSprites(this.assetLoader.itemSprites);
                 this.updateColorPreview();
                 this.gameLoop();
             }).catch(console.error);
@@ -392,7 +394,9 @@ export class Game {
         this.exitButton?.addEventListener('click', () => this.handleExit());
 
         // Set up item sprites
-        this.assetLoader.setupItemSprites();
+        this.assetLoader.setupItemSprites().then(() => {
+            this.graphics.setupItemSprites(this.assetLoader.itemSprites);
+        });
 
         // Add drag-and-drop event listeners
         // this.setupDragAndDrop(); // This method is now in inventory.ts
