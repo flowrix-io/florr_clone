@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 47,
-      "xp": 482767,
+      "xp": 482777,
       "maxHealth": 560,
       "damage": 97,
       "inventory": {
@@ -10,7 +10,7 @@
           "health_potion": 37,
           "petal_rose": 50,
           "shield": 52,
-          "petal_light": 39,
+          "petal_light": 40,
           "petal_dandelion": 13,
           "petal_stinger": 24,
           "petal_yggdrasil": 1,
@@ -186,7 +186,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "light",
-          "health": 32805,
+          "health": 32795,
           "maxHealth": 32805
         },
         {

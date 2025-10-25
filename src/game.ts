@@ -1,7 +1,6 @@
 import { Player, PlayerProgress, ServerPlayer, PlayerInventory } from './player';
 import { Dot, Enemy, Obstacle } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
-import { IMAGE_ASSETS } from './imageAssets';
 import { SVGLoader } from './SVGLoader';
 import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE } from './constants';
 import { Graphics } from './graphics';
@@ -11,6 +10,7 @@ import { InventoryManager } from './inventory';
 import { PreloadedAssets } from './preloader';
 import { Tutorial } from './tutorial';
 import { ShaderManager } from './shader/shaderManager';
+import { AssetLoader } from './asset_loader';
 
 // Global interface declarations
 declare global {
@@ -59,7 +59,6 @@ export class Game {
     private graphics: Graphics;
     private socket!: Socket;  // Using the definite assignment assertion
     private players: Map<string, Player> = new Map();
-    private playerSprite: HTMLImageElement = new Image();
     private dots: { x: number, y: number }[] = [];
     private readonly DOT_SIZE = 5;
     private readonly DOT_COUNT = 20;
@@ -87,10 +86,6 @@ export class Game {
     private keysPressed: Set<string> = new Set();
     private petalExtension: number = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
     private enemies: Map<string, Enemy> = new Map();
-    private octopusSprite: HTMLImageElement = new Image();
-    private fishSprite: HTMLImageElement = new Image();
-    private coralSprite: HTMLImageElement = new Image();
-    private palmSprite: HTMLImageElement = new Image();
     private readonly PLAYER_MAX_HEALTH = 100;
     private readonly PLAYER_DAMAGE = 10;
     private readonly ENEMY_DAMAGE = 5;
@@ -99,7 +94,6 @@ export class Game {
     private obstacles: Obstacle[] = [];
     private readonly ENEMY_CORAL_MAX_HEALTH = 50;
     private items: Map<string, WorldItem> = new Map();
-    private itemSprites: Record<string, HTMLImageElement> = {};
     private isInventoryOpen: boolean = false;
     private gameLoopId: number | null = null;
     private socketHandlers: Map<string, Function> = new Map();
@@ -185,8 +179,6 @@ export class Game {
     private craftingSlots: CraftingSlot[] = Array(4).fill(null).map((_, i) => ({ index: i, item: null }));
     private isCraftingOpen: boolean = false;
     private svgLoader: SVGLoader;
-    // Add to class properties
-    private walls: any[] = [];
     private readonly WALL_SPACING = 500; // Distance between walls
     private world_map_data: MapElement[] = [];
 
@@ -197,15 +189,8 @@ export class Game {
     private lastHeartbeat: number = 0;
     private heartbeatInterval: NodeJS.Timeout | null = null;       // Add this property for server update time
 
-    // Add to class properties at the top
-    private backgroundImage: HTMLImageElement = new Image();
-
-    private wallTexture: HTMLImageElement = new Image(); // Add this to class properties
-    private backgroundTexture: HTMLImageElement = new Image();
-    private healthPotionSprite: HTMLImageElement = new Image();
-    private speedBoostSprite: HTMLImageElement = new Image();
-    private shieldSprite: HTMLImageElement = new Image();
-    private backgroundLoadAttempted: boolean = false;
+    // Asset loader instance
+    private assetLoader: AssetLoader;
 
     private lastDeathTime: number = 0;
     private deathCooldown: number = 3000; // 3 seconds
@@ -230,6 +215,9 @@ export class Game {
         this.loadControls();
         console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled, 'show FPS:', showFPS, 'show counters:', showCounters);
         
+        // Initialize asset loader
+        this.assetLoader = new AssetLoader();
+        
         // Wait for canvas to be ready before proceeding
         this.waitForCanvas();
         this.canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -237,28 +225,19 @@ export class Game {
         // Use preloaded assets if available
         if (preloadedAssets) {
             console.log('[Game] Using preloaded assets');
-            this.playerSprite = preloadedAssets.sprites.player;
-            this.octopusSprite = preloadedAssets.sprites.octopus;
-            this.fishSprite = preloadedAssets.sprites.fish;
-            this.coralSprite = preloadedAssets.sprites.coral;
-            this.palmSprite = preloadedAssets.sprites.palm;
-            this.healthPotionSprite = preloadedAssets.sprites.healthPotion;
-            this.speedBoostSprite = preloadedAssets.sprites.speedBoost;
-            this.shieldSprite = preloadedAssets.sprites.shield;
-            this.wallTexture = preloadedAssets.sprites.wall;
-            this.backgroundTexture = preloadedAssets.backgroundTexture;
+            this.assetLoader.initializeFromPreloaded(preloadedAssets);
         }
 
         this.graphics = new Graphics(
             this.canvas, 
-            this.playerSprite, 
-            this.wallTexture,
-            this.octopusSprite,
-            this.fishSprite,
-            this.healthPotionSprite,
-            this.speedBoostSprite,
-            this.shieldSprite,
-            this.backgroundTexture
+            this.assetLoader.playerSprite, 
+            this.assetLoader.wallTexture,
+            this.assetLoader.octopusSprite,
+            this.assetLoader.fishSprite,
+            this.assetLoader.healthPotionSprite,
+            this.assetLoader.speedBoostSprite,
+            this.assetLoader.shieldSprite,
+            this.assetLoader.backgroundTexture
         );
         this.graphics.showHitboxes = this.showHitboxes;
 
@@ -293,7 +272,7 @@ export class Game {
         if (preloadedAssets) {
             // Assets already loaded, just set up item sprites and start
             console.log('[Game] Sprites already loaded, starting game immediately');
-            this.setupItemSpritesFromPreloaded(preloadedAssets);
+            this.assetLoader.setupItemSpritesFromPreloaded(preloadedAssets);
             // Only set petal images if they were loaded
             if (Object.keys(preloadedAssets.petalImages).length > 0) {
                 this.graphics.setPetalImagesFromPreloaded(preloadedAssets.petalImages);
@@ -308,8 +287,8 @@ export class Game {
             // Load sprites dynamically (fallback)
             console.log('[Game] Loading sprites dynamically');
             Promise.all([
-                this.initializeSprites(),
-                this.setupItemSprites(),
+                this.assetLoader.loadSprites(),
+                this.assetLoader.setupItemSprites(),
                 this.graphics.preloadPetalImages()
             ]).then(() => {
                 console.log('[Game] All sprites loaded successfully');
@@ -352,7 +331,7 @@ export class Game {
                     this.playerHue = parseInt(value);
                     this.playerColor = `hsl(${this.playerHue}, 100%, 50%)`;
 
-                    if (this.playerSprite.complete) {
+                    if (this.assetLoader.playerSprite.complete) {
                         this.updateColorPreview();
                     }
 
@@ -413,7 +392,7 @@ export class Game {
         this.exitButton?.addEventListener('click', () => this.handleExit());
 
         // Set up item sprites
-        this.setupItemSprites();
+        this.assetLoader.setupItemSprites();
 
         // Add drag-and-drop event listeners
         // this.setupDragAndDrop(); // This method is now in inventory.ts
@@ -543,7 +522,7 @@ export class Game {
         this.inventoryManager.updateLoadoutDisplay();
 
         this.svgLoader = new SVGLoader();
-        this.loadAssets();
+        this.assetLoader.loadAssets();
 
         // Listen for map data from the server
         this.socket.on('mapData', (mapData: MapElement[]) => {
@@ -552,7 +531,7 @@ export class Game {
             this.graphics.setMap(mapData);
             this.renderMap(mapData);
             // Load biome textures
-            this.loadBiomeTextures(mapData);
+            this.assetLoader.loadBiomeTextures(mapData, this.graphics);
             
             // Update title screen with available biomes
             this.updateTitleScreenBiomes(mapData);
@@ -573,13 +552,10 @@ export class Game {
         });
 
         // Load background image from land.svg
-        this.loadBackgroundFromSVG();
+        this.assetLoader.loadBackgroundFromSVG();
 
         // Load wall texture
-        this.wallTexture.src = IMAGE_ASSETS["wall"];
-        this.wallTexture.onload = () => {
-            console.log('Wall texture loaded successfully');
-        };
+        this.assetLoader.loadWallTexture();
 
         this.gameStartTime = Date.now();
 
@@ -625,38 +601,6 @@ export class Game {
         console.log('[Game] Canvas element found and ready');
     }
 
-    private async initializeSprites(): Promise<void> {
-        const loadSprite = async (sprite: HTMLImageElement, filename: string): Promise<void> => {
-            try {
-                sprite.crossOrigin = "anonymous";
-                sprite.src = await this.getAssetUrl(filename);
-
-                return new Promise((resolve, reject) => {
-                    sprite.onload = () => resolve();
-                    sprite.onerror = (e) => {
-                        console.error(`Failed to load sprite: ${filename}`, e);
-                        reject(e);
-                    };
-                });
-            } catch (error) {
-                console.error(`Error loading sprite ${filename}:`, error);
-                // Don't throw error, just log it and continue
-            }
-        };
-
-        try {
-            await Promise.allSettled([
-                loadSprite(this.playerSprite, 'player.png'),
-                loadSprite(this.octopusSprite, 'octopus.png'),
-                loadSprite(this.fishSprite, 'fish.png'),
-                loadSprite(this.coralSprite, 'coral.png'),
-                loadSprite(this.palmSprite, 'palm.png')
-            ]);
-        } catch (error) {
-            console.error('Error loading sprites:', error);
-            // Continue even if some sprites fail to load
-        }
-    }
 
     private authenticate() {
         // Get credentials from AuthUI or localStorage
@@ -1164,46 +1108,7 @@ export class Game {
         this.graphics.drawMap(mapData);
     }
 
-    private setupItemSpritesFromPreloaded(preloadedAssets: PreloadedAssets) {
-        console.log('[Game] Setting up item sprites from preloaded assets');
-        this.itemSprites = {
-            health_potion: preloadedAssets.sprites.healthPotion,
-            speed_boost: preloadedAssets.sprites.speedBoost,
-            shield: preloadedAssets.sprites.shield,
-        };
-        this.graphics.setupItemSprites(this.itemSprites);
-        console.log('[Game] Item sprites set up successfully');
-    }
 
-    private async setupItemSprites() {
-        this.itemSprites = {};
-        const itemTypes = ['health_potion', 'speed_boost', 'shield'];
-
-        try {
-            await Promise.all(itemTypes.map(async type => {
-                const sprite = new Image();
-                sprite.crossOrigin = "anonymous";
-                const url = await this.getAssetUrl(`${type}.png`);
-
-                await new Promise<void>((resolve, reject) => {
-                    sprite.onload = () => {
-                        this.itemSprites[type] = sprite;
-                        resolve();
-                    };
-                    sprite.onerror = (error) => {
-                        console.error(`Failed to load sprite for ${type}:`, error);
-                        reject(error);
-                    };
-                    sprite.src = url;
-                });
-            }));
-
-            console.log('All item sprites loaded successfully:', Object.keys(this.itemSprites));
-            this.graphics.setupItemSprites(this.itemSprites);
-        } catch (error) {
-            console.error('Error loading item sprites:', error);
-        }
-    }
 
     private resizeCanvas() {
         this.canvas.width = window.innerWidth;
@@ -1237,7 +1142,6 @@ export class Game {
         this.floatingTexts = [];
         this.decorations = [];
         this.sands = [];
-        this.walls = [];
 
         // Define clear canvas function
         const clearCanvas = () => {
@@ -1379,196 +1283,35 @@ export class Game {
         }
     }
 
-    private applyHueRotation(ctx: CanvasRenderingContext2D, imageData: ImageData): void {
-        const data = imageData.data;
-
-        for (let i = 0; i < data.length; i += 4) {
-            // Skip fully transparent pixels
-            if (data[i + 3] === 0) continue;
-
-            // Convert RGB to HSL
-            const r = data[i] / 255;
-            const g = data[i + 1] / 255;
-            const b = data[i + 2] / 255;
-
-            const max = Math.max(r, g, b);
-            const min = Math.min(r, g, b);
-            let h, s, l = (max + min) / 2;
-
-            if (max === min) {
-                h = s = 0; // achromatic
-            } else {
-                const d = max - min;
-                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-                switch (max) {
-                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                    case g: h = (b - r) / d + 2; break;
-                    case b: h = (r - g) / d + 4; break;
-                    default: h = 0;
-                }
-                h /= 6;
-            }
-
-            // Only adjust hue if the pixel has some saturation
-            if (s > 0.1) {  // Threshold for considering a pixel colored
-                h = (h + this.playerHue / 360) % 1;
-
-                // Convert back to RGB
-                if (s === 0) {
-                    data[i] = data[i + 1] = data[i + 2] = l * 255;
-                } else {
-                    const hue2rgb = (p: number, q: number, t: number) => {
-                        if (t < 0) t += 1;
-                        if (t > 1) t -= 1;
-                        if (t < 1 / 6) return p + (q - p) * 6 * t;
-                        if (t < 1 / 2) return q;
-                        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-                        return p;
-                    };
-
-                    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-                    const p = 2 * l - q;
-
-                    data[i] = hue2rgb(p, q, h + 1 / 3) * 255;
-                    data[i + 1] = hue2rgb(p, q, h) * 255;
-                    data[i + 2] = hue2rgb(p, q, h - 1 / 3) * 255;
-                }
-            }
-        }
-    }
 
     private updateColorPreview() {
-        if (!this.playerSprite.complete) return;
+        if (!this.assetLoader.playerSprite.complete) return;
 
         const ctx = this.colorPreviewCanvas.getContext('2d')!;
         ctx.clearRect(0, 0, this.colorPreviewCanvas.width, this.colorPreviewCanvas.height);
 
         // Draw the sprite centered in the preview
         const scale = Math.min(
-            this.colorPreviewCanvas.width / this.playerSprite.width,
-            this.colorPreviewCanvas.height / this.playerSprite.height
+            this.colorPreviewCanvas.width / this.assetLoader.playerSprite.width,
+            this.colorPreviewCanvas.height / this.assetLoader.playerSprite.height
         );
 
-        const x = (this.colorPreviewCanvas.width - this.playerSprite.width * scale) / 2;
-        const y = (this.colorPreviewCanvas.height - this.playerSprite.height * scale) / 2;
+        const x = (this.colorPreviewCanvas.width - this.assetLoader.playerSprite.width * scale) / 2;
+        const y = (this.colorPreviewCanvas.height - this.assetLoader.playerSprite.height * scale) / 2;
 
         ctx.save();
         ctx.translate(x, y);
         ctx.scale(scale, scale);
-        ctx.drawImage(this.playerSprite, 0, 0);
+        ctx.drawImage(this.assetLoader.playerSprite, 0, 0);
 
         const imageData = ctx.getImageData(0, 0, this.colorPreviewCanvas.width, this.colorPreviewCanvas.height);
-        this.applyHueRotation(ctx, imageData);
+        this.assetLoader.applyHueRotation(ctx, imageData, this.playerHue);
         ctx.putImageData(imageData, 0, 0);
         ctx.restore();
     }
 
-    // Add this helper method to handle asset URLs
-    private async getAssetUrl(filename: string): Promise<string> {
-        // Remove the file extension to get the asset key
-        const assetKey = filename.replace('.png', '');
 
-        // If running from file:// protocol, use base64 data
-        if (window.location.protocol === 'file:') {
-            // Get the base64 data from our assets
-            const base64Data = IMAGE_ASSETS[assetKey as keyof typeof IMAGE_ASSETS];
-            if (base64Data) {
-                return base64Data;
-            }
-            console.error(`No base64 data found for asset: ${filename}`);
-        }
 
-        // Otherwise use normal URL
-        return `./assets/${filename}`;
-    }
-
-    private async loadBackgroundFromSVG() {
-        if (this.backgroundLoadAttempted) {
-            return; // Prevent infinite loop
-        }
-        this.backgroundLoadAttempted = true;
-
-        try {
-            // Load the land.svg file
-            const response = await fetch('./land.svg');
-            if (!response.ok) {
-                throw new Error(`Failed to fetch land.svg: ${response.status}`);
-            }
-            const svgText = await response.text();
-            
-            // Convert SVG to data URL (base64) so it's persistent
-            const base64 = btoa(unescape(encodeURIComponent(svgText)));
-            const dataUrl = `data:image/svg+xml;base64,${base64}`;
-            
-            // Load directly into backgroundTexture
-            this.backgroundTexture.onload = () => {
-                console.log('Background SVG loaded successfully');
-                // Remove error handler after successful load
-                this.backgroundTexture.onerror = null;
-            };
-            this.backgroundTexture.onerror = (error) => {
-                console.error('Failed to load background SVG:', error);
-                // Remove error handler to prevent infinite loop
-                this.backgroundTexture.onerror = null;
-                // Create a fallback programmatic SVG if loading fails
-                this.createFallbackBackground();
-            };
-            this.backgroundTexture.src = dataUrl;
-        } catch (error) {
-            console.error('Error loading background SVG:', error);
-            // Create a fallback programmatic SVG if loading fails
-            this.createFallbackBackground();
-        }
-    }
-
-    private createFallbackBackground() {
-        console.log('Using fallback background');
-        
-        try {
-            // Create a simple green background with grass triangles as fallback
-            const svg = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
-  <rect width="400" height="400" x="0" y="0" fill="#00d885"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(60, 60) rotate(45)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(180, 80) rotate(-20)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(300, 70) rotate(120)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(100, 200) rotate(180)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(250, 280) rotate(210)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(340, 230) rotate(-90)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(80, 300) rotate(75)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <circle cx="150" cy="50" r="18" fill="#00f295"/>
-  <circle cx="280" cy="180" r="18" fill="#00f295"/>
-  <circle cx="50" cy="150" r="18" fill="#00f295"/>
-  <circle cx="200" cy="350" r="18" fill="#00f295"/>
-  <circle cx="360" cy="320" r="18" fill="#00f295"/>
-</svg>`;
-            
-            // Convert to persistent base64 data URL
-            const base64 = btoa(unescape(encodeURIComponent(svg)));
-            const dataUrl = `data:image/svg+xml;base64,${base64}`;
-            
-            // Clear any existing handlers to prevent loops
-            this.backgroundTexture.onload = () => {
-                console.log('Fallback background loaded successfully');
-                this.backgroundTexture.onload = null;
-                this.backgroundTexture.onerror = null;
-            };
-            
-            // If even the fallback fails, don't try again - just log it
-            this.backgroundTexture.onerror = (error) => {
-                console.error('Fallback background also failed to load:', error);
-                this.backgroundTexture.onerror = null;
-                this.backgroundTexture.onload = null;
-                // Don't throw or retry - just let the graphics system use the fallback color
-            };
-            
-            this.backgroundTexture.src = dataUrl;
-        } catch (error) {
-            console.error('Error creating fallback background:', error);
-            // Clear handlers to prevent any further errors
-            this.backgroundTexture.onerror = null;
-            this.backgroundTexture.onload = null;
-        }
-    }
 
     // Method to load biome-specific background textures
     /**
@@ -1580,94 +1323,7 @@ export class Game {
         }
     }
 
-    private async loadBiomeTextures(mapData: MapElement[]) {
-        // Find all biomes in the map data
-        const biomes = mapData.filter(element => element.type === 'biome' && element.properties?.biomeName && element.properties?.backgroundTexture);
-        
-        // Track which textures we've already loaded to avoid duplicates
-        const loadedTextures = new Set<string>();
-        
-        for (const biome of biomes) {
-            const biomeName = biome.properties!.biomeName!;
-            const textureFile = biome.properties!.backgroundTexture!;
-            
-            // Skip if we've already loaded this texture
-            if (loadedTextures.has(biomeName)) {
-                continue;
-            }
-            loadedTextures.add(biomeName);
-            
-            try {
-                // Load the texture file (could be SVG or image)
-                const response = await fetch(`./${textureFile}`);
-                if (!response.ok) {
-                    console.error(`Failed to fetch biome texture ${textureFile}: ${response.status}`);
-                    continue;
-                }
-                
-                // Check if it's an SVG file
-                if (textureFile.endsWith('.svg')) {
-                    const svgText = await response.text();
-                    
-                    // Convert SVG to data URL (base64)
-                    const base64 = btoa(unescape(encodeURIComponent(svgText)));
-                    const dataUrl = `data:image/svg+xml;base64,${base64}`;
-                    
-                    // Create an image element for the biome texture
-                    const biomeTexture = new Image();
-                    biomeTexture.onload = () => {
-                        console.log(`Biome texture '${biomeName}' loaded successfully from ${textureFile}`);
-                        this.graphics.setBiomeTexture(biomeName, biomeTexture);
-                    };
-                    biomeTexture.onerror = (error) => {
-                        console.error(`Failed to load biome texture '${biomeName}' from ${textureFile}:`, error);
-                    };
-                    biomeTexture.src = dataUrl;
-                } else {
-                    // For non-SVG images, load directly
-                    const biomeTexture = new Image();
-                    biomeTexture.onload = () => {
-                        console.log(`Biome texture '${biomeName}' loaded successfully from ${textureFile}`);
-                        this.graphics.setBiomeTexture(biomeName, biomeTexture);
-                    };
-                    biomeTexture.onerror = (error) => {
-                        console.error(`Failed to load biome texture '${biomeName}' from ${textureFile}:`, error);
-                    };
-                    biomeTexture.src = `./${textureFile}`;
-                }
-            } catch (error) {
-                console.error(`Error loading biome texture '${biomeName}' from ${textureFile}:`, error);
-            }
-        }
-    }
 
-    private async loadAssets() {
-        try {
-            // Create a simple wall SVG programmatically
-            const wallSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-            wallSVG.setAttribute("width", "100");
-            wallSVG.setAttribute("height", "100");
-
-            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            rect.setAttribute("width", "100");
-            rect.setAttribute("height", "100");
-            rect.setAttribute("fill", "#666");
-            wallSVG.appendChild(rect);
-
-            // Store the wall SVG
-            this.walls = Array(100).fill(null).map(() => ({
-                x: Math.random() * this.WORLD_WIDTH,
-                y: Math.random() * this.WORLD_HEIGHT,
-                element: wallSVG.cloneNode(true) as SVGElement
-            }));
-
-            console.log('Successfully initialized walls');
-        } catch (error) {
-            console.error('Failed to load game assets:', error);
-            // Create empty walls array if loading fails
-            this.walls = [];
-        }
-    }
 
     public getLocalPlayer() {
         return this.players.get(this.socket?.id || '');
