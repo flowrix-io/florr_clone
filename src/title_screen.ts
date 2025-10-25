@@ -479,12 +479,12 @@ export class TitleScreen {
                     <!-- Biome buttons will be dynamically generated here -->
                 </div>
             </div>
-            <div class="color-picker">
+            <!-- <div class="color-picker">
                 <label for="hueSlider">Player Color:</label>
                 <input type="range" id="hueSlider" min="0" max="360" value="0" class="hue-slider">
                 <div id="colorPreview" class="color-preview"></div>
                 <button id="updateColorButton" class="color-update-btn">Update Color</button>
-            </div>
+            </div> -->
             <div class="controls">
                 <p>Controls:</p>
                 <br/>
