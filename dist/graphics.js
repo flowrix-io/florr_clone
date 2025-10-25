@@ -36,6 +36,7 @@ class Graphics {
         this.explosionEffects = [];
         this.petalBreakEffects = [];
         this.lightningEffects = [];
+        this.petalParticleEffects = [];
         this.mapData = [];
         this.MINIMAP_WIDTH = 200;
         this.MINIMAP_HEIGHT = 200;
@@ -237,6 +238,43 @@ class Graphics {
             alpha: 1.0
         });
         console.log(`[GRAPHICS] Created lightning effect at (${x}, ${y}) with ${targets.length} targets`);
+    }
+    showPetalParticleEffect(x, y, rarity) {
+        // Only create particle effects for ultra, super, and unique petals
+        if (!['ultra', 'super', 'unique'].includes(rarity)) {
+            return;
+        }
+        // Create particles for the petal
+        const particles = [];
+        const particleCount = 8; // Number of particles radiating from the petal
+        for (let i = 0; i < particleCount; i++) {
+            const angle = (Math.PI * 2 * i) / particleCount + Math.random() * 0.3;
+            const speed = 0.5 + Math.random() * 0.5; // Slow, gentle movement
+            const particleLife = 2000 + Math.random() * 1000; // 2-3 seconds
+            // Get rarity color for tinting
+            const rarityColor = this.ITEM_RARITY_COLORS[rarity] || '#ffffff';
+            particles.push({
+                x: x + (Math.random() - 0.5) * 4,
+                y: y + (Math.random() - 0.5) * 4,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: particleLife,
+                maxLife: particleLife,
+                size: 1 + Math.random() * 2,
+                color: rarityColor,
+                baseColor: '#ffffff' // White base color
+            });
+        }
+        // Create petal particle effect
+        this.petalParticleEffects.push({
+            x,
+            y,
+            rarity,
+            particles,
+            lifetime: 3000, // Effect lasts 3 seconds
+            startTime: Date.now()
+        });
+        console.log(`[GRAPHICS] Created petal particle effect for ${rarity} petal at (${x}, ${y}) with ${particles.length} particles`);
     }
     drawMap(world_map_data) {
         // Draw all map elements
@@ -611,6 +649,13 @@ class Graphics {
                 this.ctx.fill();
                 this.ctx.stroke();
             }
+            // Create particle effects for ultra, super, and unique petals
+            if (['ultra', 'super', 'unique'].includes(petal.rarity)) {
+                // Only create particles occasionally to avoid performance issues
+                if (Math.random() < 0.1) { // 10% chance per frame
+                    this.showPetalParticleEffect(petalX, petalY, petal.rarity);
+                }
+            }
             // Draw health bar for petals
             if (petal.health !== undefined && petal.maxHealth !== undefined && petal.maxHealth > 0) {
                 const healthBarWidth = size;
@@ -768,6 +813,13 @@ class Graphics {
             this.ctx.fill();
             this.ctx.stroke();
         }
+        // Create particle effects for ultra, super, and unique world petals
+        if (['ultra', 'super', 'unique'].includes(item.rarity)) {
+            // Only create particles occasionally to avoid performance issues
+            if (Math.random() < 0.05) { // 5% chance per frame for world petals
+                this.showPetalParticleEffect(item.x, item.y, item.rarity);
+            }
+        }
     }
     drawFloatingTexts() {
         this.floatingTexts = this.floatingTexts.filter(text => {
@@ -892,6 +944,39 @@ class Graphics {
                 this.ctx.beginPath();
                 this.ctx.arc(target.x, target.y, 3, 0, Math.PI * 2);
                 this.ctx.fill();
+            });
+            this.ctx.restore();
+            return true;
+        });
+    }
+    drawPetalParticleEffects() {
+        this.petalParticleEffects = this.petalParticleEffects.filter(effect => {
+            const elapsed = Date.now() - effect.startTime;
+            const progress = elapsed / effect.lifetime;
+            if (progress >= 1)
+                return false;
+            this.ctx.save();
+            // Draw particles
+            effect.particles = effect.particles.filter(particle => {
+                const particleProgress = particle.life / particle.maxLife;
+                if (particleProgress <= 0)
+                    return false;
+                // Update particle position
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.life -= 16; // Assuming 60fps, reduce by ~16ms per frame
+                // Draw particle with white base color and faint rarity tinting
+                this.ctx.globalAlpha = particleProgress * 0.3; // Very faint particles
+                // Create a gradient from white base to rarity color
+                const gradient = this.ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, particle.size);
+                gradient.addColorStop(0, particle.baseColor); // White center
+                gradient.addColorStop(0.7, particle.baseColor); // Mostly white
+                gradient.addColorStop(1, particle.color); // Faint rarity color at edges
+                this.ctx.fillStyle = gradient;
+                this.ctx.beginPath();
+                this.ctx.arc(particle.x, particle.y, particle.size * particleProgress, 0, Math.PI * 2);
+                this.ctx.fill();
+                return true;
             });
             this.ctx.restore();
             return true;
@@ -1088,6 +1173,7 @@ class Graphics {
         this.drawExplosionEffects();
         this.drawPetalBreakEffects();
         this.drawLightningEffects();
+        this.drawPetalParticleEffects();
         this.ctx.restore();
         // Draw UI elements (not affected by camera)
         this.drawUI(players, currentPlayerId);
