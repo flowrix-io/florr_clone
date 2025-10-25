@@ -10,7 +10,7 @@ const socket_1 = require("./socket");
 const inventory_1 = require("./inventory");
 const tutorial_1 = require("./tutorial");
 class Game {
-    constructor(showHitboxes, serverIp, preloadedAssets, shadersEnabled = false) {
+    constructor(showHitboxes, serverIp, preloadedAssets, shadersEnabled = false, showFPS = false, showCounters = false) {
         this.speedBoostActive = false;
         this.shieldActive = false;
         this.debugCollision = false; // Toggle for collision debugging
@@ -82,6 +82,14 @@ class Game {
         this.mouseX = 0;
         this.mouseY = 0;
         this.showHitboxes = false; // Changed from true to false
+        this.showFPS = false;
+        this.showCounters = false;
+        this.fpsCounter = 0;
+        this.fpsUpdateTime = 0;
+        this.frameCount = 0;
+        this.fpsDisplayElement = null;
+        this.mobCounterElement = null;
+        this.playerCounterElement = null;
         this.playerHue = 0;
         this.playerColor = 'hsl(0, 100%, 50%)';
         this.LOADOUT_SLOTS = 10;
@@ -135,8 +143,10 @@ class Game {
         // Add chat property
         this.chat = null;
         this.showHitboxes = showHitboxes;
+        this.showFPS = showFPS;
+        this.showCounters = showCounters;
         this.loadControls();
-        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled);
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled, 'show FPS:', showFPS, 'show counters:', showCounters);
         // Wait for canvas to be ready before proceeding
         this.waitForCanvas();
         this.canvas = document.getElementById('gameCanvas');
@@ -300,6 +310,77 @@ class Game {
         this.saveIndicator.textContent = 'Progress Saved';
         this.saveIndicator.style.display = 'none';
         document.body.appendChild(this.saveIndicator);
+        // Create FPS display element
+        this.fpsDisplayElement = document.createElement('div');
+        this.fpsDisplayElement.id = 'fpsDisplay';
+        this.fpsDisplayElement.style.cssText = `
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #00ff00;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 10000;
+            display: none;
+            pointer-events: none;
+        `;
+        this.fpsDisplayElement.textContent = 'FPS: 0';
+        document.body.appendChild(this.fpsDisplayElement);
+        // Set initial FPS display visibility
+        if (this.fpsDisplayElement) {
+            this.fpsDisplayElement.style.display = this.showFPS ? 'block' : 'none';
+        }
+        // Create mob counter element
+        this.mobCounterElement = document.createElement('div');
+        this.mobCounterElement.id = 'mobCounter';
+        this.mobCounterElement.style.cssText = `
+            position: fixed;
+            bottom: 50px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #ff6b6b;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 10000;
+            display: block;
+            pointer-events: none;
+        `;
+        this.mobCounterElement.textContent = 'Mobs: 0';
+        document.body.appendChild(this.mobCounterElement);
+        // Create player counter element
+        this.playerCounterElement = document.createElement('div');
+        this.playerCounterElement.id = 'playerCounter';
+        this.playerCounterElement.style.cssText = `
+            position: fixed;
+            bottom: 90px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #4ecdc4;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 10000;
+            display: block;
+            pointer-events: none;
+        `;
+        this.playerCounterElement.textContent = 'Players: 0';
+        document.body.appendChild(this.playerCounterElement);
+        // Set initial counter visibility
+        if (this.mobCounterElement) {
+            this.mobCounterElement.style.display = this.showCounters ? 'block' : 'none';
+        }
+        if (this.playerCounterElement) {
+            this.playerCounterElement.style.display = this.showCounters ? 'block' : 'none';
+        }
         // Add this to the constructor after creating the loadout bar
         const style = document.createElement('style');
         style.textContent = `
@@ -567,6 +648,62 @@ class Game {
                 e.preventDefault();
             });
         }
+        // Add settings change listeners
+        this.setupSettingsListeners();
+    }
+    setupSettingsListeners() {
+        // Listen for settings changes from the title screen
+        const settingsMenu = document.getElementById('settingsMenu');
+        if (settingsMenu) {
+            const hitboxesCheckbox = settingsMenu.querySelector('#showHitboxesCheckbox');
+            const fpsCheckbox = settingsMenu.querySelector('#showFPS');
+            const countersCheckbox = settingsMenu.querySelector('#showCounters');
+            if (hitboxesCheckbox) {
+                hitboxesCheckbox.addEventListener('change', () => {
+                    this.showHitboxes = hitboxesCheckbox.checked;
+                    this.graphics.showHitboxes = this.showHitboxes;
+                });
+            }
+            if (fpsCheckbox) {
+                fpsCheckbox.addEventListener('change', () => {
+                    this.showFPS = fpsCheckbox.checked;
+                    // Reset FPS counter when toggling
+                    if (this.showFPS) {
+                        this.frameCount = 0;
+                        this.fpsUpdateTime = performance.now();
+                        if (this.fpsDisplayElement) {
+                            this.fpsDisplayElement.style.display = 'block';
+                        }
+                    }
+                    else {
+                        if (this.fpsDisplayElement) {
+                            this.fpsDisplayElement.style.display = 'none';
+                        }
+                    }
+                });
+            }
+            if (countersCheckbox) {
+                countersCheckbox.addEventListener('change', () => {
+                    this.showCounters = countersCheckbox.checked;
+                    if (this.showCounters) {
+                        if (this.mobCounterElement) {
+                            this.mobCounterElement.style.display = 'block';
+                        }
+                        if (this.playerCounterElement) {
+                            this.playerCounterElement.style.display = 'block';
+                        }
+                    }
+                    else {
+                        if (this.mobCounterElement) {
+                            this.mobCounterElement.style.display = 'none';
+                        }
+                        if (this.playerCounterElement) {
+                            this.playerCounterElement.style.display = 'none';
+                        }
+                    }
+                });
+            }
+        }
     }
     zoomIn() {
         this.zoomLevel = Math.min(this.zoomLevel + this.ZOOM_STEP, this.MAX_ZOOM);
@@ -659,6 +796,27 @@ class Game {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
     gameLoop() {
+        // Calculate FPS
+        if (this.showFPS) {
+            this.frameCount++;
+            const currentTime = performance.now();
+            if (currentTime - this.fpsUpdateTime >= 1000) { // Update every second
+                this.fpsCounter = this.frameCount;
+                this.frameCount = 0;
+                this.fpsUpdateTime = currentTime;
+                // Update DOM element
+                if (this.fpsDisplayElement) {
+                    this.fpsDisplayElement.textContent = `FPS: ${this.fpsCounter}`;
+                }
+            }
+        }
+        // Update counters
+        if (this.mobCounterElement) {
+            this.mobCounterElement.textContent = `Mobs: ${this.enemies.size}`;
+        }
+        if (this.playerCounterElement) {
+            this.playerCounterElement.textContent = `Players: ${this.players.size}`;
+        }
         this.update();
         this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());

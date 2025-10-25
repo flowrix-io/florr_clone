@@ -473,6 +473,11 @@ class TitleScreen {
                             Enable Particle Effects
                         </label>
                         <br/><br/>
+                        <label>
+                            <input type="checkbox" id="showCounters">
+                            Show Server Counters
+                        </label>
+                        <br/><br/>
                         <h3>Tutorial</h3>
                         <button id="resetTutorialButton">Reset Tutorial</button>
                     </div>
@@ -768,6 +773,18 @@ class TitleScreen {
                 }
             });
         }
+        const showFPSCheckbox = this.settingsMenu.querySelector('#showFPS');
+        if (showFPSCheckbox) {
+            showFPSCheckbox.addEventListener('change', () => {
+                localStorage.setItem('showFPS', showFPSCheckbox.checked.toString());
+            });
+        }
+        const showCountersCheckbox = this.settingsMenu.querySelector('#showCounters');
+        if (showCountersCheckbox) {
+            showCountersCheckbox.addEventListener('change', () => {
+                localStorage.setItem('showCounters', showCountersCheckbox.checked.toString());
+            });
+        }
         // Reset tutorial button
         const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
         if (resetTutorialButton) {
@@ -906,6 +923,16 @@ class TitleScreen {
         const enableShadersCheckbox = this.settingsMenu.querySelector('#enableShadersCheckbox');
         if (enableShadersCheckbox) {
             enableShadersCheckbox.checked = shadersEnabled;
+        }
+        const showFPS = localStorage.getItem('showFPS') === 'true';
+        const showFPSCheckbox = this.settingsMenu.querySelector('#showFPS');
+        if (showFPSCheckbox) {
+            showFPSCheckbox.checked = showFPS;
+        }
+        const showCounters = localStorage.getItem('showCounters') === 'true';
+        const showCountersCheckbox = this.settingsMenu.querySelector('#showCounters');
+        if (showCountersCheckbox) {
+            showCountersCheckbox.checked = showCounters;
         }
         const serverIP = localStorage.getItem('serverIP') || window.location.origin;
         const serverIPInput = this.settingsMenu.querySelector('#serverIP-settings');
@@ -1206,6 +1233,14 @@ class TitleScreen {
     }
     getShadersEnabled() {
         const checkbox = this.settingsMenu.querySelector('#enableShadersCheckbox');
+        return checkbox ? checkbox.checked : false;
+    }
+    getShowFPS() {
+        const checkbox = this.settingsMenu.querySelector('#showFPS');
+        return checkbox ? checkbox.checked : false;
+    }
+    getShowCounters() {
+        const checkbox = this.settingsMenu.querySelector('#showCounters');
         return checkbox ? checkbox.checked : false;
     }
     getServerIP() {

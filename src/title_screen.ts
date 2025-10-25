@@ -549,6 +549,11 @@ export class TitleScreen {
                             Enable Particle Effects
                         </label>
                         <br/><br/>
+                        <label>
+                            <input type="checkbox" id="showCounters">
+                            Show Server Counters
+                        </label>
+                        <br/><br/>
                         <h3>Tutorial</h3>
                         <button id="resetTutorialButton">Reset Tutorial</button>
                     </div>
@@ -882,6 +887,13 @@ export class TitleScreen {
             });
         }
 
+        const showCountersCheckbox = this.settingsMenu.querySelector('#showCounters') as HTMLInputElement;
+        if (showCountersCheckbox) {
+            showCountersCheckbox.addEventListener('change', () => {
+                localStorage.setItem('showCounters', showCountersCheckbox.checked.toString());
+            });
+        }
+
         // Reset tutorial button
         const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
         if (resetTutorialButton) {
@@ -1047,6 +1059,12 @@ export class TitleScreen {
         const showFPSCheckbox = this.settingsMenu.querySelector('#showFPS') as HTMLInputElement;
         if (showFPSCheckbox) {
             showFPSCheckbox.checked = showFPS;
+        }
+
+        const showCounters = localStorage.getItem('showCounters') === 'true';
+        const showCountersCheckbox = this.settingsMenu.querySelector('#showCounters') as HTMLInputElement;
+        if (showCountersCheckbox) {
+            showCountersCheckbox.checked = showCounters;
         }
 
         const serverIP = localStorage.getItem('serverIP') || window.location.origin;
@@ -1400,6 +1418,11 @@ export class TitleScreen {
 
     public getShowFPS(): boolean {
         const checkbox = this.settingsMenu.querySelector('#showFPS') as HTMLInputElement;
+        return checkbox ? checkbox.checked : false;
+    }
+
+    public getShowCounters(): boolean {
+        const checkbox = this.settingsMenu.querySelector('#showCounters') as HTMLInputElement;
         return checkbox ? checkbox.checked : false;
     }
 

@@ -211,7 +211,8 @@ function setupGameEventListeners() {
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
             const shadersEnabled = titleScreen?.getShadersEnabled() || false;
             const showFPS = titleScreen?.getShowFPS() || false;
-            currentGame = new Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled, showFPS);
+            const showCounters = titleScreen?.getShowCounters() || false;
+            currentGame = new Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled, showFPS, showCounters);
             window.currentGame = currentGame;
             
             // Hide title screen and show game
