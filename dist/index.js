@@ -6,12 +6,14 @@ const auth_ui_1 = require("./auth_ui");
 const title_screen_1 = require("./title_screen");
 const preloader_1 = require("./preloader");
 const petals_1 = require("./petals");
+const shaderManager_1 = require("./shader/shaderManager");
 let currentGame = null;
 window.currentGame = currentGame;
 let titleScreen = null;
 window.titleScreen = titleScreen;
 let authUI = null;
 let preloadedAssets = null;
+let shaderManager = null;
 // Create and show loading screen
 function createLoadingScreen() {
     const loadingScreen = document.createElement('div');
@@ -95,6 +97,10 @@ window.onload = async () => {
         await new Promise(resolve => setTimeout(resolve, 300));
         // Remove loading screen
         removeLoadingScreen();
+        // Initialize shader manager
+        console.log('[Index] Initializing shader manager...');
+        shaderManager = new shaderManager_1.ShaderManager();
+        window.shaderManager = shaderManager;
         // Initialize title screen
         console.log('[Index] Initializing title screen...');
         (0, title_screen_1.injectTitleScreenStyles)();
@@ -167,7 +173,8 @@ function setupGameEventListeners() {
             }
             const showHitboxes = titleScreen?.getShowHitboxes() || false;
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
-            currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets);
+            const shadersEnabled = titleScreen?.getShadersEnabled() || false;
+            currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled);
             window.currentGame = currentGame;
             // Hide title screen and show game
             titleScreen?.hideTitleScreen();

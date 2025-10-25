@@ -531,6 +531,11 @@ export class TitleScreen {
                             Show Hitboxes
                         </label>
                         <br/><br/>
+                        <label>
+                            <input type="checkbox" id="enableShadersCheckbox">
+                            Enable Shaders
+                        </label>
+                        <br/><br/>
                         <h3>Tutorial</h3>
                         <button id="resetTutorialButton">Reset Tutorial</button>
                     </div>
@@ -811,6 +816,17 @@ export class TitleScreen {
             });
         }
 
+        const enableShadersCheckbox = this.settingsMenu.querySelector('#enableShadersCheckbox') as HTMLInputElement;
+        if (enableShadersCheckbox) {
+            enableShadersCheckbox.addEventListener('change', () => {
+                localStorage.setItem('shadersEnabled', enableShadersCheckbox.checked.toString());
+                // Update shader manager if available
+                if (window.shaderManager) {
+                    window.shaderManager.setShadersEnabled(enableShadersCheckbox.checked);
+                }
+            });
+        }
+
         // Reset tutorial button
         const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
         if (resetTutorialButton) {
@@ -963,6 +979,12 @@ export class TitleScreen {
         const showHitboxesCheckbox = this.settingsMenu.querySelector('#showHitboxesCheckbox') as HTMLInputElement;
         if (showHitboxesCheckbox) {
             showHitboxesCheckbox.checked = showHitboxes;
+        }
+
+        const shadersEnabled = localStorage.getItem('shadersEnabled') === 'true';
+        const enableShadersCheckbox = this.settingsMenu.querySelector('#enableShadersCheckbox') as HTMLInputElement;
+        if (enableShadersCheckbox) {
+            enableShadersCheckbox.checked = shadersEnabled;
         }
 
         const serverIP = localStorage.getItem('serverIP') || window.location.origin;
@@ -1306,6 +1328,11 @@ export class TitleScreen {
 
     public getShowHitboxes(): boolean {
         const checkbox = this.settingsMenu.querySelector('#showHitboxesCheckbox') as HTMLInputElement;
+        return checkbox ? checkbox.checked : false;
+    }
+
+    public getShadersEnabled(): boolean {
+        const checkbox = this.settingsMenu.querySelector('#enableShadersCheckbox') as HTMLInputElement;
         return checkbox ? checkbox.checked : false;
     }
 

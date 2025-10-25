@@ -2,14 +2,14 @@
   "players": {
     "ocu977p98": {
       "level": 47,
-      "xp": 177825,
+      "xp": 194553,
       "maxHealth": 560,
       "damage": 97,
       "inventory": {
         "common": {
           "health_potion": 35,
           "petal_rose": 46,
-          "shield": 49,
+          "shield": 50,
           "petal_light": 35,
           "petal_dandelion": 13,
           "petal_stinger": 22,
@@ -44,8 +44,9 @@
         },
         "mythic": {
           "speed_boost": 999,
-          "petal_yggdrasil": 1,
-          "petal_explosive": 7
+          "petal_yggdrasil": 2,
+          "petal_explosive": 7,
+          "petal_light": 1
         },
         "uncommon": {
           "petal_rose": 21,
@@ -61,7 +62,8 @@
           "petal_rock": 7,
           "petal_yggdrasil": 3,
           "petal_bone": 9,
-          "petal_poison_cactus": 136
+          "petal_poison_cactus": 136,
+          "petal_iris": 2
         },
         "legendary": {
           "speed_boost": 45,
@@ -85,7 +87,7 @@
           "petal_stinger": 3,
           "speed_boost": 5,
           "petal_basic": 16,
-          "petal_rose": 19,
+          "petal_rose": 20,
           "petal_sand": 12,
           "petal_yggdrasil": 2,
           "health_potion": 2,
@@ -94,10 +96,10 @@
           "shield": 23,
           "petal_dandelion": 17,
           "petal_clover": 7,
-          "petal_bone": 40,
+          "petal_bone": 42,
           "petal_cactus": 3,
           "petal_poison_cactus": 2,
-          "petal_iris": 3
+          "petal_iris": 4
         },
         "rare": {
           "petal_dandelion": 8,
@@ -121,52 +123,59 @@
       "loadout": [
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "light",
-          "health": 28745,
-          "maxHealth": 32805
+          "rarity": "unique",
+          "maxHealth": 32805,
+          "health": 32805,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "light",
-          "health": 32785,
-          "maxHealth": 32805
+          "rarity": "unique",
+          "maxHealth": 32805,
+          "health": 32805,
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "light",
+          "rarity": "unique",
+          "maxHealth": 32805,
+          "health": 32805,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "light",
+          "rarity": "unique",
+          "maxHealth": 32805,
           "health": 32767.5,
-          "maxHealth": 32805
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "light",
+          "rarity": "unique",
+          "maxHealth": 32805,
           "health": 32805,
-          "maxHealth": 32805
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "light",
-          "health": 32795,
-          "maxHealth": 32805
-        },
-        {
-          "type": "petal",
           "rarity": "unique",
-          "petalType": "light",
+          "maxHealth": 32805,
           "health": 32805,
-          "maxHealth": 32805
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "light",
-          "health": 32805,
-          "maxHealth": 32805
+          "rarity": "unique",
+          "maxHealth": 32805,
+          "health": 28755,
+          "onCooldown": false
         },
         {
           "type": "speed_boost",
@@ -174,17 +183,19 @@
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "light",
+          "rarity": "unique",
+          "maxHealth": 32805,
           "health": 32805,
-          "maxHealth": 32805
+          "onCooldown": false
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "light",
-          "health": 28755,
-          "maxHealth": 32805
+          "rarity": "unique",
+          "maxHealth": 32805,
+          "health": 32805,
+          "onCooldown": false
         }
       ]
     },

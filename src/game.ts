@@ -10,6 +10,14 @@ import { initMultiPlayerMode, Socket } from './socket';
 import { InventoryManager } from './inventory';
 import { PreloadedAssets } from './preloader';
 import { Tutorial } from './tutorial';
+import { ShaderManager } from './shader/shaderManager';
+
+// Global interface declarations
+declare global {
+    interface Window {
+        shaderManager?: ShaderManager | null;
+    }
+}
 
 // Add these interfaces at the top of the file
 interface SandboxedScript {
@@ -207,10 +215,10 @@ export class Game {
     private controls!: { [key: string]: string };
     private tutorial: Tutorial;
 
-    constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null) {
+    constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null, shadersEnabled: boolean = false) {
         this.showHitboxes = showHitboxes;
         this.loadControls();
-        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets);
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled);
         
         // Wait for canvas to be ready before proceeding
         this.waitForCanvas();
@@ -243,6 +251,11 @@ export class Game {
             this.backgroundTexture
         );
         this.graphics.showHitboxes = this.showHitboxes;
+
+        // Initialize shaders if enabled
+        if (shadersEnabled && window.shaderManager) {
+            window.shaderManager.setShadersEnabled(true);
+        }
 
         // Set initial canvas size
         this.resizeCanvas();

@@ -5,6 +5,7 @@ import { AuthUI } from './auth_ui';
 import { TitleScreen, injectTitleScreenStyles } from './title_screen';
 import { Preloader, PreloadedAssets } from './preloader';
 import { PETAL_CONFIG } from './petals';
+import { ShaderManager } from './shader/shaderManager';
 
 // Add interfaces before the workerCode string
 interface Decoration {
@@ -20,6 +21,7 @@ declare global {
     interface Window {
         currentGame: Game | null;
         titleScreen: TitleScreen | null;
+        shaderManager?: ShaderManager | null;
     }
 }
 
@@ -28,6 +30,7 @@ let titleScreen: TitleScreen | null = null;
 window.titleScreen = titleScreen;
 let authUI: AuthUI | null = null;
 let preloadedAssets: PreloadedAssets | null = null;
+let shaderManager: ShaderManager | null = null;
 
 // Create and show loading screen
 function createLoadingScreen(): HTMLDivElement {
@@ -126,6 +129,11 @@ window.onload = async () => {
         // Remove loading screen
         removeLoadingScreen();
         
+        // Initialize shader manager
+        console.log('[Index] Initializing shader manager...');
+        shaderManager = new ShaderManager();
+        window.shaderManager = shaderManager;
+        
         // Initialize title screen
         console.log('[Index] Initializing title screen...');
         injectTitleScreenStyles();
@@ -201,7 +209,8 @@ function setupGameEventListeners() {
             }
             const showHitboxes = titleScreen?.getShowHitboxes() || false;
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
-            currentGame = new Game(showHitboxes, serverIp, preloadedAssets);
+            const shadersEnabled = titleScreen?.getShadersEnabled() || false;
+            currentGame = new Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled);
             window.currentGame = currentGame;
             
             // Hide title screen and show game

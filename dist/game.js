@@ -10,7 +10,7 @@ const socket_1 = require("./socket");
 const inventory_1 = require("./inventory");
 const tutorial_1 = require("./tutorial");
 class Game {
-    constructor(showHitboxes, serverIp, preloadedAssets) {
+    constructor(showHitboxes, serverIp, preloadedAssets, shadersEnabled = false) {
         this.speedBoostActive = false;
         this.shieldActive = false;
         this.debugCollision = false; // Toggle for collision debugging
@@ -136,7 +136,7 @@ class Game {
         this.chat = null;
         this.showHitboxes = showHitboxes;
         this.loadControls();
-        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets);
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled);
         // Wait for canvas to be ready before proceeding
         this.waitForCanvas();
         this.canvas = document.getElementById('gameCanvas');
@@ -156,6 +156,10 @@ class Game {
         }
         this.graphics = new graphics_1.Graphics(this.canvas, this.playerSprite, this.wallTexture, this.octopusSprite, this.fishSprite, this.healthPotionSprite, this.speedBoostSprite, this.shieldSprite, this.backgroundTexture);
         this.graphics.showHitboxes = this.showHitboxes;
+        // Initialize shaders if enabled
+        if (shadersEnabled && window.shaderManager) {
+            window.shaderManager.setShadersEnabled(true);
+        }
         // Set initial canvas size
         this.resizeCanvas();
         // Add resize listener
