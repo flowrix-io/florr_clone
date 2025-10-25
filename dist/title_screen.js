@@ -428,6 +428,9 @@ class TitleScreen {
         `;
         this.settingsMenu = this.createElement('div', 'settings-menu hidden');
         this.settingsMenu.id = 'settingsMenu';
+        this.settingsMenu.style.position = 'absolute';
+        this.settingsMenu.style.top = '52px';
+        this.settingsMenu.style.left = '0';
         this.settingsMenu.innerHTML = `
             <div class="settings-menu-content">
                 <div class="settings-menu-header">
@@ -460,6 +463,16 @@ class TitleScreen {
                             Enable Shaders
                         </label>
                         <br/><br/>
+                        <label>
+                            <input type="checkbox" id="showFPS">
+                            Show FPS Counter
+                        </label>
+                        <br/><br/>
+                        <label>
+                            <input type="checkbox" id="enableParticles">
+                            Enable Particle Effects
+                        </label>
+                        <br/><br/>
                         <h3>Tutorial</h3>
                         <button id="resetTutorialButton">Reset Tutorial</button>
                     </div>
@@ -469,6 +482,31 @@ class TitleScreen {
                             <label for="serverIP-settings">Server IP:</label>
                             <input type="text" id="serverIP-settings" placeholder="Server IP">
                         </div>
+                        <br/><br/>
+                        <label>
+                            <input type="checkbox" id="debugMode">
+                            Enable Debug Mode
+                        </label>
+                        <br/><br/>
+                        <label>
+                            <input type="checkbox" id="autoReconnect">
+                            Auto-reconnect on disconnect
+                        </label>
+                        <br/><br/>
+                        <label>
+                            <input type="checkbox" id="showNetworkStats">
+                            Show Network Statistics
+                        </label>
+                        <br/><br/>
+                        <h3>Performance</h3>
+                        <label>
+                            <select id="renderDistance">
+                                <option value="low">Low</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                            Render Distance
+                        </label>
                     </div>
                 </div>
             </div>
@@ -601,8 +639,9 @@ class TitleScreen {
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
         if (settingsButton) {
-            settingsButton.addEventListener('click', () => {
-                this.settingsMenu.classList.remove('hidden');
+            settingsButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.settingsMenu.classList.toggle('hidden');
             });
         }
         if (changelogButton) {
@@ -660,6 +699,14 @@ class TitleScreen {
                 this.settingsMenu.classList.add('hidden');
             });
         }
+        // Click outside to close settings menu
+        document.addEventListener('click', (e) => {
+            if (!this.settingsMenu.classList.contains('hidden') &&
+                !this.settingsMenu.contains(e.target) &&
+                !this.exitButtonContainer.querySelector('#settingsButton')?.contains(e.target)) {
+                this.settingsMenu.classList.add('hidden');
+            }
+        });
         this.settingsMenu.querySelectorAll('.tab-button').forEach(button => {
             button.addEventListener('click', () => {
                 const tab = button.getAttribute('data-tab');
@@ -768,7 +815,8 @@ class TitleScreen {
         document.body.appendChild(this.landContainer);
         document.body.appendChild(this.axolotlContainer);
         document.body.appendChild(this.floatingPetalsContainer);
-        document.body.appendChild(this.settingsMenu);
+        // Append settings menu to exitButtonContainer for proper positioning
+        this.exitButtonContainer.appendChild(this.settingsMenu);
         // Initialize floating petals manager
         this.floatingPetalManager = new FloatingPetalManager(this.floatingPetalsContainer);
         // Load and start background animation
@@ -1595,25 +1643,23 @@ exports.titleScreenStyles = `
     }
 
     .settings-menu {
-        position: fixed;
-        top: 0;
+        position: absolute;
+        top: 52px;
         left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.9);
+        border-radius: 8px;
+        color: white;
+        width: 400px;
+        max-width: 90vw;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         z-index: 4000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .settings-menu-content {
-        background: rgba(0, 0, 0, 0.8);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        width: 500px;
-        max-width: 90%;
+        padding: 15px;
+        max-height: 70vh;
+        overflow-y: auto;
     }
 
     .settings-menu-header {

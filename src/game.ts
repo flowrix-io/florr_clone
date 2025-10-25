@@ -143,6 +143,11 @@ export class Game {
     private mouseX: number = 0;
     private mouseY: number = 0;
     private showHitboxes: boolean = false;  // Changed from true to false
+    private showFPS: boolean = false;
+    private fpsCounter: number = 0;
+    private fpsUpdateTime: number = 0;
+    private frameCount: number = 0;
+    private fpsDisplayElement: HTMLElement | null = null;
     private titleScreen: HTMLElement | null;
     private nameInput: HTMLInputElement | null;
     private exitButton: HTMLElement | null;
@@ -215,10 +220,11 @@ export class Game {
     private controls!: { [key: string]: string };
     private tutorial: Tutorial;
 
-    constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null, shadersEnabled: boolean = false) {
+    constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null, shadersEnabled: boolean = false, showFPS: boolean = false) {
         this.showHitboxes = showHitboxes;
+        this.showFPS = showFPS;
         this.loadControls();
-        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled);
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled, 'show FPS:', showFPS);
         
         // Wait for canvas to be ready before proceeding
         this.waitForCanvas();
@@ -427,6 +433,32 @@ export class Game {
         this.saveIndicator.textContent = 'Progress Saved';
         this.saveIndicator.style.display = 'none';
         document.body.appendChild(this.saveIndicator);
+
+        // Create FPS display element
+        this.fpsDisplayElement = document.createElement('div');
+        this.fpsDisplayElement.id = 'fpsDisplay';
+        this.fpsDisplayElement.style.cssText = `
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #00ff00;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 10000;
+            display: none;
+            pointer-events: none;
+        `;
+        this.fpsDisplayElement.textContent = 'FPS: 0';
+        document.body.appendChild(this.fpsDisplayElement);
+
+        // Set initial FPS display visibility
+        if (this.fpsDisplayElement) {
+            this.fpsDisplayElement.style.display = this.showFPS ? 'block' : 'none';
+        }
 
         // Add this to the constructor after creating the loadout bar
         const style = document.createElement('style');
@@ -757,6 +789,43 @@ export class Game {
                 e.preventDefault();
             });
         }
+
+        // Add settings change listeners
+        this.setupSettingsListeners();
+    }
+
+    private setupSettingsListeners(): void {
+        // Listen for settings changes from the title screen
+        const settingsMenu = document.getElementById('settingsMenu');
+        if (settingsMenu) {
+            const hitboxesCheckbox = settingsMenu.querySelector('#showHitboxesCheckbox') as HTMLInputElement;
+            const fpsCheckbox = settingsMenu.querySelector('#showFPS') as HTMLInputElement;
+
+            if (hitboxesCheckbox) {
+                hitboxesCheckbox.addEventListener('change', () => {
+                    this.showHitboxes = hitboxesCheckbox.checked;
+                    this.graphics.showHitboxes = this.showHitboxes;
+                });
+            }
+
+            if (fpsCheckbox) {
+                fpsCheckbox.addEventListener('change', () => {
+                    this.showFPS = fpsCheckbox.checked;
+                    // Reset FPS counter when toggling
+                    if (this.showFPS) {
+                        this.frameCount = 0;
+                        this.fpsUpdateTime = performance.now();
+                        if (this.fpsDisplayElement) {
+                            this.fpsDisplayElement.style.display = 'block';
+                        }
+                    } else {
+                        if (this.fpsDisplayElement) {
+                            this.fpsDisplayElement.style.display = 'none';
+                        }
+                    }
+                });
+            }
+        }
     }
 
     private zoomIn() {
@@ -882,6 +951,22 @@ export class Game {
     }
 
     private gameLoop() {
+        // Calculate FPS
+        if (this.showFPS) {
+            this.frameCount++;
+            const currentTime = performance.now();
+            if (currentTime - this.fpsUpdateTime >= 1000) { // Update every second
+                this.fpsCounter = this.frameCount;
+                this.frameCount = 0;
+                this.fpsUpdateTime = currentTime;
+                
+                // Update DOM element
+                if (this.fpsDisplayElement) {
+                    this.fpsDisplayElement.textContent = `FPS: ${this.fpsCounter}`;
+                }
+            }
+        }
+
         this.update();
         this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
