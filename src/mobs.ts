@@ -707,6 +707,71 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: true,
         range: 100,
         biomeOnly: true
+    },
+    jellyfish: {
+        name: "Jellyfish",
+        health: 40,
+        damage: 40,
+        size: 1.0,
+        speed: 0.5,
+        cooldown: 2000,
+        description: "Jellyfish",
+        color: "#000000",
+        image: `<svg width="32" height="32" viewBox="-150 -150 300 300" xmlns="http://www.w3.org/2000/svg" >
+  <g id="celestial-entity">
+    <animateTransform 
+      attributeName="transform"
+      type="rotate"
+      from="0 0 0"
+      to="360 0 0"
+      dur="12s"
+      repeatCount="indefinite"
+    />
+
+    <g id="blades" stroke="#ffffff" stroke-width="16.67" fill="none" opacity="0.5">
+      <path transform="rotate(45)">
+        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-0.392s"
+          values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
+      </path>
+      <path transform="rotate(90)">
+        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-0.785s"
+          values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
+      </path>
+      <path transform="rotate(135)">
+        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-1.177s"
+          values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
+      </path>
+      <path transform="rotate(180)">
+        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-1.570s"
+          values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
+      </path>
+      <path transform="rotate(225)">
+        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-1.963s"
+          values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
+      </path>
+      <path transform="rotate(270)">
+        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-2.356s"
+          values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
+      </path>
+      <path transform="rotate(315)">
+        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-2.748s"
+          values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
+      </path>
+      <path transform="rotate(360)">
+        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-3.141s"
+          values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
+      </path>
+    </g>
+
+    <circle cx="0" cy="0" r="95.83" fill="none" stroke="#ffffff" stroke-width="8.33" opacity="0.65" />
+    
+    <circle cx="0" cy="0" r="91.67" fill="#ffffff" opacity="0.325" />
+
+  </g>
+</svg>`,
+        is_hostile: true,
+        range: 200,
+        biomeOnly: false
     }
 };
 
@@ -901,6 +966,32 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
         },
         unique: {
             range: 1500
+        }
+    },
+    jellyfish: {
+        uncommon: {
+            range: 500
+        },
+        rare: {
+            range: 700
+        },
+        epic: {
+            range: 900
+        },
+        legendary: {
+            range: 1100
+        },
+        mythic: {
+            range: 1300
+        },
+        ultra: {
+            range: 1500
+        },
+        super: {
+            range: 1700
+        },
+        unique: {
+            range: 1900
         }
     }
 };
@@ -1337,6 +1428,27 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 itemType: 'bone',
                 rarity: 'uncommon',
                 probability: 0.2, // 20% chance for bone
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    jellyfish: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'lightning',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for lightning
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'lightning',
+                rarity: 'uncommon',
+                probability: 0.2, // 20% chance for lightning
                 minQuantity: 1,
                 maxQuantity: 1
             }

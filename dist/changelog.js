@@ -23,6 +23,14 @@ exports.CHANGELOG = [
             'New petal: Iris',
             'It is discovered that mobs have round hitboxes, so the setting is now more accurate'
         ]
+    },
+    {
+        date: 'October 24, 2025',
+        changes: [
+            'Overhauled the settings menu',
+            'Ultra+ petals now have particle effects',
+            'Shaders are now available in the settings menu',
+        ]
     }
 ];
 class ChangelogManager {
