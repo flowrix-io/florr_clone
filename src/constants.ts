@@ -2538,6 +2538,16 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "ultra",
           "weight": 3,
           "mobType": "bubble"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "jellyfish"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "starfish"
         }
       ]
     }
@@ -2556,6 +2566,16 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "ultra",
           "weight": 3,
           "mobType": "bubble"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "jellyfish"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "starfish"
         }
       ]
     }
@@ -2574,6 +2594,16 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "ultra",
           "weight": 3,
           "mobType": "bubble"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "jellyfish"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "starfish"
         }
       ]
     }
@@ -2600,6 +2630,16 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "ultra",
           "weight": 3,
           "mobType": "bubble"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "jellyfish"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "starfish"
         }
       ]
     }
@@ -2618,6 +2658,16 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "ultra",
           "weight": 3,
           "mobType": "bubble"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "jellyfish"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "starfish"
         }
       ]
     }
@@ -2636,6 +2686,16 @@ export const WORLD_MAP: MapElement[] = [
           "tier": "ultra",
           "weight": 3,
           "mobType": "bubble"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "jellyfish"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "starfish"
         }
       ]
     }

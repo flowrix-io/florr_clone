@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 47,
-      "xp": 2100004,
+      "xp": 2182388,
       "maxHealth": 560,
       "damage": 97,
       "inventory": {
@@ -23,7 +23,7 @@
           "petal_iris": 5,
           "petal_basic": 14,
           "petal_poison_cactus": 1,
-          "petal_lightning": 2
+          "petal_lightning": 3
         },
         "unique": {
           "petal_stinger": 1000,
@@ -44,7 +44,7 @@
           "petal_iris": 999
         },
         "mythic": {
-          "speed_boost": 1006,
+          "speed_boost": 1010,
           "petal_yggdrasil": 2,
           "petal_explosive": 7,
           "petal_light": 1,
@@ -104,7 +104,7 @@
           "petal_cactus": 3,
           "petal_poison_cactus": 2,
           "petal_iris": 4,
-          "petal_lightning": 2
+          "petal_lightning": 3
         },
         "rare": {
           "petal_dandelion": 9,
@@ -157,7 +157,7 @@
           "petalType": "lightning",
           "rarity": "unique",
           "maxHealth": 10,
-          "health": 10,
+          "health": -97190,
           "onCooldown": false
         },
         {
