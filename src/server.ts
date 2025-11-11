@@ -1186,6 +1186,25 @@ function getSpawnTypeForLevel(level: number): NonNullable<MapElement['properties
     return 'mythic';
 }
 
+// Helper function to check if a biome only allows mob rarities less than "rare" (common or uncommon)
+function isBiomeSafeForSpawn(biome: MapElement): boolean {
+    // If biome has no spawn table, it uses default spawn logic which can include rare+ tiers
+    // So we only allow spawning in biomes with explicit spawn tables
+    if (!biome.properties?.spawnTable || biome.properties.spawnTable.length === 0) {
+        return false;
+    }
+
+    // Check that all tiers in the spawn table are common or uncommon
+    const safeTiers = ['common', 'uncommon'];
+    for (const entry of biome.properties.spawnTable) {
+        if (!safeTiers.includes(entry.tier)) {
+            return false; // Found a tier that is rare or higher
+        }
+    }
+
+    return true; // All tiers are safe (common or uncommon)
+}
+
 // Helper function to find a spawn position within a specific biome
 function getSpawnPositionInBiome(biomeName: string): { x: number, y: number } | null {
     // Find all biome elements with the specified name
@@ -1201,8 +1220,16 @@ function getSpawnPositionInBiome(biomeName: string): { x: number, y: number } | 
         return null;
     }
 
-    // Choose a random biome from the available ones
-    const biome = biomes[Math.floor(Math.random() * biomes.length)];
+    // Filter to only biomes that are safe for spawning (only common/uncommon mobs)
+    const safeBiomes = biomes.filter(biome => isBiomeSafeForSpawn(biome));
+
+    if (safeBiomes.length === 0) {
+        console.warn(`No safe spawn areas found in ${biomeName} biome (all areas have rare+ mobs)`);
+        return null;
+    }
+
+    // Choose a random biome from the safe ones
+    const biome = safeBiomes[Math.floor(Math.random() * safeBiomes.length)];
     
     // Generate a random position within the biome, with some padding from edges
     const padding = 50; // Padding from biome edges
