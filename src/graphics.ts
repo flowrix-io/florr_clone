@@ -166,6 +166,8 @@ export class Graphics {
     public showHitboxes: boolean = false;
     private itemSprites: Record<string, HTMLImageElement> = {};
     private petalImageCache: Record<string, HTMLImageElement> = {};
+    private mobSVGCache: Record<string, string> = {}; // Store original SVG strings for WASM rendering
+    private svgRenderer = getSVGRenderer();
     private lastEnemyDebugLog: number = 0;
 
     constructor(
@@ -195,6 +197,9 @@ export class Graphics {
     }
 
     private async preloadMobImages() {
+        // Initialize SVG renderer
+        await this.svgRenderer.waitForInit();
+        
         const mobTypes = getAllMobTypes();
         const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         
@@ -203,6 +208,11 @@ export class Graphics {
                 const mobStats = getMobStats(mobType, rarity);
                 if (mobStats && mobStats.image) {
                     const cacheKey = `${mobType}_${rarity}`;
+                    
+                    // Store SVG string for WASM rendering
+                    this.mobSVGCache[cacheKey] = mobStats.image;
+                    
+                    // Also load as image for fallback
                     try {
                         await this.loadSVGAsImage(mobStats.image, cacheKey);
                         console.log(`[GRAPHICS] Preloaded ${mobType} ${rarity} sprite`);
@@ -212,6 +222,8 @@ export class Graphics {
                 }
             }
         }
+        
+        console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings for WASM rendering');
     }
 
     // Method to set a biome texture
@@ -365,7 +377,6 @@ export class Graphics {
             startTime: Date.now()
         });
         
-        console.log(`[GRAPHICS] Created petal particle effect for ${rarity} petal at (${x}, ${y}) with ${particles.length} particles`);
     }
 
     public drawMap(world_map_data: MapElement[]) {
@@ -743,11 +754,6 @@ export class Graphics {
         // - We need to draw petals relative to the player position (which is already translated)
         // - So we should use relative coordinates (0, 0 is player center) or translate from player position
         
-        // Debug: Verify context state at start of drawPlayerPetals
-        if (Math.random() < 0.05) {
-            const initialTransform = this.ctx.getTransform();
-            console.log(`[Graphics] drawPlayerPetals START: player at (${player.x.toFixed(1)}, ${player.y.toFixed(1)}), context transform translate(${initialTransform.e.toFixed(1)}, ${initialTransform.f.toFixed(1)}), scale(${initialTransform.a.toFixed(2)}, ${initialTransform.d.toFixed(2)})`);
-        }
         
         // Get all petals from player loadout and expand based on count property
         const petalInstances: Array<{petal: any, instanceIndex: number}> = [];
@@ -778,10 +784,6 @@ export class Graphics {
         
         if (petalInstances.length === 0) return;
 
-        // Debug: Log petal instances
-        if (Math.random() < 0.1) { // 10% chance per frame
-            console.log(`[Graphics] Drawing ${petalInstances.length} petal instances for player`);
-        }
 
         const currentTime = Date.now();
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
@@ -789,25 +791,16 @@ export class Graphics {
 
         petalInstances.forEach(({petal, instanceIndex}, index) => {
             if (!petal || !petal.petalType || !petal.rarity) {
-                if (Math.random() < 0.1) {
-                    console.log(`[Graphics] Skipping petal ${index} - invalid petal data`);
-                }
                 return;
             }
             
             const stats = getPetalStats(petal.petalType, petal.rarity);
             if (!stats) {
-                if (Math.random() < 0.1) {
-                    console.log(`[Graphics] Skipping petal ${index} - no stats found`);
-                }
                 return;
             }
 
             // Skip drawing if petal is on cooldown
             if (petal.onCooldown) {
-                if (Math.random() < 0.1) { // Debug: log skipped petals occasionally
-                    console.log(`[Graphics] Skipping petal ${index} (on cooldown)`);
-                }
                 return;
             }
 
@@ -822,11 +815,6 @@ export class Graphics {
             // we need to use RELATIVE coordinates from the player center (0, 0)
             const petalX = Math.cos(totalAngle) * baseRadius;
             const petalY = Math.sin(totalAngle) * baseRadius;
-            
-            // Debug: Log petal positions occasionally
-            if (Math.random() < 0.05) { // 5% chance per petal per frame
-                console.log(`[Graphics] Petal ${index}: type=${petal.petalType}, pos=(${petalX.toFixed(1)}, ${petalY.toFixed(1)}), angle=${(totalAngle * 180 / Math.PI).toFixed(1)}°`);
-            }
 
             // Draw petal - set up transforms first (same pattern as mobs)
             const size = 12 * stats.size;
@@ -838,12 +826,6 @@ export class Graphics {
             // So (0, 0) is the player's center
             this.ctx.save();
             
-            // Debug: Verify we're actually drawing this petal
-            if (index < 3) {
-                const beforeSave = this.ctx.getTransform();
-                console.log(`[Graphics] Petal ${index} START DRAWING: transform translate(${beforeSave.e.toFixed(1)}, ${beforeSave.f.toFixed(1)}), petalX=${petalX.toFixed(1)}, petalY=${petalY.toFixed(1)}`);
-            }
-            
             // Apply transforms for this specific petal
             // petalX and petalY are relative to player center (0, 0)
             // IMPORTANT: The order MUST be translate then rotate for rotation to happen around petal position
@@ -852,12 +834,6 @@ export class Graphics {
             
             // Step 1: Translate to petal's orbital position (relative to player)
             this.ctx.translate(petalX, petalY);
-            
-            // Debug: Verify translate worked
-            if (index < 3) {
-                const afterTranslate = this.ctx.getTransform();
-                console.log(`[Graphics] Petal ${index} AFTER TRANSLATE: transform translate(${afterTranslate.e.toFixed(1)}, ${afterTranslate.f.toFixed(1)})`);
-            }
             
             // Step 2: Rotate around the petal's position (which is now at origin after translate)
             // IMPORTANT: Use only rotationAngle (not totalAngle) so the petal spins around its own center
@@ -1007,23 +983,66 @@ export class Graphics {
         // This ensures we can see enemies even if images/sprites fail
         
         const cacheKey = `${enemy.type}_${enemy.tier}`;
+        const mobSVG = this.mobSVGCache[cacheKey];
+        const currentTime = Date.now();
         
-        // Try to use cached SVG image first
+        // Try to use WASM SVG renderer with animations first
         let rendered = false;
-        if (this.mobImageCache.has(cacheKey)) {
-            const img = this.mobImageCache.get(cacheKey)!;
-            if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-                try {
-                    this.ctx.drawImage(
-                        img,
-                        -enemySize / 2,
-                        -enemySize / 2,
-                        enemySize,
-                        enemySize
-                    );
-                    rendered = true;
-                } catch (error) {
-                    // Image draw failed, fall through to sprite
+        
+        // Check if WASM renderer is available and not in fallback mode
+        // Note: We check isInitialized() but not isUsingFallback() because
+        // the renderer might use WASM for animation even if image loading falls back
+        if (mobSVG && this.svgRenderer.isInitialized()) {
+            try {
+                // Use SVG renderer to render animated SVG
+                // x, y, rotation are 0 because transforms are already applied by the context
+                rendered = this.svgRenderer.renderSVGToCanvas(
+                    this.ctx,
+                    mobSVG,
+                    0, // x (already translated)
+                    0, // y (already translated)
+                    enemySize,
+                    enemySize,
+                    0, // rotation (already rotated)
+                    currentTime
+                );
+                
+                // Debug: Log when WASM rendering is attempted
+                if (Math.random() < 0.01) {
+                    const usingWasm = !this.svgRenderer.isUsingFallback();
+                    console.log(`[Graphics] Rendering ${cacheKey}: WASM=${usingWasm}, rendered=${rendered}`);
+                }
+            } catch (error) {
+                console.error(`[Graphics] Error rendering enemy SVG with WASM for ${cacheKey}:`, error);
+            }
+        } else {
+            // Debug: Log why WASM renderer wasn't used
+            if (mobSVG && Math.random() < 0.01) {
+                if (!this.svgRenderer.isInitialized()) {
+                    console.log(`[Graphics] WASM renderer not initialized for ${cacheKey}`);
+                } else if (!mobSVG) {
+                    console.log(`[Graphics] No SVG found in cache for ${cacheKey}`);
+                }
+            }
+        }
+        
+        // Fallback to cached image if WASM renderer didn't work
+        if (!rendered) {
+            if (this.mobImageCache.has(cacheKey)) {
+                const img = this.mobImageCache.get(cacheKey)!;
+                if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+                    try {
+                        this.ctx.drawImage(
+                            img,
+                            -enemySize / 2,
+                            -enemySize / 2,
+                            enemySize,
+                            enemySize
+                        );
+                        rendered = true;
+                    } catch (error) {
+                        // Image draw failed, fall through to sprite
+                    }
                 }
             }
         }
@@ -1717,9 +1736,7 @@ export class Graphics {
     }
 
     public setPetalImagesFromPreloaded(imageCache: Record<string, HTMLImageElement>) {
-        console.log('[Graphics] Setting petal images from preloaded cache');
         this.petalImageCache = imageCache;
-        console.log('[Graphics] Petal images set:', Object.keys(this.petalImageCache).length, 'images');
     }
 
     public async preloadPetalImages() {
@@ -1749,7 +1766,6 @@ export class Graphics {
         });
         
         await Promise.all(loadPromises);
-        console.log('All petal images preloaded');
     }
 
     public drawCorpse(x: number, y: number, angle: number) {

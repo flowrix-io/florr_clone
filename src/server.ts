@@ -323,9 +323,11 @@ app.post('/transfer/claim', (req, res) => {
 
 // Serve static files from the dist directory
 app.use(express.static(path.join(__dirname, '../dist'), {
-    setHeaders: (res, path) => {
-        if (path.endsWith('.js')) {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js')) {
             res.setHeader('Content-Type', 'application/javascript');
+        } else if (filePath.endsWith('.wasm')) {
+            res.setHeader('Content-Type', 'application/wasm');
         }
     }
 }));

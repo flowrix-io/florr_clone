@@ -5104,7 +5104,286 @@ function testDropSystem() {
     }
 }
 
+;// ./src/svg_renderer.ts
+/**
+ * TypeScript bindings for C++ SVG renderer
+ * This module provides an interface to the WebAssembly-compiled C++ SVG renderer
+ */
+class SVGRendererWrapper {
+    constructor() {
+        this.module = null;
+        this.renderer = null;
+        this.initialized = false;
+        this.initPromise = null;
+        this.fallbackMode = false;
+        this.imageCache = new Map();
+        this.canvasCache = new Map(); // Cache for offscreen canvases
+        this.animatedCache = {};
+        this.initPromise = this.initialize();
+    }
+    async initialize() {
+        if (this.initialized) {
+            return Promise.resolve();
+        }
+        try {
+            // Try to load the WebAssembly module
+            console.log('[SVGRenderer] Attempting to load WASM module...');
+            // @ts-ignore - WebAssembly module type
+            // Use dynamic import with a string literal to avoid webpack processing
+            // Path is relative to the served root (dist directory)
+            const moduleFactory = await import(/* webpackIgnore: true */ './svg_renderer_wasm.js');
+            console.log('[SVGRenderer] Module factory loaded, initializing...');
+            // Configure locateFile to find the WASM file in the dist directory
+            const mod = await moduleFactory.default({
+                locateFile: (path, prefix) => {
+                    // If it's the WASM file, return the correct path
+                    if (path.endsWith('.wasm')) {
+                        console.log(`[SVGRenderer] locateFile called for WASM: ${path}, returning: ./svg_renderer_wasm.wasm`);
+                        return './svg_renderer_wasm.wasm';
+                    }
+                    // For other files, use the default behavior
+                    return prefix + path;
+                }
+            });
+            console.log('[SVGRenderer] Module initialized, creating renderer instance...');
+            this.module = mod;
+            this.renderer = new mod.SVGRenderer();
+            this.initialized = true;
+            this.fallbackMode = false; // Explicitly set to false when WASM loads successfully
+            console.log('[SVGRenderer] C++ renderer initialized successfully, WASM mode active');
+        }
+        catch (error) {
+            console.error('[SVGRenderer] Failed to load C++ renderer, using fallback mode:', error);
+            console.error('[SVGRenderer] Error details:', error instanceof Error ? error.stack : error);
+            this.fallbackMode = true;
+            this.initialized = true; // Mark as initialized so we can use fallback
+        }
+    }
+    async waitForInit() {
+        if (this.initPromise) {
+            await this.initPromise;
+        }
+    }
+    applyAnimationsToSVG(svgString, time) {
+        // Simple animation application - extract and update animateTransform
+        // This is a fallback if C++ renderer is not available
+        let result = svgString;
+        // Handle rotation animations
+        const rotationRegex = /<animateTransform[^>]*type="rotate"[^>]*from="([^"]*)"[^>]*to="([^"]*)"[^>]*dur="([^"]*)"[^>]*>/g;
+        result = result.replace(rotationRegex, (match, from, to, dur) => {
+            // Parse duration
+            let duration = 1000;
+            if (dur.includes('s')) {
+                duration = parseFloat(dur) * 1000;
+            }
+            else if (dur.includes('ms')) {
+                duration = parseFloat(dur);
+            }
+            // Calculate current rotation
+            const fromAngle = parseFloat(from.split(' ')[0] || '0');
+            const toAngle = parseFloat(to.split(' ')[0] || '360');
+            const progress = (time % duration) / duration;
+            const currentAngle = fromAngle + (toAngle - fromAngle) * progress;
+            return match.replace(`from="${from}"`, `from="${currentAngle} 0 0"`);
+        });
+        return result;
+    }
+    loadSVGAsImage(svgString, cacheKey) {
+        // Check cache first
+        if (this.imageCache.has(cacheKey)) {
+            const cached = this.imageCache.get(cacheKey);
+            // Return cached image if it's loaded, otherwise return null to trigger async load
+            if (cached.complete && cached.naturalWidth > 0) {
+                return cached;
+            }
+            return cached; // Return even if not loaded yet - will be drawn when ready
+        }
+        // Use data URL instead of blob URL - more efficient, no need to revoke
+        // For SVG, we can use a simpler encoding - just escape the string properly
+        // Using base64 encoding for better compatibility
+        try {
+            const base64SVG = btoa(unescape(encodeURIComponent(svgString)));
+            const dataUrl = `data:image/svg+xml;base64,${base64SVG}`;
+            const img = new Image();
+            img.src = dataUrl;
+            // Cache the image (even if not loaded yet, it will be cached when loaded)
+            this.imageCache.set(cacheKey, img);
+            return img;
+        }
+        catch (error) {
+            console.error('[SVGRenderer] Error encoding SVG:', error);
+            // Fallback to URI encoding
+            const encodedSVG = encodeURIComponent(svgString);
+            const dataUrl = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
+            const img = new Image();
+            img.src = dataUrl;
+            this.imageCache.set(cacheKey, img);
+            return img;
+        }
+    }
+    renderSVGToOffscreenCanvas(svgString, width, height) {
+        const cacheKey = `${svgString.substring(0, 50)}_${width}_${height}`;
+        // Check canvas cache
+        if (this.canvasCache.has(cacheKey)) {
+            return this.canvasCache.get(cacheKey);
+        }
+        // Create offscreen canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx)
+            return null;
+        // Render SVG to offscreen canvas
+        const img = this.loadSVGAsImage(svgString, cacheKey);
+        if (img && img.complete && img.naturalWidth > 0) {
+            ctx.drawImage(img, 0, 0, width, height);
+            this.canvasCache.set(cacheKey, canvas);
+            return canvas;
+        }
+        else if (img) {
+            // Set up async rendering
+            img.onload = () => {
+                if (ctx) {
+                    ctx.clearRect(0, 0, width, height);
+                    ctx.drawImage(img, 0, 0, width, height);
+                }
+            };
+            this.canvasCache.set(cacheKey, canvas);
+            return canvas;
+        }
+        return null;
+    }
+    renderSVGToCanvas(ctx, svgString, x, y, width, height, rotation = 0, time = Date.now()) {
+        // Get animated SVG string
+        let animatedSVG;
+        if (this.fallbackMode || !this.renderer) {
+            // Fallback: use browser's native SVG rendering
+            if (Math.random() < 0.001) {
+                console.log(`[SVGRenderer] Using fallback mode: fallbackMode=${this.fallbackMode}, renderer=${!!this.renderer}`);
+            }
+            animatedSVG = this.applyAnimationsToSVG(svgString, time);
+        }
+        else {
+            // Use C++ renderer to get animated SVG string
+            try {
+                animatedSVG = this.renderer.renderSVG(svgString, time);
+                // Debug: Check if animation was applied
+                if (Math.random() < 0.01) {
+                    const hasAnimateTransform = svgString.includes('animateTransform');
+                    const stillHasAnimateTransform = animatedSVG.includes('animateTransform');
+                    const hasTransform = animatedSVG.includes('transform=');
+                    // Extract transform values to see what's being generated
+                    const transformMatches = animatedSVG.match(/transform="([^"]*)"/g);
+                    const transforms = transformMatches ? transformMatches.map(m => m.match(/transform="([^"]*)"/)?.[1]) : [];
+                    console.log('[SVGRenderer] WASM renderer result:', {
+                        originalHasAnim: hasAnimateTransform,
+                        stillHasAnim: stillHasAnimateTransform,
+                        hasTransform: hasTransform,
+                        originalLength: svgString.length,
+                        animatedLength: animatedSVG.length,
+                        changed: svgString !== animatedSVG,
+                        time: time,
+                        transforms: transforms.slice(0, 3) // Show first 3 transforms
+                    });
+                    // Show a sample of the animated SVG
+                    if (transforms.length > 0) {
+                        const sampleStart = animatedSVG.indexOf(transforms[0] || '');
+                        if (sampleStart > 0) {
+                            const sample = animatedSVG.substring(Math.max(0, sampleStart - 50), Math.min(animatedSVG.length, sampleStart + 200));
+                            console.log('[SVGRenderer] Sample animated SVG:', sample);
+                        }
+                    }
+                }
+            }
+            catch (error) {
+                // Fallback to JavaScript animation
+                console.error('[SVGRenderer] Error calling WASM renderSVG, falling back to JS:', error);
+                this.fallbackMode = true;
+                animatedSVG = this.applyAnimationsToSVG(svgString, time);
+            }
+        }
+        // For animated SVGs, we need to use a time-based cache key to ensure
+        // the animation updates each frame. However, we can't cache every frame,
+        // so we'll use a time bucket (e.g., every 16ms for ~60fps)
+        const timeBucket = Math.floor(time / 16); // Update every ~16ms
+        const baseCacheKey = svgString.length > 100 ? svgString.substring(0, 100) : svgString;
+        const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
+        const img = this.loadSVGAsImage(animatedSVG, animatedCacheKey);
+        if (!img) {
+            return false; // Failed to create image
+        }
+        // Check if image is ready - use both complete and naturalWidth checks
+        const isReady = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
+        if (isReady) {
+            // Image is loaded, draw it directly
+            // Note: The context passed in may already have transforms applied (translate/rotate)
+            // So we apply additional transforms relative to the current state
+            // If x,y,rotation are 0, it means transforms are already applied by the caller
+            if (x !== 0 || y !== 0 || rotation !== 0) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(rotation);
+                ctx.drawImage(img, -width / 2, -height / 2, width, height);
+                ctx.restore();
+            }
+            else {
+                // Transforms already applied, just draw
+                ctx.drawImage(img, -width / 2, -height / 2, width, height);
+            }
+            return true; // Successfully rendered
+        }
+        // Image is still loading - try to draw anyway if it's a data URL (might work)
+        // For data URLs, the browser might render them even if not fully loaded
+        if (img.src && img.src.startsWith('data:')) {
+            try {
+                if (x !== 0 || y !== 0 || rotation !== 0) {
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(rotation);
+                    ctx.drawImage(img, -width / 2, -height / 2, width, height);
+                    ctx.restore();
+                }
+                else {
+                    ctx.drawImage(img, -width / 2, -height / 2, width, height);
+                }
+                return true; // Attempted to render, even if not fully loaded
+            }
+            catch (error) {
+                // Drawing failed, fall back
+                return false;
+            }
+        }
+        // Image is still loading and not a data URL - return false so fallback can be used
+        return false;
+    }
+    clearCache() {
+        if (this.renderer) {
+            this.renderer.clearCache();
+        }
+        this.imageCache.clear();
+        this.canvasCache.clear();
+        this.animatedCache = {};
+    }
+    isInitialized() {
+        return this.initialized;
+    }
+    isUsingFallback() {
+        return this.fallbackMode;
+    }
+}
+// Singleton instance
+let svgRendererInstance = null;
+function getSVGRenderer() {
+    if (!svgRendererInstance) {
+        svgRendererInstance = new SVGRendererWrapper();
+    }
+    return svgRendererInstance;
+}
+
+
 ;// ./src/graphics.ts
+
 
 
 
@@ -5191,6 +5470,8 @@ class Graphics {
         this.showHitboxes = false;
         this.itemSprites = {};
         this.petalImageCache = {};
+        this.mobSVGCache = {}; // Store original SVG strings for WASM rendering
+        this.svgRenderer = getSVGRenderer();
         this.lastEnemyDebugLog = 0;
         this.mobImageCache = new Map();
         this.canvas = canvas;
@@ -5207,6 +5488,8 @@ class Graphics {
         this.preloadMobImages();
     }
     async preloadMobImages() {
+        // Initialize SVG renderer
+        await this.svgRenderer.waitForInit();
         const mobTypes = getAllMobTypes();
         const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         for (const mobType of mobTypes) {
@@ -5214,6 +5497,9 @@ class Graphics {
                 const mobStats = getMobStats(mobType, rarity);
                 if (mobStats && mobStats.image) {
                     const cacheKey = `${mobType}_${rarity}`;
+                    // Store SVG string for WASM rendering
+                    this.mobSVGCache[cacheKey] = mobStats.image;
+                    // Also load as image for fallback
                     try {
                         await this.loadSVGAsImage(mobStats.image, cacheKey);
                         console.log(`[GRAPHICS] Preloaded ${mobType} ${rarity} sprite`);
@@ -5224,6 +5510,7 @@ class Graphics {
                 }
             }
         }
+        console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings for WASM rendering');
     }
     // Method to set a biome texture
     setBiomeTexture(biomeName, texture) {
@@ -5356,7 +5643,6 @@ class Graphics {
             lifetime: 3000, // Effect lasts 3 seconds
             startTime: Date.now()
         });
-        console.log(`[GRAPHICS] Created petal particle effect for ${rarity} petal at (${x}, ${y}) with ${particles.length} particles`);
     }
     drawMap(world_map_data) {
         // Draw all map elements
@@ -5664,11 +5950,6 @@ class Graphics {
         // - The context has: scale(zoomLevel), translate(-cameraX, -cameraY), translate(player.x, player.y)
         // - We need to draw petals relative to the player position (which is already translated)
         // - So we should use relative coordinates (0, 0 is player center) or translate from player position
-        // Debug: Verify context state at start of drawPlayerPetals
-        if (Math.random() < 0.05) {
-            const initialTransform = this.ctx.getTransform();
-            console.log(`[Graphics] drawPlayerPetals START: player at (${player.x.toFixed(1)}, ${player.y.toFixed(1)}), context transform translate(${initialTransform.e.toFixed(1)}, ${initialTransform.f.toFixed(1)}), scale(${initialTransform.a.toFixed(2)}, ${initialTransform.d.toFixed(2)})`);
-        }
         // Get all petals from player loadout and expand based on count property
         const petalInstances = [];
         try {
@@ -5696,32 +5977,19 @@ class Graphics {
         }
         if (petalInstances.length === 0)
             return;
-        // Debug: Log petal instances
-        if (Math.random() < 0.1) { // 10% chance per frame
-            console.log(`[Graphics] Drawing ${petalInstances.length} petal instances for player`);
-        }
         const currentTime = Date.now();
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = (Math.PI * 2) / petalInstances.length; // Evenly space petals
         petalInstances.forEach(({ petal, instanceIndex }, index) => {
             if (!petal || !petal.petalType || !petal.rarity) {
-                if (Math.random() < 0.1) {
-                    console.log(`[Graphics] Skipping petal ${index} - invalid petal data`);
-                }
                 return;
             }
             const stats = (0,petals.getPetalStats)(petal.petalType, petal.rarity);
             if (!stats) {
-                if (Math.random() < 0.1) {
-                    console.log(`[Graphics] Skipping petal ${index} - no stats found`);
-                }
                 return;
             }
             // Skip drawing if petal is on cooldown
             if (petal.onCooldown) {
-                if (Math.random() < 0.1) { // Debug: log skipped petals occasionally
-                    console.log(`[Graphics] Skipping petal ${index} (on cooldown)`);
-                }
                 return;
             }
             // Calculate rotation angle
@@ -5734,10 +6002,6 @@ class Graphics {
             // we need to use RELATIVE coordinates from the player center (0, 0)
             const petalX = Math.cos(totalAngle) * baseRadius;
             const petalY = Math.sin(totalAngle) * baseRadius;
-            // Debug: Log petal positions occasionally
-            if (Math.random() < 0.05) { // 5% chance per petal per frame
-                console.log(`[Graphics] Petal ${index}: type=${petal.petalType}, pos=(${petalX.toFixed(1)}, ${petalY.toFixed(1)}), angle=${(totalAngle * 180 / Math.PI).toFixed(1)}°`);
-            }
             // Draw petal - set up transforms first (same pattern as mobs)
             const size = 12 * stats.size;
             const petalSize = size;
@@ -5746,11 +6010,6 @@ class Graphics {
             // At this point, the context has: scale(zoomLevel), translate(-cameraX, -cameraY), translate(player.x, player.y)
             // So (0, 0) is the player's center
             this.ctx.save();
-            // Debug: Verify we're actually drawing this petal
-            if (index < 3) {
-                const beforeSave = this.ctx.getTransform();
-                console.log(`[Graphics] Petal ${index} START DRAWING: transform translate(${beforeSave.e.toFixed(1)}, ${beforeSave.f.toFixed(1)}), petalX=${petalX.toFixed(1)}, petalY=${petalY.toFixed(1)}`);
-            }
             // Apply transforms for this specific petal
             // petalX and petalY are relative to player center (0, 0)
             // IMPORTANT: The order MUST be translate then rotate for rotation to happen around petal position
@@ -5758,11 +6017,6 @@ class Graphics {
             // If we translate first, then rotate, it rotates around the petal position
             // Step 1: Translate to petal's orbital position (relative to player)
             this.ctx.translate(petalX, petalY);
-            // Debug: Verify translate worked
-            if (index < 3) {
-                const afterTranslate = this.ctx.getTransform();
-                console.log(`[Graphics] Petal ${index} AFTER TRANSLATE: transform translate(${afterTranslate.e.toFixed(1)}, ${afterTranslate.f.toFixed(1)})`);
-            }
             // Step 2: Rotate around the petal's position (which is now at origin after translate)
             // IMPORTANT: Use only rotationAngle (not totalAngle) so the petal spins around its own center
             // totalAngle includes the orbital position, which would make it rotate around the player
@@ -5885,17 +6139,54 @@ class Graphics {
         // Debug: Always draw something visible to verify coordinates work
         // This ensures we can see enemies even if images/sprites fail
         const cacheKey = `${enemy.type}_${enemy.tier}`;
-        // Try to use cached SVG image first
+        const mobSVG = this.mobSVGCache[cacheKey];
+        const currentTime = Date.now();
+        // Try to use WASM SVG renderer with animations first
         let rendered = false;
-        if (this.mobImageCache.has(cacheKey)) {
-            const img = this.mobImageCache.get(cacheKey);
-            if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-                try {
-                    this.ctx.drawImage(img, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
-                    rendered = true;
+        // Check if WASM renderer is available and not in fallback mode
+        // Note: We check isInitialized() but not isUsingFallback() because
+        // the renderer might use WASM for animation even if image loading falls back
+        if (mobSVG && this.svgRenderer.isInitialized()) {
+            try {
+                // Use SVG renderer to render animated SVG
+                // x, y, rotation are 0 because transforms are already applied by the context
+                rendered = this.svgRenderer.renderSVGToCanvas(this.ctx, mobSVG, 0, // x (already translated)
+                0, // y (already translated)
+                enemySize, enemySize, 0, // rotation (already rotated)
+                currentTime);
+                // Debug: Log when WASM rendering is attempted
+                if (Math.random() < 0.01) {
+                    const usingWasm = !this.svgRenderer.isUsingFallback();
+                    console.log(`[Graphics] Rendering ${cacheKey}: WASM=${usingWasm}, rendered=${rendered}`);
                 }
-                catch (error) {
-                    // Image draw failed, fall through to sprite
+            }
+            catch (error) {
+                console.error(`[Graphics] Error rendering enemy SVG with WASM for ${cacheKey}:`, error);
+            }
+        }
+        else {
+            // Debug: Log why WASM renderer wasn't used
+            if (mobSVG && Math.random() < 0.01) {
+                if (!this.svgRenderer.isInitialized()) {
+                    console.log(`[Graphics] WASM renderer not initialized for ${cacheKey}`);
+                }
+                else if (!mobSVG) {
+                    console.log(`[Graphics] No SVG found in cache for ${cacheKey}`);
+                }
+            }
+        }
+        // Fallback to cached image if WASM renderer didn't work
+        if (!rendered) {
+            if (this.mobImageCache.has(cacheKey)) {
+                const img = this.mobImageCache.get(cacheKey);
+                if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+                    try {
+                        this.ctx.drawImage(img, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+                        rendered = true;
+                    }
+                    catch (error) {
+                        // Image draw failed, fall through to sprite
+                    }
                 }
             }
         }
@@ -6460,9 +6751,7 @@ class Graphics {
         this.itemSprites = itemSprites;
     }
     setPetalImagesFromPreloaded(imageCache) {
-        console.log('[Graphics] Setting petal images from preloaded cache');
         this.petalImageCache = imageCache;
-        console.log('[Graphics] Petal images set:', Object.keys(this.petalImageCache).length, 'images');
     }
     async preloadPetalImages() {
         const { PETAL_CONFIG } = await Promise.resolve(/* import() */).then(__webpack_require__.bind(__webpack_require__, 375));
@@ -6485,7 +6774,6 @@ class Graphics {
             });
         });
         await Promise.all(loadPromises);
-        console.log('All petal images preloaded');
     }
     drawCorpse(x, y, angle) {
         this.ctx.save();
