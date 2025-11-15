@@ -1349,10 +1349,64 @@ export class Game {
         return this.socket;
     }
 
+    public getItemSprites(): Record<string, HTMLImageElement> {
+        return this.assetLoader.itemSprites;
+    }
+
+    private itemSpriteDataUrls: Map<string, string> = new Map();
+
+    public getItemSpriteDataUrl(itemType: string): string | null {
+        // Check if we already have the data URL cached
+        if (this.itemSpriteDataUrls.has(itemType)) {
+            return this.itemSpriteDataUrls.get(itemType)!;
+        }
+
+        // Get the cached sprite
+        const sprite = this.assetLoader.itemSprites[itemType];
+        if (!sprite || !sprite.complete || sprite.naturalWidth === 0) {
+            return null;
+        }
+
+        // Convert image to data URL using canvas
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = sprite.naturalWidth;
+            canvas.height = sprite.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                return null;
+            }
+            ctx.drawImage(sprite, 0, 0);
+            const dataUrl = canvas.toDataURL('image/png');
+            this.itemSpriteDataUrls.set(itemType, dataUrl);
+            return dataUrl;
+        } catch (error) {
+            console.error(`[Game] Error converting sprite to data URL for ${itemType}:`, error);
+            return null;
+        }
+    }
+
     public getPetalStats(petalType: string, rarity: string): any {
         // Import the petals module dynamically to avoid circular dependencies
         const { getPetalStats } = require('./petals');
         return getPetalStats(petalType, rarity);
+    }
+
+    public getPetalCanvas(petalType: string, rarity: string, time: number = Date.now()): HTMLCanvasElement | null {
+        const petalKey = `${petalType}_${rarity}`;
+        const petalImage = this.graphics.petalImageCache[petalKey];
+        if (!petalImage) {
+            return null;
+        }
+        
+        if (Array.isArray(petalImage)) {
+            // Animated petal - select frame based on time (24fps = 42ms per frame)
+            const frameIndex = Math.floor((time / 42) % petalImage.length);
+            return petalImage[frameIndex];
+        } else {
+            // Static petal
+            return petalImage;
+        }
     }
 
     private loadControls() {

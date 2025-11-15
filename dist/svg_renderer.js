@@ -38,7 +38,7 @@ class SVGRendererWrapper {
         this.fallbackMode = false;
         this.imageCache = new Map();
         this.dataUrlCache = new Map(); // Cache data URL strings to avoid recreating them
-        this.canvasCache = new Map(); // Cache for offscreen canvases
+        this.canvasCache = new Map(); // Cache for offscreen canvases (primary storage)
         this.animatedCache = {};
         this.initPromise = this.initialize();
     }
@@ -109,76 +109,114 @@ class SVGRendererWrapper {
         });
         return result;
     }
-    loadSVGAsImage(svgString, cacheKey) {
-        // Check cache first - reuse existing image if available
+    async loadSVGAsImageBitmap(svgString, cacheKey) {
+        // Check cache first - reuse existing image bitmap if available
         if (this.imageCache.has(cacheKey)) {
             const cached = this.imageCache.get(cacheKey);
-            // Return cached image (even if not fully loaded, browser can often render data URLs immediately)
-            return cached;
-        }
-        // Check if we have a cached data URL string to avoid recreating it
-        let dataUrl;
-        if (this.dataUrlCache.has(cacheKey)) {
-            dataUrl = this.dataUrlCache.get(cacheKey);
-        }
-        else {
-            // Create data URL only once and cache it
-            // Use data URL instead of blob URL - more efficient, no need to revoke
-            // For SVG, we can use a simpler encoding - just escape the string properly
-            // Using base64 encoding for better compatibility
-            try {
-                const base64SVG = btoa(unescape(encodeURIComponent(svgString)));
-                dataUrl = `data:image/svg+xml;base64,${base64SVG}`;
-                this.dataUrlCache.set(cacheKey, dataUrl);
-            }
-            catch (error) {
-                console.error('[SVGRenderer] Error encoding SVG:', error);
-                // Fallback to URI encoding
-                const encodedSVG = encodeURIComponent(svgString);
-                dataUrl = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
-                this.dataUrlCache.set(cacheKey, dataUrl);
+            // If it's an ImageBitmap, return it
+            if (cached && typeof cached.close === 'function') {
+                return cached;
             }
         }
-        // Reuse existing Image object if possible, or create new one
-        const img = new Image();
-        // Set src to cached data URL - no URL object creation needed
-        img.src = dataUrl;
-        // Cache the image immediately (browser can render data URLs even before onload)
-        this.imageCache.set(cacheKey, img);
-        return img;
-    }
-    renderSVGToOffscreenCanvas(svgString, width, height) {
-        const cacheKey = `${svgString.substring(0, 50)}_${width}_${height}`;
-        // Check canvas cache
-        if (this.canvasCache.has(cacheKey)) {
-            return this.canvasCache.get(cacheKey);
-        }
-        // Create offscreen canvas
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx)
+        // createImageBitmap doesn't support raw SVG Blobs directly
+        // We need to use an Image element, but we'll use a blob URL instead of data URL
+        // Blob URLs are more efficient and don't create the same request overhead
+        if (typeof createImageBitmap === 'undefined') {
+            console.warn('[SVGRenderer] createImageBitmap not available, falling back');
             return null;
-        // Render SVG to offscreen canvas
-        const img = this.loadSVGAsImage(svgString, cacheKey);
-        if (img && img.complete && img.naturalWidth > 0) {
-            ctx.drawImage(img, 0, 0, width, height);
-            this.canvasCache.set(cacheKey, canvas);
-            return canvas;
         }
-        else if (img) {
-            // Set up async rendering
-            img.onload = () => {
-                if (ctx) {
-                    ctx.clearRect(0, 0, width, height);
-                    ctx.drawImage(img, 0, 0, width, height);
-                }
-            };
-            this.canvasCache.set(cacheKey, canvas);
-            return canvas;
+        try {
+            // Create blob URL from SVG (more efficient than data URL)
+            const blob = new Blob([svgString], { type: 'image/svg+xml' });
+            const blobUrl = URL.createObjectURL(blob);
+            // Create Image element and load from blob URL
+            const img = new Image();
+            const imageBitmap = await new Promise((resolve, reject) => {
+                img.onload = async () => {
+                    try {
+                        // Use createImageBitmap on the loaded image
+                        const bitmap = await createImageBitmap(img);
+                        // Revoke blob URL immediately to free memory
+                        URL.revokeObjectURL(blobUrl);
+                        resolve(bitmap);
+                    }
+                    catch (error) {
+                        URL.revokeObjectURL(blobUrl);
+                        reject(error);
+                    }
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(blobUrl);
+                    reject(new Error('Failed to load SVG image'));
+                };
+                img.src = blobUrl;
+            });
+            // Cache the ImageBitmap
+            this.imageCache.set(cacheKey, imageBitmap);
+            return imageBitmap;
         }
+        catch (error) {
+            console.error('[SVGRenderer] Error creating image bitmap:', error);
+            return null;
+        }
+    }
+    // Legacy method - kept for fallback but should not be used (creates data URLs)
+    loadSVGAsImage(svgString, cacheKey) {
+        // This method creates data URLs and should be avoided
+        // Use loadSVGAsImageBitmap instead
+        console.warn('[SVGRenderer] loadSVGAsImage called - this creates data URLs and should be avoided');
         return null;
+    }
+    async renderSVGToOffscreenCanvas(svgString, width, height) {
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                return null;
+            }
+            // createImageBitmap doesn't support raw SVG Blobs directly
+            // We need to use an Image element with a blob URL (more efficient than data URL)
+            // createImageBitmap is available in modern browsers
+            if (typeof createImageBitmap === 'undefined') {
+                console.warn('[SVGRenderer] createImageBitmap not available');
+                return null;
+            }
+            // Create blob URL from SVG (more efficient than data URL)
+            const blob = new Blob([svgString], { type: 'image/svg+xml' });
+            const blobUrl = URL.createObjectURL(blob);
+            // Create Image element and load from blob URL
+            const img = new Image();
+            const imageBitmap = await new Promise((resolve, reject) => {
+                img.onload = async () => {
+                    try {
+                        // Use createImageBitmap on the loaded image with resize options
+                        const bitmap = await createImageBitmap(img, { resizeWidth: width, resizeHeight: height });
+                        // Revoke blob URL immediately to free memory
+                        URL.revokeObjectURL(blobUrl);
+                        resolve(bitmap);
+                    }
+                    catch (error) {
+                        URL.revokeObjectURL(blobUrl);
+                        reject(error);
+                    }
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(blobUrl);
+                    reject(new Error('Failed to load SVG image'));
+                };
+                img.src = blobUrl;
+            });
+            ctx.clearRect(0, 0, width, height);
+            ctx.drawImage(imageBitmap, 0, 0, width, height);
+            imageBitmap.close(); // Free memory
+            return canvas;
+        }
+        catch (error) {
+            console.error('[SVGRenderer] Error rendering SVG to canvas:', error);
+            return null;
+        }
     }
     renderSVGToCanvas(ctx, svgString, x, y, width, height, rotation = 0, time = Date.now()) {
         // Get animated SVG string
@@ -234,73 +272,43 @@ class SVGRendererWrapper {
         const timeBucket = Math.floor(time / 42); // Update every ~42ms for 24fps
         const baseCacheKey = svgString.length > 100 ? svgString.substring(0, 100) : svgString;
         const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
-        // Check if we already have this frame cached and ready
-        if (this.imageCache.has(animatedCacheKey)) {
-            const cached = this.imageCache.get(animatedCacheKey);
-            if (cached.complete && cached.naturalWidth > 0 && cached.naturalHeight > 0) {
-                // Use cached image immediately to prevent flicker
-                const img = cached;
+        // Check if we already have this frame as a canvas (preferred - no data URLs)
+        if (this.canvasCache.has(animatedCacheKey)) {
+            const cachedCanvas = this.canvasCache.get(animatedCacheKey);
+            if (cachedCanvas.width > 0 && cachedCanvas.height > 0) {
+                // Use cached canvas immediately
                 if (x !== 0 || y !== 0 || rotation !== 0) {
                     ctx.save();
                     ctx.translate(x, y);
                     ctx.rotate(rotation);
-                    ctx.drawImage(img, -width / 2, -height / 2, width, height);
+                    ctx.drawImage(cachedCanvas, -width / 2, -height / 2, width, height);
                     ctx.restore();
                 }
                 else {
-                    ctx.drawImage(img, -width / 2, -height / 2, width, height);
+                    ctx.drawImage(cachedCanvas, -width / 2, -height / 2, width, height);
                 }
                 return true;
             }
         }
-        // Load new frame (will be cached for next time)
-        const img = this.loadSVGAsImage(animatedSVG, animatedCacheKey);
-        if (!img) {
-            return false; // Failed to create image
+        // If no cached canvas, we should not create blob URLs during gameplay
+        // Instead, return false and let the caller use a fallback
+        // The canvas should have been pre-rendered during initialization
+        // If we're here, it means we need a frame that wasn't pre-rendered
+        // For now, don't trigger async rendering to avoid blob URL creation
+        // The caller will use sprite/circle fallback
+        // Only log occasionally to avoid spam
+        if (Math.random() < 0.001) {
+            console.warn(`[SVGRenderer] Canvas not cached for key: ${animatedCacheKey.substring(0, 50)}... (should have been pre-rendered)`);
         }
-        // Check if image is ready - use both complete and naturalWidth checks
-        const isReady = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
-        if (isReady) {
-            // Image is loaded, draw it directly
-            // Note: The context passed in may already have transforms applied (translate/rotate)
-            // So we apply additional transforms relative to the current state
-            // If x,y,rotation are 0, it means transforms are already applied by the caller
-            if (x !== 0 || y !== 0 || rotation !== 0) {
-                ctx.save();
-                ctx.translate(x, y);
-                ctx.rotate(rotation);
-                ctx.drawImage(img, -width / 2, -height / 2, width, height);
-                ctx.restore();
-            }
-            else {
-                // Transforms already applied, just draw
-                ctx.drawImage(img, -width / 2, -height / 2, width, height);
-            }
-            return true; // Successfully rendered
-        }
-        // Image is still loading - try to draw anyway if it's a data URL (might work)
-        // For data URLs, the browser might render them even if not fully loaded
-        if (img.src && img.src.startsWith('data:')) {
-            try {
-                if (x !== 0 || y !== 0 || rotation !== 0) {
-                    ctx.save();
-                    ctx.translate(x, y);
-                    ctx.rotate(rotation);
-                    ctx.drawImage(img, -width / 2, -height / 2, width, height);
-                    ctx.restore();
-                }
-                else {
-                    ctx.drawImage(img, -width / 2, -height / 2, width, height);
-                }
-                return true; // Attempted to render, even if not fully loaded
-            }
-            catch (error) {
-                // Drawing failed, fall back
-                return false;
-            }
-        }
-        // Image is still loading and not a data URL - return false so fallback can be used
         return false;
+    }
+    // Public method to cache a canvas directly (for preloading)
+    cacheCanvas(key, canvas) {
+        this.canvasCache.set(key, canvas);
+    }
+    // Public method to check if a canvas is cached
+    isCanvasCached(key) {
+        return this.canvasCache.has(key);
     }
     clearCache() {
         if (this.renderer) {
@@ -316,6 +324,24 @@ class SVGRendererWrapper {
     }
     isUsingFallback() {
         return this.fallbackMode;
+    }
+    /**
+     * Get animated SVG string for a given time
+     * Used for preloading animation frames
+     */
+    getAnimatedSVGString(svgString, time) {
+        if (this.fallbackMode || !this.renderer) {
+            return this.applyAnimationsToSVG(svgString, time);
+        }
+        else {
+            try {
+                return this.renderer.renderSVG(svgString, time);
+            }
+            catch (error) {
+                console.error('[SVGRenderer] Error getting animated SVG, using fallback:', error);
+                return this.applyAnimationsToSVG(svgString, time);
+            }
+        }
     }
 }
 exports.SVGRendererWrapper = SVGRendererWrapper;

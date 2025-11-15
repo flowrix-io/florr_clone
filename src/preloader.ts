@@ -18,7 +18,7 @@ export interface PreloadedAssets {
         exit: HTMLImageElement;
     };
     backgroundTexture: HTMLImageElement;
-    petalImages: Record<string, HTMLImageElement>;
+    petalImages: Record<string, HTMLCanvasElement | HTMLCanvasElement[]>; // Canvas for static, array of canvases for animated
 }
 
 export class Preloader {
@@ -184,11 +184,90 @@ export class Preloader {
     }
 
     /**
-     * Load petal images from PETAL_CONFIG
+     * Render SVG string to offscreen canvas using createImageBitmap (no data URLs, no requests)
+     */
+    private async renderSVGToCanvas(svgString: string, width: number = 100, height: number = 100): Promise<HTMLCanvasElement> {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Failed to get canvas context');
+        }
+        
+        // createImageBitmap doesn't support raw SVG Blobs directly
+        // We need to use an Image element with a blob URL (more efficient than data URL)
+        // createImageBitmap is available in modern browsers
+        if (typeof createImageBitmap === 'undefined') {
+            throw new Error('createImageBitmap not available');
+        }
+        
+        // Create blob URL from SVG (more efficient than data URL)
+        const blob = new Blob([svgString], { type: 'image/svg+xml' });
+        const blobUrl = URL.createObjectURL(blob);
+        
+        // Create Image element and load from blob URL
+        const img = new Image();
+        const imageBitmap = await new Promise<ImageBitmap>((resolve, reject) => {
+            img.onload = async () => {
+                try {
+                    // Use createImageBitmap on the loaded image with resize options
+                    const bitmap = await createImageBitmap(img, { resizeWidth: width, resizeHeight: height });
+                    // Revoke blob URL immediately to free memory
+                    URL.revokeObjectURL(blobUrl);
+                    resolve(bitmap);
+                } catch (error) {
+                    URL.revokeObjectURL(blobUrl);
+                    reject(error);
+                }
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(blobUrl);
+                reject(new Error('Failed to load SVG image'));
+            };
+            img.src = blobUrl;
+        });
+        
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(imageBitmap, 0, 0, width, height);
+        imageBitmap.close(); // Free memory
+        
+        return canvas;
+    }
+
+    /**
+     * Check if SVG has animations
+     */
+    private hasAnimations(svgString: string): boolean {
+        return svgString.includes('<animateTransform') || svgString.includes('<animate');
+    }
+
+    /**
+     * Get animation duration from SVG (in milliseconds)
+     */
+    private getAnimationDuration(svgString: string): number {
+        // Look for dur attribute in animateTransform
+        const durMatch = svgString.match(/dur="([^"]*)"/);
+        if (durMatch) {
+            const dur = durMatch[1];
+            if (dur.includes('s')) {
+                return parseFloat(dur) * 1000;
+            } else if (dur.includes('ms')) {
+                return parseFloat(dur);
+            }
+        }
+        return 2000; // Default 2 seconds
+    }
+
+    /**
+     * Load petal images from PETAL_CONFIG and render to offscreen canvases
      */
     private async loadPetalImages(assets: PreloadedAssets): Promise<void> {
         try {
             const { PETAL_CONFIG } = await import('./petals');
+            const { getSVGRenderer } = await import('./svg_renderer');
+            const svgRenderer = getSVGRenderer();
+            await svgRenderer.waitForInit();
             
             // Count total petal images to load
             let petalCount = 0;
@@ -196,43 +275,65 @@ export class Preloader {
                 petalCount += Object.keys(rarities).length;
             });
             
-            // Update total assets count
-            this.totalAssets += petalCount;
+            // Update total assets count (multiply by estimated frames for animated SVGs)
+            this.totalAssets += petalCount * 2; // Estimate: some will be animated
             
             const loadPromises: Promise<void>[] = [];
             
             Object.entries(PETAL_CONFIG).forEach(([petalType, rarities]) => {
                 Object.entries(rarities as Record<string, any>).forEach(([rarity, stats]) => {
                     const key = `${petalType}_${rarity}`;
-                    const img = new Image();
+                    const svgString = stats.image ?? '';
                     
-                    const promise = new Promise<void>((resolve, reject) => {
-                        img.onload = () => {
-                            assets.petalImages[key] = img;
-                            this.loadedAssets++;
-                            this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
-                            console.log(`[Preloader] Loaded petal: ${key}`);
-                            resolve();
-                        };
-                        img.onerror = (error) => {
+                    if (!svgString) {
+                        this.loadedAssets++;
+                        this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+                        return;
+                    }
+                    
+                    const promise = (async () => {
+                        try {
+                            const hasAnim = this.hasAnimations(svgString);
+                            
+                            if (hasAnim) {
+                                // Render all animation frames (24fps = 42ms per frame)
+                                const duration = this.getAnimationDuration(svgString);
+                                const frameCount = Math.ceil(duration / 42); // 24fps
+                                const canvases: HTMLCanvasElement[] = [];
+                                
+                                for (let frame = 0; frame < frameCount; frame++) {
+                                    const time = frame * 42; // Time in ms for this frame
+                                    // Get animated SVG string from renderer
+                                    const animatedSVG = svgRenderer.getAnimatedSVGString(svgString, time);
+                                    const canvas = await this.renderSVGToCanvas(animatedSVG, 100, 100);
+                                    canvases.push(canvas);
+                                }
+                                
+                                assets.petalImages[key] = canvases;
+                                this.loadedAssets += frameCount;
+                                this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+                                console.log(`[Preloader] Loaded animated petal: ${key} (${frameCount} frames)`);
+                            } else {
+                                // Static SVG - render once
+                                const canvas = await this.renderSVGToCanvas(svgString, 100, 100);
+                                assets.petalImages[key] = canvas;
+                                this.loadedAssets++;
+                                this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
+                                console.log(`[Preloader] Loaded static petal: ${key}`);
+                            }
+                        } catch (error) {
                             console.error(`[Preloader] Failed to load petal ${key}:`, error);
-                            // Don't reject, just continue
                             this.loadedAssets++;
                             this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
-                            resolve();
-                        };
-                        
-                        // Convert SVG string to data URL (no blob needed)
-                        const encodedSVG = encodeURIComponent(stats.image ?? '');
-                        img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
-                    });
+                        }
+                    })();
                     
                     loadPromises.push(promise);
                 });
             });
             
             await Promise.all(loadPromises);
-            console.log(`[Preloader] Loaded ${Object.keys(assets.petalImages).length} petal images`);
+            console.log(`[Preloader] Loaded ${Object.keys(assets.petalImages).length} petal images as canvases`);
         } catch (error) {
             console.error('[Preloader] Error loading petal images:', error);
         }

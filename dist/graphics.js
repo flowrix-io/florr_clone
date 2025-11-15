@@ -1,27 +1,4 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Graphics = void 0;
 const constants_1 = require("./constants");
@@ -29,6 +6,25 @@ const petals_1 = require("./petals");
 const mobs_1 = require("./mobs");
 const svg_renderer_1 = require("./svg_renderer");
 class Graphics {
+    /**
+     * Get the canvas to use for a petal at a given time
+     * Returns the canvas for static petals, or the appropriate frame for animated petals
+     */
+    getPetalCanvas(petalKey, time = Date.now()) {
+        const petalImage = this.petalImageCache[petalKey];
+        if (!petalImage) {
+            return null;
+        }
+        if (Array.isArray(petalImage)) {
+            // Animated petal - select frame based on time (24fps = 42ms per frame)
+            const frameIndex = Math.floor((time / 42) % petalImage.length);
+            return petalImage[frameIndex];
+        }
+        else {
+            // Static petal
+            return petalImage;
+        }
+    }
     constructor(canvas, playerSprite, wallTexture, octopusSprite, fishSprite, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
         this.cameraX = 0;
         this.cameraY = 0;
@@ -110,11 +106,10 @@ class Graphics {
         };
         this.showHitboxes = false;
         this.itemSprites = {};
-        this.petalImageCache = {};
+        this.petalImageCache = {}; // Canvas for static, array for animated
         this.mobSVGCache = {}; // Store original SVG strings for WASM rendering
         this.svgRenderer = (0, svg_renderer_1.getSVGRenderer)();
         this.lastEnemyDebugLog = 0;
-        this.mobImageCache = new Map();
         this.canvas = canvas;
         this.ctx = this.canvas.getContext('2d');
         this.playerSprite = playerSprite;
@@ -133,6 +128,8 @@ class Graphics {
         await this.svgRenderer.waitForInit();
         const mobTypes = (0, mobs_1.getAllMobTypes)();
         const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+        // Pre-render mob canvases for immediate use (no fallback circles)
+        const preloadPromises = [];
         for (const mobType of mobTypes) {
             for (const rarity of rarities) {
                 const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);
@@ -140,17 +137,46 @@ class Graphics {
                     const cacheKey = `${mobType}_${rarity}`;
                     // Store SVG string for WASM rendering
                     this.mobSVGCache[cacheKey] = mobStats.image;
-                    // Also load as image for fallback
-                    try {
-                        await this.loadSVGAsImage(mobStats.image, cacheKey);
-                        console.log(`[GRAPHICS] Preloaded ${mobType} ${rarity} sprite`);
-                    }
-                    catch (error) {
-                        console.error(`[GRAPHICS] Failed to load ${mobType} ${rarity} sprite:`, error);
-                    }
+                    // Pre-render multiple animation frames to avoid blob URL creation during gameplay
+                    // Pre-render frames for a full animation cycle (24fps = 42ms per frame)
+                    // For most mobs, animations are typically 1-2 seconds, so pre-render ~50 frames (2 seconds)
+                    const promise = (async () => {
+                        try {
+                            const mobSize = mobStats.size * 40;
+                            const baseCacheKey = mobStats.image.length > 100 ? mobStats.image.substring(0, 100) : mobStats.image;
+                            // Pre-render multiple frames (50 frames = ~2 seconds at 24fps)
+                            const framesToPreload = 50;
+                            for (let frame = 0; frame < framesToPreload; frame++) {
+                                const time = frame * 42; // Time in ms for this frame (24fps)
+                                const timeBucket = Math.floor(time / 42);
+                                const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
+                                // Skip if already cached
+                                if (this.svgRenderer.isCanvasCached(animatedCacheKey)) {
+                                    continue;
+                                }
+                                // Pre-render this animation frame
+                                const animatedSVG = this.svgRenderer.getAnimatedSVGString(mobStats.image, time);
+                                const canvas = await this.svgRenderer.renderSVGToOffscreenCanvas(animatedSVG, mobSize, mobSize);
+                                if (canvas) {
+                                    // Cache the canvas directly
+                                    this.svgRenderer.cacheCanvas(animatedCacheKey, canvas);
+                                }
+                            }
+                        }
+                        catch (error) {
+                            console.error(`[Graphics] Failed to pre-render canvas for ${cacheKey}:`, error);
+                        }
+                    })();
+                    preloadPromises.push(promise);
                 }
             }
         }
+        // Wait for all pre-renders to complete (but don't block - they'll cache in background)
+        Promise.all(preloadPromises).then(() => {
+            console.log('[Graphics] Pre-rendered mob canvases');
+        }).catch(() => {
+            console.warn('[Graphics] Some mob canvases failed to pre-render');
+        });
         console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings for WASM rendering');
     }
     // Method to set a biome texture
@@ -669,18 +695,18 @@ class Graphics {
             // Draw petal - the transforms are already applied (translate to petal position, then rotate)
             // Try to use cached SVG image
             const petalKey = `${petal.petalType}_${petal.rarity}`;
-            const petalImage = this.petalImageCache[petalKey];
-            if (petalImage && petalImage.complete && petalImage.naturalWidth > 0 && petalImage.naturalHeight > 0) {
+            const petalCanvas = this.getPetalCanvas(petalKey, Date.now());
+            if (petalCanvas && petalCanvas.width > 0 && petalCanvas.height > 0) {
                 try {
-                    // Use cached SVG image
+                    // Use cached canvas image
                     // Draw centered at origin (which is now the petal position after translate)
-                    this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                    this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                     // Add rarity glow effect
                     if (petal.rarity !== 'common') {
                         this.ctx.save();
                         this.ctx.shadowColor = stats.color;
                         this.ctx.shadowBlur = 5;
-                        this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                        this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                         this.ctx.restore();
                     }
                 }
@@ -731,34 +757,8 @@ class Graphics {
             }
         });
     }
-    async loadSVGAsImage(svgString, cacheKey) {
-        // Check cache first
-        if (this.mobImageCache.has(cacheKey)) {
-            return this.mobImageCache.get(cacheKey);
-        }
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            try {
-                // Use base64 encoding for better compatibility
-                const base64SVG = btoa(unescape(encodeURIComponent(svgString)));
-                const dataUrl = `data:image/svg+xml;base64,${base64SVG}`;
-                img.src = dataUrl;
-            }
-            catch (error) {
-                // Fallback to URI encoding
-                const encodedSVG = encodeURIComponent(svgString);
-                img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
-            }
-            img.onload = () => {
-                this.mobImageCache.set(cacheKey, img);
-                resolve(img);
-            };
-            img.onerror = (err) => {
-                console.error(`[Graphics] Failed to load SVG image for ${cacheKey}:`, err);
-                reject(err);
-            };
-        });
-    }
+    // Removed mobImageCache and loadSVGAsImage - mobs now use canvas rendering via svgRenderer
+    // No data URLs are created for mob rendering
     drawEnemy(enemy) {
         // Validate enemy has required properties
         if (!enemy || typeof enemy.x !== 'number' || typeof enemy.y !== 'number') {
@@ -789,7 +789,7 @@ class Graphics {
         // the renderer might use WASM for animation even if image loading falls back
         if (mobSVG && this.svgRenderer.isInitialized()) {
             try {
-                // Use SVG renderer to render animated SVG
+                // Use SVG renderer to render animated SVG (synchronous - uses cached canvases)
                 // x, y, rotation are 0 because transforms are already applied by the context
                 rendered = this.svgRenderer.renderSVGToCanvas(this.ctx, mobSVG, 0, // x (already translated)
                 0, // y (already translated)
@@ -816,22 +816,7 @@ class Graphics {
                 }
             }
         }
-        // Fallback to cached image if WASM renderer didn't work
-        if (!rendered) {
-            if (this.mobImageCache.has(cacheKey)) {
-                const img = this.mobImageCache.get(cacheKey);
-                if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-                    try {
-                        this.ctx.drawImage(img, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
-                        rendered = true;
-                    }
-                    catch (error) {
-                        // Image draw failed, fall through to sprite
-                    }
-                }
-            }
-        }
-        // If SVG image not ready, use sprite fallback
+        // If WASM renderer didn't work, use sprite fallback (no data URLs)
         if (!rendered) {
             // Determine which sprite to use based on enemy type
             let sprite = null;
@@ -870,12 +855,7 @@ class Graphics {
                     console.log(`[Graphics] Drew fallback circle for enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)})`);
                 }
             }
-            // Try to load SVG image asynchronously if available (non-blocking)
-            if (!this.mobImageCache.has(cacheKey) && mobStats && mobStats.image) {
-                this.loadSVGAsImage(mobStats.image, cacheKey).catch(() => {
-                    // Silently fail - will use sprite fallback
-                });
-            }
+            // No async loading - mobs use canvas rendering via svgRenderer (no data URLs)
         }
         // Draw hitbox if enabled (before restore, so it's in enemy's coordinate space)
         if (this.showHitboxes) {
@@ -955,16 +935,16 @@ class Graphics {
         // Draw petal using cached image
         const size = 12 * stats.size;
         const petalKey = `${item.petalType}_${item.rarity}`;
-        const petalImage = this.petalImageCache[petalKey];
-        if (petalImage) {
+        const petalCanvas = this.getPetalCanvas(petalKey, Date.now());
+        if (petalCanvas) {
             // Use consistent scaling to maintain aspect ratio
             const petalSize = size;
-            this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+            this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
             // Add rarity glow effect
             if (item.rarity !== 'common') {
                 this.ctx.shadowColor = stats.color;
                 this.ctx.shadowBlur = 5;
-                this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
             }
         }
         else {
@@ -1395,26 +1375,9 @@ class Graphics {
         this.petalImageCache = imageCache;
     }
     async preloadPetalImages() {
-        const { PETAL_CONFIG } = await Promise.resolve().then(() => __importStar(require('./petals')));
-        const loadPromises = [];
-        Object.entries(PETAL_CONFIG).forEach(([petalType, rarities]) => {
-            Object.entries(rarities).forEach(([rarity, stats]) => {
-                const key = `${petalType}_${rarity}`;
-                const img = new Image();
-                const promise = new Promise((resolve, reject) => {
-                    img.onload = () => {
-                        this.petalImageCache[key] = img;
-                        resolve();
-                    };
-                    img.onerror = reject;
-                    // Convert SVG string to data URL (no blob needed)
-                    const encodedSVG = encodeURIComponent(stats.image ?? '');
-                    img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
-                });
-                loadPromises.push(promise);
-            });
-        });
-        await Promise.all(loadPromises);
+        // This method is now deprecated - petal images should be preloaded via Preloader
+        // This is kept as a fallback but should not be used
+        console.warn('[Graphics] preloadPetalImages called - this should be handled by Preloader');
     }
     drawCorpse(x, y, angle) {
         this.ctx.save();

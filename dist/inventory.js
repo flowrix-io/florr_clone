@@ -400,9 +400,16 @@ class InventoryManager {
                             img.style.width = '100%';
                             img.style.height = '100%';
                             img.style.objectFit = 'contain';
-                            // Convert SVG string to data URL (no blob needed)
-                            const encodedSVG = encodeURIComponent(stats.image ?? '');
-                            img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
+                            // Use canvas image - no fallback to SVG data URL
+                            const petalCanvas = this.game.getPetalCanvas?.(item.petalType, item.rarity, Date.now());
+                            if (petalCanvas) {
+                                img.src = petalCanvas.toDataURL('image/png');
+                            }
+                            else {
+                                // No canvas available - use placeholder or skip rendering
+                                // Don't create SVG data URL
+                                return; // Skip this petal if canvas not available
+                            }
                             petalDiv.appendChild(img);
                         }
                         else {
@@ -441,7 +448,14 @@ class InventoryManager {
                 else {
                     // Regular items (health potion, speed boost, shield)
                     const img = document.createElement('img');
-                    img.src = `./assets/${item.type}.png`;
+                    // Use cached data URL if available, otherwise fallback to direct path
+                    const dataUrl = this.game.getItemSpriteDataUrl?.(item.type);
+                    if (dataUrl) {
+                        img.src = dataUrl; // Use cached data URL (in-memory)
+                    }
+                    else {
+                        img.src = `./assets/${item.type}.png`; // Fallback
+                    }
                     img.alt = item.type;
                     img.style.width = '80%';
                     img.style.height = '80%';
@@ -677,9 +691,15 @@ class InventoryManager {
                               object-fit: contain;
                           `;
                             // Convert SVG string to blob URL (same as loadout display)
-                            const encodedSVG = encodeURIComponent(stats.image ?? '');
-                            const url = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
-                            img.src = url;
+                            // Use canvas image - no fallback to SVG data URL
+                            const petalCanvas = this.game.getPetalCanvas?.(petalType, rarity, Date.now());
+                            if (petalCanvas) {
+                                img.src = petalCanvas.toDataURL('image/png');
+                            }
+                            else {
+                                // No canvas available - skip rendering
+                                return; // Skip this item if canvas not available
+                            }
                             itemElement.appendChild(img);
                         }
                         else {
@@ -698,7 +718,14 @@ class InventoryManager {
                     else {
                         // Handle other items with PNG images
                         const img = document.createElement('img');
-                        img.src = `./assets/${type}.png`;
+                        // Use cached data URL if available, otherwise fallback to direct path
+                        const dataUrl = this.game.getItemSpriteDataUrl?.(type);
+                        if (dataUrl) {
+                            img.src = dataUrl; // Use cached data URL (in-memory)
+                        }
+                        else {
+                            img.src = `./assets/${type}.png`; // Fallback
+                        }
                         img.alt = type;
                         img.draggable = false;
                         img.style.cssText = `
@@ -895,14 +922,28 @@ class InventoryManager {
                         img.style.width = '100%';
                         img.style.height = '100%';
                         img.style.objectFit = 'contain';
-                        const encodedSVG = encodeURIComponent(stats.image ?? '');
-                        img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
+                        // Use canvas image - no fallback to SVG data URL
+                        const petalCanvas = this.game.getPetalCanvas?.(firstItem.petalType, firstItem.rarity, Date.now());
+                        if (petalCanvas) {
+                            img.src = petalCanvas.toDataURL('image/png');
+                        }
+                        else {
+                            // No canvas available - skip rendering
+                            return; // Skip this petal if canvas not available
+                        }
                         slot.appendChild(img);
                     }
                 }
                 else {
                     const img = document.createElement('img');
-                    img.src = `./assets/${firstItem.type}.png`;
+                    // Use cached data URL if available, otherwise fallback to direct path
+                    const dataUrl = this.game.getItemSpriteDataUrl?.(firstItem.type);
+                    if (dataUrl) {
+                        img.src = dataUrl; // Use cached data URL (in-memory)
+                    }
+                    else {
+                        img.src = `./assets/${firstItem.type}.png`; // Fallback
+                    }
                     img.alt = firstItem.type;
                     img.style.width = '80%';
                     img.style.height = '80%';
@@ -1018,10 +1059,16 @@ class InventoryManager {
                                 img.style.width = '100%';
                                 img.style.height = '100%';
                                 img.style.objectFit = 'contain';
-                                // Convert SVG string to blob URL (same as graphics system)
-                                const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
-                                const url = URL.createObjectURL(svgBlob);
-                                img.src = url;
+                                // Use canvas image - no fallback to SVG data URL
+                                const petalType = itemType.replace('petal_', '');
+                                const petalCanvas = this.game.getPetalCanvas?.(petalType, rarity, Date.now());
+                                if (petalCanvas) {
+                                    img.src = petalCanvas.toDataURL('image/png');
+                                }
+                                else {
+                                    // No canvas available - skip rendering
+                                    return; // Skip this petal if canvas not available
+                                }
                                 petalDiv.appendChild(img);
                             }
                             else {
@@ -1035,7 +1082,14 @@ class InventoryManager {
                         else {
                             // Handle other item types with PNG images
                             const img = document.createElement('img');
-                            img.src = `./assets/${itemType}.png`;
+                            // Use cached data URL if available, otherwise fallback to direct path
+                            const dataUrl = this.game.getItemSpriteDataUrl?.(itemType);
+                            if (dataUrl) {
+                                img.src = dataUrl; // Use cached data URL (in-memory)
+                            }
+                            else {
+                                img.src = `./assets/${itemType}.png`; // Fallback
+                            }
                             img.alt = itemType;
                             img.style.width = '60%';
                             img.style.height = '60%';
