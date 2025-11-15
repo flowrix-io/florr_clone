@@ -246,6 +246,7 @@ const BASE_MOB_CONFIGS = {
         damage: 10,
         health: 100,
         size: 1.0,
+        visual_scale: 1.5,
         speed: 1.0,
         cooldown: 2000,
         description: "A small, hostile soldier ant that flies aggressively",
@@ -991,7 +992,8 @@ function generateMobStats(baseConfig, rarity, mobType) {
         is_hostile: overrides.is_hostile ?? baseConfig.is_hostile,
         range: overrides.range ?? baseConfig.range,
         xp,
-        biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false
+        biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false,
+        visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0
     };
 }
 // Generate the full mob configuration

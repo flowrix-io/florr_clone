@@ -4317,6 +4317,7 @@ const BASE_MOB_CONFIGS = {
         damage: 10,
         health: 100,
         size: 1.0,
+        visual_scale: 1.5,
         speed: 1.0,
         cooldown: 2000,
         description: "A small, hostile soldier ant that flies aggressively",
@@ -5062,7 +5063,8 @@ function generateMobStats(baseConfig, rarity, mobType) {
         is_hostile: overrides.is_hostile ?? baseConfig.is_hostile,
         range: overrides.range ?? baseConfig.range,
         xp,
-        biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false
+        biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false,
+        visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0
     };
 }
 // Generate the full mob configuration
@@ -6350,7 +6352,10 @@ class Graphics {
         }
         // Get enemy size from mob stats
         const mobStats = getMobStats(enemy.type, enemy.tier);
-        const enemySize = mobStats ? mobStats.size * 40 : 40;
+        // Use visual_scale for rendering (affects visual only, not hitbox)
+        const baseSize = mobStats ? mobStats.size * 40 : 40;
+        const visualScale = mobStats?.visual_scale ?? 1.0;
+        const enemySize = baseSize * visualScale;
         // Always set up the transform for the enemy position
         // The context already has camera transforms applied, so we translate to world position
         this.ctx.save();
@@ -6453,13 +6458,14 @@ class Graphics {
             // No async loading - mobs use canvas rendering via svgRenderer (no data URLs)
         }
         // Draw hitbox if enabled (before restore, so it's in enemy's coordinate space)
+        // Use baseSize for hitbox (actual collision size, not visual size)
         if (this.showHitboxes) {
             this.ctx.strokeStyle = this.ENEMY_COLORS[enemy.tier];
             this.ctx.lineWidth = 2;
             this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
             this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
             this.ctx.beginPath();
-            this.ctx.arc(0, 0, enemySize / 2, 0, Math.PI * 2);
+            this.ctx.arc(0, 0, baseSize / 2, 0, Math.PI * 2);
             this.ctx.stroke();
         }
         // Draw health bar (before restore, so it's in enemy's coordinate space)

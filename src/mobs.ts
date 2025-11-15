@@ -12,6 +12,7 @@ export interface MobStats {
     range: number; // Detection/attack range
     xp: number; // Experience points awarded when defeated
     biomeOnly: boolean; // Whether this mob can only spawn in biomes
+    visual_scale?: number; // Visual scale multiplier (affects rendering only, not hitbox)
 }
 
 export interface MobConfig {
@@ -64,6 +65,7 @@ interface BaseMobConfig {
     is_hostile: boolean;
     range: number;
     biomeOnly?: boolean; // Optional: whether this mob can only spawn in biomes
+    visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
 }
 
 // Special rarity overrides for specific mobs
@@ -80,6 +82,7 @@ interface RarityOverride {
     is_hostile?: boolean;
     range?: number;
     biomeOnly?: boolean;
+    visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
 }
 
 // Scaling multipliers for mob stats
@@ -313,6 +316,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         damage: 10,
         health: 100,
         size: 1.0,
+        visual_scale: 1.5,
         speed: 1.0,
         cooldown: 2000,
         description: "A small, hostile soldier ant that flies aggressively",
@@ -1068,7 +1072,8 @@ function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: st
         is_hostile: overrides.is_hostile ?? baseConfig.is_hostile,
         range: overrides.range ?? baseConfig.range,
         xp,
-        biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false
+        biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false,
+        visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0
     };
 }
 
