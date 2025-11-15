@@ -40,6 +40,7 @@ class SVGRendererWrapper {
         this.dataUrlCache = new Map(); // Cache data URL strings to avoid recreating them
         this.canvasCache = new Map(); // Cache for offscreen canvases (primary storage)
         this.animatedCache = {};
+        this.preloadingComplete = false; // Track if preloading phase is complete
         this.initPromise = this.initialize();
     }
     async initialize() {
@@ -168,6 +169,13 @@ class SVGRendererWrapper {
         return null;
     }
     async renderSVGToOffscreenCanvas(svgString, width, height) {
+        // Prevent blob URL creation during gameplay - only allow during preloading
+        if (this.preloadingComplete) {
+            if (Math.random() < 0.01) { // Only log occasionally to avoid spam
+                console.warn('[SVGRenderer] renderSVGToOffscreenCanvas called after preloading complete (preloadingComplete=' + this.preloadingComplete + ') - blob URLs should not be created during gameplay');
+            }
+            return null;
+        }
         try {
             const canvas = document.createElement('canvas');
             canvas.width = width;
@@ -184,6 +192,7 @@ class SVGRendererWrapper {
                 return null;
             }
             // Create blob URL from SVG (more efficient than data URL)
+            // NOTE: This should only happen during preloading phase
             const blob = new Blob([svgString], { type: 'image/svg+xml' });
             const blobUrl = URL.createObjectURL(blob);
             // Create Image element and load from blob URL
@@ -268,10 +277,38 @@ class SVGRendererWrapper {
             }
         }
         // For animated SVGs, we need to use a time-based cache key to ensure
-        // the animation updates each frame. Use 24fps (42ms buckets) for smooth but not laggy animation
-        const timeBucket = Math.floor(time / 42); // Update every ~42ms for 24fps
-        const baseCacheKey = svgString.length > 100 ? svgString.substring(0, 100) : svgString;
+        // the animation updates each frame. Use 15fps (67ms buckets) for smooth but not laggy animation
+        // Use modulo to wrap time within animation cycle (2000ms = 30 frames * 67ms)
+        // This ensures cache keys match between preloading and rendering
+        const animationCycleDuration = 2000; // 30 frames * 67ms = 2 seconds
+        const relativeTime = time % animationCycleDuration;
+        const timeBucket = Math.floor(relativeTime / 67); // Update every ~67ms for 15fps
+        // Normalize SVG string for consistent cache key generation
+        // Remove whitespace differences, normalize attributes, and use a stable key
+        // This ensures cache keys match between preloading and rendering
+        let normalizedSVG = svgString.replace(/\s+/g, ' ').trim();
+        // Remove xmlns attribute variations (they don't affect rendering)
+        normalizedSVG = normalizedSVG.replace(/\s+xmlns="[^"]*"/g, '');
+        // Use a more stable key based on viewBox and key attributes (more reliable than first N chars)
+        const viewBoxMatch = normalizedSVG.match(/viewBox="([^"]*)"/);
+        const widthMatch = normalizedSVG.match(/width="([^"]*)"/);
+        const keyParts = [
+            viewBoxMatch ? viewBoxMatch[1] : '',
+            widthMatch ? widthMatch[1] : '',
+            normalizedSVG.length.toString()
+        ];
+        const baseCacheKey = keyParts.join('|');
         const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
+        // Debug: Log cache lookup occasionally
+        if (Math.random() < 0.01) {
+            console.log(`[SVGRenderer] Cache lookup: key="${animatedCacheKey.substring(0, 60)}...", hasCache=${this.canvasCache.has(animatedCacheKey)}, cacheSize=${this.canvasCache.size}, timeBucket=${timeBucket}, relativeTime=${relativeTime.toFixed(1)}`);
+            // Show what keys exist for this SVG
+            const matchingKeys = Array.from(this.canvasCache.keys()).filter(k => k.startsWith(baseCacheKey.substring(0, 50)));
+            console.log(`[SVGRenderer] Matching keys for this SVG:`, matchingKeys.slice(0, 5).map(k => {
+                const match = k.match(/_(\d+)$/);
+                return match ? `timeBucket=${match[1]}` : k.substring(0, 30);
+            }));
+        }
         // Check if we already have this frame as a canvas (preferred - no data URLs)
         if (this.canvasCache.has(animatedCacheKey)) {
             const cachedCanvas = this.canvasCache.get(animatedCacheKey);
@@ -290,15 +327,67 @@ class SVGRendererWrapper {
                 return true;
             }
         }
-        // If no cached canvas, we should not create blob URLs during gameplay
-        // Instead, return false and let the caller use a fallback
+        // If exact frame not cached, try to find the closest available frame
+        // This handles cases where pre-rendering is still in progress
+        // Extract base key and find frames with matching base
+        const baseKeyMatch = animatedCacheKey.match(/^(.+)_(\d+)$/);
+        if (baseKeyMatch) {
+            const baseKey = baseKeyMatch[1];
+            const targetBucket = parseInt(baseKeyMatch[2], 10);
+            // Find all cached frames for this SVG (same base key)
+            const availableBuckets = [];
+            for (const key of this.canvasCache.keys()) {
+                const match = key.match(/^(.+)_(\d+)$/);
+                if (match && match[1] === baseKey) {
+                    availableBuckets.push(parseInt(match[2], 10));
+                }
+            }
+            if (availableBuckets.length > 0) {
+                // Find closest bucket (wrapping around animation cycle)
+                availableBuckets.sort((a, b) => a - b);
+                let closestBucket = availableBuckets[0];
+                let minDistance = Math.abs(targetBucket - closestBucket);
+                // Also check wrapping distance (e.g., if target is 29 and we have 0, distance is 1)
+                for (const bucket of availableBuckets) {
+                    const distance = Math.abs(targetBucket - bucket);
+                    const wrapDistance = Math.min(distance, 30 - distance); // 30 frames total
+                    if (wrapDistance < minDistance) {
+                        minDistance = wrapDistance;
+                        closestBucket = bucket;
+                    }
+                }
+                // Use closest available frame (increase threshold to 10 frames to handle more cases)
+                // This is better than showing fallback circles while pre-rendering continues
+                if (minDistance <= 10) {
+                    const closestKey = `${baseKey}_${closestBucket}`;
+                    const closestCanvas = this.canvasCache.get(closestKey);
+                    if (closestCanvas && closestCanvas.width > 0 && closestCanvas.height > 0) {
+                        // Use closest cached canvas
+                        if (x !== 0 || y !== 0 || rotation !== 0) {
+                            ctx.save();
+                            ctx.translate(x, y);
+                            ctx.rotate(rotation);
+                            ctx.drawImage(closestCanvas, -width / 2, -height / 2, width, height);
+                            ctx.restore();
+                        }
+                        else {
+                            ctx.drawImage(closestCanvas, -width / 2, -height / 2, width, height);
+                        }
+                        return true;
+                    }
+                }
+            }
+        }
+        // If no cached canvas (exact or close), we should not create blob URLs during gameplay
+        // Return false and let the caller use a fallback
         // The canvas should have been pre-rendered during initialization
-        // If we're here, it means we need a frame that wasn't pre-rendered
-        // For now, don't trigger async rendering to avoid blob URL creation
-        // The caller will use sprite/circle fallback
-        // Only log occasionally to avoid spam
-        if (Math.random() < 0.001) {
-            console.warn(`[SVGRenderer] Canvas not cached for key: ${animatedCacheKey.substring(0, 50)}... (should have been pre-rendered)`);
+        // If we're here, it means we need a frame that wasn't pre-rendered yet
+        // Log cache miss occasionally to debug
+        if (Math.random() < 0.01) {
+            console.warn(`[SVGRenderer] Canvas not cached for key: ${animatedCacheKey.substring(0, 60)}... (should have been pre-rendered), cacheSize=${this.canvasCache.size}`);
+            // Show a few sample keys from cache
+            const sampleKeys = Array.from(this.canvasCache.keys()).slice(0, 3);
+            console.log(`[SVGRenderer] Sample cache keys:`, sampleKeys.map(k => k.substring(0, 60)));
         }
         return false;
     }
@@ -324,6 +413,14 @@ class SVGRendererWrapper {
     }
     isUsingFallback() {
         return this.fallbackMode;
+    }
+    // Mark preloading as complete - prevents blob URL creation after this point
+    markPreloadingComplete() {
+        this.preloadingComplete = true;
+    }
+    // Check if preloading is complete
+    isPreloadingComplete() {
+        return this.preloadingComplete;
     }
     /**
      * Get animated SVG string for a given time

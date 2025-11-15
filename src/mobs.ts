@@ -321,22 +321,20 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   <circle cx="-12" cy="0" r="10" fill="#555555" stroke="#444444" stroke-width="7" />
 
   <g fill="#eeeeee" fill-opacity="0.5">
-    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(18)">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(0)">
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; 3.6; 0"
-                        keyTimes="0; 0.5; 1"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
                         dur="2s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
-    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(-18)">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(0)">
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; -3.6; 0"
-                        keyTimes="0; 0.5; 1"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
                         dur="2s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
@@ -352,7 +350,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
              values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
                      M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
                      M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
-  </path>
+             </path>
 
   <circle cx="4" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
 

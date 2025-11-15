@@ -138,17 +138,38 @@ class Graphics {
                     // Store SVG string for WASM rendering
                     this.mobSVGCache[cacheKey] = mobStats.image;
                     // Pre-render multiple animation frames to avoid blob URL creation during gameplay
-                    // Pre-render frames for a full animation cycle (24fps = 42ms per frame)
-                    // For most mobs, animations are typically 1-2 seconds, so pre-render ~50 frames (2 seconds)
+                    // Pre-render frames for a full animation cycle (15fps = 67ms per frame)
+                    // For most mobs, animations are typically 1-2 seconds, so pre-render ~30 frames (2 seconds)
                     const promise = (async () => {
                         try {
                             const mobSize = mobStats.size * 40;
-                            const baseCacheKey = mobStats.image.length > 100 ? mobStats.image.substring(0, 100) : mobStats.image;
-                            // Pre-render multiple frames (50 frames = ~2 seconds at 24fps)
-                            const framesToPreload = 50;
+                            // Normalize SVG string for consistent cache key generation (same as in renderSVGToCanvas)
+                            let normalizedSVG = mobStats.image.replace(/\s+/g, ' ').trim();
+                            // Remove xmlns attribute variations (they don't affect rendering)
+                            normalizedSVG = normalizedSVG.replace(/\s+xmlns="[^"]*"/g, '');
+                            // Use a more stable key based on viewBox and key attributes (more reliable than first N chars)
+                            const viewBoxMatch = normalizedSVG.match(/viewBox="([^"]*)"/);
+                            const widthMatch = normalizedSVG.match(/width="([^"]*)"/);
+                            const keyParts = [
+                                viewBoxMatch ? viewBoxMatch[1] : '',
+                                widthMatch ? widthMatch[1] : '',
+                                normalizedSVG.length.toString()
+                            ];
+                            const baseCacheKey = keyParts.join('|');
+                            // Pre-render multiple frames (30 frames = ~2 seconds at 15fps)
+                            const framesToPreload = 30;
                             for (let frame = 0; frame < framesToPreload; frame++) {
-                                const time = frame * 42; // Time in ms for this frame (24fps)
-                                const timeBucket = Math.floor(time / 42);
+                                // Check if preloading was marked complete (user might have set it manually)
+                                // If so, stop pre-rendering to avoid blob URL creation
+                                if (this.svgRenderer.isPreloadingComplete()) {
+                                    console.log(`[Graphics] Preloading marked complete, stopping pre-render for ${cacheKey} at frame ${frame}`);
+                                    break;
+                                }
+                                const time = frame * 67; // Time in ms for this frame (15fps)
+                                // Use same relative time calculation as renderSVGToCanvas
+                                const animationCycleDuration = 2000; // 30 frames * 67ms = 2 seconds
+                                const relativeTime = time % animationCycleDuration;
+                                const timeBucket = Math.floor(relativeTime / 67);
                                 const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
                                 // Skip if already cached
                                 if (this.svgRenderer.isCanvasCached(animatedCacheKey)) {
@@ -160,6 +181,10 @@ class Graphics {
                                 if (canvas) {
                                     // Cache the canvas directly
                                     this.svgRenderer.cacheCanvas(animatedCacheKey, canvas);
+                                    // Debug: Log first few cached frames
+                                    if (frame < 3) {
+                                        console.log(`[Graphics] Pre-rendered frame ${frame} for ${cacheKey}: key="${animatedCacheKey.substring(0, 60)}...", timeBucket=${timeBucket}`);
+                                    }
                                 }
                             }
                         }
@@ -172,11 +197,25 @@ class Graphics {
             }
         }
         // Wait for all pre-renders to complete (but don't block - they'll cache in background)
-        Promise.all(preloadPromises).then(() => {
-            console.log('[Graphics] Pre-rendered mob canvases');
-        }).catch(() => {
-            console.warn('[Graphics] Some mob canvases failed to pre-render');
-        });
+        if (preloadPromises.length === 0) {
+            // No mobs to pre-render, mark as complete immediately
+            console.log('[Graphics] No mobs to pre-render, marking preloading complete');
+            this.svgRenderer.markPreloadingComplete();
+        }
+        else {
+            console.log(`[Graphics] Starting pre-render of ${preloadPromises.length} mob types...`);
+            Promise.all(preloadPromises).then(() => {
+                console.log('[Graphics] Pre-rendered mob canvases - marking preloading complete');
+                // Mark preloading as complete to prevent blob URL creation during gameplay
+                this.svgRenderer.markPreloadingComplete();
+                console.log('[Graphics] Preloading complete flag set:', this.svgRenderer.isPreloadingComplete());
+            }).catch((error) => {
+                console.warn('[Graphics] Some mob canvases failed to pre-render:', error);
+                // Still mark as complete to prevent blob URLs even if some failed
+                this.svgRenderer.markPreloadingComplete();
+                console.log('[Graphics] Preloading complete flag set (after error):', this.svgRenderer.isPreloadingComplete());
+            });
+        }
         console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings for WASM rendering');
     }
     // Method to set a biome texture
@@ -781,7 +820,18 @@ class Graphics {
         // This ensures we can see enemies even if images/sprites fail
         const cacheKey = `${enemy.type}_${enemy.tier}`;
         const mobSVG = this.mobSVGCache[cacheKey];
-        const currentTime = Date.now();
+        // Ensure we're using the exact same SVG string that was pre-rendered
+        // The SVG string should match exactly what's in mobSVGCache
+        if (!mobSVG) {
+            // No SVG cached for this mob type/rarity
+            if (Math.random() < 0.01) {
+                console.warn(`[Graphics] No SVG cached for ${cacheKey}`);
+            }
+        }
+        // Use relative time for animation (wraps within animation cycle)
+        // This ensures cache keys match with pre-rendered frames
+        const animationCycleDuration = 2100; // 50 frames * 42ms = 2.1 seconds
+        const currentTime = Date.now() % animationCycleDuration;
         // Try to use WASM SVG renderer with animations first
         let rendered = false;
         // Check if WASM renderer is available and not in fallback mode
