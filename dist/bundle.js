@@ -5117,6 +5117,7 @@ class SVGRendererWrapper {
         this.initPromise = null;
         this.fallbackMode = false;
         this.imageCache = new Map();
+        this.dataUrlCache = new Map(); // Cache data URL strings to avoid recreating them
         this.canvasCache = new Map(); // Cache for offscreen canvases
         this.animatedCache = {};
         this.initPromise = this.initialize();
@@ -5189,37 +5190,42 @@ class SVGRendererWrapper {
         return result;
     }
     loadSVGAsImage(svgString, cacheKey) {
-        // Check cache first
+        // Check cache first - reuse existing image if available
         if (this.imageCache.has(cacheKey)) {
             const cached = this.imageCache.get(cacheKey);
-            // Return cached image if it's loaded, otherwise return null to trigger async load
-            if (cached.complete && cached.naturalWidth > 0) {
-                return cached;
+            // Return cached image (even if not fully loaded, browser can often render data URLs immediately)
+            return cached;
+        }
+        // Check if we have a cached data URL string to avoid recreating it
+        let dataUrl;
+        if (this.dataUrlCache.has(cacheKey)) {
+            dataUrl = this.dataUrlCache.get(cacheKey);
+        }
+        else {
+            // Create data URL only once and cache it
+            // Use data URL instead of blob URL - more efficient, no need to revoke
+            // For SVG, we can use a simpler encoding - just escape the string properly
+            // Using base64 encoding for better compatibility
+            try {
+                const base64SVG = btoa(unescape(encodeURIComponent(svgString)));
+                dataUrl = `data:image/svg+xml;base64,${base64SVG}`;
+                this.dataUrlCache.set(cacheKey, dataUrl);
             }
-            return cached; // Return even if not loaded yet - will be drawn when ready
+            catch (error) {
+                console.error('[SVGRenderer] Error encoding SVG:', error);
+                // Fallback to URI encoding
+                const encodedSVG = encodeURIComponent(svgString);
+                dataUrl = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
+                this.dataUrlCache.set(cacheKey, dataUrl);
+            }
         }
-        // Use data URL instead of blob URL - more efficient, no need to revoke
-        // For SVG, we can use a simpler encoding - just escape the string properly
-        // Using base64 encoding for better compatibility
-        try {
-            const base64SVG = btoa(unescape(encodeURIComponent(svgString)));
-            const dataUrl = `data:image/svg+xml;base64,${base64SVG}`;
-            const img = new Image();
-            img.src = dataUrl;
-            // Cache the image (even if not loaded yet, it will be cached when loaded)
-            this.imageCache.set(cacheKey, img);
-            return img;
-        }
-        catch (error) {
-            console.error('[SVGRenderer] Error encoding SVG:', error);
-            // Fallback to URI encoding
-            const encodedSVG = encodeURIComponent(svgString);
-            const dataUrl = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
-            const img = new Image();
-            img.src = dataUrl;
-            this.imageCache.set(cacheKey, img);
-            return img;
-        }
+        // Reuse existing Image object if possible, or create new one
+        const img = new Image();
+        // Set src to cached data URL - no URL object creation needed
+        img.src = dataUrl;
+        // Cache the image immediately (browser can render data URLs even before onload)
+        this.imageCache.set(cacheKey, img);
+        return img;
     }
     renderSVGToOffscreenCanvas(svgString, width, height) {
         const cacheKey = `${svgString.substring(0, 50)}_${width}_${height}`;
@@ -5304,11 +5310,30 @@ class SVGRendererWrapper {
             }
         }
         // For animated SVGs, we need to use a time-based cache key to ensure
-        // the animation updates each frame. However, we can't cache every frame,
-        // so we'll use a time bucket (e.g., every 16ms for ~60fps)
-        const timeBucket = Math.floor(time / 16); // Update every ~16ms
+        // the animation updates each frame. Use 24fps (42ms buckets) for smooth but not laggy animation
+        const timeBucket = Math.floor(time / 42); // Update every ~42ms for 24fps
         const baseCacheKey = svgString.length > 100 ? svgString.substring(0, 100) : svgString;
         const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
+        // Check if we already have this frame cached and ready
+        if (this.imageCache.has(animatedCacheKey)) {
+            const cached = this.imageCache.get(animatedCacheKey);
+            if (cached.complete && cached.naturalWidth > 0 && cached.naturalHeight > 0) {
+                // Use cached image immediately to prevent flicker
+                const img = cached;
+                if (x !== 0 || y !== 0 || rotation !== 0) {
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(rotation);
+                    ctx.drawImage(img, -width / 2, -height / 2, width, height);
+                    ctx.restore();
+                }
+                else {
+                    ctx.drawImage(img, -width / 2, -height / 2, width, height);
+                }
+                return true;
+            }
+        }
+        // Load new frame (will be cached for next time)
         const img = this.loadSVGAsImage(animatedSVG, animatedCacheKey);
         if (!img) {
             return false; // Failed to create image
@@ -5362,6 +5387,7 @@ class SVGRendererWrapper {
             this.renderer.clearCache();
         }
         this.imageCache.clear();
+        this.dataUrlCache.clear(); // Clear data URL cache too
         this.canvasCache.clear();
         this.animatedCache = {};
     }
