@@ -326,7 +326,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
                         type="rotate"
                         additive="sum"
                         values="0; -28.4; 0" keyTimes="0; 0.5; 1"
-                        dur="2s"
+                        dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
@@ -335,7 +335,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
                         type="rotate"
                         additive="sum"
                         values="0; 28.4; 0" keyTimes="0; 0.5; 1"
-                        dur="2s"
+                        dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
@@ -343,7 +343,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 
   <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
     <animate attributeName="d"
-             dur="2s"
+             dur="1s"
              repeatCount="indefinite"
              calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
              keyTimes="0; 0.5; 1"

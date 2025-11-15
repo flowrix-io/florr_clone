@@ -4330,7 +4330,7 @@ const BASE_MOB_CONFIGS = {
                         type="rotate"
                         additive="sum"
                         values="0; -28.4; 0" keyTimes="0; 0.5; 1"
-                        dur="2s"
+                        dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
@@ -4339,7 +4339,7 @@ const BASE_MOB_CONFIGS = {
                         type="rotate"
                         additive="sum"
                         values="0; 28.4; 0" keyTimes="0; 0.5; 1"
-                        dur="2s"
+                        dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
@@ -4347,7 +4347,7 @@ const BASE_MOB_CONFIGS = {
 
   <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
     <animate attributeName="d"
-             dur="2s"
+             dur="1s"
              repeatCount="indefinite"
              calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
              keyTimes="0; 0.5; 1"
@@ -6371,7 +6371,12 @@ class Graphics {
         // Use relative time for animation (wraps within animation cycle)
         // This ensures cache keys match with pre-rendered frames
         const animationCycleDuration = 2100; // 50 frames * 42ms = 2.1 seconds
-        const currentTime = Date.now() % animationCycleDuration;
+        let currentTime = Date.now() % animationCycleDuration;
+        // If enemy is chasing, play animation 2x faster
+        if (enemy.isChasing && enemy.isHostile) {
+            // Multiply time by 2 to make animation play 2x faster
+            currentTime = (currentTime * 2) % animationCycleDuration;
+        }
         // Try to use WASM SVG renderer with animations first
         let rendered = false;
         // Check if WASM renderer is available and not in fallback mode

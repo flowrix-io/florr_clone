@@ -1953,6 +1953,7 @@ function moveEnemies() {
         // Move enemy based on behavior
         if (closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE) && enemy.isHostile) {
             // Chase player
+            enemy.isChasing = true;
             const dx = closestPlayer.x - enemy.x;
             const dy = closestPlayer.y - enemy.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1967,6 +1968,8 @@ function moveEnemies() {
                 }
             }
         } else {
+            // Not chasing
+            enemy.isChasing = false;
             // Wander randomly
             if (!enemy.wanderTarget || currentTime - (enemy.lastWanderTime || 0) > 3000) {
                 enemy.wanderTarget = {

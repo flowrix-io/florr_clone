@@ -1062,7 +1062,13 @@ export class Graphics {
         // Use relative time for animation (wraps within animation cycle)
         // This ensures cache keys match with pre-rendered frames
         const animationCycleDuration = 2100; // 50 frames * 42ms = 2.1 seconds
-        const currentTime = Date.now() % animationCycleDuration;
+        let currentTime = Date.now() % animationCycleDuration;
+        
+        // If enemy is chasing, play animation 2x faster
+        if (enemy.isChasing && enemy.isHostile) {
+            // Multiply time by 2 to make animation play 2x faster
+            currentTime = (currentTime * 2) % animationCycleDuration;
+        }
         
         // Try to use WASM SVG renderer with animations first
         let rendered = false;
