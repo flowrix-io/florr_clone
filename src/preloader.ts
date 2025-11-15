@@ -222,10 +222,9 @@ export class Preloader {
                             resolve();
                         };
                         
-                        // Convert SVG string to data URL
-                        const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
-                        const url = URL.createObjectURL(svgBlob);
-                        img.src = url;
+                        // Convert SVG string to data URL (no blob needed)
+                        const encodedSVG = encodeURIComponent(stats.image ?? '');
+                        img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
                     });
                     
                     loadPromises.push(promise);

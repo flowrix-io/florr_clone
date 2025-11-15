@@ -501,10 +501,9 @@ export class InventoryManager {
                             img.style.height = '100%';
                             img.style.objectFit = 'contain';
                             
-                            // Convert SVG string to blob URL (same as graphics system)
-                            const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
-                            const url = URL.createObjectURL(svgBlob);
-                            img.src = url;
+                            // Convert SVG string to data URL (no blob needed)
+                            const encodedSVG = encodeURIComponent(stats.image ?? '');
+                            img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
                             
                             petalDiv.appendChild(img);
                         } else {
@@ -817,8 +816,8 @@ export class InventoryManager {
                           `;
                             
                             // Convert SVG string to blob URL (same as loadout display)
-                            const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
-                            const url = URL.createObjectURL(svgBlob);
+                            const encodedSVG = encodeURIComponent(stats.image ?? '');
+                            const url = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
                             img.src = url;
                             
                             itemElement.appendChild(img);
@@ -1087,8 +1086,8 @@ export class InventoryManager {
                         img.style.width = '100%';
                         img.style.height = '100%';
                         img.style.objectFit = 'contain';
-                        const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
-                        img.src = URL.createObjectURL(svgBlob);
+                        const encodedSVG = encodeURIComponent(stats.image ?? '');
+                        img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
                         slot.appendChild(img);
                     }
                 } else {

@@ -110,6 +110,7 @@ class Graphics {
         this.showHitboxes = false;
         this.itemSprites = {};
         this.petalImageCache = {};
+        this.lastEnemyDebugLog = 0;
         this.mobImageCache = new Map();
         this.canvas = canvas;
         this.ctx = this.canvas.getContext('2d');
@@ -387,6 +388,13 @@ class Graphics {
         // }
     }
     drawUI(players, socket) {
+        // TEST: Draw a large red square in UI layer to verify drawing works
+        this.ctx.save();
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset to screen coordinates
+        this.ctx.fillStyle = '#ff0000';
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.fillRect(this.canvas.width / 2 - 50, this.canvas.height / 2 - 50, 100, 100);
+        this.ctx.restore();
         // Draw player stats
         const player = players.get(socket);
         if (player) {
@@ -564,14 +572,24 @@ class Graphics {
             this.ctx.globalAlpha = 1.0;
             this.ctx.shadowBlur = 0;
         }
-        this.ctx.restore();
-        // Draw petals around player (outside of transform context)
+        // Draw petals around player (while still in player's transform context)
+        // This ensures petals are positioned relative to the player
         this.drawPlayerPetals(player, petalExtension);
+        this.ctx.restore();
     }
     drawPlayerPetals(player, petalExtension = 1.0) {
         // Safety check: ensure player loadout exists before filtering
         if (!player.loadout || !Array.isArray(player.loadout)) {
             return; // Skip drawing petals if loadout is not properly initialized
+        }
+        // IMPORTANT: This function is called from within drawPlayer(), which means:
+        // - The context has: scale(zoomLevel), translate(-cameraX, -cameraY), translate(player.x, player.y)
+        // - We need to draw petals relative to the player position (which is already translated)
+        // - So we should use relative coordinates (0, 0 is player center) or translate from player position
+        // Debug: Verify context state at start of drawPlayerPetals
+        if (Math.random() < 0.05) {
+            const initialTransform = this.ctx.getTransform();
+            console.log(`[Graphics] drawPlayerPetals START: player at (${player.x.toFixed(1)}, ${player.y.toFixed(1)}), context transform translate(${initialTransform.e.toFixed(1)}, ${initialTransform.f.toFixed(1)}), scale(${initialTransform.a.toFixed(2)}, ${initialTransform.d.toFixed(2)})`);
         }
         // Get all petals from player loadout and expand based on count property
         const petalInstances = [];
@@ -600,64 +618,156 @@ class Graphics {
         }
         if (petalInstances.length === 0)
             return;
+        // Debug: Log petal instances
+        if (Math.random() < 0.1) { // 10% chance per frame
+            console.log(`[Graphics] Drawing ${petalInstances.length} petal instances for player`);
+        }
         const currentTime = Date.now();
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = (Math.PI * 2) / petalInstances.length; // Evenly space petals
         petalInstances.forEach(({ petal, instanceIndex }, index) => {
-            if (!petal || !petal.petalType || !petal.rarity)
+            if (!petal || !petal.petalType || !petal.rarity) {
+                if (Math.random() < 0.1) {
+                    console.log(`[Graphics] Skipping petal ${index} - invalid petal data`);
+                }
                 return;
+            }
             const stats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
-            if (!stats)
+            if (!stats) {
+                if (Math.random() < 0.1) {
+                    console.log(`[Graphics] Skipping petal ${index} - no stats found`);
+                }
                 return;
+            }
             // Skip drawing if petal is on cooldown
-            if (petal.onCooldown)
+            if (petal.onCooldown) {
+                if (Math.random() < 0.1) { // Debug: log skipped petals occasionally
+                    console.log(`[Graphics] Skipping petal ${index} (on cooldown)`);
+                }
                 return;
+            }
             // Calculate rotation angle
             const rotationSpeed = (stats.speed ?? 1.0) * 0.002; // Convert to radians per ms
             const baseAngle = index * angleStep;
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             const totalAngle = baseAngle + rotationAngle;
             // Calculate position around player
-            const petalX = player.x + Math.cos(totalAngle) * baseRadius;
-            const petalY = player.y + Math.sin(totalAngle) * baseRadius;
-            // Draw petal using SVG image
-            this.ctx.save();
-            this.ctx.translate(petalX, petalY);
-            this.ctx.rotate(totalAngle + Math.PI / 2); // Orient petal tangent to circle
+            // Since we're already in the player's transform context (translate(player.x, player.y)),
+            // we need to use RELATIVE coordinates from the player center (0, 0)
+            const petalX = Math.cos(totalAngle) * baseRadius;
+            const petalY = Math.sin(totalAngle) * baseRadius;
+            // Debug: Log petal positions occasionally
+            if (Math.random() < 0.05) { // 5% chance per petal per frame
+                console.log(`[Graphics] Petal ${index}: type=${petal.petalType}, pos=(${petalX.toFixed(1)}, ${petalY.toFixed(1)}), angle=${(totalAngle * 180 / Math.PI).toFixed(1)}°`);
+            }
+            // Draw petal - set up transforms first (same pattern as mobs)
             const size = 12 * stats.size;
-            // Render petal using cached image
+            const petalSize = size;
+            // Save context state before drawing this petal
+            // IMPORTANT: Each petal needs its own save/restore to prevent transform interference
+            // At this point, the context has: scale(zoomLevel), translate(-cameraX, -cameraY), translate(player.x, player.y)
+            // So (0, 0) is the player's center
+            this.ctx.save();
+            // Debug: Verify we're actually drawing this petal
+            if (index < 3) {
+                const beforeSave = this.ctx.getTransform();
+                console.log(`[Graphics] Petal ${index} START DRAWING: transform translate(${beforeSave.e.toFixed(1)}, ${beforeSave.f.toFixed(1)}), petalX=${petalX.toFixed(1)}, petalY=${petalY.toFixed(1)}`);
+            }
+            // Apply transforms for this specific petal
+            // petalX and petalY are relative to player center (0, 0)
+            // IMPORTANT: The order MUST be translate then rotate for rotation to happen around petal position
+            // If we rotate first, it rotates around (0, 0) which is the player center
+            // If we translate first, then rotate, it rotates around the petal position
+            // Step 1: Translate to petal's orbital position (relative to player)
+            this.ctx.translate(petalX, petalY);
+            // Debug: Verify translate worked
+            if (index < 3) {
+                const afterTranslate = this.ctx.getTransform();
+                console.log(`[Graphics] Petal ${index} AFTER TRANSLATE: transform translate(${afterTranslate.e.toFixed(1)}, ${afterTranslate.f.toFixed(1)})`);
+            }
+            // Step 2: Rotate around the petal's position (which is now at origin after translate)
+            // IMPORTANT: Use only rotationAngle (not totalAngle) so the petal spins around its own center
+            // totalAngle includes the orbital position, which would make it rotate around the player
+            // rotationAngle is just the spinning motion, independent of orbital position
+            this.ctx.rotate(rotationAngle + Math.PI / 2);
+            // Reset any global state that might interfere
+            this.ctx.globalAlpha = 1.0;
+            this.ctx.globalCompositeOperation = 'source-over';
+            // ALWAYS draw a debug marker FIRST (before image) to verify petal position
+            // This helps us see if petals are being drawn at all
+            // Draw a large, obvious shape to ensure visibility
+            const hue = (index * 40) % 360;
+            const markerColor = `hsl(${hue}, 70%, 50%)`;
+            // Force context state to ensure drawing works
+            this.ctx.globalAlpha = 1.0;
+            this.ctx.globalCompositeOperation = 'source-over';
+            this.ctx.fillStyle = markerColor;
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 3;
+            // Draw a large square first (very visible)
+            this.ctx.fillRect(-10, -10, 20, 20);
+            // Then draw a circle on top
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, 10, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            // Try to use cached SVG image or fallback
             const petalKey = `${petal.petalType}_${petal.rarity}`;
             const petalImage = this.petalImageCache[petalKey];
-            if (petalImage) {
-                // Use consistent scaling to maintain aspect ratio
-                const petalSize = size;
-                this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
-                // Add rarity glow effect
-                if (petal.rarity !== 'common') {
-                    this.ctx.shadowColor = stats.color;
-                    this.ctx.shadowBlur = 5;
+            let petalRendered = false;
+            if (petalImage && petalImage.complete && petalImage.naturalWidth > 0 && petalImage.naturalHeight > 0) {
+                try {
+                    // Use cached SVG image
+                    // Draw centered at origin (which is now the petal position after translate)
+                    // The image should be centered, so we offset by half the size
                     this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                    petalRendered = true;
+                    // Add rarity glow effect
+                    if (petal.rarity !== 'common') {
+                        this.ctx.save();
+                        this.ctx.shadowColor = stats.color;
+                        this.ctx.shadowBlur = 5;
+                        this.ctx.drawImage(petalImage, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                        this.ctx.restore();
+                    }
+                }
+                catch (error) {
+                    console.error(`[Graphics] Error drawing petal image for ${index}:`, error);
+                    // Image draw failed, fall through to circle
                 }
             }
-            else {
+            if (!petalRendered) {
                 // Fallback to colored circle if image not loaded
-                this.ctx.fillStyle = stats.color;
+                this.ctx.fillStyle = markerColor;
                 this.ctx.strokeStyle = '#000000';
                 this.ctx.lineWidth = 1;
                 this.ctx.beginPath();
                 this.ctx.ellipse(0, 0, size / 2, size / 2, 0, 0, Math.PI * 2);
                 this.ctx.fill();
                 this.ctx.stroke();
+                // Debug: Log when using fallback
+                if (Math.random() < 0.1) {
+                    console.log(`[Graphics] Using fallback circle for petal ${index} at (${petalX.toFixed(1)}, ${petalY.toFixed(1)})`);
+                }
             }
+            // Always restore context state after drawing this petal
+            // This restores to the state before this petal's save() (which should have player transform)
+            this.ctx.restore();
+            // Remove test drawing - it's not helping diagnose the issue
             // Create particle effects for ultra, super, and unique petals
+            // IMPORTANT: These effects should NOT modify the context state, as the next petal needs the same starting state
             if (['ultra', 'super', 'unique'].includes(petal.rarity)) {
                 // Only create particles occasionally to avoid performance issues
                 if (Math.random() < 0.1) { // 10% chance per frame
                     this.showPetalParticleEffect(petalX, petalY, petal.rarity);
                 }
             }
-            // Draw health bar for petals
+            // Draw health bar for petals (after restore, so we need to set up transforms again)
             if (petal.health !== undefined && petal.maxHealth !== undefined && petal.maxHealth > 0) {
+                // Health bar should be drawn at the petal's position
+                // Since we already restored, we need to save/restore again and set up transforms
+                this.ctx.save();
+                this.ctx.translate(petalX, petalY);
                 const healthBarWidth = size;
                 const healthBarHeight = 3;
                 const healthBarY = -size * 0.7 / 2 - 8;
@@ -668,8 +778,8 @@ class Graphics {
                 const healthPercentage = petal.health / petal.maxHealth;
                 this.ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
                 this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth * healthPercentage, healthBarHeight);
+                this.ctx.restore();
             }
-            this.ctx.restore();
         });
     }
     async loadSVGAsImage(svgString, cacheKey) {
@@ -679,44 +789,110 @@ class Graphics {
         }
         return new Promise((resolve, reject) => {
             const img = new Image();
-            const dataUrl = 'data:image/svg+xml;base64,' + btoa(svgString);
+            try {
+                // Use base64 encoding for better compatibility
+                const base64SVG = btoa(unescape(encodeURIComponent(svgString)));
+                const dataUrl = `data:image/svg+xml;base64,${base64SVG}`;
+                img.src = dataUrl;
+            }
+            catch (error) {
+                // Fallback to URI encoding
+                const encodedSVG = encodeURIComponent(svgString);
+                img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
+            }
             img.onload = () => {
                 this.mobImageCache.set(cacheKey, img);
                 resolve(img);
             };
-            img.onerror = reject;
-            img.src = dataUrl;
+            img.onerror = (err) => {
+                console.error(`[Graphics] Failed to load SVG image for ${cacheKey}:`, err);
+                reject(err);
+            };
         });
     }
     drawEnemy(enemy) {
+        // Validate enemy has required properties
+        if (!enemy || typeof enemy.x !== 'number' || typeof enemy.y !== 'number') {
+            console.error('[Graphics] Invalid enemy data:', enemy);
+            return;
+        }
+        // Debug: Log when drawing enemy (occasionally to avoid spam)
+        if (Math.random() < 0.01) { // 1% chance per enemy per frame
+            console.log(`[Graphics] drawEnemy called for enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)})`);
+        }
         // Get enemy size from mob stats
         const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
         const enemySize = mobStats ? mobStats.size * 40 : 40;
+        // Always set up the transform for the enemy position
+        // The context already has camera transforms applied, so we translate to world position
         this.ctx.save();
         this.ctx.translate(enemy.x, enemy.y);
-        this.ctx.rotate(enemy.angle);
-        // Draw enemy sprite using SVG from mob config
+        this.ctx.rotate(enemy.angle || 0);
+        // Debug: Always draw something visible to verify coordinates work
+        // This ensures we can see enemies even if images/sprites fail
         const cacheKey = `${enemy.type}_${enemy.tier}`;
-        if (mobStats && mobStats.image && this.mobImageCache.has(cacheKey)) {
-            // Use cached SVG image
+        // Try to use cached SVG image first
+        let rendered = false;
+        if (this.mobImageCache.has(cacheKey)) {
             const img = this.mobImageCache.get(cacheKey);
-            this.ctx.drawImage(img, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+            if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+                try {
+                    this.ctx.drawImage(img, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+                    rendered = true;
+                }
+                catch (error) {
+                    // Image draw failed, fall through to sprite
+                }
+            }
         }
-        else if (mobStats && mobStats.image) {
-            // Load SVG image asynchronously and cache it
-            this.loadSVGAsImage(mobStats.image, cacheKey);
-            // For now, use fallback until image loads
-            const sprite = enemy.type === 'octopus' ? this.octopusSprite : this.fishSprite;
-            this.ctx.drawImage(sprite, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+        // If SVG image not ready, use sprite fallback
+        if (!rendered) {
+            // Determine which sprite to use based on enemy type
+            let sprite = null;
+            if (enemy.type === 'octopus') {
+                sprite = this.octopusSprite;
+            }
+            else if (enemy.type === 'fish' || enemy.type === 'shark') {
+                sprite = this.fishSprite;
+            }
+            // For other types (bee, ladybug, soldier_ant), sprite will be null
+            // Try to use sprite if available and loaded
+            if (sprite && sprite.complete && sprite.naturalWidth > 0 && sprite.naturalHeight > 0) {
+                try {
+                    this.ctx.drawImage(sprite, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+                    rendered = true;
+                }
+                catch (error) {
+                    // Sprite draw failed, fall through to circle
+                }
+            }
+            // If nothing rendered yet, draw a colored circle as fallback
+            // This should ALWAYS render something visible
+            if (!rendered) {
+                const tierColor = this.ENEMY_COLORS[enemy.tier] || '#ff0000';
+                // Ensure we're in the right context state
+                this.ctx.globalAlpha = 1.0;
+                this.ctx.fillStyle = tierColor;
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, enemySize / 2, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+                // Debug: Log when fallback circle is drawn
+                if (Math.random() < 0.1) { // 10% chance
+                    console.log(`[Graphics] Drew fallback circle for enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)})`);
+                }
+            }
+            // Try to load SVG image asynchronously if available (non-blocking)
+            if (!this.mobImageCache.has(cacheKey) && mobStats && mobStats.image) {
+                this.loadSVGAsImage(mobStats.image, cacheKey).catch(() => {
+                    // Silently fail - will use sprite fallback
+                });
+            }
         }
-        else {
-            // Fallback to old sprite system if no mob config found
-            const sprite = enemy.type === 'octopus' ? this.octopusSprite : this.fishSprite;
-            this.ctx.drawImage(sprite, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
-        }
-        // Draw hitbox if enabled
+        // Draw hitbox if enabled (before restore, so it's in enemy's coordinate space)
         if (this.showHitboxes) {
-            this.ctx.save();
             this.ctx.strokeStyle = this.ENEMY_COLORS[enemy.tier];
             this.ctx.lineWidth = 2;
             this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
@@ -724,9 +900,8 @@ class Graphics {
             this.ctx.beginPath();
             this.ctx.arc(0, 0, enemySize / 2, 0, Math.PI * 2);
             this.ctx.stroke();
-            this.ctx.restore();
         }
-        // Draw health bar
+        // Draw health bar (before restore, so it's in enemy's coordinate space)
         const healthBarWidth = enemySize;
         const healthBarHeight = 5;
         const healthBarY = -enemySize / 2 - 10;
@@ -734,7 +909,10 @@ class Graphics {
         this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth, healthBarHeight);
         this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
         this.ctx.fillRect(-healthBarWidth / 2, healthBarY, (enemy.health / enemy.maxHealth) * healthBarWidth, healthBarHeight);
-        // Draw enemy tier with tier color
+        this.ctx.restore();
+        // Draw enemy tier with tier color (after restore, so we need to set up transforms again)
+        this.ctx.save();
+        this.ctx.translate(enemy.x, enemy.y);
         this.ctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
         this.ctx.textAlign = 'center';
         this.ctx.font = '12px Ubuntu, sans-serif'; // Made text bold for better visibility
@@ -1124,11 +1302,14 @@ class Graphics {
         }
     }
     drawGameObjects(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
+        // Calculate viewport accounting for zoom level
+        const scaledWidth = this.canvas.width / this.zoomLevel;
+        const scaledHeight = this.canvas.height / this.zoomLevel;
         const viewport = {
             left: this.cameraX,
             top: this.cameraY,
-            right: this.cameraX + this.canvas.width,
-            bottom: this.cameraY + this.canvas.height
+            right: this.cameraX + scaledWidth,
+            bottom: this.cameraY + scaledHeight
         };
         // Draw players
         for (const player of players.values()) {
@@ -1145,9 +1326,49 @@ class Graphics {
             }
         }
         // Draw enemies
+        const enemyCount = enemies.size;
+        if (enemyCount > 0) {
+            // Debug: Log enemy count (only once per second to avoid spam)
+            const now = Date.now();
+            if (!this.lastEnemyDebugLog || now - this.lastEnemyDebugLog > 1000) {
+                console.log(`[Graphics] Drawing ${enemyCount} enemies, viewport: (${viewport.left.toFixed(1)}, ${viewport.top.toFixed(1)}) to (${viewport.right.toFixed(1)}, ${viewport.bottom.toFixed(1)})`);
+                // Log first enemy position for debugging
+                const firstEnemy = enemies.values().next().value;
+                if (firstEnemy) {
+                    console.log(`[Graphics] First enemy at: (${firstEnemy.x.toFixed(1)}, ${firstEnemy.y.toFixed(1)}), in viewport: ${firstEnemy.x >= viewport.left && firstEnemy.x <= viewport.right && firstEnemy.y >= viewport.top && firstEnemy.y <= viewport.bottom}`);
+                }
+                this.lastEnemyDebugLog = now;
+            }
+        }
         for (const enemy of enemies.values()) {
-            // Add similar viewport culling for enemies
-            this.drawEnemy(enemy);
+            // Temporarily disable viewport culling to debug rendering issue
+            // TODO: Re-enable viewport culling once rendering is fixed
+            // const enemySize = 40; // Approximate size for culling
+            // if (enemy.x + enemySize < viewport.left || 
+            //     enemy.x - enemySize > viewport.right ||
+            //     enemy.y + enemySize < viewport.top ||
+            //     enemy.y - enemySize > viewport.bottom) {
+            //     continue;
+            // }
+            try {
+                this.drawEnemy(enemy);
+            }
+            catch (error) {
+                console.error('[Graphics] Error drawing enemy:', error, enemy);
+                // Draw a simple fallback circle if rendering fails
+                try {
+                    this.ctx.save();
+                    this.ctx.translate(enemy.x, enemy.y);
+                    this.ctx.fillStyle = '#ff0000';
+                    this.ctx.beginPath();
+                    this.ctx.arc(0, 0, 20, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.restore();
+                }
+                catch (fallbackError) {
+                    console.error('[Graphics] Fallback rendering also failed:', fallbackError);
+                }
+            }
         }
         // Draw items
         for (const item of items.values()) {
@@ -1162,7 +1383,10 @@ class Graphics {
         // Apply zoom scaling
         this.ctx.scale(this.zoomLevel, this.zoomLevel);
         // Translate the context by the camera position
-        this.ctx.translate(-this.cameraX, -this.cameraY);
+        // Ensure camera position is valid (not NaN or Infinity)
+        const validCameraX = isNaN(this.cameraX) || !isFinite(this.cameraX) ? 0 : this.cameraX;
+        const validCameraY = isNaN(this.cameraY) || !isFinite(this.cameraY) ? 0 : this.cameraY;
+        this.ctx.translate(-validCameraX, -validCameraY);
         // Draw scrolling background
         this.drawScrollingBackground();
         // Draw the map
@@ -1199,10 +1423,9 @@ class Graphics {
                         resolve();
                     };
                     img.onerror = reject;
-                    // Convert SVG string to data URL
-                    const svgBlob = new Blob([stats.image ?? ''], { type: 'image/svg+xml' });
-                    const url = URL.createObjectURL(svgBlob);
-                    img.src = url;
+                    // Convert SVG string to data URL (no blob needed)
+                    const encodedSVG = encodeURIComponent(stats.image ?? '');
+                    img.src = `data:image/svg+xml;charset=utf-8,${encodedSVG}`;
                 });
                 loadPromises.push(promise);
             });

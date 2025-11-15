@@ -664,6 +664,16 @@ class Game {
             this.updateViewportAnimation();
             return;
         }
+        // Validate player position before updating camera
+        if (!player || isNaN(player.x) || isNaN(player.y) || !isFinite(player.x) || !isFinite(player.y)) {
+            // Player position is invalid, don't update camera
+            console.warn('[Game] Invalid player position, skipping camera update:', player);
+            return;
+        }
+        // Debug: Log camera position occasionally
+        if (Math.random() < 0.01) { // 1% chance per frame
+            console.log(`[Game] Camera update - Player: (${player.x.toFixed(1)}, ${player.y.toFixed(1)}), Camera: (${this.cameraX.toFixed(1)}, ${this.cameraY.toFixed(1)})`);
+        }
         // Center camera on player with zoom
         const scaledWidth = this.canvas.width / this.zoomLevel;
         const scaledHeight = this.canvas.height / this.zoomLevel;
