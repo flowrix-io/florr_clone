@@ -15,7 +15,7 @@ export interface PoisonEffect {
 
 export interface Enemy {
   id: string;
-  type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant';
+  type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant' | 'hornet';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
   x: number;
   y: number;
@@ -35,6 +35,7 @@ export interface Enemy {
   lastViewportCheck?: number;  // Last time this enemy was in any player's viewport
   damageContributors?: Map<string, number>;  // Map of player ID to damage dealt
   poisonEffects?: PoisonEffect[];  // Active poison effects on this enemy
+  lastProjectileTime?: number;  // Last time this enemy shot a projectile
 }
 
 export interface Obstacle {

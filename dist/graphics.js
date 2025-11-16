@@ -798,6 +798,31 @@ class Graphics {
     }
     // Removed mobImageCache and loadSVGAsImage - mobs now use canvas rendering via svgRenderer
     // No data URLs are created for mob rendering
+    drawMobProjectile(projectile) {
+        if (!projectile || typeof projectile.x !== 'number' || typeof projectile.y !== 'number') {
+            return;
+        }
+        // Get petal stats for rendering
+        const petalStats = (0, petals_1.getPetalStats)(projectile.petalType, projectile.petalRarity);
+        if (!petalStats) {
+            return;
+        }
+        const size = petalStats.size * 20; // Convert to pixels
+        const color = petalStats.color;
+        this.ctx.save();
+        this.ctx.translate(projectile.x, projectile.y);
+        this.ctx.rotate(projectile.angle);
+        // Draw projectile as a simple circle with petal color
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        // Add a border for visibility
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
     drawEnemy(enemy) {
         // Validate enemy has required properties
         if (!enemy || typeof enemy.x !== 'number' || typeof enemy.y !== 'number') {
@@ -1326,7 +1351,7 @@ class Graphics {
             }
         }
     }
-    drawGameObjects(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
+    drawGameObjects(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension = 1.0) {
         // Calculate viewport accounting for zoom level
         const scaledWidth = this.canvas.width / this.zoomLevel;
         const scaledHeight = this.canvas.height / this.zoomLevel;
@@ -1400,8 +1425,12 @@ class Graphics {
             // Add similar viewport culling for items
             this.drawItem(item);
         }
+        // Draw mob projectiles
+        for (const projectile of mobProjectiles.values()) {
+            this.drawMobProjectile(projectile);
+        }
     }
-    render(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
+    render(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension = 1.0) {
         this.ctx.save();
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -1417,7 +1446,7 @@ class Graphics {
         // Draw the map
         this.drawMap(this.mapData);
         // Draw game objects
-        this.drawGameObjects(players, enemies, items, currentPlayerId, petalExtension);
+        this.drawGameObjects(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension);
         // Draw explosion effects (in world coordinates, before camera restore)
         this.drawExplosionEffects();
         this.drawPetalBreakEffects();

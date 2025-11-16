@@ -41,6 +41,7 @@ const decorations = [];
 const sands = [];
 let ENEMY_COUNT = 1000;
 const playerUserIds = {}; // Maps player ID to user ID
+const mobProjectiles = []; // Track all active mob projectiles
 // Item expiration times based on rarity (in milliseconds)
 const ITEM_EXPIRATION_TIMES = {
     common: 10000, // 10 seconds
@@ -1677,6 +1678,53 @@ function moveEnemies() {
                     enemy.angle = Math.atan2(dy, dx);
                 }
             }
+            // Check if mob can shoot projectiles
+            const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+            if (mobStats?.projectile && closestPlayer) {
+                const projectileConfig = mobStats.projectile;
+                const lastShotTime = enemy.lastProjectileTime || 0;
+                const cooldown = mobStats.cooldown || 2000;
+                // Check if cooldown has passed
+                if (currentTime - lastShotTime >= cooldown) {
+                    // Calculate angle to player
+                    const angleToPlayer = Math.atan2(dy, dx);
+                    const projectileSpeed = projectileConfig.speed || 200; // pixels per second
+                    const spreadAngle = projectileConfig.spreadAngle || 0.2; // radians
+                    const projectileCount = projectileConfig.count || 1;
+                    // Get petal stats for damage and size
+                    const petalStats = (0, petals_1.getPetalStats)(projectileConfig.petalType, projectileConfig.petalRarity);
+                    if (petalStats) {
+                        // Create projectiles
+                        for (let i = 0; i < projectileCount; i++) {
+                            // Calculate spread angle for multiple projectiles
+                            let projectileAngle = angleToPlayer;
+                            if (projectileCount > 1) {
+                                const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
+                                projectileAngle = angleToPlayer + spreadOffset;
+                            }
+                            const projectile = {
+                                id: `${enemy.id}_projectile_${currentTime}_${i}`,
+                                enemyId: enemy.id,
+                                x: enemy.x,
+                                y: enemy.y,
+                                startX: enemy.x,
+                                startY: enemy.y,
+                                angle: projectileAngle,
+                                speed: projectileSpeed / 1000, // Convert to pixels per millisecond
+                                distance: 0,
+                                maxDistance: projectileConfig.distance,
+                                petalType: projectileConfig.petalType,
+                                petalRarity: projectileConfig.petalRarity,
+                                damage: petalStats.damage,
+                                size: petalStats.size
+                            };
+                            mobProjectiles.push(projectile);
+                        }
+                        // Update last shot time
+                        enemy.lastProjectileTime = currentTime;
+                    }
+                }
+            }
         }
         else {
             // Not chasing
@@ -1792,6 +1840,88 @@ function moveEnemies() {
         }
     });
     io.emit('enemiesUpdate', constants_2.enemies);
+}
+// Update and move mob projectiles
+function updateMobProjectiles(deltaTimeMs) {
+    const currentTime = Date.now();
+    for (let i = mobProjectiles.length - 1; i >= 0; i--) {
+        const projectile = mobProjectiles[i];
+        // Move projectile (speed is already in pixels per millisecond)
+        const moveDistance = projectile.speed * deltaTimeMs;
+        projectile.x += Math.cos(projectile.angle) * moveDistance;
+        projectile.y += Math.sin(projectile.angle) * moveDistance;
+        projectile.distance += moveDistance;
+        // Check if projectile has traveled max distance
+        if (projectile.distance >= projectile.maxDistance) {
+            mobProjectiles.splice(i, 1);
+            continue;
+        }
+        // Check for wall collisions
+        const projectileSize = projectile.size * 20; // Convert to pixels
+        const halfSize = projectileSize / 2;
+        let hitWall = false;
+        constants_2.WORLD_MAP.filter(constants_2.isWall).forEach(wall => {
+            const scaledWall = {
+                x: wall.x * constants_2.SCALE_FACTOR,
+                y: wall.y * constants_2.SCALE_FACTOR,
+                width: wall.width * constants_2.SCALE_FACTOR,
+                height: wall.height * constants_2.SCALE_FACTOR
+            };
+            const projLeft = projectile.x - halfSize;
+            const projRight = projectile.x + halfSize;
+            const projTop = projectile.y - halfSize;
+            const projBottom = projectile.y + halfSize;
+            if (projRight > scaledWall.x && projLeft < scaledWall.x + scaledWall.width &&
+                projBottom > scaledWall.y && projTop < scaledWall.y + scaledWall.height) {
+                hitWall = true;
+            }
+        });
+        if (hitWall) {
+            mobProjectiles.splice(i, 1);
+            continue;
+        }
+        // Check for player collisions
+        const playerArray = Object.values(constants_2.players);
+        for (const player of playerArray) {
+            if (player.isDead)
+                continue;
+            const dx = player.x - projectile.x;
+            const dy = player.y - projectile.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const hitRadius = constants_2.PLAYER_SIZE / 2 + halfSize;
+            if (distance < hitRadius) {
+                // Hit player
+                if (!player.isInvulnerable) {
+                    player.health -= projectile.damage;
+                    io.emit('playerDamaged', {
+                        playerId: player.id,
+                        health: player.health,
+                        maxHealth: player.maxHealth,
+                        isInvulnerable: player.isInvulnerable
+                    });
+                    // Apply knockback
+                    if (distance > 0) {
+                        const knockbackForce = 25;
+                        const normalizedDx = dx / distance;
+                        const normalizedDy = dy / distance;
+                        player.knockbackX = normalizedDx * knockbackForce;
+                        player.knockbackY = normalizedDy * knockbackForce;
+                    }
+                    // Check if player dies
+                    if (player.health <= 0) {
+                        player.isDead = true;
+                        player.health = 0;
+                        io.emit('playerDied', { playerId: player.id });
+                    }
+                }
+                // Remove projectile after hitting player
+                mobProjectiles.splice(i, 1);
+                break;
+            }
+        }
+    }
+    // Emit projectile updates to clients
+    io.emit('mobProjectilesUpdate', mobProjectiles);
 }
 function updatePlayerState(player, deltaTime) {
     if (!player || !player.inputs) {
@@ -2377,6 +2507,8 @@ function start_loop() {
         // Update poison effects
         updatePoisonEffects(deltaTime);
         moveEnemies();
+        // Update mob projectiles
+        updateMobProjectiles(TICK_INTERVAL); // Pass milliseconds
         // Update viewport status for all enemies
         updateEnemyViewportStatus();
         // Despawn enemies that have been outside viewport for too long

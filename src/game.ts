@@ -86,6 +86,7 @@ export class Game {
     private keysPressed: Set<string> = new Set();
     private petalExtension: number = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
     private enemies: Map<string, Enemy> = new Map();
+    private mobProjectiles: Map<string, any> = new Map(); // Store mob projectiles
     private readonly PLAYER_MAX_HEALTH = 100;
     private readonly PLAYER_DAMAGE = 10;
     private readonly ENEMY_DAMAGE = 5;
@@ -1012,7 +1013,7 @@ export class Game {
         }
 
         this.update();
-        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '', this.petalExtension);
+        this.graphics.render(this.players, this.enemies, this.items, this.mobProjectiles, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
 

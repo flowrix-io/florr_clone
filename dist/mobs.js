@@ -724,6 +724,62 @@ const BASE_MOB_CONFIGS = {
         is_hostile: false,
         range: 200,
         biomeOnly: true
+    },
+    hornet: {
+        name: "Hornet",
+        health: 10,
+        damage: 10,
+        size: 2.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "Hornet",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-55 -30 110 60" width="32" height="32">
+  
+  <defs>
+    <clipPath id="hornet-body-clip">
+      <ellipse cx="0" cy="0" rx="30" ry="20" />
+    </clipPath>
+  </defs>
+
+  <g>
+    <path d="M -25 -6 L -47 0 L -25 6 Z" 
+          fill="#333333" 
+          stroke="#292929" 
+          stroke-width="5" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" />
+    
+    <ellipse cx="0" cy="0" rx="30" ry="20" fill="#ffe763" />
+    
+    <g clip-path="url(#hornet-body-clip)" fill="#333333">
+      <rect x="-30" y="-20" width="10" height="40" />
+      <rect x="-10" y="-20" width="10" height="40" />
+      <rect x="10" y="-20" width="10" height="40" />
+    </g>
+    
+    <ellipse cx="0" cy="0" rx="30" ry="20" 
+             fill="none" 
+             stroke="#ccc04f" 
+             stroke-width="5" />
+    
+    <path d="M 25 5 Q 40 10, 50 15 Q 40 5, 25 5 M 25 -5 Q 40 -10, 50 -15 Q 40 -5, 25 -5" 
+          fill="#ffe763" 
+          stroke="#333333" 
+          stroke-width="3" />
+  </g>
+</svg>`,
+        is_hostile: true,
+        range: 100,
+        biomeOnly: false,
+        projectile: {
+            count: 1,
+            distance: 500,
+            petalType: 'stinger',
+            petalRarity: 'uncommon',
+            speed: 300,
+            spreadAngle: 0.0
+        }
     }
 };
 // Rarity-specific overrides for special cases
@@ -944,7 +1000,33 @@ const RARITY_OVERRIDES = {
         unique: {
             range: 1900
         }
-    }
+    },
+    hornet: {
+        uncommon: {
+            range: 500
+        },
+        rare: {
+            range: 700
+        },
+        epic: {
+            range: 900
+        },
+        legendary: {
+            range: 1100
+        },
+        mythic: {
+            range: 1300
+        },
+        ultra: {
+            range: 1500
+        },
+        super: {
+            range: 1700
+        },
+        unique: {
+            range: 1900
+        }
+    },
 };
 // Rarity color mappings
 const RARITY_COLORS = {
@@ -999,7 +1081,8 @@ function generateMobStats(baseConfig, rarity, mobType) {
         range: overrides.range ?? baseConfig.range,
         xp,
         biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false,
-        visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0
+        visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0,
+        projectile: overrides.projectile ?? baseConfig.projectile
     };
 }
 // Generate the full mob configuration

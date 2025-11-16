@@ -42,6 +42,7 @@ class Game {
         this.keysPressed = new Set();
         this.petalExtension = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
         this.enemies = new Map();
+        this.mobProjectiles = new Map(); // Store mob projectiles
         this.PLAYER_MAX_HEALTH = 100;
         this.PLAYER_DAMAGE = 10;
         this.ENEMY_DAMAGE = 5;
@@ -775,7 +776,7 @@ class Game {
             this.playerCounterElement.textContent = `Players: ${this.players.size}`;
         }
         this.update();
-        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '', this.petalExtension);
+        this.graphics.render(this.players, this.enemies, this.items, this.mobProjectiles, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
     update() {

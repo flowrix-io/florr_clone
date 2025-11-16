@@ -4463,6 +4463,62 @@ const BASE_MOB_CONFIGS = {
         is_hostile: false,
         range: 200,
         biomeOnly: true
+    },
+    hornet: {
+        name: "Hornet",
+        health: 10,
+        damage: 10,
+        size: 2.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "Hornet",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-55 -30 110 60" width="32" height="32">
+  
+  <defs>
+    <clipPath id="hornet-body-clip">
+      <ellipse cx="0" cy="0" rx="30" ry="20" />
+    </clipPath>
+  </defs>
+
+  <g>
+    <path d="M -25 -6 L -47 0 L -25 6 Z" 
+          fill="#333333" 
+          stroke="#292929" 
+          stroke-width="5" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" />
+    
+    <ellipse cx="0" cy="0" rx="30" ry="20" fill="#ffe763" />
+    
+    <g clip-path="url(#hornet-body-clip)" fill="#333333">
+      <rect x="-30" y="-20" width="10" height="40" />
+      <rect x="-10" y="-20" width="10" height="40" />
+      <rect x="10" y="-20" width="10" height="40" />
+    </g>
+    
+    <ellipse cx="0" cy="0" rx="30" ry="20" 
+             fill="none" 
+             stroke="#ccc04f" 
+             stroke-width="5" />
+    
+    <path d="M 25 5 Q 40 10, 50 15 Q 40 5, 25 5 M 25 -5 Q 40 -10, 50 -15 Q 40 -5, 25 -5" 
+          fill="#ffe763" 
+          stroke="#333333" 
+          stroke-width="3" />
+  </g>
+</svg>`,
+        is_hostile: true,
+        range: 100,
+        biomeOnly: false,
+        projectile: {
+            count: 1,
+            distance: 500,
+            petalType: 'stinger',
+            petalRarity: 'uncommon',
+            speed: 300,
+            spreadAngle: 0.0
+        }
     }
 };
 // Rarity-specific overrides for special cases
@@ -4683,7 +4739,33 @@ const RARITY_OVERRIDES = {
         unique: {
             range: 1900
         }
-    }
+    },
+    hornet: {
+        uncommon: {
+            range: 500
+        },
+        rare: {
+            range: 700
+        },
+        epic: {
+            range: 900
+        },
+        legendary: {
+            range: 1100
+        },
+        mythic: {
+            range: 1300
+        },
+        ultra: {
+            range: 1500
+        },
+        super: {
+            range: 1700
+        },
+        unique: {
+            range: 1900
+        }
+    },
 };
 // Rarity color mappings
 const RARITY_COLORS = {
@@ -4738,7 +4820,8 @@ function generateMobStats(baseConfig, rarity, mobType) {
         range: overrides.range ?? baseConfig.range,
         xp,
         biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false,
-        visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0
+        visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0,
+        projectile: overrides.projectile ?? baseConfig.projectile
     };
 }
 // Generate the full mob configuration
@@ -6014,6 +6097,31 @@ class Graphics {
     }
     // Removed mobImageCache and loadSVGAsImage - mobs now use canvas rendering via svgRenderer
     // No data URLs are created for mob rendering
+    drawMobProjectile(projectile) {
+        if (!projectile || typeof projectile.x !== 'number' || typeof projectile.y !== 'number') {
+            return;
+        }
+        // Get petal stats for rendering
+        const petalStats = (0,petals.getPetalStats)(projectile.petalType, projectile.petalRarity);
+        if (!petalStats) {
+            return;
+        }
+        const size = petalStats.size * 20; // Convert to pixels
+        const color = petalStats.color;
+        this.ctx.save();
+        this.ctx.translate(projectile.x, projectile.y);
+        this.ctx.rotate(projectile.angle);
+        // Draw projectile as a simple circle with petal color
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        // Add a border for visibility
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
     drawEnemy(enemy) {
         // Validate enemy has required properties
         if (!enemy || typeof enemy.x !== 'number' || typeof enemy.y !== 'number') {
@@ -6542,7 +6650,7 @@ class Graphics {
             }
         }
     }
-    drawGameObjects(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
+    drawGameObjects(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension = 1.0) {
         // Calculate viewport accounting for zoom level
         const scaledWidth = this.canvas.width / this.zoomLevel;
         const scaledHeight = this.canvas.height / this.zoomLevel;
@@ -6616,8 +6724,12 @@ class Graphics {
             // Add similar viewport culling for items
             this.drawItem(item);
         }
+        // Draw mob projectiles
+        for (const projectile of mobProjectiles.values()) {
+            this.drawMobProjectile(projectile);
+        }
     }
-    render(players, enemies, items, currentPlayerId, petalExtension = 1.0) {
+    render(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension = 1.0) {
         this.ctx.save();
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -6633,7 +6745,7 @@ class Graphics {
         // Draw the map
         this.drawMap(this.mapData);
         // Draw game objects
-        this.drawGameObjects(players, enemies, items, currentPlayerId, petalExtension);
+        this.drawGameObjects(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension);
         // Draw explosion effects (in world coordinates, before camera restore)
         this.drawExplosionEffects();
         this.drawPetalBreakEffects();
@@ -11643,6 +11755,10 @@ function setupSocketListeners(game) {
         game.enemies.clear();
         enemies.forEach(enemy => game.enemies.set(enemy.id, enemy));
     });
+    game.socket.on('mobProjectilesUpdate', (projectiles) => {
+        game.mobProjectiles.clear();
+        projectiles.forEach(projectile => game.mobProjectiles.set(projectile.id, projectile));
+    });
     game.socket.on('enemyMoved', (enemy) => {
         game.enemies.set(enemy.id, enemy);
     });
@@ -14212,6 +14328,7 @@ class Game {
         this.keysPressed = new Set();
         this.petalExtension = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
         this.enemies = new Map();
+        this.mobProjectiles = new Map(); // Store mob projectiles
         this.PLAYER_MAX_HEALTH = 100;
         this.PLAYER_DAMAGE = 10;
         this.ENEMY_DAMAGE = 5;
@@ -14945,7 +15062,7 @@ class Game {
             this.playerCounterElement.textContent = `Players: ${this.players.size}`;
         }
         this.update();
-        this.graphics.render(this.players, this.enemies, this.items, this.socket?.id ?? '', this.petalExtension);
+        this.graphics.render(this.players, this.enemies, this.items, this.mobProjectiles, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
     update() {

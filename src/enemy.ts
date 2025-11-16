@@ -9,9 +9,26 @@ export interface PoisonEffect {
   playerId: string;  // ID of the player who applied the poison
 }
 
+export interface MobProjectile {
+  id: string;
+  enemyId: string;
+  x: number;
+  y: number;
+  startX: number;
+  startY: number;
+  angle: number;
+  speed: number;
+  distance: number;
+  maxDistance: number;
+  petalType: string;
+  petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+  damage: number;
+  size: number;
+}
+
 export interface Enemy {
   id: string;
-  type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant';
+  type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant' | 'hornet';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
   x: number;
   y: number;
@@ -28,6 +45,7 @@ export interface Enemy {
   isChasing?: boolean;  // Whether the enemy is currently chasing a player
   poisonEffects?: PoisonEffect[];  // Active poison effects on this enemy
   range?: number;
+  lastProjectileTime?: number;  // Last time this enemy shot a projectile
 }
 
 export interface Obstacle {

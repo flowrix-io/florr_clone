@@ -338,6 +338,10 @@ function setupSocketListeners(game) {
         game.enemies.clear();
         enemies.forEach(enemy => game.enemies.set(enemy.id, enemy));
     });
+    game.socket.on('mobProjectilesUpdate', (projectiles) => {
+        game.mobProjectiles.clear();
+        projectiles.forEach(projectile => game.mobProjectiles.set(projectile.id, projectile));
+    });
     game.socket.on('enemyMoved', (enemy) => {
         game.enemies.set(enemy.id, enemy);
     });
