@@ -823,7 +823,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         name: "Hornet",
         health: 10,
         damage: 10,
-        size: 2.0,
+        size: 1.0,
         visual_scale: 1.5,
         speed: 1.0,
         cooldown: 2000,
