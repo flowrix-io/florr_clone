@@ -2,13 +2,13 @@
   "players": {
     "ocu977p98": {
       "level": 49,
-      "xp": 1187671,
+      "xp": 1189311,
       "maxHealth": 580,
       "damage": 101,
       "inventory": {
         "common": {
           "health_potion": 42,
-          "petal_rose": 65,
+          "petal_rose": 66,
           "shield": 78,
           "petal_light": 48,
           "petal_dandelion": 14,
@@ -18,12 +18,12 @@
           "petal_sand": 38,
           "petal_rock": 60,
           "petal_clover": 13,
-          "petal_bone": 43,
+          "petal_bone": 44,
           "petal_cactus": 8,
           "petal_iris": 22,
           "petal_basic": 19,
           "petal_poison_cactus": 2,
-          "petal_lightning": 13,
+          "petal_lightning": 22,
           "petal_missile": 2
         },
         "unique": {
@@ -39,10 +39,10 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 993,
+          "petal_sparkle": 992,
           "petal_poison_cactus": 999,
           "petal_lightning": 999,
-          "petal_iris": 998
+          "petal_iris": 999
         },
         "mythic": {
           "speed_boost": 701,
@@ -70,7 +70,7 @@
           "petal_bone": 20,
           "petal_poison_cactus": 136,
           "petal_iris": 3,
-          "petal_lightning": 17,
+          "petal_lightning": 22,
           "petal_missile": 1
         },
         "legendary": {
@@ -110,7 +110,7 @@
           "petal_poison_cactus": 2,
           "petal_iris": 4,
           "petal_lightning": 3,
-          "petal_missile": 4
+          "petal_missile": 5
         },
         "rare": {
           "petal_dandelion": 10,
@@ -135,62 +135,57 @@
           "petal_rose": 2,
           "petal_cactus": 1,
           "petal_bone": 1
-        },
-        "super": {
-          "petal_bone": 2
         }
       },
       "loadout": [
         {
           "type": "petal",
-          "petalType": "iris",
           "rarity": "unique",
-          "maxHealth": 6561,
-          "health": 6551,
+          "petalType": "sparkle",
+          "health": 656092899,
+          "maxHealth": 656093439
+        },
+        {
+          "type": "petal",
+          "petalType": "bone",
+          "rarity": "super",
+          "maxHealth": 32805,
+          "health": 31725,
           "onCooldown": false
         },
         {
           "type": "petal",
-          "petalType": "rose",
-          "rarity": "common",
-          "maxHealth": 5,
-          "health": 0,
-          "onCooldown": true
-        },
-        {
-          "type": "petal",
-          "petalType": "missile",
-          "rarity": "epic",
-          "maxHealth": 270,
-          "health": 270,
-          "onCooldown": false
+          "rarity": "super",
+          "petalType": "bone",
+          "health": 32805,
+          "maxHealth": 32805
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 653769009,
+          "health": 653768469,
           "maxHealth": 656093439
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 640474044,
+          "health": 640472964,
           "maxHealth": 656093439
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 653270132.75,
+          "health": 653269052.75,
           "maxHealth": 656093439
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 653990604,
+          "health": 653988984,
           "maxHealth": 656093439
         },
         {
@@ -202,7 +197,7 @@
           "petalType": "sparkle",
           "rarity": "unique",
           "maxHealth": 656093439,
-          "health": 655022894,
+          "health": 655021814,
           "onCooldown": false
         },
         {
@@ -210,7 +205,7 @@
           "petalType": "sparkle",
           "rarity": "unique",
           "maxHealth": 656093439,
-          "health": 652652864,
+          "health": 652651784,
           "onCooldown": false
         }
       ]
