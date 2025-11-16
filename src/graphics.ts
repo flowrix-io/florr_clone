@@ -1742,7 +1742,7 @@ export class Graphics {
         }
     }
 
-    public drawGameObjects(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0) {
+    public drawGameObjects(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0) {
         // Calculate viewport accounting for zoom level
         const scaledWidth = this.canvas.width / this.zoomLevel;
         const scaledHeight = this.canvas.height / this.zoomLevel;
@@ -1824,9 +1824,14 @@ export class Graphics {
         for (const projectile of mobProjectiles.values()) {
             this.drawMobProjectile(projectile);
         }
+
+        // Draw player projectiles
+        for (const projectile of playerProjectiles.values()) {
+            this.drawMobProjectile(projectile); // Reuse same drawing method
+        }
     }
 
-    public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0) {
+    public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0) {
         this.ctx.save();
 
         // Clear the canvas
@@ -1849,7 +1854,7 @@ export class Graphics {
         this.drawMap(this.mapData);
 
         // Draw game objects
-        this.drawGameObjects(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension);
+        this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
 
         // Draw explosion effects (in world coordinates, before camera restore)
         this.drawExplosionEffects();

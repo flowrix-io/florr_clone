@@ -26,6 +26,23 @@ export interface MobProjectile {
   size: number;
 }
 
+export interface PlayerProjectile {
+  id: string;
+  playerId: string;
+  x: number;
+  y: number;
+  startX: number;
+  startY: number;
+  angle: number;
+  speed: number;
+  distance: number;
+  maxDistance: number;
+  petalType: string;
+  petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+  damage: number;
+  size: number;
+}
+
 export interface Enemy {
   id: string;
   type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant' | 'hornet';

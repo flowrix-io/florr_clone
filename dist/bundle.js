@@ -449,6 +449,34 @@ const BASE_PETAL_CONFIGS = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="310 300 400 400" version="1.1"><path d="M 500.045 396.029 L 488.590 435.045 487.913 436.141 L 487.235 437.237 454.557 412.013 L 421.878 386.789 421.416 387.251 L 420.955 387.712 434.610 426.390 L 448.264 465.069 447.732 465.602 L 447.199 466.134 408.850 464.961 L 370.500 463.789 367.532 464.144 L 364.563 464.500 398.782 487.979 L 433 511.457 433 512 L 433 512.543 398.782 536.021 L 364.563 559.500 367.532 559.856 L 370.500 560.211 408.850 559.039 L 447.199 557.866 447.732 558.398 L 448.264 558.931 434.610 597.610 L 420.955 636.288 421.413 636.746 L 421.871 637.204 454.543 611.967 L 487.215 586.730 487.945 587.912 L 488.676 589.093 500.088 628.043 L 511.500 666.992 512 666.992 L 512.500 666.992 523.912 628.043 L 535.324 589.093 536.055 587.912 L 536.785 586.730 569.457 611.967 L 602.129 637.204 602.587 636.746 L 603.045 636.288 589.390 597.610 L 575.736 558.931 576.268 558.398 L 576.801 557.866 615.150 559.039 L 653.500 560.211 656.468 559.856 L 659.437 559.500 625.218 536.021 L 591 512.543 591 512 L 591 511.457 625.218 487.979 L 659.437 464.500 656.468 464.144 L 653.500 463.789 615.150 464.961 L 576.801 466.134 576.268 465.602 L 575.736 465.069 589.390 426.390 L 603.045 387.712 602.584 387.251 L 602.122 386.789 569.443 412.013 L 536.765 437.237 536.087 436.141 L 535.410 435.045 523.955 396.029 L 512.500 357.013 512 357.013 L 511.500 357.013 500.045 396.029 M 503.500 432.502 L 495.500 460 495 459.988 L 494.500 459.976 472 442.628 L 449.500 425.281 449.147 425.577 L 448.794 425.873 458.026 451.687 L 467.259 477.500 467.783 478.873 L 468.308 480.245 438.904 479.540 L 409.500 478.835 411.500 480.291 L 413.500 481.746 435 496.430 L 456.500 511.113 456.770 511.867 L 457.040 512.621 440.433 523.925 L 423.826 535.230 416.663 540.223 L 409.500 545.215 438.893 544.515 L 468.285 543.814 467.799 545.157 L 467.312 546.500 458.057 572.317 L 448.802 598.135 449.151 598.452 L 449.500 598.769 472 581.396 L 494.500 564.023 495 564.021 L 495.500 564.018 503.500 591.507 L 511.500 618.996 512 618.996 L 512.500 618.996 520.500 591.507 L 528.500 564.018 529 564.021 L 529.500 564.023 552 581.396 L 574.500 598.769 574.849 598.452 L 575.198 598.135 565.943 572.317 L 556.688 546.500 556.201 545.157 L 555.715 543.814 585.107 544.521 L 614.500 545.228 590.750 528.987 L 567 512.747 567 512.055 L 567 511.363 576.750 504.748 L 586.500 498.133 600.500 488.480 L 614.500 478.828 585.096 479.537 L 555.692 480.245 556.217 478.873 L 556.741 477.500 565.974 451.687 L 575.206 425.873 574.853 425.577 L 574.500 425.281 552 442.628 L 529.500 459.976 529 459.988 L 528.500 460 520.500 432.502 L 512.500 405.005 512 405.005 L 511.500 405.005 503.500 432.502" stroke="none" fill="#24c4bc" fill-rule="evenodd"/><path d="M 503.500 432.502 L 495.500 460 495 459.988 L 494.500 459.976 472 442.628 L 449.500 425.281 449.147 425.577 L 448.794 425.873 458.026 451.687 L 467.259 477.500 467.783 478.873 L 468.308 480.245 438.904 479.540 L 409.500 478.835 411.500 480.291 L 413.500 481.746 435 496.430 L 456.500 511.113 456.770 511.867 L 457.040 512.621 440.433 523.925 L 423.826 535.230 416.663 540.223 L 409.500 545.215 438.893 544.515 L 468.285 543.814 467.799 545.157 L 467.312 546.500 458.057 572.317 L 448.802 598.135 449.151 598.452 L 449.500 598.769 472 581.396 L 494.500 564.023 495 564.021 L 495.500 564.018 503.500 591.507 L 511.500 618.996 512 618.996 L 512.500 618.996 520.500 591.507 L 528.500 564.018 529 564.021 L 529.500 564.023 552 581.396 L 574.500 598.769 574.849 598.452 L 575.198 598.135 565.943 572.317 L 556.688 546.500 556.201 545.157 L 555.715 543.814 585.107 544.521 L 614.500 545.228 590.750 528.987 L 567 512.747 567 512.055 L 567 511.363 576.750 504.748 L 586.500 498.133 600.500 488.480 L 614.500 478.828 585.096 479.537 L 555.692 480.245 556.217 478.873 L 556.741 477.500 565.974 451.687 L 575.206 425.873 574.853 425.577 L 574.500 425.281 552 442.628 L 529.500 459.976 529 459.988 L 528.500 460 520.500 432.502 L 512.500 405.005 512 405.005 L 511.500 405.005 503.500 432.502" stroke="none" fill="#2bf3e3" fill-rule="evenodd"/></svg>`,
         actions: `wait_until_collision; lightning 1000;`
     },
+    missile: {
+        name: "Missile Petal",
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 2000,
+        description: "A missile that deals damage to the target",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 
+    The triangle is drawn and then rotated 90 degrees clockwise around its center point (16, 16).
+    The original points were (0,32), (28,32), (14,0).
+    After rotation and centering within a 32x32 canvas, the points are adjusted to fit the new dimensions.
+  -->
+  <polygon 
+    points="32,32 32,4 0,18"
+    fill="#000000" 
+    transform="rotate(180 16 16) translate(0, -2)" />
+</svg>`,
+        isAdminPetal: false,
+        projectile: {
+            count: 1,
+            distance: 500,
+            speed: 300,
+            spreadAngle: 0.0
+        }
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 99999,
@@ -671,7 +699,8 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         image: overrides.image ?? baseConfig.image ?? findSvgFallback(petalType, rarity),
         count: overrides.count ?? baseConfig.count,
         actions: overrides.actions ?? baseConfig.actions,
-        isAdminPetal: baseConfig.isAdminPetal ?? false
+        isAdminPetal: baseConfig.isAdminPetal ?? false,
+        projectile: baseConfig.projectile // Include projectile config if present
     };
 }
 // Generate the full petal configuration
@@ -5249,6 +5278,19 @@ const MOB_DROP_TABLES = {
                 maxQuantity: 1
             }
         ]
+    },
+    hornet: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'missile',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
     }
 };
 // Function to calculate drops for a mob based on its rarity
@@ -6700,7 +6742,7 @@ class Graphics {
             }
         }
     }
-    drawGameObjects(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension = 1.0) {
+    drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0) {
         // Calculate viewport accounting for zoom level
         const scaledWidth = this.canvas.width / this.zoomLevel;
         const scaledHeight = this.canvas.height / this.zoomLevel;
@@ -6778,8 +6820,12 @@ class Graphics {
         for (const projectile of mobProjectiles.values()) {
             this.drawMobProjectile(projectile);
         }
+        // Draw player projectiles
+        for (const projectile of playerProjectiles.values()) {
+            this.drawMobProjectile(projectile); // Reuse same drawing method
+        }
     }
-    render(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension = 1.0) {
+    render(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0) {
         this.ctx.save();
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -6795,7 +6841,7 @@ class Graphics {
         // Draw the map
         this.drawMap(this.mapData);
         // Draw game objects
-        this.drawGameObjects(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension);
+        this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
         // Draw explosion effects (in world coordinates, before camera restore)
         this.drawExplosionEffects();
         this.drawPetalBreakEffects();
@@ -11809,6 +11855,10 @@ function setupSocketListeners(game) {
         game.mobProjectiles.clear();
         projectiles.forEach(projectile => game.mobProjectiles.set(projectile.id, projectile));
     });
+    game.socket.on('playerProjectilesUpdate', (projectiles) => {
+        game.playerProjectiles.clear();
+        projectiles.forEach(projectile => game.playerProjectiles.set(projectile.id, projectile));
+    });
     game.socket.on('enemyMoved', (enemy) => {
         game.enemies.set(enemy.id, enemy);
     });
@@ -14379,6 +14429,7 @@ class Game {
         this.petalExtension = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
         this.enemies = new Map();
         this.mobProjectiles = new Map(); // Store mob projectiles
+        this.playerProjectiles = new Map(); // Store player projectiles
         this.PLAYER_MAX_HEALTH = 100;
         this.PLAYER_DAMAGE = 10;
         this.ENEMY_DAMAGE = 5;
@@ -15112,7 +15163,7 @@ class Game {
             this.playerCounterElement.textContent = `Players: ${this.players.size}`;
         }
         this.update();
-        this.graphics.render(this.players, this.enemies, this.items, this.mobProjectiles, this.socket?.id ?? '', this.petalExtension);
+        this.graphics.render(this.players, this.enemies, this.items, this.mobProjectiles, this.playerProjectiles, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
     update() {

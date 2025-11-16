@@ -1377,7 +1377,7 @@ class Graphics {
             }
         }
     }
-    drawGameObjects(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension = 1.0) {
+    drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0) {
         // Calculate viewport accounting for zoom level
         const scaledWidth = this.canvas.width / this.zoomLevel;
         const scaledHeight = this.canvas.height / this.zoomLevel;
@@ -1455,8 +1455,12 @@ class Graphics {
         for (const projectile of mobProjectiles.values()) {
             this.drawMobProjectile(projectile);
         }
+        // Draw player projectiles
+        for (const projectile of playerProjectiles.values()) {
+            this.drawMobProjectile(projectile); // Reuse same drawing method
+        }
     }
-    render(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension = 1.0) {
+    render(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0) {
         this.ctx.save();
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -1472,7 +1476,7 @@ class Graphics {
         // Draw the map
         this.drawMap(this.mapData);
         // Draw game objects
-        this.drawGameObjects(players, enemies, items, mobProjectiles, currentPlayerId, petalExtension);
+        this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
         // Draw explosion effects (in world coordinates, before camera restore)
         this.drawExplosionEffects();
         this.drawPetalBreakEffects();

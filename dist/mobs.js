@@ -1487,6 +1487,19 @@ exports.MOB_DROP_TABLES = {
                 maxQuantity: 1
             }
         ]
+    },
+    hornet: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'missile',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
     }
 };
 // Function to calculate drops for a mob based on its rarity
