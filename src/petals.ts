@@ -550,6 +550,29 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 </svg>`,
         isAdminPetal: true
     },
+    hornet_missile: {
+        name: "Hornet Missile",
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 2000,
+        description: "A missile that deals damage to the target",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 
+    The triangle is drawn and then rotated 90 degrees clockwise around its center point (16, 16).
+    The original points were (0,32), (28,32), (14,0).
+    After rotation and centering within a 32x32 canvas, the points are adjusted to fit the new dimensions.
+  -->
+  <polygon 
+    points="32,32 32,4 0,18"
+    fill="#000000" 
+    transform="rotate(180 16 16) translate(0, -2)" />
+</svg>
+`,
+        isAdminPetal: true
+    }
 };
 
 // Rarity color mappings

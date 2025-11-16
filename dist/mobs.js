@@ -730,6 +730,7 @@ const BASE_MOB_CONFIGS = {
         health: 10,
         damage: 10,
         size: 2.0,
+        visual_scale: 1.5,
         speed: 1.0,
         cooldown: 2000,
         description: "Hornet",
@@ -775,7 +776,7 @@ const BASE_MOB_CONFIGS = {
         projectile: {
             count: 1,
             distance: 500,
-            petalType: 'stinger',
+            petalType: 'hornet_missile',
             petalRarity: 'uncommon',
             speed: 300,
             spreadAngle: 0.0
