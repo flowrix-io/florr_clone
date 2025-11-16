@@ -279,9 +279,9 @@ export class Graphics {
                                 
                                 // Pre-render this animation frame
                                 const animatedSVG = this.svgRenderer.getAnimatedSVGString(mobStats.image, time);
-                                const canvas = await this.svgRenderer.renderSVGToOffscreenCanvas(animatedSVG, mobSize, mobSize);
+                                const canvas = await this.svgRenderer.renderSVGToOffscreenCanvas(animatedSVG, mobSize, mobSize, animatedCacheKey);
                                 if (canvas) {
-                                    // Cache the canvas directly
+                                    // Cache the canvas directly (also stores in IndexedDB)
                                     this.svgRenderer.cacheCanvas(animatedCacheKey, canvas);
                                     // Debug: Log first few cached frames
                                     if (frame < 3) {
@@ -1086,7 +1086,7 @@ export class Graphics {
         this.ctx.restore();
     }
 
-    public drawEnemy(enemy: Enemy) {
+    public async drawEnemy(enemy: Enemy) {
         // Validate enemy has required properties
         if (!enemy || typeof enemy.x !== 'number' || typeof enemy.y !== 'number') {
             console.error('[Graphics] Invalid enemy data:', enemy);
@@ -1145,9 +1145,9 @@ export class Graphics {
         // the renderer might use WASM for animation even if image loading falls back
         if (mobSVG && this.svgRenderer.isInitialized()) {
             try {
-                // Use SVG renderer to render animated SVG (synchronous - uses cached canvases)
+                // Use SVG renderer to render animated SVG (async - uses cached canvases)
                 // x, y, rotation are 0 because transforms are already applied by the context
-                rendered = this.svgRenderer.renderSVGToCanvas(
+                rendered = await this.svgRenderer.renderSVGToCanvas(
                     this.ctx,
                     mobSVG,
                     0, // x (already translated)
@@ -1796,7 +1796,7 @@ export class Graphics {
             // }
             
             try {
-                this.drawEnemy(enemy);
+                await this.drawEnemy(enemy);
             } catch (error) {
                 console.error('[Graphics] Error drawing enemy:', error, enemy);
                 // Draw a simple fallback circle if rendering fails
@@ -1831,7 +1831,7 @@ export class Graphics {
         }
     }
 
-    public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0) {
+    public async render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0) {
         this.ctx.save();
 
         // Clear the canvas
