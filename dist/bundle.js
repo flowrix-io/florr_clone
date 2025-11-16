@@ -4402,6 +4402,7 @@ const BASE_MOB_CONFIGS = {
         damage: 20,
         health: 100,
         size: 1.0,
+        visual_scale: 1.5,
         speed: 1.0,
         cooldown: 2000,
         description: "A small, hostile soldier fire ant that flies aggressively",
@@ -4588,6 +4589,7 @@ const BASE_MOB_CONFIGS = {
         health: 30,
         damage: 30,
         size: 1.0,
+        visual_scale: 1.5,
         speed: 0.0,
         cooldown: 2000,
         description: "Spiky",
@@ -4656,7 +4658,7 @@ const BASE_MOB_CONFIGS = {
         range: 100,
         biomeOnly: true
     },
-    hel_beetle: {
+    hbtle: {
         name: "Hel Beetle",
         health: 40,
         damage: 50,
