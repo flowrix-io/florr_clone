@@ -6106,20 +6106,46 @@ class Graphics {
         if (!petalStats) {
             return;
         }
-        const size = petalStats.size * 20; // Convert to pixels
-        const color = petalStats.color;
+        const petalSize = petalStats.size * 20; // Convert to pixels
         this.ctx.save();
         this.ctx.translate(projectile.x, projectile.y);
         this.ctx.rotate(projectile.angle);
-        // Draw projectile as a simple circle with petal color
-        this.ctx.fillStyle = color;
-        this.ctx.beginPath();
-        this.ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
-        this.ctx.fill();
-        // Add a border for visibility
-        this.ctx.strokeStyle = '#ffffff';
-        this.ctx.lineWidth = 2;
-        this.ctx.stroke();
+        // Draw petal using the same method as player petals
+        const petalKey = `${projectile.petalType}_${projectile.petalRarity}`;
+        const petalCanvas = this.getPetalCanvas(petalKey, Date.now());
+        if (petalCanvas && petalCanvas.width > 0 && petalCanvas.height > 0) {
+            try {
+                // Draw the petal canvas image centered at origin
+                this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                // Add rarity glow effect for non-common projectiles
+                if (projectile.petalRarity !== 'common') {
+                    this.ctx.save();
+                    this.ctx.shadowColor = petalStats.color;
+                    this.ctx.shadowBlur = 5;
+                    this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                    this.ctx.restore();
+                }
+            }
+            catch (error) {
+                console.error(`[Graphics] Error drawing projectile petal image:`, error);
+                // Fallback to colored circle if image fails
+                this.ctx.fillStyle = petalStats.color;
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, petalSize / 2, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+        }
+        else {
+            // Fallback to colored circle if petal canvas not available
+            this.ctx.fillStyle = petalStats.color;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, petalSize / 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            // Add a border for visibility
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+        }
         this.ctx.restore();
     }
     drawEnemy(enemy) {

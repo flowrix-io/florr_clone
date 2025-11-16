@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 49,
-      "xp": 760407,
+      "xp": 762867,
       "maxHealth": 580,
       "damage": 101,
       "inventory": {
@@ -99,7 +99,7 @@
           "petal_yggdrasil": 2,
           "health_potion": 7,
           "petal_light": 16,
-          "petal_rock": 55,
+          "petal_rock": 56,
           "shield": 32,
           "petal_dandelion": 23,
           "petal_clover": 14,
@@ -157,7 +157,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 587048164,
+          "health": 587040064,
           "maxHealth": 656093439
         },
         {
@@ -197,7 +197,7 @@
           "petalType": "sparkle",
           "rarity": "unique",
           "maxHealth": 656093439,
-          "health": 655121401.5,
+          "health": 655121364,
           "onCooldown": false
         },
         {
@@ -205,7 +205,7 @@
           "petalType": "sparkle",
           "rarity": "unique",
           "maxHealth": 656093439,
-          "health": 652857354,
+          "health": 652853304,
           "onCooldown": false
         }
       ]
