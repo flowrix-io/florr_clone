@@ -195,37 +195,33 @@ export class Preloader {
             throw new Error('Failed to get canvas context');
         }
         
-        // createImageBitmap doesn't support raw SVG Blobs directly
-        // We need to use an Image element with a blob URL (more efficient than data URL)
+        // createImageBitmap doesn't support raw SVG directly
+        // We need to use an Image element with a data URL
         // createImageBitmap is available in modern browsers
         if (typeof createImageBitmap === 'undefined') {
             throw new Error('createImageBitmap not available');
         }
         
-        // Create blob URL from SVG (more efficient than data URL)
-        const blob = new Blob([svgString], { type: 'image/svg+xml' });
-        const blobUrl = URL.createObjectURL(blob);
+        // Create data URL from SVG
+        const base64 = btoa(unescape(encodeURIComponent(svgString)));
+        const dataUrl = `data:image/svg+xml;base64,${base64}`;
         
-        // Create Image element and load from blob URL
+        // Create Image element and load from data URL
         const img = new Image();
         const imageBitmap = await new Promise<ImageBitmap>((resolve, reject) => {
             img.onload = async () => {
                 try {
                     // Use createImageBitmap on the loaded image with resize options
                     const bitmap = await createImageBitmap(img, { resizeWidth: width, resizeHeight: height });
-                    // Revoke blob URL immediately to free memory
-                    URL.revokeObjectURL(blobUrl);
                     resolve(bitmap);
                 } catch (error) {
-                    URL.revokeObjectURL(blobUrl);
                     reject(error);
                 }
             };
             img.onerror = () => {
-                URL.revokeObjectURL(blobUrl);
                 reject(new Error('Failed to load SVG image'));
             };
-            img.src = blobUrl;
+            img.src = dataUrl;
         });
         
         ctx.clearRect(0, 0, width, height);

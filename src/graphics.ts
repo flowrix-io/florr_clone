@@ -235,7 +235,7 @@ export class Graphics {
                     // Store SVG string for WASM rendering
                     this.mobSVGCache[cacheKey] = mobStats.image;
                     
-                            // Pre-render multiple animation frames to avoid blob URL creation during gameplay
+                            // Pre-render multiple animation frames to avoid data URL creation during gameplay
                             // Pre-render frames for a full animation cycle (15fps = 67ms per frame)
                             // For most mobs, animations are typically 1-2 seconds, so pre-render ~30 frames (2 seconds)
                             const promise = (async () => {
@@ -259,7 +259,7 @@ export class Graphics {
                             const framesToPreload = 30;
                             for (let frame = 0; frame < framesToPreload; frame++) {
                                 // Check if preloading was marked complete (user might have set it manually)
-                                // If so, stop pre-rendering to avoid blob URL creation
+                                // If so, stop pre-rendering to avoid data URL creation
                                 if (this.svgRenderer.isPreloadingComplete()) {
                                     console.log(`[Graphics] Preloading marked complete, stopping pre-render for ${cacheKey} at frame ${frame}`);
                                     break;
@@ -307,12 +307,12 @@ export class Graphics {
             console.log(`[Graphics] Starting pre-render of ${preloadPromises.length} mob types...`);
             Promise.all(preloadPromises).then(() => {
                 console.log('[Graphics] Pre-rendered mob canvases - marking preloading complete');
-                // Mark preloading as complete to prevent blob URL creation during gameplay
+                // Mark preloading as complete to prevent data URL creation during gameplay
                 this.svgRenderer.markPreloadingComplete();
                 console.log('[Graphics] Preloading complete flag set:', this.svgRenderer.isPreloadingComplete());
             }).catch((error) => {
                 console.warn('[Graphics] Some mob canvases failed to pre-render:', error);
-                // Still mark as complete to prevent blob URLs even if some failed
+                // Still mark as complete to prevent data URLs even if some failed
                 this.svgRenderer.markPreloadingComplete();
                 console.log('[Graphics] Preloading complete flag set (after error):', this.svgRenderer.isPreloadingComplete());
             });

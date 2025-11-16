@@ -882,38 +882,33 @@ class SVGRendererWrapper {
                 return cached;
             }
         }
-        // createImageBitmap doesn't support raw SVG Blobs directly
-        // We need to use an Image element, but we'll use a blob URL instead of data URL
-        // Blob URLs are more efficient and don't create the same request overhead
+        // createImageBitmap doesn't support raw SVG directly
+        // We need to use an Image element with a data URL
         if (typeof createImageBitmap === 'undefined') {
             console.warn('[SVGRenderer] createImageBitmap not available, falling back');
             return null;
         }
         try {
-            // Create blob URL from SVG (more efficient than data URL)
-            const blob = new Blob([svgString], { type: 'image/svg+xml' });
-            const blobUrl = URL.createObjectURL(blob);
-            // Create Image element and load from blob URL
+            // Create data URL from SVG
+            const base64 = btoa(unescape(encodeURIComponent(svgString)));
+            const dataUrl = `data:image/svg+xml;base64,${base64}`;
+            // Create Image element and load from data URL
             const img = new Image();
             const imageBitmap = await new Promise((resolve, reject) => {
                 img.onload = async () => {
                     try {
                         // Use createImageBitmap on the loaded image
                         const bitmap = await createImageBitmap(img);
-                        // Revoke blob URL immediately to free memory
-                        URL.revokeObjectURL(blobUrl);
                         resolve(bitmap);
                     }
                     catch (error) {
-                        URL.revokeObjectURL(blobUrl);
                         reject(error);
                     }
                 };
                 img.onerror = () => {
-                    URL.revokeObjectURL(blobUrl);
                     reject(new Error('Failed to load SVG image'));
                 };
-                img.src = blobUrl;
+                img.src = dataUrl;
             });
             // Cache the ImageBitmap
             this.imageCache.set(cacheKey, imageBitmap);
@@ -932,10 +927,10 @@ class SVGRendererWrapper {
         return null;
     }
     async renderSVGToOffscreenCanvas(svgString, width, height) {
-        // Prevent blob URL creation during gameplay - only allow during preloading
+        // Prevent data URL creation during gameplay - only allow during preloading
         if (this.preloadingComplete) {
             if (Math.random() < 0.01) { // Only log occasionally to avoid spam
-                console.warn('[SVGRenderer] renderSVGToOffscreenCanvas called after preloading complete (preloadingComplete=' + this.preloadingComplete + ') - blob URLs should not be created during gameplay');
+                console.warn('[SVGRenderer] renderSVGToOffscreenCanvas called after preloading complete (preloadingComplete=' + this.preloadingComplete + ') - data URLs should not be created during gameplay');
             }
             return null;
         }
@@ -947,38 +942,34 @@ class SVGRendererWrapper {
             if (!ctx) {
                 return null;
             }
-            // createImageBitmap doesn't support raw SVG Blobs directly
-            // We need to use an Image element with a blob URL (more efficient than data URL)
+            // createImageBitmap doesn't support raw SVG directly
+            // We need to use an Image element with a data URL
             // createImageBitmap is available in modern browsers
             if (typeof createImageBitmap === 'undefined') {
                 console.warn('[SVGRenderer] createImageBitmap not available');
                 return null;
             }
-            // Create blob URL from SVG (more efficient than data URL)
+            // Create data URL from SVG
             // NOTE: This should only happen during preloading phase
-            const blob = new Blob([svgString], { type: 'image/svg+xml' });
-            const blobUrl = URL.createObjectURL(blob);
-            // Create Image element and load from blob URL
+            const base64 = btoa(unescape(encodeURIComponent(svgString)));
+            const dataUrl = `data:image/svg+xml;base64,${base64}`;
+            // Create Image element and load from data URL
             const img = new Image();
             const imageBitmap = await new Promise((resolve, reject) => {
                 img.onload = async () => {
                     try {
                         // Use createImageBitmap on the loaded image with resize options
                         const bitmap = await createImageBitmap(img, { resizeWidth: width, resizeHeight: height });
-                        // Revoke blob URL immediately to free memory
-                        URL.revokeObjectURL(blobUrl);
                         resolve(bitmap);
                     }
                     catch (error) {
-                        URL.revokeObjectURL(blobUrl);
                         reject(error);
                     }
                 };
                 img.onerror = () => {
-                    URL.revokeObjectURL(blobUrl);
                     reject(new Error('Failed to load SVG image'));
                 };
-                img.src = blobUrl;
+                img.src = dataUrl;
             });
             ctx.clearRect(0, 0, width, height);
             ctx.drawImage(imageBitmap, 0, 0, width, height);
@@ -1141,7 +1132,7 @@ class SVGRendererWrapper {
                 }
             }
         }
-        // If no cached canvas (exact or close), we should not create blob URLs during gameplay
+        // If no cached canvas (exact or close), we should not create data URLs during gameplay
         // Return false and let the caller use a fallback
         // The canvas should have been pre-rendered during initialization
         // If we're here, it means we need a frame that wasn't pre-rendered yet
@@ -1177,7 +1168,7 @@ class SVGRendererWrapper {
     isUsingFallback() {
         return this.fallbackMode;
     }
-    // Mark preloading as complete - prevents blob URL creation after this point
+    // Mark preloading as complete - prevents data URL creation after this point
     markPreloadingComplete() {
         this.preloadingComplete = true;
     }
@@ -5502,7 +5493,7 @@ class Graphics {
                     const cacheKey = `${mobType}_${rarity}`;
                     // Store SVG string for WASM rendering
                     this.mobSVGCache[cacheKey] = mobStats.image;
-                    // Pre-render multiple animation frames to avoid blob URL creation during gameplay
+                    // Pre-render multiple animation frames to avoid data URL creation during gameplay
                     // Pre-render frames for a full animation cycle (15fps = 67ms per frame)
                     // For most mobs, animations are typically 1-2 seconds, so pre-render ~30 frames (2 seconds)
                     const promise = (async () => {
@@ -5525,7 +5516,7 @@ class Graphics {
                             const framesToPreload = 30;
                             for (let frame = 0; frame < framesToPreload; frame++) {
                                 // Check if preloading was marked complete (user might have set it manually)
-                                // If so, stop pre-rendering to avoid blob URL creation
+                                // If so, stop pre-rendering to avoid data URL creation
                                 if (this.svgRenderer.isPreloadingComplete()) {
                                     console.log(`[Graphics] Preloading marked complete, stopping pre-render for ${cacheKey} at frame ${frame}`);
                                     break;
@@ -5571,12 +5562,12 @@ class Graphics {
             console.log(`[Graphics] Starting pre-render of ${preloadPromises.length} mob types...`);
             Promise.all(preloadPromises).then(() => {
                 console.log('[Graphics] Pre-rendered mob canvases - marking preloading complete');
-                // Mark preloading as complete to prevent blob URL creation during gameplay
+                // Mark preloading as complete to prevent data URL creation during gameplay
                 this.svgRenderer.markPreloadingComplete();
                 console.log('[Graphics] Preloading complete flag set:', this.svgRenderer.isPreloadingComplete());
             }).catch((error) => {
                 console.warn('[Graphics] Some mob canvases failed to pre-render:', error);
-                // Still mark as complete to prevent blob URLs even if some failed
+                // Still mark as complete to prevent data URLs even if some failed
                 this.svgRenderer.markPreloadingComplete();
                 console.log('[Graphics] Preloading complete flag set (after error):', this.svgRenderer.isPreloadingComplete());
             });
@@ -18157,36 +18148,32 @@ class Preloader {
         if (!ctx) {
             throw new Error('Failed to get canvas context');
         }
-        // createImageBitmap doesn't support raw SVG Blobs directly
-        // We need to use an Image element with a blob URL (more efficient than data URL)
+        // createImageBitmap doesn't support raw SVG directly
+        // We need to use an Image element with a data URL
         // createImageBitmap is available in modern browsers
         if (typeof createImageBitmap === 'undefined') {
             throw new Error('createImageBitmap not available');
         }
-        // Create blob URL from SVG (more efficient than data URL)
-        const blob = new Blob([svgString], { type: 'image/svg+xml' });
-        const blobUrl = URL.createObjectURL(blob);
-        // Create Image element and load from blob URL
+        // Create data URL from SVG
+        const base64 = btoa(unescape(encodeURIComponent(svgString)));
+        const dataUrl = `data:image/svg+xml;base64,${base64}`;
+        // Create Image element and load from data URL
         const img = new Image();
         const imageBitmap = await new Promise((resolve, reject) => {
             img.onload = async () => {
                 try {
                     // Use createImageBitmap on the loaded image with resize options
                     const bitmap = await createImageBitmap(img, { resizeWidth: width, resizeHeight: height });
-                    // Revoke blob URL immediately to free memory
-                    URL.revokeObjectURL(blobUrl);
                     resolve(bitmap);
                 }
                 catch (error) {
-                    URL.revokeObjectURL(blobUrl);
                     reject(error);
                 }
             };
             img.onerror = () => {
-                URL.revokeObjectURL(blobUrl);
                 reject(new Error('Failed to load SVG image'));
             };
-            img.src = blobUrl;
+            img.src = dataUrl;
         });
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(imageBitmap, 0, 0, width, height);
