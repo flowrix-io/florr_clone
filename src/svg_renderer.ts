@@ -3,8 +3,6 @@
  * This module provides an interface to the WebAssembly-compiled C++ SVG renderer
  */
 
-import { getAnimationCache } from './animation_cache';
-
 interface SVGRendererModule {
     SVGRenderer: new () => SVGRendererInstance;
     onRuntimeInitialized?: () => void;
@@ -36,7 +34,6 @@ class SVGRendererWrapper {
     private canvasCache: Map<string, HTMLCanvasElement> = new Map(); // Cache for offscreen canvases (primary storage)
     private animatedCache: AnimatedSVGCache = {};
     private preloadingComplete: boolean = false; // Track if preloading phase is complete
-    private animationCache = getAnimationCache(); // IndexedDB cache for animation frames
 
     constructor() {
         this.initPromise = this.initialize();
@@ -175,23 +172,13 @@ class SVGRendererWrapper {
         return null;
     }
     
-    public async renderSVGToOffscreenCanvas(svgString: string, width: number, height: number, cacheKey?: string): Promise<HTMLCanvasElement | null> {
+    public async renderSVGToOffscreenCanvas(svgString: string, width: number, height: number): Promise<HTMLCanvasElement | null> {
         // Prevent data URL creation during gameplay - only allow during preloading
         if (this.preloadingComplete) {
             if (Math.random() < 0.01) { // Only log occasionally to avoid spam
                 console.warn('[SVGRenderer] renderSVGToOffscreenCanvas called after preloading complete (preloadingComplete=' + this.preloadingComplete + ') - data URLs should not be created during gameplay');
             }
             return null;
-        }
-        
-        // Try to load from IndexedDB cache first if cacheKey is provided
-        if (cacheKey) {
-            const cachedCanvas = await this.animationCache.getFrame(cacheKey);
-            if (cachedCanvas) {
-                // Also add to in-memory cache
-                this.canvasCache.set(cacheKey, cachedCanvas);
-                return cachedCanvas;
-            }
         }
         
         try {
@@ -238,14 +225,6 @@ class SVGRendererWrapper {
             ctx.drawImage(imageBitmap, 0, 0, width, height);
             imageBitmap.close(); // Free memory
             
-            // Store in IndexedDB cache if cacheKey is provided
-            if (cacheKey) {
-                // Store asynchronously (don't await to avoid blocking)
-                this.animationCache.storeFrame(cacheKey, canvas).catch(err => {
-                    console.warn(`[SVGRenderer] Failed to store frame in cache: ${err}`);
-                });
-            }
-            
             return canvas;
         } catch (error) {
             console.error('[SVGRenderer] Error rendering SVG to canvas:', error);
@@ -254,7 +233,7 @@ class SVGRendererWrapper {
     }
     
 
-    public async renderSVGToCanvas(
+    public renderSVGToCanvas(
         ctx: CanvasRenderingContext2D,
         svgString: string,
         x: number,
@@ -263,50 +242,17 @@ class SVGRendererWrapper {
         height: number,
         rotation: number = 0,
         time: number = Date.now()
-    ): Promise<boolean> {
+    ): boolean {
         // Get animated SVG string
         let animatedSVG: string;
         
         if (this.fallbackMode || !this.renderer) {
             // Fallback: use browser's native SVG rendering
-            if (Math.random() < 0.001) {
-                console.log(`[SVGRenderer] Using fallback mode: fallbackMode=${this.fallbackMode}, renderer=${!!this.renderer}`);
-            }
             animatedSVG = this.applyAnimationsToSVG(svgString, time);
         } else {
             // Use C++ renderer to get animated SVG string
             try {
                 animatedSVG = this.renderer.renderSVG(svgString, time);
-                // Debug: Check if animation was applied
-                if (Math.random() < 0.01) {
-                    const hasAnimateTransform = svgString.includes('animateTransform');
-                    const stillHasAnimateTransform = animatedSVG.includes('animateTransform');
-                    const hasTransform = animatedSVG.includes('transform=');
-                    
-                    // Extract transform values to see what's being generated
-                    const transformMatches = animatedSVG.match(/transform="([^"]*)"/g);
-                    const transforms = transformMatches ? transformMatches.map(m => m.match(/transform="([^"]*)"/)?.[1]) : [];
-                    
-                    console.log('[SVGRenderer] WASM renderer result:', {
-                        originalHasAnim: hasAnimateTransform,
-                        stillHasAnim: stillHasAnimateTransform,
-                        hasTransform: hasTransform,
-                        originalLength: svgString.length,
-                        animatedLength: animatedSVG.length,
-                        changed: svgString !== animatedSVG,
-                        time: time,
-                        transforms: transforms.slice(0, 3) // Show first 3 transforms
-                    });
-                    
-                    // Show a sample of the animated SVG
-                    if (transforms.length > 0) {
-                        const sampleStart = animatedSVG.indexOf(transforms[0] || '');
-                        if (sampleStart > 0) {
-                            const sample = animatedSVG.substring(Math.max(0, sampleStart - 50), Math.min(animatedSVG.length, sampleStart + 200));
-                            console.log('[SVGRenderer] Sample animated SVG:', sample);
-                        }
-                    }
-                }
             } catch (error) {
                 // Fallback to JavaScript animation
                 console.error('[SVGRenderer] Error calling WASM renderSVG, falling back to JS:', error);
@@ -340,43 +286,11 @@ class SVGRendererWrapper {
         const baseCacheKey = keyParts.join('|');
         const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
         
-        // Debug: Log cache lookup occasionally
-        if (Math.random() < 0.01) {
-            console.log(`[SVGRenderer] Cache lookup: key="${animatedCacheKey.substring(0, 60)}...", hasCache=${this.canvasCache.has(animatedCacheKey)}, cacheSize=${this.canvasCache.size}, timeBucket=${timeBucket}, relativeTime=${relativeTime.toFixed(1)}`);
-            // Show what keys exist for this SVG
-            const matchingKeys = Array.from(this.canvasCache.keys()).filter(k => k.startsWith(baseCacheKey.substring(0, 50)));
-            console.log(`[SVGRenderer] Matching keys for this SVG:`, matchingKeys.slice(0, 5).map(k => {
-                const match = k.match(/_(\d+)$/);
-                return match ? `timeBucket=${match[1]}` : k.substring(0, 30);
-            }));
-        }
-        
         // Check if we already have this frame as a canvas (preferred - no data URLs)
         if (this.canvasCache.has(animatedCacheKey)) {
             const cachedCanvas = this.canvasCache.get(animatedCacheKey)!;
             if (cachedCanvas.width > 0 && cachedCanvas.height > 0) {
                 // Use cached canvas immediately
-                if (x !== 0 || y !== 0 || rotation !== 0) {
-                    ctx.save();
-                    ctx.translate(x, y);
-                    ctx.rotate(rotation);
-                    ctx.drawImage(cachedCanvas, -width / 2, -height / 2, width, height);
-                    ctx.restore();
-                } else {
-                    ctx.drawImage(cachedCanvas, -width / 2, -height / 2, width, height);
-                }
-                return true;
-            }
-        }
-        
-        // Try to load from IndexedDB cache if not in memory cache
-        // This helps when frames were cached in a previous session
-        if (!this.preloadingComplete) {
-            const cachedCanvas = await this.animationCache.getFrame(animatedCacheKey);
-            if (cachedCanvas && cachedCanvas.width > 0 && cachedCanvas.height > 0) {
-                // Add to in-memory cache for faster access
-                this.canvasCache.set(animatedCacheKey, cachedCanvas);
-                // Use cached canvas
                 if (x !== 0 || y !== 0 || rotation !== 0) {
                     ctx.save();
                     ctx.translate(x, y);
@@ -464,10 +378,6 @@ class SVGRendererWrapper {
     // Public method to cache a canvas directly (for preloading)
     public cacheCanvas(key: string, canvas: HTMLCanvasElement): void {
         this.canvasCache.set(key, canvas);
-        // Also store in IndexedDB cache asynchronously
-        this.animationCache.storeFrame(key, canvas).catch(err => {
-            console.warn(`[SVGRenderer] Failed to store frame in cache: ${err}`);
-        });
     }
     
     // Public method to check if a canvas is cached

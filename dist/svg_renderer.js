@@ -223,42 +223,12 @@ class SVGRendererWrapper {
         let animatedSVG;
         if (this.fallbackMode || !this.renderer) {
             // Fallback: use browser's native SVG rendering
-            if (Math.random() < 0.001) {
-                console.log(`[SVGRenderer] Using fallback mode: fallbackMode=${this.fallbackMode}, renderer=${!!this.renderer}`);
-            }
             animatedSVG = this.applyAnimationsToSVG(svgString, time);
         }
         else {
             // Use C++ renderer to get animated SVG string
             try {
                 animatedSVG = this.renderer.renderSVG(svgString, time);
-                // Debug: Check if animation was applied
-                if (Math.random() < 0.01) {
-                    const hasAnimateTransform = svgString.includes('animateTransform');
-                    const stillHasAnimateTransform = animatedSVG.includes('animateTransform');
-                    const hasTransform = animatedSVG.includes('transform=');
-                    // Extract transform values to see what's being generated
-                    const transformMatches = animatedSVG.match(/transform="([^"]*)"/g);
-                    const transforms = transformMatches ? transformMatches.map(m => m.match(/transform="([^"]*)"/)?.[1]) : [];
-                    console.log('[SVGRenderer] WASM renderer result:', {
-                        originalHasAnim: hasAnimateTransform,
-                        stillHasAnim: stillHasAnimateTransform,
-                        hasTransform: hasTransform,
-                        originalLength: svgString.length,
-                        animatedLength: animatedSVG.length,
-                        changed: svgString !== animatedSVG,
-                        time: time,
-                        transforms: transforms.slice(0, 3) // Show first 3 transforms
-                    });
-                    // Show a sample of the animated SVG
-                    if (transforms.length > 0) {
-                        const sampleStart = animatedSVG.indexOf(transforms[0] || '');
-                        if (sampleStart > 0) {
-                            const sample = animatedSVG.substring(Math.max(0, sampleStart - 50), Math.min(animatedSVG.length, sampleStart + 200));
-                            console.log('[SVGRenderer] Sample animated SVG:', sample);
-                        }
-                    }
-                }
             }
             catch (error) {
                 // Fallback to JavaScript animation
@@ -290,16 +260,6 @@ class SVGRendererWrapper {
         ];
         const baseCacheKey = keyParts.join('|');
         const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
-        // Debug: Log cache lookup occasionally
-        if (Math.random() < 0.01) {
-            console.log(`[SVGRenderer] Cache lookup: key="${animatedCacheKey.substring(0, 60)}...", hasCache=${this.canvasCache.has(animatedCacheKey)}, cacheSize=${this.canvasCache.size}, timeBucket=${timeBucket}, relativeTime=${relativeTime.toFixed(1)}`);
-            // Show what keys exist for this SVG
-            const matchingKeys = Array.from(this.canvasCache.keys()).filter(k => k.startsWith(baseCacheKey.substring(0, 50)));
-            console.log(`[SVGRenderer] Matching keys for this SVG:`, matchingKeys.slice(0, 5).map(k => {
-                const match = k.match(/_(\d+)$/);
-                return match ? `timeBucket=${match[1]}` : k.substring(0, 30);
-            }));
-        }
         // Check if we already have this frame as a canvas (preferred - no data URLs)
         if (this.canvasCache.has(animatedCacheKey)) {
             const cachedCanvas = this.canvasCache.get(animatedCacheKey);

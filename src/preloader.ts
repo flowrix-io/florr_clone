@@ -3,7 +3,6 @@
  */
 
 import { IMAGE_ASSETS } from './imageAssets';
-import { getAnimationCache } from './animation_cache';
 
 export interface PreloadedAssets {
     sprites: {
@@ -27,7 +26,6 @@ export class Preloader {
     private totalAssets: number = 0;
     private loadedAssets: number = 0;
     private onProgressCallback?: (progress: number) => void;
-    private animationCache = getAnimationCache(); // IndexedDB cache for animation frames
 
     constructor(onProgress?: (progress: number) => void) {
         this.onProgressCallback = onProgress;
@@ -299,90 +297,25 @@ export class Preloader {
                                 const frameCount = Math.ceil(duration / 42); // 24fps
                                 const canvases: HTMLCanvasElement[] = [];
                                 
-                                // Generate cache keys for all frames
-                                const cacheKeys: string[] = [];
                                 for (let frame = 0; frame < frameCount; frame++) {
-                                    const time = frame * 42;
+                                    const time = frame * 42; // Time in ms for this frame
+                                    // Get animated SVG string from renderer
                                     const animatedSVG = svgRenderer.getAnimatedSVGString(svgString, time);
-                                    // Generate cache key similar to SVG renderer
-                                    let normalizedSVG = animatedSVG.replace(/\s+/g, ' ').trim();
-                                    normalizedSVG = normalizedSVG.replace(/\s+xmlns="[^"]*"/g, '');
-                                    const viewBoxMatch = normalizedSVG.match(/viewBox="([^"]*)"/);
-                                    const widthMatch = normalizedSVG.match(/width="([^"]*)"/);
-                                    const keyParts = [
-                                        viewBoxMatch ? viewBoxMatch[1] : '',
-                                        widthMatch ? widthMatch[1] : '',
-                                        normalizedSVG.length.toString()
-                                    ];
-                                    const baseCacheKey = keyParts.join('|');
-                                    const timeBucket = Math.floor((time % 2000) / 42);
-                                    const cacheKey = `petal_${key}_${baseCacheKey}_${timeBucket}`;
-                                    cacheKeys.push(cacheKey);
-                                }
-                                
-                                // Try to load from IndexedDB cache first
-                                const cachedFrames = await this.animationCache.getFrames(cacheKeys);
-                                
-                                for (let frame = 0; frame < frameCount; frame++) {
-                                    const cacheKey = cacheKeys[frame];
-                                    const cachedCanvas = cachedFrames.get(cacheKey);
-                                    
-                                    if (cachedCanvas) {
-                                        canvases.push(cachedCanvas);
-                                    } else {
-                                        const time = frame * 42; // Time in ms for this frame
-                                        // Get animated SVG string from renderer
-                                        const animatedSVG = svgRenderer.getAnimatedSVGString(svgString, time);
-                                        const canvas = await this.renderSVGToCanvas(animatedSVG, 100, 100);
-                                        canvases.push(canvas);
-                                        // Store in cache asynchronously
-                                        this.animationCache.storeFrame(cacheKey, canvas).catch(err => {
-                                            console.warn(`[Preloader] Failed to store frame in cache: ${err}`);
-                                        });
-                                    }
+                                    const canvas = await this.renderSVGToCanvas(animatedSVG, 100, 100);
+                                    canvases.push(canvas);
                                 }
                                 
                                 assets.petalImages[key] = canvases;
                                 this.loadedAssets += frameCount;
                                 this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
-                                const cachedCount = cachedFrames.size;
-                                console.log(`[Preloader] Loaded animated petal: ${key} (${frameCount} frames, ${cachedCount} from cache)`);
+                                console.log(`[Preloader] Loaded animated petal: ${key} (${frameCount} frames)`);
                             } else {
                                 // Static SVG - render once
-                                // Generate cache key
-                                let normalizedSVG = svgString.replace(/\s+/g, ' ').trim();
-                                normalizedSVG = normalizedSVG.replace(/\s+xmlns="[^"]*"/g, '');
-                                const viewBoxMatch = normalizedSVG.match(/viewBox="([^"]*)"/);
-                                const widthMatch = normalizedSVG.match(/width="([^"]*)"/);
-                                const keyParts = [
-                                    viewBoxMatch ? viewBoxMatch[1] : '',
-                                    widthMatch ? widthMatch[1] : '',
-                                    normalizedSVG.length.toString()
-                                ];
-                                const baseCacheKey = keyParts.join('|');
-                                const cacheKey = `petal_${key}_${baseCacheKey}`;
-                                
-                                // Try to load from cache first
-                                const cachedCanvas = await this.animationCache.getFrame(cacheKey);
-                                let canvas: HTMLCanvasElement;
-                                
-                                if (cachedCanvas) {
-                                    canvas = cachedCanvas;
-                                    console.log(`[Preloader] Loaded static petal from cache: ${key}`);
-                                } else {
-                                    canvas = await this.renderSVGToCanvas(svgString, 100, 100);
-                                    // Store in cache asynchronously
-                                    this.animationCache.storeFrame(cacheKey, canvas).catch(err => {
-                                        console.warn(`[Preloader] Failed to store frame in cache: ${err}`);
-                                    });
-                                }
-                                
+                                const canvas = await this.renderSVGToCanvas(svgString, 100, 100);
                                 assets.petalImages[key] = canvas;
                                 this.loadedAssets++;
                                 this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
-                                if (!cachedCanvas) {
-                                    console.log(`[Preloader] Loaded static petal: ${key}`);
-                                }
+                                console.log(`[Preloader] Loaded static petal: ${key}`);
                             }
                         } catch (error) {
                             console.error(`[Preloader] Failed to load petal ${key}:`, error);

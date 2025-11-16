@@ -855,10 +855,6 @@ class Graphics {
             console.error('[Graphics] Invalid enemy data:', enemy);
             return;
         }
-        // Debug: Log when drawing enemy (occasionally to avoid spam)
-        if (Math.random() < 0.01) { // 1% chance per enemy per frame
-            console.log(`[Graphics] drawEnemy called for enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)})`);
-        }
         // Get enemy size from mob stats
         const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
         // Use visual_scale for rendering (affects visual only, not hitbox)
@@ -905,10 +901,6 @@ class Graphics {
                 enemySize, enemySize, 0, // rotation (already rotated)
                 currentTime);
                 // Debug: Log when WASM rendering is attempted
-                if (Math.random() < 0.01) {
-                    const usingWasm = !this.svgRenderer.isUsingFallback();
-                    console.log(`[Graphics] Rendering ${cacheKey}: WASM=${usingWasm}, rendered=${rendered}`);
-                }
             }
             catch (error) {
                 console.error(`[Graphics] Error rendering enemy SVG with WASM for ${cacheKey}:`, error);
@@ -1403,19 +1395,6 @@ class Graphics {
         }
         // Draw enemies
         const enemyCount = enemies.size;
-        if (enemyCount > 0) {
-            // Debug: Log enemy count (only once per second to avoid spam)
-            const now = Date.now();
-            if (!this.lastEnemyDebugLog || now - this.lastEnemyDebugLog > 1000) {
-                console.log(`[Graphics] Drawing ${enemyCount} enemies, viewport: (${viewport.left.toFixed(1)}, ${viewport.top.toFixed(1)}) to (${viewport.right.toFixed(1)}, ${viewport.bottom.toFixed(1)})`);
-                // Log first enemy position for debugging
-                const firstEnemy = enemies.values().next().value;
-                if (firstEnemy) {
-                    console.log(`[Graphics] First enemy at: (${firstEnemy.x.toFixed(1)}, ${firstEnemy.y.toFixed(1)}), in viewport: ${firstEnemy.x >= viewport.left && firstEnemy.x <= viewport.right && firstEnemy.y >= viewport.top && firstEnemy.y <= viewport.bottom}`);
-                }
-                this.lastEnemyDebugLog = now;
-            }
-        }
         for (const enemy of enemies.values()) {
             // Temporarily disable viewport culling to debug rendering issue
             // TODO: Re-enable viewport culling once rendering is fixed

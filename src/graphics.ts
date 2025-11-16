@@ -279,9 +279,9 @@ export class Graphics {
                                 
                                 // Pre-render this animation frame
                                 const animatedSVG = this.svgRenderer.getAnimatedSVGString(mobStats.image, time);
-                                const canvas = await this.svgRenderer.renderSVGToOffscreenCanvas(animatedSVG, mobSize, mobSize, animatedCacheKey);
+                                const canvas = await this.svgRenderer.renderSVGToOffscreenCanvas(animatedSVG, mobSize, mobSize);
                                 if (canvas) {
-                                    // Cache the canvas directly (also stores in IndexedDB)
+                                    // Cache the canvas directly
                                     this.svgRenderer.cacheCanvas(animatedCacheKey, canvas);
                                     // Debug: Log first few cached frames
                                     if (frame < 3) {
@@ -1086,16 +1086,11 @@ export class Graphics {
         this.ctx.restore();
     }
 
-    public async drawEnemy(enemy: Enemy) {
+    public drawEnemy(enemy: Enemy) {
         // Validate enemy has required properties
         if (!enemy || typeof enemy.x !== 'number' || typeof enemy.y !== 'number') {
             console.error('[Graphics] Invalid enemy data:', enemy);
             return;
-        }
-        
-        // Debug: Log when drawing enemy (occasionally to avoid spam)
-        if (Math.random() < 0.01) { // 1% chance per enemy per frame
-            console.log(`[Graphics] drawEnemy called for enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)})`);
         }
         
         // Get enemy size from mob stats
@@ -1145,9 +1140,9 @@ export class Graphics {
         // the renderer might use WASM for animation even if image loading falls back
         if (mobSVG && this.svgRenderer.isInitialized()) {
             try {
-                // Use SVG renderer to render animated SVG (async - uses cached canvases)
+                // Use SVG renderer to render animated SVG (synchronous - uses cached canvases)
                 // x, y, rotation are 0 because transforms are already applied by the context
-                rendered = await this.svgRenderer.renderSVGToCanvas(
+                rendered = this.svgRenderer.renderSVGToCanvas(
                     this.ctx,
                     mobSVG,
                     0, // x (already translated)
@@ -1159,10 +1154,6 @@ export class Graphics {
                 );
                 
                 // Debug: Log when WASM rendering is attempted
-                if (Math.random() < 0.01) {
-                    const usingWasm = !this.svgRenderer.isUsingFallback();
-                    console.log(`[Graphics] Rendering ${cacheKey}: WASM=${usingWasm}, rendered=${rendered}`);
-                }
             } catch (error) {
                 console.error(`[Graphics] Error rendering enemy SVG with WASM for ${cacheKey}:`, error);
             }
@@ -1770,19 +1761,6 @@ export class Graphics {
 
         // Draw enemies
         const enemyCount = enemies.size;
-        if (enemyCount > 0) {
-            // Debug: Log enemy count (only once per second to avoid spam)
-            const now = Date.now();
-            if (!this.lastEnemyDebugLog || now - this.lastEnemyDebugLog > 1000) {
-                console.log(`[Graphics] Drawing ${enemyCount} enemies, viewport: (${viewport.left.toFixed(1)}, ${viewport.top.toFixed(1)}) to (${viewport.right.toFixed(1)}, ${viewport.bottom.toFixed(1)})`);
-                // Log first enemy position for debugging
-                const firstEnemy = enemies.values().next().value;
-                if (firstEnemy) {
-                    console.log(`[Graphics] First enemy at: (${firstEnemy.x.toFixed(1)}, ${firstEnemy.y.toFixed(1)}), in viewport: ${firstEnemy.x >= viewport.left && firstEnemy.x <= viewport.right && firstEnemy.y >= viewport.top && firstEnemy.y <= viewport.bottom}`);
-                }
-                this.lastEnemyDebugLog = now;
-            }
-        }
         
         for (const enemy of enemies.values()) {
             // Temporarily disable viewport culling to debug rendering issue
@@ -1796,7 +1774,7 @@ export class Graphics {
             // }
             
             try {
-                await this.drawEnemy(enemy);
+                this.drawEnemy(enemy);
             } catch (error) {
                 console.error('[Graphics] Error drawing enemy:', error, enemy);
                 // Draw a simple fallback circle if rendering fails
@@ -1831,7 +1809,7 @@ export class Graphics {
         }
     }
 
-    public async render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0) {
+    public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0) {
         this.ctx.save();
 
         // Clear the canvas

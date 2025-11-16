@@ -1014,10 +1014,7 @@ export class Game {
         }
 
         this.update();
-        // Render is async but we don't await it to avoid blocking the game loop
-        this.graphics.render(this.players, this.enemies, this.items, this.mobProjectiles, this.playerProjectiles, this.socket?.id ?? '', this.petalExtension).catch(err => {
-            console.error('[Game] Error in render:', err);
-        });
+        this.graphics.render(this.players, this.enemies, this.items, this.mobProjectiles, this.playerProjectiles, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
 
