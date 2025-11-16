@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 49,
-      "xp": 146218,
+      "xp": 148648,
       "maxHealth": 580,
       "damage": 101,
       "inventory": {
@@ -146,8 +146,8 @@
           "petalType": "rose",
           "rarity": "common",
           "maxHealth": 5,
-          "health": 5,
-          "onCooldown": false
+          "health": 0,
+          "onCooldown": true
         },
         {
           "type": "petal",
@@ -174,7 +174,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 655766559,
+          "health": 655669359,
           "maxHealth": 656093439
         },
         {

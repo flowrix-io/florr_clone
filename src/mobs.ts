@@ -613,9 +613,9 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         color: "#000000",
         image: `<svg width="32" height="32" viewBox="-50 -50 125 100" xmlns="http://www.w3.org/2000/svg">
 
-  <g id="pincers" transform="translate(35, 0)" fill="#333333" stroke="#333333" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+  <g id="beetle-pincers" transform="translate(35, 0)" fill="#333333" stroke="#333333" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
     
-    <g id="top-pincer">
+    <g id="beetle-top-pincer">
       <animateTransform 
         attributeName="transform"
         type="rotate"
@@ -625,7 +625,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
       <path d="M -10,15 Q 15,30 35,15 Q 15,20 -10,5 Z" />
     </g>
     
-    <g id="bottom-pincer">
+    <g id="beetle-bottom-pincer">
       <animateTransform 
         attributeName="transform"
         type="rotate"
@@ -636,14 +636,14 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     </g>
   </g>
 
-  <g id="body">
+  <g id="beetle-body">
     <path d="M 0,-30 Q 40,-30 40,0 Q 40,30 0,30 Q -40,30 -40,0 Q -40,-30 0,-30 Z" fill="#905db0" />
     
     <path d="M 0,-33.5 Q 43.5,-33.5 43.5,0 Q 43.5,33.5 0,33.5 Q -43.5,33.5 -43.5,0 Q -43.5,-33.5 0,-33.5 Z M 0,-26.5 Q -36.5,-26.5 -36.5,0 Q -36.5,26.5 0,26.5 Q 36.5,26.5 36.5,0 Q 36.5,-26.5 0,-26.5 Z" fill="#734a8d" fill-rule="evenodd" />
     
     <path d="M -20,0 Q 0,-3 20,0" stroke="#734a8d" stroke-width="7" fill="none" stroke-linecap="round" />
     
-    <g id="spots" fill="#734a8d">
+    <g id="beetle-spots" fill="#734a8d">
       <circle cx="-17" cy="-12" r="5" />
       <circle cx="-17" cy="12" r="5" />
       <circle cx="0" cy="-15" r="5" />
@@ -668,9 +668,9 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         color: "#000000",
         image: `<svg width="32" height="32" viewBox="-50 -50 125 100" xmlns="http://www.w3.org/2000/svg">
 
-  <g id="pincers" transform="translate(35, 0)" fill="#333333" stroke="#333333" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+  <g id="hel-beetle-pincers" transform="translate(35, 0)" fill="#333333" stroke="#333333" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
     
-    <g id="top-pincer">
+    <g id="hel-beetle-top-pincer">
       <animateTransform 
         attributeName="transform"
         type="rotate"
@@ -680,7 +680,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
       <path d="M -10,15 Q 15,30 35,15 Q 15,20 -10,5 Z" />
     </g>
     
-    <g id="bottom-pincer">
+    <g id="hel-beetle-bottom-pincer">
       <animateTransform 
         attributeName="transform"
         type="rotate"
@@ -691,14 +691,14 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     </g>
   </g>
 
-  <g id="body">
+  <g id="hel-beetle-body">
     <path d="M 0,-30 Q 40,-30 40,0 Q 40,30 0,30 Q -40,30 -40,0 Q -40,-30 0,-30 Z" fill="#831013" />
     
     <path d="M 0,-33.5 Q 43.5,-33.5 43.5,0 Q 43.5,33.5 0,33.5 Q -43.5,33.5 -43.5,0 Q -43.5,-33.5 0,-33.5 Z M 0,-26.5 Q -36.5,-26.5 -36.5,0 Q -36.5,26.5 0,26.5 Q 36.5,26.5 36.5,0 Q 36.5,-26.5 0,-26.5 Z" fill="#691010" fill-rule="evenodd" />
     
     <path d="M -20,0 Q 0,-3 20,0" stroke="#691010" stroke-width="7" fill="none" stroke-linecap="round" />
     
-    <g id="spots" fill="#691010">
+    <g id="hel-beetle-spots" fill="#691010">
       <circle cx="-17" cy="-12" r="5" />
       <circle cx="-17" cy="12" r="5" />
       <circle cx="0" cy="-15" r="5" />
