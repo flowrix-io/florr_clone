@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 49,
-      "xp": 504326,
+      "xp": 749756,
       "maxHealth": 580,
       "damage": 101,
       "inventory": {
@@ -86,7 +86,7 @@
           "petal_yggdrasil": 4,
           "petal_cactus": 7,
           "petal_poison_cactus": 2,
-          "petal_bone": 79,
+          "petal_bone": 126,
           "petal_iris": 5,
           "petal_lightning": 14
         },
@@ -150,42 +150,42 @@
           "petalType": "rose",
           "rarity": "common",
           "maxHealth": 5,
-          "health": 0,
-          "onCooldown": true
+          "health": 5,
+          "onCooldown": false
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 589004324,
+          "health": 587060324,
           "maxHealth": 656093439
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 655426721.5,
+          "health": 653847221.5,
           "maxHealth": 656093439
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 642278484,
+          "health": 640577484,
           "maxHealth": 656093439
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 655462705.25,
+          "health": 653761705.25,
           "maxHealth": 656093439
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 655311911.5,
+          "health": 654096911.5,
           "maxHealth": 656093439
         },
         {
@@ -197,7 +197,7 @@
           "petalType": "sparkle",
           "rarity": "unique",
           "maxHealth": 656093439,
-          "health": 656093439,
+          "health": 655121439,
           "onCooldown": false
         },
         {
@@ -205,7 +205,7 @@
           "petalType": "sparkle",
           "rarity": "unique",
           "maxHealth": 656093439,
-          "health": 656032689,
+          "health": 652873689,
           "onCooldown": false
         }
       ]
