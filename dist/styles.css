@@ -490,7 +490,6 @@ label {
     z-index: 1000;
     padding: 10px;
     border-radius: 5px;
-    background: rgb(0, 234, 255);
 }
 
 .inventory-item.dragging {

@@ -12628,9 +12628,6 @@ class InventoryManager {
             loadoutBar.appendChild(slot);
         }
         document.body.appendChild(loadoutBar);
-        loadoutBar.style.backgroundColor = 'red'; // Debug: make background visible
-        loadoutBar.style.opacity = '1'; // Debug: ensure not transparent
-        loadoutBar.style.zIndex = '9999'; // Debug: bring to front
         // Create inventory panel
         this.inventoryPanel = document.createElement('div');
         this.inventoryPanel.id = 'inventoryPanel';
@@ -12955,6 +12952,8 @@ class InventoryManager {
         slots.forEach((slot, index) => {
             slot.innerHTML = '';
             slot.classList.remove('on-cooldown', 'petal-slot');
+            // Reset background color to default
+            slot.style.backgroundColor = '';
             const item = player.loadout[index];
             if (item) {
                 // Handle cooldown state
@@ -12964,6 +12963,10 @@ class InventoryManager {
                 // Handle different item types
                 if (item.type === 'petal') {
                     slot.classList.add('petal-slot');
+                    // Set background color based on rarity
+                    if (item.rarity && this.ITEM_RARITY_COLORS[item.rarity]) {
+                        slot.style.backgroundColor = this.ITEM_RARITY_COLORS[item.rarity];
+                    }
                     // Create petal visual using SVG image
                     const petalDiv = document.createElement('div');
                     petalDiv.style.width = '80%';
