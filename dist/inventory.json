@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 49,
-      "xp": 2443657,
+      "xp": 2445601,
       "maxHealth": 580,
       "damage": 101,
       "inventory": {
@@ -103,7 +103,7 @@
           "petal_light": 16,
           "petal_rock": 58,
           "shield": 32,
-          "petal_dandelion": 25,
+          "petal_dandelion": 26,
           "petal_clover": 14,
           "petal_bone": 46,
           "petal_cactus": 3,
@@ -142,30 +142,28 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 636494416.5,
+          "health": 636490366.5,
           "maxHealth": 656093439
         },
         {
           "type": "petal",
-          "petalType": "bone",
           "rarity": "super",
-          "maxHealth": 32805,
-          "health": -88695,
-          "onCooldown": true
+          "petalType": "bone",
+          "health": 32670,
+          "maxHealth": 32805
         },
         {
           "type": "petal",
-          "petalType": "bone",
           "rarity": "super",
-          "maxHealth": 32805,
-          "health": -88695,
-          "onCooldown": true
+          "petalType": "bone",
+          "health": 32805,
+          "maxHealth": 32805
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 646227246.5,
+          "health": 656093439,
           "maxHealth": 656093439
         },
         {
@@ -198,7 +196,7 @@
           "petalType": "sparkle",
           "rarity": "unique",
           "maxHealth": 656093439,
-          "health": 648578214,
+          "health": 648568079,
           "onCooldown": false
         },
         {
@@ -206,7 +204,7 @@
           "petalType": "sparkle",
           "rarity": "unique",
           "maxHealth": 656093439,
-          "health": 646308856.5,
+          "health": 646308819,
           "onCooldown": false
         }
       ]

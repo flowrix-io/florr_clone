@@ -3,6 +3,27 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryManager = void 0;
 const petals_1 = require("./petals");
 class InventoryManager {
+    /**
+     * Darken a hex color by a specified percentage
+     * @param hex - Hex color string (e.g., '#7eef6d')
+     * @param percent - Percentage to darken (0-100, default 30)
+     * @returns Darkened hex color string
+     */
+    darkenColor(hex, percent = 30) {
+        // Remove # if present
+        const num = parseInt(hex.replace('#', ''), 16);
+        // Extract RGB components
+        const r = (num >> 16) & 255;
+        const g = (num >> 8) & 255;
+        const b = num & 255;
+        // Darken each component
+        const factor = 1 - (percent / 100);
+        const newR = Math.round(r * factor);
+        const newG = Math.round(g * factor);
+        const newB = Math.round(b * factor);
+        // Convert back to hex
+        return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
+    }
     constructor(game, chat) {
         this.inventoryPanel = null;
         this.craftingPanel = null;
@@ -43,7 +64,7 @@ class InventoryManager {
             slot.style.width = '50px';
             slot.style.height = '50px';
             slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
-            slot.style.border = '2px solid #00ba3e';
+            slot.style.border = '3px solid #00ba3e';
             slot.style.borderRadius = '5px';
             loadoutBar.appendChild(slot);
         }
@@ -372,8 +393,10 @@ class InventoryManager {
         slots.forEach((slot, index) => {
             slot.innerHTML = '';
             slot.classList.remove('on-cooldown', 'petal-slot');
-            // Reset background color to default
-            slot.style.backgroundColor = '';
+            // Reset background and border colors to default
+            const slotElement = slot;
+            slotElement.style.backgroundColor = '';
+            slotElement.style.borderColor = '';
             const item = player.loadout[index];
             if (item) {
                 // Handle cooldown state
@@ -383,9 +406,11 @@ class InventoryManager {
                 // Handle different item types
                 if (item.type === 'petal') {
                     slot.classList.add('petal-slot');
-                    // Set background color based on rarity
+                    // Set background and border colors based on rarity
                     if (item.rarity && this.ITEM_RARITY_COLORS[item.rarity]) {
-                        slot.style.backgroundColor = this.ITEM_RARITY_COLORS[item.rarity];
+                        const rarityColor = this.ITEM_RARITY_COLORS[item.rarity];
+                        slotElement.style.backgroundColor = rarityColor;
+                        slotElement.style.borderColor = this.darkenColor(rarityColor);
                     }
                     // Create petal visual using SVG image
                     const petalDiv = document.createElement('div');
