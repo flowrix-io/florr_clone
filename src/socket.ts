@@ -268,6 +268,10 @@ function setupSocketListeners(game: any) {
                 velocityY: 0
             });
         });
+        // Update loadout display after player loadout and inventory is received
+        if (game.socket.id && game.players.has(game.socket.id) && game.inventoryManager) {
+            game.inventoryManager.updateLoadoutDisplay();
+        }
     });
 
     game.socket.on('newPlayer', (player: Player) => {
@@ -503,7 +507,6 @@ function setupSocketListeners(game: any) {
     });
 
     game.socket.on('itemSpawned', (item: WorldItem) => {
-        console.log('Item spawned:', item);
         game.items.set(item.id, item);
     });
 
@@ -643,7 +646,6 @@ function setupSocketListeners(game: any) {
         maxHealth: number;
         damage: number;
     }) => {
-        console.log('XP gained:', data);  // Add logging
         const player = game.players.get(data.playerId);
         if (player) {
             player.xp = data.totalXp;

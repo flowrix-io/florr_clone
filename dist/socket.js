@@ -227,6 +227,10 @@ function setupSocketListeners(game) {
                 velocityY: 0
             });
         });
+        // Update loadout display after player loadout and inventory is received
+        if (game.socket.id && game.players.has(game.socket.id) && game.inventoryManager) {
+            game.inventoryManager.updateLoadoutDisplay();
+        }
     });
     game.socket.on('newPlayer', (player) => {
         //console.log('New player joined:', player);
@@ -419,7 +423,6 @@ function setupSocketListeners(game) {
         });
     });
     game.socket.on('itemSpawned', (item) => {
-        console.log('Item spawned:', item);
         game.items.set(item.id, item);
     });
     // Petal action event handlers
@@ -529,7 +532,6 @@ function setupSocketListeners(game) {
         }
     });
     game.socket.on('xpGained', (data) => {
-        console.log('XP gained:', data); // Add logging
         const player = game.players.get(data.playerId);
         if (player) {
             player.xp = data.totalXp;

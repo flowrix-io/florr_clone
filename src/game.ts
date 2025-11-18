@@ -525,7 +525,6 @@ export class Game {
 
         // Add to constructor after other UI initialization
         this.inventoryManager = new InventoryManager(this, this.chat);
-        this.inventoryManager.updateLoadoutDisplay();
 
         this.svgLoader = new SVGLoader();
         this.assetLoader.loadAssets();
@@ -579,6 +578,9 @@ export class Game {
         // Initialize tutorial
         this.tutorial = new Tutorial();
         document.getElementById('connectingDiv')?.remove();
+
+        // Note: updateLoadoutDisplay() is now called after player data is received
+        // in the 'authenticated' and 'currentPlayers' event handlers
     }
 
     /**
@@ -628,6 +630,8 @@ export class Game {
                         const player = this.players.get(this.socket.id);
                         if (player) {
                             Object.assign(player, response.player);
+                            // Update loadout display after player loadout and inventory is received
+                            this.inventoryManager.updateLoadoutDisplay();
                         }
                     }
                 }
@@ -887,11 +891,6 @@ export class Game {
             // Player position is invalid, don't update camera
             console.warn('[Game] Invalid player position, skipping camera update:', player);
             return;
-        }
-        
-        // Debug: Log camera position occasionally
-        if (Math.random() < 0.01) { // 1% chance per frame
-            console.log(`[Game] Camera update - Player: (${player.x.toFixed(1)}, ${player.y.toFixed(1)}), Camera: (${this.cameraX.toFixed(1)}, ${this.cameraY.toFixed(1)})`);
         }
 
         // Center camera on player with zoom

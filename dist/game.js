@@ -390,7 +390,6 @@ class Game {
         document.head.appendChild(style);
         // Add to constructor after other UI initialization
         this.inventoryManager = new inventory_1.InventoryManager(this, this.chat);
-        this.inventoryManager.updateLoadoutDisplay();
         this.svgLoader = new SVGLoader_1.SVGLoader();
         this.assetLoader.loadAssets();
         // Listen for map data from the server
@@ -432,6 +431,8 @@ class Game {
         // Initialize tutorial
         this.tutorial = new tutorial_1.Tutorial();
         document.getElementById('connectingDiv')?.remove();
+        // Note: updateLoadoutDisplay() is now called after player data is received
+        // in the 'authenticated' and 'currentPlayers' event handlers
     }
     /**
      * Waits for the canvas element to be ready in the DOM
@@ -472,6 +473,8 @@ class Game {
                         const player = this.players.get(this.socket.id);
                         if (player) {
                             Object.assign(player, response.player);
+                            // Update loadout display after player loadout and inventory is received
+                            this.inventoryManager.updateLoadoutDisplay();
                         }
                     }
                 }
@@ -672,10 +675,6 @@ class Game {
             // Player position is invalid, don't update camera
             console.warn('[Game] Invalid player position, skipping camera update:', player);
             return;
-        }
-        // Debug: Log camera position occasionally
-        if (Math.random() < 0.01) { // 1% chance per frame
-            console.log(`[Game] Camera update - Player: (${player.x.toFixed(1)}, ${player.y.toFixed(1)}), Camera: (${this.cameraX.toFixed(1)}, ${this.cameraY.toFixed(1)})`);
         }
         // Center camera on player with zoom
         const scaledWidth = this.canvas.width / this.zoomLevel;
