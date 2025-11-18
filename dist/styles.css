@@ -407,7 +407,7 @@ label {
     width: 40px;
     height: 40px;
     background: rgba(255, 255, 255, 0.1);
-    border: 1px solid #666;
+    border: 3px solid #666;
     border-radius: 3px;
     display: flex;
     align-items: center;
@@ -417,7 +417,8 @@ label {
 }
 
 .crafting-inventory-item:hover {
-    background: rgba(255, 255, 255, 0.2);
+    opacity: 0.9;
+    transform: scale(1.05);
 }
 
 .crafting-inventory-item img {

@@ -676,12 +676,14 @@ class InventoryManager {
                     const itemElement = document.createElement('div');
                     itemElement.className = 'inventory-item';
                     itemElement.draggable = true;
+                    const rarityColor = this.ITEM_RARITY_COLORS[rarity];
+                    const darkenedColor = this.darkenColor(rarityColor);
                     itemElement.style.cssText = `
                       position: relative;
                       width: 50px;
                       height: 50px;
-                      background-color: ${this.ITEM_RARITY_COLORS[rarity]}20;
-                      border: 2px solid ${this.ITEM_RARITY_COLORS[rarity]};
+                      background-color: ${rarityColor};
+                      border: 3px solid ${darkenedColor};
                       border-radius: 5px;
                       display: flex;
                       align-items: center;
@@ -1061,6 +1063,13 @@ class InventoryManager {
                         itemElement.dataset.rarity = rarity;
                         itemElement.dataset.type = itemType;
                         itemElement.dataset.count = count.toString();
+                        // Set background and border colors based on rarity
+                        const rarityColor = this.ITEM_RARITY_COLORS[rarity];
+                        const darkenedColor = this.darkenColor(rarityColor);
+                        if (rarityColor) {
+                            itemElement.style.backgroundColor = rarityColor;
+                            itemElement.style.border = `3px solid ${darkenedColor}`;
+                        }
                         // Create container for item display
                         const itemContainer = document.createElement('div');
                         itemContainer.style.position = 'relative';
