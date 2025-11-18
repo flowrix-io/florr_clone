@@ -1398,13 +1398,13 @@ class Graphics {
         for (const enemy of enemies.values()) {
             // Temporarily disable viewport culling to debug rendering issue
             // TODO: Re-enable viewport culling once rendering is fixed
-            // const enemySize = 40; // Approximate size for culling
-            // if (enemy.x + enemySize < viewport.left || 
-            //     enemy.x - enemySize > viewport.right ||
-            //     enemy.y + enemySize < viewport.top ||
-            //     enemy.y - enemySize > viewport.bottom) {
-            //     continue;
-            // }
+            const enemySize = 40; // Approximate size for culling
+            if (enemy.x + enemySize < viewport.left ||
+                enemy.x - enemySize > viewport.right ||
+                enemy.y + enemySize < viewport.top ||
+                enemy.y - enemySize > viewport.bottom) {
+                continue;
+            }
             try {
                 this.drawEnemy(enemy);
             }
