@@ -468,25 +468,22 @@ class Graphics {
             const flowerCenterX = 50;
             const flowerCenterY = 120; // 50 + 70 pixels down
             const flowerEye = { x: 2, y: 0 }; // Centered eyes for UI flower
-            this.ctx.save();
-            this.drawFlower({ x: flowerCenterX, y: flowerCenterY }, flowerEye);
-            this.ctx.restore();
             // Position bars to the right of the flower
             const healthBarWidth = 200;
             const healthBarHeight = 20;
-            const healthX = flowerCenterX + 40; // Offset from flower center
+            const healthX = flowerCenterX; // Offset from flower center
             const healthY = 100; // 30 + 70 pixels down
             // Draw health bar with rounded ends
             const clampedHealth = Math.max(0, player.health); // Cap health at 0
             const healthFillWidth = (clampedHealth / player.maxHealth) * healthBarWidth;
             const radius = healthBarHeight / 2;
             // Health bar background (rounded)
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
             this.ctx.beginPath();
-            this.ctx.roundRect(healthX, healthY, healthBarWidth, healthBarHeight, radius);
+            this.ctx.roundRect(healthX - 2, healthY - 2, healthBarWidth + 4, healthBarHeight + 4, radius);
             this.ctx.fill();
             // Health bar fill (rounded)
-            this.ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+            this.ctx.fillStyle = '#73ff54';
             this.ctx.beginPath();
             this.ctx.roundRect(healthX, healthY, healthFillWidth, healthBarHeight, radius);
             this.ctx.fill();
@@ -498,9 +495,9 @@ class Graphics {
             const xpBarY = healthY + healthBarHeight + 5;
             const xpFillWidth = (player.xp / player.xpToNextLevel) * healthBarWidth;
             // XP bar background (rounded)
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
             this.ctx.beginPath();
-            this.ctx.roundRect(healthX, xpBarY, healthBarWidth, healthBarHeight, radius);
+            this.ctx.roundRect(healthX - 2, xpBarY - 2, healthBarWidth + 4, healthBarHeight + 4, radius);
             this.ctx.fill();
             // XP bar fill (rounded) with new color
             this.ctx.fillStyle = '#faffc9';
@@ -510,6 +507,15 @@ class Graphics {
             // XP text
             this.ctx.fillStyle = 'white';
             this.ctx.fillText(`Level ${player.level} - XP: ${player.xp}/${player.xpToNextLevel}`, healthX + 5, xpBarY + 15);
+            this.ctx.save();
+            // Draw black outline around flower
+            this.ctx.beginPath();
+            this.ctx.arc(flowerCenterX, flowerCenterY, 27, 0, Math.PI * 2, false);
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 4;
+            this.ctx.stroke();
+            this.drawFlower({ x: flowerCenterX, y: flowerCenterY }, flowerEye);
+            this.ctx.restore();
         }
         // Draw floating texts
         this.drawFloatingTexts();
