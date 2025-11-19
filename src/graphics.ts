@@ -1234,6 +1234,9 @@ export class Graphics {
         this.ctx.translate(enemy.x, enemy.y);
         this.ctx.rotate(enemy.angle || 0);
         
+        // Disable anti-aliasing for mobs (pixelated look)
+        this.ctx.imageSmoothingEnabled = false;
+        
         // Debug: Always draw something visible to verify coordinates work
         // This ensures we can see enemies even if images/sprites fail
         
@@ -1270,6 +1273,7 @@ export class Graphics {
             try {
                 // Use SVG renderer to render animated SVG (synchronous - uses cached canvases)
                 // x, y, rotation are 0 because transforms are already applied by the context
+                // Pass true to indicate this is a mob render (disable anti-aliasing)
                 rendered = this.svgRenderer.renderSVGToCanvas(
                     this.ctx,
                     mobSVG,
@@ -1278,7 +1282,8 @@ export class Graphics {
                     enemySize,
                     enemySize,
                     0, // rotation (already rotated)
-                    currentTime
+                    currentTime,
+                    true // disableAntiAliasing flag
                 );
                 
                 // Debug: Log when WASM rendering is attempted

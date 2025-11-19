@@ -219,7 +219,7 @@ class SVGRendererWrapper {
             return null;
         }
     }
-    renderSVGToCanvas(ctx, svgString, x, y, width, height, rotation = 0, time = Date.now()) {
+    renderSVGToCanvas(ctx, svgString, x, y, width, height, rotation = 0, time = Date.now(), disableAntiAliasing = false) {
         // Get animated SVG string
         let animatedSVG;
         if (this.fallbackMode || !this.renderer) {
@@ -266,6 +266,11 @@ class SVGRendererWrapper {
         if (this.canvasCache.has(animatedCacheKey)) {
             const cachedCanvas = this.canvasCache.get(animatedCacheKey);
             if (cachedCanvas.width > 0 && cachedCanvas.height > 0) {
+                // Disable anti-aliasing if requested
+                const originalSmoothing = ctx.imageSmoothingEnabled;
+                if (disableAntiAliasing) {
+                    ctx.imageSmoothingEnabled = false;
+                }
                 // Use cached canvas immediately
                 if (x !== 0 || y !== 0 || rotation !== 0) {
                     ctx.save();
@@ -276,6 +281,10 @@ class SVGRendererWrapper {
                 }
                 else {
                     ctx.drawImage(cachedCanvas, -width / 2, -height / 2, width, height);
+                }
+                // Restore original smoothing setting
+                if (disableAntiAliasing) {
+                    ctx.imageSmoothingEnabled = originalSmoothing;
                 }
                 return true;
             }
@@ -315,6 +324,11 @@ class SVGRendererWrapper {
                     const closestKey = `${baseKey}_${closestBucket}`;
                     const closestCanvas = this.canvasCache.get(closestKey);
                     if (closestCanvas && closestCanvas.width > 0 && closestCanvas.height > 0) {
+                        // Disable anti-aliasing if requested
+                        const originalSmoothing = ctx.imageSmoothingEnabled;
+                        if (disableAntiAliasing) {
+                            ctx.imageSmoothingEnabled = false;
+                        }
                         // Use closest cached canvas
                         if (x !== 0 || y !== 0 || rotation !== 0) {
                             ctx.save();
@@ -325,6 +339,10 @@ class SVGRendererWrapper {
                         }
                         else {
                             ctx.drawImage(closestCanvas, -width / 2, -height / 2, width, height);
+                        }
+                        // Restore original smoothing setting
+                        if (disableAntiAliasing) {
+                            ctx.imageSmoothingEnabled = originalSmoothing;
                         }
                         return true;
                     }
