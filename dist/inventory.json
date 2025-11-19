@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 49,
-      "xp": 2807924,
+      "xp": 2811025,
       "maxHealth": 580,
       "damage": 101,
       "inventory": {
@@ -16,12 +16,12 @@
           "petal_yggdrasil": 2,
           "speed_boost": 44,
           "petal_sand": 38,
-          "petal_rock": 61,
+          "petal_rock": 62,
           "petal_clover": 13,
           "petal_bone": 47,
           "petal_cactus": 8,
           "petal_iris": 22,
-          "petal_basic": 20,
+          "petal_basic": 22,
           "petal_poison_cactus": 2,
           "petal_lightning": 22,
           "petal_missile": 7
@@ -111,7 +111,7 @@
           "petal_poison_cactus": 2,
           "petal_iris": 4,
           "petal_lightning": 3,
-          "petal_missile": 16
+          "petal_missile": 17
         },
         "rare": {
           "petal_dandelion": 11,
@@ -119,9 +119,9 @@
           "petal_rose": 13,
           "petal_light": 6,
           "health_potion": 7,
-          "shield": 18,
+          "shield": 19,
           "petal_sand": 2,
-          "petal_basic": 8,
+          "petal_basic": 9,
           "speed_boost": 26,
           "petal_stinger": 2,
           "petal_yggdrasil": 1,
@@ -142,7 +142,7 @@
           "petalType": "dandelion",
           "rarity": "super",
           "maxHealth": 17496,
-          "health": 13446,
+          "health": 8671,
           "onCooldown": false
         },
         {
@@ -165,22 +165,22 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "basic",
-          "health": 48802.5,
+          "health": 46102.5,
           "maxHealth": 65610
         },
         {
           "type": "petal",
-          "rarity": "unique",
           "petalType": "basic",
-          "health": -1572.5,
+          "rarity": "unique",
           "maxHealth": 65610,
-          "onCooldown": true
+          "health": 61560,
+          "onCooldown": false
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "poison_cactus",
-          "health": 53645,
+          "health": 49595,
           "maxHealth": 98415
         },
         {
@@ -199,7 +199,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "basic",
-          "health": 39127.5,
+          "health": 39090,
           "maxHealth": 65610
         },
         null,

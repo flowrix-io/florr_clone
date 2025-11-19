@@ -4,6 +4,7 @@ exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT =
 exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = exports.DEFAULT_SERVER_CONFIGS = exports.WORLD_MAP = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.ZONE_BOUNDARIES = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = void 0;
 exports.getMobAnimationFramerate = getMobAnimationFramerate;
 exports.getMobAnimationFrameTime = getMobAnimationFrameTime;
+exports.getHighQualityMobs = getHighQualityMobs;
 exports.validateWorldMap = validateWorldMap;
 exports.isWall = isWall;
 exports.isSpawn = isSpawn;
@@ -24,6 +25,11 @@ function getMobAnimationFrameTime() {
     // Convert FPS to milliseconds per frame
     const fps = getMobAnimationFramerate();
     return 1000 / fps;
+}
+// High quality mobs setting utility
+function getHighQualityMobs() {
+    const saved = localStorage.getItem('highQualityMobs');
+    return saved === 'true'; // Default to false (optimized approach)
 }
 // Server protocol configuration
 exports.USE_HTTPS = typeof process !== 'undefined' && process.env ? process.env.USE_HTTPS !== 'false' : true; // Default to HTTPS, set USE_HTTPS=false to use HTTP

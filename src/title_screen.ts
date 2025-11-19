@@ -554,6 +554,11 @@ export class TitleScreen {
                             <input type="range" id="mobFramerateSlider" min="5" max="60" value="15" step="1">
                         </label>
                         <br/><br/>
+                        <label>
+                            <input type="checkbox" id="highQualityMobs">
+                            High Quality Mobs (Pre-render frames per rarity - uses more memory)
+                        </label>
+                        <br/><br/>
                         <h3>Tutorial</h3>
                         <button id="resetTutorialButton">Reset Tutorial</button>
                     </div>
@@ -897,6 +902,13 @@ export class TitleScreen {
             });
         }
 
+        const highQualityMobsCheckbox = this.settingsMenu.querySelector('#highQualityMobs') as HTMLInputElement;
+        if (highQualityMobsCheckbox) {
+            highQualityMobsCheckbox.addEventListener('change', () => {
+                localStorage.setItem('highQualityMobs', highQualityMobsCheckbox.checked.toString());
+            });
+        }
+
         // Reset tutorial button
         const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
         if (resetTutorialButton) {
@@ -1088,6 +1100,12 @@ export class TitleScreen {
         }
         if (mobFramerateValue) {
             mobFramerateValue.textContent = mobFramerate.toString();
+        }
+
+        const highQualityMobs = localStorage.getItem('highQualityMobs') === 'true';
+        const highQualityMobsCheckbox = this.settingsMenu.querySelector('#highQualityMobs') as HTMLInputElement;
+        if (highQualityMobsCheckbox) {
+            highQualityMobsCheckbox.checked = highQualityMobs;
         }
     }
 

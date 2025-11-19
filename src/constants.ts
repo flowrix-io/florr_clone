@@ -21,6 +21,12 @@ export function getMobAnimationFrameTime(): number {
     return 1000 / fps;
 }
 
+// High quality mobs setting utility
+export function getHighQualityMobs(): boolean {
+    const saved = localStorage.getItem('highQualityMobs');
+    return saved === 'true'; // Default to false (optimized approach)
+}
+
 // Server protocol configuration
 export const USE_HTTPS = typeof process !== 'undefined' && process.env ? process.env.USE_HTTPS !== 'false' : true;  // Default to HTTPS, set USE_HTTPS=false to use HTTP
 export const SERVER_PROTOCOL = USE_HTTPS ? 'https' : 'http';
