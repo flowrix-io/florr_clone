@@ -224,6 +224,30 @@ class Graphics {
     getMobAnimationFrameTime() {
         return (0, constants_1.getMobAnimationFrameTime)();
     }
+    /**
+     * Get the total memory used by offscreen canvases in MB
+     */
+    getOffscreenCanvasMemoryMB() {
+        try {
+            const canvasCache = this.svgRenderer.canvasCache;
+            if (!canvasCache) {
+                return 0;
+            }
+            let totalBytes = 0;
+            for (const canvas of canvasCache.values()) {
+                if (canvas && canvas.width && canvas.height) {
+                    // Each pixel is 4 bytes (RGBA)
+                    totalBytes += canvas.width * canvas.height * 4;
+                }
+            }
+            // Convert bytes to MB
+            return totalBytes / (1024 * 1024);
+        }
+        catch (error) {
+            console.warn('[Graphics] Error calculating canvas memory:', error);
+            return 0;
+        }
+    }
     // Method to set a biome texture
     setBiomeTexture(biomeName, texture) {
         this.biomeTextures.set(biomeName, texture);

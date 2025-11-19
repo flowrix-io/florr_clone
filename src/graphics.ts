@@ -328,6 +328,33 @@ export class Graphics {
         return getMobAnimationFrameTime();
     }
 
+    /**
+     * Get the total memory used by offscreen canvases in MB
+     */
+    public getOffscreenCanvasMemoryMB(): number {
+        try {
+            const canvasCache = (this.svgRenderer as any).canvasCache as Map<string, HTMLCanvasElement> | undefined;
+            if (!canvasCache) {
+                return 0;
+            }
+
+            let totalBytes = 0;
+            
+            for (const canvas of canvasCache.values()) {
+                if (canvas && canvas.width && canvas.height) {
+                    // Each pixel is 4 bytes (RGBA)
+                    totalBytes += canvas.width * canvas.height * 4;
+                }
+            }
+
+            // Convert bytes to MB
+            return totalBytes / (1024 * 1024);
+        } catch (error) {
+            console.warn('[Graphics] Error calculating canvas memory:', error);
+            return 0;
+        }
+    }
+
     // Method to set a biome texture
     public setBiomeTexture(biomeName: string, texture: HTMLImageElement) {
         this.biomeTextures.set(biomeName, texture);

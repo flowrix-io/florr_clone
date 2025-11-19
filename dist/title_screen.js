@@ -464,18 +464,13 @@ class TitleScreen {
                         </label>
                         <br/><br/>
                         <label>
-                            <input type="checkbox" id="showFPS">
-                            Show FPS Counter
+                            <input type="checkbox" id="showStats">
+                            Show Performance Stats (FPS, Counters, Memory)
                         </label>
                         <br/><br/>
                         <label>
                             <input type="checkbox" id="enableParticles">
                             Enable Particle Effects
-                        </label>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" id="showCounters">
-                            Show Server Counters
                         </label>
                         <br/><br/>
                         <label>
@@ -778,16 +773,10 @@ class TitleScreen {
                 }
             });
         }
-        const showFPSCheckbox = this.settingsMenu.querySelector('#showFPS');
-        if (showFPSCheckbox) {
-            showFPSCheckbox.addEventListener('change', () => {
-                localStorage.setItem('showFPS', showFPSCheckbox.checked.toString());
-            });
-        }
-        const showCountersCheckbox = this.settingsMenu.querySelector('#showCounters');
-        if (showCountersCheckbox) {
-            showCountersCheckbox.addEventListener('change', () => {
-                localStorage.setItem('showCounters', showCountersCheckbox.checked.toString());
+        const showStatsCheckbox = this.settingsMenu.querySelector('#showStats');
+        if (showStatsCheckbox) {
+            showStatsCheckbox.addEventListener('change', () => {
+                localStorage.setItem('showStats', showStatsCheckbox.checked.toString());
             });
         }
         const mobFramerateSlider = this.settingsMenu.querySelector('#mobFramerateSlider');
@@ -938,15 +927,20 @@ class TitleScreen {
         if (enableShadersCheckbox) {
             enableShadersCheckbox.checked = shadersEnabled;
         }
-        const showFPS = localStorage.getItem('showFPS') === 'true';
-        const showFPSCheckbox = this.settingsMenu.querySelector('#showFPS');
-        if (showFPSCheckbox) {
-            showFPSCheckbox.checked = showFPS;
+        // Load combined stats setting (migrate from old separate settings if needed)
+        let showStats = localStorage.getItem('showStats') === 'true';
+        if (!localStorage.getItem('showStats')) {
+            // Migrate from old settings
+            const oldShowFPS = localStorage.getItem('showFPS') === 'true';
+            const oldShowCounters = localStorage.getItem('showCounters') === 'true';
+            showStats = oldShowFPS || oldShowCounters;
+            if (showStats) {
+                localStorage.setItem('showStats', 'true');
+            }
         }
-        const showCounters = localStorage.getItem('showCounters') === 'true';
-        const showCountersCheckbox = this.settingsMenu.querySelector('#showCounters');
-        if (showCountersCheckbox) {
-            showCountersCheckbox.checked = showCounters;
+        const showStatsCheckbox = this.settingsMenu.querySelector('#showStats');
+        if (showStatsCheckbox) {
+            showStatsCheckbox.checked = showStats;
         }
         const serverIP = localStorage.getItem('serverIP') || window.location.origin;
         const serverIPInput = this.settingsMenu.querySelector('#serverIP-settings');
@@ -1258,12 +1252,8 @@ class TitleScreen {
         const checkbox = this.settingsMenu.querySelector('#enableShadersCheckbox');
         return checkbox ? checkbox.checked : false;
     }
-    getShowFPS() {
-        const checkbox = this.settingsMenu.querySelector('#showFPS');
-        return checkbox ? checkbox.checked : false;
-    }
-    getShowCounters() {
-        const checkbox = this.settingsMenu.querySelector('#showCounters');
+    getShowStats() {
+        const checkbox = this.settingsMenu.querySelector('#showStats');
         return checkbox ? checkbox.checked : false;
     }
     getServerIP() {

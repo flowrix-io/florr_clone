@@ -540,18 +540,13 @@ export class TitleScreen {
                         </label>
                         <br/><br/>
                         <label>
-                            <input type="checkbox" id="showFPS">
-                            Show FPS Counter
+                            <input type="checkbox" id="showStats">
+                            Show Performance Stats (FPS, Counters, Memory)
                         </label>
                         <br/><br/>
                         <label>
                             <input type="checkbox" id="enableParticles">
                             Enable Particle Effects
-                        </label>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" id="showCounters">
-                            Show Server Counters
                         </label>
                         <br/><br/>
                         <label>
@@ -885,17 +880,10 @@ export class TitleScreen {
             });
         }
 
-        const showFPSCheckbox = this.settingsMenu.querySelector('#showFPS') as HTMLInputElement;
-        if (showFPSCheckbox) {
-            showFPSCheckbox.addEventListener('change', () => {
-                localStorage.setItem('showFPS', showFPSCheckbox.checked.toString());
-            });
-        }
-
-        const showCountersCheckbox = this.settingsMenu.querySelector('#showCounters') as HTMLInputElement;
-        if (showCountersCheckbox) {
-            showCountersCheckbox.addEventListener('change', () => {
-                localStorage.setItem('showCounters', showCountersCheckbox.checked.toString());
+        const showStatsCheckbox = this.settingsMenu.querySelector('#showStats') as HTMLInputElement;
+        if (showStatsCheckbox) {
+            showStatsCheckbox.addEventListener('change', () => {
+                localStorage.setItem('showStats', showStatsCheckbox.checked.toString());
             });
         }
 
@@ -1070,16 +1058,20 @@ export class TitleScreen {
             enableShadersCheckbox.checked = shadersEnabled;
         }
 
-        const showFPS = localStorage.getItem('showFPS') === 'true';
-        const showFPSCheckbox = this.settingsMenu.querySelector('#showFPS') as HTMLInputElement;
-        if (showFPSCheckbox) {
-            showFPSCheckbox.checked = showFPS;
+        // Load combined stats setting (migrate from old separate settings if needed)
+        let showStats = localStorage.getItem('showStats') === 'true';
+        if (!localStorage.getItem('showStats')) {
+            // Migrate from old settings
+            const oldShowFPS = localStorage.getItem('showFPS') === 'true';
+            const oldShowCounters = localStorage.getItem('showCounters') === 'true';
+            showStats = oldShowFPS || oldShowCounters;
+            if (showStats) {
+                localStorage.setItem('showStats', 'true');
+            }
         }
-
-        const showCounters = localStorage.getItem('showCounters') === 'true';
-        const showCountersCheckbox = this.settingsMenu.querySelector('#showCounters') as HTMLInputElement;
-        if (showCountersCheckbox) {
-            showCountersCheckbox.checked = showCounters;
+        const showStatsCheckbox = this.settingsMenu.querySelector('#showStats') as HTMLInputElement;
+        if (showStatsCheckbox) {
+            showStatsCheckbox.checked = showStats;
         }
 
         const serverIP = localStorage.getItem('serverIP') || window.location.origin;
@@ -1441,13 +1433,8 @@ export class TitleScreen {
         return checkbox ? checkbox.checked : false;
     }
 
-    public getShowFPS(): boolean {
-        const checkbox = this.settingsMenu.querySelector('#showFPS') as HTMLInputElement;
-        return checkbox ? checkbox.checked : false;
-    }
-
-    public getShowCounters(): boolean {
-        const checkbox = this.settingsMenu.querySelector('#showCounters') as HTMLInputElement;
+    public getShowStats(): boolean {
+        const checkbox = this.settingsMenu.querySelector('#showStats') as HTMLInputElement;
         return checkbox ? checkbox.checked : false;
     }
 
