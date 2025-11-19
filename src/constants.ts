@@ -9,6 +9,18 @@ export const FISH_DETECTION_RADIUS = 500;  // How far fish can detect players
 export const PLAYER_BASE_SPEED = 5;  // Base player speed to match
 export const FISH_RETURN_SPEED = 0.5;  // Speed at which fish return to their normal behavior
 
+// Mob animation framerate utility
+export function getMobAnimationFramerate(): number {
+    const saved = localStorage.getItem('mobAnimationFramerate');
+    return saved ? parseInt(saved, 10) : 15; // Default to 15 FPS
+}
+
+export function getMobAnimationFrameTime(): number {
+    // Convert FPS to milliseconds per frame
+    const fps = getMobAnimationFramerate();
+    return 1000 / fps;
+}
+
 // Server protocol configuration
 export const USE_HTTPS = typeof process !== 'undefined' && process.env ? process.env.USE_HTTPS !== 'false' : true;  // Default to HTTPS, set USE_HTTPS=false to use HTTP
 export const SERVER_PROTOCOL = USE_HTTPS ? 'https' : 'http';

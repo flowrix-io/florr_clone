@@ -554,6 +554,11 @@ export class TitleScreen {
                             Show Server Counters
                         </label>
                         <br/><br/>
+                        <label>
+                            Mob Animation Framerate: <span id="mobFramerateValue">15</span> FPS
+                            <input type="range" id="mobFramerateSlider" min="5" max="60" value="15" step="1">
+                        </label>
+                        <br/><br/>
                         <h3>Tutorial</h3>
                         <button id="resetTutorialButton">Reset Tutorial</button>
                     </div>
@@ -894,6 +899,16 @@ export class TitleScreen {
             });
         }
 
+        const mobFramerateSlider = this.settingsMenu.querySelector('#mobFramerateSlider') as HTMLInputElement;
+        const mobFramerateValue = this.settingsMenu.querySelector('#mobFramerateValue') as HTMLElement;
+        if (mobFramerateSlider && mobFramerateValue) {
+            mobFramerateSlider.addEventListener('input', () => {
+                const framerate = parseInt(mobFramerateSlider.value, 10);
+                mobFramerateValue.textContent = framerate.toString();
+                localStorage.setItem('mobAnimationFramerate', framerate.toString());
+            });
+        }
+
         // Reset tutorial button
         const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
         if (resetTutorialButton) {
@@ -1071,6 +1086,16 @@ export class TitleScreen {
         const serverIPInput = this.settingsMenu.querySelector('#serverIP-settings') as HTMLInputElement;
         if (serverIPInput) {
             serverIPInput.value = serverIP;
+        }
+
+        const mobFramerate = parseInt(localStorage.getItem('mobAnimationFramerate') || '15', 10);
+        const mobFramerateSlider = this.settingsMenu.querySelector('#mobFramerateSlider') as HTMLInputElement;
+        const mobFramerateValue = this.settingsMenu.querySelector('#mobFramerateValue') as HTMLElement;
+        if (mobFramerateSlider) {
+            mobFramerateSlider.value = mobFramerate.toString();
+        }
+        if (mobFramerateValue) {
+            mobFramerateValue.textContent = mobFramerate.toString();
         }
     }
 
@@ -1975,6 +2000,24 @@ export const titleScreenStyles = `
         padding: 5px;
         border-radius: 3px;
         text-align: center;
+    }
+
+    #mobFramerateSlider {
+        width: 100%;
+        margin: 10px 0;
+        cursor: pointer;
+    }
+
+    #mobFramerateValue {
+        font-weight: bold;
+        color: #4CAF50;
+        margin-left: 10px;
+    }
+
+    .tab-content label {
+        display: block;
+        margin: 10px 0;
+        color: white;
     }
 
     .register-warning {

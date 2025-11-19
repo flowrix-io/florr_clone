@@ -29,6 +29,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SVGRendererWrapper = void 0;
 exports.getSVGRenderer = getSVGRenderer;
+const constants_1 = require("./constants");
 class SVGRendererWrapper {
     constructor() {
         this.module = null;
@@ -238,12 +239,13 @@ class SVGRendererWrapper {
             }
         }
         // For animated SVGs, we need to use a time-based cache key to ensure
-        // the animation updates each frame. Use 15fps (67ms buckets) for smooth but not laggy animation
-        // Use modulo to wrap time within animation cycle (2000ms = 30 frames * 67ms)
-        // This ensures cache keys match between preloading and rendering
-        const animationCycleDuration = 2000; // 30 frames * 67ms = 2 seconds
+        // the animation updates each frame. Use configurable framerate for smooth animation
+        // Use modulo to wrap time within animation cycle
+        const frameTime = this.getFrameTime(); // Get milliseconds per frame from settings
+        const framesPerCycle = 30; // Number of frames in a complete animation cycle
+        const animationCycleDuration = framesPerCycle * frameTime; // Total cycle duration
         const relativeTime = time % animationCycleDuration;
-        const timeBucket = Math.floor(relativeTime / 67); // Update every ~67ms for 15fps
+        const timeBucket = Math.floor(relativeTime / frameTime); // Update based on configured framerate
         // Normalize SVG string for consistent cache key generation
         // Remove whitespace differences, normalize attributes, and use a stable key
         // This ensures cache keys match between preloading and rendering
@@ -372,6 +374,12 @@ class SVGRendererWrapper {
     // Check if preloading is complete
     isPreloadingComplete() {
         return this.preloadingComplete;
+    }
+    /**
+     * Get the frame time in milliseconds based on configured framerate
+     */
+    getFrameTime() {
+        return (0, constants_1.getMobAnimationFrameTime)();
     }
     /**
      * Get animated SVG string for a given time

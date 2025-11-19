@@ -138,7 +138,7 @@ class Graphics {
                     // Store SVG string for WASM rendering
                     this.mobSVGCache[cacheKey] = mobStats.image;
                     // Pre-render multiple animation frames to avoid data URL creation during gameplay
-                    // Pre-render frames for a full animation cycle (15fps = 67ms per frame)
+                    // Pre-render frames for a full animation cycle (configurable framerate)
                     // For most mobs, animations are typically 1-2 seconds, so pre-render ~30 frames (2 seconds)
                     const promise = (async () => {
                         try {
@@ -156,7 +156,7 @@ class Graphics {
                                 normalizedSVG.length.toString()
                             ];
                             const baseCacheKey = keyParts.join('|');
-                            // Pre-render multiple frames (30 frames = ~2 seconds at 15fps)
+                            // Pre-render multiple frames (30 frames per animation cycle)
                             const framesToPreload = 30;
                             for (let frame = 0; frame < framesToPreload; frame++) {
                                 // Check if preloading was marked complete (user might have set it manually)
@@ -165,11 +165,13 @@ class Graphics {
                                     console.log(`[Graphics] Preloading marked complete, stopping pre-render for ${cacheKey} at frame ${frame}`);
                                     break;
                                 }
-                                const time = frame * 67; // Time in ms for this frame (15fps)
+                                const frameTime = this.getMobAnimationFrameTime(); // Get milliseconds per frame from settings
+                                const time = frame * frameTime; // Time in ms for this frame
                                 // Use same relative time calculation as renderSVGToCanvas
-                                const animationCycleDuration = 2000; // 30 frames * 67ms = 2 seconds
+                                const framesPerCycle = 30; // Number of frames in a complete animation cycle
+                                const animationCycleDuration = framesPerCycle * frameTime; // Total cycle duration
                                 const relativeTime = time % animationCycleDuration;
-                                const timeBucket = Math.floor(relativeTime / 67);
+                                const timeBucket = Math.floor(relativeTime / frameTime);
                                 const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
                                 // Skip if already cached
                                 if (this.svgRenderer.isCanvasCached(animatedCacheKey)) {
@@ -217,6 +219,10 @@ class Graphics {
             });
         }
         console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings for WASM rendering');
+    }
+    // Method to get mob animation frame time in milliseconds
+    getMobAnimationFrameTime() {
+        return (0, constants_1.getMobAnimationFrameTime)();
     }
     // Method to set a biome texture
     setBiomeTexture(biomeName, texture) {

@@ -3,6 +3,8 @@
  * This module provides an interface to the WebAssembly-compiled C++ SVG renderer
  */
 
+import { getMobAnimationFrameTime } from './constants';
+
 interface SVGRendererModule {
     SVGRenderer: new () => SVGRendererInstance;
     onRuntimeInitialized?: () => void;
@@ -262,12 +264,13 @@ class SVGRendererWrapper {
         }
         
         // For animated SVGs, we need to use a time-based cache key to ensure
-        // the animation updates each frame. Use 15fps (67ms buckets) for smooth but not laggy animation
-        // Use modulo to wrap time within animation cycle (2000ms = 30 frames * 67ms)
-        // This ensures cache keys match between preloading and rendering
-        const animationCycleDuration = 2000; // 30 frames * 67ms = 2 seconds
+        // the animation updates each frame. Use configurable framerate for smooth animation
+        // Use modulo to wrap time within animation cycle
+        const frameTime = this.getFrameTime(); // Get milliseconds per frame from settings
+        const framesPerCycle = 30; // Number of frames in a complete animation cycle
+        const animationCycleDuration = framesPerCycle * frameTime; // Total cycle duration
         const relativeTime = time % animationCycleDuration;
-        const timeBucket = Math.floor(relativeTime / 67); // Update every ~67ms for 15fps
+        const timeBucket = Math.floor(relativeTime / frameTime); // Update based on configured framerate
         
         // Normalize SVG string for consistent cache key generation
         // Remove whitespace differences, normalize attributes, and use a stable key
@@ -411,6 +414,13 @@ class SVGRendererWrapper {
     // Check if preloading is complete
     public isPreloadingComplete(): boolean {
         return this.preloadingComplete;
+    }
+
+    /**
+     * Get the frame time in milliseconds based on configured framerate
+     */
+    private getFrameTime(): number {
+        return getMobAnimationFrameTime();
     }
 
     /**
