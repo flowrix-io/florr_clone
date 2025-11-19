@@ -352,7 +352,10 @@ export class Graphics {
         // For most mobs, animations are typically 1-2 seconds, so pre-render ~30 frames (2 seconds)
         const promise = (async () => {
             try {
-                const mobSize = mobStats.size * 40;
+                // Use 256x256 for canvas size when high quality is off (better image quality)
+                // When high quality is on, use the mob's actual size
+                const highQualityMobs = getHighQualityMobs();
+                const mobSize = highQualityMobs ? mobStats.size * 40 : 256;
                 
                 // Pre-render multiple frames (30 frames per animation cycle)
                 const framesToPreload = 30;
