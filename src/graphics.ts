@@ -223,37 +223,60 @@ export class Graphics {
         const mobTypes = getAllMobTypes();
         const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         
+        // Track which SVG baseCacheKeys we've already pre-rendered frames for
+        // This allows different rarities of the same mob type to share animation frames
+        const preloadedBaseCacheKeys = new Set<string>();
+        
         // Pre-render mob canvases for immediate use (no fallback circles)
         const preloadPromises: Promise<void>[] = [];
         
+        // First pass: Store all SVG strings in cache (needed for rendering)
+        for (const mobType of mobTypes) {
+            for (const rarity of rarities) {
+                const mobStats = getMobStats(mobType, rarity);
+                if (mobStats && mobStats.image) {
+                    const cacheKey = `${mobType}_${rarity}`;
+                    // Store SVG string for WASM rendering
+                    this.mobSVGCache[cacheKey] = mobStats.image;
+                }
+            }
+        }
+        
+        // Second pass: Pre-render animation frames only once per unique SVG
         for (const mobType of mobTypes) {
             for (const rarity of rarities) {
                 const mobStats = getMobStats(mobType, rarity);
                 if (mobStats && mobStats.image) {
                     const cacheKey = `${mobType}_${rarity}`;
                     
-                    // Store SVG string for WASM rendering
-                    this.mobSVGCache[cacheKey] = mobStats.image;
+                    // Normalize SVG string for consistent cache key generation (same as in renderSVGToCanvas)
+                    let normalizedSVG = mobStats.image.replace(/\s+/g, ' ').trim();
+                    // Remove xmlns attribute variations (they don't affect rendering)
+                    normalizedSVG = normalizedSVG.replace(/\s+xmlns="[^"]*"/g, '');
+                    // Use a more stable key based on viewBox and key attributes (more reliable than first N chars)
+                    const viewBoxMatch = normalizedSVG.match(/viewBox="([^"]*)"/);
+                    const widthMatch = normalizedSVG.match(/width="([^"]*)"/);
+                    const keyParts = [
+                        viewBoxMatch ? viewBoxMatch[1] : '',
+                        widthMatch ? widthMatch[1] : '',
+                        normalizedSVG.length.toString()
+                    ];
+                    const baseCacheKey = keyParts.join('|');
                     
-                            // Pre-render multiple animation frames to avoid data URL creation during gameplay
-                            // Pre-render frames for a full animation cycle (configurable framerate)
-                            // For most mobs, animations are typically 1-2 seconds, so pre-render ~30 frames (2 seconds)
-                            const promise = (async () => {
-                                try {
-                                    const mobSize = mobStats.size * 40;
-                                    // Normalize SVG string for consistent cache key generation (same as in renderSVGToCanvas)
-                                    let normalizedSVG = mobStats.image.replace(/\s+/g, ' ').trim();
-                                    // Remove xmlns attribute variations (they don't affect rendering)
-                                    normalizedSVG = normalizedSVG.replace(/\s+xmlns="[^"]*"/g, '');
-                                    // Use a more stable key based on viewBox and key attributes (more reliable than first N chars)
-                                    const viewBoxMatch = normalizedSVG.match(/viewBox="([^"]*)"/);
-                                    const widthMatch = normalizedSVG.match(/width="([^"]*)"/);
-                                    const keyParts = [
-                                        viewBoxMatch ? viewBoxMatch[1] : '',
-                                        widthMatch ? widthMatch[1] : '',
-                                        normalizedSVG.length.toString()
-                                    ];
-                                    const baseCacheKey = keyParts.join('|');
+                    // Skip if we've already pre-rendered frames for this SVG (shared across rarities)
+                    if (preloadedBaseCacheKeys.has(baseCacheKey)) {
+                        continue;
+                    }
+                    
+                    // Mark this baseCacheKey as pre-rendered
+                    preloadedBaseCacheKeys.add(baseCacheKey);
+                    
+                    // Pre-render multiple animation frames to avoid data URL creation during gameplay
+                    // Pre-render frames for a full animation cycle (configurable framerate)
+                    // For most mobs, animations are typically 1-2 seconds, so pre-render ~30 frames (2 seconds)
+                    const promise = (async () => {
+                        try {
+                            const mobSize = mobStats.size * 40;
                             
                             // Pre-render multiple frames (30 frames per animation cycle)
                             const framesToPreload = 30;
@@ -261,7 +284,7 @@ export class Graphics {
                                 // Check if preloading was marked complete (user might have set it manually)
                                 // If so, stop pre-rendering to avoid data URL creation
                                 if (this.svgRenderer.isPreloadingComplete()) {
-                                    console.log(`[Graphics] Preloading marked complete, stopping pre-render for ${cacheKey} at frame ${frame}`);
+                                    console.log(`[Graphics] Preloading marked complete, stopping pre-render for ${baseCacheKey} at frame ${frame}`);
                                     break;
                                 }
                                 
@@ -287,12 +310,12 @@ export class Graphics {
                                     this.svgRenderer.cacheCanvas(animatedCacheKey, canvas);
                                     // Debug: Log first few cached frames
                                     if (frame < 3) {
-                                        console.log(`[Graphics] Pre-rendered frame ${frame} for ${cacheKey}: key="${animatedCacheKey.substring(0, 60)}...", timeBucket=${timeBucket}`);
+                                        console.log(`[Graphics] Pre-rendered frame ${frame} for mob type ${mobType} (baseCacheKey="${baseCacheKey.substring(0, 60)}...", timeBucket=${timeBucket})`);
                                     }
                                 }
                             }
                         } catch (error) {
-                            console.error(`[Graphics] Failed to pre-render canvas for ${cacheKey}:`, error);
+                            console.error(`[Graphics] Failed to pre-render canvas for ${cacheKey} (baseCacheKey=${baseCacheKey}):`, error);
                         }
                     })();
                     preloadPromises.push(promise);
