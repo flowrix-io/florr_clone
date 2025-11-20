@@ -1024,7 +1024,7 @@ const BASE_MOB_CONFIGS = {
 </svg>`,
         is_hostile: true,
         range: 500,
-        biomeOnly: false,
+        biomeOnly: true,
         projectile: {
             count: 1,
             distance: 500,
@@ -1182,7 +1182,7 @@ const BASE_MOB_CONFIGS = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: false,
+        biomeOnly: true,
     },
     bush: {
         name: "Bush",
@@ -1225,7 +1225,7 @@ const BASE_MOB_CONFIGS = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: false,
+        biomeOnly: true,
     },
     target_dummy: {
         name: "Target Dummy",
@@ -1254,7 +1254,7 @@ const BASE_MOB_CONFIGS = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: false,
+        biomeOnly: true,
     }
 };
 // Rarity-specific overrides for special cases

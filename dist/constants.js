@@ -2695,6 +2695,540 @@ exports.WORLD_MAP = [
                 }
             ]
         }
+    },
+    {
+        "type": "wall",
+        "x": 48138.4375,
+        "y": 23880,
+        "width": 400,
+        "height": 3320,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 48158.4375,
+        "y": 23910,
+        "width": 3570,
+        "height": 460,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 51178.4375,
+        "y": 23940,
+        "width": 540,
+        "height": 3290,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 48398.4375,
+        "y": 26850,
+        "width": 1490,
+        "height": 340,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 49890,
+        "y": 26900,
+        "width": 1310,
+        "height": 1860,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 5,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 48140,
+        "y": 27190,
+        "width": 1780,
+        "height": 1550,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 5,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 51180,
+        "y": 27210,
+        "width": 2240,
+        "height": 1510,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 5,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 51720,
+        "y": 22870,
+        "width": 1870,
+        "height": 4390,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 5,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 43960,
+        "y": 20030,
+        "width": 4190,
+        "height": 14750,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 41300,
+        "y": 20010,
+        "width": 8950,
+        "height": 1050,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 41300,
+        "y": 21050,
+        "width": 2730,
+        "height": 15770,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 48130,
+        "y": 21040,
+        "width": 3610,
+        "height": 2890,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 50230,
+        "y": 20020,
+        "width": 9710,
+        "height": 1140,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 51720,
+        "y": 21130,
+        "width": 8210,
+        "height": 1880,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "wall",
+        "x": 53548.4375,
+        "y": 22910,
+        "width": 380,
+        "height": 7890,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 53348.4375,
+        "y": 27180,
+        "width": 220,
+        "height": 4880,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 48108.4375,
+        "y": 28690,
+        "width": 5280,
+        "height": 340,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 42828.4375,
+        "y": 25510,
+        "width": 260,
+        "height": 290,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 44168.4375,
+        "y": 28960,
+        "width": 260,
+        "height": 240,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 45008.4375,
+        "y": 24360,
+        "width": 250,
+        "height": 220,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 44188.4375,
+        "y": 27030,
+        "width": 220,
+        "height": 270,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 42208.4375,
+        "y": 30360,
+        "width": 750,
+        "height": 230,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 42878.4375,
+        "y": 30530,
+        "width": 980,
+        "height": 270,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 43808.4375,
+        "y": 30700,
+        "width": 820,
+        "height": 230,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 44598.4375,
+        "y": 30840,
+        "width": 1480,
+        "height": 150,
+        "properties": {}
+    },
+    {
+        "type": "biome",
+        "x": 48140,
+        "y": 29020,
+        "width": 5260,
+        "height": 2260,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 44010,
+        "y": 34750,
+        "width": 4160,
+        "height": 2070,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 53900,
+        "y": 22990,
+        "width": 6040,
+        "height": 5210,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 53900,
+        "y": 28180,
+        "width": 6030,
+        "height": 2800,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 53550,
+        "y": 30750,
+        "width": 6370,
+        "height": 6040,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 48110,
+        "y": 31240,
+        "width": 5470,
+        "height": 5570,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "jungle.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 3,
+                    "mobType": "bush"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 48670,
+        "y": 24530,
+        "width": 120,
+        "height": 130,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 48730,
+        "y": 26370,
+        "width": 200,
+        "height": 130,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 10,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 48690,
+        "y": 25460,
+        "width": 140,
+        "height": 130,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 10,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 50910,
+        "y": 24920,
+        "width": 190,
+        "height": 150,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 10,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 50500,
+        "y": 24490,
+        "width": 160,
+        "height": 150,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 10,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 49630,
+        "y": 26230,
+        "width": 230,
+        "height": 190,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "mythic",
+                    "weight": 10,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 48870,
+        "y": 24590,
+        "width": 1550,
+        "height": 1560,
+        "properties": {
+            "biomeName": "jungle",
+            "backgroundTexture": "desert.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 10,
+                    "mobType": "bush"
+                }
+            ]
+        }
     }
 ];
 // Add map validation function
