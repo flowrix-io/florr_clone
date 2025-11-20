@@ -131,6 +131,138 @@ const MOB_XP_TABLES = {
         ultra: 19800,
         super: 2100000,
         unique: 6800000
+    },
+    dark_ladybug: {
+        common: 1,
+        uncommon: 3,
+        rare: 30,
+        epic: 270,
+        legendary: 1400,
+        mythic: 32000,
+        ultra: 150000,
+        super: 1200000,
+        unique: 6800000
+    },
+    sandstorm: {
+        common: 1,
+        uncommon: 3,
+        rare: 30,
+        epic: 270,
+        legendary: 1400,
+        mythic: 32000,
+        ultra: 150000,
+        super: 1200000,
+        unique: 6800000
+    },
+    cactus: {
+        common: 1,
+        uncommon: 3,
+        rare: 30,
+        epic: 270,
+        legendary: 1400,
+        mythic: 32000,
+        ultra: 150000,
+        super: 1200000,
+        unique: 6800000
+    },
+    beetle: {
+        common: 1,
+        uncommon: 3,
+        rare: 30,
+        epic: 270,
+        legendary: 1400,
+        mythic: 32000,
+        ultra: 150000,
+        super: 1200000,
+        unique: 6800000
+    },
+    hel_beetle: {
+        common: 2,
+        uncommon: 8,
+        rare: 35,
+        epic: 300,
+        legendary: 1500,
+        mythic: 40000,
+        ultra: 200000,
+        super: 1600000,
+        unique: 8000000
+    },
+    jellyfish: {
+        common: 2,
+        uncommon: 8,
+        rare: 35,
+        epic: 300,
+        legendary: 1500,
+        mythic: 40000,
+        ultra: 200000,
+        super: 1600000,
+        unique: 8000000
+    },
+    bubble: {
+        common: 1,
+        uncommon: 1,
+        rare: 2,
+        epic: 22,
+        legendary: 206,
+        mythic: 900,
+        ultra: 18000,
+        super: 1000000,
+        unique: 4500000
+    },
+    hornet: {
+        common: 2,
+        uncommon: 8,
+        rare: 35,
+        epic: 300,
+        legendary: 1500,
+        mythic: 40000,
+        ultra: 200000,
+        super: 1600000,
+        unique: 8000000
+    },
+    mantis: {
+        common: 2,
+        uncommon: 8,
+        rare: 35,
+        epic: 300,
+        legendary: 1500,
+        mythic: 40000,
+        ultra: 200000,
+        super: 1600000,
+        unique: 8000000
+    },
+    leafbug: {
+        common: 1,
+        uncommon: 1,
+        rare: 2,
+        epic: 22,
+        legendary: 206,
+        mythic: 3100,
+        ultra: 19800,
+        super: 2100000,
+        unique: 6800000
+    },
+    bush: {
+        common: 1,
+        uncommon: 1,
+        rare: 2,
+        epic: 22,
+        legendary: 206,
+        mythic: 3100,
+        ultra: 19800,
+        super: 2100000,
+        unique: 6800000
+    },
+    target_dummy: {
+        common: 100,
+        uncommon: 100,
+        rare: 100,
+        epic: 100,
+        legendary: 100,
+        mythic: 100,
+        ultra: 100,
+        super: 100,
+        unique: 100
     }
 };
 // Base mob configurations - only common rarity stats

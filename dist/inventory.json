@@ -2,7 +2,7 @@
   "players": {
     "ocu977p98": {
       "level": 50,
-      "xp": 2027378,
+      "xp": 2124848,
       "maxHealth": 590,
       "damage": 103,
       "inventory": {
@@ -28,7 +28,7 @@
         },
         "unique": {
           "petal_stinger": 999,
-          "petal_basic": 997,
+          "petal_basic": 998,
           "petal_rose": 1000,
           "petal_light": 1000,
           "petal_rock": 1000,
@@ -39,10 +39,10 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 998,
+          "petal_sparkle": 995,
           "petal_poison_cactus": 998,
           "petal_lightning": 998,
-          "petal_iris": 996
+          "petal_iris": 998
         },
         "mythic": {
           "speed_boost": 701,
@@ -90,7 +90,7 @@
           "petal_yggdrasil": 4,
           "petal_cactus": 7,
           "petal_poison_cactus": 2,
-          "petal_bone": 141,
+          "petal_bone": 143,
           "petal_iris": 5,
           "petal_lightning": 14,
           "petal_missile": 8
@@ -159,49 +159,46 @@
         },
         {
           "type": "petal",
-          "petalType": "iris",
           "rarity": "unique",
-          "maxHealth": 6561,
-          "health": -17739,
-          "onCooldown": true
+          "petalType": "sparkle",
+          "health": 655728939,
+          "maxHealth": 656093439
         },
         {
           "type": "petal",
-          "petalType": "iris",
           "rarity": "unique",
-          "maxHealth": 6561,
-          "health": -17739,
-          "onCooldown": true
+          "petalType": "sparkle",
+          "health": 655485939,
+          "maxHealth": 656093439
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "sparkle",
+          "health": 655364439,
+          "maxHealth": 656093439
         },
         {
           "type": "petal",
           "petalType": "basic",
           "rarity": "unique",
           "maxHealth": 65610,
-          "health": -7290,
+          "health": -55890,
           "onCooldown": true
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "unique",
-          "maxHealth": 65610,
-          "health": 65610,
-          "onCooldown": false
         },
         {
           "type": "petal",
           "petalType": "poison_cactus",
           "rarity": "unique",
           "maxHealth": 98415,
-          "health": 57915,
+          "health": 98415,
           "onCooldown": false
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 557172169,
+          "health": 556321669,
           "maxHealth": 656093439
         },
         {
