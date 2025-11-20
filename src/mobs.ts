@@ -1145,8 +1145,51 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         biomeOnly: false,
-    }
-};
+    },
+    bush: {
+        name: "Bush",
+        health: 50,
+        damage: 12,
+        size: 1.0,
+        visual_scale: 1.2,
+        speed: 0.0,
+        cooldown: 2000,
+        description: "Bush",
+        color: "#000000",
+        image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <polygon points="16,2 20,12 30,12 22,18 24,28 16,23 8,28 10,18 2,12 12,12"
+           fill="#15ad31" stroke="#059e21" stroke-width="1" stroke-linejoin="round"/>
+  <path d="M16 16 L16 8 Z"
+    stroke="#059e21" 
+    stroke-width="2" 
+    stroke-linejoin="round" 
+    fill="none"/>
+  <path d="M16 16 L16 8 Z"
+    stroke="#059e21" 
+    stroke-width="2" 
+    stroke-linejoin="round" 
+    fill="none" transform="rotate(72 16 16)"/>
+  <path d="M16 16 L16 8 Z"
+    stroke="#059e21" 
+    stroke-width="2" 
+    stroke-linejoin="round" 
+    fill="none" transform="rotate(144 16 16)"/>
+  <path d="M16 16 L16 8 Z"
+    stroke="#059e21" 
+    stroke-width="2" 
+    stroke-linejoin="round" 
+    fill="none" transform="rotate(216 16 16)"/>
+  <path d="M16 16 L16 8 Z"
+    stroke="#059e21" 
+    stroke-width="2" 
+    stroke-linejoin="round" 
+    fill="none" transform="rotate(288 16 16)"/>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: false,
+    },
+}
 
 // Rarity-specific overrides for special cases
 const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride } } = {
