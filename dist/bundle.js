@@ -6606,7 +6606,11 @@ class Graphics {
             if (['ultra', 'super', 'unique'].includes(petal.rarity)) {
                 // Only create particles occasionally to avoid performance issues
                 if (Math.random() < 0.1) { // 10% chance per frame
-                    this.showPetalParticleEffect(petalX, petalY, petal.rarity);
+                    // Convert relative petal coordinates to absolute world coordinates
+                    // petalX and petalY are relative to player center, so add player position
+                    const worldX = player.x + petalX;
+                    const worldY = player.y + petalY;
+                    this.showPetalParticleEffect(worldX, worldY, petal.rarity);
                 }
             }
             // Draw health bar for petals (after restore, so we need to set up transforms again)
@@ -7049,7 +7053,7 @@ class Graphics {
                 particle.y += particle.vy;
                 particle.life -= 16; // Assuming 60fps, reduce by ~16ms per frame
                 // Draw particle with white base color and faint rarity tinting
-                this.ctx.globalAlpha = particleProgress * 0.3; // Very faint particles
+                this.ctx.globalAlpha = particleProgress * 0.6; // More visible particles
                 // Create a gradient from white base to rarity color
                 const gradient = this.ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, particle.size);
                 gradient.addColorStop(0, particle.baseColor); // White center
