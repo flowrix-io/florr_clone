@@ -875,6 +875,126 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
             speed: 300,
             spreadAngle: 0.0
         }
+    },
+    mantis: {
+        name: "Mantis",
+        health: 10,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.5,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "Mantis",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<g>
+  <path d="M5 20 L2 25 Z" 
+          stroke="#000000" 
+          stroke-width="2" 
+          stroke-linejoin="round" 
+          fill="none"><animateTransform 
+    attributeName="transform"
+    attributeType="XML" type="rotate"
+    from="0 5 20"
+    to="-28 5 20"
+    additive="sum"
+    dur="1s"
+    repeatCount="indefinite"/></path>
+  <path d="M12 20 L12 27 Z" 
+          stroke="#000000" 
+          stroke-width="2" 
+          stroke-linejoin="round" 
+          fill="none"><animateTransform 
+    attributeName="transform"
+    attributeType="XML" type="rotate"
+    from="0 12 20"
+    to="-28 12 20"
+    additive="sum"
+    dur="1s"
+    repeatCount="indefinite"/></path>
+  <path d="M19 20 L21 25 Z" 
+          stroke="#000000" 
+          stroke-width="2" 
+          stroke-linejoin="round" 
+          fill="none">
+    <animateTransform 
+    attributeName="transform"
+    attributeType="XML" type="rotate"
+    from="0 19 20"
+    to="28 19 20"
+    additive="sum"
+    dur="1s"
+    repeatCount="indefinite"/>
+  </path>
+</g>
+<g>
+  <path d="M5 12 L2 7 Z" 
+          stroke="#000000" 
+          stroke-width="2" 
+          stroke-linejoin="round" 
+          fill="none"><animateTransform 
+    attributeName="transform"
+    attributeType="XML" type="rotate"
+    from="0 5 12"
+    to="-28 5 12"
+    additive="sum"
+    dur="1s"
+    repeatCount="indefinite"/></path>
+  <path d="M12 12 L12 5 Z" 
+          stroke="#000000" 
+          stroke-width="2" 
+          stroke-linejoin="round" 
+          fill="none"><animateTransform 
+    attributeName="transform"
+    attributeType="XML" type="rotate"
+    from="0 12 12"
+    to="28 12 12"
+    additive="sum"
+    dur="1s"
+    repeatCount="indefinite"/></path>
+  <path d="M19 12 L21 7 Z" 
+          stroke="#000000" 
+          stroke-width="2" 
+          stroke-linejoin="round" 
+          fill="none">
+    <animateTransform 
+    attributeName="transform"
+    attributeType="XML" type="rotate"
+    from="0 19 12"
+    to="28 19 12"
+    additive="sum"
+    dur="1s"
+    repeatCount="indefinite"/>
+  </path>
+</g>
+<path d="M21 12 L28 8 Z" 
+        stroke="#000000" 
+        stroke-width="2" 
+        stroke-linejoin="round" 
+        fill="none"/>
+<path d="M21 20 L28 24 Z" 
+        stroke="#000000" 
+        stroke-width="2" 
+        stroke-linejoin="round" 
+        fill="none"/>
+<ellipse cx="12" cy="16" rx="12" ry="8" fill="#66aa11" stroke="#338808"/>
+<path d="M5 16 L20 16 Z" 
+        stroke="#338808" 
+        stroke-width="2" 
+        stroke-linejoin="round" 
+        fill="none"/>
+</svg>`,
+        is_hostile: true,
+        range: 500,
+        biomeOnly: false,
+        projectile: {
+            count: 1,
+            distance: 500,
+            petalType: 'basic',
+            petalRarity: 'uncommon',
+            speed: 300,
+            spreadAngle: 0.0
+        }
     }
 };
 
@@ -1123,6 +1243,29 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
             range: 1900
         }
     },
+    mantis: {
+        uncommon: {
+            range: 500
+        },
+        rare: {
+            range: 700
+        },
+        epic: {
+            range: 900
+        },
+        legendary: {
+            range: 1100
+        },
+        mythic: {
+            range: 1300
+        },
+        super: {
+            range: 1500
+        },
+        unique: {
+            range: 1700
+        }
+    }
 };
 
 // Rarity color mappings
