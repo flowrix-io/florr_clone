@@ -1189,6 +1189,35 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         range: 100,
         biomeOnly: false,
     },
+    target_dummy: {
+        name: "Target Dummy",
+        health: 100000000,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 0.0,
+        cooldown: 2000,
+        description: "Target Dummy",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-30 -30 60 60" width="32" height="32">
+  <circle cx="0" cy="0" r="25" fill="#a8a8a8" stroke="#868686" stroke-width="3" />
+
+  <g>
+    <rect x="-10" y="-11" width="6" height="12" fill="#222222" stroke="#222222" stroke-width="1" />
+    
+    <rect x="-10" y="-8" width="6" height="6" fill="#ffffff" />
+
+    <rect x="4" y="-11" width="6" height="12" fill="#222222" stroke="#222222" stroke-width="1" />
+
+    <rect x="4" y="-8" width="6" height="6" fill="#ffffff" />
+
+    <path d="M -6 10 Q 0 13 6 10" fill="none" stroke="#222222" stroke-width="1.5" stroke-linecap="round" />
+  </g>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: false,
+    }
 }
 
 // Rarity-specific overrides for special cases
