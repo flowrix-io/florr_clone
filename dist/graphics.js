@@ -625,6 +625,83 @@ class Graphics {
         // Draw minimap
         this.drawMinimap(players, socket);
     }
+    drawBossBars(enemies) {
+        // Calculate viewport accounting for zoom level
+        const scaledWidth = this.canvas.width / this.zoomLevel;
+        const scaledHeight = this.canvas.height / this.zoomLevel;
+        const viewport = {
+            left: this.cameraX,
+            top: this.cameraY,
+            right: this.cameraX + scaledWidth,
+            bottom: this.cameraY + scaledHeight
+        };
+        // Find all ultra, super, and unique mobs in view
+        const bossMobs = [];
+        for (const enemy of enemies.values()) {
+            if (enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique') {
+                // Check if enemy is in viewport (same logic as drawGameObjects)
+                const enemySize = 40; // Approximate size for culling
+                if (!(enemy.x + enemySize < viewport.left ||
+                    enemy.x - enemySize > viewport.right ||
+                    enemy.y + enemySize < viewport.top ||
+                    enemy.y - enemySize > viewport.bottom)) {
+                    bossMobs.push(enemy);
+                }
+            }
+        }
+        // Draw boss bars at the top of the screen
+        if (bossMobs.length > 0) {
+            const bossBarWidth = 400;
+            const bossBarHeight = 24;
+            const nameFontSize = 20;
+            const nameMargin = 8; // Space between name and bar
+            const bossBarSpacing = 60; // Space between multiple boss bars (increased to accommodate name)
+            const topMargin = 20; // Margin from top of screen
+            const centerX = this.canvas.width / 2;
+            bossMobs.forEach((enemy, index) => {
+                const nameY = topMargin + (index * bossBarSpacing);
+                const bossBarY = nameY + nameFontSize + nameMargin;
+                const bossBarX = centerX - bossBarWidth / 2;
+                // Get mob stats for name
+                const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                const mobName = mobStats ? mobStats.name : `${enemy.tier} ${enemy.type}`;
+                // Draw mob name above the bar (larger font, centered)
+                this.ctx.font = `${nameFontSize}px Ubuntu, sans-serif`;
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 4;
+                const nameTextWidth = this.ctx.measureText(mobName).width;
+                const nameX = centerX - nameTextWidth / 2;
+                this.ctx.strokeText(mobName, nameX, nameY);
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillText(mobName, nameX, nameY);
+                // Draw health bar with rounded ends
+                const clampedHealth = Math.max(0, enemy.health);
+                const healthFillWidth = (clampedHealth / enemy.maxHealth) * bossBarWidth;
+                const radius = bossBarHeight / 2;
+                // Boss bar background (rounded)
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
+                this.ctx.beginPath();
+                this.ctx.roundRect(bossBarX - 2, bossBarY - 2, bossBarWidth + 4, bossBarHeight + 4, radius);
+                this.ctx.fill();
+                // Boss bar fill (rounded) - same color as player health bar
+                this.ctx.fillStyle = '#73ff54';
+                this.ctx.beginPath();
+                this.ctx.roundRect(bossBarX, bossBarY, healthFillWidth, bossBarHeight, radius);
+                this.ctx.fill();
+                // Draw health text (centered on the bar)
+                this.ctx.font = '16px Ubuntu, sans-serif';
+                const textY = bossBarY + 18;
+                const healthText = `${Math.round(clampedHealth)}/${enemy.maxHealth}`;
+                const healthTextWidth = this.ctx.measureText(healthText).width;
+                const healthTextX = centerX - healthTextWidth / 2;
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 3;
+                this.ctx.strokeText(healthText, healthTextX, textY);
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillText(healthText, healthTextX, textY);
+            });
+        }
+    }
     s(size) {
         return 1 * size;
     }
@@ -1581,6 +1658,8 @@ class Graphics {
         this.ctx.restore();
         // Draw UI elements (not affected by camera)
         this.drawUI(players, currentPlayerId);
+        // Draw boss bars for ultra, super, and unique mobs in view
+        this.drawBossBars(enemies);
     }
     setupItemSprites(itemSprites) {
         this.itemSprites = itemSprites;
