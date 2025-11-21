@@ -84,6 +84,7 @@ export class Game {
     private readonly WORLD_WIDTH = ACTUAL_WORLD_WIDTH;  // Increased from 2000 to 10000
     private readonly WORLD_HEIGHT = ACTUAL_WORLD_HEIGHT;  // Keep height the same
     private keysPressed: Set<string> = new Set();
+    private mouseButtonsPressed: Set<number> = new Set(); // Track mouse buttons: 0 = left, 2 = right
     private petalExtension: number = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
     private enemies: Map<string, Enemy> = new Map();
     private mobProjectiles: Map<string, any> = new Map(); // Store mob projectiles
@@ -377,13 +378,29 @@ export class Game {
             }
         });
 
-        // Add mouse move listener
+        // Add mouse move listener - always track mouse position so it's available when toggling mouse controls
         this.canvas.addEventListener('mousemove', (event) => {
-            if (this.useMouseControls) {
-                const rect = this.canvas.getBoundingClientRect();
-                this.mouseX = event.clientX - rect.left + this.cameraX;
-                this.mouseY = event.clientY - rect.top + this.cameraY;
+            const rect = this.canvas.getBoundingClientRect();
+            this.mouseX = event.clientX - rect.left + this.cameraX;
+            this.mouseY = event.clientY - rect.top + this.cameraY;
+        });
+
+        // Add mouse button listeners for petal extension/retraction
+        this.canvas.addEventListener('mousedown', (event) => {
+            this.mouseButtonsPressed.add(event.button);
+            // Prevent context menu on right click
+            if (event.button === 2) {
+                event.preventDefault();
             }
+        });
+
+        this.canvas.addEventListener('mouseup', (event) => {
+            this.mouseButtonsPressed.delete(event.button);
+        });
+
+        // Prevent context menu on right click
+        this.canvas.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
         });
 
         // Initialize exit button
@@ -1042,14 +1059,19 @@ export class Game {
         const maxExtension = 2.0; // Maximum extension multiplier
         const minExtension = 0.7; // Minimum extension multiplier
 
-        if (this.keysPressed.has(' ')) {
-            // Space key - extend petals
+        // Check for space key or left mouse button (button 0)
+        const extendPressed = this.keysPressed.has(' ') || this.mouseButtonsPressed.has(0);
+        // Check for shift key or right mouse button (button 2)
+        const retractPressed = this.keysPressed.has('Shift') || this.mouseButtonsPressed.has(2);
+
+        if (extendPressed) {
+            // Space key or left mouse - extend petals
             this.petalExtension = Math.min(maxExtension, this.petalExtension + extensionSpeed);
-        } else if (this.keysPressed.has('Shift')) {
-            // Shift key - retract petals
+        } else if (retractPressed) {
+            // Shift key or right mouse - retract petals
             this.petalExtension = Math.max(minExtension, this.petalExtension - extensionSpeed);
         } else {
-            // No keys pressed - return to normal
+            // No keys or buttons pressed - return to normal
             const targetExtension = 1.0;
             if (this.petalExtension > targetExtension) {
                 this.petalExtension = Math.max(targetExtension, this.petalExtension - extensionSpeed);
@@ -1078,10 +1100,21 @@ export class Game {
         }
         
         // Only send input, don't update position locally
-        this.socket.emit('playerInput', { 
-            keys: Array.from(this.keysPressed), 
-            petalExtension: this.petalExtension 
-        });
+        const inputData: any = {
+            keys: Array.from(this.keysPressed),
+            petalExtension: this.petalExtension
+        };
+
+        // Include mouse data when mouse controls are enabled
+        if (this.useMouseControls) {
+            inputData.useMouse = true;
+            inputData.mouseX = this.mouseX;
+            inputData.mouseY = this.mouseY;
+        } else {
+            inputData.useMouse = false;
+        }
+
+        this.socket.emit('playerInput', inputData);
     }
 
     private updatePlayerEye() {
@@ -1228,6 +1261,7 @@ export class Game {
 
         // Remove any event listeners
         this.keysPressed.clear();
+        this.mouseButtonsPressed.clear();
 
         // Set canvas background to white
         this.canvas.style.backgroundColor = 'white';
@@ -1288,6 +1322,7 @@ export class Game {
 
         // Remove any event listeners
         this.keysPressed.clear();
+        this.mouseButtonsPressed.clear();
 
         // Force multiple clear attempts to ensure everything is gone
         for (let i = 0; i < 3; i++) {
