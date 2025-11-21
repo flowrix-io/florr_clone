@@ -92,6 +92,9 @@ export const MAX_INVENTORY_SIZE = 5;
 export const RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
 
 export const MAX_SPEED = 90;
+// Nonlinear mouse movement parameters
+export const MOUSE_NONLINEAR_SCALE = 200; // Reference distance for nonlinear scaling (pixels)
+export const MOUSE_NONLINEAR_EXPONENT = 0.6; // Power curve exponent (0.6 = slower for small distances, faster for large)
 
 // Add knockback constants at the top with other constants
 export const KNOCKBACK_FORCE = 5; // Reduced for faster movement with many enemies

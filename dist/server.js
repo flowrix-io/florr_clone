@@ -2030,7 +2030,12 @@ function updatePlayerState(player, deltaTime) {
         const dy = player.inputs.mouseY - player.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         if (distance > 5) {
-            const speed = constants_2.MAX_SPEED * player.speed_boost * (0, petal_actions_1.getSpeedMultiplier)(player);
+            // Nonlinear speed calculation: small distances = slower, large distances = faster
+            // Uses a power curve: speed scales with (distance/scale)^exponent
+            // This gives fine control for small movements and faster response for large movements
+            const normalizedDistance = Math.min(distance / constants_2.MOUSE_NONLINEAR_SCALE, 1.0);
+            const speedMultiplier = Math.pow(normalizedDistance, constants_2.MOUSE_NONLINEAR_EXPONENT);
+            const speed = constants_2.MAX_SPEED * player.speed_boost * (0, petal_actions_1.getSpeedMultiplier)(player) * speedMultiplier;
             targetVelocityX = (dx / distance) * speed;
             targetVelocityY = (dy / distance) * speed;
             player.angle = Math.atan2(dy, dx);
