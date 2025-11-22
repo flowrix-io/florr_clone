@@ -914,6 +914,16 @@ export class Graphics {
     }
 
     public drawMap(world_map_data: MapElement[]) {
+        // Calculate viewport accounting for zoom level
+        const scaledWidth = this.canvas.width / this.zoomLevel;
+        const scaledHeight = this.canvas.height / this.zoomLevel;
+        const viewport = {
+            left: this.cameraX,
+            top: this.cameraY,
+            right: this.cameraX + scaledWidth,
+            bottom: this.cameraY + scaledHeight
+        };
+
         // Draw all map elements
         world_map_data.forEach(element => {
             const x = element.x;
@@ -921,12 +931,12 @@ export class Graphics {
             const width = element.width;
             const height = element.height;
 
-            // Only draw elements that are visible in the viewport
+            // Only draw elements that are visible in the viewport (accounting for zoom)
             if (
-                x + width >= this.cameraX &&
-                x <= this.cameraX + this.canvas.width &&
-                y + height >= this.cameraY &&
-                y <= this.cameraY + this.canvas.height
+                x + width >= viewport.left &&
+                x <= viewport.right &&
+                y + height >= viewport.top &&
+                y <= viewport.bottom
             ) {
                 if (element.type === 'wall') {
                     // Draw wall texture tiled
