@@ -467,7 +467,7 @@ export class TitleScreen {
             box-shadow: none;
         `;
         this.centerText.innerHTML = `
-            <p class="title">florr.io clone</p>
+            <p class="title" style="-webkit-text-stroke: 3px black;">florr.io clone</p>
             <!-- <p class="instructions">Use arrow keys to move. Hold space to extend petals.</p> -->
             <div class="name-input-container">
                 <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
@@ -524,8 +524,8 @@ export class TitleScreen {
                         <div class="controls-grid">
                             <!-- Controls will be dynamically added here -->
                         </div>
-                        <button id="saveControlsButton">Save Controls</button>
-                        <button id="resetControlsButton">Reset to Default</button>
+                        <button id="saveControlsButton" class="tab-button">Save Controls</button>
+                        <button id="resetControlsButton" class="tab-button">Reset to Default</button>
                     </div>
                     <div id="graphics-tab" class="tab-content">
                         <h3>Graphics</h3>
@@ -560,33 +560,33 @@ export class TitleScreen {
                         </label>
                         <br/><br/>
                         <h3>Tutorial</h3>
-                        <button id="resetTutorialButton">Reset Tutorial</button>
+                        <button id="resetTutorialButton" class="tab-button">Reset Tutorial</button>
                     </div>
                     <div id="advanced-tab" class="tab-content">
                         <h3>Advanced Settings</h3>
                         <div class="server-input">
                             <label for="serverIP-settings">Server IP:</label>
-                            <input type="text" id="serverIP-settings" placeholder="Server IP">
+                            <input type="text" class="tab-button" id="serverIP-settings" placeholder="Server IP">
                         </div>
                         <br/><br/>
                         <label>
-                            <input type="checkbox" id="debugMode">
+                            <input type="checkbox" class="tab-button" id="debugMode">
                             Enable Debug Mode
                         </label>
                         <br/><br/>
                         <label>
-                            <input type="checkbox" id="autoReconnect">
+                            <input type="checkbox" class="tab-button" id="autoReconnect">
                             Auto-reconnect on disconnect
                         </label>
                         <br/><br/>
                         <label>
-                            <input type="checkbox" id="showNetworkStats">
+                            <input type="checkbox" class="tab-button" id="showNetworkStats">
                             Show Network Statistics
                         </label>
                         <br/><br/>
                         <h3>Performance</h3>
                         <label>
-                            <select id="renderDistance">
+                            <select class="tab-button" id="renderDistance">
                                 <option value="low">Low</option>
                                 <option value="medium" selected>Medium</option>
                                 <option value="high">High</option>
@@ -1914,7 +1914,6 @@ export const titleScreenStyles = `
     }
 
     button:hover {
-        background-color: rgba(255, 255, 255, 1);
         transform: scale(1.05);
     }
 
@@ -1922,7 +1921,7 @@ export const titleScreenStyles = `
         position: absolute;
         top: 52px;
         left: 0;
-        background: rgba(0, 0, 0, 0.9);
+        background: #aaaaaa;
         border-radius: 8px;
         color: white;
         width: 400px;
@@ -1963,16 +1962,16 @@ export const titleScreenStyles = `
 
     .tab-button {
         padding: 10px;
-        background: #333;
-        border: 1px solid #555;
+        background: #a3a3a3;
+        border: 3px solid #858585;
         color: white;
         cursor: pointer;
         border-radius: 5px;
     }
 
     .tab-button.active {
-        background: #555;
-        border-bottom: 1px solid #555;
+        background: #a3a3a3;
+        border-bottom: 3px solid #858585;
     }
 
     .tab-content {
@@ -1999,9 +1998,9 @@ export const titleScreenStyles = `
     }
 
     .control-input {
-        background: #555;
-        border: 1px solid #777;
-        color: white;
+        background: #e6e6e6;
+        border: 3px solid #a3a3a3;
+        color: #000000;
         padding: 5px;
         border-radius: 3px;
         text-align: center;
