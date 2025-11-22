@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 42588854,
+      "totalXP": 42783097,
       "inventory": {
         "common": {
           "health_potion": 10,
@@ -39,7 +39,7 @@
           "petal_shield": 999,
           "petal_sparkle": 997,
           "petal_poison_cactus": 999,
-          "petal_lightning": 993,
+          "petal_lightning": 995,
           "petal_iris": 998,
           "petal_jelly": 1000
         },
@@ -80,8 +80,8 @@
           "petal_clover": 29,
           "petal_dandelion": 18,
           "petal_sand": 24,
-          "petal_rose": 32,
-          "health_potion": 23,
+          "petal_rose": 33,
+          "health_potion": 24,
           "petal_light": 29,
           "shield": 77,
           "petal_stinger": 16,
@@ -138,7 +138,7 @@
           "petal_yggdrasil": 1,
           "petal_missile": 2,
           "petal_dandelion": 1,
-          "petal_bone": 1,
+          "petal_bone": 2,
           "petal_clover": 1,
           "shield": 2,
           "petal_basic": 1,
@@ -172,7 +172,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 640347039,
+          "health": 640318689,
           "maxHealth": 656093439
         },
         {
@@ -195,17 +195,10 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 246395401.5,
+          "health": 180776626.5,
           "maxHealth": 656093439
         },
-        {
-          "type": "petal",
-          "petalType": "lightning",
-          "rarity": "unique",
-          "maxHealth": 10,
-          "health": -24290,
-          "onCooldown": false
-        },
+        null,
         {
           "type": "speed_boost",
           "rarity": "unique"
@@ -218,14 +211,7 @@
           "health": 10,
           "onCooldown": false
         },
-        {
-          "type": "petal",
-          "petalType": "lightning",
-          "rarity": "unique",
-          "maxHealth": 10,
-          "health": 10,
-          "onCooldown": false
-        },
+        null,
         null,
         null,
         null,

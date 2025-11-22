@@ -190,13 +190,19 @@ export function sendBossMobDefeatedMessage(enemy: Enemy, io: any, players: Recor
     
     // Capitalize the first letter of the rarity
     const rarity = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
+
+    // Get the username from the socket
+    const socket = io.sockets.sockets.get(topDamagerId) as AuthenticatedSocket;
+    const username = socket?.username || 'Unknown';
     
     // Send chat message
     io.emit('chatMessage', {
         sender: '',
-        content: `<b style="color: ${ENEMY_TIERS[enemy.tier as keyof typeof ENEMY_TIERS].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by ${topDamager.name}</b>`,
+        content: `<b style="color: ${ENEMY_TIERS[enemy.tier as keyof typeof ENEMY_TIERS].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`,
         timestamp: Date.now()
     });
+
+    
 }
 
 // Helper function to create initial basic petals for new players
@@ -1796,9 +1802,12 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             return;
         }
 
+        const player = players[socket.id];
+        const playerName = player ? player.name : socket.username;
+        
         const chatMessage: ChatMessage = {
-            sender: socket.username,
-            content: message,
+            sender: `@${socket.username}`,
+            content: `[<span style="color: yellow;">${playerName}</span>] ${message}`,
             timestamp: Date.now()
         };
 

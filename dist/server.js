@@ -167,10 +167,13 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
     }
     // Capitalize the first letter of the rarity
     const rarity = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
+    // Get the username from the socket
+    const socket = io.sockets.sockets.get(topDamagerId);
+    const username = socket?.username || 'Unknown';
     // Send chat message
     io.emit('chatMessage', {
         sender: '',
-        content: `<b style="color: ${constants_2.ENEMY_TIERS[enemy.tier].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by ${topDamager.name}</b>`,
+        content: `<b style="color: ${constants_2.ENEMY_TIERS[enemy.tier].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`,
         timestamp: Date.now()
     });
 }
@@ -1538,9 +1541,11 @@ io.on('connection', (socket) => {
             });
             return;
         }
+        const player = constants_2.players[socket.id];
+        const playerName = player ? player.name : socket.username;
         const chatMessage = {
-            sender: socket.username,
-            content: message,
+            sender: `@${socket.username}`,
+            content: `[<span style="color: yellow;">${playerName}</span>] ${message}`,
             timestamp: Date.now()
         };
         // Add to history and trim if needed
