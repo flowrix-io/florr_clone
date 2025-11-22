@@ -3234,6 +3234,487 @@ exports.WORLD_MAP = [
                 }
             ]
         }
+    },
+    {
+        "type": "biome",
+        "x": 1410,
+        "y": 11840,
+        "width": 0,
+        "height": 0,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 160,
+        "y": 12820,
+        "width": 1030,
+        "height": 1370,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "uncommon",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "ultra",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "super",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "unique",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 120,
+        "y": 11060,
+        "width": 320,
+        "height": 1720,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "uncommon",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "ultra",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "super",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "unique",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 430,
+        "y": 11080,
+        "width": 1830,
+        "height": 160,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "uncommon",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "ultra",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "super",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "unique",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 1750,
+        "y": 9290,
+        "width": 540,
+        "height": 1810,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "uncommon",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "ultra",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "super",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "unique",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 2020,
+        "y": 11170,
+        "width": 280,
+        "height": 1810,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "uncommon",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "ultra",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "super",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "unique",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 1180,
+        "y": 12840,
+        "width": 1060,
+        "height": 150,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "uncommon",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "ultra",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "super",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "unique",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 90,
+        "y": 7000,
+        "width": 2870,
+        "height": 750,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "uncommon",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "ultra",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "super",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "unique",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 2910,
+        "y": 7040,
+        "width": 2540,
+        "height": 480,
+        "properties": {
+            "biomeName": "garden",
+            "backgroundTexture": "land.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "uncommon",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "ultra",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "super",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                },
+                {
+                    "tier": "unique",
+                    "weight": 1,
+                    "mobType": "target_dummy"
+                }
+            ]
+        }
     }
 ];
 // Add map validation function

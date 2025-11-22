@@ -167,6 +167,11 @@ export function sendBossMobDefeatedMessage(enemy: Enemy, io: any, players: Recor
         return;
     }
     
+    // Target dummies don't count as boss mobs and don't send notifications
+    if (enemy.type === 'target_dummy') {
+        return;
+    }
+    
     // Get the top damage dealer
     if (!enemy.damageContributors || enemy.damageContributors.size === 0) {
         return;
@@ -691,6 +696,11 @@ function despawnDistantEnemies() {
             continue;
         }
         
+        // Target dummies never despawn
+        if (enemy.type === 'target_dummy') {
+            continue;
+        }
+        
         // Check if enemy is currently outside any player's viewport
         const inViewport = isPositionInAnyViewport(enemy.x, enemy.y);
         
@@ -826,7 +836,14 @@ function createSpecialMob(tier: 'ultra' | 'super' | 'unique'): Enemy | null {
         return null;
     }
     
-    const mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
+    // Filter out target_dummy from boss mob spawning
+    const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+    if (eligibleMobTypes.length === 0) {
+        console.error("No eligible mob types found for boss spawning (excluding target dummies).");
+        return null;
+    }
+    
+    const mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
     const mobStats = getMobStats(mobType, tier);
     
     if (!mobStats) {
@@ -888,9 +905,10 @@ function createSpecialMob(tier: 'ultra' | 'super' | 'unique'): Enemy | null {
 
 // Function to update special mob counts
 export function updateSpecialMobCounts() {
-    ultraMobCount = enemies.filter(e => e.tier === 'ultra').length;
-    superMobCount = enemies.filter(e => e.tier === 'super').length;
-    uniqueMobCount = enemies.filter(e => e.tier === 'unique').length;
+    // Exclude target dummies from boss mob counting
+    ultraMobCount = enemies.filter(e => e.tier === 'ultra' && e.type !== 'target_dummy').length;
+    superMobCount = enemies.filter(e => e.tier === 'super' && e.type !== 'target_dummy').length;
+    uniqueMobCount = enemies.filter(e => e.tier === 'unique' && e.type !== 'target_dummy').length;
 }
 
 // Function to spawn special mobs
@@ -904,11 +922,14 @@ function spawnSpecialMobs() {
         if (ultraMob) {
             enemies.push(ultraMob);
             ultraMobCount = 1;
-            io.emit('chatMessage', {
-                sender: '',
-                content: `<b style="color: ${ENEMY_TIERS.ultra.color};">An ultra ${ultraMob.type.replace('_', ' ')} has spawned in a legendary zone!</b>`,
-                timestamp: Date.now()
-            });
+            // Don't send spawn notification for target dummies
+            if (ultraMob.type !== 'target_dummy') {
+                io.emit('chatMessage', {
+                    sender: '',
+                    content: `<b style="color: ${ENEMY_TIERS.ultra.color};">An ultra ${ultraMob.type.replace('_', ' ')} has spawned in a legendary zone!</b>`,
+                    timestamp: Date.now()
+                });
+            }
             console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
         }
     }
@@ -919,11 +940,14 @@ function spawnSpecialMobs() {
         if (superMob) {
             enemies.push(superMob);
             superMobCount = 1;
-            io.emit('chatMessage', {
-                sender: '',
-                content: `<b style="color: ${ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
-                timestamp: Date.now()
-            });
+            // Don't send spawn notification for target dummies
+            if (superMob.type !== 'target_dummy') {
+                io.emit('chatMessage', {
+                    sender: '',
+                    content: `<b style="color: ${ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
+                    timestamp: Date.now()
+                });
+            }
             console.log(`[SERVER] Spawned super mob: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
         }
     }
@@ -934,11 +958,14 @@ function spawnSpecialMobs() {
         if (uniqueMob) {
             enemies.push(uniqueMob);
             uniqueMobCount = 1;
-            io.emit('chatMessage', {
-                sender: '',
-                content: `<b style="color: ${ENEMY_TIERS.unique.color};">A unique ${uniqueMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
-                timestamp: Date.now()
-            });
+            // Don't send spawn notification for target dummies
+            if (uniqueMob.type !== 'target_dummy') {
+                io.emit('chatMessage', {
+                    sender: '',
+                    content: `<b style="color: ${ENEMY_TIERS.unique.color};">A unique ${uniqueMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
+                    timestamp: Date.now()
+                });
+            }
             console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);
         }
     }
@@ -1043,13 +1070,28 @@ function createEnemy(): Enemy {
             // If spawn table specifies a mob type, use it; otherwise pick randomly
             if (spawnSelection.mobType) {
                 mobType = spawnSelection.mobType as Enemy['type'];
+                
+                // For target dummies, check if one of this tier already exists
+                if (mobType === 'target_dummy') {
+                    const existingDummy = enemies.find(e => e.type === 'target_dummy' && e.tier === tier);
+                    if (existingDummy) {
+                        // Target dummy of this tier already exists, don't spawn another
+                        return null as any;
+                    }
+                }
             } else {
                 const allMobTypes = getAllMobTypes();
                 if (allMobTypes.length === 0) {
                     console.error("No mob types found in MOB_CONFIG.");
                     return null as any;
                 }
-                mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
+                // Filter out target_dummy from random selection (they should only spawn from explicit spawn table entries)
+                const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+                if (eligibleMobTypes.length === 0) {
+                    console.error("No eligible mob types found (excluding target dummies).");
+                    return null as any;
+                }
+                mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
             }
         } else {
             // Fallback if spawn table selection fails
@@ -1058,7 +1100,13 @@ function createEnemy(): Enemy {
                 console.error("No mob types found in MOB_CONFIG.");
                 return null as any;
             }
-            mobType = allMobTypes[Math.floor(Math.random() * allMobTypes.length)] as Enemy['type'];
+            // Filter out target_dummy from random selection
+            const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+            if (eligibleMobTypes.length === 0) {
+                console.error("No eligible mob types found (excluding target dummies).");
+                return null as any;
+            }
+            mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
         }
     } else {
         // Check if position is in a spawn zone
@@ -1090,7 +1138,11 @@ function createEnemy(): Enemy {
         }
         
         // Filter to only allow non-biome-only mobs in regular spawn zones
+        // Also exclude target_dummy (they should only spawn from explicit map biome entries)
         const eligibleMobTypes = allMobTypes.filter(type => {
+            if (type === 'target_dummy') {
+                return false; // Never spawn target dummies as normal mobs
+            }
             const stats = getMobStats(type, tier);
             return stats && !stats.biomeOnly;
         });
@@ -1698,7 +1750,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             const command = message.substring(1).toLowerCase();
             
             if (command === 'list_ultra') {
-                const ultraMobs = enemies.filter(e => e.tier === 'ultra');
+                // Exclude target dummies from list commands
+                const ultraMobs = enemies.filter(e => e.tier === 'ultra' && e.type !== 'target_dummy');
                 if (ultraMobs.length === 0) {
                     io.emit('chatMessage', {
                         sender: 'System',
@@ -1730,7 +1783,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             }
             
             if (command === 'list_super') {
-                const superMobs = enemies.filter(e => e.tier === 'super');
+                // Exclude target dummies from list commands
+                const superMobs = enemies.filter(e => e.tier === 'super' && e.type !== 'target_dummy');
                 if (superMobs.length === 0) {
                     io.emit('chatMessage', {
                         sender: 'System',
@@ -1762,7 +1816,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             }
             
             if (command === 'list_unique') {
-                const uniqueMobs = enemies.filter(e => e.tier === 'unique');
+                // Exclude target dummies from list commands
+                const uniqueMobs = enemies.filter(e => e.tier === 'unique' && e.type !== 'target_dummy');
                 if (uniqueMobs.length === 0) {
                     io.emit('chatMessage', {
                         sender: 'System',
