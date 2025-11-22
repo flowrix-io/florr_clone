@@ -42,6 +42,7 @@ exports.CHANGELOG = [
         date: 'November 21, 2025',
         changes: [
             'Some recolors and tweaks to the graphics',
+            'New petal: Jelly',
             'fixes'
         ]
     }

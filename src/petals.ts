@@ -80,6 +80,7 @@ interface BasePetalConfig {
 
 // Special rarity overrides for specific petals
 interface RarityOverride {
+    knockback?: number;
     count?: number;
     image?: string;
     description?: string;
@@ -238,6 +239,32 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
         },
         unique: {
             health: 10
+        }
+    },
+    jelly: {
+        uncommon: {
+            knockback: 50.0
+        },
+        rare: {
+            knockback: 100.0
+        },
+        epic: {
+            knockback: 250.0
+        },
+        legendary: {
+            knockback: 500.0
+        },
+        mythic: {
+            knockback: 1800.0
+        },
+        ultra: {
+            knockback: 10000.0
+        },
+        super: {
+            knockback: 25000.0
+        },
+        unique: {
+            knockback: 50000.0
         }
     }
 };
@@ -508,6 +535,24 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
             spreadAngle: 0.0
         }
     },
+    jelly: {
+        name: "Jelly Petal",
+        damage: 1,
+        health: 100,
+        size: 1.0,
+        cooldown: 1000,
+        knockback: 15.0,
+        description: "A jelly that deals damage to the target",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14.5" fill="rgba(255, 128, 255, 0.2)" stroke="rgba(255, 128, 255, 0.5)" stroke-width="3"/>
+<circle cx="12" cy="12" r="2" fill="rgba(255, 128, 255, 0.5)"/>
+<circle cx="25" cy="17" r="3" fill="rgba(255, 128, 255, 0.5)"/>
+<circle cx="12" cy="25" r="2.5" fill="rgba(255, 128, 255, 0.5)"/>
+</svg>`,
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 99999,
@@ -736,7 +781,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         size: baseConfig.size, // Size stays the same for each petal type
         speed: baseConfig.speed ?? 1.0, // Default speed
         cooldown,
-        knockback: baseConfig.knockback ?? 5, // Default knockback
+        knockback: overrides.knockback ?? baseConfig.knockback ?? 5, // Apply override or use base config or default
         poison: poison, // Scaled poison damage per millisecond
         poisonDuration: overrides.poisonDuration ?? baseConfig.poisonDuration, // Poison duration in milliseconds
         description: overrides.description ?? baseConfig.description,
