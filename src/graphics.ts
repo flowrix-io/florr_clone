@@ -858,7 +858,58 @@ export class Graphics {
             }
 
             this.ctx.closePath();
+            
+            // Fill with pattern
             this.ctx.fill();
+            
+            // Draw outline only on outer edges (not on the base that connects to wall)
+            this.ctx.strokeStyle = '#783f01';
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            
+            if (direction === 'top') {
+                // Draw outline on left side, top, and right side (skip bottom base)
+                // Start from left side of base, go up left edge
+                this.ctx.moveTo(spikeX, spikeY);
+                this.ctx.lineTo(spikeX + (spikeWidth - topWidth) / 2, spikeY - spikeHeight);
+                // Draw top edge
+                this.ctx.lineTo(spikeX + (spikeWidth + topWidth) / 2, spikeY - spikeHeight);
+                // Draw right edge down to base
+                this.ctx.lineTo(spikeX + spikeWidth, spikeY);
+                // Don't draw the base edge
+            } else if (direction === 'bottom') {
+                // Draw outline on left side, bottom, and right side (skip top base)
+                // Start from left side of base, go down left edge
+                this.ctx.moveTo(spikeX, spikeY);
+                this.ctx.lineTo(spikeX + (spikeWidth - topWidth) / 2, spikeY + spikeHeight);
+                // Draw bottom edge
+                this.ctx.lineTo(spikeX + (spikeWidth + topWidth) / 2, spikeY + spikeHeight);
+                // Draw right edge up to base
+                this.ctx.lineTo(spikeX + spikeWidth, spikeY);
+                // Don't draw the base edge
+            } else if (direction === 'left') {
+                // Draw outline on top, left side, and bottom (skip right base)
+                // Start from top of base, go left along top edge
+                this.ctx.moveTo(spikeX, spikeY);
+                this.ctx.lineTo(spikeX - spikeHeight, spikeY + (spikeWidth - topWidth) / 2);
+                // Draw left edge
+                this.ctx.lineTo(spikeX - spikeHeight, spikeY + (spikeWidth + topWidth) / 2);
+                // Draw bottom edge back to base
+                this.ctx.lineTo(spikeX, spikeY + spikeWidth);
+                // Don't draw the base edge
+            } else if (direction === 'right') {
+                // Draw outline on top, right side, and bottom (skip left base)
+                // Start from top of base, go right along top edge
+                this.ctx.moveTo(spikeX, spikeY);
+                this.ctx.lineTo(spikeX + spikeHeight, spikeY + (spikeWidth - topWidth) / 2);
+                // Draw right edge
+                this.ctx.lineTo(spikeX + spikeHeight, spikeY + (spikeWidth + topWidth) / 2);
+                // Draw bottom edge back to base
+                this.ctx.lineTo(spikeX, spikeY + spikeWidth);
+                // Don't draw the base edge
+            }
+            
+            this.ctx.stroke();
         });
     }
 

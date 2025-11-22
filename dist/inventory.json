@@ -2,14 +2,14 @@
   "players": {
     "ocu977p98": {
       "level": 50,
-      "xp": 4533176,
+      "xp": 4536731,
       "maxHealth": 590,
       "damage": 103,
       "inventory": {
         "common": {
           "health_potion": 6,
           "petal_rose": 81,
-          "shield": 87,
+          "shield": 88,
           "petal_light": 54,
           "petal_dandelion": 18,
           "petal_stinger": 33,
@@ -24,7 +24,7 @@
           "petal_basic": 27,
           "petal_poison_cactus": 2,
           "petal_lightning": 22,
-          "petal_missile": 15
+          "petal_missile": 17
         },
         "unique": {
           "petal_stinger": 1000,
@@ -61,10 +61,10 @@
           "petal_dandelion": 52,
           "petal_basic": 38,
           "petal_sand": 4,
-          "speed_boost": 15,
+          "speed_boost": 16,
           "petal_stinger": 13,
-          "shield": 14,
-          "petal_clover": 13,
+          "shield": 15,
+          "petal_clover": 14,
           "petal_light": 8,
           "health_potion": 15,
           "petal_rock": 11,
@@ -169,14 +169,14 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 655208580.75,
+          "health": 655208555.75,
           "maxHealth": 656093439
         },
         {
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 641486344.5,
+          "health": 641476084.5,
           "maxHealth": 656093439
         },
         {
@@ -199,7 +199,7 @@
           "type": "petal",
           "rarity": "unique",
           "petalType": "sparkle",
-          "health": 344743144.5,
+          "health": 344742972,
           "maxHealth": 656093439
         },
         {
