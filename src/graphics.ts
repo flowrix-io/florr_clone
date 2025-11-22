@@ -580,6 +580,288 @@ export class Graphics {
         
     }
 
+    /**
+     * Check if a wall edge is exposed (no adjacent wall)
+     */
+    private isEdgeExposed(
+        wall: MapElement,
+        edge: 'top' | 'bottom' | 'left' | 'right',
+        allWalls: MapElement[]
+    ): boolean {
+        const tolerance = 1; // Small tolerance for floating point comparison
+        const x = wall.x;
+        const y = wall.y;
+        const width = wall.width;
+        const height = wall.height;
+
+        switch (edge) {
+            case 'top':
+                // Check if there's a wall directly above
+                return !allWalls.some(other => 
+                    other !== wall &&
+                    other.type === 'wall' &&
+                    Math.abs(other.y + other.height - y) < tolerance &&
+                    other.x < x + width &&
+                    other.x + other.width > x
+                );
+            case 'bottom':
+                // Check if there's a wall directly below
+                return !allWalls.some(other => 
+                    other !== wall &&
+                    other.type === 'wall' &&
+                    Math.abs(other.y - (y + height)) < tolerance &&
+                    other.x < x + width &&
+                    other.x + other.width > x
+                );
+            case 'left':
+                // Check if there's a wall directly to the left
+                return !allWalls.some(other => 
+                    other !== wall &&
+                    other.type === 'wall' &&
+                    Math.abs(other.x + other.width - x) < tolerance &&
+                    other.y < y + height &&
+                    other.y + other.height > y
+                );
+            case 'right':
+                // Check if there's a wall directly to the right
+                return !allWalls.some(other => 
+                    other !== wall &&
+                    other.type === 'wall' &&
+                    Math.abs(other.x - (x + width)) < tolerance &&
+                    other.y < y + height &&
+                    other.y + other.height > y
+                );
+        }
+    }
+
+    /**
+     * Simple seeded random number generator for consistent spikes per wall
+     */
+    private seededRandom(seed: number): number {
+        const x = Math.sin(seed) * 10000;
+        return x - Math.floor(x);
+    }
+
+    /**
+     * Draw spiky edges on a wall using the tiled texture pattern
+     * Spikes are randomly positioned and can connect together, with softer curves
+     */
+    private drawWallSpikes(
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        wall: MapElement,
+        allWalls: MapElement[],
+        pattern: CanvasPattern
+    ): void {
+        const minSpikeHeight = 8;
+        const maxSpikeHeight = 25;
+        const minSpikeWidth = 25;
+        const maxSpikeWidth = 50;
+        const minSpikeSpacing = 0;
+        const maxSpikeSpacing = 20;
+        const clusterChance = 0.3; // 30% chance of spikes connecting/clustering
+
+        // Use wall position as seed for consistent randomness
+        const baseSeed = (wall.x * 1000 + wall.y) * 1000;
+
+        this.ctx.save();
+        this.ctx.fillStyle = pattern;
+
+        // Top edge spikes
+        if (this.isEdgeExposed(wall, 'top', allWalls)) {
+            this.drawRandomSpikesOnEdge(
+                x, y, width, 0,
+                'top',
+                baseSeed + 1,
+                minSpikeHeight, maxSpikeHeight,
+                minSpikeWidth, maxSpikeWidth,
+                minSpikeSpacing, maxSpikeSpacing,
+                clusterChance
+            );
+        }
+
+        // Bottom edge spikes
+        if (this.isEdgeExposed(wall, 'bottom', allWalls)) {
+            this.drawRandomSpikesOnEdge(
+                x, y + height, width, 0,
+                'bottom',
+                baseSeed + 2,
+                minSpikeHeight, maxSpikeHeight,
+                minSpikeWidth, maxSpikeWidth,
+                minSpikeSpacing, maxSpikeSpacing,
+                clusterChance
+            );
+        }
+
+        // Left edge spikes
+        if (this.isEdgeExposed(wall, 'left', allWalls)) {
+            this.drawRandomSpikesOnEdge(
+                x, y, 0, height,
+                'left',
+                baseSeed + 3,
+                minSpikeHeight, maxSpikeHeight,
+                minSpikeWidth, maxSpikeWidth,
+                minSpikeSpacing, maxSpikeSpacing,
+                clusterChance
+            );
+        }
+
+        // Right edge spikes
+        if (this.isEdgeExposed(wall, 'right', allWalls)) {
+            this.drawRandomSpikesOnEdge(
+                x + width, y, 0, height,
+                'right',
+                baseSeed + 4,
+                minSpikeHeight, maxSpikeHeight,
+                minSpikeWidth, maxSpikeWidth,
+                minSpikeSpacing, maxSpikeSpacing,
+                clusterChance
+            );
+        }
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Draw random spikes along an edge with clustering support
+     */
+    private drawRandomSpikesOnEdge(
+        startX: number,
+        startY: number,
+        edgeWidth: number,
+        edgeHeight: number,
+        direction: 'top' | 'bottom' | 'left' | 'right',
+        seed: number,
+        minHeight: number,
+        maxHeight: number,
+        minWidth: number,
+        maxWidth: number,
+        minSpacing: number,
+        maxSpacing: number,
+        clusterChance: number
+    ): void {
+        const edgeLength = direction === 'top' || direction === 'bottom' ? edgeWidth : edgeHeight;
+        const spikes: Array<{ pos: number; width: number; height: number; isCluster: boolean }> = [];
+        
+        let currentPos = 0;
+        let seedOffset = 0;
+
+        // Generate random spike positions with clustering
+        let inCluster = false;
+        let clusterSpikeCount = 0;
+        let clusterMaxSpikes = 0;
+        let prevSpikeEnd = 0; // Track where previous spike ends to prevent overlap
+
+        while (prevSpikeEnd < edgeLength) {
+            const rand = this.seededRandom(seed + seedOffset++);
+            
+            // Check if we should start a new cluster
+            if (!inCluster && rand < clusterChance) {
+                inCluster = true;
+                clusterSpikeCount = 0;
+                clusterMaxSpikes = 2 + Math.floor(this.seededRandom(seed + seedOffset++) * 3); // 2-4 spikes in cluster
+            }
+            
+            // Calculate spacing from previous spike end
+            let spacing = 0;
+            if (inCluster && clusterSpikeCount > 0) {
+                // Small spacing within cluster
+                spacing = minSpacing * 0.3 + (minSpacing * 0.5) * this.seededRandom(seed + seedOffset++);
+            } else if (!inCluster) {
+                // Normal spacing for non-clustered spikes
+                spacing = minSpacing + (maxSpacing - minSpacing) * rand;
+            }
+            
+            // Position spike after previous spike with spacing
+            currentPos = prevSpikeEnd + spacing;
+
+            if (currentPos >= edgeLength) break;
+
+            const spikeWidth = minWidth + (maxWidth - minWidth) * this.seededRandom(seed + seedOffset++);
+            const spikeHeight = minHeight + (maxHeight - minHeight) * this.seededRandom(seed + seedOffset++);
+            
+            // Clustered spikes are wider and can vary in height
+            const finalWidth = inCluster ? spikeWidth * (1.3 + this.seededRandom(seed + seedOffset++) * 0.7) : spikeWidth;
+            const finalHeight = inCluster ? spikeHeight * (1.1 + this.seededRandom(seed + seedOffset++) * 0.2) : spikeHeight;
+
+            // Ensure spike doesn't go beyond edge
+            if (currentPos + finalWidth > edgeLength) {
+                break;
+            }
+
+            spikes.push({
+                pos: currentPos,
+                width: finalWidth,
+                height: finalHeight,
+                isCluster: inCluster
+            });
+
+            // Update position to end of current spike
+            prevSpikeEnd = currentPos + finalWidth;
+
+            // Update cluster state
+            if (inCluster) {
+                clusterSpikeCount++;
+                if (clusterSpikeCount >= clusterMaxSpikes) {
+                    inCluster = false;
+                    // Add extra spacing after cluster ends
+                    prevSpikeEnd += minSpacing * 0.5;
+                }
+            }
+        }
+
+        // Draw the spikes with straight lines (less sharp trapezoid shape)
+        spikes.forEach((spike, index) => {
+            // Use actual position without overlap adjustment
+            const spikeX = direction === 'top' || direction === 'bottom' 
+                ? startX + spike.pos 
+                : startX;
+            const spikeY = direction === 'left' || direction === 'right'
+                ? startY + spike.pos
+                : startY;
+
+            const spikeWidth = spike.width;
+            const spikeHeight = spike.height;
+            
+            // Make spikes less sharp by using a flat top instead of sharp point
+            // Top width is 20-40% of base width for less sharp appearance
+            const topWidth = spikeWidth * (0.2 + this.seededRandom((spike.pos * 1000) % 1000) * 0.2);
+
+            this.ctx.beginPath();
+
+            if (direction === 'top') {
+                // Trapezoid spike pointing upward with flat top
+                this.ctx.moveTo(spikeX, spikeY);
+                this.ctx.lineTo(spikeX + (spikeWidth - topWidth) / 2, spikeY - spikeHeight);
+                this.ctx.lineTo(spikeX + (spikeWidth + topWidth) / 2, spikeY - spikeHeight);
+                this.ctx.lineTo(spikeX + spikeWidth, spikeY);
+            } else if (direction === 'bottom') {
+                // Trapezoid spike pointing downward with flat bottom
+                this.ctx.moveTo(spikeX, spikeY);
+                this.ctx.lineTo(spikeX + (spikeWidth - topWidth) / 2, spikeY + spikeHeight);
+                this.ctx.lineTo(spikeX + (spikeWidth + topWidth) / 2, spikeY + spikeHeight);
+                this.ctx.lineTo(spikeX + spikeWidth, spikeY);
+            } else if (direction === 'left') {
+                // Trapezoid spike pointing left with flat left side
+                this.ctx.moveTo(spikeX, spikeY);
+                this.ctx.lineTo(spikeX - spikeHeight, spikeY + (spikeWidth - topWidth) / 2);
+                this.ctx.lineTo(spikeX - spikeHeight, spikeY + (spikeWidth + topWidth) / 2);
+                this.ctx.lineTo(spikeX, spikeY + spikeWidth);
+            } else if (direction === 'right') {
+                // Trapezoid spike pointing right with flat right side
+                this.ctx.moveTo(spikeX, spikeY);
+                this.ctx.lineTo(spikeX + spikeHeight, spikeY + (spikeWidth - topWidth) / 2);
+                this.ctx.lineTo(spikeX + spikeHeight, spikeY + (spikeWidth + topWidth) / 2);
+                this.ctx.lineTo(spikeX, spikeY + spikeWidth);
+            }
+
+            this.ctx.closePath();
+            this.ctx.fill();
+        });
+    }
+
     public drawMap(world_map_data: MapElement[]) {
         // Draw all map elements
         world_map_data.forEach(element => {
@@ -602,6 +884,10 @@ export class Graphics {
                         this.ctx.save();
                         this.ctx.fillStyle = pattern;
                         this.ctx.fillRect(x, y, width, height);
+                        
+                        // Draw spiky edges on exposed edges
+                        this.drawWallSpikes(x, y, width, height, element, world_map_data, pattern);
+                        
                         this.ctx.restore();
                     }
                 } else {
