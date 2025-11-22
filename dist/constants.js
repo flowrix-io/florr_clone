@@ -94,9 +94,9 @@ exports.KNOCKBACK_FORCE = 5; // Reduced for faster movement with many enemies
 exports.KNOCKBACK_RECOVERY_SPEED = 0.7; // Faster decay to reduce movement resistance
 // Add XP-related constants
 exports.BASE_XP_REQUIREMENT = 100;
-exports.XP_MULTIPLIER = 1.25;
+exports.XP_MULTIPLIER = 1.08;
 exports.HEALTH_PER_LEVEL = 10;
-exports.DAMAGE_PER_LEVEL = 2;
+exports.DAMAGE_PER_LEVEL = 1;
 exports.PLAYER_SIZE = 40;
 exports.ENEMY_SIZE = 40;
 // Define zone boundaries for different tiers

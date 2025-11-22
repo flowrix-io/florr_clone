@@ -38,8 +38,7 @@ export interface Player {
   isDead?: boolean;
 }
 export interface PlayerProgress {
-  level: number;
-  xp: number;
+  totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
   inventory: PlayerInventory;
   loadout: (Item | null)[];
 }

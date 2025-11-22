@@ -103,7 +103,7 @@ export class Game {
     private readonly BASE_XP_REQUIREMENT = 100;
     private readonly XP_MULTIPLIER = 1.5;
     private readonly MAX_LEVEL = 50;
-    private readonly HEALTH_PER_LEVEL = 10;
+    private readonly HEALTH_PER_LEVEL = 20;
     private readonly DAMAGE_PER_LEVEL = 2;
     // Add this property to store floating texts
     private floatingTexts: Array<{

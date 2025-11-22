@@ -59,7 +59,7 @@ class Game {
         this.BASE_XP_REQUIREMENT = 100;
         this.XP_MULTIPLIER = 1.5;
         this.MAX_LEVEL = 50;
-        this.HEALTH_PER_LEVEL = 10;
+        this.HEALTH_PER_LEVEL = 20;
         this.DAMAGE_PER_LEVEL = 2;
         // Add this property to store floating texts
         this.floatingTexts = [];

@@ -17,6 +17,12 @@ if (database.checkForPlainTextPasswords()) {
 } else {
     console.log('[SERVER] All passwords are already hashed');
 }
+
+// Migrate player data from old format to new format on server startup
+const migratedPlayers = database.migratePlayerData();
+if (migratedPlayers > 0) {
+    console.log(`[SERVER] Migrated ${migratedPlayers} players to new XP format`);
+}
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition } from './petal_actions';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig } from './constants';
@@ -1299,12 +1305,38 @@ interface AuthenticatedSocket extends Socket {
 
 // XP and level management functions
 export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: string): void {
-    player.xp += xp;
-    while (player.xp >= player.xpToNextLevel) {
-        player.xp -= player.xpToNextLevel;
-        player.level++;
-        player.xpToNextLevel = calculateXPRequirement(player.level);
-        handleLevelUp(player);
+    // Calculate current total XP
+    const currentTotalXP = calculateTotalXP(player.level, player.xp);
+    // Add the new XP
+    const newTotalXP = currentTotalXP + xp;
+    
+    // Calculate new level from total XP
+    const oldLevel = player.level;
+    const newLevel = calculateLevelFromTotalXP(newTotalXP);
+    const newCurrentLevelXP = calculateCurrentLevelXP(newTotalXP, newLevel);
+    
+    // Update player stats
+    player.xp = newCurrentLevelXP;
+    player.level = newLevel;
+    player.xpToNextLevel = calculateXPRequirement(newLevel);
+    
+    // Check if level increased and handle level ups
+    if (newLevel > oldLevel) {
+        // Update maxHealth and damage based on new level
+        player.maxHealth = calculateMaxHealthFromLevel(newLevel);
+        player.damage = calculateDamageFromLevel(newLevel);
+        // Heal to full when leveling up
+        player.health = player.maxHealth;
+        
+        // Emit level up event for each level gained
+        for (let level = oldLevel + 1; level <= newLevel; level++) {
+            io.emit('levelUp', {
+                playerId: player.id,
+                level: level,
+                maxHealth: calculateMaxHealthFromLevel(level),
+                damage: calculateDamageFromLevel(level)
+            });
+        }
     }
 
     // Save progress after XP gain if we have the socket ID
@@ -1318,7 +1350,7 @@ export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: strin
     io.emit('xpGained', {
         playerId: player.id,
         xp: xp,
-        totalXp: player.xp,
+        totalXp: newCurrentLevelXP,
         level: player.level,
         xpToNextLevel: player.xpToNextLevel,
         maxHealth: player.maxHealth,
@@ -1351,6 +1383,13 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             // console.log('User authenticated, loading saved progress for userId:', user.id);
             const savedProgress = database.getPlayerByUserId(user.id);
             // console.log('Loaded saved progress:', savedProgress);
+
+            // Calculate level, maxHealth, and damage from total XP
+            const totalXP = savedProgress?.totalXP || 0;
+            const level = calculateLevelFromTotalXP(totalXP);
+            const currentLevelXP = calculateCurrentLevelXP(totalXP, level);
+            const maxHealth = calculateMaxHealthFromLevel(level);
+            const damage = calculateDamageFromLevel(level);
 
             // Determine spawn position based on selected biome
             let spawnX = 200;
@@ -1388,15 +1427,15 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 score: 0,
                 velocityX: 0,
                 velocityY: 0,
-                health: savedProgress?.maxHealth || PLAYER_MAX_HEALTH,
-                maxHealth: savedProgress?.maxHealth || PLAYER_MAX_HEALTH,
-                damage: savedProgress?.damage || PLAYER_DAMAGE,
+                health: maxHealth,
+                maxHealth: maxHealth,
+                damage: damage,
                 inventory: savedProgress?.inventory || createInitialInventory(),
                 loadout: savedProgress?.loadout || createInitialBasicPetals().concat(Array(5).fill(null)),
                 isInvulnerable: true,
-                level: savedProgress?.level || 1,
-                xp: savedProgress?.xp || 0,
-                xpToNextLevel: calculateXPRequirement(savedProgress?.level || 1),
+                level: level,
+                xp: currentLevelXP,
+                xpToNextLevel: calculateXPRequirement(level),
                 knockbackX: 0,
                 knockbackY: 0,
                 inputs: { keys: [] },
@@ -3144,6 +3183,45 @@ function calculateXPRequirement(level: number): number {
     return Math.floor(BASE_XP_REQUIREMENT * Math.pow(XP_MULTIPLIER, level - 1));
 }
 
+// Calculate total XP from level and current level XP
+function calculateTotalXP(level: number, currentLevelXP: number): number {
+    let totalXP = currentLevelXP;
+    for (let i = 1; i < level; i++) {
+        totalXP += calculateXPRequirement(i);
+    }
+    return totalXP;
+}
+
+// Calculate level from total XP
+function calculateLevelFromTotalXP(totalXP: number): number {
+    let level = 1;
+    let xpNeeded = 0;
+    while (xpNeeded + calculateXPRequirement(level) <= totalXP) {
+        xpNeeded += calculateXPRequirement(level);
+        level++;
+    }
+    return level;
+}
+
+// Calculate current level XP from total XP
+function calculateCurrentLevelXP(totalXP: number, level: number): number {
+    let xpNeeded = 0;
+    for (let i = 1; i < level; i++) {
+        xpNeeded += calculateXPRequirement(i);
+    }
+    return totalXP - xpNeeded;
+}
+
+// Calculate max health from level
+function calculateMaxHealthFromLevel(level: number): number {
+    return PLAYER_MAX_HEALTH + Math.ceil(Math.pow(level, 1.5) * HEALTH_PER_LEVEL);
+}
+
+// Calculate damage from level
+function calculateDamageFromLevel(level: number): number {
+    return PLAYER_DAMAGE + Math.ceil(Math.pow(level, 1.5) * DAMAGE_PER_LEVEL);
+}
+
 // Cross-server player transfer functionality
 async function transferPlayerToServer(player: ServerPlayer, targetServerPort: number, targetX: number, targetY: number): Promise<boolean> {
     const targetServerConfig = getServerConfigByPort(targetServerPort);
@@ -3305,10 +3383,13 @@ async function transferPlayerToServer(player: ServerPlayer, targetServerPort: nu
 // }, 24 * 60 * 60 * 1000); // Run once per day
 
 // Add this function near the other helper functions
+// Note: This function is now mostly handled in addXPToPlayer, but kept for backwards compatibility
 function handleLevelUp(player: ServerPlayer): void {
-    player.maxHealth += HEALTH_PER_LEVEL;
+    // Level up is now handled in addXPToPlayer with dynamic calculation
+    // This function is kept for any other code that might call it
+    player.maxHealth = calculateMaxHealthFromLevel(player.level);
     player.health = player.maxHealth;  // Heal to full when leveling up
-    player.damage += DAMAGE_PER_LEVEL;
+    player.damage = calculateDamageFromLevel(player.level);
 
     io.emit('levelUp', {
         playerId: player.id,
@@ -3417,11 +3498,11 @@ function savePlayerProgress(player: ServerPlayer, userId: string) {
     if (userId) {
         // console.log('Saving player progress for userId:', userId);
 
+        // Calculate total XP from current level and XP
+        const totalXP = calculateTotalXP(player.level, player.xp);
+
         const saveResult = database.savePlayer(userId, {
-            level: player.level,
-            xp: player.xp,
-            maxHealth: player.maxHealth,
-            damage: player.damage,
+            totalXP: totalXP,
             inventory: player.inventory,
             loadout: player.loadout
         });

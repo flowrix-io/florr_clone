@@ -137,4 +137,40 @@ exports.database = {
         }
         return false;
     },
+    // Migrate old player data format (level, xp, maxHealth, damage) to new format (totalXP)
+    migratePlayerData: () => {
+        let migrated = 0;
+        for (const userId in db.players) {
+            const player = db.players[userId]; // Use any for migration to handle old format
+            // Check if this is old format (has level and xp but not totalXP)
+            if ('level' in player && 'xp' in player && !('totalXP' in player)) {
+                // Calculate total XP from old level and xp
+                const level = player.level || 1;
+                const currentLevelXP = player.xp || 0;
+                // Calculate total XP using same formula as server
+                // BASE_XP_REQUIREMENT = 100, XP_MULTIPLIER = 1.25
+                const BASE_XP_REQUIREMENT = 100;
+                const XP_MULTIPLIER = 1.25;
+                const calculateXPRequirement = (lvl) => {
+                    return Math.floor(BASE_XP_REQUIREMENT * Math.pow(XP_MULTIPLIER, lvl - 1));
+                };
+                let totalXP = currentLevelXP;
+                for (let i = 1; i < level; i++) {
+                    totalXP += calculateXPRequirement(i);
+                }
+                // Update to new format
+                db.players[userId] = {
+                    totalXP: totalXP,
+                    inventory: player.inventory,
+                    loadout: player.loadout
+                };
+                migrated++;
+            }
+        }
+        if (migrated > 0) {
+            writeDatabase();
+            console.log(`Successfully migrated ${migrated} players to new XP format`);
+        }
+        return migrated;
+    },
 };
