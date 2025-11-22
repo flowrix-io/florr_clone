@@ -68,7 +68,7 @@ export class ChangelogManager {
             left: 20px;
             width: 600px;
             max-height: 500px;
-            background: rgba(0, 0, 0, 0.95);
+            background: #49c46f;
             border: 2px solid #4CAF50;
             border-radius: 10px;
             padding: 20px;
@@ -81,7 +81,7 @@ export class ChangelogManager {
         const content = document.createElement('div');
         content.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="color: #4CAF50; margin: 0; font-family: Arial, sans-serif;">Changelog</h2>
+                <h2 style="color: #FFFFFF; margin: 0; font-family: Arial, sans-serif; -webkit-text-stroke: 1px black; -webkit-font-smoothing: none;">Changelog</h2>
                 <button id="closeChangelogButton" style="background: #ff4444; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 16px;">✕</button>
             </div>
             <div id="changelogContent"></div>
@@ -127,27 +127,31 @@ export class ChangelogManager {
                 padding: 15px;
                 background: rgba(255, 255, 255, 0.05);
                 border-radius: 8px;
-                border-left: 4px solid #4CAF50;
             }
             .changelog-date {
                 font-size: 20px;
                 font-weight: bold;
-                color: #4CAF50;
+                color: #FFFFFF;
+                -webkit-font-smoothing: 0.5px;
+                -webkit-text-stroke: 0.5px black;
                 margin-bottom: 10px;
             }
             .changelog-change {
                 margin: 8px 0;
                 padding-left: 20px;
                 position: relative;
-                color: #ddd;
+                color: #FFFFFF;
                 line-height: 1.6;
+                -webkit-font-smoothing: 0.5px;
+                -webkit-text-stroke: 0.5px black;
             }
             .changelog-change::before {
                 content: '•';
                 position: absolute;
                 left: 5px;
                 font-size: 20px;
-                color: #4CAF50;
+                color: #FFFFFF;
+                -webkit-text-stroke: 2px black;
             }
         `;
         document.head.appendChild(style);
@@ -157,7 +161,8 @@ export class ChangelogManager {
         const contentDiv = this.changelogPanel?.querySelector('#changelogContent');
         if (!contentDiv) return;
 
-        contentDiv.innerHTML = CHANGELOG.map(entry => `
+        // Reverse the array to show most recent entries first
+        contentDiv.innerHTML = [...CHANGELOG].reverse().map(entry => `
             <div class="changelog-entry">
                 <div class="changelog-date">${entry.date}</div>
                 ${entry.changes.map(change => `
