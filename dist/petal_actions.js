@@ -13,6 +13,7 @@ exports.updatePetalPosition = updatePetalPosition;
 const petals_1 = require("./petals");
 const server_utils_1 = require("./server_utils");
 const server_1 = require("./server");
+const constants_1 = require("./constants");
 // Global state for tracking petal actions
 const petalActionStates = new Map();
 // Explosion throttle state
@@ -176,6 +177,7 @@ function explodePetal(x, y, petalSize, damage, enemies, io, player) {
                     const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                     (0, server_1.addXPToPlayer)(player, xpGained, player.id);
                     (0, server_1.handleMobDrops)(enemy);
+                    (0, server_1.sendBossMobDefeatedMessage)(enemy, io, constants_1.players);
                     (0, server_1.updateSpecialMobCounts)();
                 }
                 // Remove enemy from array
@@ -231,6 +233,7 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage) {
                     const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                     (0, server_1.addXPToPlayer)(player, xpGained, player.id);
                     (0, server_1.handleMobDrops)(enemy);
+                    (0, server_1.sendBossMobDefeatedMessage)(enemy, io, constants_1.players);
                     (0, server_1.updateSpecialMobCounts)();
                 }
                 // Remove enemy from array

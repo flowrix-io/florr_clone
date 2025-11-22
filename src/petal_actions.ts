@@ -1,7 +1,8 @@
 import { PetalAction, parsePetalActions } from './petals';
 import { ServerPlayer } from './player';
 import { Enemy, getXPFromEnemy } from './server_utils';
-import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts } from './server';
+import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
+import { players } from './constants';
 
 // Action execution context
 export interface ActionContext {
@@ -242,6 +243,7 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
                     const xpGained = getXPFromEnemy(enemy);
                     addXPToPlayer(player, xpGained, player.id);
                     handleMobDrops(enemy);
+                    sendBossMobDefeatedMessage(enemy, io, players);
                     updateSpecialMobCounts();
                 }
                 
@@ -310,6 +312,7 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
                     const xpGained = getXPFromEnemy(enemy);
                     addXPToPlayer(player, xpGained, player.id);
                     handleMobDrops(enemy);
+                    sendBossMobDefeatedMessage(enemy, io, players);
                     updateSpecialMobCounts();
                 }
                 

@@ -159,6 +159,46 @@ export function handleMobDrops(enemy: Enemy) {
     }
 }
 
+// Helper function to send boss mob defeated message in chat
+export function sendBossMobDefeatedMessage(enemy: Enemy, io: any, players: Record<string, ServerPlayer>) {
+    // Check if this is a boss mob (ultra, super, or unique tier)
+    const isBossMob = ['ultra', 'super', 'unique'].includes(enemy.tier);
+    if (!isBossMob) {
+        return;
+    }
+    
+    // Get the top damage dealer
+    if (!enemy.damageContributors || enemy.damageContributors.size === 0) {
+        return;
+    }
+    
+    // Sort players by damage dealt (highest first)
+    const sortedPlayers = Array.from(enemy.damageContributors.entries())
+        .sort((a, b) => b[1] - a[1]);
+    
+    if (sortedPlayers.length === 0) {
+        return;
+    }
+    
+    // Get the top damage dealer's player ID
+    const topDamagerId = sortedPlayers[0][0];
+    const topDamager = players[topDamagerId];
+    
+    if (!topDamager) {
+        return;
+    }
+    
+    // Capitalize the first letter of the rarity
+    const rarity = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
+    
+    // Send chat message
+    io.emit('chatMessage', {
+        sender: 'System',
+        content: `A ${rarity} mob has been defeated by ${topDamager.name}`,
+        timestamp: Date.now()
+    });
+}
+
 // Helper function to create initial basic petals for new players
 function createInitialBasicPetals() {
     const basicPetalStats = getPetalStats('basic', 'common');
@@ -1940,6 +1980,7 @@ function updatePoisonEffects(deltaTime: number) {
                     
                     // Handle mob drops
                     handleMobDrops(enemy);
+                    sendBossMobDefeatedMessage(enemy, io, players);
                     enemies.splice(index, 1);
                     updateSpecialMobCounts();
                     io.emit('enemyDestroyed', enemy.id);
@@ -2383,6 +2424,7 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
                     const xpGained = getXPFromEnemy(enemy);
                     addXPToPlayer(player, xpGained, projectile.playerId);
                     handleMobDrops(enemy);
+                    sendBossMobDefeatedMessage(enemy, io, players);
                     updateSpecialMobCounts();
                     enemies.splice(j, 1);
                     io.emit('enemyDestroyed', enemy.id);
@@ -2581,6 +2623,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                         addXPToPlayer(player, xpGained, player.id);
                         // Handle mob drops using the new drop table system
                         handleMobDrops(enemy);
+                        sendBossMobDefeatedMessage(enemy, io, players);
                         enemies.splice(index, 1);
                         updateSpecialMobCounts();
                         io.emit('enemyDestroyed', enemy.id);
@@ -2883,6 +2926,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                             addXPToPlayer(player, xpGained, player.id);
                             // Handle mob drops using the new drop table system
                             handleMobDrops(enemy);
+                            sendBossMobDefeatedMessage(enemy, io, players);
                             enemies.splice(index, 1);
                             updateSpecialMobCounts();
                             io.emit('enemyDestroyed', enemy.id);
