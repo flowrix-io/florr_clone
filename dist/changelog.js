@@ -31,6 +31,19 @@ exports.CHANGELOG = [
             'Ultra+ petals now have particle effects',
             'Shaders are now available in the settings menu',
         ]
+    },
+    {
+        date: 'November 20, 2025',
+        changes: [
+            'New biome: Jungle',
+        ]
+    },
+    {
+        date: 'November 21, 2025',
+        changes: [
+            'Some recolors and tweaks to the graphics',
+            'fixes'
+        ]
     }
 ];
 class ChangelogManager {
