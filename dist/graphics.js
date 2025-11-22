@@ -891,11 +891,17 @@ class Graphics {
         for (const enemy of enemies.values()) {
             if (enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique') {
                 // Check if enemy is in viewport (same logic as drawGameObjects)
-                const enemySize = 40; // Approximate size for culling
-                if (!(enemy.x + enemySize < viewport.left ||
-                    enemy.x - enemySize > viewport.right ||
-                    enemy.y + enemySize < viewport.top ||
-                    enemy.y - enemySize > viewport.bottom)) {
+                const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                const baseSize = mobStats ? mobStats.size * 40 : 40;
+                const visualScale = mobStats?.visual_scale ?? 1.0;
+                const enemySize = baseSize * visualScale;
+                // Add a buffer margin to ensure mobs are completely out before considering them out of viewport
+                const cullingBuffer = Math.max(enemySize, 100); // At least 100px buffer, or enemy size if larger
+                // Mob is in viewport if it's NOT completely outside (with buffer)
+                if (!(enemy.x + enemySize / 2 + cullingBuffer < viewport.left ||
+                    enemy.x - enemySize / 2 - cullingBuffer > viewport.right ||
+                    enemy.y + enemySize / 2 + cullingBuffer < viewport.top ||
+                    enemy.y - enemySize / 2 - cullingBuffer > viewport.bottom)) {
                     bossMobs.push(enemy);
                 }
             }
@@ -1841,13 +1847,20 @@ class Graphics {
         // Draw enemies
         const enemyCount = enemies.size;
         for (const enemy of enemies.values()) {
-            // Temporarily disable viewport culling to debug rendering issue
-            // TODO: Re-enable viewport culling once rendering is fixed
-            const enemySize = 40; // Approximate size for culling
-            if (enemy.x + enemySize < viewport.left ||
-                enemy.x - enemySize > viewport.right ||
-                enemy.y + enemySize < viewport.top ||
-                enemy.y - enemySize > viewport.bottom) {
+            // Calculate actual enemy size for accurate culling
+            const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+            const baseSize = mobStats ? mobStats.size * 40 : 40;
+            const visualScale = mobStats?.visual_scale ?? 1.0;
+            const enemySize = baseSize * visualScale;
+            // Add a buffer margin to ensure mobs are completely out before culling
+            // This prevents culling when mobs are barely outside the viewport
+            const cullingBuffer = Math.max(enemySize, 100); // At least 100px buffer, or enemy size if larger
+            // Only cull if the mob is completely outside the viewport (with buffer)
+            // A mob is completely outside if all of its edges are outside the viewport bounds
+            if (enemy.x + enemySize / 2 + cullingBuffer < viewport.left ||
+                enemy.x - enemySize / 2 - cullingBuffer > viewport.right ||
+                enemy.y + enemySize / 2 + cullingBuffer < viewport.top ||
+                enemy.y - enemySize / 2 - cullingBuffer > viewport.bottom) {
                 continue;
             }
             try {

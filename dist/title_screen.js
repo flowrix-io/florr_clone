@@ -208,15 +208,20 @@ class TitleScreen {
                 title: 'Ocean',
                 displayName: 'Ocean'
             },
-            'swamp': {
-                color: 'rgb(200,255,250)',
-                title: 'Swamp',
-                displayName: 'Swamp'
+            'hel': {
+                color: 'rgb(255, 0, 0)',
+                title: 'Hel',
+                displayName: 'Hel'
             },
             'ant_hell': {
                 color: '#c9904f',
                 title: 'Ant Hell',
                 displayName: 'Ant Hell'
+            },
+            'jungle': {
+                color: 'rgb(0, 255, 0)',
+                title: 'Jungle',
+                displayName: 'Jungle'
             }
         };
         // Return config for known biome or create a default one
