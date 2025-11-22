@@ -1040,6 +1040,74 @@ function createEnemy() {
             return null;
         }
     }
+    // Check if spawn position is too close to other mobs
+    const MIN_MOB_SPAWN_DISTANCE = 80; // Minimum distance between mob spawns (2x base mob size)
+    const halfMobSize = mobSize / 2;
+    const tooCloseToOtherMob = constants_2.enemies.some(otherEnemy => {
+        const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
+        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : constants_2.ENEMY_SIZE;
+        const otherHalfSize = otherMobSize / 2;
+        const dx = otherEnemy.x - x;
+        const dy = otherEnemy.y - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const minDistance = halfMobSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
+        return distance < minDistance;
+    });
+    if (tooCloseToOtherMob) {
+        // Position is too close to another mob, try to find a new position
+        let newValidPosition = false;
+        let newAttempts = 0;
+        const MAX_NEW_ATTEMPTS = 50;
+        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
+            newAttempts++;
+            // Pick a random player and spawn near their viewport
+            const randomPlayerId = Object.keys(constants_2.players)[Math.floor(Math.random() * Object.keys(constants_2.players).length)];
+            const player = constants_2.players[randomPlayerId];
+            // Generate position within player's viewport (with buffer)
+            const viewportBuffer = constants_2.VIEWPORT_BUFFER;
+            const minX = player.x - constants_2.VIEWPORT_WIDTH / 2 - viewportBuffer;
+            const maxX = player.x + constants_2.VIEWPORT_WIDTH / 2 + viewportBuffer;
+            const minY = player.y - constants_2.VIEWPORT_HEIGHT / 2 - viewportBuffer;
+            const maxY = player.y + constants_2.VIEWPORT_HEIGHT / 2 + viewportBuffer;
+            x = minX + Math.random() * (maxX - minX);
+            y = minY + Math.random() * (maxY - minY);
+            // Clamp to world boundaries
+            x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
+            y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
+            // Check if position is in a safe zone
+            const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+                x >= element.x * constants_2.SCALE_FACTOR &&
+                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
+                y >= element.y * constants_2.SCALE_FACTOR &&
+                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+            // Check if position collides with walls
+            const collidesWithWall = constants_2.WORLD_MAP.some(element => element.type === 'wall' &&
+                x >= element.x * constants_2.SCALE_FACTOR &&
+                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
+                y >= element.y * constants_2.SCALE_FACTOR &&
+                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+            // Check if position is safe from petal range
+            const inPetalRange = isPositionInPlayerPetalRange(x, y, mobSize);
+            // Check if position is far enough from other mobs
+            const tooClose = constants_2.enemies.some(otherEnemy => {
+                const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
+                const otherMobSize = otherMobStats ? otherMobStats.size * 40 : constants_2.ENEMY_SIZE;
+                const otherHalfSize = otherMobSize / 2;
+                const dx = otherEnemy.x - x;
+                const dy = otherEnemy.y - y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const minDistance = halfMobSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
+                return distance < minDistance;
+            });
+            if (!inSafeZone && !collidesWithWall && !inPetalRange && !tooClose) {
+                newValidPosition = true;
+            }
+        }
+        // If we still couldn't find a valid position, return null
+        if (!newValidPosition) {
+            return null;
+        }
+    }
     // console.log(`[DEBUG] Spawning ${mobType} (${tier}) mob with stats:`, {
     //     health: mobStats.health,
     //     damage: mobStats.damage,
@@ -1934,9 +2002,16 @@ function moveEnemies() {
             }
         });
         // Check for mob-to-mob collisions (only check enemies that come after this one to avoid double-processing)
+        // Only apply collision resolution if at least one mob is hostile or chasing (passive mobs don't push)
         const currentIndex = constants_2.enemies.indexOf(enemy);
         for (let i = currentIndex + 1; i < constants_2.enemies.length; i++) {
             const otherEnemy = constants_2.enemies[i];
+            // Skip collision resolution if both mobs are passive and not chasing
+            const thisMobIsPassive = !enemy.isHostile && !enemy.isChasing;
+            const otherMobIsPassive = !otherEnemy.isHostile && !otherEnemy.isChasing;
+            if (thisMobIsPassive && otherMobIsPassive) {
+                continue; // Both are passive, don't push each other
+            }
             // Get other enemy's size
             const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
             const otherEnemySize = otherMobStats ? otherMobStats.size * 40 : constants_2.ENEMY_SIZE;
