@@ -169,8 +169,8 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
     const rarity = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
     // Send chat message
     io.emit('chatMessage', {
-        sender: 'System',
-        content: `A ${rarity} mob has been defeated by ${topDamager.name}`,
+        sender: '',
+        content: `<b style="color: ${constants_2.ENEMY_TIERS[enemy.tier].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by ${topDamager.name}</b>`,
         timestamp: Date.now()
     });
 }
@@ -767,8 +767,8 @@ function spawnSpecialMobs() {
             constants_2.enemies.push(ultraMob);
             ultraMobCount = 1;
             io.emit('chatMessage', {
-                sender: 'System',
-                content: 'An ultra mob has spawned in a legendary zone!',
+                sender: '',
+                content: `<b style="color: ${constants_2.ENEMY_TIERS.ultra.color};">An ultra ${ultraMob.type.replace('_', ' ')} has spawned in a legendary zone!</b>`,
                 timestamp: Date.now()
             });
             console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
@@ -781,8 +781,8 @@ function spawnSpecialMobs() {
             constants_2.enemies.push(superMob);
             superMobCount = 1;
             io.emit('chatMessage', {
-                sender: 'System',
-                content: 'A super mob has spawned in a mythic zone!',
+                sender: '',
+                content: `<b style="color: ${constants_2.ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
                 timestamp: Date.now()
             });
             console.log(`[SERVER] Spawned super mob: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
@@ -795,8 +795,8 @@ function spawnSpecialMobs() {
             constants_2.enemies.push(uniqueMob);
             uniqueMobCount = 1;
             io.emit('chatMessage', {
-                sender: 'System',
-                content: 'A unique mob has spawned in a mythic zone!',
+                sender: '',
+                content: `<b style="color: ${constants_2.ENEMY_TIERS.unique.color};">A unique ${uniqueMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
                 timestamp: Date.now()
             });
             console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);

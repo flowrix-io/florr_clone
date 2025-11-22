@@ -81,7 +81,9 @@ exports.ENEMY_TIERS = {
     epic: { health: 80, speed: 1.25, damage: 20, probability: 0.1, color: '#861fde' },
     legendary: { health: 100, speed: 1.5, damage: 25, probability: 0.04, color: '#1fdbde' },
     mythic: { health: 150, speed: 2, damage: 30, probability: 0.01, color: '#de1f65' },
-    ultra: { health: 450, speed: 2, damage: 90, probability: 0.0001, color: '#de1f65' }
+    ultra: { health: 450, speed: 2, damage: 90, probability: 0.0, color: '#de1f65' },
+    super: { health: 1350, speed: 3, damage: 270, probability: 0.0, color: '#2bffa4' },
+    unique: { health: 4050, speed: 4, damage: 810, probability: 0.0, color: '#bf00ff' }
 };
 exports.MAX_INVENTORY_SIZE = 5;
 exports.RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
