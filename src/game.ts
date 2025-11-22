@@ -381,8 +381,9 @@ export class Game {
         // Add mouse move listener - always track mouse position so it's available when toggling mouse controls
         this.canvas.addEventListener('mousemove', (event) => {
             const rect = this.canvas.getBoundingClientRect();
-            this.mouseX = event.clientX - rect.left + this.cameraX;
-            this.mouseY = event.clientY - rect.top + this.cameraY;
+            // Convert screen coordinates to world coordinates accounting for zoom
+            this.mouseX = (event.clientX - rect.left) / this.zoomLevel + this.cameraX;
+            this.mouseY = (event.clientY - rect.top) / this.zoomLevel + this.cameraY;
         });
 
         // Add mouse button listeners for petal extension/retraction
