@@ -2711,19 +2711,17 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         // Get enemy size based on mob stats
         const mobStats = getMobStats(enemy.type, enemy.tier);
         const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
+        const enemyRadius = enemySize / 2;
+        const playerRadius = PLAYER_SIZE / 2;
 
-        // Calculate enemy hitbox bounds (enemy.x, enemy.y is center point)
-        const enemyLeft = enemy.x - enemySize / 2;
-        const enemyRight = enemy.x + enemySize / 2;
-        const enemyTop = enemy.y - enemySize / 2;
-        const enemyBottom = enemy.y + enemySize / 2;
+        // Use circular hitbox collision (matching mob-to-mob collision)
+        // Both player and enemy positions are center points
+        const dx = enemy.x - newX;
+        const dy = enemy.y - newY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const minDistance = enemyRadius + playerRadius;
 
-        if (
-            newX < enemyRight &&
-            newX + PLAYER_SIZE > enemyLeft &&
-            newY < enemyBottom &&
-            newY + PLAYER_SIZE > enemyTop
-        ) {
+        if (distance < minDistance && distance > 0) {
             collision = true;
             // Don't damage dead players (corpses)
             if (!player.isDead) {
@@ -2748,10 +2746,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                     }
                 }, 1000);
 
-                // Calculate knockback direction first
-                const dx = enemy.x - newX;
-                const dy = enemy.y - newY;
-                const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                // Calculate knockback direction (reuse distance calculation from collision check)
                 const normalizedDx = dx / distance;
                 const normalizedDy = dy / distance;
 
