@@ -2187,7 +2187,7 @@ function updatePlayerProjectiles(deltaTimeMs) {
                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
                 // Apply knockback
                 if (distance > 0) {
-                    const knockbackForce = 10;
+                    const knockbackForce = 20;
                     const normalizedDx = dx / distance;
                     const normalizedDy = dy / distance;
                     enemy.knockbackX = normalizedDx * knockbackForce;

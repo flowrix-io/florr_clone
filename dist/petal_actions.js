@@ -161,7 +161,7 @@ function explodePetal(x, y, petalSize, damage, enemies, io, player) {
             }
             enemy.health -= damage;
             // Apply knockback
-            const knockbackForce = 10;
+            const knockbackForce = 20;
             const dx = enemy.x - x;
             const dy = enemy.y - y;
             const normalizedDx = dx / (distance || 1);
@@ -218,7 +218,7 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage) {
             }
             enemy.health -= damage;
             // Apply slight knockback
-            const knockbackForce = 5;
+            const knockbackForce = 10;
             const dx = enemy.x - x;
             const dy = enemy.y - y;
             const normalizedDx = dx / (distance || 1);

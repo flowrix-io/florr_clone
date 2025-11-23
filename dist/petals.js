@@ -206,7 +206,7 @@ const BASE_PETAL_CONFIGS = {
         description: "A simple petal that provides basic protection",
         color: "#90EE90",
         count: 1,
-        knockback: 5,
+        knockback: 10,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
@@ -723,7 +723,7 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         size: baseConfig.size, // Size stays the same for each petal type
         speed: baseConfig.speed ?? 1.0, // Default speed
         cooldown,
-        knockback: overrides.knockback ?? baseConfig.knockback ?? 5, // Apply override or use base config or default
+        knockback: overrides.knockback ?? baseConfig.knockback ?? 10, // Apply override or use base config or default
         poison: poison, // Scaled poison damage per millisecond
         poisonDuration: overrides.poisonDuration ?? baseConfig.poisonDuration, // Poison duration in milliseconds
         description: overrides.description ?? baseConfig.description,
