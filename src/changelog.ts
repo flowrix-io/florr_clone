@@ -49,6 +49,14 @@ export const CHANGELOG: ChangelogEntry[] = [
             'New petal: Jelly',
             'fixes'
         ]
+    },
+    {
+        date: 'November 22, 2025',
+        changes: [
+            'New petal: Yucca',
+            'New petal: Leaf',
+            'Target dummy now showd DPS',
+        ]
     }
 ];
 
