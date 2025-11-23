@@ -1,21 +1,21 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 45314761,
+      "totalXP": 45654002,
       "inventory": {
         "common": {
           "health_potion": 11,
           "petal_rose": 92,
           "shield": 100,
           "petal_light": 57,
-          "petal_dandelion": 20,
+          "petal_dandelion": 21,
           "petal_stinger": 37,
           "petal_yggdrasil": 5,
           "speed_boost": 65,
           "petal_sand": 38,
           "petal_rock": 74,
           "petal_clover": 19,
-          "petal_bone": 66,
+          "petal_bone": 67,
           "petal_cactus": 16,
           "petal_iris": 29,
           "petal_basic": 35,
@@ -28,7 +28,7 @@
         },
         "unique": {
           "petal_stinger": 1000,
-          "petal_basic": 1000,
+          "petal_basic": 992,
           "petal_rose": 1000,
           "petal_light": 1000,
           "petal_rock": 1000,
@@ -42,7 +42,7 @@
           "petal_sparkle": 999,
           "petal_poison_cactus": 999,
           "petal_lightning": 999,
-          "petal_iris": 998,
+          "petal_iris": 997,
           "petal_jelly": 1000
         },
         "mythic": {
@@ -85,20 +85,20 @@
           "petal_clover": 31,
           "petal_dandelion": 25,
           "petal_sand": 24,
-          "petal_rose": 38,
-          "health_potion": 28,
-          "petal_light": 29,
-          "shield": 84,
+          "petal_rose": 39,
+          "health_potion": 29,
+          "petal_light": 30,
+          "shield": 85,
           "petal_stinger": 20,
           "petal_basic": 40,
-          "petal_rock": 24,
+          "petal_rock": 25,
           "petal_yggdrasil": 4,
           "petal_cactus": 7,
           "petal_poison_cactus": 2,
           "petal_bone": 151,
           "petal_iris": 5,
           "petal_lightning": 20,
-          "petal_missile": 20,
+          "petal_missile": 21,
           "petal_jelly": 2
         },
         "epic": {
@@ -111,9 +111,9 @@
           "health_potion": 10,
           "petal_light": 21,
           "petal_rock": 66,
-          "shield": 47,
+          "shield": 48,
           "petal_dandelion": 45,
-          "petal_clover": 21,
+          "petal_clover": 22,
           "petal_bone": 51,
           "petal_cactus": 3,
           "petal_poison_cactus": 2,
@@ -124,7 +124,7 @@
         "rare": {
           "petal_dandelion": 15,
           "petal_rock": 13,
-          "petal_rose": 20,
+          "petal_rose": 21,
           "petal_light": 9,
           "health_potion": 9,
           "shield": 25,
@@ -160,19 +160,82 @@
         }
       },
       "loadout": [
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
+        {
+          "type": "petal",
+          "petalType": "iris",
+          "rarity": "unique",
+          "maxHealth": 6561,
+          "health": 6561,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "unique",
+          "maxHealth": 65610,
+          "health": 65610,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "unique",
+          "maxHealth": 65610,
+          "health": 41310,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "unique",
+          "maxHealth": 65610,
+          "health": -7290,
+          "onCooldown": true
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "unique",
+          "maxHealth": 65610,
+          "health": 65610,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "unique",
+          "maxHealth": 65610,
+          "health": 65610,
+          "onCooldown": false
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "unique",
+          "maxHealth": 65610,
+          "health": 65610,
+          "onCooldown": false
+        },
         {
           "type": "speed_boost",
           "rarity": "unique"
         },
-        null,
-        null,
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "unique",
+          "maxHealth": 65610,
+          "health": -393594390,
+          "onCooldown": true
+        },
+        {
+          "type": "petal",
+          "petalType": "basic",
+          "rarity": "unique",
+          "maxHealth": 65610,
+          "health": -393594390,
+          "onCooldown": true
+        },
         null,
         null,
         null,
