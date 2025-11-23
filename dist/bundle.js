@@ -16087,11 +16087,11 @@ class SkillsManager {
         const content = document.createElement('div');
         content.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="color: #FFFFFF; margin: 0; font-family: Arial, sans-serif; -webkit-text-stroke: 1px black; -webkit-font-smoothing: none;">Skills Tree</h2>
+                <h2 class="outlined-text" style="margin: 0; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-smooth: always;">Skills Tree</h2>
                 <button id="closeSkillsButton" style="background: #ff4444; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 16px;">✕</button>
             </div>
             <div style="margin-bottom: 15px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
-                <div style="color: #FFFFFF; font-size: 18px; -webkit-text-stroke: 0.5px black;">
+                <div class="outlined-text-dynamic" style="font-size: 18px; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-smooth: always;">
                     Talent Points: <span id="tpDisplay">0</span>
                 </div>
                 <button id="resetSkillsButton" style="background: #ff4444; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold;">Reset All Skills</button>
@@ -16143,7 +16143,12 @@ class SkillsManager {
                 font-size: 18px;
                 font-weight: bold;
                 color: #FFFFFF;
-                -webkit-text-stroke: 0.5px black;
+                font-family: Arial, sans-serif;
+                -webkit-text-stroke: 1px #000000;
+                text-stroke: 1px #000000;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+                font-smooth: always;
                 margin-bottom: 10px;
                 text-align: center;
             }
@@ -16177,8 +16182,13 @@ class SkillsManager {
                 cursor: pointer;
                 font-weight: bold;
                 font-size: 12px;
+                font-family: Arial, sans-serif;
                 color: white;
-                -webkit-text-stroke: 1px black;
+                -webkit-text-stroke: 0.5px #000000;
+                text-stroke: 0.5px #000000;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+                font-smooth: always;
                 transition: all 0.2s;
                 position: relative;
                 z-index: 1;
@@ -16202,8 +16212,35 @@ class SkillsManager {
                 flex: 1;
                 margin-left: 10px;
                 font-size: 12px;
+                font-family: Arial, sans-serif;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+                font-smooth: always;
+            }
+            .skill-tier-name,
+            .skill-tier-multiplier,
+            .skill-tier-cost {
+                position: relative;
+            }
+            .skill-tier-name,
+            .skill-tier-multiplier,
+            .skill-tier-cost {
                 color: #FFFFFF;
-                -webkit-text-stroke: 0.5px black;
+                -webkit-text-stroke: 0.5px #000000;
+                text-stroke: 0.5px #000000;
+            }
+            .outlined-text {
+                position: relative;
+            }
+            .outlined-text {
+                color: #FFFFFF;
+                -webkit-text-stroke: 1px #000000;
+                text-stroke: 1px #000000;
+            }
+            .outlined-text-dynamic {
+                color: #FFFFFF;
+                -webkit-text-stroke: 1px #000000;
+                text-stroke: 1px #000000;
             }
             .skill-tier-name {
                 font-weight: bold;
@@ -16228,22 +16265,28 @@ class SkillsManager {
         contentDiv.innerHTML = skills.map(skill => `
             <div class="skill-tree" data-skill="${skill.id}">
                 <div class="skill-tree-title">${skill.name}</div>
-                ${petals.RARITY_LEVELS.map((rarity, index) => `
+                ${petals.RARITY_LEVELS.map((rarity, index) => {
+            const tierNumber = index + 1;
+            const rarityName = rarity.charAt(0).toUpperCase() + rarity.slice(1);
+            const multiplier = (RARITY_MULTIPLIERS[rarity] * 100).toFixed(0);
+            const cost = RARITY_TP_COSTS[rarity];
+            return `
                     <div class="skill-tier">
                         <div class="skill-tier-node" 
                              id="skill-${skill.id}-${rarity}"
                              data-skill="${skill.id}"
                              data-rarity="${rarity}"
                              style="background-color: ${skills_RARITY_COLORS[rarity]}; border-color: ${this.darkenColor(skills_RARITY_COLORS[rarity])};">
-                            ${index + 1}
+                            ${tierNumber}
                         </div>
                         <div class="skill-tier-info">
-                            <div class="skill-tier-name">${rarity.charAt(0).toUpperCase() + rarity.slice(1)}</div>
-                            <div class="skill-tier-multiplier">${(RARITY_MULTIPLIERS[rarity] * 100).toFixed(0)}%</div>
-                            <div class="skill-tier-cost" style="font-size: 10px; opacity: 0.7;">${RARITY_TP_COSTS[rarity]} TP</div>
+                            <div class="skill-tier-name">${rarityName}</div>
+                            <div class="skill-tier-multiplier">${multiplier}%</div>
+                            <div class="skill-tier-cost" style="font-size: 10px; opacity: 0.7;">${cost} TP</div>
                         </div>
                     </div>
-                `).join('')}
+                `;
+        }).join('')}
             </div>
         `).join('');
         // Add event listeners to tier nodes
@@ -19017,7 +19060,7 @@ const CHANGELOG = [
         changes: [
             'New petal: Yucca',
             'New petal: Leaf',
-            'Target dummy now showd DPS',
+            'Target dummy now shows DPS',
         ]
     }
 ];
@@ -19048,7 +19091,7 @@ class ChangelogManager {
         const content = document.createElement('div');
         content.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="color: #FFFFFF; margin: 0; font-family: Arial, sans-serif; -webkit-text-stroke: 1px black; -webkit-font-smoothing: none;">Changelog</h2>
+                <h2 class="outlined-text" style="margin: 0; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-smooth: always;">Changelog</h2>
                 <button id="closeChangelogButton" style="background: #ff4444; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 16px;">✕</button>
             </div>
             <div id="changelogContent"></div>
@@ -19093,27 +19136,48 @@ class ChangelogManager {
             .changelog-date {
                 font-size: 20px;
                 font-weight: bold;
+                font-family: Arial, sans-serif;
                 color: #FFFFFF;
-                -webkit-font-smoothing: 0.5px;
-                -webkit-text-stroke: 0.5px black;
+                -webkit-text-stroke: 1px #000000;
+                text-stroke: 1px #000000;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+                font-smooth: always;
                 margin-bottom: 10px;
             }
             .changelog-change {
                 margin: 8px 0;
                 padding-left: 20px;
                 position: relative;
-                color: #FFFFFF;
+                font-family: Arial, sans-serif;
                 line-height: 1.6;
-                -webkit-font-smoothing: 0.5px;
-                -webkit-text-stroke: 0.5px black;
             }
-            .changelog-change::before {
-                content: '•';
+            .changelog-change-bullet {
                 position: absolute;
                 left: 5px;
                 font-size: 20px;
+                font-family: Arial, sans-serif;
                 color: #FFFFFF;
-                -webkit-text-stroke: 2px black;
+                -webkit-text-stroke: 1px #000000;
+                text-stroke: 1px #000000;
+                z-index: 2;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+                font-smooth: always;
+            }
+            .changelog-change-text {
+                position: relative;
+                color: #FFFFFF;
+                -webkit-text-stroke: 0.5px #000000;
+                text-stroke: 0.5px #000000;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+                font-smooth: always;
+            }
+            .outlined-text {
+                color: #FFFFFF;
+                -webkit-text-stroke: 1px #000000;
+                text-stroke: 1px #000000;
             }
         `;
         document.head.appendChild(style);
@@ -19127,7 +19191,10 @@ class ChangelogManager {
             <div class="changelog-entry">
                 <div class="changelog-date">${entry.date}</div>
                 ${entry.changes.map(change => `
-                    <div class="changelog-change">${change}</div>
+                    <div class="changelog-change">
+                        <span class="changelog-change-bullet">•</span>
+                        <span class="changelog-change-text">${change}</span>
+                    </div>
                 `).join('')}
             </div>
         `).join('');

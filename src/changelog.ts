@@ -55,7 +55,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         changes: [
             'New petal: Yucca',
             'New petal: Leaf',
-            'Target dummy now showd DPS',
+            'Target dummy now shows DPS',
         ]
     }
 ];
@@ -90,7 +90,7 @@ export class ChangelogManager {
         const content = document.createElement('div');
         content.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="color: #FFFFFF; margin: 0; font-family: Arial, sans-serif; -webkit-text-stroke: 1px black; -webkit-font-smoothing: none;">Changelog</h2>
+                <h2 class="outlined-text" style="margin: 0; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-smooth: always;">Changelog</h2>
                 <button id="closeChangelogButton" style="background: #ff4444; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 16px;">✕</button>
             </div>
             <div id="changelogContent"></div>
@@ -140,27 +140,48 @@ export class ChangelogManager {
             .changelog-date {
                 font-size: 20px;
                 font-weight: bold;
+                font-family: Arial, sans-serif;
                 color: #FFFFFF;
-                -webkit-font-smoothing: 0.5px;
-                -webkit-text-stroke: 0.5px black;
+                -webkit-text-stroke: 1px #000000;
+                text-stroke: 1px #000000;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+                font-smooth: always;
                 margin-bottom: 10px;
             }
             .changelog-change {
                 margin: 8px 0;
                 padding-left: 20px;
                 position: relative;
-                color: #FFFFFF;
+                font-family: Arial, sans-serif;
                 line-height: 1.6;
-                -webkit-font-smoothing: 0.5px;
-                -webkit-text-stroke: 0.5px black;
             }
-            .changelog-change::before {
-                content: '•';
+            .changelog-change-bullet {
                 position: absolute;
                 left: 5px;
                 font-size: 20px;
+                font-family: Arial, sans-serif;
                 color: #FFFFFF;
-                -webkit-text-stroke: 2px black;
+                -webkit-text-stroke: 1px #000000;
+                text-stroke: 1px #000000;
+                z-index: 2;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+                font-smooth: always;
+            }
+            .changelog-change-text {
+                position: relative;
+                color: #FFFFFF;
+                -webkit-text-stroke: 0.5px #000000;
+                text-stroke: 0.5px #000000;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+                font-smooth: always;
+            }
+            .outlined-text {
+                color: #FFFFFF;
+                -webkit-text-stroke: 1px #000000;
+                text-stroke: 1px #000000;
             }
         `;
         document.head.appendChild(style);
@@ -175,7 +196,10 @@ export class ChangelogManager {
             <div class="changelog-entry">
                 <div class="changelog-date">${entry.date}</div>
                 ${entry.changes.map(change => `
-                    <div class="changelog-change">${change}</div>
+                    <div class="changelog-change">
+                        <span class="changelog-change-bullet">•</span>
+                        <span class="changelog-change-text">${change}</span>
+                    </div>
                 `).join('')}
             </div>
         `).join('');
