@@ -468,7 +468,7 @@ export class Graphics {
             fontSize,
             alpha: 1.0,
             yOffset: 0,
-            lifetime: 1000
+            lifetime: 100
         });
     }
 
@@ -1966,6 +1966,12 @@ export class Graphics {
             if (text.alpha <= 0) return false;
 
             this.ctx.save();
+            // Apply camera transform to convert world coordinates to screen coordinates
+            this.ctx.scale(this.zoomLevel, this.zoomLevel);
+            const validCameraX = isNaN(this.cameraX) || !isFinite(this.cameraX) ? 0 : this.cameraX;
+            const validCameraY = isNaN(this.cameraY) || !isFinite(this.cameraY) ? 0 : this.cameraY;
+            this.ctx.translate(-validCameraX, -validCameraY);
+            
             this.ctx.globalAlpha = text.alpha;
             this.ctx.fillStyle = text.color;
             this.ctx.font = `${text.fontSize}px Ubuntu, sans-serif`;

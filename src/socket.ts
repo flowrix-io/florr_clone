@@ -465,7 +465,21 @@ function setupSocketListeners(game: any) {
     game.socket.on('enemyDamaged', (data: { enemyId: string, health: number }) => {
         const enemy = game.enemies.get(data.enemyId);
         if (enemy) {
+            const oldHealth = enemy.health;
             enemy.health = data.health;
+            
+            // Calculate damage dealt and show floating damage number
+            if (oldHealth > data.health) {
+                const damage = oldHealth - data.health;
+                // Show damage number at enemy position
+                game.showFloatingText(
+                    enemy.x,
+                    enemy.y - 20,
+                    `-${Math.round(damage)}`,
+                    '#ff0000',
+                    16
+                );
+            }
         }
     });
 
