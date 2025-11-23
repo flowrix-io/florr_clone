@@ -959,6 +959,23 @@ class Graphics {
             });
         }
     }
+    formatNumber(num) {
+        if (num >= 1e12) {
+            return (num / 1e12).toFixed(1) + 'T';
+        }
+        else if (num >= 1e9) {
+            return (num / 1e9).toFixed(1) + 'B';
+        }
+        else if (num >= 1e6) {
+            return (num / 1e6).toFixed(1) + 'M';
+        }
+        else if (num >= 1e3) {
+            return (num / 1e3).toFixed(1) + 'K';
+        }
+        else {
+            return num.toFixed(1);
+        }
+    }
     s(size) {
         return 1 * size;
     }
@@ -1441,6 +1458,19 @@ class Graphics {
         this.ctx.strokeText(enemy.tier.toUpperCase(), 0, enemySize / 2 + 20);
         // Draw the text
         this.ctx.fillText(enemy.tier.toUpperCase(), 0, enemySize / 2 + 20);
+        // Draw DPS for target dummies
+        if (enemy.type === 'target_dummy' && enemy.currentDPS !== undefined) {
+            const dps = enemy.currentDPS || 0;
+            const formattedDPS = this.formatNumber(dps);
+            const dpsText = `DPS: ${formattedDPS}`;
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '10px Ubuntu, sans-serif';
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 2;
+            const dpsY = enemySize / 2 + 40;
+            this.ctx.strokeText(dpsText, 0, dpsY);
+            this.ctx.fillText(dpsText, 0, dpsY);
+        }
         this.ctx.restore();
     }
     drawItem(item) {

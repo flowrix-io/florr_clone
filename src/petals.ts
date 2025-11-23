@@ -585,7 +585,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
     },
     sparkle: {
         name: "Sparkle Petal",
-        damage: 99999,
+        damage: 9999999999,
         health: 99999,
         size: 1.0,
         cooldown: 500,

@@ -469,6 +469,13 @@ function setupSocketListeners(game: any) {
         }
     });
 
+    game.socket.on('targetDummyDPS', (data: { enemyId: string, dps: number }) => {
+        const enemy = game.enemies.get(data.enemyId);
+        if (enemy && enemy.type === 'target_dummy') {
+            enemy.currentDPS = data.dps;
+        }
+    });
+
     game.socket.on('enemyDestroyed', (enemyId: string) => {
         game.enemies.delete(enemyId);
     });

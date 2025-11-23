@@ -69,7 +69,51 @@ function trackDamage(enemy, playerId, damage) {
     }
     const currentDamage = enemy.damageContributors.get(playerId) || 0;
     enemy.damageContributors.set(playerId, currentDamage + damage);
+    // Track DPS for target dummies
+    if (enemy.type === 'target_dummy') {
+        const now = Date.now();
+        if (!enemy.dpsStartTime) {
+            enemy.dpsStartTime = now;
+            enemy.dpsHistory = [];
+        }
+        if (!enemy.dpsHistory) {
+            enemy.dpsHistory = [];
+        }
+        enemy.dpsHistory.push({ time: now, damage: damage });
+        // Keep only last 60 seconds of history
+        const cutoffTime = now - 60000;
+        enemy.dpsHistory = enemy.dpsHistory.filter(entry => entry.time > cutoffTime);
+    }
     // console.log(`[DAMAGE] Player ${playerId} dealt ${damage} to ${enemy.type} (${enemy.tier}) - total: ${currentDamage + damage}`);
+}
+// Calculate DPS for target dummies
+function calculateDPS(enemy) {
+    if (enemy.type !== 'target_dummy' || !enemy.dpsHistory || enemy.dpsHistory.length === 0) {
+        return 0;
+    }
+    const now = Date.now();
+    const timeWindow = 10000; // 10 seconds window
+    const cutoffTime = now - timeWindow;
+    // Sum damage in the last 10 seconds
+    const recentDamage = enemy.dpsHistory
+        .filter(entry => entry.time > cutoffTime)
+        .reduce((sum, entry) => sum + entry.damage, 0);
+    // Calculate DPS (damage per second)
+    const dps = recentDamage / (timeWindow / 1000);
+    return dps;
+}
+// Update DPS for all target dummies and send to clients
+function updateTargetDummyDPS() {
+    const targetDummies = constants_2.enemies.filter(e => e.type === 'target_dummy');
+    for (const dummy of targetDummies) {
+        const dps = calculateDPS(dummy);
+        dummy.currentDPS = dps;
+        // Send DPS update to all clients
+        io.emit('targetDummyDPS', {
+            enemyId: dummy.id,
+            dps: dps
+        });
+    }
 }
 // Helper function to get eligible players for a drop based on damage ranking
 function getEligiblePlayers(enemy) {
@@ -147,10 +191,6 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
     // Check if this is a boss mob (ultra, super, or unique tier)
     const isBossMob = ['ultra', 'super', 'unique'].includes(enemy.tier);
     if (!isBossMob) {
-        return;
-    }
-    // Target dummies don't count as boss mobs and don't send notifications
-    if (enemy.type === 'target_dummy') {
         return;
     }
     // Get the top damage dealer
@@ -1116,7 +1156,7 @@ function createEnemy() {
     //     range: mobStats.range
     // });
     const currentTime = Date.now();
-    return {
+    const enemy = {
         id: Math.random().toString(36).substr(2, 9),
         type: mobType,
         tier,
@@ -1134,6 +1174,13 @@ function createEnemy() {
         spawnTime: currentTime,
         lastViewportCheck: currentTime // Mark as in viewport since we spawned it there
     };
+    // Initialize DPS tracking for target dummies
+    if (mobType === 'target_dummy') {
+        enemy.dpsStartTime = currentTime;
+        enemy.dpsHistory = [];
+        enemy.currentDPS = 0;
+    }
+    return enemy;
 }
 // Update respawnPlayer to use spawn points from the map
 function respawnPlayer(player) {
@@ -3145,6 +3192,10 @@ setInterval(() => {
 setTimeout(() => {
     spawnSpecialMobs();
 }, 5000); // 5 seconds after server start
+// Update DPS for target dummies every second
+setInterval(() => {
+    updateTargetDummyDPS();
+}, 1000); // 1 second
 // Move savePlayerProgress outside the socket connection handler
 function savePlayerProgress(player, userId) {
     if (userId) {
