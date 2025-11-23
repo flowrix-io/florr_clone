@@ -89,7 +89,7 @@ export class Chat {
         this.chatContainer.style.cssText = `
           position: fixed;
           bottom: 10px;
-          left: 10px;
+          left: 60px;
           width: 300px;
           height: 200px;
           background: transparent;

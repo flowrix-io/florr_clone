@@ -647,24 +647,35 @@ export class TitleScreen {
             display: none;
             flex-direction: column;
             gap: 10px;
+            pointer-events: auto;
         `;
         const craftIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'craft')?.value || '';
         const inventoryIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'inventory')?.value || '';
+        const skillsIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'skills')?.value || '';
         // Update SVGs to be 32x32 - craft icon has different attributes than inventory
         const formattedCraftIcon = craftIcon
             .replace('width="512px"', 'width="32"')
             .replace('height="512px"', 'height="32"')
-            .replace('fill="#000"', 'fill="#fff"');  // Ensure white fill
-        const formattedInventoryIcon = inventoryIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+            .replace('fill="#000"', 'fill="#fff"')  // Ensure white fill
+            .replace('<svg', '<svg style="pointer-events: none;"');  // Prevent SVG from capturing clicks
+        const formattedInventoryIcon = inventoryIcon
+            .replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"')
+            .replace('<svg', '<svg style="pointer-events: none;"');  // Prevent SVG from capturing clicks
+        const formattedSkillsIcon = skillsIcon
+            .replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"')
+            .replace('<svg', '<svg style="pointer-events: none;"');  // Prevent SVG from capturing clicks
         
         console.log('Craft icon HTML:', formattedCraftIcon.substring(0, 100));
         console.log('Inventory icon HTML:', formattedInventoryIcon.substring(0, 100));
-        // With column-reverse, inventory first (displays at bottom), craft second (displays at top)
+        // Order: inventory (top), skills (middle), craft (bottom)
         bottomLeftButtons.innerHTML = `
-            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #00b3ff; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Inventory (I)">
+            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #00b3ff; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 3; pointer-events: auto;" title="Inventory (I)">
                 ${formattedInventoryIcon}
             </div>
-            <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #ff9d00; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Craft (R)">
+            <div id="skillsButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #9d4edd; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 2; pointer-events: auto;" title="Skills (K)">
+                ${formattedSkillsIcon}
+            </div>
+            <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #ff9d00; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 1; pointer-events: auto;" title="Craft (R)">
                 ${formattedCraftIcon}
             </div>
         `;
@@ -763,10 +774,11 @@ export class TitleScreen {
             });
         }
 
-        // Craft and Inventory button event listeners
+        // Craft, Skills, and Inventory button event listeners
         // Using setTimeout to ensure these run after the DOM is fully ready
         setTimeout(() => {
             const craftButtonIcon = document.getElementById('craftButtonIcon');
+            const skillsButtonIcon = document.getElementById('skillsButtonIcon');
             const inventoryButtonIcon = document.getElementById('inventoryButtonIcon');
 
             if (craftButtonIcon) {
@@ -782,7 +794,26 @@ export class TitleScreen {
                     // Get the controls from localStorage or use default
                     const savedControls = localStorage.getItem('controls');
                     const controls = savedControls ? JSON.parse(savedControls) : { crafting: 'r' };
-                    const event = new KeyboardEvent('keydown', { key: controls.crafting || 'r' });
+                    const event = new KeyboardEvent('keydown', { key: controls.crafting || 'r', bubbles: true, cancelable: true });
+                    document.dispatchEvent(event);
+                    return false;
+                }, true);
+            }
+
+            if (skillsButtonIcon) {
+                // Remove any existing listeners by cloning
+                const newSkillsButton = skillsButtonIcon.cloneNode(true);
+                skillsButtonIcon.parentNode?.replaceChild(newSkillsButton, skillsButtonIcon);
+                
+                newSkillsButton.addEventListener('click', (e) => {
+                    console.log('Skills button clicked');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Get the controls from localStorage or use default
+                    const savedControls = localStorage.getItem('controls');
+                    const controls = savedControls ? JSON.parse(savedControls) : { skills: 'k' };
+                    const event = new KeyboardEvent('keydown', { key: controls.skills || 'k', bubbles: true, cancelable: true });
                     document.dispatchEvent(event);
                     return false;
                 }, true);
@@ -801,7 +832,7 @@ export class TitleScreen {
                     // Get the controls from localStorage or use default
                     const savedControls = localStorage.getItem('controls');
                     const controls = savedControls ? JSON.parse(savedControls) : { inventory: 'i' };
-                    const event = new KeyboardEvent('keydown', { key: controls.inventory || 'i' });
+                    const event = new KeyboardEvent('keydown', { key: controls.inventory || 'i', bubbles: true, cancelable: true });
                     document.dispatchEvent(event);
                     return false;
                 }, true);
