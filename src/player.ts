@@ -36,11 +36,25 @@ export interface Player {
   eye?: {x: number, y: number};
   targetEye?: {x: number, y: number};
   isDead?: boolean;
+  tp?: number; // Talent Points
+  skills?: {
+    damage?: string; // Rarity tier: common, uncommon, rare, etc.
+    petalHealth?: string;
+    playerHealth?: string;
+    healingMultiplier?: string;
+  };
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
   inventory: PlayerInventory;
   loadout: (Item | null)[];
+  tp?: number; // Talent Points
+  skills?: {
+    damage?: string; // Rarity tier: common, uncommon, rare, etc.
+    petalHealth?: string;
+    playerHealth?: string;
+    healingMultiplier?: string;
+  };
 }
 
 export interface ServerPlayer {
@@ -82,4 +96,11 @@ export interface ServerPlayer {
   isDead?: boolean;
   killedBy?: { type: string; tier: string }; // Track which enemy killed the player
   effects?: PlayerEffect[]; // Active petal effects
+  tp?: number; // Talent Points
+  skills?: {
+    damage?: string; // Rarity tier: common, uncommon, rare, etc.
+    petalHealth?: string;
+    playerHealth?: string;
+    healingMultiplier?: string;
+  };
 }

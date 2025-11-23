@@ -7,6 +7,7 @@ import { Graphics } from './graphics';
 import { Chat } from './chat';
 import { initMultiPlayerMode, Socket } from './socket';
 import { InventoryManager } from './inventory';
+import { SkillsManager } from './skills';
 import { PreloadedAssets } from './preloader';
 import { Tutorial } from './tutorial';
 import { ShaderManager } from './shader/shaderManager';
@@ -207,6 +208,7 @@ export class Game {
 
     // Add property
     private inventoryManager!: InventoryManager;
+    private skillsManager!: SkillsManager;
     private controls!: { [key: string]: string };
     private tutorial: Tutorial;
 
@@ -541,6 +543,7 @@ export class Game {
 
         // Add to constructor after other UI initialization
         this.inventoryManager = new InventoryManager(this, this.chat);
+        this.skillsManager = new SkillsManager(this);
 
         this.svgLoader = new SVGLoader();
         this.assetLoader.loadAssets();
@@ -703,6 +706,11 @@ export class Game {
 
             if (event.key === this.controls.crafting) {
                 this.inventoryManager.toggleCrafting();
+                return;
+            }
+
+            if (event.key === this.controls.skills) {
+                this.skillsManager.toggle();
                 return;
             }
 
@@ -1462,6 +1470,7 @@ export class Game {
             move_right: 'd',
             inventory: 'i',
             crafting: 'r',
+            skills: 'k',
             toggle_mouse_controls: 'c',
             toggle_hitboxes: 'h',
             zoom_in: '=',

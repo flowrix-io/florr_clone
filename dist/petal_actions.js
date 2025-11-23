@@ -70,10 +70,30 @@ function executeAction(action, context, trigger) {
             console.warn(`Unknown action type: ${action.type}`);
     }
 }
+// Skill multipliers based on rarity tier
+const SKILL_MULTIPLIERS = {
+    common: 1.0,
+    uncommon: 1.1,
+    rare: 1.25,
+    epic: 1.5,
+    legendary: 2.0,
+    mythic: 3.0,
+    ultra: 5.0,
+    super: 10.0,
+    unique: 20.0
+};
+function getSkillMultiplier(skillTier) {
+    if (!skillTier)
+        return 1.0;
+    return SKILL_MULTIPLIERS[skillTier] || 1.0;
+}
 // Heal the player
 function healPlayer(player, healAmount, io) {
     const oldHealth = player.health;
-    player.health = Math.min(player.maxHealth, player.health + healAmount);
+    // Apply healing multiplier skill bonus
+    const healingMultiplier = getSkillMultiplier(player.skills?.healingMultiplier);
+    const modifiedHealAmount = healAmount * healingMultiplier;
+    player.health = Math.min(player.maxHealth, player.health + modifiedHealAmount);
     if (player.health !== oldHealth) {
         io.emit('playerHealed', {
             playerId: player.id,

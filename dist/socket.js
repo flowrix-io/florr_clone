@@ -614,6 +614,21 @@ function setupSocketListeners(game) {
                 if (game.inventoryManager) {
                     game.inventoryManager.updateLoadoutDisplay();
                 }
+                // Update skills menu if open
+                if (game.skillsManager && updatedPlayer.tp !== undefined && updatedPlayer.skills) {
+                    game.skillsManager.updateSkills(updatedPlayer.tp, updatedPlayer.skills);
+                }
+            }
+        }
+    });
+    game.socket.on('skillsUpdated', (data) => {
+        const player = game.players.get(data.playerId);
+        if (player) {
+            player.tp = data.tp;
+            player.skills = data.skills;
+            // Update skills menu if this is the current player and menu is open
+            if (data.playerId === game.socket?.id && game.skillsManager) {
+                game.skillsManager.updateSkills(data.tp, data.skills);
             }
         }
     });

@@ -7,6 +7,7 @@ const graphics_1 = require("./graphics");
 const chat_1 = require("./chat");
 const socket_1 = require("./socket");
 const inventory_1 = require("./inventory");
+const skills_1 = require("./skills");
 const tutorial_1 = require("./tutorial");
 const asset_loader_1 = require("./asset_loader");
 class Game {
@@ -403,6 +404,7 @@ class Game {
         document.head.appendChild(style);
         // Add to constructor after other UI initialization
         this.inventoryManager = new inventory_1.InventoryManager(this, this.chat);
+        this.skillsManager = new skills_1.SkillsManager(this);
         this.svgLoader = new SVGLoader_1.SVGLoader();
         this.assetLoader.loadAssets();
         // Listen for map data from the server
@@ -536,6 +538,10 @@ class Game {
             }
             if (event.key === this.controls.crafting) {
                 this.inventoryManager.toggleCrafting();
+                return;
+            }
+            if (event.key === this.controls.skills) {
+                this.skillsManager.toggle();
                 return;
             }
             if (event.key === this.controls.toggle_mouse_controls) {
@@ -1147,6 +1153,7 @@ class Game {
             move_right: 'd',
             inventory: 'i',
             crafting: 'r',
+            skills: 'k',
             toggle_mouse_controls: 'c',
             toggle_hitboxes: 'h',
             zoom_in: '=',

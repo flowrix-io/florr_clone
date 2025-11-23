@@ -25,6 +25,7 @@ if (migratedPlayers > 0) {
 }
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition } from './petal_actions';
+import { RARITY_LEVELS, Rarity } from './petals';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect } from './server_utils';
 import { MobProjectile, PlayerProjectile } from './enemy';
@@ -1549,6 +1550,41 @@ interface AuthenticatedSocket extends Socket {
     username?: string;
 }
 
+// Skill multipliers based on rarity tier
+const SKILL_MULTIPLIERS: Record<string, number> = {
+    common: 1.0,
+    uncommon: 1.1,
+    rare: 1.25,
+    epic: 1.5,
+    legendary: 2.0,
+    mythic: 3.0,
+    ultra: 5.0,
+    super: 10.0,
+    unique: 20.0
+};
+
+// Helper function to get skill multiplier
+function getSkillMultiplier(skillTier: string | undefined): number {
+    if (!skillTier) return 1.0;
+    return SKILL_MULTIPLIERS[skillTier] || 1.0;
+}
+
+// Helper function to apply petal health bonus
+function applyPetalHealthBonus(petal: Item | null, player: ServerPlayer): void {
+    if (!petal || petal.type !== 'petal' || !petal.petalType) return;
+    
+    const petalHealthMultiplier = getSkillMultiplier(player.skills?.petalHealth);
+    const petalStats = getPetalStats(petal.petalType, petal.rarity || 'common');
+    if (petalStats) {
+        const baseMaxHealth = petalStats.health;
+        petal.maxHealth = Math.round(baseMaxHealth * petalHealthMultiplier);
+        // Ensure current health doesn't exceed new max
+        if (petal.health !== undefined && petal.health > petal.maxHealth) {
+            petal.health = petal.maxHealth;
+        }
+    }
+}
+
 // XP and level management functions
 export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: string): void {
     // Calculate current total XP
@@ -1568,9 +1604,21 @@ export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: strin
     
     // Check if level increased and handle level ups
     if (newLevel > oldLevel) {
-        // Update maxHealth and damage based on new level
-        player.maxHealth = calculateMaxHealthFromLevel(newLevel);
-        player.damage = calculateDamageFromLevel(newLevel);
+        // Award TP for each level gained (1 TP per level)
+        const levelsGained = newLevel - oldLevel;
+        if (!player.tp) player.tp = 0;
+        player.tp += levelsGained;
+        
+        // Initialize skills if not present
+        if (!player.skills) {
+            player.skills = {};
+        }
+        
+        // Update maxHealth and damage based on new level and skills (using multipliers)
+        const healthMultiplier = getSkillMultiplier(player.skills.playerHealth);
+        const damageMultiplier = getSkillMultiplier(player.skills.damage);
+        player.maxHealth = Math.round(calculateMaxHealthFromLevel(newLevel) * healthMultiplier);
+        player.damage = Math.round(calculateDamageFromLevel(newLevel) * damageMultiplier);
         // Heal to full when leveling up
         player.health = player.maxHealth;
         
@@ -1583,6 +1631,13 @@ export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: strin
                 damage: calculateDamageFromLevel(level)
             });
         }
+        
+        // Emit skills update
+        io.emit('skillsUpdated', {
+            playerId: player.id,
+            tp: player.tp,
+            skills: player.skills
+        });
     }
 
     // Save progress after XP gain if we have the socket ID
@@ -1664,6 +1719,22 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 }
             }
 
+            // Initialize skills from saved progress or defaults
+            const savedSkills: { damage?: string; petalHealth?: string; playerHealth?: string; healingMultiplier?: string } = 
+                (savedProgress as any)?.skills || {};
+            const savedTP: number = (savedProgress as any)?.tp || 0;
+            
+            // Calculate TP from level (1 TP per level)
+            // Count spent TP by counting rarity tiers unlocked
+            const countTiers = (tier: string | undefined): number => {
+                if (!tier) return 0;
+                const index = RARITY_LEVELS.indexOf(tier as Rarity);
+                return index >= 0 ? index + 1 : 0;
+            };
+            const spentTP = countTiers(savedSkills.damage) + countTiers(savedSkills.petalHealth) + 
+                          countTiers(savedSkills.playerHealth) + countTiers(savedSkills.healingMultiplier);
+            const currentTP = Math.max(0, level - spentTP + savedTP);
+
             players[socket.id] = {
                 id: socket.id,
                 name: credentials.playerName || 'Unnamed',
@@ -1673,9 +1744,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 score: 0,
                 velocityX: 0,
                 velocityY: 0,
-                health: maxHealth,
-                maxHealth: maxHealth,
-                damage: damage,
+                health: Math.round(maxHealth * getSkillMultiplier(savedSkills.playerHealth)),
+                maxHealth: Math.round(maxHealth * getSkillMultiplier(savedSkills.playerHealth)),
+                damage: Math.round(damage * getSkillMultiplier(savedSkills.damage)),
                 inventory: savedProgress?.inventory || createInitialInventory(),
                 loadout: savedProgress?.loadout || createInitialBasicPetals().concat(Array(5).fill(null)),
                 isInvulnerable: true,
@@ -1685,7 +1756,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 knockbackX: 0,
                 knockbackY: 0,
                 inputs: { keys: [] },
-                speed_boost: 1
+                speed_boost: 1,
+                tp: currentTP,
+                skills: savedSkills
             };
 
             // Save initial state and log the result
@@ -1708,6 +1781,13 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             socket.emit('authenticated', {
                 success: true,
                 player: players[socket.id]
+            });
+            
+            // Send initial skills update
+            socket.emit('skillsUpdated', {
+                playerId: players[socket.id].id,
+                tp: players[socket.id].tp || 0,
+                skills: players[socket.id].skills || {}
             });
 
             // Send current game state
@@ -1872,6 +1952,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     socket.on('updateLoadout', (data: { loadout: (Item | null)[]; inventory: PlayerInventory }) => {
         const player = players[socket.id];
         if (player) {
+            // Apply petal health bonuses to all petals in loadout
+            data.loadout.forEach(petal => {
+                applyPetalHealthBonus(petal, player);
+            });
             player.loadout = data.loadout;
             player.inventory = data.inventory;
             io.emit('playerUpdated', player);
@@ -2050,6 +2134,90 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     }
 
     // Add to socket connection handler after other socket events
+    socket.on('upgradeSkill', (data: { skillId: string; rarity: string }) => {
+        const player = players[socket.id];
+        if (!player) {
+            socket.emit('skillUpgradeError', { message: 'Player not found' });
+            return;
+        }
+
+        // Initialize skills and TP if not present
+        if (!player.skills) {
+            player.skills = {};
+        }
+        if (player.tp === undefined) {
+            player.tp = 0;
+        }
+
+        // Check if player has enough TP
+        if (player.tp < 1) {
+            socket.emit('skillUpgradeError', { message: 'Not enough Talent Points' });
+            return;
+        }
+
+        // Validate skill ID
+        const validSkills = ['damage', 'petalHealth', 'playerHealth', 'healingMultiplier'];
+        if (!validSkills.includes(data.skillId)) {
+            socket.emit('skillUpgradeError', { message: 'Invalid skill ID' });
+            return;
+        }
+
+        // Validate rarity
+        if (!RARITY_LEVELS.includes(data.rarity as Rarity)) {
+            socket.emit('skillUpgradeError', { message: 'Invalid rarity tier' });
+            return;
+        }
+
+        // Get current tier for this skill
+        const skillKey = data.skillId as keyof typeof player.skills;
+        const currentTier = player.skills[skillKey];
+        const currentIndex = currentTier ? RARITY_LEVELS.indexOf(currentTier as Rarity) : -1;
+        const targetIndex = RARITY_LEVELS.indexOf(data.rarity as Rarity);
+
+        // Check if this is the next tier in sequence
+        if (targetIndex !== currentIndex + 1) {
+            socket.emit('skillUpgradeError', { message: 'Must upgrade tiers in order' });
+            return;
+        }
+
+        // Upgrade the skill to the new tier
+        player.skills[skillKey] = data.rarity;
+        player.tp -= 1;
+
+        // Apply skill multipliers to player stats
+        const healthMultiplier = getSkillMultiplier(player.skills.playerHealth);
+        const damageMultiplier = getSkillMultiplier(player.skills.damage);
+        player.maxHealth = Math.round(calculateMaxHealthFromLevel(player.level) * healthMultiplier);
+        player.damage = Math.round(calculateDamageFromLevel(player.level) * damageMultiplier);
+        
+        // Ensure health doesn't exceed max health
+        if (player.health > player.maxHealth) {
+            player.health = player.maxHealth;
+        }
+
+        // Apply petal health bonuses to all equipped petals
+        if (player.loadout) {
+            player.loadout.forEach(petal => {
+                applyPetalHealthBonus(petal, player);
+            });
+        }
+
+        // Save progress
+        if (socket.userId) {
+            savePlayerProgress(player, socket.userId);
+        }
+
+        // Emit skills update
+        io.emit('skillsUpdated', {
+            playerId: player.id,
+            tp: player.tp,
+            skills: player.skills
+        });
+
+        // Emit player update to sync stats
+        io.emit('playerUpdated', player);
+    });
+
     socket.on('craftItems', (data: { items: Item[] }) => {
         const player = players[socket.id];
         if (!player) return;
@@ -3109,11 +3277,14 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                         setTimeout(() => {
                             if (players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex]!.onCooldown) {
                                 // Restore petal after cooldown
-                                player.loadout[loadoutIndex] = {
+                                const restoredPetal = {
                                     ...originalPetal,
                                     health: originalPetal.maxHealth, // Restore full health
                                     onCooldown: false
                                 };
+                                // Apply petal health bonus
+                                applyPetalHealthBonus(restoredPetal, player);
+                                player.loadout[loadoutIndex] = restoredPetal;
                                 
                                 io.emit('petalRestored', {
                                     playerId: player.id,
@@ -3768,8 +3939,10 @@ function savePlayerProgress(player: ServerPlayer, userId: string) {
         const saveResult = database.savePlayer(userId, {
             totalXP: totalXP,
             inventory: player.inventory,
-            loadout: player.loadout
-        });
+            loadout: player.loadout,
+            tp: player.tp || 0,
+            skills: player.skills || {}
+        } as any);
 
         // if (saveResult) {
         //     console.log('Successfully saved player progress');
