@@ -223,8 +223,11 @@ class SkillsManager {
                 font-weight: bold;
             }
             .skill-tier-multiplier {
-                font-size: 10px;
+                font-size: 12px;
                 opacity: 0.8;
+            }
+            .skill-tier-cost {
+                font-size: 12px;
             }
         `;
         document.head.appendChild(style);
@@ -258,8 +261,8 @@ class SkillsManager {
                         </div>
                         <div class="skill-tier-info">
                             <div class="skill-tier-name">${rarityName}</div>
-                            <div class="skill-tier-multiplier">${multiplier}%</div>
-                            <div class="skill-tier-cost" style="font-size: 10px; opacity: 0.7;">${cost} TP</div>
+                            <div class="skill-tier-multiplier" style="opacity: 1;">${multiplier}%</div>
+                            <div class="skill-tier-cost" style="opacity: 1;">${cost} TP</div>
                         </div>
                     </div>
                 `;
