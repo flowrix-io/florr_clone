@@ -6,7 +6,6 @@ import { Item } from "./item";
 
 // Add these constants at the top with the others
 export const FISH_DETECTION_RADIUS = 500;  // How far fish can detect players
-export const PLAYER_BASE_SPEED = 5;  // Base player speed to match
 export const FISH_RETURN_SPEED = 0.5;  // Speed at which fish return to their normal behavior
 
 // Mob animation framerate utility
@@ -93,7 +92,7 @@ export const MAX_INVENTORY_SIZE = 5;
 
 export const RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
 
-export const MAX_SPEED = 90;
+export const MAX_SPEED = 135;
 // Nonlinear mouse movement parameters
 export const MOUSE_NONLINEAR_SCALE = 200; // Reference distance for nonlinear scaling (pixels)
 export const MOUSE_NONLINEAR_EXPONENT = 0.6; // Power curve exponent (0.6 = slower for small distances, faster for large)

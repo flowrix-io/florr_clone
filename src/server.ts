@@ -2997,7 +2997,7 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         const dy = player.inputs.mouseY - player.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (distance > 5) {
+        if (distance > 1) {
             // Nonlinear speed calculation: small distances = slower, large distances = faster
             // Uses a power curve: speed scales with (distance/scale)^exponent
             // This gives fine control for small movements and faster response for large movements
@@ -3953,32 +3953,6 @@ async function transferPlayerToServer(player: ServerPlayer, targetServerPort: nu
     }
 }
 
-
-// Optional: Clean up old player data periodically
-// setInterval(() => {
-//     database.cleanupOldPlayers(30); // Clean up players not seen in 30 days
-// }, 24 * 60 * 60 * 1000); // Run once per day
-
-// Add this function near the other helper functions
-// Note: This function is now mostly handled in addXPToPlayer, but kept for backwards compatibility
-function handleLevelUp(player: ServerPlayer): void {
-    // Level up is now handled in addXPToPlayer with dynamic calculation
-    // This function is kept for any other code that might call it
-    // Apply skill multipliers
-    const healthMultiplier = getSkillMultiplier(player.skills?.playerHealth);
-    const damageMultiplier = getSkillMultiplier(player.skills?.damage);
-    player.maxHealth = Math.round(calculateMaxHealthFromLevel(player.level) * healthMultiplier);
-    player.health = player.maxHealth;  // Heal to full when leveling up
-    player.damage = Math.round(calculateDamageFromLevel(player.level) * damageMultiplier);
-
-    io.emit('levelUp', {
-        playerId: player.id,
-        level: player.level,
-        maxHealth: player.maxHealth,
-        damage: player.damage
-    });
-}
-
 // Add these constants at the top with other constants
 const HEALTH_REGEN_RATE = 5;  // Health points recovered per tick
 const HEALTH_REGEN_INTERVAL = 1000;  // Milliseconds between health regeneration ticks
@@ -4013,12 +3987,7 @@ setInterval(() => {
     
     // Despawn any enemies that have been outside viewport for too long
     despawnDistantEnemies();
-    
-    // Log current enemy distribution and density analysis
-    const densityInfo = calculateCurrentDensity();
-    // if (densityInfo) {
-    //     console.log(`[SERVER] Viewport refresh: ${densityInfo.enemiesInViewport}/${densityInfo.totalEnemies} enemies in viewport`);
-    // }
+
 }, 10000); // 10 seconds
 
 // Add density maintenance interval (every 2 seconds)
