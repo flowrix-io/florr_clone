@@ -847,6 +847,7 @@ const BASE_MOB_CONFIGS = {
         name: "Bubble",
         health: 10,
         damage: 0,
+        visual_scale: 3.0,
         size: 2.0,
         speed: 0.0,
         cooldown: 2000,
@@ -1774,6 +1775,14 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.4, // 40% chance for speed boost
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yucca',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for yucca
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
@@ -2013,7 +2022,41 @@ exports.MOB_DROP_TABLES = {
                 maxQuantity: 1
             }
         ]
-    }
+    },
+    leafbug: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'yucca',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    bush: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'yucca',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yucca',
+                rarity: 'uncommon',
+                probability: 0.1,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
 };
 // Function to calculate drops for a mob based on its rarity
 function calculateMobDrops(mobType, mobRarity) {
