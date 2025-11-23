@@ -112,13 +112,13 @@ function executeAction(action: PetalAction, context: ActionContext, trigger: 'on
 const SKILL_MULTIPLIERS: Record<string, number> = {
     common: 1.0,
     uncommon: 1.1,
-    rare: 1.25,
-    epic: 1.5,
-    legendary: 2.0,
-    mythic: 3.0,
-    ultra: 5.0,
-    super: 10.0,
-    unique: 20.0
+    rare: 1.2,
+    epic: 1.35,
+    legendary: 1.6,
+    mythic: 2.0,
+    ultra: 2.6,
+    super: 3.3,
+    unique: 4.0
 };
 
 function getSkillMultiplier(skillTier: string | undefined): number {

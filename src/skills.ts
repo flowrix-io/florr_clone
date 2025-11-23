@@ -22,13 +22,25 @@ const RARITY_COLORS: Record<string, string> = {
 const RARITY_MULTIPLIERS: Record<string, number> = {
     common: 1.0,
     uncommon: 1.1,
-    rare: 1.25,
-    epic: 1.5,
-    legendary: 2.0,
-    mythic: 3.0,
-    ultra: 5.0,
-    super: 10.0,
-    unique: 20.0
+    rare: 1.2,
+    epic: 1.35,
+    legendary: 1.6,
+    mythic: 2.0,
+    ultra: 2.6,
+    super: 3.3,
+    unique: 4.0
+};
+
+const RARITY_TP_COSTS: Record<string, number> = {
+    common: 1,
+    uncommon: 2,
+    rare: 3,
+    epic: 5,
+    legendary: 8,
+    mythic: 12,
+    ultra: 18,
+    super: 25,
+    unique: 26
 };
 
 export class SkillsManager {
@@ -225,6 +237,7 @@ export class SkillsManager {
                         <div class="skill-tier-info">
                             <div class="skill-tier-name">${rarity.charAt(0).toUpperCase() + rarity.slice(1)}</div>
                             <div class="skill-tier-multiplier">${(RARITY_MULTIPLIERS[rarity] * 100).toFixed(0)}%</div>
+                            <div class="skill-tier-cost" style="font-size: 10px; opacity: 0.7;">${RARITY_TP_COSTS[rarity]} TP</div>
                         </div>
                     </div>
                 `).join('')}
@@ -320,7 +333,7 @@ export class SkillsManager {
                 if (!node) return;
 
                 const isUnlocked = this.isTierUnlocked(currentTier, rarity);
-                const isAvailable = nextTier === rarity && tp >= 1;
+                const isAvailable = nextTier === rarity && tp >= RARITY_TP_COSTS[rarity];
 
                 // Remove all classes
                 node.classList.remove('unlocked', 'locked', 'available');

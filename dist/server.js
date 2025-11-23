@@ -1311,13 +1311,25 @@ for (let i = 0; i < constants_2.SAND_COUNT; i++) {
 const SKILL_MULTIPLIERS = {
     common: 1.0,
     uncommon: 1.1,
-    rare: 1.25,
-    epic: 1.5,
-    legendary: 2.0,
-    mythic: 3.0,
-    ultra: 5.0,
-    super: 10.0,
-    unique: 20.0
+    rare: 1.2,
+    epic: 1.35,
+    legendary: 1.6,
+    mythic: 2.0,
+    ultra: 2.6,
+    super: 3.3,
+    unique: 4.0
+};
+// TP costs for each rarity tier (total = 100 TP for full tree)
+const RARITY_TP_COSTS = {
+    common: 1,
+    uncommon: 2,
+    rare: 3,
+    epic: 5,
+    legendary: 8,
+    mythic: 12,
+    ultra: 18,
+    super: 25,
+    unique: 26
 };
 // Helper function to get skill multiplier
 function getSkillMultiplier(skillTier) {
@@ -1459,15 +1471,22 @@ io.on('connection', (socket) => {
             const savedSkills = savedProgress?.skills || {};
             const savedTP = savedProgress?.tp || 0;
             // Calculate TP from level (1 TP per level)
-            // Count spent TP by counting rarity tiers unlocked
-            const countTiers = (tier) => {
+            // Count spent TP by summing costs of unlocked tiers
+            const countSpentTP = (tier) => {
                 if (!tier)
                     return 0;
                 const index = petals_1.RARITY_LEVELS.indexOf(tier);
-                return index >= 0 ? index + 1 : 0;
+                if (index < 0)
+                    return 0;
+                // Sum costs from common up to this tier
+                let total = 0;
+                for (let i = 0; i <= index; i++) {
+                    total += RARITY_TP_COSTS[petals_1.RARITY_LEVELS[i]];
+                }
+                return total;
             };
-            const spentTP = countTiers(savedSkills.damage) + countTiers(savedSkills.petalHealth) +
-                countTiers(savedSkills.playerHealth) + countTiers(savedSkills.healingMultiplier);
+            const spentTP = countSpentTP(savedSkills.damage) + countSpentTP(savedSkills.petalHealth) +
+                countSpentTP(savedSkills.playerHealth) + countSpentTP(savedSkills.healingMultiplier);
             const currentTP = Math.max(0, level - spentTP + savedTP);
             // Reconstruct loadout from saved data (only type/rarity/petalType saved)
             const reconstructLoadout = (savedLoadout) => {
@@ -1873,6 +1892,13 @@ io.on('connection', (socket) => {
             socket.emit('skillUpgradeError', { message: 'Invalid rarity tier' });
             return;
         }
+        // Get TP cost for this tier
+        const tpCost = RARITY_TP_COSTS[data.rarity] || 1;
+        // Check if player has enough TP
+        if (player.tp < tpCost) {
+            socket.emit('skillUpgradeError', { message: `Not enough Talent Points (need ${tpCost} TP)` });
+            return;
+        }
         // Get current tier for this skill
         const skillKey = data.skillId;
         const currentTier = player.skills[skillKey];
@@ -1885,7 +1911,7 @@ io.on('connection', (socket) => {
         }
         // Upgrade the skill to the new tier
         player.skills[skillKey] = data.rarity;
-        player.tp -= 1;
+        player.tp -= tpCost;
         // Apply skill multipliers to player stats
         const healthMultiplier = getSkillMultiplier(player.skills.playerHealth);
         const damageMultiplier = getSkillMultiplier(player.skills.damage);
@@ -1933,17 +1959,24 @@ io.on('connection', (socket) => {
             socket.emit('skillResetError', { message: 'Player not found' });
             return;
         }
-        // Count how many TP were spent (count all tiers unlocked)
-        const countTiers = (tier) => {
+        // Count how many TP were spent (sum costs of all tiers unlocked)
+        const countSpentTP = (tier) => {
             if (!tier)
                 return 0;
             const index = petals_1.RARITY_LEVELS.indexOf(tier);
-            return index >= 0 ? index + 1 : 0;
+            if (index < 0)
+                return 0;
+            // Sum costs from common up to this tier
+            let total = 0;
+            for (let i = 0; i <= index; i++) {
+                total += RARITY_TP_COSTS[petals_1.RARITY_LEVELS[i]];
+            }
+            return total;
         };
-        const spentTP = countTiers(player.skills?.damage) +
-            countTiers(player.skills?.petalHealth) +
-            countTiers(player.skills?.playerHealth) +
-            countTiers(player.skills?.healingMultiplier);
+        const spentTP = countSpentTP(player.skills?.damage) +
+            countSpentTP(player.skills?.petalHealth) +
+            countSpentTP(player.skills?.playerHealth) +
+            countSpentTP(player.skills?.healingMultiplier);
         // Reset all skills
         player.skills = {};
         // Refund all TP (player's level gives TP, so refund = level - current TP)

@@ -1,19 +1,19 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 48376020,
+      "totalXP": 48383020,
       "inventory": {
         "common": {
           "health_potion": 14,
           "petal_rose": 98,
           "shield": 110,
           "petal_light": 61,
-          "petal_dandelion": 21,
+          "petal_dandelion": 22,
           "petal_stinger": 37,
           "petal_yggdrasil": 5,
           "speed_boost": 67,
           "petal_sand": 38,
-          "petal_rock": 79,
+          "petal_rock": 80,
           "petal_clover": 20,
           "petal_bone": 69,
           "petal_cactus": 16,
@@ -62,7 +62,7 @@
         },
         "uncommon": {
           "petal_rose": 34,
-          "petal_dandelion": 60,
+          "petal_dandelion": 61,
           "petal_basic": 42,
           "petal_sand": 4,
           "speed_boost": 20,
@@ -104,14 +104,14 @@
         },
         "epic": {
           "petal_stinger": 20,
-          "speed_boost": 39,
+          "speed_boost": 40,
           "petal_basic": 35,
-          "petal_rose": 54,
+          "petal_rose": 55,
           "petal_sand": 12,
           "petal_yggdrasil": 2,
           "health_potion": 15,
           "petal_light": 22,
-          "petal_rock": 72,
+          "petal_rock": 73,
           "shield": 55,
           "petal_dandelion": 53,
           "petal_clover": 24,
@@ -120,7 +120,7 @@
           "petal_poison_cactus": 2,
           "petal_iris": 4,
           "petal_lightning": 3,
-          "petal_missile": 51
+          "petal_missile": 52
         },
         "rare": {
           "petal_dandelion": 16,
@@ -222,10 +222,12 @@
         null,
         null
       ],
-      "tp": 249,
+      "tp": 2,
       "skills": {
-        "petalHealth": "unique",
-        "damage": "unique"
+        "damage": "unique",
+        "petalHealth": "legendary",
+        "playerHealth": "epic",
+        "healingMultiplier": "rare"
       }
     },
     "1g99g1gfk": {
