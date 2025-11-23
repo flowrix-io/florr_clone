@@ -2138,7 +2138,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         drops: [
             {
                 type: 'petal',
-                itemType: 'yucca',
+                itemType: 'leaf',
                 rarity: 'common',
                 probability: 1.0,
                 minQuantity: 1,
@@ -2151,7 +2151,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         drops: [
             {
                 type: 'petal',
-                itemType: 'yucca',
+                itemType: 'leaf',
                 rarity: 'common',
                 probability: 0.5,
                 minQuantity: 1,
@@ -2159,9 +2159,22 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
             },
             {
                 type: 'petal',
-                itemType: 'yucca',
+                itemType: 'leaf',
                 rarity: 'uncommon',
                 probability: 0.1,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    mantis: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'leaf',
+                rarity: 'common',
+                probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 1
             }

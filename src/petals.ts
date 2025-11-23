@@ -562,9 +562,24 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         description: "A yucca that deals damage to the target",
         color: "#000000",
         count: 1,
-        actions: "wait_until_collision; heal 10;",
+        actions: "heal 10;",
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <path d="M 32 0 A 32 32 0 0 1 0 32 M 0 32 A 32 32 0 0 1 32 0 Z" fill="#00bf29" stroke="#006e18"/>
+</svg>`,
+        isAdminPetal: false
+    },
+    leaf: {
+        name: "Leaf Petal",
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 1000,
+        description: "A leaf that heals the player when spawned",
+        color: "#000000",
+        count: 1,
+        actions: "heal 10;",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<path d="M 32 0 A 25 25 0 0 1 5 27 M 5 27 A 25 25 0 0 1 32 0 M 0 32 L 32 0" fill="#0b8a26" stroke="#006e18"/>
 </svg>`,
         isAdminPetal: false
     },

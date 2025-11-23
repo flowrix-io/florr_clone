@@ -2028,7 +2028,7 @@ exports.MOB_DROP_TABLES = {
         drops: [
             {
                 type: 'petal',
-                itemType: 'yucca',
+                itemType: 'leaf',
                 rarity: 'common',
                 probability: 1.0,
                 minQuantity: 1,
@@ -2041,7 +2041,7 @@ exports.MOB_DROP_TABLES = {
         drops: [
             {
                 type: 'petal',
-                itemType: 'yucca',
+                itemType: 'leaf',
                 rarity: 'common',
                 probability: 0.5,
                 minQuantity: 1,
@@ -2049,9 +2049,22 @@ exports.MOB_DROP_TABLES = {
             },
             {
                 type: 'petal',
-                itemType: 'yucca',
+                itemType: 'leaf',
                 rarity: 'uncommon',
                 probability: 0.1,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    mantis: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'leaf',
+                rarity: 'common',
+                probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 1
             }
