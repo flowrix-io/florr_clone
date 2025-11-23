@@ -56,10 +56,11 @@ class SkillsManager {
                 <h2 style="color: #FFFFFF; margin: 0; font-family: Arial, sans-serif; -webkit-text-stroke: 1px black; -webkit-font-smoothing: none;">Skills Tree</h2>
                 <button id="closeSkillsButton" style="background: #ff4444; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 16px;">✕</button>
             </div>
-            <div style="margin-bottom: 15px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 5px;">
+            <div style="margin-bottom: 15px; padding: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
                 <div style="color: #FFFFFF; font-size: 18px; -webkit-text-stroke: 0.5px black;">
                     Talent Points: <span id="tpDisplay">0</span>
                 </div>
+                <button id="resetSkillsButton" style="background: #ff4444; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold;">Reset All Skills</button>
             </div>
             <div id="skillsContent" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;"></div>
         `;
@@ -70,6 +71,11 @@ class SkillsManager {
         const closeButton = this.skillsPanel.querySelector('#closeSkillsButton');
         if (closeButton) {
             closeButton.addEventListener('click', () => this.hide());
+        }
+        // Add reset button listener
+        const resetButton = this.skillsPanel.querySelector('#resetSkillsButton');
+        if (resetButton) {
+            resetButton.addEventListener('click', () => this.resetSkills());
         }
         // Close on escape key
         document.addEventListener('keydown', (e) => {
@@ -233,6 +239,18 @@ class SkillsManager {
             return;
         }
         socket.emit('upgradeSkill', { skillId, rarity });
+    }
+    resetSkills() {
+        const socket = this.game.getSocket();
+        if (!socket) {
+            console.error('Socket not available');
+            return;
+        }
+        // Confirm with user
+        if (!confirm('Are you sure you want to reset all skills? All TP will be refunded.')) {
+            return;
+        }
+        socket.emit('resetSkills');
     }
     getCurrentTier(skills, skillId) {
         if (!skills || !skills[skillId])

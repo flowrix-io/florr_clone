@@ -380,16 +380,23 @@ export function updatePlayerEffects(player: ServerPlayer, deltaTime: number): vo
     }
 }
 
-// Get current damage multiplier from effects
+// Get current damage multiplier from effects and skills
 export function getDamageMultiplier(player: ServerPlayer): number {
-    if (!player.effects) return 1.0;
-
     let multiplier = 1.0;
-    for (const effect of player.effects) {
-        if (effect.type === 'damage_boost') {
-            multiplier *= effect.value;
+    
+    // Apply skill multiplier first
+    const skillMultiplier = getSkillMultiplier(player.skills?.damage);
+    multiplier *= skillMultiplier;
+    
+    // Then apply petal effect multipliers
+    if (player.effects) {
+        for (const effect of player.effects) {
+            if (effect.type === 'damage_boost') {
+                multiplier *= effect.value;
+            }
         }
     }
+    
     return multiplier;
 }
 

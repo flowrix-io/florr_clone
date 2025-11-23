@@ -1429,8 +1429,8 @@ io.on('connection', (socket) => {
             const totalXP = savedProgress?.totalXP || 0;
             const level = calculateLevelFromTotalXP(totalXP);
             const currentLevelXP = calculateCurrentLevelXP(totalXP, level);
-            const maxHealth = calculateMaxHealthFromLevel(level);
-            const damage = calculateDamageFromLevel(level);
+            const baseMaxHealth = calculateMaxHealthFromLevel(level);
+            const baseDamage = calculateDamageFromLevel(level);
             // Determine spawn position based on selected biome
             let spawnX = 200;
             let spawnY = constants_2.WORLD_HEIGHT / 2;
@@ -1469,6 +1469,33 @@ io.on('connection', (socket) => {
             const spentTP = countTiers(savedSkills.damage) + countTiers(savedSkills.petalHealth) +
                 countTiers(savedSkills.playerHealth) + countTiers(savedSkills.healingMultiplier);
             const currentTP = Math.max(0, level - spentTP + savedTP);
+            // Reconstruct loadout from saved data (only type/rarity/petalType saved)
+            const reconstructLoadout = (savedLoadout) => {
+                if (!savedLoadout || !Array.isArray(savedLoadout)) {
+                    return createInitialBasicPetals().concat(Array(5).fill(null));
+                }
+                return savedLoadout.map((item) => {
+                    if (!item || !item.type)
+                        return null;
+                    if (item.type === 'petal' && item.petalType) {
+                        const petalStats = (0, petals_2.getPetalStats)(item.petalType, item.rarity || 'common');
+                        if (petalStats) {
+                            const petalHealthMultiplier = getSkillMultiplier(savedSkills.petalHealth);
+                            const maxHealth = Math.round(petalStats.health * petalHealthMultiplier);
+                            return {
+                                type: 'petal',
+                                rarity: item.rarity || 'common',
+                                petalType: item.petalType,
+                                health: maxHealth,
+                                maxHealth: maxHealth,
+                                onCooldown: false
+                            };
+                        }
+                    }
+                    return item; // For non-petal items, return as-is
+                });
+            };
+            const reconstructedLoadout = reconstructLoadout(savedProgress?.loadout);
             constants_2.players[socket.id] = {
                 id: socket.id,
                 name: credentials.playerName || 'Unnamed',
@@ -1478,11 +1505,11 @@ io.on('connection', (socket) => {
                 score: 0,
                 velocityX: 0,
                 velocityY: 0,
-                health: Math.round(maxHealth * getSkillMultiplier(savedSkills.playerHealth)),
-                maxHealth: Math.round(maxHealth * getSkillMultiplier(savedSkills.playerHealth)),
-                damage: Math.round(damage * getSkillMultiplier(savedSkills.damage)),
+                health: Math.round(baseMaxHealth * getSkillMultiplier(savedSkills.playerHealth)),
+                maxHealth: Math.round(baseMaxHealth * getSkillMultiplier(savedSkills.playerHealth)),
+                damage: Math.round(baseDamage * getSkillMultiplier(savedSkills.damage)),
                 inventory: savedProgress?.inventory || createInitialInventory(),
-                loadout: savedProgress?.loadout || createInitialBasicPetals().concat(Array(5).fill(null)),
+                loadout: reconstructedLoadout,
                 isInvulnerable: true,
                 level: level,
                 xp: currentLevelXP,
@@ -1868,10 +1895,83 @@ io.on('connection', (socket) => {
         if (player.health > player.maxHealth) {
             player.health = player.maxHealth;
         }
-        // Apply petal health bonuses to all equipped petals
+        // Apply petal health bonuses to all equipped petals and respawn them
         if (player.loadout) {
-            player.loadout.forEach(petal => {
-                applyPetalHealthBonus(petal, player);
+            player.loadout.forEach((petal, index) => {
+                if (petal && petal.type === 'petal') {
+                    applyPetalHealthBonus(petal, player);
+                    // Respawn petal (restore health to max and remove cooldown)
+                    if (petal.maxHealth !== undefined) {
+                        petal.health = petal.maxHealth;
+                        petal.onCooldown = false;
+                        // Emit petal restored event for each petal
+                        io.emit('petalRestored', {
+                            playerId: player.id,
+                            slotIndex: index,
+                            petal: petal
+                        });
+                    }
+                }
+            });
+        }
+        // Save progress
+        if (socket.userId) {
+            savePlayerProgress(player, socket.userId);
+        }
+        // Emit skills update
+        io.emit('skillsUpdated', {
+            playerId: player.id,
+            tp: player.tp,
+            skills: player.skills
+        });
+        // Emit player update to sync stats
+        io.emit('playerUpdated', player);
+    });
+    socket.on('resetSkills', () => {
+        const player = constants_2.players[socket.id];
+        if (!player) {
+            socket.emit('skillResetError', { message: 'Player not found' });
+            return;
+        }
+        // Count how many TP were spent (count all tiers unlocked)
+        const countTiers = (tier) => {
+            if (!tier)
+                return 0;
+            const index = petals_1.RARITY_LEVELS.indexOf(tier);
+            return index >= 0 ? index + 1 : 0;
+        };
+        const spentTP = countTiers(player.skills?.damage) +
+            countTiers(player.skills?.petalHealth) +
+            countTiers(player.skills?.playerHealth) +
+            countTiers(player.skills?.healingMultiplier);
+        // Reset all skills
+        player.skills = {};
+        // Refund all TP (player's level gives TP, so refund = level - current TP)
+        player.tp = player.level;
+        // Recalculate player stats without skill multipliers
+        player.maxHealth = calculateMaxHealthFromLevel(player.level);
+        player.damage = calculateDamageFromLevel(player.level);
+        // Ensure health doesn't exceed max health
+        if (player.health > player.maxHealth) {
+            player.health = player.maxHealth;
+        }
+        // Reconstruct all petals without petal health bonuses
+        if (player.loadout) {
+            player.loadout.forEach((petal, index) => {
+                if (petal && petal.type === 'petal' && petal.petalType) {
+                    const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity || 'common');
+                    if (petalStats) {
+                        petal.maxHealth = petalStats.health;
+                        petal.health = petal.maxHealth;
+                        petal.onCooldown = false;
+                        // Emit petal restored event for each petal
+                        io.emit('petalRestored', {
+                            playerId: player.id,
+                            slotIndex: index,
+                            petal: petal
+                        });
+                    }
+                }
             });
         }
         // Save progress
@@ -3253,9 +3353,12 @@ async function transferPlayerToServer(player, targetServerPort, targetX, targetY
 function handleLevelUp(player) {
     // Level up is now handled in addXPToPlayer with dynamic calculation
     // This function is kept for any other code that might call it
-    player.maxHealth = calculateMaxHealthFromLevel(player.level);
+    // Apply skill multipliers
+    const healthMultiplier = getSkillMultiplier(player.skills?.playerHealth);
+    const damageMultiplier = getSkillMultiplier(player.skills?.damage);
+    player.maxHealth = Math.round(calculateMaxHealthFromLevel(player.level) * healthMultiplier);
     player.health = player.maxHealth; // Heal to full when leveling up
-    player.damage = calculateDamageFromLevel(player.level);
+    player.damage = Math.round(calculateDamageFromLevel(player.level) * damageMultiplier);
     io.emit('levelUp', {
         playerId: player.id,
         level: player.level,
@@ -3352,10 +3455,20 @@ function savePlayerProgress(player, userId) {
         // console.log('Saving player progress for userId:', userId);
         // Calculate total XP from current level and XP
         const totalXP = calculateTotalXP(player.level, player.xp);
+        // Filter loadout to only save type and rarity (not status fields)
+        const cleanLoadout = (player.loadout || []).map(item => {
+            if (!item)
+                return null;
+            return {
+                type: item.type,
+                rarity: item.rarity,
+                petalType: item.petalType
+            };
+        });
         const saveResult = database_1.database.savePlayer(userId, {
             totalXP: totalXP,
             inventory: player.inventory,
-            loadout: player.loadout,
+            loadout: cleanLoadout,
             tp: player.tp || 0,
             skills: player.skills || {}
         });
