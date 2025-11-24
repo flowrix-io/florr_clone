@@ -1951,20 +1951,15 @@ function updatePlayerState(player, deltaTime) {
                 const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
                 const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE; // Use mob size or fallback to base size
                 const petalSize = 40 * petalStats.size; // Use same base size as enemies for consistency
-                // Calculate enemy hitbox bounds (enemy.x, enemy.y is center point)
-                const enemyLeft = enemy.x - enemySize / 2;
-                const enemyRight = enemy.x + enemySize / 2;
-                const enemyTop = enemy.y - enemySize / 2;
-                const enemyBottom = enemy.y + enemySize / 2;
-                // Calculate petal hitbox bounds (petalX, petalY is center point)
-                const petalLeft = petalX - petalSize / 2;
-                const petalRight = petalX + petalSize / 2;
-                const petalTop = petalY - petalSize / 2;
-                const petalBottom = petalY + petalSize / 2;
-                if (petalLeft < enemyRight &&
-                    petalRight > enemyLeft &&
-                    petalTop < enemyBottom &&
-                    petalBottom > enemyTop) {
+                // Use circular hitbox collision (matching player-to-mob and mob-to-mob collision)
+                // Both petal and enemy positions are center points
+                const enemyRadius = enemySize / 2;
+                const petalRadius = petalSize / 2;
+                const dx = enemy.x - petalX;
+                const dy = enemy.y - petalY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const minDistance = enemyRadius + petalRadius;
+                if (distance < minDistance && distance > 0) {
                     // Petal hits enemy - deal damage to both
                     const damageMultiplier = (0, petal_actions_1.getDamageMultiplier)(player);
                     const finalDamage = petalStats.damage * damageMultiplier;
