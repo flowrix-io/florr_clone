@@ -52,8 +52,8 @@ class SkillsManager {
             transform: translate(-50%, -50%);
             width: 900px;
             max-height: 700px;
-            background: #49c46f;
-            border: 2px solid #4CAF50;
+            background: #e3685f;
+            border: 2px solid #b3524b;
             border-radius: 10px;
             padding: 20px;
             z-index: 4000;
@@ -105,11 +105,11 @@ class SkillsManager {
                 border-radius: 5px;
             }
             .skills-panel::-webkit-scrollbar-thumb {
-                background: #4CAF50;
+                background: #b3524b;
                 border-radius: 5px;
             }
             .skills-panel::-webkit-scrollbar-thumb:hover {
-                background: #45a049;
+                background: #b3524b;
             }
             .skill-tree {
                 background: rgba(255, 255, 255, 0.05);

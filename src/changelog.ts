@@ -57,6 +57,12 @@ export const CHANGELOG: ChangelogEntry[] = [
             'New petal: Leaf',
             'Target dummy now shows DPS',
         ]
+    },
+    {
+        date: 'November 23, 2025',
+        changes: [
+            'Added skills system',
+        ]
     }
 ];
 
