@@ -24,12 +24,28 @@ class InventoryManager {
         // Convert back to hex
         return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
     }
+    /**
+     * Convert hex color to rgba string
+     * @param hex - Hex color string (e.g., '#7eef6d')
+     * @param alpha - Alpha value (0-1)
+     * @returns RGBA color string
+     */
+    hexToRgba(hex, alpha) {
+        // Remove # if present
+        const num = parseInt(hex.replace('#', ''), 16);
+        // Extract RGB components
+        const r = (num >> 16) & 255;
+        const g = (num >> 8) & 255;
+        const b = num & 255;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
     constructor(game, chat) {
         this.inventoryPanel = null;
         this.craftingPanel = null;
         this.craftingItems = [];
         this.isInventoryOpen = false;
         this.isCraftingOpen = false;
+        this.successDisplayShownAt = 0; // Timestamp when success display was shown
         this.LOADOUT_SLOTS = 10;
         this.LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
         this.chat = null;
@@ -102,6 +118,11 @@ class InventoryManager {
         const multiplierText = document.createElement('div');
         multiplierText.className = 'crafting-multiplier';
         craftingCircleContainer.appendChild(multiplierText);
+        // Success display in the center
+        const successDisplay = document.createElement('div');
+        successDisplay.className = 'crafting-success-display';
+        successDisplay.style.display = 'none';
+        craftingCircleContainer.appendChild(successDisplay);
         craftingMain.appendChild(craftingCircleContainer);
         const craftingActions = document.createElement('div');
         craftingActions.className = 'crafting-actions';
@@ -128,6 +149,15 @@ class InventoryManager {
         craftingContent.appendChild(inventoryPreview);
         this.craftingPanel.appendChild(craftingContent);
         document.body.appendChild(this.craftingPanel);
+        // Add click handler to clear success display when clicking on crafting slots
+        // (with minimum display time enforced in clearCraftingSuccessDisplay)
+        this.craftingPanel.addEventListener('click', (e) => {
+            // Clear success display when clicking on crafting slots or circle container
+            const target = e.target;
+            if (target.closest('.crafting-slot') || target.closest('.crafting-circle-container')) {
+                this.clearCraftingSuccessDisplay();
+            }
+        });
         // Add styles
         const style = document.createElement('style');
         style.textContent = `
@@ -162,6 +192,44 @@ class InventoryManager {
                 color: white;
                 text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
                 display: none;
+            }
+            .crafting-success-display {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 80px;
+                height: 80px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                z-index: 10;
+                pointer-events: none;
+            }
+            .crafting-success-display .success-item {
+                width: 60px;
+                height: 60px;
+                border: 3px solid;
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(0, 0, 0, 0.9);
+                position: relative;
+            }
+            .crafting-success-display .success-item img {
+                width: 90%;
+                height: 90%;
+                object-fit: contain;
+            }
+            .crafting-success-display .success-count {
+                position: absolute;
+                bottom: -25px;
+                font-size: 18px;
+                font-weight: bold;
+                color: white;
+                text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
             }
             .crafting-actions {
                 display: flex;
@@ -251,6 +319,8 @@ class InventoryManager {
             return;
         const isOpen = this.craftingPanel.classList.contains('open');
         if (!isOpen) {
+            // Clear success display when opening
+            this.clearCraftingSuccessDisplay();
             this.craftingPanel.style.display = 'block';
             this.hideChat();
             setTimeout(() => {
@@ -261,6 +331,8 @@ class InventoryManager {
         else {
             this.craftingPanel.classList.remove('open');
             this.showChat();
+            // Clear success display when closing
+            this.clearCraftingSuccessDisplay();
             setTimeout(() => {
                 if (this.craftingPanel) {
                     this.craftingPanel.style.display = 'none';
@@ -915,6 +987,9 @@ class InventoryManager {
             this.game.showFloatingText(this.game.canvas.width / 2, 50, 'You must add items in multiples of 5 to craft!', '#FF0000', 20);
             return;
         }
+        console.log('[CLIENT] Sending craftItems request:', { itemCount: this.craftingItems.length });
+        // Clear any previous success display when starting new craft
+        this.clearCraftingSuccessDisplay();
         this.game.getSocket()?.emit('craftItems', { items: this.craftingItems });
         this.craftingItems = [];
         this.updateCraftingDisplay();
@@ -925,6 +1000,11 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
+        // Clear success display when updating (e.g., when items change)
+        // Only clear if there are no items in crafting (user cleared the slots)
+        if (this.craftingItems.length === 0) {
+            this.clearCraftingSuccessDisplay();
+        }
         const slots = this.craftingPanel.querySelectorAll('.crafting-slot');
         const container = this.craftingPanel.querySelector('.crafting-circle-container');
         const multiplierEl = this.craftingPanel.querySelector('.crafting-multiplier');
@@ -1004,6 +1084,93 @@ class InventoryManager {
         }
         // Update inventory preview
         this.updateCraftingInventoryPreview();
+    }
+    showCraftingSuccess(newItem, successCount) {
+        console.log('[INVENTORY] showCraftingSuccess called:', { newItem, successCount });
+        if (!this.craftingPanel) {
+            console.log('[INVENTORY] No crafting panel found');
+            return;
+        }
+        const successDisplay = this.craftingPanel.querySelector('.crafting-success-display');
+        if (!successDisplay) {
+            console.log('[INVENTORY] No success display element found');
+            return;
+        }
+        // Clear previous content
+        successDisplay.innerHTML = '';
+        successDisplay.style.display = 'flex';
+        // Record when the success display was shown
+        this.successDisplayShownAt = Date.now();
+        // Create item container
+        const itemContainer = document.createElement('div');
+        itemContainer.className = 'success-item';
+        // Set border and background color based on rarity
+        const rarity = newItem.rarity || 'common';
+        const rarityColor = this.ITEM_RARITY_COLORS[rarity] || '#7eef6d';
+        itemContainer.style.borderColor = rarityColor;
+        // Set solid background with rarity color (more opaque for visibility)
+        const bgColor = this.hexToRgba(rarityColor, 0.7);
+        itemContainer.style.backgroundColor = bgColor;
+        // Create item image
+        const img = document.createElement('img');
+        img.style.width = '90%';
+        img.style.height = '90%';
+        img.style.objectFit = 'contain';
+        if (newItem.type === 'petal' && newItem.petalType && rarity) {
+            const petalCanvas = this.game.getPetalCanvas?.(newItem.petalType, rarity, Date.now());
+            if (petalCanvas) {
+                img.src = petalCanvas.toDataURL('image/png');
+                console.log('[INVENTORY] Using petal canvas for:', newItem.petalType, rarity);
+            }
+            else {
+                console.log('[INVENTORY] Petal canvas not available');
+            }
+        }
+        else {
+            const dataUrl = this.game.getItemSpriteDataUrl?.(newItem.type);
+            if (dataUrl) {
+                img.src = dataUrl;
+                console.log('[INVENTORY] Using item sprite data URL for:', newItem.type);
+            }
+            else {
+                img.src = `./assets/${newItem.type}.png`;
+                console.log('[INVENTORY] Using fallback image path for:', newItem.type);
+            }
+        }
+        // Handle image load errors
+        img.onerror = () => {
+            console.error('[INVENTORY] Failed to load image for:', newItem);
+            // Still show the container even if image fails
+        };
+        itemContainer.appendChild(img);
+        successDisplay.appendChild(itemContainer);
+        // Create success count text
+        const countText = document.createElement('div');
+        countText.className = 'success-count';
+        countText.textContent = `x${successCount}`;
+        countText.style.color = this.ITEM_RARITY_COLORS[rarity] || '#7eef6d';
+        successDisplay.appendChild(countText);
+        console.log('[INVENTORY] Success display created and shown');
+    }
+    clearCraftingSuccessDisplay() {
+        if (!this.craftingPanel)
+            return;
+        // Don't clear if it hasn't been shown for at least 0.5 seconds
+        const now = Date.now();
+        if (this.successDisplayShownAt > 0 && (now - this.successDisplayShownAt) < 500) {
+            // Schedule to clear after the minimum display time
+            const remainingTime = 500 - (now - this.successDisplayShownAt);
+            setTimeout(() => {
+                this.clearCraftingSuccessDisplay();
+            }, remainingTime);
+            return;
+        }
+        const successDisplay = this.craftingPanel.querySelector('.crafting-success-display');
+        if (successDisplay) {
+            successDisplay.style.display = 'none';
+            successDisplay.innerHTML = '';
+            this.successDisplayShownAt = 0; // Reset timestamp
+        }
     }
     calculateSuccessChance() {
         const items = this.craftingItems;

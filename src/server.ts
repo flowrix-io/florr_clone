@@ -32,87 +32,70 @@ import { MobProjectile, PlayerProjectile } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getAllPetalTypes, getPetalStats } from './petals';
 import { MOB_CONFIG, getMobStats, getAllMobTypes, calculateMobDrops, DropItem } from './mobs';
+
+// Import from refactored modules
+import { 
+    trackDamage, 
+    calculateDPS, 
+    getEligiblePlayers, 
+    sendBossMobDefeatedMessage 
+} from './server/utils';
+import { 
+    items, 
+    ultraMobCount, 
+    superMobCount, 
+    uniqueMobCount,
+    decorations,
+    sands,
+    ENEMY_COUNT,
+    playerUserIds,
+    mobProjectiles,
+    playerProjectiles,
+    petalLastProjectileTime,
+    ITEM_EXPIRATION_TIMES,
+    getItems,
+    getMobProjectiles,
+    getPlayerProjectiles,
+    setEnemyCount,
+    getEnemyCount
+} from './server/gameState';
+import { handleMobDrops as handleMobDropsModule } from './server/itemManager';
+import {
+    createInitialBasicPetals,
+    createInitialInventory,
+    addItem,
+    removeItem,
+    hasItem,
+    respawnPlayer as respawnPlayerModule,
+    getSpawnPositionInBiome,
+    isBiomeSafeForSpawn,
+    calculateXPRequirement,
+    calculateTotalXP,
+    calculateLevelFromTotalXP,
+    calculateCurrentLevelXP,
+    calculateMaxHealthFromLevel,
+    calculateDamageFromLevel,
+    getSkillMultiplier,
+    applyPetalHealthBonus,
+    addXPToPlayer as addXPToPlayerModule,
+    savePlayerProgress as savePlayerProgressModule
+} from './server/playerManager';
+
 const app = express();
 
-const items: WorldItem[] = [];
+// Re-export functions that are used elsewhere
+export { trackDamage, sendBossMobDefeatedMessage };
 
-// Special mob tracking
-let ultraMobCount = 0;
-let superMobCount = 0;
-let uniqueMobCount = 0;
-
-const decorations: Decoration[] = [];
-const sands: Sand[] = [];
-let ENEMY_COUNT = 1000;
-const playerUserIds: Record<string, string> = {}; // Maps player ID to user ID
-const mobProjectiles: MobProjectile[] = []; // Track all active mob projectiles
-const playerProjectiles: PlayerProjectile[] = []; // Track all active player projectiles
-const petalLastProjectileTime: Map<string, number> = new Map(); // Track last projectile time per petal instance
-
-// Item expiration times based on rarity (in milliseconds)
-const ITEM_EXPIRATION_TIMES: Record<string, number> = {
-    common: 10000,      // 10 seconds
-    uncommon: 20000,    // 20 seconds
-    rare: 30000,        // 30 seconds
-    epic: 40000,        // 40 seconds
-    legendary: 50000,   // 50 seconds
-    mythic: 60000,      // 60 seconds
-    ultra: 80000,       // 80 seconds
-    super: 120000,      // 120 seconds
-    unique: 300000      // 300 seconds (5 minutes)
-};
-
-// Helper function to track damage dealt to an enemy
-export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
-    if (!enemy.damageContributors) {
-        enemy.damageContributors = new Map();
-    }
-    const currentDamage = enemy.damageContributors.get(playerId) || 0;
-    enemy.damageContributors.set(playerId, currentDamage + damage);
-    
-    // Track DPS for target dummies
-    if (enemy.type === 'target_dummy') {
-        const now = Date.now();
-        if (!enemy.dpsStartTime) {
-            enemy.dpsStartTime = now;
-            enemy.dpsHistory = [];
-        }
-        if (!enemy.dpsHistory) {
-            enemy.dpsHistory = [];
-        }
-        enemy.dpsHistory.push({ time: now, damage: damage });
-        
-        // Keep only last 60 seconds of history
-        const cutoffTime = now - 60000;
-        enemy.dpsHistory = enemy.dpsHistory.filter(entry => entry.time > cutoffTime);
-    }
-    
-    // console.log(`[DAMAGE] Player ${playerId} dealt ${damage} to ${enemy.type} (${enemy.tier}) - total: ${currentDamage + damage}`);
+// Wrapper function for handleMobDrops that passes io (will be set up later)
+let ioInstance: any;
+export function handleMobDrops(enemy: Enemy) {
+    handleMobDropsModule(enemy, ioInstance);
 }
 
-// Calculate DPS for target dummies
-function calculateDPS(enemy: Enemy): number {
-    if (enemy.type !== 'target_dummy' || !enemy.dpsHistory || enemy.dpsHistory.length === 0) {
-        return 0;
-    }
-    
-    const now = Date.now();
-    const timeWindow = 10000; // 10 seconds window
-    const cutoffTime = now - timeWindow;
-    
-    // Sum damage in the last 10 seconds
-    const recentDamage = enemy.dpsHistory
-        .filter(entry => entry.time > cutoffTime)
-        .reduce((sum, entry) => sum + entry.damage, 0);
-    
-    // Calculate DPS (damage per second)
-    const dps = recentDamage / (timeWindow / 1000);
-    
-    return dps;
-}
-
-// Update DPS for all target dummies and send to clients
+// Wrapper function for updateTargetDummyDPS
 function updateTargetDummyDPS() {
+    if (!ioInstance) return; // Guard against ioInstance not being set yet
+    
     const targetDummies = enemies.filter(e => e.type === 'target_dummy');
     
     for (const dummy of targetDummies) {
@@ -120,172 +103,11 @@ function updateTargetDummyDPS() {
         dummy.currentDPS = dps;
         
         // Send DPS update to all clients
-        io.emit('targetDummyDPS', {
+        ioInstance.emit('targetDummyDPS', {
             enemyId: dummy.id,
             dps: dps
         });
     }
-}
-
-// Helper function to get eligible players for a drop based on damage ranking
-function getEligiblePlayers(enemy: Enemy): string[] {
-    if (!enemy.damageContributors || enemy.damageContributors.size === 0) {
-        return [];
-    }
-    
-    // Sort players by damage dealt (highest first)
-    const sortedPlayers = Array.from(enemy.damageContributors.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(entry => entry[0]);
-    
-    // Determine placement requirement based on mob rarity
-    const isUltraOrAbove = ['ultra', 'super', 'unique'].includes(enemy.tier);
-    const placementRequirement = isUltraOrAbove ? 15 : 4;
-    
-    // Return top N players who qualify
-    return sortedPlayers.slice(0, placementRequirement);
-}
-
-// Function to handle mob drops when a mob dies
-export function handleMobDrops(enemy: Enemy) {
-    const mobType = enemy.type || 'bee'; // Default to bee if type is not set
-    const drops = calculateMobDrops(mobType, enemy.tier);
-    
-    // Get list of eligible players based on damage ranking
-    const eligiblePlayers = getEligiblePlayers(enemy);
-    
-    // If no players dealt damage, don't drop anything
-    if (eligiblePlayers.length === 0) {
-        console.log(`[DROP] Mob ${enemy.type} (${enemy.tier}) died with no damage contributors - no drops`);
-        return;
-    }
-    
-    console.log(`[DROP] Mob ${enemy.type} (${enemy.tier}) drops for ${eligiblePlayers.length} eligible players`);
-    
-    for (const drop of drops) {
-        // Determine quantity
-        const quantity = 1; // Simplified to always drop 1 item
-        
-        // Create items for each quantity
-        for (let q = 0; q < quantity; q++) {
-            const offsetX = (Math.random() - 0.5) * 100;
-            const offsetY = (Math.random() - 0.5) * 100;
-            
-            const itemId = Math.random().toString(36).substr(2, 9);
-            const spawnTime = Date.now();
-            
-            const newItem: WorldItem = {
-                id: itemId,
-                type: drop.type === 'consumable' ? drop.itemType as Item['type'] : 'petal',
-                x: enemy.x + offsetX,
-                y: enemy.y + offsetY,
-                rarity: drop.rarity,
-                petalType: drop.type === 'petal' ? drop.itemType : undefined,
-                eligiblePlayers: eligiblePlayers,
-                pickedUpBy: new Set(),
-                spawnTime: spawnTime
-            };
-            
-            items.push(newItem);
-            
-            // Only send itemSpawned event to eligible players
-            for (const playerId of eligiblePlayers) {
-                io.to(playerId).emit('itemSpawned', newItem);
-            }
-            
-            // Schedule automatic removal after expiration time
-            const expirationTime = ITEM_EXPIRATION_TIMES[drop.rarity] || 10000;
-            setTimeout(() => {
-                const itemIndex = items.findIndex(item => item.id === itemId);
-                if (itemIndex !== -1) {
-                    const expiredItem = items[itemIndex];
-                    items.splice(itemIndex, 1);
-                    
-                    // Notify eligible players that item expired
-                    if (expiredItem.eligiblePlayers) {
-                        for (const playerId of expiredItem.eligiblePlayers) {
-                            io.to(playerId).emit('itemRemoved', itemId);
-                        }
-                    }
-                    
-                    console.log(`[DROP] Item ${itemId} (${drop.rarity}) expired after ${expirationTime}ms`);
-                }
-            }, expirationTime);
-        }
-    }
-}
-
-// Helper function to send boss mob defeated message in chat
-export function sendBossMobDefeatedMessage(enemy: Enemy, io: any, players: Record<string, ServerPlayer>) {
-    // Check if this is a boss mob (ultra, super, or unique tier)
-    const isBossMob = ['ultra', 'super', 'unique'].includes(enemy.tier);
-    if (!isBossMob) {
-        return;
-    }
-    
-    // Get the top damage dealer
-    if (!enemy.damageContributors || enemy.damageContributors.size === 0) {
-        return;
-    }
-    
-    // Sort players by damage dealt (highest first)
-    const sortedPlayers = Array.from(enemy.damageContributors.entries())
-        .sort((a, b) => b[1] - a[1]);
-    
-    if (sortedPlayers.length === 0) {
-        return;
-    }
-    
-    // Get the top damage dealer's player ID
-    const topDamagerId = sortedPlayers[0][0];
-    const topDamager = players[topDamagerId];
-    
-    if (!topDamager) {
-        return;
-    }
-    
-    // Capitalize the first letter of the rarity
-    const rarity = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
-
-    // Get the username from the socket
-    const socket = io.sockets.sockets.get(topDamagerId) as AuthenticatedSocket;
-    const username = socket?.username || 'Unknown';
-    
-    // Send chat message
-    io.emit('chatMessage', {
-        sender: '',
-        content: `<b style="color: ${ENEMY_TIERS[enemy.tier as keyof typeof ENEMY_TIERS].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`,
-        timestamp: Date.now()
-    });
-
-    
-}
-
-// Helper function to create initial basic petals for new players
-function createInitialBasicPetals() {
-    const basicPetalStats = getPetalStats('basic', 'common');
-    if (!basicPetalStats) {
-        console.error('Failed to get basic petal stats');
-        return [];
-    }
-    
-    return Array(5).fill(null).map(() => ({
-        type: 'petal' as const,
-        rarity: 'common' as const,
-        petalType: 'basic',
-        health: basicPetalStats.health,
-        maxHealth: basicPetalStats.health,
-        onCooldown: false
-    }));
-}
-
-// Helper function to create initial inventory with basic petals
-function createInitialInventory(): PlayerInventory {
-    return {
-        common: {
-            'petal_basic': 5
-        }
-    };
 }
 // Add body parser middleware for JSON
 app.use(express.json());
@@ -478,6 +300,9 @@ const io = new Server(server, {
     }
 });
 
+// Set ioInstance for use in modules
+ioInstance = io;
+
 // Get current server port and configuration
 const PORT = process.env.PORT || 3000;
 const CURRENT_SERVER_PORT = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
@@ -488,25 +313,8 @@ const CURRENT_SERVER_CONFIG = getServerConfigByPort(CURRENT_SERVER_PORT) || { po
 // const MAZE_CELL_SIZE = 1000;
 // const MAZE_WALL_THICKNESS = 100;
 
-// Replace the initializeObstacles function with this:
-function initializeMapObstacles(): Obstacle[] {
-    const mapObstacles: Obstacle[] = [];
-
-    // Convert wall elements from WORLD_MAP to obstacles
-    WORLD_MAP.filter(isWall).forEach(wall => {
-        mapObstacles.push({
-            id: Math.random().toString(36).substr(2, 9),
-            x: wall.x * SCALE_FACTOR,
-            y: wall.y * SCALE_FACTOR,
-            width: wall.width * SCALE_FACTOR,
-            height: wall.height * SCALE_FACTOR,
-            type: 'coral',
-            isEnemy: false
-        });
-    });
-
-    return mapObstacles;
-}
+// Initialize map obstacles - using function from gameState module
+import { initializeMapObstacles } from './server/gameState';
 
 // Update the server initialization code
 // Replace the old obstacle initialization with:
@@ -957,9 +765,9 @@ function createSpecialMob(tier: 'ultra' | 'super' | 'unique'): Enemy | null {
 // Function to update special mob counts
 export function updateSpecialMobCounts() {
     // Exclude target dummies from boss mob counting
-    ultraMobCount = enemies.filter(e => e.tier === 'ultra' && e.type !== 'target_dummy').length;
-    superMobCount = enemies.filter(e => e.tier === 'super' && e.type !== 'target_dummy').length;
-    uniqueMobCount = enemies.filter(e => e.tier === 'unique' && e.type !== 'target_dummy').length;
+    ultraMobCount.value = enemies.filter(e => e.tier === 'ultra' && e.type !== 'target_dummy').length;
+    superMobCount.value = enemies.filter(e => e.tier === 'super' && e.type !== 'target_dummy').length;
+    uniqueMobCount.value = enemies.filter(e => e.tier === 'unique' && e.type !== 'target_dummy').length;
 }
 
 // Function to spawn special mobs
@@ -968,11 +776,11 @@ function spawnSpecialMobs() {
     updateSpecialMobCounts();
     
     // Spawn ultra mob if none exists
-    if (ultraMobCount === 0) {
+    if (ultraMobCount.value === 0) {
         const ultraMob = createSpecialMob('ultra');
         if (ultraMob) {
             enemies.push(ultraMob);
-            ultraMobCount = 1;
+            ultraMobCount.value = 1;
             // Don't send spawn notification for target dummies
             if (ultraMob.type !== 'target_dummy') {
                 io.emit('chatMessage', {
@@ -986,11 +794,11 @@ function spawnSpecialMobs() {
     }
     
     // Spawn super mob if none exists
-    if (superMobCount === 0) {
+    if (superMobCount.value === 0) {
         const superMob = createSpecialMob('super');
         if (superMob) {
             enemies.push(superMob);
-            superMobCount = 1;
+            superMobCount.value = 1;
             // Don't send spawn notification for target dummies
             if (superMob.type !== 'target_dummy') {
                 io.emit('chatMessage', {
@@ -1004,11 +812,11 @@ function spawnSpecialMobs() {
     }
     
     // Spawn unique mob with 1/4 chance if super mob exists
-    if (superMobCount > 0 && uniqueMobCount === 0 && Math.random() < 0.25) {
+    if (superMobCount.value > 0 && uniqueMobCount.value === 0 && Math.random() < 0.25) {
         const uniqueMob = createSpecialMob('unique');
         if (uniqueMob) {
             enemies.push(uniqueMob);
-            uniqueMobCount = 1;
+            uniqueMobCount.value = 1;
             // Don't send spawn notification for target dummies
             if (uniqueMob.type !== 'target_dummy') {
                 io.emit('chatMessage', {
@@ -1401,39 +1209,7 @@ function createEnemy(): Enemy {
     return enemy;
 }
 
-// Update respawnPlayer to use spawn points from the map
-function respawnPlayer(player: ServerPlayer) {
-    // Find valid spawn points for player's level
-    const validSpawnPoints = WORLD_MAP.filter(element =>
-        element.type === 'spawn' &&
-        element.properties?.spawnType === getSpawnTypeForLevel(player.level)
-    );
-
-    if (validSpawnPoints.length > 0) {
-        // Choose random spawn point
-        const spawn = validSpawnPoints[Math.floor(Math.random() * validSpawnPoints.length)];
-        player.x = (spawn.x + Math.random() * spawn.width) * SCALE_FACTOR;
-        player.y = (spawn.y + Math.random() * spawn.height) * SCALE_FACTOR;
-    } else {
-        // Fallback to old spawn logic if no valid spawn points
-        console.warn('No valid spawn points found for level', player.level);
-        player.x = Math.random() * ACTUAL_WORLD_WIDTH;
-        player.y = Math.random() * ACTUAL_WORLD_HEIGHT;
-    }
-
-    // Rest of respawnPlayer remains the same
-    player.health = player.maxHealth;
-    player.score = Math.max(0, player.score - 10);
-    player.isInvulnerable = true;
-    player.lastDamageTime = 0;
-    player.isDead = false;
-
-    setTimeout(() => {
-        player.isInvulnerable = false;
-        // Notify client that invulnerability has ended
-        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
-    }, RESPAWN_INVULNERABILITY_TIME);
-}
+// respawnPlayer moved to playerManager module - using wrapper function defined earlier
 
 // Helper function to determine spawn type based on level
 function getSpawnTypeForLevel(level: number): NonNullable<MapElement['properties']>['spawnType'] {
@@ -1445,87 +1221,7 @@ function getSpawnTypeForLevel(level: number): NonNullable<MapElement['properties
     return 'mythic';
 }
 
-// Helper function to check if a biome only allows mob rarities less than "rare" (common or uncommon)
-function isBiomeSafeForSpawn(biome: MapElement): boolean {
-    // If biome has no spawn table, it uses default spawn logic which can include rare+ tiers
-    // So we only allow spawning in biomes with explicit spawn tables
-    if (!biome.properties?.spawnTable || biome.properties.spawnTable.length === 0) {
-        return false;
-    }
-
-    // Check that all tiers in the spawn table are common or uncommon
-    const safeTiers = ['common', 'uncommon'];
-    for (const entry of biome.properties.spawnTable) {
-        if (!safeTiers.includes(entry.tier)) {
-            return false; // Found a tier that is rare or higher
-        }
-    }
-
-    return true; // All tiers are safe (common or uncommon)
-}
-
-// Helper function to find a spawn position within a specific biome
-function getSpawnPositionInBiome(biomeName: string): { x: number, y: number } | null {
-    // Find all biome elements with the specified name
-    const biomes = WORLD_MAP.filter(element => 
-        element.type === 'biome' && 
-        element.properties?.biomeName === biomeName &&
-        element.width > 0 && 
-        element.height > 0
-    );
-
-    if (biomes.length === 0) {
-        console.warn(`No valid biomes found with name: ${biomeName}`);
-        return null;
-    }
-
-    // Filter to only biomes that are safe for spawning (only common/uncommon mobs)
-    const safeBiomes = biomes.filter(biome => isBiomeSafeForSpawn(biome));
-
-    if (safeBiomes.length === 0) {
-        console.warn(`No safe spawn areas found in ${biomeName} biome (all areas have rare+ mobs)`);
-        return null;
-    }
-
-    // Choose a random biome from the safe ones
-    const biome = safeBiomes[Math.floor(Math.random() * safeBiomes.length)];
-    
-    // Generate a random position within the biome, with some padding from edges
-    const padding = 50; // Padding from biome edges
-    const x = biome.x + padding + Math.random() * Math.max(0, biome.width - padding * 2);
-    const y = biome.y + padding + Math.random() * Math.max(0, biome.height - padding * 2);
-    
-    console.log(`Spawning in ${biomeName} biome at (${x.toFixed(0)}, ${y.toFixed(0)})`);
-    return { x: x * SCALE_FACTOR, y: y * SCALE_FACTOR };
-}
-
-function addItem(inventory: PlayerInventory, rarity: string, type: string, count: number) {
-    if (!inventory[rarity]) {
-        inventory[rarity] = {};
-    }
-    if (!inventory[rarity][type]) {
-        inventory[rarity][type] = 0;
-    }
-    inventory[rarity][type] += count;
-}
-
-function removeItem(inventory: PlayerInventory, rarity: string, type: string, count: number): boolean {
-    if (inventory[rarity] && inventory[rarity][type] && inventory[rarity][type] >= count) {
-        inventory[rarity][type] -= count;
-        if (inventory[rarity][type] === 0) {
-            delete inventory[rarity][type];
-            if (Object.keys(inventory[rarity]).length === 0) {
-                delete inventory[rarity];
-            }
-        }
-        return true;
-    }
-    return false;
-}
-
-function hasItem(inventory: PlayerInventory, rarity: string, type: string, count: number): boolean {
-    return inventory[rarity]?.[type] >= count;
-}
+// Helper functions moved to playerManager module - using imports
 
 
 // Initialize enemies - now only spawn when players connect
@@ -1576,100 +1272,39 @@ const RARITY_TP_COSTS: Record<string, number> = {
     unique: 26
 };
 
-// Helper function to get skill multiplier
-function getSkillMultiplier(skillTier: string | undefined): number {
-    if (!skillTier) return 1.0;
-    return SKILL_MULTIPLIERS[skillTier] || 1.0;
-}
-
-// Helper function to apply petal health bonus
-function applyPetalHealthBonus(petal: Item | null, player: ServerPlayer): void {
-    if (!petal || petal.type !== 'petal' || !petal.petalType) return;
-    
-    const petalHealthMultiplier = getSkillMultiplier(player.skills?.petalHealth);
-    const petalStats = getPetalStats(petal.petalType, petal.rarity || 'common');
-    if (petalStats) {
-        const baseMaxHealth = petalStats.health;
-        petal.maxHealth = Math.round(baseMaxHealth * petalHealthMultiplier);
-        // Ensure current health doesn't exceed new max
-        if (petal.health !== undefined && petal.health > petal.maxHealth) {
-            petal.health = petal.maxHealth;
-        }
-    }
-}
-
-// XP and level management functions
+// Functions moved to playerManager module - using imports
+// Wrapper for addXPToPlayer that passes io and handles additional events
 export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: string): void {
-    // Calculate current total XP
-    const currentTotalXP = calculateTotalXP(player.level, player.xp);
-    // Add the new XP
-    const newTotalXP = currentTotalXP + xp;
+    addXPToPlayerModule(player, xp, socketId, ioInstance);
     
-    // Calculate new level from total XP
-    const oldLevel = player.level;
-    const newLevel = calculateLevelFromTotalXP(newTotalXP);
-    const newCurrentLevelXP = calculateCurrentLevelXP(newTotalXP, newLevel);
-    
-    // Update player stats
-    player.xp = newCurrentLevelXP;
-    player.level = newLevel;
-    player.xpToNextLevel = calculateXPRequirement(newLevel);
-    
-    // Check if level increased and handle level ups
-    if (newLevel > oldLevel) {
-        // Award TP for each level gained (1 TP per level)
-        const levelsGained = newLevel - oldLevel;
-        if (!player.tp) player.tp = 0;
-        player.tp += levelsGained;
-        
-        // Initialize skills if not present
-        if (!player.skills) {
-            player.skills = {};
-        }
-        
-        // Update maxHealth and damage based on new level and skills (using multipliers)
-        const healthMultiplier = getSkillMultiplier(player.skills.playerHealth);
-        const damageMultiplier = getSkillMultiplier(player.skills.damage);
-        player.maxHealth = Math.round(calculateMaxHealthFromLevel(newLevel) * healthMultiplier);
-        player.damage = Math.round(calculateDamageFromLevel(newLevel) * damageMultiplier);
-        // Heal to full when leveling up
-        player.health = player.maxHealth;
-        
-        // Emit level up event for each level gained
-        for (let level = oldLevel + 1; level <= newLevel; level++) {
-            io.emit('levelUp', {
+    // Emit xpGained event
+    ioInstance.emit('xpGained', {
                 playerId: player.id,
-                level: level,
-                maxHealth: calculateMaxHealthFromLevel(level),
-                damage: calculateDamageFromLevel(level)
-            });
-        }
-        
-        // Emit skills update
-        io.emit('skillsUpdated', {
-            playerId: player.id,
-            tp: player.tp,
-            skills: player.skills
-        });
-    }
-
-    // Save progress after XP gain if we have the socket ID
-    if (socketId) {
-        const socket = Array.from(io.sockets.sockets.values()).find(s => s.id === socketId) as AuthenticatedSocket;
-        if (socket?.userId) {
-            savePlayerProgress(player, socket.userId);
-        }
-    }
-
-    io.emit('xpGained', {
-        playerId: player.id,
         xp: xp,
-        totalXp: newCurrentLevelXP,
+        totalXp: player.xp,
         level: player.level,
         xpToNextLevel: player.xpToNextLevel,
         maxHealth: player.maxHealth,
         damage: player.damage
     });
+
+    // Save progress after XP gain if we have the socket ID
+    if (socketId) {
+        const socket = Array.from(ioInstance.sockets.sockets.values()).find((s: any) => s.id === socketId) as AuthenticatedSocket;
+        if (socket?.userId) {
+            savePlayerProgressModule(player, socket.userId, database);
+        }
+    }
+}
+
+// Wrapper for respawnPlayer that passes io
+function respawnPlayer(player: ServerPlayer) {
+    respawnPlayerModule(player, ioInstance);
+}
+
+// Wrapper for savePlayerProgress that passes database
+function savePlayerProgress(player: ServerPlayer, userId: string) {
+    savePlayerProgressModule(player, userId, database);
 }
 
 io.on('connection', (socket: AuthenticatedSocket) => {
@@ -2366,77 +2001,110 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     });
 
     socket.on('craftItems', (data: { items: Item[] }) => {
-        const player = players[socket.id];
-        if (!player) return;
-
-        if (data.items.length < 5 || data.items.length % 5 !== 0) {
-            socket.emit('craftingFailed', 'Invalid number of items for crafting');
-            return;
-        }
-
-        const firstItem = data.items[0];
-        const { type, rarity, petalType } = firstItem;
-
-        if (!rarity) return;
-
-        const itemKey = type === 'petal' && petalType ? `petal_${petalType}` : type;
-
-        const validCraft = data.items.every(item =>
-            item.type === type && item.rarity === rarity && item.petalType === petalType
-        );
-
-        if (!validCraft) {
-            socket.emit('craftingFailed', 'Items must be of same type and rarity');
-            return;
-        }
-
-        if (!hasItem(player.inventory, rarity, itemKey, data.items.length)) {
-            socket.emit('craftingFailed', 'Not enough items to craft');
-            return;
-        }
-
-        const rarityUpgrades: Record<string, string> = {
-            common: 'uncommon',
-            uncommon: 'rare',
-            rare: 'epic',
-            epic: 'legendary',
-            legendary: 'mythic',
-            mythic: 'ultra',
-            ultra: 'super',
-            super: 'unique'
-        };
-
-        const newRarity = rarityUpgrades[rarity];
-        if (!newRarity) {
-            socket.emit('craftingFailed', 'Cannot upgrade unique items');
-            return;
-        }
-
-        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
-        const rarityIndex = rarities.indexOf(rarity);
-        const baseChance = 64;
-        const successChance = baseChance / Math.pow(2, rarityIndex);
-        
-        removeItem(player.inventory, rarity, itemKey, data.items.length);
-
-        let successfulCrafts = 0;
-        const numBatches = data.items.length / 5;
-        for (let i = 0; i < numBatches; i++) {
-            if (Math.random() * 100 < successChance) {
-                successfulCrafts++;
+        try {
+            console.log('[CRAFT] Craft request received:', { itemCount: data.items?.length, playerId: socket.id });
+            
+            const player = players[socket.id];
+            if (!player) {
+                console.log('[CRAFT] Player not found');
+                socket.emit('craftingFailed', 'Player not found');
+                return;
             }
-        }
 
-        if (successfulCrafts > 0) {
-            addItem(player.inventory, newRarity, itemKey, successfulCrafts);
-        }
+            if (!data.items || data.items.length < 5 || data.items.length % 5 !== 0) {
+                console.log('[CRAFT] Invalid item count:', data.items?.length);
+                socket.emit('craftingFailed', 'Invalid number of items for crafting');
+                return;
+            }
 
-        socket.emit('craftingFinished', {
-            successCount: successfulCrafts,
-            failCount: numBatches - successfulCrafts,
-            newItem: { type: itemKey, rarity: newRarity },
-            inventory: player.inventory
-        });
+            const firstItem = data.items[0];
+            const { type, rarity, petalType } = firstItem;
+
+            if (!rarity) {
+                console.log('[CRAFT] Missing rarity');
+                socket.emit('craftingFailed', 'Items must have a rarity');
+                return;
+            }
+
+            // Use the same format as when items are picked up: `${type}_${petalType}` for petals
+            const itemKey = type === 'petal' && petalType ? `${type}_${petalType}` : type;
+            console.log('[CRAFT] Crafting:', { type, rarity, petalType, itemKey, itemCount: data.items.length });
+
+            const validCraft = data.items.every(item =>
+                item.type === type && item.rarity === rarity && item.petalType === petalType
+            );
+
+            if (!validCraft) {
+                console.log('[CRAFT] Invalid craft - items not matching');
+                socket.emit('craftingFailed', 'Items must be of same type and rarity');
+                return;
+            }
+
+            if (!hasItem(player.inventory, rarity, itemKey, data.items.length)) {
+                console.log('[CRAFT] Not enough items in inventory');
+                socket.emit('craftingFailed', 'Not enough items to craft');
+                return;
+            }
+
+            const rarityUpgrades: Record<string, string> = {
+                common: 'uncommon',
+                uncommon: 'rare',
+                rare: 'epic',
+                epic: 'legendary',
+                legendary: 'mythic',
+                mythic: 'ultra',
+                ultra: 'super',
+                super: 'unique'
+            };
+
+            const newRarity = rarityUpgrades[rarity];
+            if (!newRarity) {
+                console.log('[CRAFT] Cannot upgrade unique items');
+                socket.emit('craftingFailed', 'Cannot upgrade unique items');
+                return;
+            }
+
+            const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+            const rarityIndex = rarities.indexOf(rarity);
+            const baseChance = 64;
+            const successChance = baseChance / Math.pow(2, rarityIndex);
+            
+            // Remove items from inventory - check if removal was successful
+            const removed = removeItem(player.inventory, rarity, itemKey, data.items.length);
+            if (!removed) {
+                console.log('[CRAFT] Failed to remove items from inventory');
+                socket.emit('craftingFailed', 'Failed to remove items from inventory');
+                return;
+            }
+
+            let successfulCrafts = 0;
+            const numBatches = data.items.length / 5;
+            for (let i = 0; i < numBatches; i++) {
+                if (Math.random() * 100 < successChance) {
+                    successfulCrafts++;
+                }
+            }
+
+            if (successfulCrafts > 0) {
+                addItem(player.inventory, newRarity, itemKey, successfulCrafts);
+            }
+
+            console.log('[CRAFT] Crafting complete:', { successfulCrafts, failCount: numBatches - successfulCrafts, newRarity });
+
+            // Always emit craftingFinished, even if all crafts failed
+            // This ensures the client gets feedback and updates inventory
+            socket.emit('craftingFinished', {
+                successCount: successfulCrafts,
+                failCount: numBatches - successfulCrafts,
+                newItem: successfulCrafts > 0 ? { type: itemKey, rarity: newRarity } : { type: itemKey, rarity: rarity },
+                inventory: player.inventory
+            });
+            
+            console.log('[CRAFT] craftingFinished event emitted');
+        } catch (error) {
+            console.error('[CRAFT] Error during crafting:', error);
+            socket.emit('craftingFailed', 'An error occurred during crafting');
+        }
     });
 });
 
@@ -3755,49 +3423,7 @@ server.listen(PORT, () => {
     console.log(`Server is running on ${SERVER_PROTOCOL}://localhost:${PORT}`);
 });
 
-// Add XP calculation functions
-function calculateXPRequirement(level: number): number {
-    return Math.floor(BASE_XP_REQUIREMENT * Math.pow(XP_MULTIPLIER, level - 1));
-}
-
-// Calculate total XP from level and current level XP
-function calculateTotalXP(level: number, currentLevelXP: number): number {
-    let totalXP = currentLevelXP;
-    for (let i = 1; i < level; i++) {
-        totalXP += calculateXPRequirement(i);
-    }
-    return totalXP;
-}
-
-// Calculate level from total XP
-function calculateLevelFromTotalXP(totalXP: number): number {
-    let level = 1;
-    let xpNeeded = 0;
-    while (xpNeeded + calculateXPRequirement(level) <= totalXP) {
-        xpNeeded += calculateXPRequirement(level);
-        level++;
-    }
-    return level;
-}
-
-// Calculate current level XP from total XP
-function calculateCurrentLevelXP(totalXP: number, level: number): number {
-    let xpNeeded = 0;
-    for (let i = 1; i < level; i++) {
-        xpNeeded += calculateXPRequirement(i);
-    }
-    return totalXP - xpNeeded;
-}
-
-// Calculate max health from level
-function calculateMaxHealthFromLevel(level: number): number {
-    return PLAYER_MAX_HEALTH + Math.ceil(Math.pow(level, 1.5) * HEALTH_PER_LEVEL);
-}
-
-// Calculate damage from level
-function calculateDamageFromLevel(level: number): number {
-    return PLAYER_DAMAGE + Math.ceil(Math.pow(level, 1.5) * DAMAGE_PER_LEVEL);
-}
+// XP calculation functions moved to playerManager module - using imports
 
 // Cross-server player transfer functionality
 async function transferPlayerToServer(player: ServerPlayer, targetServerPort: number, targetX: number, targetY: number): Promise<boolean> {
@@ -4047,41 +3673,7 @@ setInterval(() => {
     updateTargetDummyDPS();
 }, 1000); // 1 second
 
-// Move savePlayerProgress outside the socket connection handler
-function savePlayerProgress(player: ServerPlayer, userId: string) {
-    if (userId) {
-        // console.log('Saving player progress for userId:', userId);
-
-        // Calculate total XP from current level and XP
-        const totalXP = calculateTotalXP(player.level, player.xp);
-
-        // Filter loadout to only save type and rarity (not status fields)
-        const cleanLoadout = (player.loadout || []).map(item => {
-            if (!item) return null;
-            return {
-                type: item.type,
-                rarity: item.rarity,
-                petalType: item.petalType
-            };
-        });
-
-        const saveResult = database.savePlayer(userId, {
-            totalXP: totalXP,
-            inventory: player.inventory,
-            loadout: cleanLoadout,
-            tp: player.tp || 0,
-            skills: player.skills || {}
-        } as any);
-
-        // if (saveResult) {
-        //     console.log('Successfully saved player progress');
-        // } else {
-        //     console.error('Failed to save player progress');
-        // }
-    } else {
-        // console.warn('Attempted to save player progress without userId');
-    }
-}
+// savePlayerProgress moved to playerManager module - using wrapper function defined earlier
 
 // Add periodic saving
 const SAVE_INTERVAL = 60000; // Save every minute
@@ -4160,8 +3752,8 @@ process.stdin.on('data', (data) => {
     } else if (command.startsWith('set_max_enemies')) {
         const newCount = parseInt(command.split(' ')[1]);
         if (!isNaN(newCount) && newCount >= 0) {
-            ENEMY_COUNT = newCount;
-            console.log(`Max enemies set to ${ENEMY_COUNT}`);
+            ENEMY_COUNT.value = newCount;
+            console.log(`Max enemies set to ${ENEMY_COUNT.value}`);
             adjustEnemyCount();
         } else {
             console.log('Invalid enemy count. Please provide a valid number.');
@@ -4174,7 +3766,7 @@ process.stdin.on('data', (data) => {
 // Add this function after the command handler
 function adjustEnemyCount() {
     const playerCount = Object.keys(players).length;
-    const targetEnemyCount = playerCount > 0 ? ENEMIES_PER_VIEWPORT * playerCount : ENEMY_COUNT;
+    const targetEnemyCount = playerCount > 0 ? ENEMIES_PER_VIEWPORT * playerCount : ENEMY_COUNT.value;
     
     // Remove excess enemies if current count is higher than target
     while (enemies.length > targetEnemyCount) {

@@ -643,10 +643,31 @@ function setupSocketListeners(game) {
         game.showSaveIndicator();
     });
     game.socket.on('craftingFinished', (data) => {
+        console.log('[CLIENT] craftingFinished received:', data);
         const player = game.players.get(game.socket?.id || '');
         if (player) {
             player.inventory = data.inventory;
             if (data.successCount > 0) {
+                // Show success display in crafting panel
+                if (game.inventoryManager.isCraftingOpen) {
+                    // Parse item type and petalType from itemKey
+                    const itemKey = data.newItem.type;
+                    let itemType = 'petal';
+                    let petalType;
+                    if (itemKey.startsWith('petal_')) {
+                        itemType = 'petal';
+                        petalType = itemKey.substring(6);
+                    }
+                    else {
+                        itemType = itemKey;
+                    }
+                    const displayItem = {
+                        type: itemType,
+                        rarity: data.newItem.rarity,
+                        petalType: petalType
+                    };
+                    game.inventoryManager.showCraftingSuccess(displayItem, data.successCount);
+                }
                 game.showFloatingText(game.canvas.width / 2, 50, `Successfully crafted ${data.successCount}x ${data.newItem.rarity} ${data.newItem.type}!`, game.ITEM_RARITY_COLORS[data.newItem.rarity || 'common'], 24);
             }
             if (data.failCount > 0) {
@@ -655,6 +676,13 @@ function setupSocketListeners(game) {
             if (game.inventoryManager.isCraftingOpen) {
                 game.inventoryManager.updateCraftingDisplay();
             }
+        }
+    });
+    game.socket.on('craftingFailed', (message) => {
+        console.log('[CLIENT] craftingFailed received:', message);
+        game.showFloatingText(game.canvas.width / 2, 50, `Crafting failed: ${message}`, '#FF0000', 20);
+        if (game.inventoryManager.isCraftingOpen) {
+            game.inventoryManager.updateCraftingDisplay();
         }
     });
     // Listen for server game state updates for better synchronization
