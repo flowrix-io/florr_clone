@@ -1,0 +1,661 @@
+import { Server as SocketIOServer } from 'socket.io';
+import { Enemy } from '../server_utils';
+import { 
+    players,
+    enemies
+} from '../constants';
+import { 
+    ultraMobCount,
+    superMobCount,
+    uniqueMobCount
+} from './gameState';
+import {
+    WORLD_MAP,
+    ENEMY_TIERS,
+    ACTUAL_WORLD_WIDTH,
+    ACTUAL_WORLD_HEIGHT,
+    SCALE_FACTOR,
+    VIEWPORT_BUFFER,
+    VIEWPORT_WIDTH,
+    VIEWPORT_HEIGHT,
+    ORIGINAL_ENEMY_COUNT,
+    TOTAL_WORLD_AREA,
+    MapElement,
+    BiomeSpawnEntry
+} from '../constants';
+import { getMobStats, getAllMobTypes } from '../mobs';
+
+// Helper function to get spawn zone type for a given position
+function getSpawnZoneType(x: number, y: number): string | null {
+    for (const element of WORLD_MAP) {
+        if (element.type === 'spawn' && element.properties?.spawnType) {
+            const scaledX = x / SCALE_FACTOR;
+            const scaledY = y / SCALE_FACTOR;
+            
+            if (scaledX >= element.x && 
+                scaledX <= element.x + element.width && 
+                scaledY >= element.y && 
+                scaledY <= element.y + element.height) {
+                return element.properties.spawnType;
+            }
+        }
+    }
+    return null; // Not in any spawn zone
+}
+
+// Helper function to get biome at a given position
+function getBiomeAtPosition(x: number, y: number): MapElement | null {
+    for (const element of WORLD_MAP) {
+        if (element.type === 'biome') {
+            const scaledX = x / SCALE_FACTOR;
+            const scaledY = y / SCALE_FACTOR;
+            
+            if (scaledX >= element.x && 
+                scaledX <= element.x + element.width && 
+                scaledY >= element.y && 
+                scaledY <= element.y + element.height) {
+                return element;
+            }
+        }
+    }
+    return null; // Not in any biome
+}
+
+// Helper function to select a spawn from a biome's spawn table
+function selectSpawnFromBiomeTable(spawnTable: BiomeSpawnEntry[]): { mobType: string | undefined, tier: Enemy['tier'] } | null {
+    if (!spawnTable || spawnTable.length === 0) return null;
+    
+    // Calculate total weight
+    const totalWeight = spawnTable.reduce((sum, entry) => sum + entry.weight, 0);
+    
+    // Random selection based on weights
+    let random = Math.random() * totalWeight;
+    
+    for (const entry of spawnTable) {
+        random -= entry.weight;
+        if (random <= 0) {
+            return {
+                mobType: entry.mobType,
+                tier: entry.tier
+            };
+        }
+    }
+    
+    // Fallback to first entry
+    return {
+        mobType: spawnTable[0].mobType,
+        tier: spawnTable[0].tier
+    };
+}
+
+// Helper function to get random position in a specific zone type
+function getRandomPositionInZoneType(zoneType: string): { x: number, y: number } | null {
+    const zones = WORLD_MAP.filter(element => 
+        element.type === 'spawn' && 
+        element.properties?.spawnType === zoneType
+    );
+    
+    if (zones.length === 0) return null;
+    
+    const zone = zones[Math.floor(Math.random() * zones.length)];
+    let x = (zone.x + Math.random() * zone.width) * SCALE_FACTOR;
+    let y = (zone.y + Math.random() * zone.height) * SCALE_FACTOR;
+    
+    // Ensure position is within world boundaries
+    x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
+    y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
+    
+    return { x, y };
+}
+
+// Helper functions that need to be passed from server.ts
+export interface EnemySpawnerHelpers {
+    getPlayerViewports: () => Array<{x: number, y: number, width: number, height: number}>;
+    isPositionInPlayerPetalRange: (x: number, y: number, mobSize: number) => boolean;
+    getEnemiesInViewportCount: () => number;
+}
+
+/**
+ * Create a new enemy at a valid position
+ */
+export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
+    const playerCount = Object.keys(players).length;
+    
+    // Don't spawn if no players are connected
+    if (playerCount === 0) {
+        return null as any;
+    }
+    
+    // Calculate target enemy count based on viewport density
+    const viewports = helpers.getPlayerViewports();
+    const totalViewportArea = viewports.reduce((total, viewport) => {
+        const extendedViewport = {
+            x: viewport.x - VIEWPORT_BUFFER,
+            y: viewport.y - VIEWPORT_BUFFER,
+            width: viewport.width + (VIEWPORT_BUFFER * 2),
+            height: viewport.height + (VIEWPORT_BUFFER * 2)
+        };
+        return total + (extendedViewport.width * extendedViewport.height);
+    }, 0);
+    
+    // Calculate target density: same as 9000 enemies across the whole world (9x density)
+    const targetDensity = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;
+    const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
+    
+    // Don't spawn if we already have enough enemies in viewport
+    if (helpers.getEnemiesInViewportCount() >= targetEnemyCount) {
+        return null as any;
+    }
+
+    let validPosition = false;
+    let x = 0, y = 0;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 100; // Increased attempts for viewport-only spawning
+
+    while (!validPosition && attempts < MAX_ATTEMPTS) {
+        attempts++;
+        
+        // Pick a random player and spawn near their viewport
+        const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
+        const player = players[randomPlayerId];
+        
+        // Generate position within player's viewport (with buffer)
+        const viewportBuffer = VIEWPORT_BUFFER;
+        const minX = player.x - VIEWPORT_WIDTH/2 - viewportBuffer;
+        const maxX = player.x + VIEWPORT_WIDTH/2 + viewportBuffer;
+        const minY = player.y - VIEWPORT_HEIGHT/2 - viewportBuffer;
+        const maxY = player.y + VIEWPORT_HEIGHT/2 + viewportBuffer;
+        
+        x = minX + Math.random() * (maxX - minX);
+        y = minY + Math.random() * (maxY - minY);
+        
+        // Clamp to world boundaries
+        x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
+        y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
+
+        // Check if position is in a safe zone
+        const inSafeZone = WORLD_MAP.some(element =>
+            element.type === 'safe_zone' &&
+            x >= element.x * SCALE_FACTOR &&
+            x <= (element.x + element.width) * SCALE_FACTOR &&
+            y >= element.y * SCALE_FACTOR &&
+            y <= (element.y + element.height) * SCALE_FACTOR
+        );
+
+        // Check if position collides with walls
+        const collidesWithWall = WORLD_MAP.some(element =>
+            element.type === 'wall' &&
+            x >= element.x * SCALE_FACTOR &&
+            x <= (element.x + element.width) * SCALE_FACTOR &&
+            y >= element.y * SCALE_FACTOR &&
+            y <= (element.y + element.height) * SCALE_FACTOR
+        );
+
+        if (!inSafeZone && !collidesWithWall) {
+            validPosition = true;
+        }
+    }
+
+    // If we couldn't find a valid position, return null
+    if (!validPosition) {
+        return null as any;
+    }
+
+    // Check if position is in a biome first
+    const biome = getBiomeAtPosition(x, y);
+    let tier: Enemy['tier'] = 'common';
+    let mobType: Enemy['type'];
+
+    if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
+        // In a biome - use the biome's spawn table
+        const spawnSelection = selectSpawnFromBiomeTable(biome.properties.spawnTable);
+        
+        if (spawnSelection) {
+            tier = spawnSelection.tier;
+            
+            // If spawn table specifies a mob type, use it; otherwise pick randomly
+            if (spawnSelection.mobType) {
+                mobType = spawnSelection.mobType as Enemy['type'];
+                
+                // For target dummies, check if one of this tier already exists
+                if (mobType === 'target_dummy') {
+                    const existingDummy = enemies.find((e: Enemy) => e.type === 'target_dummy' && e.tier === tier);
+                    if (existingDummy) {
+                        // Target dummy of this tier already exists, don't spawn another
+                        return null as any;
+                    }
+                }
+            } else {
+                const allMobTypes = getAllMobTypes();
+                if (allMobTypes.length === 0) {
+                    console.error("No mob types found in MOB_CONFIG.");
+                    return null as any;
+                }
+                // Filter out target_dummy from random selection (they should only spawn from explicit spawn table entries)
+                const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+                if (eligibleMobTypes.length === 0) {
+                    console.error("No eligible mob types found (excluding target dummies).");
+                    return null as any;
+                }
+                mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
+            }
+        } else {
+            // Fallback if spawn table selection fails
+            const allMobTypes = getAllMobTypes();
+            if (allMobTypes.length === 0) {
+                console.error("No mob types found in MOB_CONFIG.");
+                return null as any;
+            }
+            // Filter out target_dummy from random selection
+            const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+            if (eligibleMobTypes.length === 0) {
+                console.error("No eligible mob types found (excluding target dummies).");
+                return null as any;
+            }
+            mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
+        }
+    } else {
+        // Check if position is in a spawn zone
+        const spawnZoneType = getSpawnZoneType(x, y);
+
+        if (spawnZoneType) {
+            // In a spawn zone - only spawn the specific rarity for this zone
+            tier = spawnZoneType as Enemy['tier'];
+        } else {
+            // Outside spawn zones and biomes - use normal probability distribution
+            const tierRoll = Math.random();
+            let cumulativeProbability = 0;
+
+            for (const [t, data] of Object.entries(ENEMY_TIERS)) {
+                cumulativeProbability += data.probability;
+                if (tierRoll < cumulativeProbability) {
+                    tier = t as Enemy['tier'];
+                    break;
+                }
+            }
+        }
+
+        // Select mob type (fish, octopus, or shark)
+        // Filter out biome-only mobs when spawning outside biomes
+        const allMobTypes = getAllMobTypes();
+        if (allMobTypes.length === 0) {
+            console.error("No mob types found in MOB_CONFIG.");
+            return null as any;
+        }
+        
+        // Filter to only allow non-biome-only mobs in regular spawn zones
+        // Also exclude target_dummy (they should only spawn from explicit map biome entries)
+        const eligibleMobTypes = allMobTypes.filter(type => {
+            if (type === 'target_dummy') {
+                return false; // Never spawn target dummies as normal mobs
+            }
+            const stats = getMobStats(type, tier);
+            return stats && !stats.biomeOnly;
+        });
+        
+        if (eligibleMobTypes.length === 0) {
+            // No eligible mobs for this tier outside biomes
+            return null as any;
+        }
+        
+        mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
+    }
+
+    // Get mob stats from config
+    const mobStats = getMobStats(mobType, tier);
+    if (!mobStats) {
+        console.error(`No mob stats found for ${mobType} ${tier}`);
+        return null as any;
+    }
+
+    // Check if the spawn position would overlap with any player's petal range
+    const mobSize = mobStats.size * 40;
+    if (helpers.isPositionInPlayerPetalRange(x, y, mobSize)) {
+        // Position is too close to player petal range, try to find a new position
+        let newValidPosition = false;
+        let newAttempts = 0;
+        const MAX_NEW_ATTEMPTS = 50;
+        
+        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
+            newAttempts++;
+            
+            // Pick a random player and spawn near their viewport
+            const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
+            const player = players[randomPlayerId];
+            
+            // Generate position within player's viewport (with buffer)
+            const viewportBuffer = VIEWPORT_BUFFER;
+            const minX = player.x - VIEWPORT_WIDTH/2 - viewportBuffer;
+            const maxX = player.x + VIEWPORT_WIDTH/2 + viewportBuffer;
+            const minY = player.y - VIEWPORT_HEIGHT/2 - viewportBuffer;
+            const maxY = player.y + VIEWPORT_HEIGHT/2 + viewportBuffer;
+            
+            x = minX + Math.random() * (maxX - minX);
+            y = minY + Math.random() * (maxY - minY);
+            
+            // Clamp to world boundaries
+            x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
+            y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
+
+            // Check if position is in a safe zone
+            const inSafeZone = WORLD_MAP.some(element =>
+                element.type === 'safe_zone' &&
+                x >= element.x * SCALE_FACTOR &&
+                x <= (element.x + element.width) * SCALE_FACTOR &&
+                y >= element.y * SCALE_FACTOR &&
+                y <= (element.y + element.height) * SCALE_FACTOR
+            );
+
+            // Check if position collides with walls
+            const collidesWithWall = WORLD_MAP.some(element =>
+                element.type === 'wall' &&
+                x >= element.x * SCALE_FACTOR &&
+                x <= (element.x + element.width) * SCALE_FACTOR &&
+                y >= element.y * SCALE_FACTOR &&
+                y <= (element.y + element.height) * SCALE_FACTOR
+            );
+
+            // Check if position is safe from petal range
+            const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, mobSize);
+
+            if (!inSafeZone && !collidesWithWall && !inPetalRange) {
+                newValidPosition = true;
+            }
+        }
+        
+        // If we still couldn't find a valid position, return null
+        if (!newValidPosition) {
+            return null as any;
+        }
+    }
+
+    // Check if spawn position is too close to other mobs
+    const MIN_MOB_SPAWN_DISTANCE = 80; // Minimum distance between mob spawns (2x base mob size)
+    const halfMobSize = mobSize / 2;
+    const tooCloseToOtherMob = enemies.some((otherEnemy: Enemy) => {
+        const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
+        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
+        const otherHalfSize = otherMobSize / 2;
+        
+        const dx = otherEnemy.x - x;
+        const dy = otherEnemy.y - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const minDistance = halfMobSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
+        
+        return distance < minDistance;
+    });
+
+    if (tooCloseToOtherMob) {
+        // Position is too close to another mob, try to find a new position
+        let newValidPosition = false;
+        let newAttempts = 0;
+        const MAX_NEW_ATTEMPTS = 50;
+        
+        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
+            newAttempts++;
+            
+            // Pick a random player and spawn near their viewport
+            const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
+            const player = players[randomPlayerId];
+            
+            // Generate position within player's viewport (with buffer)
+            const viewportBuffer = VIEWPORT_BUFFER;
+            const minX = player.x - VIEWPORT_WIDTH/2 - viewportBuffer;
+            const maxX = player.x + VIEWPORT_WIDTH/2 + viewportBuffer;
+            const minY = player.y - VIEWPORT_HEIGHT/2 - viewportBuffer;
+            const maxY = player.y + VIEWPORT_HEIGHT/2 + viewportBuffer;
+            
+            x = minX + Math.random() * (maxX - minX);
+            y = minY + Math.random() * (maxY - minY);
+            
+            // Clamp to world boundaries
+            x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
+            y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
+
+            // Check if position is in a safe zone
+            const inSafeZone = WORLD_MAP.some(element =>
+                element.type === 'safe_zone' &&
+                x >= element.x * SCALE_FACTOR &&
+                x <= (element.x + element.width) * SCALE_FACTOR &&
+                y >= element.y * SCALE_FACTOR &&
+                y <= (element.y + element.height) * SCALE_FACTOR
+            );
+
+            // Check if position collides with walls
+            const collidesWithWall = WORLD_MAP.some(element =>
+                element.type === 'wall' &&
+                x >= element.x * SCALE_FACTOR &&
+                x <= (element.x + element.width) * SCALE_FACTOR &&
+                y >= element.y * SCALE_FACTOR &&
+                y <= (element.y + element.height) * SCALE_FACTOR
+            );
+
+            // Check if position is safe from petal range
+            const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, mobSize);
+
+            // Check if position is far enough from other mobs
+            const tooClose = enemies.some((otherEnemy: Enemy) => {
+                const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
+                const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
+                const otherHalfSize = otherMobSize / 2;
+                
+                const dx = otherEnemy.x - x;
+                const dy = otherEnemy.y - y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const minDistance = halfMobSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
+                
+                return distance < minDistance;
+            });
+
+            if (!inSafeZone && !collidesWithWall && !inPetalRange && !tooClose) {
+                newValidPosition = true;
+            }
+        }
+        
+        // If we still couldn't find a valid position, return null
+        if (!newValidPosition) {
+            return null as any;
+        }
+    }
+
+    const currentTime = Date.now();
+    const enemy: Enemy = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: mobType,
+        tier,
+        x,
+        y,
+        angle: Math.random() * Math.PI * 2,
+        health: mobStats.health,
+        maxHealth: mobStats.health,
+        speed: mobStats.speed,
+        damage: mobStats.damage,
+        knockbackX: 0,
+        knockbackY: 0,
+        isHostile: mobStats.is_hostile,
+        range: mobStats.range,
+        spawnTime: currentTime,
+        lastViewportCheck: currentTime  // Mark as in viewport since we spawned it there
+    };
+    
+    // Initialize DPS tracking for target dummies
+    if (mobType === 'target_dummy') {
+        enemy.dpsStartTime = currentTime;
+        enemy.dpsHistory = [];
+        enemy.currentDPS = 0;
+    }
+    
+    return enemy;
+}
+
+/**
+ * Function to create special mobs (ultra, super, unique)
+ */
+export function createSpecialMob(
+    tier: 'ultra' | 'super' | 'unique',
+    helpers: EnemySpawnerHelpers
+): Enemy | null {
+    let zoneType: string;
+    
+    if (tier === 'ultra') {
+        zoneType = 'legendary';
+    } else if (tier === 'super') {
+        zoneType = 'mythic';
+    } else { // unique
+        zoneType = 'mythic';
+    }
+    
+    const position = getRandomPositionInZoneType(zoneType);
+    if (!position) {
+        console.error(`No ${zoneType} zones found for ${tier} mob spawning`);
+        return null;
+    }
+    
+    const allMobTypes = getAllMobTypes();
+    if (allMobTypes.length === 0) {
+        console.error("No mob types found in MOB_CONFIG.");
+        return null;
+    }
+    
+    // Filter out target_dummy from boss mob spawning
+    const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+    if (eligibleMobTypes.length === 0) {
+        console.error("No eligible mob types found for boss spawning (excluding target dummies).");
+        return null;
+    }
+    
+    const mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
+    const mobStats = getMobStats(mobType, tier);
+    
+    if (!mobStats) {
+        console.error(`No mob stats found for ${mobType} ${tier}`);
+        return null;
+    }
+    
+    // Check if the spawn position would overlap with any player's petal range
+    const mobSize = mobStats.size * 40;
+    if (helpers.isPositionInPlayerPetalRange(position.x, position.y, mobSize)) {
+        // Position is too close to player petal range, try to find a new position
+        let newValidPosition = false;
+        let newAttempts = 0;
+        const MAX_NEW_ATTEMPTS = 50;
+        
+        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
+            newAttempts++;
+            
+            // Try to find a new position in the same zone type
+            const newPosition = getRandomPositionInZoneType(zoneType);
+            if (!newPosition) {
+                continue; // Try again
+            }
+            
+            // Check if the new position is safe from petal range
+            const inPetalRange = helpers.isPositionInPlayerPetalRange(newPosition.x, newPosition.y, mobSize);
+            
+            if (!inPetalRange) {
+                position.x = newPosition.x;
+                position.y = newPosition.y;
+                newValidPosition = true;
+            }
+        }
+        
+        // If we still couldn't find a valid position, return null
+        if (!newValidPosition) {
+            return null;
+        }
+    }
+    
+    const currentTime = Date.now();
+    return {
+        id: Math.random().toString(36).substr(2, 9),
+        type: mobType,
+        tier: tier,
+        x: position.x,
+        y: position.y,
+        angle: Math.random() * Math.PI * 2,
+        health: mobStats.health,
+        maxHealth: mobStats.health,
+        speed: mobStats.speed,
+        damage: mobStats.damage,
+        knockbackX: 0,
+        knockbackY: 0,
+        isHostile: mobStats.is_hostile,
+        range: mobStats.range
+    };
+}
+
+/**
+ * Function to update special mob counts
+ */
+export function updateSpecialMobCounts() {
+    // Exclude target dummies from boss mob counting
+    ultraMobCount.value = enemies.filter((e: Enemy) => e.tier === 'ultra' && e.type !== 'target_dummy').length;
+    superMobCount.value = enemies.filter((e: Enemy) => e.tier === 'super' && e.type !== 'target_dummy').length;
+    uniqueMobCount.value = enemies.filter((e: Enemy) => e.tier === 'unique' && e.type !== 'target_dummy').length;
+}
+
+/**
+ * Function to spawn special mobs
+ */
+export function spawnSpecialMobs(
+    helpers: EnemySpawnerHelpers,
+    io: SocketIOServer
+) {
+    // Update counts first
+    updateSpecialMobCounts();
+    
+    // Spawn ultra mob if none exists
+    if (ultraMobCount.value === 0) {
+        const ultraMob = createSpecialMob('ultra', helpers);
+        if (ultraMob) {
+            enemies.push(ultraMob);
+            ultraMobCount.value = 1;
+            // Don't send spawn notification for target dummies
+            if (ultraMob.type !== 'target_dummy') {
+                io.emit('chatMessage', {
+                    sender: '',
+                    content: `<b style="color: ${ENEMY_TIERS.ultra.color};">An ultra ${ultraMob.type.replace('_', ' ')} has spawned in a legendary zone!</b>`,
+                    timestamp: Date.now()
+                });
+            }
+            console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
+        }
+    }
+    
+    // Spawn super mob if none exists
+    if (superMobCount.value === 0) {
+        const superMob = createSpecialMob('super', helpers);
+        if (superMob) {
+            enemies.push(superMob);
+            superMobCount.value = 1;
+            // Don't send spawn notification for target dummies
+            if (superMob.type !== 'target_dummy') {
+                io.emit('chatMessage', {
+                    sender: '',
+                    content: `<b style="color: ${ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
+                    timestamp: Date.now()
+                });
+            }
+            console.log(`[SERVER] Spawned super mob: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
+        }
+    }
+    
+    // Spawn unique mob with 1/4 chance if super mob exists
+    if (superMobCount.value > 0 && uniqueMobCount.value === 0 && Math.random() < 0.25) {
+        const uniqueMob = createSpecialMob('unique', helpers);
+        if (uniqueMob) {
+            enemies.push(uniqueMob);
+            uniqueMobCount.value = 1;
+            // Don't send spawn notification for target dummies
+            if (uniqueMob.type !== 'target_dummy') {
+                io.emit('chatMessage', {
+                    sender: '',
+                    content: `<b style="color: ${ENEMY_TIERS.unique.color};">A unique ${uniqueMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
+                    timestamp: Date.now()
+                });
+            }
+            console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);
+        }
+    }
+}
+

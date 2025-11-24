@@ -80,6 +80,14 @@ import {
     addXPToPlayer as addXPToPlayerModule,
     savePlayerProgress as savePlayerProgressModule
 } from './server/playerManager';
+import { setupTransferEndpoints, transferPlayerToServer as transferPlayerToServerModule } from './server/crossServer';
+import { 
+    createEnemy as createEnemyModule, 
+    createSpecialMob as createSpecialMobModule,
+    spawnSpecialMobs as spawnSpecialMobsModule,
+    updateSpecialMobCounts as updateSpecialMobCountsModule,
+    EnemySpawnerHelpers
+} from './server/enemySpawner';
 
 const app = express();
 
@@ -179,81 +187,7 @@ app.post('/auth/logout', (req, res) => {
     res.json({ message: 'Logged out successfully' });
 });
 
-// Cross-server player transfer endpoints
-app.post('/transfer/player', (req, res) => {
-    const { playerData, targetX, targetY } = req.body;
-    
-    if (!playerData) {
-        return res.status(400).json({ message: 'Player data is required' });
-    }
-    
-    try {
-        // Handle incoming player transfer from another server
-        console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Receiving transferred player: ${playerData.name}`);
-        
-        // Create a temporary socket ID for the transferred player
-        const tempSocketId = `transfer_${Date.now()}_${Math.random()}`;
-        
-        // Add the transferred player to this server
-        const transferToken = Math.random().toString(36).substr(2, 9);
-        players[tempSocketId] = {
-            ...playerData,
-            id: tempSocketId,
-            x: targetX || 200,
-            y: targetY || WORLD_HEIGHT / 2,
-            isTransferred: true, // Mark as transferred so client can reconnect
-            transferToken: transferToken // Token for client to claim this player
-        };
-        
-        // Set a timeout to clean up unclaimed transfers after 30 seconds
-        setTimeout(() => {
-            if (players[tempSocketId] && players[tempSocketId].isTransferred) {
-                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Cleaning up unclaimed transfer: ${tempSocketId}`);
-                delete players[tempSocketId];
-            }
-        }, 30000);
-        
-        res.json({ 
-            success: true, 
-            tempPlayerId: tempSocketId,
-            transferToken: players[tempSocketId].transferToken,
-            serverInfo: CURRENT_SERVER_CONFIG
-        });
-        
-    } catch (error) {
-        console.error('Error handling player transfer:', error);
-        res.status(500).json({ message: 'Failed to transfer player' });
-    }
-});
-
-app.post('/transfer/claim', (req, res) => {
-    const { transferToken, newSocketId } = req.body;
-    
-    if (!transferToken || !newSocketId) {
-        return res.status(400).json({ message: 'Transfer token and new socket ID are required' });
-    }
-    
-    // Find the transferred player by token
-    const tempPlayerId = Object.keys(players).find(id => 
-        players[id].transferToken === transferToken && players[id].isTransferred
-    );
-    
-    if (!tempPlayerId) {
-        return res.status(404).json({ message: 'Invalid transfer token or player not found' });
-    }
-    
-    // Move player data to new socket ID
-    const playerData = players[tempPlayerId];
-    delete playerData.isTransferred;
-    delete playerData.transferToken;
-    playerData.id = newSocketId;
-    
-    players[newSocketId] = playerData;
-    delete players[tempPlayerId];
-    
-    console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Player transfer claimed: ${playerData.name} -> ${newSocketId}`);
-    res.json({ success: true, playerData });
-});
+// Cross-server player transfer endpoints - setup will be called after io is created
 
 // Serve static files from the dist directory
 app.use(express.static(path.join(__dirname, '../dist'), {
@@ -308,6 +242,16 @@ const PORT = process.env.PORT || 3000;
 const CURRENT_SERVER_PORT = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
 const SERVER_CONFIGS = getServerConfigs();
 const CURRENT_SERVER_CONFIG = getServerConfigByPort(CURRENT_SERVER_PORT) || { port: CURRENT_SERVER_PORT, host: 'localhost', name: `Server${CURRENT_SERVER_PORT}` };
+
+// Setup cross-server transfer endpoints
+setupTransferEndpoints(app, io, CURRENT_SERVER_CONFIG, CURRENT_SERVER_PORT);
+
+// Create helper functions object for enemy spawner (must be defined before functions that use it)
+const enemySpawnerHelpers: EnemySpawnerHelpers = {
+    getPlayerViewports,
+    isPositionInPlayerPetalRange,
+    getEnemiesInViewportCount
+};
 
 // Remove or comment out these lines since we're not using grid generation anymore
 // const MAZE_CELL_SIZE = 1000;
@@ -671,542 +615,20 @@ function getRandomPositionInZoneType(zoneType: string): { x: number, y: number }
     return { x, y };
 }
 
-// Function to create special mobs (ultra, super, unique)
-function createSpecialMob(tier: 'ultra' | 'super' | 'unique'): Enemy | null {
-    let zoneType: string;
-    
-    if (tier === 'ultra') {
-        zoneType = 'legendary';
-    } else if (tier === 'super') {
-        zoneType = 'mythic';
-    } else { // unique
-        zoneType = 'mythic';
-    }
-    
-    const position = getRandomPositionInZoneType(zoneType);
-    if (!position) {
-        console.error(`No ${zoneType} zones found for ${tier} mob spawning`);
-        return null;
-    }
-    
-    const allMobTypes = getAllMobTypes();
-    if (allMobTypes.length === 0) {
-        console.error("No mob types found in MOB_CONFIG.");
-        return null;
-    }
-    
-    // Filter out target_dummy from boss mob spawning
-    const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
-    if (eligibleMobTypes.length === 0) {
-        console.error("No eligible mob types found for boss spawning (excluding target dummies).");
-        return null;
-    }
-    
-    const mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
-    const mobStats = getMobStats(mobType, tier);
-    
-    if (!mobStats) {
-        console.error(`No mob stats found for ${mobType} ${tier}`);
-        return null;
-    }
-    
-    // Check if the spawn position would overlap with any player's petal range
-    const mobSize = mobStats.size * 40;
-    if (isPositionInPlayerPetalRange(position.x, position.y, mobSize)) {
-        // Position is too close to player petal range, try to find a new position
-        let newValidPosition = false;
-        let newAttempts = 0;
-        const MAX_NEW_ATTEMPTS = 50;
-        
-        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
-            newAttempts++;
-            
-            // Try to find a new position in the same zone type
-            const newPosition = getRandomPositionInZoneType(zoneType);
-            if (!newPosition) {
-                continue; // Try again
-            }
-            
-            // Check if the new position is safe from petal range
-            const inPetalRange = isPositionInPlayerPetalRange(newPosition.x, newPosition.y, mobSize);
-            
-            if (!inPetalRange) {
-                position.x = newPosition.x;
-                position.y = newPosition.y;
-                newValidPosition = true;
-            }
-        }
-        
-        // If we still couldn't find a valid position, return null
-        if (!newValidPosition) {
-            return null;
-        }
-    }
-    
-    const currentTime = Date.now();
-    return {
-        id: Math.random().toString(36).substr(2, 9),
-        type: mobType,
-        tier: tier,
-        x: position.x,
-        y: position.y,
-        angle: Math.random() * Math.PI * 2,
-        health: mobStats.health,
-        maxHealth: mobStats.health,
-        speed: mobStats.speed,
-        damage: mobStats.damage,
-        knockbackX: 0,
-        knockbackY: 0,
-        isHostile: mobStats.is_hostile,
-        range: mobStats.range
-    };
-}
+// createSpecialMob moved to enemySpawner module
 
-// Function to update special mob counts
+// Wrapper functions for enemy spawner
 export function updateSpecialMobCounts() {
-    // Exclude target dummies from boss mob counting
-    ultraMobCount.value = enemies.filter(e => e.tier === 'ultra' && e.type !== 'target_dummy').length;
-    superMobCount.value = enemies.filter(e => e.tier === 'super' && e.type !== 'target_dummy').length;
-    uniqueMobCount.value = enemies.filter(e => e.tier === 'unique' && e.type !== 'target_dummy').length;
+    updateSpecialMobCountsModule();
 }
 
-// Function to spawn special mobs
 function spawnSpecialMobs() {
-    // Update counts first
-    updateSpecialMobCounts();
-    
-    // Spawn ultra mob if none exists
-    if (ultraMobCount.value === 0) {
-        const ultraMob = createSpecialMob('ultra');
-        if (ultraMob) {
-            enemies.push(ultraMob);
-            ultraMobCount.value = 1;
-            // Don't send spawn notification for target dummies
-            if (ultraMob.type !== 'target_dummy') {
-                io.emit('chatMessage', {
-                    sender: '',
-                    content: `<b style="color: ${ENEMY_TIERS.ultra.color};">An ultra ${ultraMob.type.replace('_', ' ')} has spawned in a legendary zone!</b>`,
-                    timestamp: Date.now()
-                });
-            }
-            console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
-        }
-    }
-    
-    // Spawn super mob if none exists
-    if (superMobCount.value === 0) {
-        const superMob = createSpecialMob('super');
-        if (superMob) {
-            enemies.push(superMob);
-            superMobCount.value = 1;
-            // Don't send spawn notification for target dummies
-            if (superMob.type !== 'target_dummy') {
-                io.emit('chatMessage', {
-                    sender: '',
-                    content: `<b style="color: ${ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
-                    timestamp: Date.now()
-                });
-            }
-            console.log(`[SERVER] Spawned super mob: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
-        }
-    }
-    
-    // Spawn unique mob with 1/4 chance if super mob exists
-    if (superMobCount.value > 0 && uniqueMobCount.value === 0 && Math.random() < 0.25) {
-        const uniqueMob = createSpecialMob('unique');
-        if (uniqueMob) {
-            enemies.push(uniqueMob);
-            uniqueMobCount.value = 1;
-            // Don't send spawn notification for target dummies
-            if (uniqueMob.type !== 'target_dummy') {
-                io.emit('chatMessage', {
-                    sender: '',
-                    content: `<b style="color: ${ENEMY_TIERS.unique.color};">A unique ${uniqueMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
-                    timestamp: Date.now()
-                });
-            }
-            console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);
-        }
-    }
+    spawnSpecialMobsModule(enemySpawnerHelpers, io);
 }
 
-// Update the createEnemy function to spawn only in player viewports
-function createEnemy(): Enemy {
-    const playerCount = Object.keys(players).length;
-    
-    // Don't spawn if no players are connected
-    if (playerCount === 0) {
-        return null as any;
-    }
-    
-    // Calculate target enemy count based on viewport density
-    const viewports = getPlayerViewports();
-    const totalViewportArea = viewports.reduce((total, viewport) => {
-        const extendedViewport = {
-            x: viewport.x - VIEWPORT_BUFFER,
-            y: viewport.y - VIEWPORT_BUFFER,
-            width: viewport.width + (VIEWPORT_BUFFER * 2),
-            height: viewport.height + (VIEWPORT_BUFFER * 2)
-        };
-        return total + (extendedViewport.width * extendedViewport.height);
-    }, 0);
-    
-    // Calculate target density: same as 9000 enemies across the whole world (9x density)
-    const targetDensity = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;
-    const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
-    
-    // Don't spawn if we already have enough enemies in viewport
-    if (getEnemiesInViewportCount() >= targetEnemyCount) {
-        return null as any;
-    }
-
-    let validPosition = false;
-    let x = 0, y = 0;
-    let attempts = 0;
-    const MAX_ATTEMPTS = 100; // Increased attempts for viewport-only spawning
-
-    while (!validPosition && attempts < MAX_ATTEMPTS) {
-        attempts++;
-        
-        // Pick a random player and spawn near their viewport
-        const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
-        const player = players[randomPlayerId];
-        
-        // Generate position within player's viewport (with buffer)
-        const viewportBuffer = VIEWPORT_BUFFER;
-        const minX = player.x - VIEWPORT_WIDTH/2 - viewportBuffer;
-        const maxX = player.x + VIEWPORT_WIDTH/2 + viewportBuffer;
-        const minY = player.y - VIEWPORT_HEIGHT/2 - viewportBuffer;
-        const maxY = player.y + VIEWPORT_HEIGHT/2 + viewportBuffer;
-        
-        x = minX + Math.random() * (maxX - minX);
-        y = minY + Math.random() * (maxY - minY);
-        
-        // Clamp to world boundaries
-        x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
-        y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
-
-        // Check if position is in a safe zone
-        const inSafeZone = WORLD_MAP.some(element =>
-            element.type === 'safe_zone' &&
-            x >= element.x * SCALE_FACTOR &&
-            x <= (element.x + element.width) * SCALE_FACTOR &&
-            y >= element.y * SCALE_FACTOR &&
-            y <= (element.y + element.height) * SCALE_FACTOR
-        );
-
-        // Check if position collides with walls
-        const collidesWithWall = WORLD_MAP.some(element =>
-            element.type === 'wall' &&
-            x >= element.x * SCALE_FACTOR &&
-            x <= (element.x + element.width) * SCALE_FACTOR &&
-            y >= element.y * SCALE_FACTOR &&
-            y <= (element.y + element.height) * SCALE_FACTOR
-        );
-
-        if (!inSafeZone && !collidesWithWall) {
-            validPosition = true;
-        }
-    }
-
-    // If we couldn't find a valid position, return null
-    if (!validPosition) {
-        return null as any;
-    }
-
-    // Check if position is in a biome first
-    const biome = getBiomeAtPosition(x, y);
-    let tier: Enemy['tier'] = 'common';
-    let mobType: Enemy['type'];
-
-    if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
-        // In a biome - use the biome's spawn table
-        const spawnSelection = selectSpawnFromBiomeTable(biome.properties.spawnTable);
-        
-        if (spawnSelection) {
-            tier = spawnSelection.tier;
-            
-            // If spawn table specifies a mob type, use it; otherwise pick randomly
-            if (spawnSelection.mobType) {
-                mobType = spawnSelection.mobType as Enemy['type'];
-                
-                // For target dummies, check if one of this tier already exists
-                if (mobType === 'target_dummy') {
-                    const existingDummy = enemies.find(e => e.type === 'target_dummy' && e.tier === tier);
-                    if (existingDummy) {
-                        // Target dummy of this tier already exists, don't spawn another
-                        return null as any;
-                    }
-                }
-            } else {
-                const allMobTypes = getAllMobTypes();
-                if (allMobTypes.length === 0) {
-                    console.error("No mob types found in MOB_CONFIG.");
-                    return null as any;
-                }
-                // Filter out target_dummy from random selection (they should only spawn from explicit spawn table entries)
-                const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
-                if (eligibleMobTypes.length === 0) {
-                    console.error("No eligible mob types found (excluding target dummies).");
-                    return null as any;
-                }
-                mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
-            }
-        } else {
-            // Fallback if spawn table selection fails
-            const allMobTypes = getAllMobTypes();
-            if (allMobTypes.length === 0) {
-                console.error("No mob types found in MOB_CONFIG.");
-                return null as any;
-            }
-            // Filter out target_dummy from random selection
-            const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
-            if (eligibleMobTypes.length === 0) {
-                console.error("No eligible mob types found (excluding target dummies).");
-                return null as any;
-            }
-            mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
-        }
-    } else {
-        // Check if position is in a spawn zone
-        const spawnZoneType = getSpawnZoneType(x, y);
-
-        if (spawnZoneType) {
-            // In a spawn zone - only spawn the specific rarity for this zone
-            tier = spawnZoneType as Enemy['tier'];
-        } else {
-            // Outside spawn zones and biomes - use normal probability distribution
-            const tierRoll = Math.random();
-            let cumulativeProbability = 0;
-
-            for (const [t, data] of Object.entries(ENEMY_TIERS)) {
-                cumulativeProbability += data.probability;
-                if (tierRoll < cumulativeProbability) {
-                    tier = t as Enemy['tier'];
-                    break;
-                }
-            }
-        }
-
-        // Select mob type (fish, octopus, or shark)
-        // Filter out biome-only mobs when spawning outside biomes
-        const allMobTypes = getAllMobTypes();
-        if (allMobTypes.length === 0) {
-            console.error("No mob types found in MOB_CONFIG.");
-            return null as any;
-        }
-        
-        // Filter to only allow non-biome-only mobs in regular spawn zones
-        // Also exclude target_dummy (they should only spawn from explicit map biome entries)
-        const eligibleMobTypes = allMobTypes.filter(type => {
-            if (type === 'target_dummy') {
-                return false; // Never spawn target dummies as normal mobs
-            }
-            const stats = getMobStats(type, tier);
-            return stats && !stats.biomeOnly;
-        });
-        
-        if (eligibleMobTypes.length === 0) {
-            // No eligible mobs for this tier outside biomes
-            return null as any;
-        }
-        
-        mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
-    }
-
-    // Get mob stats from config
-    const mobStats = getMobStats(mobType, tier);
-    if (!mobStats) {
-        console.error(`No mob stats found for ${mobType} ${tier}`);
-        return null as any;
-    }
-
-    // Check if the spawn position would overlap with any player's petal range
-    const mobSize = mobStats.size * 40;
-    if (isPositionInPlayerPetalRange(x, y, mobSize)) {
-        // Position is too close to player petal range, try to find a new position
-        let newValidPosition = false;
-        let newAttempts = 0;
-        const MAX_NEW_ATTEMPTS = 50;
-        
-        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
-            newAttempts++;
-            
-            // Pick a random player and spawn near their viewport
-            const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
-            const player = players[randomPlayerId];
-            
-            // Generate position within player's viewport (with buffer)
-            const viewportBuffer = VIEWPORT_BUFFER;
-            const minX = player.x - VIEWPORT_WIDTH/2 - viewportBuffer;
-            const maxX = player.x + VIEWPORT_WIDTH/2 + viewportBuffer;
-            const minY = player.y - VIEWPORT_HEIGHT/2 - viewportBuffer;
-            const maxY = player.y + VIEWPORT_HEIGHT/2 + viewportBuffer;
-            
-            x = minX + Math.random() * (maxX - minX);
-            y = minY + Math.random() * (maxY - minY);
-            
-            // Clamp to world boundaries
-            x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
-            y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
-
-            // Check if position is in a safe zone
-            const inSafeZone = WORLD_MAP.some(element =>
-                element.type === 'safe_zone' &&
-                x >= element.x * SCALE_FACTOR &&
-                x <= (element.x + element.width) * SCALE_FACTOR &&
-                y >= element.y * SCALE_FACTOR &&
-                y <= (element.y + element.height) * SCALE_FACTOR
-            );
-
-            // Check if position collides with walls
-            const collidesWithWall = WORLD_MAP.some(element =>
-                element.type === 'wall' &&
-                x >= element.x * SCALE_FACTOR &&
-                x <= (element.x + element.width) * SCALE_FACTOR &&
-                y >= element.y * SCALE_FACTOR &&
-                y <= (element.y + element.height) * SCALE_FACTOR
-            );
-
-            // Check if position is safe from petal range
-            const inPetalRange = isPositionInPlayerPetalRange(x, y, mobSize);
-
-            if (!inSafeZone && !collidesWithWall && !inPetalRange) {
-                newValidPosition = true;
-            }
-        }
-        
-        // If we still couldn't find a valid position, return null
-        if (!newValidPosition) {
-            return null as any;
-        }
-    }
-
-    // Check if spawn position is too close to other mobs
-    const MIN_MOB_SPAWN_DISTANCE = 80; // Minimum distance between mob spawns (2x base mob size)
-    const halfMobSize = mobSize / 2;
-    const tooCloseToOtherMob = enemies.some(otherEnemy => {
-        const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
-        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : ENEMY_SIZE;
-        const otherHalfSize = otherMobSize / 2;
-        
-        const dx = otherEnemy.x - x;
-        const dy = otherEnemy.y - y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const minDistance = halfMobSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
-        
-        return distance < minDistance;
-    });
-
-    if (tooCloseToOtherMob) {
-        // Position is too close to another mob, try to find a new position
-        let newValidPosition = false;
-        let newAttempts = 0;
-        const MAX_NEW_ATTEMPTS = 50;
-        
-        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
-            newAttempts++;
-            
-            // Pick a random player and spawn near their viewport
-            const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
-            const player = players[randomPlayerId];
-            
-            // Generate position within player's viewport (with buffer)
-            const viewportBuffer = VIEWPORT_BUFFER;
-            const minX = player.x - VIEWPORT_WIDTH/2 - viewportBuffer;
-            const maxX = player.x + VIEWPORT_WIDTH/2 + viewportBuffer;
-            const minY = player.y - VIEWPORT_HEIGHT/2 - viewportBuffer;
-            const maxY = player.y + VIEWPORT_HEIGHT/2 + viewportBuffer;
-            
-            x = minX + Math.random() * (maxX - minX);
-            y = minY + Math.random() * (maxY - minY);
-            
-            // Clamp to world boundaries
-            x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
-            y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
-
-            // Check if position is in a safe zone
-            const inSafeZone = WORLD_MAP.some(element =>
-                element.type === 'safe_zone' &&
-                x >= element.x * SCALE_FACTOR &&
-                x <= (element.x + element.width) * SCALE_FACTOR &&
-                y >= element.y * SCALE_FACTOR &&
-                y <= (element.y + element.height) * SCALE_FACTOR
-            );
-
-            // Check if position collides with walls
-            const collidesWithWall = WORLD_MAP.some(element =>
-                element.type === 'wall' &&
-                x >= element.x * SCALE_FACTOR &&
-                x <= (element.x + element.width) * SCALE_FACTOR &&
-                y >= element.y * SCALE_FACTOR &&
-                y <= (element.y + element.height) * SCALE_FACTOR
-            );
-
-            // Check if position is safe from petal range
-            const inPetalRange = isPositionInPlayerPetalRange(x, y, mobSize);
-
-            // Check if position is far enough from other mobs
-            const tooClose = enemies.some(otherEnemy => {
-                const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
-                const otherMobSize = otherMobStats ? otherMobStats.size * 40 : ENEMY_SIZE;
-                const otherHalfSize = otherMobSize / 2;
-                
-                const dx = otherEnemy.x - x;
-                const dy = otherEnemy.y - y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const minDistance = halfMobSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
-                
-                return distance < minDistance;
-            });
-
-            if (!inSafeZone && !collidesWithWall && !inPetalRange && !tooClose) {
-                newValidPosition = true;
-            }
-        }
-        
-        // If we still couldn't find a valid position, return null
-        if (!newValidPosition) {
-            return null as any;
-        }
-    }
-
-    // console.log(`[DEBUG] Spawning ${mobType} (${tier}) mob with stats:`, {
-    //     health: mobStats.health,
-    //     damage: mobStats.damage,
-    //     speed: mobStats.speed,
-    //     isHostile: mobStats.is_hostile,
-    //     range: mobStats.range
-    // });
-
-    const currentTime = Date.now();
-    const enemy: Enemy = {
-        id: Math.random().toString(36).substr(2, 9),
-        type: mobType,
-        tier,
-        x,
-        y,
-        angle: Math.random() * Math.PI * 2,
-        health: mobStats.health,
-        maxHealth: mobStats.health,
-        speed: mobStats.speed,
-        damage: mobStats.damage,
-        knockbackX: 0,
-        knockbackY: 0,
-        isHostile: mobStats.is_hostile,
-        range: mobStats.range,
-        spawnTime: currentTime,
-        lastViewportCheck: currentTime  // Mark as in viewport since we spawned it there
-    };
-    
-    // Initialize DPS tracking for target dummies
-    if (mobType === 'target_dummy') {
-        enemy.dpsStartTime = currentTime;
-        enemy.dpsHistory = [];
-        enemy.currentDPS = 0;
-    }
-    
-    return enemy;
+// Wrapper for createEnemy
+function createEnemy(): Enemy | null {
+    return createEnemyModule(enemySpawnerHelpers);
 }
 
 // respawnPlayer moved to playerManager module - using wrapper function defined earlier
@@ -3301,11 +2723,16 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                     player.teleporterEnterTime = undefined;
                     
                     // Attempt to transfer player to target server
-                    transferPlayerToServer(
+                    transferPlayerToServerModule(
                         player,
                         teleportTo.serverPort,
                         teleportTo.x * SCALE_FACTOR,
-                        teleportTo.y * SCALE_FACTOR
+                        teleportTo.y * SCALE_FACTOR,
+                        io,
+                        database,
+                        USE_HTTPS,
+                        CURRENT_SERVER_CONFIG,
+                        CURRENT_SERVER_PORT
                     ).catch(error => {
                         console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player ${player.name}:`, error);
                         // Optionally notify the player about the failed transfer
@@ -3425,158 +2852,20 @@ server.listen(PORT, () => {
 
 // XP calculation functions moved to playerManager module - using imports
 
-// Cross-server player transfer functionality
+// transferPlayerToServer moved to crossServer module - using transferPlayerToServerModule
+// Wrapper for transferPlayerToServer - delegates to crossServer module
 async function transferPlayerToServer(player: ServerPlayer, targetServerPort: number, targetX: number, targetY: number): Promise<boolean> {
-    const targetServerConfig = getServerConfigByPort(targetServerPort);
-    
-    if (!targetServerConfig) {
-        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Target server config not found for port ${targetServerPort}`);
-        return false;
-    }
-    
-    if (targetServerPort === CURRENT_SERVER_PORT) {
-        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Cannot transfer player to the same server`);
-        return false;
-    }
-    
-    try {
-        // Save player progress before transfer
-        const userId = playerUserIds[player.id];
-        if (userId) {
-            savePlayerProgress(player, userId);
-        }
-        
-        // Prepare player data for transfer (remove socket-specific data)
-        const playerDataForTransfer = {
-            name: player.name,
-            score: player.score,
-            health: player.health,
-            maxHealth: player.maxHealth,
-            damage: player.damage,
-            inventory: player.inventory,
-            loadout: player.loadout,
-            level: player.level,
-            xp: player.xp,
-            xpToNextLevel: player.xpToNextLevel,
-            angle: player.angle,
-            velocityX: 0,
-            velocityY: 0,
-            knockbackX: 0,
-            knockbackY: 0,
-            inputs: { keys: [] },
-            speed_boost: player.speed_boost
-        };
-        
-        // Create HTTPS request to target server
-        const postData = JSON.stringify({
-            playerData: playerDataForTransfer,
-            targetX,
-            targetY
-        });
-        
-        const options = {
-            hostname: targetServerConfig.host,
-            port: targetServerConfig.port,
-            path: '/transfer/player',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(postData)
-            },
-            // For self-signed certificates in development (only if using HTTPS)
-            rejectUnauthorized: USE_HTTPS ? false : undefined
-        };
-        
-        return new Promise((resolve) => {
-            const req = USE_HTTPS ? 
-                https.request(options, (res) => {
-                    let responseData = '';
-                    
-                    res.on('data', (chunk) => {
-                        responseData += chunk;
-                    });
-                    
-                    res.on('end', () => {
-                    try {
-                        const response = JSON.parse(responseData);
-                        if (response.success) {
-                            console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
-                            
-                            // Notify client about successful transfer
-                            io.to(player.id).emit('playerTransferred', {
-                                targetServer: targetServerConfig,
-                                transferToken: response.transferToken,
-                                targetX,
-                                targetY
-                            });
-                            
-                            // Remove player from current server immediately
-                            delete players[player.id];
-                            delete playerUserIds[player.id];
-                            io.emit('playerLeft', player.id);
-                            
-                            resolve(true);
-                        } else {
-                            console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player: ${response.message}`);
-                            resolve(false);
-                        }
-                    } catch (error) {
-                        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error parsing transfer response:`, error);
-                        resolve(false);
-                    }
-                });
-            }) :
-                http.request(options, (res) => {
-                    let responseData = '';
-                    
-                    res.on('data', (chunk) => {
-                        responseData += chunk;
-                    });
-                    
-                    res.on('end', () => {
-                        try {
-                            const response = JSON.parse(responseData);
-                            if (response.success) {
-                                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
-                                
-                                // Notify client about successful transfer
-                                io.to(player.id).emit('playerTransferred', {
-                                    targetServer: targetServerConfig,
-                                    transferToken: response.transferToken,
-                                    targetX,
-                                    targetY
-                                });
-                                
-                                // Remove player from current server immediately
-                                delete players[player.id];
-                                delete playerUserIds[player.id];
-                                io.emit('playerLeft', player.id);
-                                
-                                resolve(true);
-                            } else {
-                                console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player: ${response.message}`);
-                                resolve(false);
-                            }
-                        } catch (error) {
-                            console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error parsing transfer response:`, error);
-                            resolve(false);
-                        }
-                    });
-                });
-            
-            req.on('error', (error) => {
-                console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error transferring player:`, error);
-                resolve(false);
-            });
-            
-            req.write(postData);
-            req.end();
-        });
-        
-    } catch (error) {
-        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Error during player transfer:`, error);
-        return false;
-    }
+    return transferPlayerToServerModule(
+        player,
+        targetServerPort,
+        targetX,
+        targetY,
+        io,
+        database,
+        USE_HTTPS,
+        CURRENT_SERVER_CONFIG,
+        CURRENT_SERVER_PORT
+    );
 }
 
 // Add these constants at the top with other constants
