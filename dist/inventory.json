@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 48655448,
+      "totalXP": 48655988,
       "inventory": {
         "common": {
           "health_potion": 17,
@@ -218,7 +218,7 @@
         null,
         null
       ],
-      "tp": 414,
+      "tp": 552,
       "skills": {}
     },
     "1g99g1gfk": {

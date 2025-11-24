@@ -532,89 +532,6 @@ function despawnDistantEnemies() {
     }
 }
 
-// Helper function to get spawn zone type for a given position
-function getSpawnZoneType(x: number, y: number): string | null {
-    for (const element of WORLD_MAP) {
-        if (element.type === 'spawn' && element.properties?.spawnType) {
-            const scaledX = x / SCALE_FACTOR;
-            const scaledY = y / SCALE_FACTOR;
-            
-            if (scaledX >= element.x && 
-                scaledX <= element.x + element.width && 
-                scaledY >= element.y && 
-                scaledY <= element.y + element.height) {
-                return element.properties.spawnType;
-            }
-        }
-    }
-    return null; // Not in any spawn zone
-}
-
-// Helper function to get biome at a given position
-function getBiomeAtPosition(x: number, y: number): MapElement | null {
-    for (const element of WORLD_MAP) {
-        if (element.type === 'biome') {
-            const scaledX = x / SCALE_FACTOR;
-            const scaledY = y / SCALE_FACTOR;
-            
-            if (scaledX >= element.x && 
-                scaledX <= element.x + element.width && 
-                scaledY >= element.y && 
-                scaledY <= element.y + element.height) {
-                return element;
-            }
-        }
-    }
-    return null; // Not in any biome
-}
-
-// Helper function to select a spawn from a biome's spawn table
-function selectSpawnFromBiomeTable(spawnTable: BiomeSpawnEntry[]): { mobType: string | undefined, tier: Enemy['tier'] } | null {
-    if (!spawnTable || spawnTable.length === 0) return null;
-    
-    // Calculate total weight
-    const totalWeight = spawnTable.reduce((sum, entry) => sum + entry.weight, 0);
-    
-    // Random selection based on weights
-    let random = Math.random() * totalWeight;
-    
-    for (const entry of spawnTable) {
-        random -= entry.weight;
-        if (random <= 0) {
-            return {
-                mobType: entry.mobType,
-                tier: entry.tier
-            };
-        }
-    }
-    
-    // Fallback to first entry
-    return {
-        mobType: spawnTable[0].mobType,
-        tier: spawnTable[0].tier
-    };
-}
-
-// Helper function to get random position in a specific zone type
-function getRandomPositionInZoneType(zoneType: string): { x: number, y: number } | null {
-    const zones = WORLD_MAP.filter(element => 
-        element.type === 'spawn' && 
-        element.properties?.spawnType === zoneType
-    );
-    
-    if (zones.length === 0) return null;
-    
-    const zone = zones[Math.floor(Math.random() * zones.length)];
-    let x = (zone.x + Math.random() * zone.width) * SCALE_FACTOR;
-    let y = (zone.y + Math.random() * zone.height) * SCALE_FACTOR;
-    
-    // Ensure position is within world boundaries
-    x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
-    y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
-    
-    return { x, y };
-}
-
 // createSpecialMob moved to enemySpawner module
 
 // Wrapper functions for enemy spawner
@@ -2849,24 +2766,6 @@ function start_loop() {
 server.listen(PORT, () => {
     console.log(`Server is running on ${SERVER_PROTOCOL}://localhost:${PORT}`);
 });
-
-// XP calculation functions moved to playerManager module - using imports
-
-// transferPlayerToServer moved to crossServer module - using transferPlayerToServerModule
-// Wrapper for transferPlayerToServer - delegates to crossServer module
-async function transferPlayerToServer(player: ServerPlayer, targetServerPort: number, targetX: number, targetY: number): Promise<boolean> {
-    return transferPlayerToServerModule(
-        player,
-        targetServerPort,
-        targetX,
-        targetY,
-        io,
-        database,
-        USE_HTTPS,
-        CURRENT_SERVER_CONFIG,
-        CURRENT_SERVER_PORT
-    );
-}
 
 // Add these constants at the top with other constants
 const HEALTH_REGEN_RATE = 5;  // Health points recovered per tick
