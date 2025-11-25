@@ -1405,6 +1405,29 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         biomeOnly: true,
+    },
+    garbage: {
+        name: "Garbage",
+        health: 10,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "A garbage",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="7" r="4" fill="#333333"/>
+<circle cx="16" cy="19" r="13" fill="#333333"/>
+<circle cx="2" cy="2" r="0.5" fill="#3b1600"/>
+<circle cx="1" cy="28" r="0.5" fill="#3b1600"/>
+<circle cx="3" cy="25" r="0.5" fill="#3b1600"/>
+<circle cx="31" cy="28" r="0.5" fill="#3b1600"/>
+<circle cx="29" cy="4" r="0.5" fill="#3b1600"/>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
     }
 }
 
