@@ -1385,6 +1385,26 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         biomeOnly: true,
+    },
+    roach: {
+        name: "Roach",
+        health: 50,
+        damage: 13,
+        size: 2.0,
+        visual_scale: 1.0,
+        speed: 2.0,
+        cooldown: 2000,
+        description: "A roach",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<ellipse cx="21" cy="16" rx="11" ry="8" fill="#a33c00" stroke-width="2" stroke="#732a00"/>
+<circle cx="12" cy="16" r="5" fill="#3b1600"/>
+<path d="M 9 14 A 12 12 0 0 1 0 8" stroke="#333333"/>
+<path d="M 9 18 A 12 12 0 0 0 0 24" stroke="#333333"/>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
     }
 }
 
