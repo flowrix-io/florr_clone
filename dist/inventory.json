@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 49203318,
+      "totalXP": 49235981,
       "inventory": {
         "common": {
           "health_potion": 17,
@@ -88,7 +88,7 @@
           "petal_dandelion": 31,
           "petal_sand": 19,
           "petal_rose": 6,
-          "health_potion": 4,
+          "health_potion": 5,
           "petal_light": 26,
           "petal_stinger": 15,
           "petal_basic": 5,
@@ -124,7 +124,7 @@
           "petal_leaf": 2
         },
         "rare": {
-          "petal_dandelion": 21,
+          "petal_dandelion": 22,
           "petal_rock": 18,
           "petal_rose": 3,
           "petal_light": 10,
@@ -219,7 +219,7 @@
         null,
         null
       ],
-      "tp": 28,
+      "tp": 35,
       "skills": {
         "damage": "unique",
         "petalHealth": "mythic"
