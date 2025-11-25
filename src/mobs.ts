@@ -1350,6 +1350,41 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         biomeOnly: true,
+    },
+    fly: {
+        name: "Fly",
+        health: 8,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "A fly",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" stroke-width="4" fill="#333333" stroke="#5c5c5c"/>
+  <ellipse cx="0" cy="0" rx="10" ry="7" transform="translate(22 23) rotate(0)" fill="rgba(128, 128, 128, 0.5)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  <ellipse cx="0" cy="0" rx="10" ry="7" transform="translate(22 9) rotate(0)" fill="rgba(128, 128, 128, 0.5)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
     }
 }
 
