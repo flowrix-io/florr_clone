@@ -1330,6 +1330,10 @@ class Graphics {
         this.ctx.save();
         this.ctx.translate(enemy.x, enemy.y);
         this.ctx.rotate(enemy.angle || 0);
+        // Flip horizontally if reversed is true
+        if (enemy.reversed || mobStats?.reversed) {
+            this.ctx.scale(-1, 1);
+        }
         // Disable anti-aliasing for mobs (pixelated look)
         this.ctx.imageSmoothingEnabled = false;
         // Debug: Always draw something visible to verify coordinates work
@@ -1397,6 +1401,7 @@ class Graphics {
             }
             // For other types (bee, ladybug, soldier_ant), sprite will be null
             // Try to use sprite if available and loaded
+            // Note: The scale(-1, 1) is already applied at the beginning if reversed is true
             if (sprite && sprite.complete && sprite.naturalWidth > 0 && sprite.naturalHeight > 0) {
                 try {
                     this.ctx.drawImage(sprite, -enemySize / 2, -enemySize / 2, enemySize, enemySize);

@@ -53,14 +53,16 @@ function selectSpawnFromBiomeTable(spawnTable) {
         if (random <= 0) {
             return {
                 mobType: entry.mobType,
-                tier: entry.tier
+                tier: entry.tier,
+                reversed: entry.reversed
             };
         }
     }
     // Fallback to first entry
     return {
         mobType: spawnTable[0].mobType,
-        tier: spawnTable[0].tier
+        tier: spawnTable[0].tier,
+        reversed: spawnTable[0].reversed
     };
 }
 // Helper function to get random position in a specific zone type
@@ -148,11 +150,13 @@ function createEnemy(helpers) {
     const biome = getBiomeAtPosition(x, y);
     let tier = 'common';
     let mobType;
+    let reversed = undefined;
     if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
         // In a biome - use the biome's spawn table
         const spawnSelection = selectSpawnFromBiomeTable(biome.properties.spawnTable);
         if (spawnSelection) {
             tier = spawnSelection.tier;
+            reversed = spawnSelection.reversed;
             // If spawn table specifies a mob type, use it; otherwise pick randomly
             if (spawnSelection.mobType) {
                 mobType = spawnSelection.mobType;
@@ -373,6 +377,7 @@ function createEnemy(helpers) {
         knockbackY: 0,
         isHostile: mobStats.is_hostile,
         range: mobStats.range,
+        reversed: reversed ?? mobStats.reversed ?? false,
         spawnTime: currentTime,
         lastViewportCheck: currentTime // Mark as in viewport since we spawned it there
     };

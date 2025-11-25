@@ -36,6 +36,7 @@ export interface Enemy {
   damageContributors?: Map<string, number>;  // Map of player ID to damage dealt
   poisonEffects?: PoisonEffect[];  // Active poison effects on this enemy
   lastProjectileTime?: number;  // Last time this enemy shot a projectile
+  reversed?: boolean;  // Whether the mob image should be flipped horizontally
   // DPS tracking for target dummies
   dpsHistory?: Array<{ time: number; damage: number }>;  // History of damage events with timestamps
   dpsStartTime?: number;  // When DPS tracking started

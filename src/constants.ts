@@ -156,6 +156,7 @@ export interface BiomeSpawnEntry {
     mobType?: string;  // If not specified, uses any mob type
     tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
     weight: number;  // Relative probability (higher = more common)
+    reversed?: boolean;  // Whether the mob image should be flipped horizontally
 }
 
 export interface MapElement {
@@ -3306,42 +3307,42 @@ export const WORLD_MAP: MapElement[] = [
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "uncommon",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "rare",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "epic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "legendary",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "mythic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "ultra",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "super",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "unique",
           "weight": 1,
           "mobType": "target_dummy"
@@ -3364,42 +3365,42 @@ export const WORLD_MAP: MapElement[] = [
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "uncommon",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "rare",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "epic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "legendary",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "mythic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "ultra",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "super",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "unique",
           "weight": 1,
           "mobType": "target_dummy"
@@ -3422,42 +3423,42 @@ export const WORLD_MAP: MapElement[] = [
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "uncommon",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "rare",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "epic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "legendary",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "mythic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "ultra",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "super",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "unique",
           "weight": 1,
           "mobType": "target_dummy"
@@ -3480,42 +3481,42 @@ export const WORLD_MAP: MapElement[] = [
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "uncommon",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "rare",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "epic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "legendary",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "mythic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "ultra",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "super",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "unique",
           "weight": 1,
           "mobType": "target_dummy"
@@ -3538,42 +3539,42 @@ export const WORLD_MAP: MapElement[] = [
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "uncommon",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "rare",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "epic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "legendary",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "mythic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "ultra",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "super",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "unique",
           "weight": 1,
           "mobType": "target_dummy"
@@ -3596,42 +3597,42 @@ export const WORLD_MAP: MapElement[] = [
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "uncommon",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "rare",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "epic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "legendary",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "mythic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "ultra",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "super",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "unique",
           "weight": 1,
           "mobType": "target_dummy"
@@ -3654,42 +3655,42 @@ export const WORLD_MAP: MapElement[] = [
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "uncommon",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "rare",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "epic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "legendary",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "mythic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "ultra",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "super",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "unique",
           "weight": 1,
           "mobType": "target_dummy"
@@ -3712,48 +3713,252 @@ export const WORLD_MAP: MapElement[] = [
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "uncommon",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "rare",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "epic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "legendary",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "mythic",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "ultra",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "super",
           "weight": 1,
           "mobType": "target_dummy"
         },
-{
+        {
           "tier": "unique",
           "weight": 1,
           "mobType": "target_dummy"
         }
       ]
     }
+  },
+  {
+    "type": "biome",
+    "x": 6230,
+    "y": 36980,
+    "width": 13580,
+    "height": 22960,
+    "properties": {
+      "biomeName": "sewers_test",
+      "backgroundTexture": "sewers.svg",
+      "spawnTable": [
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "roach"
+        },
+        {
+          "tier": "mythic",
+          "weight": 1,
+          "mobType": "garbage"
+        },
+        {
+          "tier": "mythic",
+          "weight": 3,
+          "mobType": "fly"
+        },
+        {
+          "tier": "mythic",
+          "weight": 2,
+          "mobType": "moth"
+        },
+        {
+          "tier": "mythic",
+          "weight": 1,
+          "mobType": "spider"
+        }
+      ]
+    }
+  },
+  {
+    "type": "biome",
+    "x": 50,
+    "y": 37010,
+    "width": 6200,
+    "height": 22930,
+    "properties": {
+      "biomeName": "sewers_test",
+      "backgroundTexture": "sewers.svg",
+      "spawnTable": [
+        {
+          "tier": "common",
+          "weight": 3,
+          "mobType": "roach"
+        },
+        {
+          "tier": "common",
+          "weight": 1,
+          "mobType": "garbage"
+        },
+        {
+          "tier": "common",
+          "weight": 3,
+          "mobType": "fly"
+        },
+        {
+          "tier": "common",
+          "weight": 1,
+          "mobType": "moth"
+        },
+        {
+          "tier": "common",
+          "weight": 1,
+          "mobType": "spider"
+        }
+      ]
+    }
+  },
+  {
+    "type": "wall",
+    "x": 196.25,
+    "y": 56280,
+    "width": 4030,
+    "height": 3450,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 4496.25,
+    "y": 54670,
+    "width": 2100,
+    "height": 5040,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 1666.25,
+    "y": 53920,
+    "width": 2650,
+    "height": 2100,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 376.25,
+    "y": 54270,
+    "width": 1170,
+    "height": 1770,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 2716.25,
+    "y": 55980,
+    "width": 290,
+    "height": 610,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 4486.25,
+    "y": 49990,
+    "width": 5590,
+    "height": 3910,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 7196.25,
+    "y": 53430,
+    "width": 1000,
+    "height": 6520,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 4516.25,
+    "y": 59660,
+    "width": 2510,
+    "height": 290,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 2696.25,
+    "y": 48930,
+    "width": 660,
+    "height": 5110,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 1806.25,
+    "y": 51410,
+    "width": 710,
+    "height": 2600,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 266.25,
+    "y": 51980,
+    "width": 1660,
+    "height": 850,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 336.25,
+    "y": 49340,
+    "width": 2430,
+    "height": 1100,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 3046.25,
+    "y": 48530,
+    "width": 10260,
+    "height": 480,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 6126.25,
+    "y": 48920,
+    "width": 2440,
+    "height": 650,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 4156.25,
+    "y": 49320,
+    "width": 1720,
+    "height": 380,
+    "properties": {}
+  },
+  {
+    "type": "wall",
+    "x": 8096.25,
+    "y": 54850,
+    "width": 6120,
+    "height": 4220,
+    "properties": {}
   }
 ];
 

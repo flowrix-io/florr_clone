@@ -1256,6 +1256,105 @@ const BASE_MOB_CONFIGS = {
         is_hostile: false,
         range: 100,
         biomeOnly: true,
+    },
+    fly: {
+        name: "Fly",
+        health: 8,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "A fly",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" stroke-width="4" fill="#333333" stroke="#5c5c5c"/>
+  <ellipse cx="0" cy="0" rx="10" ry="7" transform="translate(22 23) rotate(0)" fill="rgba(128, 128, 128, 0.5)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  <ellipse cx="0" cy="0" rx="10" ry="7" transform="translate(22 9) rotate(0)" fill="rgba(128, 128, 128, 0.5)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
+        reversed: true,
+    },
+    roach: {
+        name: "Roach",
+        health: 50,
+        damage: 13,
+        size: 2.0,
+        visual_scale: 1.0,
+        speed: 2.0,
+        cooldown: 2000,
+        description: "A roach",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<ellipse cx="21" cy="16" rx="11" ry="8" fill="#a33c00" stroke-width="2" stroke="#732a00"/>
+<circle cx="12" cy="16" r="5" fill="#3b1600"/>
+<path d="M 9 14 A 12 12 0 0 1 0 8" stroke="#333333"/>
+<path d="M 9 18 A 12 12 0 0 0 0 24" stroke="#333333"/>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
+        reversed: true,
+    },
+    garbage: {
+        name: "Garbage",
+        health: 10,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "A garbage",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="7" r="4" fill="#333333"/>
+<circle cx="16" cy="19" r="13" fill="#333333"/>
+<circle cx="2" cy="2" r="0.5" fill="#3b1600"/>
+<circle cx="1" cy="28" r="0.5" fill="#3b1600"/>
+<circle cx="3" cy="25" r="0.5" fill="#3b1600"/>
+<circle cx="31" cy="28" r="0.5" fill="#3b1600"/>
+<circle cx="29" cy="4" r="0.5" fill="#3b1600"/>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
+        reversed: true,
+    },
+    moth: {
+        name: "Moth",
+        health: 10,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "A moth",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" stroke-width="4" fill="#333333" stroke="#5c5c5c"/>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
+        reversed: true,
     }
 };
 // Rarity-specific overrides for special cases
@@ -1581,6 +1680,7 @@ function generateMobStats(baseConfig, rarity, mobType) {
         xp,
         biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false,
         visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0,
+        reversed: overrides.reversed ?? baseConfig.reversed ?? false,
         projectile: overrides.projectile ?? baseConfig.projectile
     };
 }

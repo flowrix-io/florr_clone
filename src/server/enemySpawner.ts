@@ -62,7 +62,7 @@ function getBiomeAtPosition(x: number, y: number): MapElement | null {
 }
 
 // Helper function to select a spawn from a biome's spawn table
-function selectSpawnFromBiomeTable(spawnTable: BiomeSpawnEntry[]): { mobType: string | undefined, tier: Enemy['tier'] } | null {
+function selectSpawnFromBiomeTable(spawnTable: BiomeSpawnEntry[]): { mobType: string | undefined, tier: Enemy['tier'], reversed?: boolean } | null {
     if (!spawnTable || spawnTable.length === 0) return null;
     
     // Calculate total weight
@@ -76,7 +76,8 @@ function selectSpawnFromBiomeTable(spawnTable: BiomeSpawnEntry[]): { mobType: st
         if (random <= 0) {
             return {
                 mobType: entry.mobType,
-                tier: entry.tier
+                tier: entry.tier,
+                reversed: entry.reversed
             };
         }
     }
@@ -84,7 +85,8 @@ function selectSpawnFromBiomeTable(spawnTable: BiomeSpawnEntry[]): { mobType: st
     // Fallback to first entry
     return {
         mobType: spawnTable[0].mobType,
-        tier: spawnTable[0].tier
+        tier: spawnTable[0].tier,
+        reversed: spawnTable[0].reversed
     };
 }
 
@@ -205,6 +207,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
     const biome = getBiomeAtPosition(x, y);
     let tier: Enemy['tier'] = 'common';
     let mobType: Enemy['type'];
+    let reversed: boolean | undefined = undefined;
 
     if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
         // In a biome - use the biome's spawn table
@@ -212,6 +215,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         
         if (spawnSelection) {
             tier = spawnSelection.tier;
+            reversed = spawnSelection.reversed;
             
             // If spawn table specifies a mob type, use it; otherwise pick randomly
             if (spawnSelection.mobType) {
@@ -474,6 +478,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         knockbackY: 0,
         isHostile: mobStats.is_hostile,
         range: mobStats.range,
+        reversed: reversed ?? mobStats.reversed ?? false,
         spawnTime: currentTime,
         lastViewportCheck: currentTime  // Mark as in viewport since we spawned it there
     };

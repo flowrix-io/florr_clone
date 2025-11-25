@@ -13,6 +13,7 @@ export interface MobStats {
     xp: number; // Experience points awarded when defeated
     biomeOnly: boolean; // Whether this mob can only spawn in biomes
     visual_scale?: number; // Visual scale multiplier (affects rendering only, not hitbox)
+    reversed?: boolean; // Whether the mob image should be flipped horizontally
     projectile?: {
         count: number; // Number of projectiles to shoot
         distance: number; // Maximum distance projectiles travel
@@ -74,6 +75,7 @@ interface BaseMobConfig {
     range: number;
     biomeOnly?: boolean; // Optional: whether this mob can only spawn in biomes
     visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
+    reversed?: boolean; // Optional: whether the mob image should be flipped horizontally
     projectile?: {
         count: number;
         distance: number;
@@ -99,6 +101,7 @@ interface RarityOverride {
     range?: number;
     biomeOnly?: boolean;
     visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
+    reversed?: boolean; // Optional: whether the mob image should be flipped horizontally
     projectile?: {
         count: number;
         distance: number;
@@ -1385,6 +1388,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         biomeOnly: true,
+        reversed: true,
     },
     roach: {
         name: "Roach",
@@ -1405,6 +1409,7 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         biomeOnly: true,
+        reversed: true,
     },
     garbage: {
         name: "Garbage",
@@ -1428,6 +1433,25 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         biomeOnly: true,
+        reversed: true,
+    },
+    moth: {
+        name: "Moth",
+        health: 10,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "A moth",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" stroke-width="4" fill="#333333" stroke="#5c5c5c"/>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
+        reversed: true,
     }
 }
 
@@ -1763,6 +1787,7 @@ function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: st
         xp,
         biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false,
         visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0,
+        reversed: overrides.reversed ?? baseConfig.reversed ?? false,
         projectile: overrides.projectile ?? baseConfig.projectile
     };
 }

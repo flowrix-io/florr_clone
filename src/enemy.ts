@@ -63,6 +63,7 @@ export interface Enemy {
   poisonEffects?: PoisonEffect[];  // Active poison effects on this enemy
   range?: number;
   lastProjectileTime?: number;  // Last time this enemy shot a projectile
+  reversed?: boolean;  // Whether the mob image should be flipped horizontally
   // DPS tracking for target dummies
   currentDPS?: number;  // Current calculated DPS
   dpsHistory?: Array<{ time: number; dps: number }>;  // History of DPS values over time
