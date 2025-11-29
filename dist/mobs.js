@@ -1657,7 +1657,11 @@ function generateMobStats(baseConfig, rarity, mobType) {
     const damage = baseConfig.damage * DAMAGE_SCALING[rarity];
     const health = baseConfig.health * HEALTH_SCALING[rarity];
     // Calculate size scaling using the size scaling table
+    // Size already includes rarity scaling, so mass will automatically account for rarity
     const size = baseConfig.size * SIZE_SCALING[rarity];
+    // Calculate mass based on size (mass scales with area, size^2)
+    // Larger mobs and higher rarity mobs (which have larger size) will have more mass
+    const mass = size * size; // Mass proportional to area (size^2)
     // Get XP from the specific mob XP table
     const xp = MOB_XP_TABLES[mobType]?.[rarity] || 1;
     // Get rarity-specific overrides
@@ -1670,6 +1674,7 @@ function generateMobStats(baseConfig, rarity, mobType) {
         damage,
         health,
         size,
+        mass,
         speed: overrides.speed ?? baseConfig.speed,
         cooldown: overrides.cooldown ?? baseConfig.cooldown,
         description: overrides.description ?? baseConfig.description,

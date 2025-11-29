@@ -1638,13 +1638,16 @@ function updatePlayerProjectiles(deltaTimeMs) {
                 (0, utils_1.trackDamage)(enemy, projectile.playerId, finalDamage);
                 enemy.health -= finalDamage;
                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
-                // Apply knockback
+                // Apply knockback, accounting for mass (heavier mobs are harder to knock back)
                 if (distance > 0) {
                     const knockbackForce = 20;
                     const normalizedDx = dx / distance;
                     const normalizedDy = dy / distance;
-                    enemy.knockbackX = normalizedDx * knockbackForce;
-                    enemy.knockbackY = normalizedDy * knockbackForce;
+                    // Mass is already calculated from size (which includes rarity), so higher rarity = more mass
+                    const mobMass = mobStats ? mobStats.mass : 1.0; // Default mass of 1.0 if mobStats is null
+                    const effectiveKnockback = knockbackForce / mobMass; // Divide by mass so heavier mobs resist knockback more
+                    enemy.knockbackX = normalizedDx * effectiveKnockback;
+                    enemy.knockbackY = normalizedDy * effectiveKnockback;
                 }
                 // Check if enemy dies
                 if (enemy.health <= 0) {
@@ -2009,9 +2012,12 @@ function updatePlayerState(player, deltaTime) {
                         const distance = Math.sqrt(dx * dx + dy * dy) || 1;
                         const normalizedDx = dx / distance;
                         const normalizedDy = dy / distance;
-                        // Apply knockback to enemy
-                        enemy.knockbackX = normalizedDx * knockbackForce;
-                        enemy.knockbackY = normalizedDy * knockbackForce;
+                        // Apply knockback to enemy, accounting for mass (heavier mobs are harder to knock back)
+                        // Mass is already calculated from size (which includes rarity), so higher rarity = more mass
+                        const mobMass = mobStats ? mobStats.mass : 1.0; // Default mass of 1.0 if mobStats is null
+                        const effectiveKnockback = knockbackForce / mobMass; // Divide by mass so heavier mobs resist knockback more
+                        enemy.knockbackX = normalizedDx * effectiveKnockback;
+                        enemy.knockbackY = normalizedDy * effectiveKnockback;
                     }
                     io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
                     // Handle petal collision for wait_until_collision actions

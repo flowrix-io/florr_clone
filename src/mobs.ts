@@ -3,6 +3,7 @@ export interface MobStats {
     damage: number;
     health: number;
     size: number;
+    mass: number; // Mass of the mob (affects knockback resistance, calculated from size)
     speed: number; // Movement speed
     cooldown: number; // Attack cooldown time in milliseconds
     description: string;
@@ -1760,7 +1761,12 @@ function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: st
     const health = baseConfig.health * HEALTH_SCALING[rarity];
     
     // Calculate size scaling using the size scaling table
+    // Size already includes rarity scaling, so mass will automatically account for rarity
     const size = baseConfig.size * SIZE_SCALING[rarity];
+    
+    // Calculate mass based on size (mass scales with area, size^2)
+    // Larger mobs and higher rarity mobs (which have larger size) will have more mass
+    const mass = size * size; // Mass proportional to area (size^2)
     
     // Get XP from the specific mob XP table
     const xp = MOB_XP_TABLES[mobType]?.[rarity] || 1;
@@ -1777,6 +1783,7 @@ function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: st
         damage,
         health,
         size,
+        mass,
         speed: overrides.speed ?? baseConfig.speed,
         cooldown: overrides.cooldown ?? baseConfig.cooldown,
         description: overrides.description ?? baseConfig.description,
