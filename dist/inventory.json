@@ -1,17 +1,17 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 66437121,
+      "totalXP": 66883038,
       "inventory": {
         "common": {
-          "health_potion": 20,
-          "petal_rose": 105,
-          "shield": 16,
-          "petal_light": 69,
+          "health_potion": 21,
+          "petal_rose": 107,
+          "shield": 18,
+          "petal_light": 70,
           "petal_dandelion": 24,
           "petal_stinger": 5,
           "petal_yggdrasil": 5,
-          "speed_boost": 75,
+          "speed_boost": 76,
           "petal_sand": 38,
           "petal_rock": 90,
           "petal_clover": 22,
@@ -21,7 +21,7 @@
           "petal_basic": 45,
           "petal_poison_cactus": 8,
           "petal_lightning": 27,
-          "petal_missile": 48,
+          "petal_missile": 49,
           "petal_jelly": 4,
           "petal_yucca": 11,
           "petal_leaf": 2
@@ -43,8 +43,9 @@
           "petal_poison_cactus": 999,
           "petal_lightning": 999,
           "petal_iris": 998,
-          "petal_jelly": 1000,
-          "petal_cutter": 999
+          "petal_jelly": 992,
+          "petal_cutter": 1000,
+          "petal_lightning_cutter": 998
         },
         "mythic": {
           "speed_boost": 2,
@@ -66,13 +67,13 @@
           "shield": 1
         },
         "uncommon": {
-          "petal_rose": 6,
+          "petal_rose": 7,
           "petal_dandelion": 6,
-          "petal_basic": 47,
+          "petal_basic": 48,
           "petal_sand": 5,
-          "speed_boost": 18,
+          "speed_boost": 19,
           "petal_stinger": 20,
-          "shield": 35,
+          "shield": 36,
           "petal_clover": 18,
           "petal_light": 9,
           "health_potion": 3,
@@ -103,7 +104,7 @@
           "petal_poison_cactus": 2,
           "petal_bone": 9,
           "petal_iris": 5,
-          "petal_missile": 19,
+          "petal_missile": 20,
           "petal_jelly": 2,
           "shield": 8
         },
@@ -117,7 +118,7 @@
           "health_potion": 22,
           "petal_light": 26,
           "petal_rock": 80,
-          "shield": 68,
+          "shield": 69,
           "petal_dandelion": 63,
           "petal_clover": 27,
           "petal_bone": 56,
@@ -177,20 +178,52 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "cutter"
+          "petalType": "lightning_cutter"
         },
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "jelly"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "jelly"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "jelly"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "jelly"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "jelly"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "jelly"
+        },
         {
           "type": "speed_boost",
           "rarity": "unique"
         },
-        null,
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "jelly"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "jelly"
+        },
         null,
         null,
         null,
@@ -202,7 +235,7 @@
         null,
         null
       ],
-      "tp": 44,
+      "tp": 110,
       "skills": {
         "playerHealth": "unique",
         "damage": "mythic"
