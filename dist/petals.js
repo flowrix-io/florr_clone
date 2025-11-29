@@ -509,6 +509,34 @@ const BASE_PETAL_CONFIGS = {
 </svg>`,
         isAdminPetal: false
     },
+    cutter: {
+        name: "Cutter Petal",
+        damage: 30,
+        health: 100000000,
+        size: 7.0,
+        cooldown: 1,
+        description: "A cutter that deals damage to the target",
+        knockback: 5,
+        color: "#000000",
+        count: 1,
+        range: 0.0,
+        image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#111111" fill-rule="evenodd" d="
+    M 25 0 A 25 25 0 1 0 -25 0 A 25 25 0 1 0 25 0
+    M 24.749 24.749
+    Q 9.899 23.899 0 35
+    Q -9.899 23.899 -24.749 24.749
+    Q -23.899 9.899 -35 0
+    Q -23.899 -9.899 -24.749 -24.749
+    Q -9.899 -23.899 0 -35
+    Q 9.899 -23.899 24.749 -24.749
+    Q 23.899 -9.899 35 0
+    Q 23.899 9.899 24.749 24.749
+    Z" 
+  />
+</svg>`,
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
@@ -732,6 +760,7 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         count: overrides.count ?? baseConfig.count,
         actions: overrides.actions ?? baseConfig.actions,
         isAdminPetal: baseConfig.isAdminPetal ?? false,
+        range: baseConfig.range ?? 1.0, // Default range multiplier
         projectile: baseConfig.projectile // Include projectile config if present
     };
 }

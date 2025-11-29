@@ -322,20 +322,23 @@ function isPositionInPlayerPetalRange(x: number, y: number, mobSize: number): bo
         const petalExtension = player.inputs?.petalExtension || 1.0;
         const baseRadius = 60 * petalExtension;
         
-        // Find the largest petal size in the player's loadout
+        // Find the largest petal size and range in the player's loadout
         let maxPetalSize = 0;
+        let maxPetalRange = 1.0;
         for (const item of player.loadout) {
             if (item && item.type === 'petal' && item.petalType && item.rarity) {
                 const petalStats = getPetalStats(item.petalType, item.rarity);
                 if (petalStats) {
                     const petalSize = 40 * petalStats.size;
                     maxPetalSize = Math.max(maxPetalSize, petalSize);
+                    const petalRange = petalStats.range ?? 1.0;
+                    maxPetalRange = Math.max(maxPetalRange, petalRange);
                 }
             }
         }
         
-        // Calculate the maximum range from player center (base radius + half petal size + half mob size)
-        const maxRange = baseRadius + (maxPetalSize / 2) + (mobSize / 2);
+        // Calculate the maximum range from player center (base radius * max range multiplier + half petal size + half mob size)
+        const maxRange = (baseRadius * maxPetalRange) + (maxPetalSize / 2) + (mobSize / 2);
         
         // Check if the mob spawn position is within this range
         const dx = x - player.x;
@@ -2247,8 +2250,11 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             const totalAngle = baseAngle + rotationAngle;
 
-            const petalX = player.x + Math.cos(totalAngle) * baseRadius;
-            const petalY = player.y + Math.sin(totalAngle) * baseRadius;
+            // Apply petal range multiplier to base radius
+            const petalRange = petalStats.range ?? 1.0;
+            const petalRadius = baseRadius * petalRange;
+            const petalX = player.x + Math.cos(totalAngle) * petalRadius;
+            const petalY = player.y + Math.sin(totalAngle) * petalRadius;
             
             // Update petal position in action context
             const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;

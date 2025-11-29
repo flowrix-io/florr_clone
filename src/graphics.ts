@@ -1492,11 +1492,15 @@ export class Graphics {
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             const totalAngle = baseAngle + rotationAngle;
 
+            // Apply petal range multiplier to base radius
+            const petalRange = stats.range ?? 1.0;
+            const petalRadius = baseRadius * petalRange;
+
             // Calculate position around player
             // Since we're already in the player's transform context (translate(player.x, player.y)),
             // we need to use RELATIVE coordinates from the player center (0, 0)
-            const petalX = Math.cos(totalAngle) * baseRadius;
-            const petalY = Math.sin(totalAngle) * baseRadius;
+            const petalX = Math.cos(totalAngle) * petalRadius;
+            const petalY = Math.sin(totalAngle) * petalRadius;
 
             // Draw petal - set up transforms first (same pattern as mobs)
             const size = 12 * stats.size;

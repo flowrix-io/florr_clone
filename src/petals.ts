@@ -14,6 +14,7 @@ export interface PetalStats {
     count: number; // Number of petals to spawn per equipped item (default 1)
     actions?: string; // Action sequence string like "heal 20; break;" (optional)
     isAdminPetal?: boolean; // Whether the petal is an admin petal (default false)
+    range?: number; // Multiplier for how much the petal extends from player (default 1.0)
     projectile?: {
         count: number; // Number of projectiles to shoot
         distance: number; // Maximum distance projectiles travel
@@ -70,6 +71,7 @@ interface BasePetalConfig {
     poisonDuration?: number; // Duration in milliseconds that poison effect lasts (optional)
     actions?: string; // Action sequence string like "heal 20; break;"
     isAdminPetal?: boolean; // Whether the petal is an admin petal (default false)
+    range?: number; // Multiplier for how much the petal extends from player (default 1.0)
     projectile?: {
         count: number; // Number of projectiles to shoot
         distance: number; // Maximum distance projectiles travel
@@ -90,6 +92,7 @@ interface RarityOverride {
     poison?: number; // Poison damage per millisecond applied to units (optional)
     poisonDuration?: number; // Duration in milliseconds that poison effect lasts (optional)
     actions?: string; // Action sequence string like "heal 20; break;"
+    range?: number; // Multiplier for how much the petal extends from player (optional)
 }
 
 // Rarity-specific overrides for special cases
@@ -583,6 +586,34 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 </svg>`,
         isAdminPetal: false
     },
+    cutter: {
+        name: "Cutter Petal",
+        damage: 30,
+        health: 100000000,
+        size: 7.0,
+        cooldown: 1,
+        description: "A cutter that deals damage to the target",
+        knockback: 5,
+        color: "#000000",
+        count: 1,
+        range: 0.0,
+        image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#111111" fill-rule="evenodd" d="
+    M 25 0 A 25 25 0 1 0 -25 0 A 25 25 0 1 0 25 0
+    M 24.749 24.749
+    Q 9.899 23.899 0 35
+    Q -9.899 23.899 -24.749 24.749
+    Q -23.899 9.899 -35 0
+    Q -23.899 -9.899 -24.749 -24.749
+    Q -9.899 -23.899 0 -35
+    Q 9.899 -23.899 24.749 -24.749
+    Q 23.899 -9.899 35 0
+    Q 23.899 9.899 24.749 24.749
+    Z" 
+  />
+</svg>`,
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
@@ -820,6 +851,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         count: overrides.count ?? baseConfig.count,
         actions: overrides.actions ?? baseConfig.actions,
         isAdminPetal: baseConfig.isAdminPetal ?? false,
+        range: baseConfig.range ?? 1.0, // Default range multiplier
         projectile: baseConfig.projectile // Include projectile config if present
     };
 }
