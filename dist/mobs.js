@@ -1359,7 +1359,7 @@ const BASE_MOB_CONFIGS = {
     item_spawner: {
         name: "Item Spawner",
         health: 100000000,
-        damage: 0,
+        damage: 50,
         size: 1.0,
         visual_scale: 1.0,
         speed: 0.0,

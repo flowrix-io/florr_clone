@@ -1932,24 +1932,8 @@ function updatePlayerState(player, deltaTime) {
             collision = true;
             // Don't damage dead players (corpses)
             if (!player.isDead) {
-                const shieldAmount = (0, petal_actions_1.getShieldAmount)(player);
-                const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
-                player.health -= damageToPlayer;
-                player.lastDamageTime = Date.now();
-                player.isInvulnerable = true;
-                // Track which enemy dealt the killing blow
-                if (player.health <= 0) {
-                    player.killedBy = { type: enemy.type, tier: enemy.tier };
-                }
-                // Set invulnerability timer (1 second after taking damage)
-                setTimeout(() => {
-                    if (constants_2.players[player.id]) {
-                        constants_2.players[player.id].isInvulnerable = false;
-                        // Notify client that invulnerability has ended
-                        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
-                    }
-                }, 1000);
                 // Calculate knockback direction (reuse distance calculation from collision check)
+                // Apply knockback for all enemies, including item spawner
                 const normalizedDx = dx / distance;
                 const normalizedDy = dy / distance;
                 const knockbackDistance = 25;
@@ -1958,15 +1942,46 @@ function updatePlayerState(player, deltaTime) {
                 // Apply knockback to player position
                 newX -= normalizedDx * knockbackDistance;
                 newY -= normalizedDy * knockbackDistance;
-                io.emit('playerDamaged', {
-                    playerId: player.id,
-                    health: player.health,
-                    maxHealth: player.maxHealth,
-                    isInvulnerable: player.isInvulnerable,
-                    knockbackX: knockbackX,
-                    knockbackY: knockbackY
-                });
-                // Track damage dealt by this player
+                // Item spawner doesn't deal damage to players, but still applies knockback
+                if (enemy.type !== 'item_spawner') {
+                    const shieldAmount = (0, petal_actions_1.getShieldAmount)(player);
+                    const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
+                    player.health -= damageToPlayer;
+                    player.lastDamageTime = Date.now();
+                    player.isInvulnerable = true;
+                    // Track which enemy dealt the killing blow
+                    if (player.health <= 0) {
+                        player.killedBy = { type: enemy.type, tier: enemy.tier };
+                    }
+                    // Set invulnerability timer (1 second after taking damage)
+                    setTimeout(() => {
+                        if (constants_2.players[player.id]) {
+                            constants_2.players[player.id].isInvulnerable = false;
+                            // Notify client that invulnerability has ended
+                            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                        }
+                    }, 1000);
+                    io.emit('playerDamaged', {
+                        playerId: player.id,
+                        health: player.health,
+                        maxHealth: player.maxHealth,
+                        isInvulnerable: player.isInvulnerable,
+                        knockbackX: knockbackX,
+                        knockbackY: knockbackY
+                    });
+                }
+                else {
+                    // Emit knockback event for item spawner (without damage)
+                    io.emit('playerDamaged', {
+                        playerId: player.id,
+                        health: player.health,
+                        maxHealth: player.maxHealth,
+                        isInvulnerable: player.isInvulnerable,
+                        knockbackX: knockbackX,
+                        knockbackY: knockbackY
+                    });
+                }
+                // Track damage dealt by this player (even for item spawner, so players can still damage it)
                 (0, utils_1.trackDamage)(enemy, player.id, player.damage);
                 enemy.health -= player.damage;
                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
@@ -2184,8 +2199,32 @@ function updatePlayerState(player, deltaTime) {
                         if (nonAdminPetalTypes.length > 0) {
                             // Pick a random petal type
                             const randomPetalType = nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)];
-                            // Pick a random rarity
-                            const randomRarity = petals_1.RARITY_LEVELS[Math.floor(Math.random() * petals_1.RARITY_LEVELS.length)];
+                            // Pick a random rarity with weighted probabilities (rarer items are much rarer)
+                            // Weighted distribution: common is most common, rarer items are exponentially rarer
+                            const rarityWeights = {
+                                'common': 30.0, // 50%
+                                'uncommon': 10.0, // 20%
+                                'rare': 10.0, // 12%
+                                'epic': 5.0, // 8%
+                                'legendary': 5.0, // 5%
+                                'mythic': 5.0, // 3%
+                                'ultra': 5.0, // 1.5%
+                                'super': 5.0, // 0.4%
+                                'unique': 0.05 // 0.1%
+                            };
+                            // Calculate total weight
+                            const totalWeight = petals_1.RARITY_LEVELS.reduce((sum, rarity) => sum + (rarityWeights[rarity] || 0), 0);
+                            // Pick a rarity based on weighted probability
+                            let randomRarity = 'common'; // Default fallback
+                            const random = Math.random() * totalWeight;
+                            let cumulativeWeight = 0;
+                            for (const rarity of petals_1.RARITY_LEVELS) {
+                                cumulativeWeight += rarityWeights[rarity] || 0;
+                                if (random <= cumulativeWeight) {
+                                    randomRarity = rarity;
+                                    break;
+                                }
+                            }
                             // Calculate spawner's hitbox radius to ensure items spawn outside it
                             const spawnerMobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
                             const spawnerSize = spawnerMobStats ? spawnerMobStats.size * 40 : constants_2.ENEMY_SIZE;

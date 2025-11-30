@@ -63,6 +63,15 @@ export const CHANGELOG: ChangelogEntry[] = [
         changes: [
             'Added skills system',
         ]
+    },
+    {
+        date: 'November 29, 2025',
+        changes: [
+            'New mob: Item Spawner',
+            'New petal: Cutter',
+            'New petal: Lightning Cutter',
+            'New biome: Sewers',
+        ]
     }
 ];
 
