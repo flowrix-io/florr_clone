@@ -1,19 +1,19 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 67210648,
+      "totalXP": 67271385,
       "inventory": {
         "common": {
           "health_potion": 23,
-          "petal_rose": 111,
+          "petal_rose": 112,
           "shield": 19,
-          "petal_light": 73,
-          "petal_dandelion": 26,
-          "petal_stinger": 6,
+          "petal_light": 74,
+          "petal_dandelion": 27,
+          "petal_stinger": 7,
           "petal_yggdrasil": 6,
           "speed_boost": 78,
           "petal_sand": 39,
-          "petal_rock": 93,
+          "petal_rock": 95,
           "petal_clover": 23,
           "petal_bone": 18,
           "petal_cactus": 4,
@@ -24,22 +24,23 @@
           "petal_missile": 51,
           "petal_jelly": 7,
           "petal_yucca": 13,
-          "petal_leaf": 6
+          "petal_leaf": 6,
+          "petal_cutter": 1
         },
         "unique": {
           "petal_stinger": 1004,
           "petal_basic": 1001,
           "petal_rose": 1003,
           "petal_light": 1000,
-          "petal_rock": 993,
+          "petal_rock": 1000,
           "petal_yggdrasil": 1002,
           "speed_boost": 999,
-          "health_potion": 1000,
+          "health_potion": 999,
           "petal_healing": 1000,
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 998,
+          "petal_sparkle": 999,
           "petal_poison_cactus": 1000,
           "petal_lightning": 1000,
           "petal_iris": 998,
@@ -102,7 +103,7 @@
           "petal_clover": 35,
           "petal_dandelion": 44,
           "petal_sand": 19,
-          "petal_rose": 21,
+          "petal_rose": 22,
           "health_potion": 10,
           "petal_light": 30,
           "petal_stinger": 23,
@@ -111,7 +112,7 @@
           "petal_yggdrasil": 7,
           "petal_cactus": 7,
           "petal_poison_cactus": 4,
-          "petal_bone": 9,
+          "petal_bone": 10,
           "petal_iris": 6,
           "petal_missile": 23,
           "petal_jelly": 3,
@@ -124,12 +125,12 @@
         "epic": {
           "petal_stinger": 23,
           "speed_boost": 50,
-          "petal_basic": 40,
-          "petal_rose": 63,
+          "petal_basic": 42,
+          "petal_rose": 64,
           "petal_sand": 14,
           "petal_yggdrasil": 3,
-          "health_potion": 22,
-          "petal_light": 27,
+          "health_potion": 23,
+          "petal_light": 28,
           "petal_rock": 82,
           "shield": 69,
           "petal_dandelion": 65,
@@ -211,54 +212,21 @@
       },
       "loadout": [
         {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "cutter"
+          "type": "health_potion",
+          "rarity": "unique"
         },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "rock"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "rock"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "rock"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "rock"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "rock"
-        },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
         {
           "type": "speed_boost",
           "rarity": "unique"
         },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "rock"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "rock"
-        },
+        null,
+        null,
         null,
         null,
         null,
@@ -270,9 +238,10 @@
         null,
         null
       ],
-      "tp": 210,
+      "tp": 0,
       "skills": {
-        "petalHealth": "unique"
+        "petalHealth": "unique",
+        "playerHealth": "unique"
       }
     },
     "1g99g1gfk": {

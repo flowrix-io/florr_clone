@@ -1706,7 +1706,7 @@ function updateMobProjectiles(deltaTimeMs) {
                     });
                     // Apply knockback
                     if (distance > 0) {
-                        const knockbackForce = 25;
+                        const knockbackForce = 250;
                         const normalizedDx = dx / distance;
                         const normalizedDy = dy / distance;
                         player.knockbackX = normalizedDx * knockbackForce;
