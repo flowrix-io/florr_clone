@@ -595,6 +595,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         description: "A cutter that deals damage to the target",
         knockback: 5,
         color: "#000000",
+        speed: 2.0,
         count: 1,
         range: 0.0,
         image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
@@ -623,7 +624,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         description: "A cutter that deals damage to the target",
         knockback: 5,
         color: "#000000",
-        actions: "delay 1000; lightning 1000; break;",
+        actions: "lightning 1000; break;",
+        speed: 2.0,
         count: 1,
         range: 0.0,
         image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
