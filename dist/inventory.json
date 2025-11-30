@@ -1,21 +1,21 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 67271457,
+      "totalXP": 67306464,
       "inventory": {
         "common": {
           "health_potion": 23,
           "petal_rose": 112,
           "shield": 19,
           "petal_light": 75,
-          "petal_dandelion": 27,
-          "petal_stinger": 7,
+          "petal_dandelion": 28,
+          "petal_stinger": 8,
           "petal_yggdrasil": 6,
           "speed_boost": 78,
           "petal_sand": 39,
           "petal_rock": 96,
           "petal_clover": 23,
-          "petal_bone": 18,
+          "petal_bone": 19,
           "petal_cactus": 4,
           "petal_iris": 31,
           "petal_basic": 46,
@@ -45,7 +45,7 @@
           "petal_lightning": 1000,
           "petal_iris": 998,
           "petal_jelly": 1002,
-          "petal_cutter": 1000,
+          "petal_cutter": 999,
           "petal_lightning_cutter": 999,
           "petal_yucca": 1,
           "petal_missile": 2,
@@ -63,7 +63,7 @@
           "petal_rose": 1,
           "petal_bone": 6,
           "petal_iris": 2,
-          "petal_stinger": 3,
+          "petal_stinger": 4,
           "petal_dandelion": 2,
           "petal_leaf": 3,
           "petal_missile": 2,
@@ -198,7 +198,7 @@
           "petal_dandelion": 3,
           "speed_boost": 2,
           "petal_rose": 1,
-          "petal_leaf": 6,
+          "petal_leaf": 7,
           "petal_stinger": 1,
           "petal_clover": 2,
           "petal_sand": 2,
@@ -207,7 +207,8 @@
           "petal_cutter": 1,
           "petal_missile": 1,
           "petal_lightning": 1,
-          "petal_basic": 2
+          "petal_basic": 2,
+          "petal_yucca": 1
         }
       },
       "loadout": [
@@ -215,7 +216,11 @@
           "type": "health_potion",
           "rarity": "unique"
         },
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "cutter"
+        },
         null,
         null,
         null,

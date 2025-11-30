@@ -3717,28 +3717,287 @@ exports.WORLD_MAP = [
     },
     {
         "type": "biome",
-        "x": 6230,
-        "y": 36980,
-        "width": 13580,
-        "height": 22960,
+        "x": 50,
+        "y": 48480,
+        "width": 3470,
+        "height": 11510,
         "properties": {
-            "biomeName": "sewers_test",
+            "biomeName": "sewers",
+            "backgroundTexture": "sewers.svg",
+            "spawnTable": [
+                {
+                    "tier": "common",
+                    "weight": 5,
+                    "mobType": "fly"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 3490,
+        "y": 47410,
+        "width": 5540,
+        "height": 11550,
+        "properties": {
+            "biomeName": "sewers",
+            "backgroundTexture": "sewers.svg",
+            "spawnTable": [
+                {
+                    "tier": "uncommon",
+                    "weight": 2,
+                    "mobType": "fly"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 40,
+        "y": 36990,
+        "width": 3500,
+        "height": 11540,
+        "properties": {
+            "biomeName": "sewers",
+            "backgroundTexture": "sewers.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "fly"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "roach"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "moth"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "spider"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "garbage"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 3520,
+        "y": 58650,
+        "width": 16310,
+        "height": 1340,
+        "properties": {
+            "biomeName": "sewers",
+            "backgroundTexture": "sewers.svg",
+            "spawnTable": [
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "fly"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "roach"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "moth"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "spider"
+                },
+                {
+                    "tier": "rare",
+                    "weight": 2,
+                    "mobType": "garbage"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 8960,
+        "y": 53260,
+        "width": 10870,
+        "height": 5400,
+        "properties": {
+            "biomeName": "sewers",
+            "backgroundTexture": "sewers.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "fly"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "roach"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "moth"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "spider"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "garbage"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 3500,
+        "y": 36940,
+        "width": 4440,
+        "height": 10500,
+        "properties": {
+            "biomeName": "sewers",
+            "backgroundTexture": "sewers.svg",
+            "spawnTable": [
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "fly"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "roach"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "moth"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "spider"
+                },
+                {
+                    "tier": "epic",
+                    "weight": 2,
+                    "mobType": "garbage"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 7920,
+        "y": 36950,
+        "width": 3780,
+        "height": 10490,
+        "properties": {
+            "biomeName": "sewers",
+            "backgroundTexture": "sewers.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "fly"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "roach"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "moth"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "spider"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "garbage"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 9000,
+        "y": 47380,
+        "width": 10850,
+        "height": 5910,
+        "properties": {
+            "biomeName": "sewers",
+            "backgroundTexture": "sewers.svg",
+            "spawnTable": [
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "fly"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "roach"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "moth"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "spider"
+                },
+                {
+                    "tier": "legendary",
+                    "weight": 2,
+                    "mobType": "garbage"
+                }
+            ]
+        }
+    },
+    {
+        "type": "biome",
+        "x": 11680,
+        "y": 36970,
+        "width": 8180,
+        "height": 10450,
+        "properties": {
+            "biomeName": "sewers",
             "backgroundTexture": "sewers.svg",
             "spawnTable": [
                 {
                     "tier": "mythic",
-                    "weight": 3,
-                    "mobType": "roach"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 1,
-                    "mobType": "garbage"
-                },
-                {
-                    "tier": "mythic",
-                    "weight": 3,
+                    "weight": 2,
                     "mobType": "fly"
+                },
+                {
+                    "tier": "mythic",
+                    "weight": 2,
+                    "mobType": "roach"
                 },
                 {
                     "tier": "mythic",
@@ -3747,176 +4006,223 @@ exports.WORLD_MAP = [
                 },
                 {
                     "tier": "mythic",
-                    "weight": 1,
+                    "weight": 2,
                     "mobType": "spider"
-                }
-            ]
-        }
-    },
-    {
-        "type": "biome",
-        "x": 50,
-        "y": 37010,
-        "width": 6200,
-        "height": 22930,
-        "properties": {
-            "biomeName": "sewers_test",
-            "backgroundTexture": "sewers.svg",
-            "spawnTable": [
-                {
-                    "tier": "common",
-                    "weight": 3,
-                    "mobType": "roach"
                 },
                 {
-                    "tier": "common",
-                    "weight": 1,
+                    "tier": "mythic",
+                    "weight": 2,
                     "mobType": "garbage"
-                },
-                {
-                    "tier": "common",
-                    "weight": 3,
-                    "mobType": "fly"
-                },
-                {
-                    "tier": "common",
-                    "weight": 1,
-                    "mobType": "moth"
-                },
-                {
-                    "tier": "common",
-                    "weight": 1,
-                    "mobType": "spider"
                 }
             ]
         }
     },
     {
         "type": "wall",
-        "x": 196.25,
-        "y": 56280,
-        "width": 4030,
-        "height": 3450,
+        "x": 778.4375,
+        "y": 53380,
+        "width": 2020,
+        "height": 5900,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 4496.25,
-        "y": 54670,
+        "x": 788.4375,
+        "y": 49970,
+        "width": 5850,
+        "height": 2650,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 818.4375,
+        "y": 45610,
         "width": 2100,
-        "height": 5040,
+        "height": 4060,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 1666.25,
-        "y": 53920,
-        "width": 2650,
-        "height": 2100,
+        "x": 28.4375,
+        "y": 50770,
+        "width": 820,
+        "height": 950,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 376.25,
-        "y": 54270,
-        "width": 1170,
-        "height": 1770,
+        "x": 2788.4375,
+        "y": 55100,
+        "width": 170,
+        "height": 4890,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 2716.25,
-        "y": 55980,
-        "width": 290,
-        "height": 610,
+        "x": 2958.4375,
+        "y": 59990,
+        "width": 0,
+        "height": 0,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 4486.25,
-        "y": 49990,
-        "width": 5590,
-        "height": 3910,
+        "x": 2778.4375,
+        "y": 54180,
+        "width": 5490,
+        "height": 1040,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 7196.25,
-        "y": 53430,
-        "width": 1000,
-        "height": 6520,
+        "x": 7448.4375,
+        "y": 54910,
+        "width": 820,
+        "height": 3130,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 4516.25,
-        "y": 59660,
-        "width": 2510,
-        "height": 290,
+        "x": 7238.4375,
+        "y": 50000,
+        "width": 5830,
+        "height": 3540,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 2696.25,
-        "y": 48930,
-        "width": 660,
-        "height": 5110,
+        "x": 2868.4375,
+        "y": 45620,
+        "width": 3170,
+        "height": 3110,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 1806.25,
-        "y": 51410,
-        "width": 710,
-        "height": 2600,
+        "x": 5738.4375,
+        "y": 47910,
+        "width": 310,
+        "height": 1560,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 266.25,
-        "y": 51980,
-        "width": 1660,
-        "height": 850,
+        "x": 5958.4375,
+        "y": 43520,
+        "width": 3450,
+        "height": 5970,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 336.25,
-        "y": 49340,
-        "width": 2430,
-        "height": 1100,
+        "x": 1468.4375,
+        "y": 44100,
+        "width": 3860,
+        "height": 1590,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 3046.25,
-        "y": 48530,
-        "width": 10260,
-        "height": 480,
+        "x": 9278.4375,
+        "y": 54210,
+        "width": 3330,
+        "height": 2810,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 6126.25,
-        "y": 48920,
-        "width": 2440,
-        "height": 650,
+        "x": 13598.4375,
+        "y": 54240,
+        "width": 6290,
+        "height": 4290,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 4156.25,
-        "y": 49320,
-        "width": 1720,
-        "height": 380,
+        "x": 9208.4375,
+        "y": 57700,
+        "width": 2990,
+        "height": 2290,
         "properties": {}
     },
     {
         "type": "wall",
-        "x": 8096.25,
-        "y": 54850,
-        "width": 6120,
-        "height": 4220,
+        "x": 12198.4375,
+        "y": 59990,
+        "width": 10,
+        "height": 0,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 13048.4375,
+        "y": 50010,
+        "width": 5930,
+        "height": 3570,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 10788.4375,
+        "y": 44460,
+        "width": 840,
+        "height": 5590,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 12678.4375,
+        "y": 44480,
+        "width": 7200,
+        "height": 4980,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 12688.4375,
+        "y": 37740,
+        "width": 570,
+        "height": 6870,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 38.4375,
+        "y": 41890,
+        "width": 5270,
+        "height": 1700,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 5298.4375,
+        "y": 41910,
+        "width": 4080,
+        "height": 560,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 9048.4375,
+        "y": 42030,
+        "width": 360,
+        "height": 1550,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 9368.4375,
+        "y": 37330,
+        "width": 2790,
+        "height": 6340,
+        "properties": {}
+    },
+    {
+        "type": "wall",
+        "x": 5768.4375,
+        "y": 36920,
+        "width": 3140,
+        "height": 4520,
         "properties": {}
     }
 ];
