@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 67271447,
+      "totalXP": 67271457,
       "inventory": {
         "common": {
           "health_potion": 23,
@@ -21,7 +21,7 @@
           "petal_basic": 46,
           "petal_poison_cactus": 9,
           "petal_lightning": 27,
-          "petal_missile": 51,
+          "petal_missile": 52,
           "petal_jelly": 7,
           "petal_yucca": 13,
           "petal_leaf": 6,

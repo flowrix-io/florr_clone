@@ -57,6 +57,11 @@ A multiplayer browser-based survival game where players control flowers and use 
 - **Fish**: Directional movement patterns
 - **Octopus**: Random movement with unpredictable behavior
 - **Tier-Based Scaling**: Enemies scale in health, speed, and damage by zone
+- **Item Spawner**: Special non-hostile enemy that spawns random petals when hit (1% chance per petal hit)
+  - Does not damage players but applies knockback
+  - Still damages player petals (50 damage per hit)
+  - Items spawn outside the spawner's hitbox to prevent overlap
+  - Weighted rarity system: Common items are much more likely than rare items
 
 ### 🎒 Inventory & Progression
 
@@ -71,6 +76,9 @@ A multiplayer browser-based survival game where players control flowers and use 
 - **Speed Boosts**: 2x movement speed for 10 seconds
 - **Shields**: 50% damage reduction for protection
 - **Petal Drops**: Collect new petals from defeated enemies
+- **Item Spawner Drops**: Hit item spawners with petals for a 1% chance to receive random petals
+  - Rarity distribution: Common (30%), Uncommon (10%), Rare (10%), Epic (5%), Legendary (5%), Mythic (5%), Ultra (5%), Super (5%), Unique (0.05%)
+  - Only the player who hit the spawner can pick up the dropped item
 
 ### 🛠️ Technical Features
 
@@ -153,6 +161,92 @@ npm run dev
 - **Rose Petals**: High damage, good for aggressive play
 - **Stinger Petals**: Fast attacks, perfect for hit-and-run tactics
 - **Mix and Match**: Combine different petal types for versatile builds
+
+## 🎮 Server Commands & Admin System
+
+### Server Console Commands
+
+The server supports commands via stdin (standard input) for server administration:
+
+#### Player Management
+- `save` - Save all players' progress
+- `save <playerId>` - Save specific player's progress
+- `list-players` - List all connected players with their IDs and levels
+- `list-sockets` - List all socket connections
+
+#### Enemy Management
+- `spawn <mobType> <rarity>` - Spawn a specific mob with a specific rarity
+  - Example: `spawn bee rare`
+  - Example: `spawn octopus legendary 1000 2000` (with coordinates)
+- `spawn_special_mobs` - Spawn special mobs (ultra, super, unique)
+- `set_max_enemies <count>` - Set the maximum number of enemies
+
+#### Available Mob Types
+All mob types from the game can be spawned: `bee`, `octopus`, `fish`, `shark`, `ladybug`, `soldier_ant`, `hornet`, `mantis`, `leafbug`, `bush`, `target_dummy`, `item_spawner`
+
+#### Available Rarities
+`common`, `uncommon`, `rare`, `epic`, `legendary`, `mythic`, `ultra`, `super`, `unique`
+
+### Admin System
+
+#### Setting Up Admin Users
+
+To grant admin privileges to a user, edit `dist/inventory.json` (or the database file) and add `"admin": true` to the user object:
+
+```json
+{
+  "users": {
+    "your_username": {
+      "id": "...",
+      "username": "your_username",
+      "password": "...",
+      "admin": true
+    }
+  }
+}
+```
+
+#### Admin Chat Commands
+
+Admin players can execute server commands directly from the in-game chat:
+
+- `/admin <command>` - Execute a server command
+- `/cmd <command>` - Alternative prefix for admin commands
+
+**Examples:**
+- `/admin spawn bee rare` - Spawn a rare bee
+- `/admin spawn octopus legendary 1000 2000` - Spawn at specific coordinates
+- `/admin list-players` - List all players
+- `/admin set_max_enemies 100` - Set max enemy count
+
+#### Security Features
+- Admin commands are hidden from non-admin users in `/help`
+- Non-admin users attempting to use admin commands receive "Command does not exist" message
+- All admin command executions are logged to the server console
+- Admin status is checked server-side for security
+
+### Chat Commands
+
+All players can use these chat commands:
+
+- `/help` - Show available commands (admin commands only visible to admins)
+- `/list_ultra` - List all ultra mobs in the world
+- `/list_super` - List all super mobs
+- `/list_unique` - List all unique mobs
+- `/list_legendary` - List all legendary mobs
+- `/list_mythic` - List all mythic mobs
+- `/list_epic` - List all epic mobs
+- `/list_rare` - List all rare mobs
+- `/list_uncommon` - List all uncommon mobs
+- `/list_common` - List all common mobs
+- `/list_all` - List all mobs
+
+Chat also supports HTML formatting:
+- `<b>bold</b>` - Bold text
+- `<i>italic</i>` - Italic text
+- `<u>underline</u>` - Underlined text
+- `<span style="color: red">colored text</span>` - Colored text
+- `<blink>blinking text</blink>` - Blinking text
 
 ## 🛠️ Development
 
