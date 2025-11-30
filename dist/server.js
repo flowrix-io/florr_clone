@@ -2294,6 +2294,8 @@ function updatePlayerState(player, deltaTime) {
                                 pickedUpBy: new Set(),
                                 spawnTime: spawnTime
                             };
+                            // Check and fix wall collisions before adding item
+                            (0, utils_1.checkItemWallCollisions)(newItem);
                             gameState_1.items.push(newItem);
                             // Send itemSpawned event to the player
                             io.to(player.id).emit('itemSpawned', newItem);
@@ -2603,6 +2605,10 @@ function start_loop() {
         updateEnemyViewportStatus();
         // Despawn enemies that have been outside viewport for too long
         despawnDistantEnemies();
+        // Check and fix item-wall collisions for all items
+        for (const item of gameState_1.items) {
+            (0, utils_1.checkItemWallCollisions)(item);
+        }
         const playersForBroadcast = Object.values(constants_2.players).map(p => ({
             id: p.id,
             name: p.name,

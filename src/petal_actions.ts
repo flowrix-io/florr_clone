@@ -314,16 +314,6 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
             
             enemy.health -= damage;
             
-            // Apply slight knockback
-            const knockbackForce = 10;
-            const dx = enemy.x - x;
-            const dy = enemy.y - y;
-            const normalizedDx = dx / (distance || 1);
-            const normalizedDy = dy / (distance || 1);
-            
-            enemy.knockbackX = normalizedDx * knockbackForce;
-            enemy.knockbackY = normalizedDy * knockbackForce;
-            
             io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
             
             // Check if enemy dies

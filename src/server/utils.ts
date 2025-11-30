@@ -1,6 +1,7 @@
 import { Enemy } from '../server_utils';
 import { ServerPlayer } from '../player';
-import { ENEMY_TIERS } from '../constants';
+import { ENEMY_TIERS, WORLD_MAP, isWall, SCALE_FACTOR, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT } from '../constants';
+import { WorldItem } from '../item';
 
 // Helper function to track damage dealt to an enemy
 export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
@@ -113,6 +114,66 @@ export function sendBossMobDefeatedMessage(
         sender: '',
         content: `<b style="color: ${ENEMY_TIERS[enemy.tier as keyof typeof ENEMY_TIERS].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`,
         timestamp: Date.now()
+    });
+}
+
+// Check and fix item-wall collisions
+export function checkItemWallCollisions(item: WorldItem): void {
+    const ITEM_SIZE = 15; // Item radius (30x30 hitbox)
+    const halfSize = ITEM_SIZE;
+    
+    // Check for wall collisions
+    WORLD_MAP.filter(isWall).forEach(wall => {
+        const scaledWall = {
+            x: wall.x * SCALE_FACTOR,
+            y: wall.y * SCALE_FACTOR,
+            width: wall.width * SCALE_FACTOR,
+            height: wall.height * SCALE_FACTOR
+        };
+
+        // Check if item (with size) overlaps with wall
+        const itemLeft = item.x - halfSize;
+        const itemRight = item.x + halfSize;
+        const itemTop = item.y - halfSize;
+        const itemBottom = item.y + halfSize;
+
+        const wallLeft = scaledWall.x;
+        const wallRight = scaledWall.x + scaledWall.width;
+        const wallTop = scaledWall.y;
+        const wallBottom = scaledWall.y + scaledWall.height;
+
+        // Check for overlap
+        if (itemRight > wallLeft && itemLeft < wallRight && 
+            itemBottom > wallTop && itemTop < wallBottom) {
+            
+            // Calculate overlap amounts
+            const overlapLeft = itemRight - wallLeft;
+            const overlapRight = wallRight - itemLeft;
+            const overlapTop = itemBottom - wallTop;
+            const overlapBottom = wallBottom - itemTop;
+
+            // Find the minimum overlap to determine push direction
+            const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+
+            // Push item away from wall in the direction of minimum overlap
+            if (minOverlap === overlapLeft) {
+                // Push left
+                item.x = wallLeft - halfSize - 5; // 5px buffer
+            } else if (minOverlap === overlapRight) {
+                // Push right
+                item.x = wallRight + halfSize + 5; // 5px buffer
+            } else if (minOverlap === overlapTop) {
+                // Push up
+                item.y = wallTop - halfSize - 5; // 5px buffer
+            } else if (minOverlap === overlapBottom) {
+                // Push down
+                item.y = wallBottom + halfSize + 5; // 5px buffer
+            }
+
+            // Ensure item stays within world boundaries after push
+            item.x = Math.max(halfSize, Math.min(ACTUAL_WORLD_WIDTH - halfSize, item.x));
+            item.y = Math.max(halfSize, Math.min(ACTUAL_WORLD_HEIGHT - halfSize, item.y));
+        }
     });
 }
 

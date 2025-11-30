@@ -3,7 +3,7 @@ import { Enemy } from '../server_utils';
 import { WorldItem, Item } from '../item';
 import { calculateMobDrops, DropItem } from '../mobs';
 import { items, ITEM_EXPIRATION_TIMES } from './gameState';
-import { getEligiblePlayers } from './utils';
+import { getEligiblePlayers, checkItemWallCollisions } from './utils';
 
 // Function to handle mob drops when a mob dies
 export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
@@ -44,6 +44,9 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
                 pickedUpBy: new Set(),
                 spawnTime: spawnTime
             };
+            
+            // Check and fix wall collisions before adding item
+            checkItemWallCollisions(newItem);
             
             items.push(newItem);
             

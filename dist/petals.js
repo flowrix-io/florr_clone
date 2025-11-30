@@ -541,7 +541,7 @@ const BASE_PETAL_CONFIGS = {
     lightning_cutter: {
         name: "Lightning Cutter Petal",
         damage: 30,
-        health: 1,
+        health: 100000000,
         size: 7.0,
         cooldown: 1,
         description: "A cutter that deals damage to the target",

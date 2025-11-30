@@ -34,11 +34,12 @@ import { getAllPetalTypes, getPetalStats } from './petals';
 import { MOB_CONFIG, getMobStats, getAllMobTypes, calculateMobDrops, DropItem } from './mobs';
 
 // Import from refactored modules
-import { 
+import {
     trackDamage, 
     calculateDPS, 
     getEligiblePlayers, 
-    sendBossMobDefeatedMessage 
+    sendBossMobDefeatedMessage,
+    checkItemWallCollisions
 } from './server/utils';
 import { 
     items, 
@@ -2710,6 +2711,9 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
                                 spawnTime: spawnTime
                             };
                             
+                            // Check and fix wall collisions before adding item
+                            checkItemWallCollisions(newItem);
+                            
                             items.push(newItem);
                             
                             // Send itemSpawned event to the player
@@ -3094,6 +3098,11 @@ function start_loop() {
         
         // Despawn enemies that have been outside viewport for too long
         despawnDistantEnemies();
+
+        // Check and fix item-wall collisions for all items
+        for (const item of items) {
+            checkItemWallCollisions(item);
+        }
 
         const playersForBroadcast = Object.values(players).map(p => ({
             id: p.id,

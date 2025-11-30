@@ -36,6 +36,8 @@ function handleMobDrops(enemy, io) {
                 pickedUpBy: new Set(),
                 spawnTime: spawnTime
             };
+            // Check and fix wall collisions before adding item
+            (0, utils_1.checkItemWallCollisions)(newItem);
             gameState_1.items.push(newItem);
             // Only send itemSpawned event to eligible players
             for (const playerId of eligiblePlayers) {
