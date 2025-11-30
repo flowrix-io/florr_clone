@@ -756,7 +756,7 @@ io.on('connection', (socket) => {
                                 petalType: item.petalType,
                                 health: maxHealth,
                                 maxHealth: maxHealth,
-                                onCooldown: false
+                                onCooldown: true
                             };
                         }
                     }
@@ -789,6 +789,40 @@ io.on('connection', (socket) => {
                 tp: currentTP,
                 skills: savedSkills
             };
+            // Start cooldown timers for all petals that are on cooldown
+            const player = constants_2.players[socket.id];
+            if (player && player.loadout) {
+                for (let i = 0; i < player.loadout.length; i++) {
+                    const petal = player.loadout[i];
+                    if (petal && petal.type === 'petal' && petal.petalType && petal.rarity && petal.onCooldown) {
+                        const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity);
+                        if (petalStats) {
+                            const cooldownTime = petalStats.cooldown || 10000;
+                            setTimeout(() => {
+                                if (constants_2.players[socket.id] && constants_2.players[socket.id].loadout[i] && constants_2.players[socket.id].loadout[i].onCooldown) {
+                                    // Restore petal after cooldown
+                                    const restoredPetal = {
+                                        type: petal.type,
+                                        petalType: petal.petalType,
+                                        rarity: petal.rarity,
+                                        health: petal.maxHealth,
+                                        maxHealth: petal.maxHealth,
+                                        onCooldown: false
+                                    };
+                                    // Apply petal health bonus
+                                    (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, constants_2.players[socket.id]);
+                                    constants_2.players[socket.id].loadout[i] = restoredPetal;
+                                    io.emit('petalRestored', {
+                                        playerId: constants_2.players[socket.id].id,
+                                        slotIndex: i,
+                                        petal: constants_2.players[socket.id].loadout[i]
+                                    });
+                                }
+                            }, cooldownTime);
+                        }
+                    }
+                }
+            }
             // Save initial state and log the result
             // console.log('Saving initial player state');
             savePlayerProgress(constants_2.players[socket.id], user.id);
@@ -956,9 +990,49 @@ io.on('connection', (socket) => {
     socket.on('updateLoadout', (data) => {
         const player = constants_2.players[socket.id];
         if (player) {
+            // Track which slots had petals before to detect changes
+            const oldLoadout = player.loadout || [];
             // Apply petal health bonuses to all petals in loadout
-            data.loadout.forEach(petal => {
-                (0, playerManager_1.applyPetalHealthBonus)(petal, player);
+            data.loadout.forEach((petal, index) => {
+                if (petal && petal.type === 'petal') {
+                    (0, playerManager_1.applyPetalHealthBonus)(petal, player);
+                    // Check if this is a new petal (different from old loadout) or newly equipped
+                    const oldPetal = oldLoadout[index];
+                    const isNewPetal = !oldPetal ||
+                        oldPetal.type !== 'petal' ||
+                        oldPetal.petalType !== petal.petalType ||
+                        oldPetal.rarity !== petal.rarity;
+                    // If it's a new petal, set it on cooldown and start the cooldown timer
+                    if (isNewPetal && petal.petalType) {
+                        petal.onCooldown = true;
+                        const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity || 'common');
+                        if (petalStats) {
+                            const cooldownTime = petalStats.cooldown || 10000;
+                            setTimeout(() => {
+                                if (constants_2.players[socket.id] && constants_2.players[socket.id].loadout[index] &&
+                                    constants_2.players[socket.id].loadout[index].onCooldown) {
+                                    // Restore petal after cooldown
+                                    const restoredPetal = {
+                                        type: petal.type,
+                                        petalType: petal.petalType,
+                                        rarity: petal.rarity,
+                                        health: petal.maxHealth,
+                                        maxHealth: petal.maxHealth,
+                                        onCooldown: false
+                                    };
+                                    // Apply petal health bonus
+                                    (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, constants_2.players[socket.id]);
+                                    constants_2.players[socket.id].loadout[index] = restoredPetal;
+                                    io.emit('petalRestored', {
+                                        playerId: constants_2.players[socket.id].id,
+                                        slotIndex: index,
+                                        petal: constants_2.players[socket.id].loadout[index]
+                                    });
+                                }
+                            }, cooldownTime);
+                        }
+                    }
+                }
             });
             player.loadout = data.loadout;
             player.inventory = data.inventory;
@@ -2106,6 +2180,10 @@ function updatePlayerState(player, deltaTime) {
         for (let idx = 0; idx < petalInstances.length; idx++) {
             const { petal, instanceIndex, loadoutIndex } = petalInstances[idx];
             if (!petal || !petal.health || petal.health <= 0) {
+                continue;
+            }
+            // Skip petals that are on cooldown
+            if (petal.onCooldown) {
                 continue;
             }
             const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity);

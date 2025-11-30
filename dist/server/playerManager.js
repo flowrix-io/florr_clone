@@ -46,7 +46,7 @@ function createInitialBasicPetals() {
         petalType: 'basic',
         health: basicPetalStats.health,
         maxHealth: basicPetalStats.health,
-        onCooldown: false
+        onCooldown: true
     }));
 }
 // Helper function to create initial inventory with basic petals

@@ -46,7 +46,7 @@ export function createInitialBasicPetals() {
         petalType: 'basic',
         health: basicPetalStats.health,
         maxHealth: basicPetalStats.health,
-        onCooldown: false
+        onCooldown: true
     }));
 }
 

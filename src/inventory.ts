@@ -426,6 +426,7 @@ export class InventoryManager {
             if (stats) {
                 item.health = stats.health;
                 item.maxHealth = stats.health;
+                item.onCooldown = true; // New petals should start on cooldown
             }
         }
 
