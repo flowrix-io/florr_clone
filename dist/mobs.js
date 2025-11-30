@@ -1355,6 +1355,29 @@ const BASE_MOB_CONFIGS = {
         range: 100,
         biomeOnly: true,
         reversed: true,
+    },
+    item_spawner: {
+        name: "Item Spawner",
+        health: 100000000,
+        damage: 0,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 0.0,
+        cooldown: 2000,
+        description: "An item spawner",
+        color: "#000000",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<path d="M 0 0 L 0 32 M 0 32 L 32 32 M 32 32 L 32 0 M 32 0 L 0 0 M 0 0 Z" stroke="#9900ff"/>
+<circle cx="16" cy="16" r="8" fill="#00e5ff" stroke="#00bcd1"/>
+<circle cx="5" cy="5" r="3" fill="white" stroke="#d9d9d9"/>
+<circle cx="27" cy="5" r="3" fill="#ff94f4" stroke="#d17bc9"/>
+<circle cx="27" cy="5" r="3" fill="#ff94f4" stroke="#d17bc9"/>
+<polygon points="26,27.5 29,26 29,29" fill="#000000"/>
+<circle cx="5" cy="27" r="3" fill="#2bf3e3" stroke="#23c4b7"/>
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
     }
 };
 // Rarity-specific overrides for special cases

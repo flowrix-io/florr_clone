@@ -45,7 +45,7 @@ export interface PlayerProjectile {
 
 export interface Enemy {
   id: string;
-  type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy';
+  type: 'octopus' | 'fish' | 'shark' | 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
   x: number;
   y: number;

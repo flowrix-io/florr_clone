@@ -352,8 +352,6 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
         targets: targets,
         damage: petalDamage || 25
     });
-    
-    console.log(`[LIGHTNING] Lightning struck at (${x}, ${y}) with radius ${radius}, hit ${targets.length} targets`);
 }
 
 // Update player effects (call this in the game loop)

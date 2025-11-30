@@ -551,6 +551,193 @@ function createEnemy(): Enemy | null {
     return createEnemyModule(enemySpawnerHelpers);
 }
 
+// Function to spawn a specific mob with a specific rarity at optional coordinates
+function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void {
+    // Validate mob type
+    const allMobTypes = getAllMobTypes();
+    if (!allMobTypes.includes(mobType)) {
+        console.log(`Invalid mob type: ${mobType}`);
+        console.log(`Available mob types: ${allMobTypes.join(', ')}`);
+        return;
+    }
+
+    // Validate rarity
+    const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    if (!validRarities.includes(rarity.toLowerCase())) {
+        console.log(`Invalid rarity: ${rarity}`);
+        console.log(`Valid rarities: ${validRarities.join(', ')}`);
+        return;
+    }
+
+    const tier = rarity.toLowerCase() as Enemy['tier'];
+    const mobStats = getMobStats(mobType, tier);
+    
+    if (!mobStats) {
+        console.log(`No stats found for ${mobType} with rarity ${tier}`);
+        return;
+    }
+
+    // Find a valid spawn position
+    let validPosition = false;
+    let spawnX: number | undefined = x;
+    let spawnY: number | undefined = y;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 100;
+
+    // If coordinates are provided, validate them
+    if (spawnX !== undefined && spawnY !== undefined) {
+        // Validate provided coordinates
+        spawnX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, spawnX));
+        spawnY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, spawnY));
+        
+        // Check if position is in a safe zone
+        const inSafeZone = WORLD_MAP.some(element =>
+            element.type === 'safe_zone' &&
+            spawnX! >= element.x * SCALE_FACTOR &&
+            spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
+            spawnY! >= element.y * SCALE_FACTOR &&
+            spawnY! <= (element.y + element.height) * SCALE_FACTOR
+        );
+
+        // Check if position collides with walls
+        const collidesWithWall = WORLD_MAP.some(element =>
+            element.type === 'wall' &&
+            spawnX! >= element.x * SCALE_FACTOR &&
+            spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
+            spawnY! >= element.y * SCALE_FACTOR &&
+            spawnY! <= (element.y + element.height) * SCALE_FACTOR
+        );
+
+        if (!inSafeZone && !collidesWithWall) {
+            validPosition = true;
+        } else {
+            console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) are in a safe zone or wall. Finding alternative position...`);
+            spawnX = undefined;
+            spawnY = undefined;
+        }
+    }
+
+    // If coordinates weren't provided or were invalid, find a valid position
+    if (!validPosition) {
+        // Try to spawn near a player if available
+        const playerIds = Object.keys(players);
+        if (playerIds.length > 0) {
+        while (!validPosition && attempts < MAX_ATTEMPTS) {
+            attempts++;
+            const randomPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)];
+            const player = players[randomPlayerId];
+            
+            // Spawn within viewport of a random player
+            const viewportBuffer = VIEWPORT_BUFFER;
+            const minX = player.x - VIEWPORT_WIDTH/2 - viewportBuffer;
+            const maxX = player.x + VIEWPORT_WIDTH/2 + viewportBuffer;
+            const minY = player.y - VIEWPORT_HEIGHT/2 - viewportBuffer;
+            const maxY = player.y + VIEWPORT_HEIGHT/2 + viewportBuffer;
+            
+            spawnX = minX + Math.random() * (maxX - minX);
+            spawnY = minY + Math.random() * (maxY - minY);
+            
+            // Clamp to world boundaries
+            spawnX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, spawnX));
+            spawnY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, spawnY));
+
+            // Check if position is in a safe zone
+            const inSafeZone = WORLD_MAP.some(element =>
+                element.type === 'safe_zone' &&
+                spawnX! >= element.x * SCALE_FACTOR &&
+                spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
+                spawnY! >= element.y * SCALE_FACTOR &&
+                spawnY! <= (element.y + element.height) * SCALE_FACTOR
+            );
+
+            // Check if position collides with walls
+            const collidesWithWall = WORLD_MAP.some(element =>
+                element.type === 'wall' &&
+                spawnX! >= element.x * SCALE_FACTOR &&
+                spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
+                spawnY! >= element.y * SCALE_FACTOR &&
+                spawnY! <= (element.y + element.height) * SCALE_FACTOR
+            );
+
+            if (!inSafeZone && !collidesWithWall) {
+                validPosition = true;
+            }
+        }
+        } else {
+            // No players online, spawn at random valid position
+            while (!validPosition && attempts < MAX_ATTEMPTS) {
+                attempts++;
+                spawnX = Math.random() * ACTUAL_WORLD_WIDTH;
+                spawnY = Math.random() * ACTUAL_WORLD_HEIGHT;
+
+                // Check if position is in a safe zone
+                const inSafeZone = WORLD_MAP.some(element =>
+                    element.type === 'safe_zone' &&
+                    spawnX! >= element.x * SCALE_FACTOR &&
+                    spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
+                    spawnY! >= element.y * SCALE_FACTOR &&
+                    spawnY! <= (element.y + element.height) * SCALE_FACTOR
+                );
+
+                // Check if position collides with walls
+                const collidesWithWall = WORLD_MAP.some(element =>
+                    element.type === 'wall' &&
+                    spawnX! >= element.x * SCALE_FACTOR &&
+                    spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
+                    spawnY! >= element.y * SCALE_FACTOR &&
+                    spawnY! <= (element.y + element.height) * SCALE_FACTOR
+                );
+
+                if (!inSafeZone && !collidesWithWall) {
+                    validPosition = true;
+                }
+            }
+        }
+    }
+
+    if (!validPosition || spawnX === undefined || spawnY === undefined) {
+        console.log(`Failed to find valid spawn position for ${mobType} after ${MAX_ATTEMPTS} attempts`);
+        return;
+    }
+
+    // Create the enemy
+    const currentTime = Date.now();
+    const enemy: Enemy = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: mobType as Enemy['type'],
+        tier: tier,
+        x: spawnX,
+        y: spawnY,
+        angle: Math.random() * Math.PI * 2,
+        health: mobStats.health,
+        maxHealth: mobStats.health,
+        speed: mobStats.speed,
+        damage: mobStats.damage,
+        knockbackX: 0,
+        knockbackY: 0,
+        isHostile: mobStats.is_hostile,
+        range: mobStats.range,
+        reversed: mobStats.reversed ?? false,
+        spawnTime: currentTime,
+        lastViewportCheck: currentTime
+    };
+
+    // Initialize DPS tracking for target dummies
+    if (mobType === 'target_dummy') {
+        enemy.dpsStartTime = currentTime;
+        enemy.dpsHistory = [];
+        enemy.currentDPS = 0;
+    }
+
+    // Add to enemies array
+    enemies.push(enemy);
+    
+    // Notify all clients
+    io.emit('enemySpawned', enemy);
+    
+    console.log(`Spawned ${tier} ${mobType} at (${Math.round(spawnX)}, ${Math.round(spawnY)})`);
+}
+
 // respawnPlayer moved to playerManager module - using wrapper function defined earlier
 
 // Helper function to determine spawn type based on level
@@ -2388,6 +2575,75 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
 
                     io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
 
+                    // Check if item spawner was hit and has 1% chance to spawn a random petal
+                    if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
+                        // Get all petal types and filter out admin petals
+                        const allPetalTypes = getAllPetalTypes();
+                        const nonAdminPetalTypes = allPetalTypes.filter(petalType => {
+                            // Check if the petal is an admin petal by checking any rarity
+                            const commonStats = getPetalStats(petalType, 'common');
+                            return !commonStats?.isAdminPetal;
+                        });
+
+                        if (nonAdminPetalTypes.length > 0) {
+                            // Pick a random petal type
+                            const randomPetalType = nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)];
+                            
+                            // Pick a random rarity
+                            const randomRarity = RARITY_LEVELS[Math.floor(Math.random() * RARITY_LEVELS.length)];
+                            
+                            // Calculate spawner's hitbox radius to ensure items spawn outside it
+                            const spawnerMobStats = getMobStats(enemy.type, enemy.tier);
+                            const spawnerSize = spawnerMobStats ? spawnerMobStats.size * 40 : ENEMY_SIZE;
+                            const spawnerRadius = spawnerSize / 2;
+                            const minSpawnDistance = spawnerRadius + 30; // Spawn at least 30px outside the hitbox
+                            const maxSpawnDistance = spawnerRadius + 100; // Spawn up to 100px away
+                            
+                            // Spawn item at a random angle and distance outside the spawner's hitbox
+                            const spawnAngle = Math.random() * Math.PI * 2;
+                            const spawnDistance = minSpawnDistance + Math.random() * (maxSpawnDistance - minSpawnDistance);
+                            const offsetX = Math.cos(spawnAngle) * spawnDistance;
+                            const offsetY = Math.sin(spawnAngle) * spawnDistance;
+                            
+                            const itemId = Math.random().toString(36).substr(2, 9);
+                            const spawnTime = Date.now();
+                            
+                            const newItem: WorldItem = {
+                                id: itemId,
+                                type: 'petal',
+                                x: enemy.x + offsetX,
+                                y: enemy.y + offsetY,
+                                rarity: randomRarity,
+                                petalType: randomPetalType,
+                                eligiblePlayers: [player.id], // Only the player who hit it can pick it up
+                                pickedUpBy: new Set(),
+                                spawnTime: spawnTime
+                            };
+                            
+                            items.push(newItem);
+                            
+                            // Send itemSpawned event to the player
+                            io.to(player.id).emit('itemSpawned', newItem);
+                            
+                            // Schedule automatic removal after expiration time
+                            const expirationTime = ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
+                            setTimeout(() => {
+                                const itemIndex = items.findIndex(item => item.id === itemId);
+                                if (itemIndex !== -1) {
+                                    const expiredItem = items[itemIndex];
+                                    items.splice(itemIndex, 1);
+                                    
+                                    // Notify the player that item expired
+                                    io.to(player.id).emit('itemRemoved', itemId);
+                                    
+                                    console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
+                                }
+                            }, expirationTime);
+                            
+                            console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
+                        }
+                    }
+
                     // Handle petal collision for wait_until_collision actions
                     const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
                     const collisionContext = {
@@ -2953,6 +3209,32 @@ process.stdin.on('data', (data) => {
         }
     } else if (command === 'spawn_special_mobs') {
         spawnSpecialMobs();
+    } else if (command.startsWith('spawn')) {
+        const parts = command.split(' ');
+        if (parts.length === 3) {
+            // spawn <mobType> <rarity>
+            const mobType = parts[1];
+            const rarity = parts[2];
+            spawnMob(mobType, rarity);
+        } else if (parts.length === 5) {
+            // spawn <mobType> <rarity> <x> <y>
+            const mobType = parts[1];
+            const rarity = parts[2];
+            const x = parseFloat(parts[3]);
+            const y = parseFloat(parts[4]);
+            if (isNaN(x) || isNaN(y)) {
+                console.log('Invalid coordinates. Usage: spawn <mobType> <rarity> [x] [y]');
+            } else {
+                spawnMob(mobType, rarity, x, y);
+            }
+        } else {
+            console.log('Usage: spawn <mobType> <rarity> [x] [y]');
+            console.log('  Examples:');
+            console.log('    spawn bee rare');
+            console.log('    spawn octopus legendary 1000 2000');
+            console.log(`Available mob types: ${getAllMobTypes().join(', ')}`);
+            console.log('Valid rarities: common, uncommon, rare, epic, legendary, mythic, ultra, super, unique');
+        }
     }
 });
 
