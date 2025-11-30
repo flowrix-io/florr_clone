@@ -66,6 +66,7 @@ exports.CHANGELOG = [
             'New mob: Item Spawner',
             'New petal: Cutter',
             'New petal: Lightning Cutter',
+            'New petal: Wing',
             'New biome: Sewers',
         ]
     }

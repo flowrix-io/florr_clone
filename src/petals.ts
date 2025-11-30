@@ -643,6 +643,21 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 </svg>`,
         isAdminPetal: false
     },
+    wing: {
+        name: "Wing Petal",
+        damage: 20,
+        health: 10,
+        size: 1.0,
+        cooldown: 2500,
+        range: 2.0,
+        description: "A wing that deals damage to the target",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<path d="M 20 0 Q -5 16 20 32 M 20 32 Q 10 16 20 0 M 20 0 Z" stroke="#e6e6e6" stroke-width="2" fill="#ffffff" stroke-linecap="round"/>
+</svg>`,
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,

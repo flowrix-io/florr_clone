@@ -2218,6 +2218,32 @@ exports.MOB_DROP_TABLES = {
             }
         ]
     },
+    fly: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'wing',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    moth: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'wing',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    }
 };
 // Function to calculate drops for a mob based on its rarity
 function calculateMobDrops(mobType, mobRarity) {

@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 67310814,
+      "totalXP": 67384794,
       "inventory": {
         "common": {
           "health_potion": 23,
@@ -25,7 +25,8 @@
           "petal_jelly": 7,
           "petal_yucca": 13,
           "petal_leaf": 6,
-          "petal_cutter": 1
+          "petal_cutter": 1,
+          "petal_wing": 3
         },
         "unique": {
           "petal_stinger": 1004,
@@ -45,12 +46,13 @@
           "petal_lightning": 1000,
           "petal_iris": 998,
           "petal_jelly": 1002,
-          "petal_cutter": 999,
-          "petal_lightning_cutter": 999,
+          "petal_cutter": 1000,
+          "petal_lightning_cutter": 998,
           "petal_yucca": 1,
           "petal_missile": 2,
           "petal_bone": 1,
-          "petal_sand": 1
+          "petal_sand": 1,
+          "petal_wing": 993
         },
         "mythic": {
           "speed_boost": 2,
@@ -219,19 +221,47 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "cutter"
+          "petalType": "lightning_cutter"
         },
-        null,
-        null,
-        null,
-        null,
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "wing"
+        },
         {
           "type": "speed_boost",
           "rarity": "unique"
         },
-        null,
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "wing"
+        },
         null,
         null,
         null,
