@@ -30,6 +30,7 @@ interface User {
     username: string;
     password: string; // Now stores bcrypt hashed password
     isPlainText?: boolean; // Flag to track if password needs migration
+    admin?: boolean; // Admin flag for server command access
 }
 
 interface DatabaseData {
@@ -103,6 +104,12 @@ export const database = {
             return user;
         }
         return null;
+    },
+
+    // Check if a user is admin by username
+    isUserAdmin: (username: string): boolean => {
+        const user = db.users[username];
+        return user?.admin === true;
     },
 
     // Player-related functions

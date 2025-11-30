@@ -123,26 +123,9 @@ class Chat {
             // Restore original transparency when blurred
             this.chatInput.style.background = 'rgba(0, 0, 0, 0.3)';
         });
-        // Update the help message to include blink tag
+        // Send all messages to server (including /help for server-side handling)
         this.chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && this.chatInput?.value.trim()) {
-                if (this.chatInput.value.trim().toLowerCase() === '/help') {
-                    this.addChatMessage({
-                        sender: 'System',
-                        content: `Available HTML tags: 
-                          <b>bold</b>, 
-                          <i>italic</i>, 
-                          <u>underline</u>, 
-                          <span style="color: red">colored text</span>,
-                          <blink>blinking text</blink>,
-                          <script>console.log('Hello!')</script> (sandboxed). 
-                          Example: Hello <b>world</b> in <span style="color: #ff0000">red</span> and <blink>blinking</blink>!
-                          Script example: <script>alert('Hello from script!');</script>`,
-                        timestamp: Date.now()
-                    });
-                    this.chatInput.value = '';
-                    return;
-                }
                 // Send the chat message to the server
                 this.socket.emit('chatMessage', this.chatInput.value.trim());
                 this.chatInput.value = '';

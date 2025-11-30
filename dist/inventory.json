@@ -1,19 +1,19 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 67271385,
+      "totalXP": 67271447,
       "inventory": {
         "common": {
           "health_potion": 23,
           "petal_rose": 112,
           "shield": 19,
-          "petal_light": 74,
+          "petal_light": 75,
           "petal_dandelion": 27,
           "petal_stinger": 7,
           "petal_yggdrasil": 6,
           "speed_boost": 78,
           "petal_sand": 39,
-          "petal_rock": 95,
+          "petal_rock": 96,
           "petal_clover": 23,
           "petal_bone": 18,
           "petal_cactus": 4,
@@ -360,6 +360,7 @@
     "sussy": {
       "id": "ocu977p98",
       "username": "sussy",
+      "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6"
     },
     "dev": {

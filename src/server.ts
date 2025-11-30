@@ -1188,9 +1188,58 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     socket.on('chatMessage', (message: string) => {
         if (!socket.username) return;  // Ensure user is authenticated
 
+        // Check for admin commands (only admins can use /admin or /cmd)
+        if ((message.startsWith('/admin ') || message.startsWith('/cmd ')) && socket.username) {
+            const isAdmin = database.isUserAdmin(socket.username);
+            if (isAdmin) {
+                // Extract the command after /admin or /cmd
+                const command = message.substring(message.indexOf(' ') + 1);
+                executeServerCommand(command, socket.username);
+                
+                // Send confirmation to admin
+                io.to(socket.id).emit('chatMessage', {
+                    sender: 'System',
+                    content: `[ADMIN] Command executed: ${command}`,
+                    timestamp: Date.now()
+                });
+                return; // Don't process as regular chat message
+            } else {
+                // Not an admin - pretend command doesn't exist
+                io.to(socket.id).emit('chatMessage', {
+                    sender: 'System',
+                    content: 'Command does not exist.',
+                    timestamp: Date.now()
+                });
+                return;
+            }
+        }
+
         // Check for commands
         if (message.startsWith('/')) {
             const command = message.substring(1).toLowerCase();
+            
+            if (command === 'help') {
+                const isAdmin = socket.username ? database.isUserAdmin(socket.username) : false;
+                let helpText = 'Available commands:\n';
+                helpText += '/list_ultra - List all ultra mobs <br/>';
+                helpText += '/list_super - List all super mobs <br/>';
+                helpText += '/list_unique - List all unique mobs <br/>';
+                helpText += '<br/>Chat supports HTML tags: <b>bold</b>, <i>italic</i>, <u>underline</u>, <span style="color: red">colored text</span>, <blink>blinking text</blink>';
+                
+                if (isAdmin) {
+                    helpText += '<br/><br/>Admin commands:<br/>';
+                    helpText += '/admin <command> - Execute server command\n';
+                    helpText += '/cmd <command> - Execute server command (alternative)\n';
+                    helpText += 'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y]';
+                }
+                
+                io.to(socket.id).emit('chatMessage', {
+                    sender: 'System',
+                    content: helpText,
+                    timestamp: Date.now()
+                });
+                return;
+            }
             
             if (command === 'list_ultra') {
                 // Exclude target dummies from list commands
@@ -3201,12 +3250,16 @@ app.post('/admin/save-progress', (req, res) => {
     }
 });
 
-// Add console command handler after the httpsServer.listen() call
-process.stdin.on('data', (data) => {
-    const command = data.toString().trim();
+// Function to execute server commands (can be called from stdin or chat)
+function executeServerCommand(command: string, executor?: string): void {
+    const trimmedCommand = command.trim();
+    
+    if (executor) {
+        console.log(`[ADMIN] ${executor} executed: ${trimmedCommand}`);
+    }
 
-    if (command.startsWith('save')) {
-        const parts = command.split(' ');
+    if (trimmedCommand.startsWith('save')) {
+        const parts = trimmedCommand.split(' ');
         if (parts.length === 2) {
             const playerId = parts[1];
             const player = players[playerId];
@@ -3231,16 +3284,16 @@ process.stdin.on('data', (data) => {
             });
             // console.log(`Saved progress for ${savedCount} players`);
         }
-    } else if (command === 'list-players') {
+    } else if (trimmedCommand === 'list-players') {
         Object.entries(players).forEach(([socketId, player]) => {
             console.log(`Player ID: ${socketId}, Name: ${player.name}, Level: ${player.level}`);
         });
-    } else if (command === 'list-sockets') {
+    } else if (trimmedCommand === 'list-sockets') {
         io.sockets.sockets.forEach((socket) => {
             console.log(`Socket ID: ${socket.id}`);
         });
-    } else if (command.startsWith('set_max_enemies')) {
-        const newCount = parseInt(command.split(' ')[1]);
+    } else if (trimmedCommand.startsWith('set_max_enemies')) {
+        const newCount = parseInt(trimmedCommand.split(' ')[1]);
         if (!isNaN(newCount) && newCount >= 0) {
             ENEMY_COUNT.value = newCount;
             console.log(`Max enemies set to ${ENEMY_COUNT.value}`);
@@ -3248,10 +3301,10 @@ process.stdin.on('data', (data) => {
         } else {
             console.log('Invalid enemy count. Please provide a valid number.');
         }
-    } else if (command === 'spawn_special_mobs') {
+    } else if (trimmedCommand === 'spawn_special_mobs') {
         spawnSpecialMobs();
-    } else if (command.startsWith('spawn')) {
-        const parts = command.split(' ');
+    } else if (trimmedCommand.startsWith('spawn')) {
+        const parts = trimmedCommand.split(' ');
         if (parts.length === 3) {
             // spawn <mobType> <rarity>
             const mobType = parts[1];
@@ -3277,6 +3330,12 @@ process.stdin.on('data', (data) => {
             console.log('Valid rarities: common, uncommon, rare, epic, legendary, mythic, ultra, super, unique');
         }
     }
+}
+
+// Add console command handler after the httpsServer.listen() call
+process.stdin.on('data', (data) => {
+    const command = data.toString().trim();
+    executeServerCommand(command);
 });
 
 // Add this function after the command handler

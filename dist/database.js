@@ -96,6 +96,11 @@ exports.database = {
         }
         return null;
     },
+    // Check if a user is admin by username
+    isUserAdmin: (username) => {
+        const user = db.users[username];
+        return user?.admin === true;
+    },
     // Player-related functions
     savePlayer: (userId, progress) => {
         db.players[userId] = {
