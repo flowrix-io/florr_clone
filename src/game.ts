@@ -548,6 +548,22 @@ export class Game {
         this.svgLoader = new SVGLoader();
         this.assetLoader.loadAssets();
 
+        // Check if we have preconnected map data
+        if (window.preconnectedMapData) {
+            console.log('[Game] Using preconnected map data');
+            const mapData = window.preconnectedMapData;
+            this.world_map_data = mapData;
+            this.graphics.setMap(mapData);
+            this.renderMap(mapData);
+            // Load biome textures
+            this.assetLoader.loadBiomeTextures(mapData, this.graphics);
+            
+            // Update title screen with available biomes
+            this.updateTitleScreenBiomes(mapData);
+            // Clear preconnected map data
+            window.preconnectedMapData = null;
+        }
+
         // Listen for map data from the server
         this.socket.on('mapData', (mapData: MapElement[]) => {
             //console.log('Received map data:', mapData);
@@ -630,6 +646,33 @@ export class Game {
 
 
     private authenticate() {
+        // Wait for socket to be ready
+        if (!this.socket) {
+            console.error('[Game] Socket not initialized, cannot authenticate');
+            // Try again after a short delay
+            setTimeout(() => {
+                if (this.socket) {
+                    this.authenticate();
+                }
+            }, 100);
+            return;
+        }
+
+        // Wait for socket to be connected before authenticating
+        if (!this.socket.connected) {
+            console.log('[Game] Socket not connected yet, waiting for connection...');
+            this.socket.once('connect', () => {
+                console.log('[Game] Socket connected, now authenticating...');
+                this.performAuthentication();
+            });
+            return;
+        }
+
+        console.log('[Game] Socket already connected, authenticating immediately...');
+        this.performAuthentication();
+    }
+
+    private performAuthentication() {
         // Get credentials from AuthUI or localStorage
         const credentials = {
             username: localStorage.getItem('username') || 'player1',
@@ -638,11 +681,16 @@ export class Game {
             spawnBiome: localStorage.getItem('spawnBiome') || 'default'
         };
 
+        console.log('[Game] Sending authentication request with username:', credentials.username);
         this.socket.emit('authenticate', credentials);
 
+        // Remove any existing authenticated listeners to avoid duplicates
+        this.socket.removeAllListeners('authenticated');
+        
         this.socket.on('authenticated', (response: { success: boolean; error?: string; player?: any }) => {
+            console.log('[Game] Received authentication response:', response);
             if (response.success) {
-                console.log('Authentication successful');
+                console.log('[Game] Authentication successful');
                 if (response.player) {
                     if (this.socket.id) {
                         // Update player data with saved progress
@@ -660,7 +708,7 @@ export class Game {
                     this.tutorial.start();
                 }, 1000);
             } else {
-                console.error('Authentication failed:', response.error);
+                console.error('[Game] Authentication failed:', response.error);
                 alert('Authentication failed: ' + response.error);
                 localStorage.removeItem('currentUser');
                 window.location.reload();

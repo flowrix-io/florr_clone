@@ -5,21 +5,74 @@ exports.initMultiPlayerMode = initMultiPlayerMode;
 const socket_io_client_1 = require("socket.io-client");
 Object.defineProperty(exports, "Socket", { enumerable: true, get: function () { return socket_io_client_1.Socket; } });
 function initMultiPlayerMode(game, serverIp) {
-    // Use provided server IP or current origin as default
-    const serverUrl = serverIp || window.location.origin;
-    console.log(`[CLIENT] Connecting to server: ${serverUrl}`);
-    game.socket = (0, socket_io_client_1.io)(serverUrl, {
-        secure: serverUrl.startsWith('https'),
-        rejectUnauthorized: false,
-        withCredentials: true
-    });
-    game.socket.on('connect', () => {
-        const connectTime = performance.now();
-        console.log(`[CLIENT] Connected to server at ${connectTime.toFixed(0)}`);
+    // Remove connecting message immediately
+    const connectingDiv = document.getElementById('connectingDiv');
+    if (connectingDiv) {
+        connectingDiv.remove();
+    }
+    // Check if there's a preconnected socket available
+    if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+        console.log(`[CLIENT] Using preconnected socket (ID: ${window.preconnectedSocket.id})`);
+        game.socket = window.preconnectedSocket;
+        // Remove only the mapData listener from preconnect, keep all other listeners
+        const mapDataListeners = game.socket.listeners('mapData');
+        game.socket.removeAllListeners('mapData');
+        // Clear the preconnected socket reference since we're now using it
+        window.preconnectedSocket = null;
+        // Socket is already connected
+        console.log(`[CLIENT] Preconnected socket already connected, proceeding with authentication`);
+    }
+    else if (window.preconnectedSocket && !window.preconnectedSocket.connected) {
+        console.log(`[CLIENT] Preconnected socket exists but not connected yet, creating new connection instead`);
+        // If preconnected socket exists but isn't connected, create a new one
+        window.preconnectedSocket = null;
+        // Fall through to create new connection
+    }
+    // Create new connection if no preconnected socket or it wasn't connected
+    if (!game.socket) {
+        // Use provided server IP or current origin as default
+        const serverUrl = serverIp || window.location.origin;
+        console.log(`[CLIENT] Connecting to server: ${serverUrl}`);
+        game.socket = (0, socket_io_client_1.io)(serverUrl, {
+            secure: serverUrl.startsWith('https'),
+            rejectUnauthorized: false,
+            withCredentials: true,
+            transports: ['websocket', 'polling'] // Explicitly set transports
+        });
+        game.socket.on('connect', () => {
+            const connectTime = performance.now();
+            console.log(`[CLIENT] Connected to server at ${connectTime.toFixed(0)}`);
+            // Remove connecting message when connected
+            const connectingDiv = document.getElementById('connectingDiv');
+            if (connectingDiv) {
+                connectingDiv.remove();
+            }
+            game.hideTitleScreen();
+            game.showExitButton();
+        });
+        game.socket.on('connect_error', (error) => {
+            console.error(`[CLIENT] Connection error:`, error);
+            // Remove connecting message on error
+            const connectingDiv = document.getElementById('connectingDiv');
+            if (connectingDiv) {
+                connectingDiv.remove();
+            }
+        });
+    }
+    // Only setup listeners if socket is assigned
+    if (game.socket) {
+        setupSocketListeners(game);
+    }
+    // If socket is already connected (preconnected), hide title screen now
+    if (game.socket.connected) {
+        console.log(`[CLIENT] Socket already connected, hiding title screen`);
         game.hideTitleScreen();
-        game.showExitButton();
-    });
-    setupSocketListeners(game);
+        // Remove connecting message
+        const connectingDiv = document.getElementById('connectingDiv');
+        if (connectingDiv) {
+            connectingDiv.remove();
+        }
+    }
 }
 function setupSocketListeners(game) {
     game.socket.on('connect', () => {

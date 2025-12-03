@@ -7,7 +7,11 @@ const title_screen_1 = require("./title_screen");
 const preloader_1 = require("./preloader");
 const petals_1 = require("./petals");
 const shaderManager_1 = require("./shader/shaderManager");
+const socket_io_client_1 = require("socket.io-client");
 let currentGame = null;
+let preconnectedSocket = null; // Store preconnected socket
+let preconnectedMapData = null; // Store map data received during preconnect
+let isConnecting = false; // Flag to prevent multiple connection attempts
 window.currentGame = currentGame;
 let titleScreen = null;
 window.titleScreen = titleScreen;
@@ -109,6 +113,14 @@ window.onload = async () => {
         await titleScreen.appendToBody();
         // Initialize auth UI after title screen is created
         authUI = new auth_ui_1.AuthUI();
+        // Preconnect if user is already logged in (showing "logging in")
+        // Use setTimeout to ensure titleScreen is fully initialized
+        setTimeout(() => {
+            if (localStorage.getItem('username')) {
+                console.log('[Index] User is logged in, preconnecting to server...');
+                preconnectToServer();
+            }
+        }, 100);
         // Set up game event listeners
         setupGameEventListeners();
         console.log('[Index] Application initialized successfully');
@@ -139,6 +151,46 @@ window.onload = async () => {
         document.body.appendChild(errorMsg);
     }
 };
+// Preconnect to server without authenticating/spawning
+function preconnectToServer() {
+    if (preconnectedSocket) {
+        console.log('[Index] Socket already preconnected');
+        return;
+    }
+    const serverIp = titleScreen?.getServerIP() || window.location.origin;
+    const serverUrl = serverIp || window.location.origin;
+    console.log(`[Index] Preconnecting to server: ${serverUrl}`);
+    preconnectedSocket = (0, socket_io_client_1.io)(serverUrl, {
+        secure: serverUrl.startsWith('https'),
+        rejectUnauthorized: false,
+        withCredentials: true,
+        transports: ['websocket', 'polling'] // Explicitly set transports
+    });
+    preconnectedSocket.on('connect', () => {
+        console.log(`[Index] Preconnected to server (socket ID: ${preconnectedSocket?.id})`);
+    });
+    preconnectedSocket.on('connect_error', (error) => {
+        console.error('[Index] Preconnect connection error:', error);
+    });
+    // Store map data if received during preconnect
+    preconnectedSocket.on('mapData', (mapData) => {
+        console.log('[Index] Received map data during preconnect');
+        preconnectedMapData = mapData;
+        window.preconnectedMapData = mapData;
+        // Update title screen biomes if available
+        if (titleScreen) {
+            titleScreen.updateBiomesFromMapData(mapData);
+        }
+    });
+    preconnectedSocket.on('disconnect', (reason) => {
+        console.log(`[Index] Preconnected socket disconnected: ${reason}`);
+        preconnectedSocket = null;
+        preconnectedMapData = null;
+        window.preconnectedSocket = null;
+        window.preconnectedMapData = null;
+    });
+    window.preconnectedSocket = preconnectedSocket;
+}
 function setupGameEventListeners() {
     if (!titleScreen)
         return;
@@ -146,6 +198,16 @@ function setupGameEventListeners() {
     const multiPlayerButton = titleScreen.getMultiPlayerButton();
     if (multiPlayerButton) {
         multiPlayerButton.addEventListener('click', () => {
+            // Prevent multiple clicks
+            if (isConnecting || currentGame) {
+                return;
+            }
+            isConnecting = true;
+            // Remove any existing connectingDiv first
+            const existingConnectingDiv = document.getElementById('connectingDiv');
+            if (existingConnectingDiv) {
+                existingConnectingDiv.remove();
+            }
             const connectingDiv = document.createElement('div');
             connectingDiv.innerHTML = 'Connecting...';
             connectingDiv.style.cssText = `
@@ -167,10 +229,6 @@ function setupGameEventListeners() {
             `;
             connectingDiv.id = 'connectingDiv';
             document.body.appendChild(connectingDiv);
-            if (currentGame) {
-                // Cleanup previous game
-                currentGame.cleanup();
-            }
             const showHitboxes = titleScreen?.getShowHitboxes() || false;
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
             const shadersEnabled = titleScreen?.getShadersEnabled() || false;
@@ -180,6 +238,15 @@ function setupGameEventListeners() {
             // Hide title screen and show game
             titleScreen?.hideTitleScreen();
             titleScreen?.showExitButton();
+            // Reset connecting flag after a short delay
+            setTimeout(() => {
+                isConnecting = false;
+                // Ensure connectingDiv is removed (backup)
+                const connectingDiv = document.getElementById('connectingDiv');
+                if (connectingDiv) {
+                    connectingDiv.remove();
+                }
+            }, 1000);
         });
     }
     // Handle exit button click

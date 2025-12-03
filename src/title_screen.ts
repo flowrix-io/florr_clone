@@ -644,7 +644,7 @@ export class TitleScreen {
             bottom: 20px;
             left: 20px;
             z-index: 3000;
-            display: none;
+            display: flex;
             flex-direction: column;
             gap: 10px;
             pointer-events: auto;
@@ -791,11 +791,18 @@ export class TitleScreen {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
-                    // Get the controls from localStorage or use default
-                    const savedControls = localStorage.getItem('controls');
-                    const controls = savedControls ? JSON.parse(savedControls) : { crafting: 'r' };
-                    const event = new KeyboardEvent('keydown', { key: controls.crafting || 'r', bubbles: true, cancelable: true });
-                    document.dispatchEvent(event);
+                    
+                    // Check if game is running
+                    if (window.currentGame) {
+                        // Get the controls from localStorage or use default
+                        const savedControls = localStorage.getItem('controls');
+                        const controls = savedControls ? JSON.parse(savedControls) : { crafting: 'r' };
+                        const event = new KeyboardEvent('keydown', { key: controls.crafting || 'r', bubbles: true, cancelable: true });
+                        document.dispatchEvent(event);
+                    } else {
+                        // Show message that game needs to be started
+                        alert('Please start the game first by clicking "Ready▶︎"');
+                    }
                     return false;
                 }, true);
             }
@@ -810,11 +817,18 @@ export class TitleScreen {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
-                    // Get the controls from localStorage or use default
-                    const savedControls = localStorage.getItem('controls');
-                    const controls = savedControls ? JSON.parse(savedControls) : { skills: 'k' };
-                    const event = new KeyboardEvent('keydown', { key: controls.skills || 'k', bubbles: true, cancelable: true });
-                    document.dispatchEvent(event);
+                    
+                    // Check if game is running
+                    if (window.currentGame) {
+                        // Get the controls from localStorage or use default
+                        const savedControls = localStorage.getItem('controls');
+                        const controls = savedControls ? JSON.parse(savedControls) : { skills: 'k' };
+                        const event = new KeyboardEvent('keydown', { key: controls.skills || 'k', bubbles: true, cancelable: true });
+                        document.dispatchEvent(event);
+                    } else {
+                        // Show message that game needs to be started
+                        alert('Please start the game first by clicking "Ready▶︎"');
+                    }
                     return false;
                 }, true);
             }
@@ -829,11 +843,18 @@ export class TitleScreen {
                     e.preventDefault();
                     e.stopPropagation();
                     e.stopImmediatePropagation();
-                    // Get the controls from localStorage or use default
-                    const savedControls = localStorage.getItem('controls');
-                    const controls = savedControls ? JSON.parse(savedControls) : { inventory: 'i' };
-                    const event = new KeyboardEvent('keydown', { key: controls.inventory || 'i', bubbles: true, cancelable: true });
-                    document.dispatchEvent(event);
+                    
+                    // Check if game is running
+                    if (window.currentGame) {
+                        // Get the controls from localStorage or use default
+                        const savedControls = localStorage.getItem('controls');
+                        const controls = savedControls ? JSON.parse(savedControls) : { inventory: 'i' };
+                        const event = new KeyboardEvent('keydown', { key: controls.inventory || 'i', bubbles: true, cancelable: true });
+                        document.dispatchEvent(event);
+                    } else {
+                        // Show message that game needs to be started
+                        alert('Please start the game first by clicking "Ready▶︎"');
+                    }
                     return false;
                 }, true);
             }
@@ -1386,11 +1407,8 @@ export class TitleScreen {
         if (exitButton) {
             exitButton.style.display = 'none';
         }
-        // Also hide bottom left buttons
-        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
-        if (bottomLeftButtons) {
-            bottomLeftButtons.style.display = 'none';
-        }
+        // Keep bottom left buttons visible on title screen
+        // They are now always visible
     }
 
     public showDeathScreen(killedBy?: { type: string; tier: string }): void {
