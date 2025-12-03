@@ -320,6 +320,13 @@ export class SkillsManager {
             return;
         }
 
+        // Check if socket is authenticated (username is set during authentication)
+        if (!(socket as any).username) {
+            console.warn('[SKILLS] Socket not authenticated yet');
+            alert('Please wait for authentication to complete');
+            return;
+        }
+
         socket.emit('upgradeSkill', { skillId, rarity });
     }
 

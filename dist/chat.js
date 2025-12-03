@@ -126,6 +126,13 @@ class Chat {
         // Send all messages to server (including /help for server-side handling)
         this.chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && this.chatInput?.value.trim()) {
+                // Check if socket is authenticated (username is set during authentication)
+                if (!this.socket.username) {
+                    console.warn('[CHAT] Socket not authenticated yet, message will be sent when authenticated');
+                    // Store message to send later if needed, or just show error
+                    alert('Please wait for authentication to complete');
+                    return;
+                }
                 // Send the chat message to the server
                 this.socket.emit('chatMessage', this.chatInput.value.trim());
                 this.chatInput.value = '';

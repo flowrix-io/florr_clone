@@ -186,6 +186,11 @@ function preconnectToServer() {
     preconnectedSocket.on('authenticated', (response) => {
         if (response.success && response.player && titleScreen) {
             console.log('[Index] Updating title screen with player data');
+            // Mark socket as authenticated - this allows operations to proceed immediately
+            const username = localStorage.getItem('username');
+            if (username) {
+                preconnectedSocket.username = username;
+            }
             // Update title screen inventory manager with player data
             titleScreen.titleScreenInventoryManager?.updateFromPlayerData({
                 inventory: response.player.inventory || {},
@@ -205,8 +210,16 @@ function preconnectToServer() {
     });
     // Listen for skills updates
     preconnectedSocket.on('skillsUpdated', (data) => {
-        if (titleScreen && titleScreen.titleScreenSkillsManager) {
-            titleScreen.titleScreenSkillsManager.updateSkills(data.tp, data.skills);
+        console.log('[Index] skillsUpdated received:', data);
+        // Check if this is for the current player (compare socket ID)
+        if (data.playerId === preconnectedSocket.id && titleScreen) {
+            if (titleScreen.titleScreenSkillsManager) {
+                titleScreen.titleScreenSkillsManager.updateSkills(data.tp, data.skills);
+            }
+            // Also update skills data in inventory manager
+            if (titleScreen.titleScreenInventoryManager) {
+                titleScreen.titleScreenInventoryManager.updateSkillsData(data.tp, data.skills);
+            }
         }
     });
     preconnectedSocket.on('disconnect', (reason) => {

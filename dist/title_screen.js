@@ -1738,6 +1738,7 @@ class TitleScreenInventoryManager {
             this.socket = window.preconnectedSocket;
             this.authenticateAndFetchData();
             this.setupCraftingSocketListeners();
+            this.setupSkillsSocketListeners();
         }
         else {
             // Wait for socket to connect
@@ -1746,23 +1747,67 @@ class TitleScreenInventoryManager {
                     this.socket = window.preconnectedSocket;
                     this.authenticateAndFetchData();
                     this.setupCraftingSocketListeners();
+                    this.setupSkillsSocketListeners();
                     clearInterval(checkSocket);
                 }
             }, 100);
         }
     }
+    setupSkillsSocketListeners() {
+        if (!this.socket)
+            return;
+        // Listen for skills updates - this will be handled by index.ts which has access to titleScreen
+        // We just update our local skills data here
+        this.socket.on('skillsUpdated', (data) => {
+            console.log('[TitleScreenInventory] skillsUpdated received:', data);
+            // Check if this is for the current player
+            if (data.playerId === this.socket.id) {
+                // Update skills data in inventory manager
+                this.updateSkillsData(data.tp, data.skills);
+            }
+        });
+    }
     setupCraftingSocketListeners() {
         if (!this.socket)
             return;
-        // Listen for crafting results
-        this.socket.on('craftResult', (result) => {
-            if (result.success && result.newItem && result.successCount) {
-                this.showCraftingSuccess(result.newItem, result.successCount);
-                // Refresh inventory after crafting
-                if (this.socket) {
-                    this.socket.emit('requestPlayerData');
-                }
+        // Listen for crafting finished event (server emits 'craftingFinished', not 'craftResult')
+        this.socket.on('craftingFinished', (data) => {
+            console.log('[TitleScreen] craftingFinished received:', data);
+            // Update inventory
+            if (this.playerData) {
+                this.playerData.inventory = data.inventory;
             }
+            if (data.successCount > 0) {
+                // Parse item type and petalType from itemKey
+                const itemKey = data.newItem.type;
+                let itemType = 'petal';
+                let petalType;
+                if (itemKey.startsWith('petal_')) {
+                    itemType = 'petal';
+                    petalType = itemKey.substring(6);
+                }
+                else {
+                    itemType = itemKey;
+                }
+                const displayItem = {
+                    type: itemType,
+                    rarity: data.newItem.rarity,
+                    petalType: petalType
+                };
+                this.showCraftingSuccess(displayItem, data.successCount);
+            }
+            if (data.failCount > 0) {
+                console.log(`[TitleScreen] Failed to craft ${data.failCount}x. Items were lost.`);
+            }
+            // Update displays
+            if (this.isCraftingOpen) {
+                this.updateCraftingInventoryPreview();
+                this.updateInventoryDisplay();
+            }
+        });
+        // Listen for crafting failures
+        this.socket.on('craftingFailed', (error) => {
+            alert(error);
         });
         // Listen for player updates to refresh inventory
         this.socket.on('playerUpdated', (updatedPlayer) => {
@@ -1811,6 +1856,14 @@ class TitleScreenInventoryManager {
                 this.updateLoadoutDisplay();
                 if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
                     this.updateInventoryDisplay();
+                }
+                // Mark socket as authenticated - this allows operations to proceed
+                // The server sets socket.username during authentication, but we ensure it's set here too
+                if (this.socket && !this.socket.username) {
+                    const username = localStorage.getItem('username');
+                    if (username) {
+                        this.socket.username = username;
+                    }
                 }
             }
         };
@@ -2402,7 +2455,12 @@ class TitleScreenInventoryManager {
             alert('Not connected to server');
             return;
         }
-        console.log('[TitleScreen] Sending craftItems request:', { itemCount: this.craftingItems.length });
+        // Check if player is authenticated (socket.username is set during authentication)
+        if (!this.socket.username) {
+            alert('Please wait for authentication to complete');
+            return;
+        }
+        console.log('[TitleScreen] Sending craftItems request:', { itemCount: this.craftingItems.length, socketId: this.socket.id });
         this.socket.emit('craftItems', { items: this.craftingItems });
         this.craftingItems = [];
         this.updateCraftingDisplay();
