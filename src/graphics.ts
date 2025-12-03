@@ -1886,6 +1886,31 @@ export class Graphics {
         this.ctx.restore();
     }
 
+    /**
+     * Darken a hex color by a specified percentage
+     * @param hex - Hex color string (e.g., '#7eef6d')
+     * @param percent - Percentage to darken (0-100, default 30)
+     * @returns Darkened hex color string
+     */
+    private darkenColor(hex: string, percent: number = 30): string {
+        // Remove # if present
+        const num = parseInt(hex.replace('#', ''), 16);
+        
+        // Extract RGB components
+        const r = (num >> 16) & 255;
+        const g = (num >> 8) & 255;
+        const b = num & 255;
+        
+        // Darken each component
+        const factor = 1 - (percent / 100);
+        const newR = Math.round(r * factor);
+        const newG = Math.round(g * factor);
+        const newB = Math.round(b * factor);
+        
+        // Convert back to hex
+        return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
+    }
+
     private drawItem(item: WorldItem) {
         this.ctx.save();
         this.ctx.translate(item.x, item.y);
@@ -1894,8 +1919,11 @@ export class Graphics {
         if (item.rarity) {
             this.ctx.save();
             this.ctx.beginPath();
-            this.ctx.arc(0, 0, 25, 0, Math.PI * 2);
-            this.ctx.fillStyle = `${this.ITEM_RARITY_COLORS[item.rarity]}40`;
+            this.ctx.roundRect(-25, -25, 50, 50, 5);
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeStyle = this.darkenColor(this.ITEM_RARITY_COLORS[item.rarity], 30);
+            this.ctx.stroke();
+            this.ctx.fillStyle = `${this.ITEM_RARITY_COLORS[item.rarity]}`;
             this.ctx.fill();
             this.ctx.restore();
         }
