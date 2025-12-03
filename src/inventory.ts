@@ -71,6 +71,18 @@ export class InventoryManager {
     }
 
     /**
+     * Format petal name for display (matches graphics.ts formatting)
+     * @param petalType - The petal type string
+     * @returns Formatted petal name
+     */
+    private formatPetalName(petalType: string): string {
+        if (!petalType) return "";
+        let itemName = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
+        itemName = itemName.replace('_', ' ');
+        return itemName;
+    }
+
+    /**
      * Convert hex color to rgba string
      * @param hex - Hex color string (e.g., '#7eef6d')
      * @param alpha - Alpha value (0-1)
@@ -661,6 +673,35 @@ export class InventoryManager {
                     }
                     
                     slot.appendChild(petalDiv);
+
+                    // Add petal name label (similar to drops in graphics.ts)
+                    if (item.petalType) {
+                        const petalName = this.formatPetalName(item.petalType);
+                        if (petalName) {
+                            const nameLabel = document.createElement('div');
+                            nameLabel.className = 'petal-name';
+                            nameLabel.textContent = petalName;
+                            nameLabel.style.cssText = `
+                                position: absolute;
+                                bottom: 5px;
+                                left: 50%;
+                                transform: translateX(-50%);
+                                color: white;
+                                font-size: 12px;
+                                font-weight: bold;
+                                text-shadow: 
+                                    -1px -1px 0 #000,
+                                    1px -1px 0 #000,
+                                    -1px 1px 0 #000,
+                                    1px 1px 0 #000,
+                                    0 0 3px rgba(0,0,0,0.8);
+                                white-space: nowrap;
+                                pointer-events: none;
+                                z-index: 10;
+                            `;
+                            slot.appendChild(nameLabel);
+                        }
+                    }
                 } else {
                     // Regular items (health potion, speed boost, shield)
                     const img = document.createElement('img');
@@ -992,14 +1033,44 @@ export class InventoryManager {
                     countLabel.textContent = count.toString();
                     countLabel.style.cssText = `
                         position: absolute;
-                        bottom: 2px;
+                        top: 2px;
                         right: 4px;
                         color: white;
-                        font-size: 14px;
+                        font-size: 12px;
                         font-weight: bold;
                         text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
                     `;
                     itemElement.appendChild(countLabel);
+
+                    // Add petal name label for petals (similar to drops in graphics.ts)
+                    if (type.startsWith('petal_')) {
+                        const petalType = type.replace('petal_', '');
+                        const petalName = this.formatPetalName(petalType);
+                        if (petalName) {
+                            const nameLabel = document.createElement('div');
+                            nameLabel.className = 'petal-name';
+                            nameLabel.textContent = petalName;
+                            nameLabel.style.cssText = `
+                                position: absolute;
+                                bottom: 5px;
+                                left: 50%;
+                                transform: translateX(-50%);
+                                color: white;
+                                font-size: 12px;
+                                font-weight: bold;
+                                text-shadow: 
+                                    -1px -1px 0 #000,
+                                    1px -1px 0 #000,
+                                    -1px 1px 0 #000,
+                                    1px 1px 0 #000,
+                                    0 0 3px rgba(0,0,0,0.8);
+                                white-space: nowrap;
+                                pointer-events: none;
+                                z-index: 10;
+                            `;
+                            itemElement.appendChild(nameLabel);
+                        }
+                    }
 
                     grid.appendChild(itemElement);
                 });
