@@ -8,6 +8,8 @@ import { ChangelogManager } from './changelog';
 import { WORLD_MAP } from './constants';
 import { Item } from './item';
 import { Player, PlayerInventory } from './player';
+import { Chat } from './chat';
+import { SkillsManager } from './skills';
 
 interface FloatingPetal {
     element: HTMLElement;
@@ -168,12 +170,18 @@ export class TitleScreen {
     private backgroundTime: number = 0;
     private changelogManager!: ChangelogManager;
     private titleScreenInventoryManager!: TitleScreenInventoryManager;
+    private titleScreenChat: Chat | null = null;
+    private titleScreenSkillsManager: SkillsManager | null = null;
 
     constructor() {
         this.initializeElements();
         this.setupEventListeners();
         this.changelogManager = new ChangelogManager();
         this.titleScreenInventoryManager = new TitleScreenInventoryManager();
+        
+        // Initialize chat and skills when socket is available
+        this.initializeTitleScreenChat();
+        this.initializeTitleScreenSkills();
         
         // Initialize biome selector with local map data
         this.updateBiomesFromMapData(WORLD_MAP);
@@ -756,6 +764,38 @@ export class TitleScreen {
     }
 
     private setupEventListeners(): void {
+        // Add keyboard shortcuts for chat and skills on title screen
+        document.addEventListener('keydown', (event) => {
+            // Don't interfere if game is running
+            if (window.currentGame) return;
+            
+            // Don't interfere if chat is focused
+            if (this.titleScreenChat && this.titleScreenChat.isFocused) {
+                if (event.key === 'Escape') {
+                    this.titleScreenChat.blur();
+                }
+                return;
+            }
+            
+            const controls = this.getControls();
+            
+            // Chat shortcut
+            if (event.key === (controls.chat || 'Enter')) {
+                if (this.titleScreenChat) {
+                    this.titleScreenChat.focus();
+                }
+                event.preventDefault();
+                return;
+            }
+            
+            // Skills shortcut
+            if (event.key === (controls.skills || 'k')) {
+                this.toggleSkillsOnTitleScreen();
+                event.preventDefault();
+                return;
+            }
+        });
+        
         // Settings button event listener (now in exitButtonContainer)
         const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
         const changelogButton = this.exitButtonContainer.querySelector('#changelogButton');
@@ -1778,21 +1818,97 @@ export class TitleScreen {
             return;
         }
 
-        // Check if skills panel already exists (from game)
-        let skillsPanel = document.getElementById('skillsPanel') as HTMLDivElement;
-        
-        if (!skillsPanel) {
-            // Use title screen inventory manager to show skills
-            this.titleScreenInventoryManager.toggleSkills();
+        // Use title screen skills manager
+        if (this.titleScreenSkillsManager) {
+            this.titleScreenSkillsManager.toggle();
         } else {
-            // Toggle existing panel
-            const isOpen = skillsPanel.style.display === 'block';
-            if (!isOpen) {
-                skillsPanel.style.display = 'block';
-            } else {
-                skillsPanel.style.display = 'none';
-            }
+            alert('Please start the game to view and upgrade your skills.');
         }
+    }
+
+    private initializeTitleScreenChat(): void {
+        // Wait for preconnected socket to be available
+        const checkSocket = setInterval(() => {
+            if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+                console.log('[TitleScreen] Initializing chat with preconnected socket');
+                this.titleScreenChat = new Chat(window.preconnectedSocket);
+                clearInterval(checkSocket);
+            }
+        }, 100);
+
+        // Timeout after 5 seconds if socket doesn't connect
+        setTimeout(() => {
+            clearInterval(checkSocket);
+            if (!this.titleScreenChat && window.preconnectedSocket && window.preconnectedSocket.connected) {
+                console.log('[TitleScreen] Initializing chat with preconnected socket (delayed)');
+                this.titleScreenChat = new Chat(window.preconnectedSocket);
+            }
+        }, 5000);
+    }
+
+    private initializeTitleScreenSkills(): void {
+        // Create a minimal game interface for skills manager
+        const createGameInterface = () => ({
+            getLocalPlayer: () => {
+                // Get player data from title screen inventory manager
+                const playerData = (this.titleScreenInventoryManager as any).playerData;
+                if (!playerData) return undefined;
+                
+                return {
+                    id: window.preconnectedSocket?.id || '',
+                    name: localStorage.getItem('username') || 'Unnamed',
+                    x: 0,
+                    y: 0,
+                    angle: 0,
+                    score: 0,
+                    imageLoaded: true,
+                    image: new Image(),
+                    velocityX: 0,
+                    velocityY: 0,
+                    health: 100,
+                    maxHealth: 100,
+                    damage: 10,
+                    inventory: playerData.inventory,
+                    loadout: playerData.loadout,
+                    level: 1,
+                    xp: 0,
+                    xpToNextLevel: 100,
+                    tp: playerData.tp || 0,
+                    skills: playerData.skills || {}
+                } as Player;
+            },
+            getSocket: () => window.preconnectedSocket,
+            showFloatingText: () => {}, // No-op for title screen
+            canvas: document.createElement('canvas')
+        });
+
+        // Wait for socket to be available
+        const checkSocket = setInterval(() => {
+            if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+                console.log('[TitleScreen] Initializing skills manager with preconnected socket');
+                this.titleScreenSkillsManager = new SkillsManager(createGameInterface());
+                // Refresh skills if player data is already available
+                const playerData = (this.titleScreenInventoryManager as any).playerData;
+                if (playerData && playerData.tp !== undefined && playerData.skills) {
+                    this.titleScreenSkillsManager.updateSkills(playerData.tp || 0, playerData.skills || {});
+                }
+                clearInterval(checkSocket);
+            }
+        }, 100);
+
+        // Timeout after 5 seconds if socket doesn't connect
+        setTimeout(() => {
+            clearInterval(checkSocket);
+            if (!this.titleScreenSkillsManager && window.preconnectedSocket && window.preconnectedSocket.connected) {
+                console.log('[TitleScreen] Initializing skills manager with preconnected socket (delayed)');
+                this.titleScreenSkillsManager = new SkillsManager(createGameInterface());
+                // Refresh skills if player data is already available
+                const playerData = (this.titleScreenInventoryManager as any).playerData;
+                if (playerData && playerData.tp !== undefined && playerData.skills) {
+                    this.titleScreenSkillsManager.updateSkills(playerData.tp || 0, playerData.skills || {});
+                }
+            }
+        }, 5000);
     }
 }
 
@@ -1803,7 +1919,7 @@ export class TitleScreen {
 class TitleScreenInventoryManager {
     private inventoryPanel: HTMLDivElement | null = null;
     private loadoutBar: HTMLDivElement | null = null;
-    private playerData: { inventory: PlayerInventory; loadout: (Item | null)[] } | null = null;
+    private playerData: { inventory: PlayerInventory; loadout: (Item | null)[]; tp?: number; skills?: any } | null = null;
     private socket: any = null;
     private readonly LOADOUT_SLOTS = 10;
     private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
@@ -2253,11 +2369,19 @@ class TitleScreenInventoryManager {
         }
     }
 
-    public updateFromPlayerData(playerData: { inventory: PlayerInventory; loadout: (Item | null)[] }): void {
+    public updateFromPlayerData(playerData: { inventory: PlayerInventory; loadout: (Item | null)[]; tp?: number; skills?: any }): void {
         this.playerData = playerData;
         this.updateLoadoutDisplay();
         if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
             this.updateInventoryDisplay();
+        }
+    }
+    
+    public updateSkillsData(tp: number, skills: { [key: string]: string }): void {
+        // Update skills data in playerData
+        if (this.playerData) {
+            this.playerData.tp = tp;
+            this.playerData.skills = skills;
         }
     }
 
@@ -2273,14 +2397,8 @@ class TitleScreenInventoryManager {
     }
 
     public toggleSkills(): void {
-        // Check if game is running - if so, use game's skills
-        if (window.currentGame && (window.currentGame as any).skillsManager) {
-            (window.currentGame as any).skillsManager.toggle();
-            return;
-        }
-
-        // For title screen, show a message that skills require the game to be running
-        alert('Please start the game to view and upgrade your skills.');
+        // This is now handled by TitleScreen.toggleSkillsOnTitleScreen()
+        // This method is kept for compatibility but shouldn't be called directly
     }
 }
 

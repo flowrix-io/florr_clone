@@ -182,15 +182,31 @@ function preconnectToServer() {
             titleScreen.updateBiomesFromMapData(mapData);
         }
     });
-    // Listen for authenticated event to update title screen inventory
+    // Listen for authenticated event to update title screen inventory and skills
     preconnectedSocket.on('authenticated', (response) => {
         if (response.success && response.player && titleScreen) {
             console.log('[Index] Updating title screen with player data');
             // Update title screen inventory manager with player data
             titleScreen.titleScreenInventoryManager?.updateFromPlayerData({
                 inventory: response.player.inventory || {},
-                loadout: response.player.loadout || Array(10).fill(null)
+                loadout: response.player.loadout || Array(10).fill(null),
+                tp: response.player.tp,
+                skills: response.player.skills
             });
+            // Update title screen skills manager if it exists
+            if (titleScreen.titleScreenSkillsManager && response.player.tp !== undefined && response.player.skills) {
+                titleScreen.titleScreenSkillsManager.updateSkills(response.player.tp || 0, response.player.skills || {});
+            }
+            // Also update skills data in inventory manager
+            if (titleScreen.titleScreenInventoryManager) {
+                titleScreen.titleScreenInventoryManager.updateSkillsData(response.player.tp || 0, response.player.skills || {});
+            }
+        }
+    });
+    // Listen for skills updates
+    preconnectedSocket.on('skillsUpdated', (data) => {
+        if (titleScreen && titleScreen.titleScreenSkillsManager) {
+            titleScreen.titleScreenSkillsManager.updateSkills(data.tp, data.skills);
         }
     });
     preconnectedSocket.on('disconnect', (reason) => {

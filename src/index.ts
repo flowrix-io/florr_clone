@@ -228,15 +228,40 @@ function preconnectToServer() {
         }
     });
 
-    // Listen for authenticated event to update title screen inventory
+    // Listen for authenticated event to update title screen inventory and skills
     preconnectedSocket.on('authenticated', (response: { success: boolean; error?: string; player?: any }) => {
         if (response.success && response.player && titleScreen) {
             console.log('[Index] Updating title screen with player data');
             // Update title screen inventory manager with player data
             (titleScreen as any).titleScreenInventoryManager?.updateFromPlayerData({
                 inventory: response.player.inventory || {},
-                loadout: response.player.loadout || Array(10).fill(null)
+                loadout: response.player.loadout || Array(10).fill(null),
+                tp: response.player.tp,
+                skills: response.player.skills
             });
+            
+            // Update title screen skills manager if it exists
+            if ((titleScreen as any).titleScreenSkillsManager && response.player.tp !== undefined && response.player.skills) {
+                (titleScreen as any).titleScreenSkillsManager.updateSkills(
+                    response.player.tp || 0,
+                    response.player.skills || {}
+                );
+            }
+            
+            // Also update skills data in inventory manager
+            if ((titleScreen as any).titleScreenInventoryManager) {
+                (titleScreen as any).titleScreenInventoryManager.updateSkillsData(
+                    response.player.tp || 0,
+                    response.player.skills || {}
+                );
+            }
+        }
+    });
+
+    // Listen for skills updates
+    preconnectedSocket.on('skillsUpdated', (data: { playerId: string; tp: number; skills: { [key: string]: string } }) => {
+        if (titleScreen && (titleScreen as any).titleScreenSkillsManager) {
+            (titleScreen as any).titleScreenSkillsManager.updateSkills(data.tp, data.skills);
         }
     });
     
