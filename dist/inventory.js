@@ -75,28 +75,38 @@ class InventoryManager {
         this.game = game;
         this.chat = chat;
         this.allPetalTypes = (0, petals_1.getAllPetalTypes)();
-        // Create loadout bar
-        const loadoutBar = document.createElement('div');
-        loadoutBar.id = 'loadoutBar';
-        loadoutBar.style.position = 'fixed';
-        loadoutBar.style.bottom = '20px';
-        loadoutBar.style.left = '50%';
-        loadoutBar.style.transform = 'translateX(-50%)';
-        loadoutBar.style.display = 'flex';
-        loadoutBar.style.gap = '5px';
-        loadoutBar.style.zIndex = '1000';
-        for (let i = 0; i < this.LOADOUT_SLOTS; i++) {
-            const slot = document.createElement('div');
-            slot.className = 'loadout-slot';
-            slot.dataset.slot = i.toString();
-            slot.style.width = '50px';
-            slot.style.height = '50px';
-            slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
-            slot.style.border = '3px solid #00ba3e';
-            slot.style.borderRadius = '5px';
-            loadoutBar.appendChild(slot);
+        // Create loadout bar (or use existing one if it already exists)
+        let loadoutBar = document.getElementById('loadoutBar');
+        if (!loadoutBar) {
+            loadoutBar = document.createElement('div');
+            loadoutBar.id = 'loadoutBar';
+            loadoutBar.style.position = 'fixed';
+            loadoutBar.style.bottom = '20px';
+            loadoutBar.style.left = '50%';
+            loadoutBar.style.transform = 'translateX(-50%)';
+            loadoutBar.style.display = 'flex';
+            loadoutBar.style.gap = '5px';
+            loadoutBar.style.zIndex = '1000';
+            document.body.appendChild(loadoutBar);
         }
-        document.body.appendChild(loadoutBar);
+        else {
+            // Clear existing slots if loadout bar already exists
+            loadoutBar.innerHTML = '';
+        }
+        // Create slots if they don't exist
+        if (loadoutBar.querySelectorAll('.loadout-slot').length === 0) {
+            for (let i = 0; i < this.LOADOUT_SLOTS; i++) {
+                const slot = document.createElement('div');
+                slot.className = 'loadout-slot';
+                slot.dataset.slot = i.toString();
+                slot.style.width = '50px';
+                slot.style.height = '50px';
+                slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
+                slot.style.border = '3px solid #00ba3e';
+                slot.style.borderRadius = '5px';
+                loadoutBar.appendChild(slot);
+            }
+        }
         // Create inventory panel
         this.inventoryPanel = document.createElement('div');
         this.inventoryPanel.id = 'inventoryPanel';
@@ -472,9 +482,16 @@ class InventoryManager {
             console.warn('Player not yet initialized for loadout update');
             return;
         }
-        console.log('Updating loadout display with loadout:', player.loadout.map(item => item ? item.type : null));
-        const slots = document.querySelectorAll('.loadout-slot');
-        console.log('Found ' + slots.length + ' loadout slots');
+        // Remove excessive logging - only log when debugging
+        // console.log('[INVENTORY] Updating loadout display with loadout:', player.loadout);
+        // Only update slots in the game's loadout bar (id='loadoutBar'), not the title screen one
+        const loadoutBar = document.getElementById('loadoutBar');
+        if (!loadoutBar) {
+            console.warn('[INVENTORY] Loadout bar not found');
+            return;
+        }
+        const slots = loadoutBar.querySelectorAll('.loadout-slot');
+        console.log('[INVENTORY] Found ' + slots.length + ' loadout slots');
         slots.forEach((slot, index) => {
             slot.innerHTML = '';
             slot.classList.remove('on-cooldown', 'petal-slot');
@@ -513,15 +530,16 @@ class InventoryManager {
                             img.style.width = '100%';
                             img.style.height = '100%';
                             img.style.objectFit = 'contain';
-                            // Use canvas image - no fallback to SVG data URL
+                            // Use canvas image if available, otherwise use SVG data URL as fallback
                             const petalCanvas = this.game.getPetalCanvas?.(item.petalType, item.rarity, Date.now());
                             if (petalCanvas) {
                                 img.src = petalCanvas.toDataURL('image/png');
                             }
                             else {
-                                // No canvas available - use placeholder or skip rendering
-                                // Don't create SVG data URL
-                                return; // Skip this petal if canvas not available
+                                // Fallback to SVG data URL if canvas not available yet
+                                const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                                const url = URL.createObjectURL(svgBlob);
+                                img.src = url;
                             }
                             petalDiv.appendChild(img);
                         }
@@ -639,50 +657,64 @@ class InventoryManager {
                 }
             });
         };
+        // Function to setup drag and drop listeners on loadout slots
+        const setupLoadoutSlotListeners = () => {
+            // Only update slots in the game's loadout bar (id='loadoutBar'), not the title screen one
+            const loadoutBar = document.getElementById('loadoutBar');
+            if (!loadoutBar)
+                return;
+            const slots = loadoutBar.querySelectorAll('.loadout-slot');
+            slots.forEach((slot, slotIndex) => {
+                const slotElement = slot;
+                slotElement.dataset.slot = slotIndex.toString();
+                // Remove existing listeners by cloning the element
+                const newSlot = slotElement.cloneNode(true);
+                slotElement.parentNode?.replaceChild(newSlot, slotElement);
+                newSlot.addEventListener('dragenter', (e) => {
+                    e.preventDefault();
+                    newSlot.classList.add('drag-over');
+                });
+                newSlot.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    const dragEvent = e;
+                    dragEvent.dataTransfer.dropEffect = 'move';
+                    newSlot.classList.add('drag-over');
+                });
+                newSlot.addEventListener('dragleave', (e) => {
+                    newSlot.classList.remove('drag-over');
+                });
+                newSlot.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    const dragEvent = e;
+                    newSlot.classList.remove('drag-over');
+                    const itemData = dragEvent.dataTransfer?.getData('text/plain');
+                    const fromLoadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
+                    if (itemData) {
+                        const { rarity, type } = JSON.parse(itemData);
+                        const slot = parseInt(newSlot.dataset.slot || '-1');
+                        if (rarity && type && slot >= 0) {
+                            this.equipItemToLoadout(rarity, type, slot);
+                        }
+                    }
+                    else if (fromLoadoutSlot) {
+                        const fromSlot = parseInt(fromLoadoutSlot);
+                        const toSlot = slotIndex;
+                        if (fromSlot !== toSlot) {
+                            this.swapLoadoutItems(fromSlot, toSlot);
+                        }
+                    }
+                });
+            });
+        };
+        // Setup listeners initially
+        setupLoadoutSlotListeners();
+        // Wrap updateLoadoutDisplay to re-setup listeners after update
         const originalUpdateLoadoutDisplay = this.updateLoadoutDisplay.bind(this);
         this.updateLoadoutDisplay = () => {
             originalUpdateLoadoutDisplay();
             updateLoadoutDraggable();
+            setupLoadoutSlotListeners(); // Re-setup drop listeners after innerHTML is cleared
         };
-        const slots = document.querySelectorAll('.loadout-slot');
-        slots.forEach((slot, slotIndex) => {
-            slot.dataset.slot = slotIndex.toString();
-            slot.addEventListener('dragenter', (e) => {
-                e.preventDefault();
-                e.currentTarget.classList.add('drag-over');
-            });
-            slot.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                const dragEvent = e;
-                dragEvent.dataTransfer.dropEffect = 'move';
-                e.currentTarget.classList.add('drag-over');
-            });
-            slot.addEventListener('dragleave', (e) => {
-                e.currentTarget.classList.remove('drag-over');
-            });
-            slot.addEventListener('drop', (e) => {
-                e.preventDefault();
-                const dragEvent = e;
-                const target = e.currentTarget;
-                target.classList.remove('drag-over');
-                const itemData = dragEvent.dataTransfer?.getData('text/plain');
-                const fromLoadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
-                if (itemData) {
-                    const { rarity, type } = JSON.parse(itemData);
-                    const slot = parseInt(target.dataset.slot || '-1');
-                    if (rarity && type && slot >= 0) {
-                        this.equipItemToLoadout(rarity, type, slot);
-                    }
-                }
-                else if (fromLoadoutSlot) {
-                    const fromSlot = parseInt(fromLoadoutSlot);
-                    const toSlot = slotIndex;
-                    if (fromSlot !== toSlot) {
-                        this.swapLoadoutItems(fromSlot, toSlot);
-                    }
-                }
-            });
-        });
         const craftingSlots = this.craftingPanel?.querySelectorAll('.crafting-slot');
         craftingSlots?.forEach(slot => {
             slot.addEventListener('click', () => {

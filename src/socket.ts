@@ -830,13 +830,18 @@ function setupSocketListeners(game: any) {
     game.socket.on('playerUpdated', (updatedPlayer: Player) => {
         const player = game.players.get(updatedPlayer.id);
         if (player) {
+            // Check if loadout actually changed before updating
+            const loadoutChanged = JSON.stringify(player.loadout) !== JSON.stringify(updatedPlayer.loadout);
+            const inventoryChanged = JSON.stringify(player.inventory) !== JSON.stringify(updatedPlayer.inventory);
+            
             Object.assign(player, updatedPlayer);
             // Update displays if this is the current player
             if (updatedPlayer.id === game.socket?.id) {
-                if (game.isInventoryOpen) {
+                if (game.isInventoryOpen && inventoryChanged) {
                     game.updateInventoryDisplay();
                 }
-                if (game.inventoryManager) {
+                // Only update loadout display if loadout actually changed
+                if (game.inventoryManager && loadoutChanged) {
                     game.inventoryManager.updateLoadoutDisplay();
                 }
                 // Update skills menu if open
