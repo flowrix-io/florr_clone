@@ -1940,6 +1940,27 @@ export class Graphics {
             }
         }
 
+        // Draw item name
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '12px Ubuntu, sans-serif';
+        this.ctx.textAlign = 'center';
+        let itemName = "";
+        if (item.type === 'petal' && item.petalType) {
+            itemName = item.petalType[0].toUpperCase() + item.petalType.slice(1).toLowerCase() || "";
+        } else {
+            itemName = item.type[0].toUpperCase() + item.type.slice(1).toLowerCase();
+        }
+        itemName = itemName.replace('_', ' ');
+
+        // Ensure item name is not blurred by setting shadow blur to 0
+        this.ctx.shadowBlur = 0;
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeText(itemName, 0, 20);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(itemName, 0, 20);
+
         // Draw hitbox if enabled
         if (this.showHitboxes) {
             this.ctx.save();
