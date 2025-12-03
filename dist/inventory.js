@@ -499,8 +499,8 @@ class InventoryManager {
                     }
                     // Create petal visual using SVG image
                     const petalDiv = document.createElement('div');
-                    petalDiv.style.width = '80%';
-                    petalDiv.style.height = '80%';
+                    petalDiv.style.width = '60%';
+                    petalDiv.style.height = '60%';
                     petalDiv.style.display = 'flex';
                     petalDiv.style.alignItems = 'center';
                     petalDiv.style.justifyContent = 'center';
@@ -570,7 +570,7 @@ class InventoryManager {
                                 left: 50%;
                                 transform: translateX(-50%);
                                 color: white;
-                                font-size: 12px;
+                                font-size: 10px;
                                 font-weight: bold;
                                 text-shadow: 
                                     -1px -1px 0 #000,
@@ -598,8 +598,8 @@ class InventoryManager {
                         img.src = `./assets/${item.type}.png`; // Fallback
                     }
                     img.alt = item.type;
-                    img.style.width = '80%';
-                    img.style.height = '80%';
+                    img.style.width = '60%';
+                    img.style.height = '60%';
                     img.style.objectFit = 'contain';
                     slot.appendChild(img);
                 }
@@ -829,8 +829,8 @@ class InventoryManager {
                             img.alt = type;
                             img.draggable = false;
                             img.style.cssText = `
-                              width: 40px;
-                              height: 40px;
+                              width: 30px;
+                              height: 30px;
                               object-fit: contain;
                           `;
                             // Convert SVG string to blob URL (same as loadout display)
@@ -849,8 +849,8 @@ class InventoryManager {
                             // Fallback to colored circle for petals
                             const fallbackDiv = document.createElement('div');
                             fallbackDiv.style.cssText = `
-                              width: 40px;
-                              height: 40px;
+                              width: 30px;
+                              height: 30px;
                               border-radius: 50%;
                               background-color: #90EE90;
                               border: 2px solid #000;
@@ -872,8 +872,8 @@ class InventoryManager {
                         img.alt = type;
                         img.draggable = false;
                         img.style.cssText = `
-                          width: 40px;
-                          height: 40px;
+                          width: 30px;
+                          height: 30px;
                           object-fit: contain;
                       `;
                         itemElement.appendChild(img);
@@ -905,7 +905,7 @@ class InventoryManager {
                                 left: 50%;
                                 transform: translateX(-50%);
                                 color: white;
-                                font-size: 12px;
+                                font-size: 10px;
                                 font-weight: bold;
                                 text-shadow: 
                                     -1px -1px 0 #000,
