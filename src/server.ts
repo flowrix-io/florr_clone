@@ -900,7 +900,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             // Initialize skills from saved progress or defaults
             const savedSkills: { damage?: string; petalHealth?: string; playerHealth?: string; healingMultiplier?: string } = 
                 (savedProgress as any)?.skills || {};
-            const savedTP: number = (savedProgress as any)?.tp || 0;
+            
+            // Check if TP was explicitly saved in the database
+            const hasSavedTP = savedProgress && (savedProgress as any).tp !== undefined;
+            const savedTP: number = hasSavedTP ? (savedProgress as any).tp : 0;
             
             // Calculate TP from level (1 TP per level)
             // Count spent TP by summing costs of unlocked tiers
@@ -917,7 +920,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             };
             const spentTP = countSpentTP(savedSkills.damage) + countSpentTP(savedSkills.petalHealth) + 
                           countSpentTP(savedSkills.playerHealth) + countSpentTP(savedSkills.healingMultiplier);
-            const currentTP = Math.max(0, level - spentTP + savedTP);
+            
+            // Use savedTP if it was explicitly saved (authoritative), otherwise calculate from level - spentTP
+            // This prevents TP duplication when refreshing/re-authenticating
+            const currentTP = hasSavedTP ? savedTP : Math.max(0, level - spentTP);
 
             // Reconstruct loadout from saved data (only type/rarity/petalType saved)
             const reconstructLoadout = (savedLoadout: any[] | undefined): (Item | null)[] => {

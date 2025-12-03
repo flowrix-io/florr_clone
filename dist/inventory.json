@@ -1,30 +1,31 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 74866568,
+      "totalXP": 75057745,
       "inventory": {
         "common": {
-          "shield": 36,
-          "petal_light": 1,
+          "shield": 41,
+          "petal_light": 2,
           "petal_dandelion": 1,
           "petal_stinger": 13,
           "petal_yggdrasil": 7,
-          "speed_boost": 83,
+          "speed_boost": 4,
           "petal_sand": 39,
-          "petal_rock": 105,
+          "petal_rock": 106,
           "petal_clover": 24,
-          "petal_bone": 31,
+          "petal_bone": 32,
           "petal_cactus": 5,
           "petal_iris": 2,
-          "petal_basic": 50,
           "petal_poison_cactus": 10,
           "petal_lightning": 29,
-          "petal_missile": 2,
+          "petal_missile": 5,
           "petal_jelly": 7,
           "petal_yucca": 15,
           "petal_leaf": 1,
           "petal_cutter": 1,
-          "petal_wing": 27
+          "petal_wing": 27,
+          "petal_rose": 2,
+          "health_potion": 1
         },
         "unique": {
           "petal_stinger": 1004,
@@ -39,18 +40,18 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 993,
+          "petal_sparkle": 999,
           "petal_poison_cactus": 1000,
           "petal_lightning": 1000,
           "petal_iris": 998,
           "petal_jelly": 1002,
-          "petal_cutter": 1000,
-          "petal_lightning_cutter": 998,
+          "petal_cutter": 999,
+          "petal_lightning_cutter": 999,
           "petal_yucca": 1,
           "petal_missile": 2,
           "petal_bone": 1,
-          "petal_sand": 1,
-          "petal_wing": 1000
+          "petal_wing": 992,
+          "petal_sand": 1
         },
         "mythic": {
           "speed_boost": 3,
@@ -77,12 +78,12 @@
         "uncommon": {
           "petal_rose": 29,
           "petal_dandelion": 19,
-          "petal_basic": 52,
+          "petal_basic": 58,
           "petal_sand": 5,
-          "speed_boost": 22,
+          "speed_boost": 30,
           "petal_stinger": 22,
-          "shield": 40,
-          "petal_clover": 27,
+          "shield": 41,
+          "petal_clover": 28,
           "petal_light": 22,
           "health_potion": 7,
           "petal_rock": 19,
@@ -99,13 +100,13 @@
           "petal_lightning_cutter": 1
         },
         "legendary": {
-          "speed_boost": 51,
+          "speed_boost": 52,
           "petal_clover": 37,
-          "petal_dandelion": 54,
+          "petal_dandelion": 56,
           "petal_sand": 14,
-          "petal_rose": 32,
-          "health_potion": 12,
-          "petal_light": 33,
+          "petal_rose": 35,
+          "health_potion": 14,
+          "petal_light": 35,
           "petal_stinger": 29,
           "petal_basic": 18,
           "petal_rock": 25,
@@ -114,7 +115,7 @@
           "petal_poison_cactus": 4,
           "petal_bone": 13,
           "petal_iris": 6,
-          "petal_missile": 29,
+          "petal_missile": 30,
           "petal_jelly": 3,
           "shield": 13,
           "petal_leaf": 2,
@@ -124,24 +125,24 @@
           "petal_wing": 16
         },
         "epic": {
-          "petal_stinger": 30,
+          "petal_stinger": 31,
           "speed_boost": 54,
           "petal_basic": 43,
-          "petal_rose": 69,
+          "petal_rose": 70,
           "petal_sand": 14,
           "petal_yggdrasil": 3,
-          "health_potion": 25,
+          "health_potion": 26,
           "petal_light": 31,
-          "petal_rock": 86,
-          "shield": 79,
-          "petal_dandelion": 70,
-          "petal_clover": 28,
-          "petal_bone": 60,
+          "petal_rock": 87,
+          "shield": 82,
+          "petal_dandelion": 72,
+          "petal_clover": 29,
+          "petal_bone": 61,
           "petal_cactus": 5,
           "petal_poison_cactus": 2,
           "petal_iris": 4,
           "petal_lightning": 5,
-          "petal_missile": 3,
+          "petal_missile": 5,
           "petal_leaf": 5,
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,
@@ -162,7 +163,7 @@
           "petal_bone": 18,
           "petal_clover": 6,
           "petal_lightning": 2,
-          "petal_missile": 22,
+          "petal_missile": 23,
           "petal_leaf": 2,
           "petal_iris": 3,
           "petal_yucca": 1,
@@ -203,45 +204,53 @@
           "petal_leaf": 3,
           "petal_stinger": 1,
           "petal_clover": 2,
-          "petal_sand": 2,
           "petal_iris": 3,
           "petal_light": 3,
           "petal_cutter": 1,
           "petal_missile": 2,
-          "petal_lightning": 1,
           "petal_basic": 2,
           "petal_yucca": 1,
           "petal_yggdrasil": 1,
-          "petal_rock": 1
+          "petal_rock": 1,
+          "petal_lightning": 1,
+          "petal_sand": 2
         }
       },
       "loadout": [
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "sparkle"
+          "petalType": "wing"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "lightning_cutter"
+          "petalType": "wing"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "sparkle"
+          "petalType": "wing"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "sparkle"
+          "petalType": "wing"
         },
-        null,
-        null,
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "sparkle"
+          "petalType": "cutter"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "wing"
         },
         {
           "type": "speed_boost",
@@ -250,12 +259,12 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "sparkle"
+          "petalType": "wing"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "sparkle"
+          "petalType": "wing"
         },
         null,
         null,
@@ -268,10 +277,8 @@
         null,
         null
       ],
-      "tp": 516,
-      "skills": {
-        "playerHealth": "unique"
-      }
+      "tp": 143,
+      "skills": {}
     },
     "1g99g1gfk": {
       "totalXP": 0,
