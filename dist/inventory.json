@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 74714510,
+      "totalXP": 74728577,
       "inventory": {
         "common": {
           "health_potion": 30,
@@ -30,7 +30,7 @@
         },
         "unique": {
           "petal_stinger": 1004,
-          "petal_basic": 1000,
+          "petal_basic": 1001,
           "petal_rose": 1003,
           "petal_light": 1000,
           "petal_rock": 1000,
@@ -41,7 +41,7 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 992,
+          "petal_sparkle": 993,
           "petal_poison_cactus": 1000,
           "petal_lightning": 1000,
           "petal_iris": 998,
@@ -238,16 +238,8 @@
           "rarity": "unique",
           "petalType": "sparkle"
         },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "basic"
-        },
+        null,
+        null,
         {
           "type": "petal",
           "rarity": "unique",

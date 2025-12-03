@@ -763,12 +763,54 @@ export class InventoryManager {
         });
 
         const updateLoadoutDraggable = () => {
-            const slots = document.querySelectorAll('.loadout-slot');
+            // Only update slots in the game's loadout bar (id='loadoutBar'), not the title screen one
+            const loadoutBar = document.getElementById('loadoutBar');
+            if (!loadoutBar) return;
+            
+            const slots = loadoutBar.querySelectorAll('.loadout-slot');
             slots.forEach((slot, slotIndex) => {
+                const slotElement = slot as HTMLElement;
+                
+                // Find the draggable element - prefer img, then petal div, then slot itself
                 const img = slot.querySelector('img');
+                let draggableElement: HTMLElement | null = null;
+                
                 if (img) {
-                    img.draggable = true;
-                    img.addEventListener('dragstart', (e: Event) => {
+                    draggableElement = img as HTMLElement;
+                } else {
+                    // Look for petal div (has display: flex style)
+                    const petalDiv = Array.from(slot.children).find((child: Element) => {
+                        const htmlChild = child as HTMLElement;
+                        return htmlChild.style.display === 'flex' || 
+                               htmlChild.style.cssText.includes('display: flex') ||
+                               htmlChild.style.cssText.includes('display:flex');
+                    }) as HTMLElement;
+                    if (petalDiv) {
+                        draggableElement = petalDiv;
+                    }
+                }
+                
+                // If we found a child element, make it draggable
+                if (draggableElement) {
+                    draggableElement.draggable = true;
+                    draggableElement.style.cursor = 'grab';
+                    
+                    // Remove existing dragstart listeners by cloning
+                    const newElement = draggableElement.cloneNode(true) as HTMLElement;
+                    draggableElement.parentNode?.replaceChild(newElement, draggableElement);
+                    
+                    // Add dragstart listener
+                    newElement.addEventListener('dragstart', (e: Event) => {
+                        const dragEvent = e as DragEvent;
+                        dragEvent.dataTransfer?.setData('text/loadoutSlot', slotIndex.toString());
+                        dragEvent.dataTransfer!.effectAllowed = 'move';
+                        e.stopPropagation(); // Prevent event bubbling
+                    });
+                } else if (slotElement && slotElement.children.length === 0) {
+                    // If slot is empty, make the slot itself draggable (shouldn't happen, but just in case)
+                    slotElement.draggable = true;
+                    slotElement.style.cursor = 'grab';
+                    slotElement.addEventListener('dragstart', (e: Event) => {
                         const dragEvent = e as DragEvent;
                         dragEvent.dataTransfer?.setData('text/loadoutSlot', slotIndex.toString());
                         dragEvent.dataTransfer!.effectAllowed = 'move';
@@ -840,8 +882,8 @@ export class InventoryManager {
         const originalUpdateLoadoutDisplay = this.updateLoadoutDisplay.bind(this);
         this.updateLoadoutDisplay = () => {
             originalUpdateLoadoutDisplay();
-            updateLoadoutDraggable();
             setupLoadoutSlotListeners(); // Re-setup drop listeners after innerHTML is cleared
+            updateLoadoutDraggable(); // Re-setup drag listeners after innerHTML is cleared
         };
 
         const craftingSlots = this.craftingPanel?.querySelectorAll('.crafting-slot');
