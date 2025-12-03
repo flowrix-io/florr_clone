@@ -122,6 +122,7 @@ class TitleScreen {
         this.initializeElements();
         this.setupEventListeners();
         this.changelogManager = new changelog_1.ChangelogManager();
+        this.titleScreenInventoryManager = new TitleScreenInventoryManager();
         // Initialize biome selector with local map data
         this.updateBiomesFromMapData(constants_1.WORLD_MAP);
     }
@@ -430,6 +431,9 @@ class TitleScreen {
                 <br/>
                 <p>Press R to craft items</p>
             </div>
+            <div id="titleScreenLoadoutBar" style="margin-top: 20px; display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; max-width: 600px;">
+                <!-- Loadout slots will be added here -->
+            </div>
         `;
         this.settingsMenu = this.createElement('div', 'settings-menu hidden');
         this.settingsMenu.id = 'settingsMenu';
@@ -704,8 +708,8 @@ class TitleScreen {
                         document.dispatchEvent(event);
                     }
                     else {
-                        // Show message that game needs to be started
-                        alert('Please start the game first by clicking "Ready▶︎"');
+                        // Toggle crafting panel directly on title screen
+                        this.toggleCraftingOnTitleScreen();
                     }
                     return false;
                 }, true);
@@ -728,8 +732,8 @@ class TitleScreen {
                         document.dispatchEvent(event);
                     }
                     else {
-                        // Show message that game needs to be started
-                        alert('Please start the game first by clicking "Ready▶︎"');
+                        // Toggle skills panel directly on title screen
+                        this.toggleSkillsOnTitleScreen();
                     }
                     return false;
                 }, true);
@@ -752,8 +756,8 @@ class TitleScreen {
                         document.dispatchEvent(event);
                     }
                     else {
-                        // Show message that game needs to be started
-                        alert('Please start the game first by clicking "Ready▶︎"');
+                        // Toggle inventory panel directly on title screen
+                        this.toggleInventoryOnTitleScreen();
                     }
                     return false;
                 }, true);
@@ -1514,8 +1518,500 @@ class TitleScreen {
             this.backgroundCanvas.style.display = 'block';
         }
     }
+    toggleInventoryOnTitleScreen() {
+        // Use the title screen inventory manager
+        this.titleScreenInventoryManager.toggleInventory();
+    }
+    toggleCraftingOnTitleScreen() {
+        // Check if game is running - if so, use game's crafting
+        if (window.currentGame && window.currentGame.inventoryManager) {
+            window.currentGame.inventoryManager.toggleCrafting();
+            return;
+        }
+        // Check if crafting panel already exists (from game)
+        let craftingPanel = document.getElementById('craftingPanel');
+        if (!craftingPanel) {
+            // Use title screen inventory manager to show crafting
+            this.titleScreenInventoryManager.toggleCrafting();
+        }
+        else {
+            // Toggle existing panel
+            const isOpen = craftingPanel.style.display === 'block';
+            if (!isOpen) {
+                craftingPanel.style.display = 'block';
+                setTimeout(() => {
+                    craftingPanel.classList.add('open');
+                }, 10);
+            }
+            else {
+                craftingPanel.classList.remove('open');
+                setTimeout(() => {
+                    craftingPanel.style.display = 'none';
+                }, 300);
+            }
+        }
+    }
+    toggleSkillsOnTitleScreen() {
+        // Check if game is running - if so, use game's skills
+        if (window.currentGame && window.currentGame.skillsManager) {
+            window.currentGame.skillsManager.toggle();
+            return;
+        }
+        // Check if skills panel already exists (from game)
+        let skillsPanel = document.getElementById('skillsPanel');
+        if (!skillsPanel) {
+            // Use title screen inventory manager to show skills
+            this.titleScreenInventoryManager.toggleSkills();
+        }
+        else {
+            // Toggle existing panel
+            const isOpen = skillsPanel.style.display === 'block';
+            if (!isOpen) {
+                skillsPanel.style.display = 'block';
+            }
+            else {
+                skillsPanel.style.display = 'none';
+            }
+        }
+    }
 }
 exports.TitleScreen = TitleScreen;
+/**
+ * Title Screen Inventory Manager
+ * Handles inventory and loadout on the title screen using the preconnected socket
+ */
+class TitleScreenInventoryManager {
+    constructor() {
+        this.inventoryPanel = null;
+        this.loadoutBar = null;
+        this.playerData = null;
+        this.socket = null;
+        this.LOADOUT_SLOTS = 10;
+        this.LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+        this.ITEM_RARITY_COLORS = {
+            common: '#7eef6d',
+            uncommon: '#ffe65d',
+            rare: '#4d52e3',
+            epic: '#861fde',
+            legendary: '#de1f1f',
+            mythic: '#1fdbde',
+            ultra: '#de1f65',
+            super: '#2bffa4',
+            unique: '#bf00ff'
+        };
+        this.initializeLoadoutBar();
+        this.setupSocketListeners();
+    }
+    initializeLoadoutBar() {
+        // Create loadout bar for title screen
+        const loadoutContainer = document.getElementById('titleScreenLoadoutBar');
+        if (!loadoutContainer) {
+            // Retry after a short delay if container doesn't exist yet
+            setTimeout(() => this.initializeLoadoutBar(), 100);
+            return;
+        }
+        this.loadoutBar = loadoutContainer;
+        for (let i = 0; i < this.LOADOUT_SLOTS; i++) {
+            const slot = document.createElement('div');
+            slot.className = 'loadout-slot';
+            slot.dataset.slot = i.toString();
+            slot.style.width = '50px';
+            slot.style.height = '50px';
+            slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
+            slot.style.border = '3px solid #00ba3e';
+            slot.style.borderRadius = '5px';
+            slot.style.position = 'relative';
+            slot.style.display = 'flex';
+            slot.style.alignItems = 'center';
+            slot.style.justifyContent = 'center';
+            // Add key binding label
+            const keyText = document.createElement('div');
+            keyText.className = 'key-binding';
+            keyText.textContent = this.LOADOUT_KEY_BINDINGS[i];
+            keyText.style.cssText = `
+                position: absolute;
+                top: 5px;
+                left: 5px;
+                color: white;
+                font-size: 12px;
+                pointer-events: none;
+            `;
+            slot.appendChild(keyText);
+            if (this.loadoutBar) {
+                this.loadoutBar.appendChild(slot);
+            }
+        }
+    }
+    setupSocketListeners() {
+        // Check for preconnected socket and authenticate early to get player data
+        if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+            this.socket = window.preconnectedSocket;
+            this.authenticateAndFetchData();
+        }
+        else {
+            // Wait for socket to connect
+            const checkSocket = setInterval(() => {
+                if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+                    this.socket = window.preconnectedSocket;
+                    this.authenticateAndFetchData();
+                    clearInterval(checkSocket);
+                }
+            }, 100);
+        }
+    }
+    authenticateAndFetchData() {
+        if (!this.socket || !this.socket.connected)
+            return;
+        const username = localStorage.getItem('username');
+        const password = localStorage.getItem('password');
+        const playerName = document.getElementById('nameInput')?.value || 'Unnamed';
+        const spawnBiome = localStorage.getItem('spawnBiome') || 'default';
+        if (!username || !password)
+            return;
+        console.log('[TitleScreenInventory] Authenticating to fetch player data...');
+        // Authenticate to get player data (this will spawn on server but we won't show game until Ready)
+        // Use a flag to prevent duplicate authentication
+        if (this.socket._titleScreenAuthenticated) {
+            console.log('[TitleScreenInventory] Already authenticated, skipping');
+            return;
+        }
+        this.socket._titleScreenAuthenticated = true;
+        this.socket.emit('authenticate', {
+            username,
+            password,
+            playerName,
+            spawnBiome
+        });
+        // Listen for authentication response (use on instead of once to catch it if already sent)
+        const authenticatedHandler = (response) => {
+            if (response.success && response.player) {
+                console.log('[TitleScreenInventory] Received player data:', response.player);
+                this.playerData = {
+                    inventory: response.player.inventory || {},
+                    loadout: response.player.loadout || Array(10).fill(null)
+                };
+                this.updateLoadoutDisplay();
+                if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
+                    this.updateInventoryDisplay();
+                }
+            }
+        };
+        // Check if already authenticated (socket might have authenticated before we set up listener)
+        if (this.socket._authenticatedData) {
+            authenticatedHandler(this.socket._authenticatedData);
+        }
+        else {
+            this.socket.on('authenticated', authenticatedHandler);
+        }
+    }
+    // private authenticateAndFetchData(): void {
+    //     if (!this.socket || !this.socket.connected) return;
+    //     const username = localStorage.getItem('username');
+    //     const password = localStorage.getItem('password');
+    //     const playerName = (document.getElementById('nameInput') as HTMLInputElement)?.value || 'Unnamed';
+    //     const spawnBiome = localStorage.getItem('spawnBiome') || 'default';
+    //     if (!username || !password) return;
+    //     console.log('[TitleScreenInventory] Authenticating to fetch player data...');
+    //     // Authenticate to get player data
+    //     this.socket.emit('authenticate', {
+    //         username,
+    //         password,
+    //         playerName,
+    //         spawnBiome
+    //     });
+    //     // Listen for authentication response
+    //     this.socket.once('authenticated', (response: { success: boolean; error?: string; player?: any }) => {
+    //         if (response.success && response.player) {
+    //             console.log('[TitleScreenInventory] Received player data:', response.player);
+    //             this.playerData = {
+    //                 inventory: response.player.inventory || {},
+    //                 loadout: response.player.loadout || Array(10).fill(null)
+    //             };
+    //             this.updateLoadoutDisplay();
+    //             this.updateInventoryDisplay();
+    //         }
+    //     });
+    // }
+    updateLoadoutDisplay() {
+        if (!this.loadoutBar || !this.playerData)
+            return;
+        const slots = this.loadoutBar.querySelectorAll('.loadout-slot');
+        slots.forEach((slot, index) => {
+            const slotElement = slot;
+            slotElement.innerHTML = '';
+            // Add key binding back
+            const keyText = document.createElement('div');
+            keyText.className = 'key-binding';
+            keyText.textContent = this.LOADOUT_KEY_BINDINGS[index];
+            keyText.style.cssText = `
+                position: absolute;
+                top: 5px;
+                left: 5px;
+                color: white;
+                font-size: 12px;
+                pointer-events: none;
+            `;
+            slotElement.appendChild(keyText);
+            const item = this.playerData?.loadout[index];
+            if (item && item.type === 'petal' && item.petalType && item.rarity) {
+                const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+                if (stats && stats.image) {
+                    const img = document.createElement('div');
+                    img.innerHTML = stats.image;
+                    img.style.width = '60%';
+                    img.style.height = '60%';
+                    img.style.display = 'flex';
+                    img.style.alignItems = 'center';
+                    img.style.justifyContent = 'center';
+                    slotElement.appendChild(img);
+                    // Set rarity color
+                    if (this.ITEM_RARITY_COLORS[item.rarity]) {
+                        slotElement.style.backgroundColor = this.ITEM_RARITY_COLORS[item.rarity];
+                    }
+                }
+            }
+        });
+    }
+    updateInventoryDisplay() {
+        if (!this.inventoryPanel || !this.playerData)
+            return;
+        const content = this.inventoryPanel.querySelector('.inventory-content');
+        if (!content)
+            return;
+        content.innerHTML = '';
+        const title = document.createElement('h2');
+        title.textContent = 'Inventory';
+        content.appendChild(title);
+        const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        const gridContainer = document.createElement('div');
+        gridContainer.className = 'inventory-grid-container';
+        gridContainer.style.cssText = `
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          padding: 10px;
+      `;
+        rarities.forEach(rarity => {
+            const items = this.playerData?.inventory[rarity];
+            if (items && Object.keys(items).length > 0) {
+                const rarityRow = document.createElement('div');
+                rarityRow.className = 'rarity-row';
+                rarityRow.style.cssText = `
+                  display: flex;
+                  flex-direction: column;
+                  gap: 5px;
+              `;
+                const rarityLabel = document.createElement('div');
+                rarityLabel.textContent = rarity.toUpperCase();
+                rarityLabel.style.cssText = `
+                  color: ${this.ITEM_RARITY_COLORS[rarity]};
+                  font-weight: bold;
+                  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+                  padding-left: 5px;
+              `;
+                rarityRow.appendChild(rarityLabel);
+                const grid = document.createElement('div');
+                grid.className = 'inventory-grid';
+                grid.style.cssText = `
+                  display: flex;
+                  flex-wrap: wrap;
+                  gap: 5px;
+                  padding: 5px;
+                  background: rgba(0, 0, 0, 0.2);
+                  border-radius: 5px;
+                  border: 1px solid ${this.ITEM_RARITY_COLORS[rarity]}40;
+              `;
+                Object.entries(items).forEach(([type, count]) => {
+                    const itemCount = typeof count === 'number' ? count : 0;
+                    if (itemCount > 0) {
+                        const itemElement = document.createElement('div');
+                        itemElement.className = 'inventory-item';
+                        itemElement.draggable = true;
+                        const rarityColor = this.ITEM_RARITY_COLORS[rarity];
+                        const darkenedColor = this.darkenColor(rarityColor);
+                        itemElement.style.cssText = `
+                      position: relative;
+                      width: 50px;
+                      height: 50px;
+                      background-color: ${rarityColor};
+                      border: 3px solid ${darkenedColor};
+                      border-radius: 5px;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      cursor: pointer;
+                      transition: all 0.2s ease;
+                  `;
+                        itemElement.addEventListener('mouseover', () => {
+                            itemElement.style.transform = 'scale(1.05)';
+                            itemElement.style.boxShadow = `0 0 10px ${this.ITEM_RARITY_COLORS[rarity]}`;
+                        });
+                        itemElement.addEventListener('mouseout', () => {
+                            itemElement.style.transform = 'scale(1)';
+                            itemElement.style.boxShadow = 'none';
+                        });
+                        itemElement.addEventListener('dragstart', (e) => {
+                            e.dataTransfer?.setData('text/plain', JSON.stringify({ rarity, type }));
+                            itemElement.classList.add('dragging');
+                        });
+                        itemElement.addEventListener('dragend', () => {
+                            itemElement.classList.remove('dragging');
+                        });
+                        // Handle different item types for display
+                        if (type.startsWith('petal_')) {
+                            const petalType = type.replace('petal_', '');
+                            const stats = (0, petals_1.getPetalStats)(petalType, rarity);
+                            if (stats && stats.image) {
+                                const img = document.createElement('img');
+                                img.alt = type;
+                                img.draggable = false;
+                                img.style.cssText = `
+                              width: 30px;
+                              height: 30px;
+                              object-fit: contain;
+                          `;
+                                // For title screen, use SVG directly since we don't have canvas
+                                const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                                const url = URL.createObjectURL(svgBlob);
+                                img.src = url;
+                                itemElement.appendChild(img);
+                            }
+                        }
+                        else {
+                            const img = document.createElement('img');
+                            img.src = `./assets/${type}.png`;
+                            img.alt = type;
+                            img.draggable = false;
+                            img.style.cssText = `
+                          width: 30px;
+                          height: 30px;
+                          object-fit: contain;
+                      `;
+                            itemElement.appendChild(img);
+                        }
+                        const countLabel = document.createElement('div');
+                        countLabel.className = 'item-count';
+                        countLabel.textContent = itemCount.toString();
+                        countLabel.style.cssText = `
+                        position: absolute;
+                        top: 2px;
+                        right: 4px;
+                        color: white;
+                        font-size: 12px;
+                        font-weight: bold;
+                        text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+                    `;
+                        itemElement.appendChild(countLabel);
+                        // Add petal name label for petals
+                        if (type.startsWith('petal_')) {
+                            const petalType = type.replace('petal_', '');
+                            const petalName = this.formatPetalName(petalType);
+                            if (petalName) {
+                                const nameLabel = document.createElement('div');
+                                nameLabel.className = 'petal-name';
+                                nameLabel.textContent = petalName;
+                                nameLabel.style.cssText = `
+                                position: absolute;
+                                bottom: 5px;
+                                left: 50%;
+                                transform: translateX(-50%);
+                                color: white;
+                                font-size: 10px;
+                                font-weight: bold;
+                                text-shadow: 
+                                    -1px -1px 0 #000,
+                                    1px -1px 0 #000,
+                                    -1px 1px 0 #000,
+                                    1px 1px 0 #000,
+                                    0 0 3px rgba(0,0,0,0.8);
+                                white-space: nowrap;
+                                pointer-events: none;
+                                z-index: 10;
+                            `;
+                                itemElement.appendChild(nameLabel);
+                            }
+                        }
+                        grid.appendChild(itemElement);
+                    }
+                });
+                rarityRow.appendChild(grid);
+                gridContainer.appendChild(rarityRow);
+            }
+        });
+        content.appendChild(gridContainer);
+    }
+    darkenColor(hex, percent = 30) {
+        const num = parseInt(hex.replace('#', ''), 16);
+        const r = (num >> 16) & 255;
+        const g = (num >> 8) & 255;
+        const b = num & 255;
+        const factor = 1 - (percent / 100);
+        const newR = Math.round(r * factor);
+        const newG = Math.round(g * factor);
+        const newB = Math.round(b * factor);
+        return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
+    }
+    formatPetalName(petalType) {
+        if (!petalType)
+            return "";
+        let itemName = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
+        itemName = itemName.replace('_', ' ');
+        return itemName;
+    }
+    toggleInventory() {
+        let inventoryPanel = document.getElementById('inventoryPanel');
+        if (!inventoryPanel) {
+            inventoryPanel = document.createElement('div');
+            inventoryPanel.id = 'inventoryPanel';
+            inventoryPanel.className = 'inventory-panel';
+            inventoryPanel.style.display = 'none';
+            const inventoryContent = document.createElement('div');
+            inventoryContent.className = 'inventory-content';
+            inventoryPanel.appendChild(inventoryContent);
+            document.body.appendChild(inventoryPanel);
+            this.inventoryPanel = inventoryPanel;
+        }
+        const isOpen = inventoryPanel.style.display === 'block';
+        if (!isOpen) {
+            this.updateInventoryDisplay();
+            inventoryPanel.style.display = 'block';
+            setTimeout(() => {
+                inventoryPanel.classList.add('open');
+            }, 10);
+        }
+        else {
+            inventoryPanel.classList.remove('open');
+            setTimeout(() => {
+                inventoryPanel.style.display = 'none';
+            }, 300);
+        }
+    }
+    updateFromPlayerData(playerData) {
+        this.playerData = playerData;
+        this.updateLoadoutDisplay();
+        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
+            this.updateInventoryDisplay();
+        }
+    }
+    toggleCrafting() {
+        // Check if game is running - if so, use game's crafting
+        if (window.currentGame && window.currentGame.inventoryManager) {
+            window.currentGame.inventoryManager.toggleCrafting();
+            return;
+        }
+        // For title screen, show a message that crafting requires the game to be running
+        alert('Please start the game to use the crafting system.');
+    }
+    toggleSkills() {
+        // Check if game is running - if so, use game's skills
+        if (window.currentGame && window.currentGame.skillsManager) {
+            window.currentGame.skillsManager.toggle();
+            return;
+        }
+        // For title screen, show a message that skills require the game to be running
+        alert('Please start the game to view and upgrade your skills.');
+    }
+}
 // CSS styles that were in the HTML
 exports.titleScreenStyles = `
     .auth-container {

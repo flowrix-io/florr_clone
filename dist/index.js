@@ -182,6 +182,17 @@ function preconnectToServer() {
             titleScreen.updateBiomesFromMapData(mapData);
         }
     });
+    // Listen for authenticated event to update title screen inventory
+    preconnectedSocket.on('authenticated', (response) => {
+        if (response.success && response.player && titleScreen) {
+            console.log('[Index] Updating title screen with player data');
+            // Update title screen inventory manager with player data
+            titleScreen.titleScreenInventoryManager?.updateFromPlayerData({
+                inventory: response.player.inventory || {},
+                loadout: response.player.loadout || Array(10).fill(null)
+            });
+        }
+    });
     preconnectedSocket.on('disconnect', (reason) => {
         console.log(`[Index] Preconnected socket disconnected: ${reason}`);
         preconnectedSocket = null;
