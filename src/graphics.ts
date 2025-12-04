@@ -581,6 +581,68 @@ export class Graphics {
     }
 
     /**
+     * Sample the background color at a specific world position and return darkened color with alpha 0.5
+     */
+    private sampleColorAtPosition(worldX: number, worldY: number): string {
+        // Get the current transform state to properly convert coordinates
+        // Note: getImageData uses canvas pixel coordinates, not transformed coordinates
+        const validCameraX = isNaN(this.cameraX) || !isFinite(this.cameraX) ? 0 : this.cameraX;
+        const validCameraY = isNaN(this.cameraY) || !isFinite(this.cameraY) ? 0 : this.cameraY;
+        
+        // Convert world coordinates to canvas pixel coordinates
+        // Account for zoom and camera position
+        const canvasX = Math.floor((worldX - validCameraX) * this.zoomLevel);
+        const canvasY = Math.floor((worldY - validCameraY) * this.zoomLevel);
+        
+        // Make sure we're within canvas bounds
+        if (canvasX >= 0 && canvasX < this.canvas.width && canvasY >= 0 && canvasY < this.canvas.height) {
+            try {
+                // Use a small region (3x3) for more reliable sampling
+                const sampleSize = 3;
+                const startX = Math.max(0, canvasX - Math.floor(sampleSize / 2));
+                const startY = Math.max(0, canvasY - Math.floor(sampleSize / 2));
+                const endX = Math.min(this.canvas.width, startX + sampleSize);
+                const endY = Math.min(this.canvas.height, startY + sampleSize);
+                const actualWidth = endX - startX;
+                const actualHeight = endY - startY;
+                
+                if (actualWidth > 0 && actualHeight > 0) {
+                    const imageData = this.ctx.getImageData(startX, startY, actualWidth, actualHeight);
+                    const pixelCount = imageData.data.length / 4; // Each pixel is 4 bytes (RGBA)
+                    
+                    if (pixelCount > 0) {
+                        let rSum = 0, gSum = 0, bSum = 0;
+                        for (let i = 0; i < imageData.data.length; i += 4) {
+                            rSum += imageData.data[i];
+                            gSum += imageData.data[i + 1];
+                            bSum += imageData.data[i + 2];
+                        }
+                        
+                        const avgR = Math.round(rSum / pixelCount);
+                        const avgG = Math.round(gSum / pixelCount);
+                        const avgB = Math.round(bSum / pixelCount);
+                        
+                        // Darken the color by reducing each component by 30%
+                        const darkenFactor = 0.9; // 90% of original = 10% darker
+                        const darkR = Math.round(avgR * darkenFactor);
+                        const darkG = Math.round(avgG * darkenFactor);
+                        const darkB = Math.round(avgB * darkenFactor);
+                        
+                        // Return darkened rgba color with alpha 0.5
+                        return `rgba(${darkR}, ${darkG}, ${darkB}, 0.5)`;
+                    }
+                }
+            } catch (error) {
+                // Fallback if sampling fails
+            }
+        }
+        
+        // Fallback: use default background color (#00d885) darkened with alpha 0.5
+        // Darken by 30%: 0 * 0.7 = 0, 216 * 0.7 = 151, 133 * 0.7 = 93
+        return 'rgba(0, 151, 93, 0.5)';
+    }
+
+    /**
      * Check if a wall edge is exposed (no adjacent wall)
      */
     private isEdgeExposed(
@@ -718,6 +780,90 @@ export class Graphics {
                 minSpikeWidth, maxSpikeWidth,
                 minSpikeSpacing, maxSpikeSpacing,
                 clusterChance
+            );
+        }
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Draw shadows around wall spikes
+     */
+    private drawWallSpikeShadows(
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        wall: MapElement,
+        allWalls: MapElement[],
+        shadowSize: number
+    ): void {
+        const minSpikeHeight = 8;
+        const maxSpikeHeight = 25;
+        const minSpikeWidth = 25;
+        const maxSpikeWidth = 50;
+        const minSpikeSpacing = 0;
+        const maxSpikeSpacing = 20;
+        const clusterChance = 0.3;
+
+        // Use wall position as seed for consistent randomness (same as drawWallSpikes)
+        const baseSeed = (wall.x * 1000 + wall.y) * 1000;
+
+        this.ctx.save();
+
+        // Top edge spike shadows
+        if (this.isEdgeExposed(wall, 'top', allWalls)) {
+            this.drawRandomSpikeShadowsOnEdge(
+                x, y, width, 0,
+                'top',
+                baseSeed + 1,
+                minSpikeHeight, maxSpikeHeight,
+                minSpikeWidth, maxSpikeWidth,
+                minSpikeSpacing, maxSpikeSpacing,
+                clusterChance,
+                shadowSize
+            );
+        }
+
+        // Bottom edge spike shadows
+        if (this.isEdgeExposed(wall, 'bottom', allWalls)) {
+            this.drawRandomSpikeShadowsOnEdge(
+                x, y + height, width, 0,
+                'bottom',
+                baseSeed + 2,
+                minSpikeHeight, maxSpikeHeight,
+                minSpikeWidth, maxSpikeWidth,
+                minSpikeSpacing, maxSpikeSpacing,
+                clusterChance,
+                shadowSize
+            );
+        }
+
+        // Left edge spike shadows
+        if (this.isEdgeExposed(wall, 'left', allWalls)) {
+            this.drawRandomSpikeShadowsOnEdge(
+                x, y, 0, height,
+                'left',
+                baseSeed + 3,
+                minSpikeHeight, maxSpikeHeight,
+                minSpikeWidth, maxSpikeWidth,
+                minSpikeSpacing, maxSpikeSpacing,
+                clusterChance,
+                shadowSize
+            );
+        }
+
+        // Right edge spike shadows
+        if (this.isEdgeExposed(wall, 'right', allWalls)) {
+            this.drawRandomSpikeShadowsOnEdge(
+                x + width, y, 0, height,
+                'right',
+                baseSeed + 4,
+                minSpikeHeight, maxSpikeHeight,
+                minSpikeWidth, maxSpikeWidth,
+                minSpikeSpacing, maxSpikeSpacing,
+                clusterChance,
+                shadowSize
             );
         }
 
@@ -913,6 +1059,188 @@ export class Graphics {
         });
     }
 
+    /**
+     * Draw shadows around random spikes along an edge (mirrors drawRandomSpikesOnEdge logic)
+     */
+    private drawRandomSpikeShadowsOnEdge(
+        startX: number,
+        startY: number,
+        edgeWidth: number,
+        edgeHeight: number,
+        direction: 'top' | 'bottom' | 'left' | 'right',
+        seed: number,
+        minHeight: number,
+        maxHeight: number,
+        minWidth: number,
+        maxWidth: number,
+        minSpacing: number,
+        maxSpacing: number,
+        clusterChance: number,
+        shadowSize: number
+    ): void {
+        const edgeLength = direction === 'top' || direction === 'bottom' ? edgeWidth : edgeHeight;
+        const spikes: Array<{ pos: number; width: number; height: number; isCluster: boolean }> = [];
+        
+        let currentPos = 0;
+        let seedOffset = 0;
+
+        // Generate random spike positions with clustering (same logic as drawRandomSpikesOnEdge)
+        let inCluster = false;
+        let clusterSpikeCount = 0;
+        let clusterMaxSpikes = 0;
+        let prevSpikeEnd = 0;
+
+        while (prevSpikeEnd < edgeLength) {
+            const rand = this.seededRandom(seed + seedOffset++);
+            
+            if (!inCluster && rand < clusterChance) {
+                inCluster = true;
+                clusterSpikeCount = 0;
+                clusterMaxSpikes = 2 + Math.floor(this.seededRandom(seed + seedOffset++) * 3);
+            }
+            
+            let spacing = 0;
+            if (inCluster && clusterSpikeCount > 0) {
+                spacing = minSpacing * 0.3 + (minSpacing * 0.5) * this.seededRandom(seed + seedOffset++);
+            } else if (!inCluster) {
+                spacing = minSpacing + (maxSpacing - minSpacing) * rand;
+            }
+            
+            currentPos = prevSpikeEnd + spacing;
+
+            if (currentPos >= edgeLength) break;
+
+            const spikeWidth = minWidth + (maxWidth - minWidth) * this.seededRandom(seed + seedOffset++);
+            const spikeHeight = minHeight + (maxHeight - minHeight) * this.seededRandom(seed + seedOffset++);
+            
+            const finalWidth = inCluster ? spikeWidth * (1.3 + this.seededRandom(seed + seedOffset++) * 0.7) : spikeWidth;
+            const finalHeight = inCluster ? spikeHeight * (1.1 + this.seededRandom(seed + seedOffset++) * 0.2) : spikeHeight;
+
+            if (currentPos + finalWidth > edgeLength) {
+                break;
+            }
+
+            spikes.push({
+                pos: currentPos,
+                width: finalWidth,
+                height: finalHeight,
+                isCluster: inCluster
+            });
+
+            prevSpikeEnd = currentPos + finalWidth;
+
+            if (inCluster) {
+                clusterSpikeCount++;
+                if (clusterSpikeCount >= clusterMaxSpikes) {
+                    inCluster = false;
+                    prevSpikeEnd += minSpacing * 0.5;
+                }
+            }
+        }
+
+        // Draw shadows around each spike
+        spikes.forEach((spike) => {
+            const spikeX = direction === 'top' || direction === 'bottom' 
+                ? startX + spike.pos 
+                : startX;
+            const spikeY = direction === 'left' || direction === 'right'
+                ? startY + spike.pos
+                : startY;
+
+            const spikeWidth = spike.width;
+            const spikeHeight = spike.height;
+            
+            const topWidth = spikeWidth * (0.2 + this.seededRandom((spike.pos * 1000) % 1000) * 0.2);
+
+            // Sample color at the center of the shadow area for this spike
+            let shadowCenterX: number;
+            let shadowCenterY: number;
+            
+            if (direction === 'top') {
+                shadowCenterX = spikeX + spikeWidth / 2;
+                shadowCenterY = spikeY - spikeHeight - shadowSize / 2;
+            } else if (direction === 'bottom') {
+                shadowCenterX = spikeX + spikeWidth / 2;
+                shadowCenterY = spikeY + spikeHeight + shadowSize / 2;
+            } else if (direction === 'left') {
+                shadowCenterX = spikeX - spikeHeight - shadowSize / 2;
+                shadowCenterY = spikeY + spikeWidth / 2;
+            } else { // right
+                shadowCenterX = spikeX + spikeHeight + shadowSize / 2;
+                shadowCenterY = spikeY + spikeWidth / 2;
+            }
+            
+            const shadowColor = this.sampleColorAtPosition(shadowCenterX, shadowCenterY);
+            
+            // Set fill style before drawing the path
+            this.ctx.fillStyle = shadowColor;
+            this.ctx.beginPath();
+
+            // Draw shadow path that extends around all edges of the spike shape
+            // The shadow extends shadowSize pixels outward from each edge
+            if (direction === 'top') {
+                // Shadow around top spike - create outer path
+                const leftX = spikeX + (spikeWidth - topWidth) / 2;
+                const rightX = spikeX + (spikeWidth + topWidth) / 2;
+                const topY = spikeY - spikeHeight;
+                
+                // Start from left base, go around the spike
+                this.ctx.moveTo(spikeX - shadowSize, spikeY);
+                // Left edge shadow
+                this.ctx.lineTo(leftX - shadowSize, topY - shadowSize);
+                // Top edge shadow
+                this.ctx.lineTo(rightX + shadowSize, topY - shadowSize);
+                // Right edge shadow
+                this.ctx.lineTo(spikeX + spikeWidth + shadowSize, spikeY);
+            } else if (direction === 'bottom') {
+                // Shadow around bottom spike - create outer path
+                const leftX = spikeX + (spikeWidth - topWidth) / 2;
+                const rightX = spikeX + (spikeWidth + topWidth) / 2;
+                const bottomY = spikeY + spikeHeight;
+                
+                // Start from left base, go around the spike
+                this.ctx.moveTo(spikeX - shadowSize, spikeY);
+                // Left edge shadow
+                this.ctx.lineTo(leftX - shadowSize, bottomY + shadowSize);
+                // Bottom edge shadow
+                this.ctx.lineTo(rightX + shadowSize, bottomY + shadowSize);
+                // Right edge shadow
+                this.ctx.lineTo(spikeX + spikeWidth + shadowSize, spikeY);
+            } else if (direction === 'left') {
+                // Shadow around left spike - create outer path
+                const topY = spikeY + (spikeWidth - topWidth) / 2;
+                const bottomY = spikeY + (spikeWidth + topWidth) / 2;
+                const leftX = spikeX - spikeHeight;
+                
+                // Start from top base, go around the spike
+                this.ctx.moveTo(spikeX, spikeY - shadowSize);
+                // Top edge shadow
+                this.ctx.lineTo(leftX - shadowSize, topY - shadowSize);
+                // Left edge shadow
+                this.ctx.lineTo(leftX - shadowSize, bottomY + shadowSize);
+                // Bottom edge shadow
+                this.ctx.lineTo(spikeX, spikeY + spikeWidth + shadowSize);
+            } else if (direction === 'right') {
+                // Shadow around right spike - create outer path
+                const topY = spikeY + (spikeWidth - topWidth) / 2;
+                const bottomY = spikeY + (spikeWidth + topWidth) / 2;
+                const rightX = spikeX + spikeHeight;
+                
+                // Start from top base, go around the spike
+                this.ctx.moveTo(spikeX, spikeY - shadowSize);
+                // Top edge shadow
+                this.ctx.lineTo(rightX + shadowSize, topY - shadowSize);
+                // Right edge shadow
+                this.ctx.lineTo(rightX + shadowSize, bottomY + shadowSize);
+                // Bottom edge shadow
+                this.ctx.lineTo(spikeX, spikeY + spikeWidth + shadowSize);
+            }
+
+            this.ctx.closePath();
+            this.ctx.fill();
+        });
+    }
+
     public drawMap(world_map_data: MapElement[]) {
         // Calculate viewport accounting for zoom level
         const scaledWidth = this.canvas.width / this.zoomLevel;
@@ -939,9 +1267,40 @@ export class Graphics {
                 y <= viewport.bottom
             ) {
                 if (element.type === 'wall') {
+                    const shadowSize = 7; // Size of shadow around the wall
+                    
+                    // Draw shadow around wall base (rectangular part)
+                    // Sample color at each shadow rectangle's position
+                    this.ctx.save();
+                    
+                    // Top shadow - sample at top shadow position
+                    const topShadowColor = this.sampleColorAtPosition(x - shadowSize, y - shadowSize);
+                    this.ctx.fillStyle = topShadowColor;
+                    this.ctx.fillRect(x - shadowSize, y - shadowSize, width + shadowSize * 2, shadowSize);
+                    
+                    // Bottom shadow - sample at bottom shadow position
+                    const bottomShadowColor = this.sampleColorAtPosition(x - shadowSize, y + height);
+                    this.ctx.fillStyle = bottomShadowColor;
+                    this.ctx.fillRect(x - shadowSize, y + height, width + shadowSize * 2, shadowSize);
+                    
+                    // Left shadow - sample at left shadow position
+                    const leftShadowColor = this.sampleColorAtPosition(x - shadowSize, y);
+                    this.ctx.fillStyle = leftShadowColor;
+                    this.ctx.fillRect(x - shadowSize, y, shadowSize, height);
+                    
+                    // Right shadow - sample at right shadow position
+                    const rightShadowColor = this.sampleColorAtPosition(x + width, y);
+                    this.ctx.fillStyle = rightShadowColor;
+                    this.ctx.fillRect(x + width, y, shadowSize, height);
+                    
+                    this.ctx.restore();
+                    
                     // Draw wall texture tiled
                     const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
                     if (pattern) {
+                        // Draw shadows around spikes first (they will sample their own positions)
+                        this.drawWallSpikeShadows(x, y, width, height, element, world_map_data, shadowSize);
+                        
                         this.ctx.save();
                         this.ctx.fillStyle = pattern;
                         this.ctx.fillRect(x, y, width, height);
