@@ -326,8 +326,12 @@ export class TitleScreen {
                 button.classList.add('selected');
                 
                 // Save to localStorage
-                localStorage.setItem('spawnBiome', biome || 'default');
-                console.log('Selected spawn biome:', biome);
+                const selectedBiome = biome || 'default';
+                localStorage.setItem('spawnBiome', selectedBiome);
+                console.log('Selected spawn biome:', selectedBiome);
+                
+                // Reload background with new biome
+                this.loadBackgroundTexture(selectedBiome);
             });
         });
         
@@ -1665,21 +1669,64 @@ export class TitleScreen {
         }
     }
 
-    private async loadBackgroundTexture(): Promise<void> {
+    /**
+     * Gets the SVG file path for a given biome
+     */
+    private getBiomeSvgPath(biomeName: string): string {
+        const biomeSvgMap: { [key: string]: string } = {
+            'default': './land.svg',
+            'land': './land.svg',
+            'desert': './desert.svg',
+            'ocean': './ocean.svg',
+            'ant_hell': './ant_hell.svg',
+            'hel': './hel.svg',
+            'sewers': './sewers.svg',
+            'jungle': './jungle.svg'
+        };
+        
+        return biomeSvgMap[biomeName] || biomeSvgMap['default'];
+    }
+
+    private async loadBackgroundTexture(biomeName?: string): Promise<void> {
+        // Get biome from parameter or localStorage, default to 'default'
+        const biome = biomeName || localStorage.getItem('spawnBiome') || 'default';
+        const svgPath = this.getBiomeSvgPath(biome);
+        
         return new Promise((resolve) => {
             this.backgroundTexture.onload = () => {
-                console.log('Title screen background loaded successfully');
+                console.log(`Title screen background loaded successfully for biome: ${biome}`);
                 resolve();
             };
             this.backgroundTexture.onerror = (error) => {
-                console.error('Failed to load title screen background:', error);
+                console.error(`Failed to load title screen background for biome ${biome}:`, error);
                 // Create a fallback image to prevent broken state
                 this.createFallbackImage();
                 resolve();
             };
             
-            // Use the hardcoded SVG directly with proper encoding
-            const svgText = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
+            // Load SVG file using fetch
+            fetch(svgPath)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch SVG: ${response.statusText}`);
+                    }
+                    return response.text();
+                })
+                .then(svgText => {
+                    try {
+                        const base64 = btoa(unescape(encodeURIComponent(svgText)));
+                        const dataUrl = `data:image/svg+xml;base64,${base64}`;
+                        this.backgroundTexture.src = dataUrl;
+                    } catch (error) {
+                        console.error('Error encoding SVG:', error);
+                        this.createFallbackImage();
+                        resolve();
+                    }
+                })
+                .catch(error => {
+                    console.error(`Error loading SVG from ${svgPath}:`, error);
+                    // Fallback to hardcoded default SVG
+                    const svgText = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
   <rect width="400" height="400" x="0" y="0" fill="#1ea761"/>
 
   <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#1c9959" transform="translate(60, 60) rotate(45)" stroke-width="7" stroke="#1c9959" stroke-linejoin="round"/>
@@ -1696,16 +1743,16 @@ export class TitleScreen {
   <circle cx="200" cy="350" r="18" fill="#1c9959"/>
   <circle cx="360" cy="320" r="18" fill="#2fb571"/>
 </svg>`;
-            
-            try {
-                const base64 = btoa(unescape(encodeURIComponent(svgText)));
-                const dataUrl = `data:image/svg+xml;base64,${base64}`;
-                this.backgroundTexture.src = dataUrl;
-            } catch (error) {
-                console.error('Error encoding SVG:', error);
-                this.createFallbackImage();
-                resolve();
-            }
+                    try {
+                        const base64 = btoa(unescape(encodeURIComponent(svgText)));
+                        const dataUrl = `data:image/svg+xml;base64,${base64}`;
+                        this.backgroundTexture.src = dataUrl;
+                    } catch (error) {
+                        console.error('Error encoding fallback SVG:', error);
+                        this.createFallbackImage();
+                        resolve();
+                    }
+                });
         });
     }
 
