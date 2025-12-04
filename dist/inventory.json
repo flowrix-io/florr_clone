@@ -1,30 +1,30 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 82008940,
+      "totalXP": 82021896,
       "inventory": {
         "common": {
           "shield": 41,
-          "petal_light": 3,
+          "petal_light": 5,
           "petal_dandelion": 2,
           "petal_stinger": 14,
           "petal_yggdrasil": 7,
           "speed_boost": 4,
           "petal_sand": 39,
-          "petal_rock": 106,
+          "petal_rock": 108,
           "petal_clover": 24,
           "petal_bone": 34,
           "petal_cactus": 5,
           "petal_iris": 2,
           "petal_poison_cactus": 10,
           "petal_lightning": 29,
-          "petal_missile": 6,
+          "petal_missile": 7,
           "petal_jelly": 7,
           "petal_leaf": 1,
           "petal_cutter": 1,
-          "petal_wing": 49,
-          "petal_rose": 3,
-          "health_potion": 4,
+          "petal_wing": 51,
+          "petal_rose": 5,
+          "health_potion": 5,
           "petal_basic": 2
         },
         "unique": {
@@ -67,7 +67,7 @@
           "petal_stinger": 5,
           "petal_dandelion": 3,
           "petal_leaf": 5,
-          "petal_missile": 3,
+          "petal_missile": 4,
           "petal_poison_cactus": 1,
           "petal_basic": 3,
           "shield": 1,
@@ -128,23 +128,23 @@
         },
         "epic": {
           "petal_stinger": 32,
-          "speed_boost": 54,
-          "petal_basic": 43,
+          "speed_boost": 55,
+          "petal_basic": 44,
           "petal_rose": 70,
           "petal_sand": 14,
           "petal_yggdrasil": 3,
           "health_potion": 26,
           "petal_light": 31,
           "petal_rock": 87,
-          "shield": 82,
-          "petal_dandelion": 72,
+          "shield": 83,
+          "petal_dandelion": 74,
           "petal_clover": 29,
           "petal_bone": 61,
           "petal_cactus": 5,
           "petal_poison_cactus": 2,
           "petal_iris": 4,
           "petal_lightning": 5,
-          "petal_missile": 7,
+          "petal_missile": 8,
           "petal_leaf": 5,
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,
@@ -222,7 +222,7 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "sparkle"
+          "petalType": "lightning"
         },
         {
           "type": "petal",
@@ -247,7 +247,7 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "lightning"
+          "petalType": "sparkle"
         },
         {
           "type": "petal",
