@@ -1,8 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 124 124" fill="none">
-<rect x="0.0" y="0.0" width="400" height="400" fill="#cc493f"/>
-<circle cx="25.2109" cy="51.5391" r="5.1641" fill="#6e2924"/>
-<circle cx="105.5341" cy="25.5207" r="5.1641" fill="#6e2924"/>
-<circle cx="51.5308" cy="85.3607" r="5.1641" fill="#6e2924"/>
-<circle cx="64.5341" cy="15.5207" r="5.1641" fill="#6e2924"/>
-<circle cx="103.5341" cy="102.5207" r="5.1641" fill="#6e2924"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" fill="none">
+<rect fill="#a31414" width="400" height="400" x="0" y="0"/>
+<rect fill="#8f0606" width="50" height="50" x="225" y="225" transform="rotate(10, 0, 100)"/>
+<rect fill="#8f0606" width="50" height="50" x="100" y="225" transform="rotate(-45, 0, 50)"/>
+<rect fill="#8f0606" width="50" height="50" x="300" y="225" transform="rotate(-4, 0, 50)"/>
+<rect fill="#8f0606" width="50" height="50" x="10" y="100" transform="rotate(-20, 0, 50)"/>
+<rect fill="#8f0606" width="50" height="50" x="10" y="300" transform="rotate(-5, 0, 50)"/>
+<rect fill="#a11f1f" width="20" height="20" x="280" y="300" transform="rotate(-5, 0, 50)"/>
+<rect fill="#a11f1f" width="20" height="20" x="18" y="58" transform="rotate(-8, 100, 100)"/>
+<rect fill="#a11f1f" width="20" height="20" x="18" y="58" transform="rotate(-85, 100, 100)"/>
+<rect fill="#a11f1f" width="20" height="20" x="18" y="58" transform="rotate(-85, 200, 100)"/>
 </svg>
