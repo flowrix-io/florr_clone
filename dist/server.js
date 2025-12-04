@@ -1472,6 +1472,25 @@ io.on('connection', (socket) => {
             }
             if (successfulCrafts > 0) {
                 (0, playerManager_1.addItem)(player.inventory, newRarity, itemKey, successfulCrafts);
+                // Send global notification for super or unique petal crafts
+                if ((newRarity === 'super' || newRarity === 'unique') && type === 'petal' && petalType) {
+                    const petalStats = (0, petals_2.getPetalStats)(petalType, newRarity);
+                    if (petalStats) {
+                        const rarityColors = {
+                            super: '#2bffa4',
+                            unique: '#bf00ff'
+                        };
+                        const rarityColor = rarityColors[newRarity] || '#ffffff';
+                        const petalName = petalStats.name.slice(0, -5);
+                        const username = socket.username || 'Unknown';
+                        const playerNickname = player.name || username;
+                        io.emit('chatMessage', {
+                            sender: '',
+                            content: `<b style="color: ${rarityColor};">A ${petalName}has been crafted by <b style="color: #00ff00;">@${username}</b> [<b style="color: yellow;">${playerNickname}</b>]</b>`,
+                            timestamp: Date.now()
+                        });
+                    }
+                }
             }
             console.log('[CRAFT] Crafting complete:', { successfulCrafts, failCount: numBatches - successfulCrafts, newRarity });
             // Always emit craftingFinished, even if all crafts failed

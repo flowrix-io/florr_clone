@@ -80,6 +80,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Some UI changes',
             'Recolored some biomes',
             'New petal: Square',
+            'A global notification is now shown when a rare petal is crafted',
         ]
     }
 ];
