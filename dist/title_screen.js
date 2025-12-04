@@ -1254,6 +1254,62 @@ class TitleScreen {
         this.hideFloatingPetals();
         this.stopBackgroundAnimation();
         this.hideBackgroundCanvas();
+        // Hide all title screen panels
+        this.hideTitleScreenPanels();
+    }
+    hideTitleScreenPanels() {
+        // Hide inventory panel
+        const inventoryPanel = document.getElementById('inventoryPanel');
+        if (inventoryPanel) {
+            inventoryPanel.classList.remove('open');
+            inventoryPanel.style.display = 'none';
+        }
+        // Hide crafting panel
+        const craftingPanel = document.getElementById('craftingPanel');
+        if (craftingPanel) {
+            craftingPanel.classList.remove('open');
+            craftingPanel.style.display = 'none';
+        }
+        // Hide title screen loadout bar
+        const titleScreenLoadoutBar = document.getElementById('titleScreenLoadoutBar');
+        if (titleScreenLoadoutBar) {
+            titleScreenLoadoutBar.style.display = 'none';
+        }
+        // Hide skills panel (created by SkillsManager, no ID, so we need to find it by class)
+        const skillsPanel = document.querySelector('.skills-panel');
+        if (skillsPanel) {
+            skillsPanel.style.display = 'none';
+        }
+        // Hide chat container (created by Chat, no ID, so we need to find it by class)
+        const chatContainer = document.querySelector('.chat-container');
+        if (chatContainer) {
+            chatContainer.style.display = 'none';
+        }
+        // Also close panels through managers if they exist
+        // Note: We check display style directly and hide manually to avoid toggling logic
+        // The panels are already hidden above, but we ensure managers know they're closed
+        if (this.titleScreenInventoryManager) {
+            // Force close inventory panel if it exists
+            const invPanel = document.getElementById('inventoryPanel');
+            if (invPanel) {
+                invPanel.classList.remove('open');
+                invPanel.style.display = 'none';
+            }
+            // Force close crafting panel if it exists
+            const craftPanel = document.getElementById('craftingPanel');
+            if (craftPanel) {
+                craftPanel.classList.remove('open');
+                craftPanel.style.display = 'none';
+            }
+        }
+        // Close skills panel if open
+        if (this.titleScreenSkillsManager) {
+            this.titleScreenSkillsManager.hide();
+        }
+        // Hide chat if open
+        if (this.titleScreenChat && this.titleScreenChat.chatContainer) {
+            this.titleScreenChat.hide();
+        }
     }
     showTitleScreen() {
         this.showAuthContainer();
