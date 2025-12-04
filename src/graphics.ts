@@ -1267,33 +1267,7 @@ export class Graphics {
                 y <= viewport.bottom
             ) {
                 if (element.type === 'wall') {
-                    const shadowSize = 7; // Size of shadow around the wall
-                    
-                    // Draw shadow around wall base (rectangular part)
-                    // Sample color at each shadow rectangle's position
-                    this.ctx.save();
-                    
-                    // Top shadow - sample at top shadow position
-                    const topShadowColor = this.sampleColorAtPosition(x - shadowSize, y - shadowSize);
-                    this.ctx.fillStyle = topShadowColor;
-                    this.ctx.fillRect(x - shadowSize, y - shadowSize, width + shadowSize * 2, shadowSize);
-                    
-                    // Bottom shadow - sample at bottom shadow position
-                    const bottomShadowColor = this.sampleColorAtPosition(x - shadowSize, y + height);
-                    this.ctx.fillStyle = bottomShadowColor;
-                    this.ctx.fillRect(x - shadowSize, y + height, width + shadowSize * 2, shadowSize);
-                    
-                    // Left shadow - sample at left shadow position
-                    const leftShadowColor = this.sampleColorAtPosition(x - shadowSize, y);
-                    this.ctx.fillStyle = leftShadowColor;
-                    this.ctx.fillRect(x - shadowSize, y, shadowSize, height);
-                    
-                    // Right shadow - sample at right shadow position
-                    const rightShadowColor = this.sampleColorAtPosition(x + width, y);
-                    this.ctx.fillStyle = rightShadowColor;
-                    this.ctx.fillRect(x + width, y, shadowSize, height);
-                    
-                    this.ctx.restore();
+                    const shadowSize = 7; // Size of shadow around the spikes
                     
                     // Draw wall texture tiled
                     const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
