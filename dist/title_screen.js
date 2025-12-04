@@ -1927,13 +1927,17 @@ class TitleScreenInventoryManager {
             if (item && item.type === 'petal' && item.petalType && item.rarity) {
                 const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
                 if (stats && stats.image) {
-                    const img = document.createElement('div');
-                    img.innerHTML = stats.image;
+                    // Use img element with SVG data URL instead of innerHTML to prevent positioning issues
+                    const img = document.createElement('img');
                     img.style.width = '60%';
                     img.style.height = '60%';
-                    img.style.display = 'flex';
-                    img.style.alignItems = 'center';
-                    img.style.justifyContent = 'center';
+                    img.style.objectFit = 'contain';
+                    img.style.display = 'block';
+                    img.style.margin = 'auto';
+                    // Convert SVG to data URL
+                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                    const url = URL.createObjectURL(svgBlob);
+                    img.src = url;
                     slotElement.appendChild(img);
                     // Set rarity color
                     if (this.ITEM_RARITY_COLORS[item.rarity]) {
