@@ -1,12 +1,12 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 81996264,
+      "totalXP": 82008580,
       "inventory": {
         "common": {
           "shield": 41,
-          "petal_light": 2,
-          "petal_dandelion": 1,
+          "petal_light": 3,
+          "petal_dandelion": 2,
           "petal_stinger": 14,
           "petal_yggdrasil": 7,
           "speed_boost": 4,
@@ -22,13 +22,13 @@
           "petal_jelly": 7,
           "petal_leaf": 1,
           "petal_cutter": 1,
-          "petal_wing": 27,
+          "petal_wing": 49,
           "petal_rose": 3,
-          "health_potion": 2,
-          "petal_basic": 1
+          "health_potion": 4,
+          "petal_basic": 2
         },
         "unique": {
-          "petal_stinger": 1003,
+          "petal_stinger": 1004,
           "petal_basic": 1001,
           "petal_rose": 1003,
           "petal_light": 1000,
@@ -40,9 +40,9 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 999,
+          "petal_sparkle": 992,
           "petal_poison_cactus": 1000,
-          "petal_lightning": 1000,
+          "petal_lightning": 999,
           "petal_iris": 998,
           "petal_jelly": 1002,
           "petal_cutter": 999,
@@ -50,7 +50,7 @@
           "petal_yucca": 1,
           "petal_missile": 2,
           "petal_bone": 1,
-          "petal_wing": 994,
+          "petal_wing": 1000,
           "petal_sand": 1
         },
         "mythic": {
@@ -62,7 +62,7 @@
           "petal_sand": 1,
           "health_potion": 2,
           "petal_rose": 2,
-          "petal_bone": 6,
+          "petal_bone": 7,
           "petal_iris": 2,
           "petal_stinger": 5,
           "petal_dandelion": 3,
@@ -144,7 +144,7 @@
           "petal_poison_cactus": 2,
           "petal_iris": 4,
           "petal_lightning": 5,
-          "petal_missile": 5,
+          "petal_missile": 7,
           "petal_leaf": 5,
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,
@@ -165,14 +165,14 @@
           "petal_bone": 18,
           "petal_clover": 6,
           "petal_lightning": 2,
-          "petal_missile": 23,
+          "petal_missile": 24,
           "petal_leaf": 2,
           "petal_iris": 3,
           "petal_yucca": 1,
           "petal_jelly": 2,
           "petal_cutter": 2,
           "petal_lightning_cutter": 5,
-          "petal_wing": 2
+          "petal_wing": 4
         },
         "ultra": {
           "speed_boost": 3,
@@ -204,7 +204,7 @@
           "speed_boost": 2,
           "petal_rose": 2,
           "petal_leaf": 3,
-          "petal_stinger": 1,
+          "petal_stinger": 2,
           "petal_clover": 2,
           "petal_iris": 3,
           "petal_light": 3,
@@ -222,22 +222,22 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "stinger"
-        },
-        {
-          "type": "petal",
-          "rarity": "super",
-          "petalType": "stinger"
+          "petalType": "sparkle"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "wing"
+          "petalType": "sparkle"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "wing"
+          "petalType": "sparkle"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "sparkle"
         },
         {
           "type": "petal",
@@ -247,12 +247,12 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "wing"
+          "petalType": "lightning"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "wing"
+          "petalType": "sparkle"
         },
         {
           "type": "speed_boost",
@@ -261,12 +261,12 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "wing"
+          "petalType": "sparkle"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "wing"
+          "petalType": "sparkle"
         },
         null,
         null,

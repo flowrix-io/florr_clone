@@ -191,6 +191,10 @@ function preconnectToServer() {
             if (username) {
                 preconnectedSocket.username = username;
             }
+            // Mark inventory manager as authenticated
+            if (titleScreen.titleScreenInventoryManager) {
+                titleScreen.titleScreenInventoryManager.isAuthenticated = true;
+            }
             // Update title screen inventory manager with player data
             titleScreen.titleScreenInventoryManager?.updateFromPlayerData({
                 inventory: response.player.inventory || {},

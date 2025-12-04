@@ -1675,6 +1675,7 @@ class TitleScreenInventoryManager {
         this.socket = null;
         this.craftingItems = [];
         this.isCraftingOpen = false;
+        this.isAuthenticated = false;
         this.LOADOUT_SLOTS = 10;
         this.LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
         this.ITEM_RARITY_COLORS = {
@@ -1691,6 +1692,25 @@ class TitleScreenInventoryManager {
         this.initializeLoadoutBar();
         this.initializeCraftingPanel();
         this.setupSocketListeners();
+        this.setupGlobalDragAndDrop();
+    }
+    setupGlobalDragAndDrop() {
+        // Handle dropping items outside loadout slots to move them back to inventory
+        document.addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+        document.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const dragEvent = e;
+            const target = e.target;
+            // If dropped outside loadout slots and inventory grid, move item back to inventory
+            if (!target.closest('.loadout-slot') && !target.closest('.inventory-grid') && !target.closest('.crafting-inventory-grid')) {
+                const loadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
+                if (loadoutSlot) {
+                    this.moveItemToInventory(parseInt(loadoutSlot));
+                }
+            }
+        });
     }
     initializeLoadoutBar() {
         // Create loadout bar for title screen
@@ -1701,6 +1721,19 @@ class TitleScreenInventoryManager {
             return;
         }
         this.loadoutBar = loadoutContainer;
+        // Add drag-over style class support (only once)
+        if (!document.getElementById('titleScreenLoadoutStyles')) {
+            const style = document.createElement('style');
+            style.id = 'titleScreenLoadoutStyles';
+            style.textContent = `
+                #titleScreenLoadoutBar .loadout-slot.drag-over {
+                    border-color: #00ff00 !important;
+                    background-color: rgba(0, 255, 0, 0.2) !important;
+                    transform: scale(1.05);
+                }
+            `;
+            document.head.appendChild(style);
+        }
         for (let i = 0; i < this.LOADOUT_SLOTS; i++) {
             const slot = document.createElement('div');
             slot.className = 'loadout-slot';
@@ -1714,6 +1747,7 @@ class TitleScreenInventoryManager {
             slot.style.display = 'flex';
             slot.style.alignItems = 'center';
             slot.style.justifyContent = 'center';
+            slot.style.transition = 'all 0.2s ease';
             // Add key binding label
             const keyText = document.createElement('div');
             keyText.className = 'key-binding';
@@ -1849,6 +1883,7 @@ class TitleScreenInventoryManager {
         const authenticatedHandler = (response) => {
             if (response.success && response.player) {
                 console.log('[TitleScreenInventory] Received player data:', response.player);
+                this.isAuthenticated = true;
                 this.playerData = {
                     inventory: response.player.inventory || {},
                     loadout: response.player.loadout || Array(10).fill(null)
@@ -1910,6 +1945,10 @@ class TitleScreenInventoryManager {
         slots.forEach((slot, index) => {
             const slotElement = slot;
             slotElement.innerHTML = '';
+            slotElement.classList.remove('on-cooldown', 'petal-slot');
+            slotElement.style.backgroundColor = '';
+            slotElement.style.borderColor = '';
+            slotElement.dataset.slot = index.toString();
             // Add key binding back
             const keyText = document.createElement('div');
             keyText.className = 'key-binding';
@@ -1921,31 +1960,314 @@ class TitleScreenInventoryManager {
                 color: white;
                 font-size: 12px;
                 pointer-events: none;
+                z-index: 5;
             `;
             slotElement.appendChild(keyText);
             const item = this.playerData?.loadout[index];
-            if (item && item.type === 'petal' && item.petalType && item.rarity) {
-                const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
-                if (stats && stats.image) {
-                    // Use img element with SVG data URL instead of innerHTML to prevent positioning issues
+            if (item) {
+                // Handle cooldown state
+                if (item.onCooldown) {
+                    slotElement.classList.add('on-cooldown');
+                }
+                // Handle different item types
+                if (item.type === 'petal' && item.petalType && item.rarity) {
+                    slotElement.classList.add('petal-slot');
+                    // Set background and border colors based on rarity
+                    if (this.ITEM_RARITY_COLORS[item.rarity]) {
+                        const rarityColor = this.ITEM_RARITY_COLORS[item.rarity];
+                        slotElement.style.backgroundColor = rarityColor;
+                        slotElement.style.borderColor = this.darkenColor(rarityColor);
+                    }
+                    const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+                    if (stats && stats.image) {
+                        // Create petal visual container
+                        const petalDiv = document.createElement('div');
+                        petalDiv.style.width = '60%';
+                        petalDiv.style.height = '60%';
+                        petalDiv.style.display = 'flex';
+                        petalDiv.style.alignItems = 'center';
+                        petalDiv.style.justifyContent = 'center';
+                        petalDiv.style.position = 'relative';
+                        // Use img element with SVG data URL
+                        const img = document.createElement('img');
+                        img.style.width = '100%';
+                        img.style.height = '100%';
+                        img.style.objectFit = 'contain';
+                        img.draggable = true;
+                        img.style.cursor = 'grab';
+                        // Convert SVG to data URL
+                        const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                        const url = URL.createObjectURL(svgBlob);
+                        img.src = url;
+                        petalDiv.appendChild(img);
+                        slotElement.appendChild(petalDiv);
+                        // Show health bar for petals
+                        if (item.health !== undefined && item.maxHealth !== undefined && item.maxHealth > 0) {
+                            const healthBar = document.createElement('div');
+                            healthBar.style.position = 'absolute';
+                            healthBar.style.bottom = '0';
+                            healthBar.style.left = '0';
+                            healthBar.style.width = '100%';
+                            healthBar.style.height = '3px';
+                            healthBar.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
+                            const healthFill = document.createElement('div');
+                            const clampedHealth = Math.max(0, item.health);
+                            const healthPercentage = clampedHealth / item.maxHealth;
+                            healthFill.style.width = `${healthPercentage * 100}%`;
+                            healthFill.style.height = '100%';
+                            healthFill.style.backgroundColor = 'rgba(0, 255, 0, 0.7)';
+                            healthBar.appendChild(healthFill);
+                            slotElement.appendChild(healthBar);
+                        }
+                        // Add petal name label
+                        const petalName = this.formatPetalName(item.petalType);
+                        if (petalName) {
+                            const nameLabel = document.createElement('div');
+                            nameLabel.className = 'petal-name';
+                            nameLabel.textContent = petalName;
+                            nameLabel.style.cssText = `
+                                position: absolute;
+                                bottom: 5px;
+                                left: 50%;
+                                transform: translateX(-50%);
+                                color: white;
+                                font-size: 10px;
+                                font-weight: bold;
+                                text-shadow: 
+                                    -1px -1px 0 #000,
+                                    1px -1px 0 #000,
+                                    -1px 1px 0 #000,
+                                    1px 1px 0 #000,
+                                    0 0 3px rgba(0,0,0,0.8);
+                                white-space: nowrap;
+                                pointer-events: none;
+                                z-index: 10;
+                            `;
+                            slotElement.appendChild(nameLabel);
+                        }
+                    }
+                }
+                else if (item.type) {
+                    // Regular items (health potion, speed boost, shield)
                     const img = document.createElement('img');
+                    img.src = `./assets/${item.type}.png`;
+                    img.alt = item.type;
                     img.style.width = '60%';
                     img.style.height = '60%';
                     img.style.objectFit = 'contain';
-                    img.style.display = 'block';
-                    img.style.margin = 'auto';
-                    // Convert SVG to data URL
-                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                    const url = URL.createObjectURL(svgBlob);
-                    img.src = url;
+                    img.draggable = true;
+                    img.style.cursor = 'grab';
                     slotElement.appendChild(img);
-                    // Set rarity color
-                    if (this.ITEM_RARITY_COLORS[item.rarity]) {
-                        slotElement.style.backgroundColor = this.ITEM_RARITY_COLORS[item.rarity];
-                    }
                 }
             }
         });
+        // Re-setup drag and drop listeners after updating display
+        this.setupLoadoutDragAndDrop();
+    }
+    formatPetalName(petalType) {
+        if (!petalType)
+            return "";
+        let itemName = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
+        itemName = itemName.replace('_', ' ');
+        return itemName;
+    }
+    setupLoadoutDragAndDrop() {
+        if (!this.loadoutBar)
+            return;
+        const slots = this.loadoutBar.querySelectorAll('.loadout-slot');
+        // Setup draggable items in slots
+        slots.forEach((slot, slotIndex) => {
+            const slotElement = slot;
+            // Find draggable element (img or petal div)
+            const img = slotElement.querySelector('img');
+            const petalDiv = slotElement.querySelector('div[style*="display: flex"]');
+            let draggableElement = img || petalDiv || slotElement;
+            if (draggableElement && slotElement.querySelector('img, div[style*="display: flex"]')) {
+                draggableElement.draggable = true;
+                draggableElement.style.cursor = 'grab';
+                // Remove old listeners by cloning
+                const newElement = draggableElement.cloneNode(true);
+                draggableElement.parentNode?.replaceChild(newElement, draggableElement);
+                draggableElement = newElement;
+                draggableElement.addEventListener('dragstart', (e) => {
+                    e.stopPropagation();
+                    const dragEvent = e;
+                    dragEvent.dataTransfer?.setData('text/loadoutSlot', slotIndex.toString());
+                    dragEvent.dataTransfer.effectAllowed = 'move';
+                });
+            }
+        });
+        // Setup drop listeners on slots
+        slots.forEach((slot, slotIndex) => {
+            const slotElement = slot;
+            // Remove old listeners by cloning
+            const newSlot = slotElement.cloneNode(true);
+            slotElement.parentNode?.replaceChild(newSlot, slotElement);
+            newSlot.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                newSlot.classList.add('drag-over');
+            });
+            newSlot.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                const dragEvent = e;
+                dragEvent.dataTransfer.dropEffect = 'move';
+                newSlot.classList.add('drag-over');
+            });
+            newSlot.addEventListener('dragleave', (e) => {
+                newSlot.classList.remove('drag-over');
+            });
+            newSlot.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const dragEvent = e;
+                newSlot.classList.remove('drag-over');
+                const itemData = dragEvent.dataTransfer?.getData('text/plain');
+                const fromLoadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
+                if (itemData) {
+                    // Item from inventory
+                    const { rarity, type } = JSON.parse(itemData);
+                    const slot = parseInt(newSlot.dataset.slot || '-1');
+                    if (rarity && type && slot >= 0) {
+                        this.equipItemToLoadout(rarity, type, slot);
+                    }
+                }
+                else if (fromLoadoutSlot) {
+                    // Item from another loadout slot
+                    const fromSlot = parseInt(fromLoadoutSlot);
+                    const toSlot = slotIndex;
+                    if (fromSlot !== toSlot) {
+                        this.swapLoadoutItems(fromSlot, toSlot);
+                    }
+                }
+            });
+        });
+    }
+    equipItemToLoadout(rarity, type, loadoutSlot) {
+        if (!this.playerData || loadoutSlot >= this.LOADOUT_SLOTS || this.getItemCount(rarity, type) === 0)
+            return;
+        // Parse petal type if it's a petal
+        let itemType;
+        let petalType;
+        if (type.startsWith('petal_')) {
+            itemType = 'petal';
+            petalType = type.substring(6);
+        }
+        else {
+            itemType = type;
+        }
+        const item = {
+            type: itemType,
+            rarity: rarity,
+            petalType: petalType
+        };
+        // Initialize health for petals
+        if (itemType === 'petal' && petalType && rarity) {
+            const stats = (0, petals_1.getPetalStats)(petalType, rarity);
+            if (stats) {
+                item.health = stats.health;
+                item.maxHealth = stats.health;
+                item.onCooldown = true;
+            }
+        }
+        const newLoadout = [...this.playerData.loadout];
+        this.removeItem(rarity, type, 1);
+        const existingItem = newLoadout[loadoutSlot];
+        if (existingItem && existingItem.rarity) {
+            const existingKey = existingItem.type === 'petal' ? `${existingItem.type}_${existingItem.petalType}` : existingItem.type;
+            this.addItem(existingItem.rarity, existingKey, 1);
+        }
+        newLoadout[loadoutSlot] = item;
+        this.playerData.loadout = newLoadout;
+        // Emit to server - ensure socket is authenticated and player exists
+        if (this.socket && this.socket.connected && this.isAuthenticated && this.socket.username) {
+            console.log('[TitleScreen] Emitting updateLoadout (equipItemToLoadout):', {
+                socketId: this.socket.id,
+                loadout: newLoadout,
+                inventory: this.playerData.inventory
+            });
+            this.socket.emit('updateLoadout', {
+                loadout: newLoadout,
+                inventory: this.playerData.inventory
+            });
+        }
+        else {
+            console.warn('[TitleScreen] Cannot emit updateLoadout - socket not ready:', {
+                hasSocket: !!this.socket,
+                connected: this.socket?.connected,
+                authenticated: this.isAuthenticated,
+                hasUsername: !!this.socket?.username,
+                socketId: this.socket?.id
+            });
+        }
+        this.updateLoadoutDisplay();
+        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
+            this.updateInventoryDisplay();
+        }
+    }
+    moveItemToInventory(loadoutSlot) {
+        if (!this.playerData || loadoutSlot >= this.playerData.loadout.length)
+            return;
+        const item = this.playerData.loadout[loadoutSlot];
+        if (!item || !item.rarity)
+            return;
+        const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+        this.addItem(item.rarity, itemKey, 1);
+        const newLoadout = [...this.playerData.loadout];
+        newLoadout[loadoutSlot] = null;
+        this.playerData.loadout = newLoadout;
+        // Emit to server - ensure socket is authenticated and player exists
+        if (this.socket && this.socket.connected && this.isAuthenticated && this.socket.username) {
+            console.log('[TitleScreen] Emitting updateLoadout (moveItemToInventory):', {
+                socketId: this.socket.id,
+                loadout: newLoadout,
+                inventory: this.playerData.inventory
+            });
+            this.socket.emit('updateLoadout', {
+                loadout: newLoadout,
+                inventory: this.playerData.inventory
+            });
+        }
+        else {
+            console.warn('[TitleScreen] Cannot emit updateLoadout - socket not ready:', {
+                hasSocket: !!this.socket,
+                connected: this.socket?.connected,
+                authenticated: this.isAuthenticated,
+                hasUsername: !!this.socket?.username,
+                socketId: this.socket?.id
+            });
+        }
+        this.updateLoadoutDisplay();
+        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
+            this.updateInventoryDisplay();
+        }
+    }
+    swapLoadoutItems(fromSlot, toSlot) {
+        if (!this.playerData)
+            return;
+        const newLoadout = [...this.playerData.loadout];
+        [newLoadout[fromSlot], newLoadout[toSlot]] = [newLoadout[toSlot], newLoadout[fromSlot]];
+        this.playerData.loadout = newLoadout;
+        // Emit to server - ensure socket is authenticated and player exists
+        if (this.socket && this.socket.connected && this.isAuthenticated && this.socket.username) {
+            console.log('[TitleScreen] Emitting updateLoadout (swapLoadoutItems):', {
+                socketId: this.socket.id,
+                loadout: newLoadout,
+                inventory: this.playerData.inventory
+            });
+            this.socket.emit('updateLoadout', {
+                loadout: newLoadout,
+                inventory: this.playerData.inventory
+            });
+        }
+        else {
+            console.warn('[TitleScreen] Cannot emit updateLoadout - socket not ready:', {
+                hasSocket: !!this.socket,
+                connected: this.socket?.connected,
+                authenticated: this.isAuthenticated,
+                hasUsername: !!this.socket?.username,
+                socketId: this.socket?.id
+            });
+        }
+        this.updateLoadoutDisplay();
     }
     updateInventoryDisplay() {
         if (!this.inventoryPanel || !this.playerData)
@@ -2125,13 +2447,6 @@ class TitleScreenInventoryManager {
         const newG = Math.round(g * factor);
         const newB = Math.round(b * factor);
         return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
-    }
-    formatPetalName(petalType) {
-        if (!petalType)
-            return "";
-        let itemName = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
-        itemName = itemName.replace('_', ' ');
-        return itemName;
     }
     toggleInventory() {
         let inventoryPanel = document.getElementById('inventoryPanel');

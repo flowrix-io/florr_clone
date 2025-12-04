@@ -992,7 +992,16 @@ io.on('connection', (socket) => {
         }
     });
     socket.on('updateLoadout', (data) => {
+        console.log('[SERVER] updateLoadout received from socket:', socket.id, 'player exists:', !!constants_2.players[socket.id], 'authenticated:', !!socket.username);
         const player = constants_2.players[socket.id];
+        if (!player) {
+            console.warn('[SERVER] updateLoadout: Player not found for socket:', socket.id);
+            return;
+        }
+        if (!socket.username) {
+            console.warn('[SERVER] updateLoadout: Socket not authenticated');
+            return;
+        }
         if (player) {
             // Track which slots had petals before to detect changes
             const oldLoadout = player.loadout || [];
