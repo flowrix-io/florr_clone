@@ -2358,6 +2358,19 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 maxQuantity: 1
             }
         ]
+    },
+    target_dummy: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'square',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 2
+            }
+        ]
     }
 };
 

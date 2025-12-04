@@ -1,15 +1,15 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 87678561,
+      "totalXP": 87820061,
       "inventory": {
         "common": {
-          "shield": 45,
+          "shield": 47,
           "petal_light": 6,
           "petal_dandelion": 3,
           "petal_stinger": 14,
           "petal_yggdrasil": 8,
-          "speed_boost": 6,
+          "speed_boost": 8,
           "petal_sand": 42,
           "petal_rock": 114,
           "petal_clover": 25,
@@ -18,13 +18,13 @@
           "petal_iris": 5,
           "petal_poison_cactus": 11,
           "petal_lightning": 29,
-          "petal_missile": 12,
+          "petal_missile": 13,
           "petal_jelly": 7,
-          "petal_leaf": 1,
+          "petal_leaf": 2,
           "petal_cutter": 1,
-          "petal_wing": 63,
+          "petal_wing": 65,
           "petal_rose": 11,
-          "health_potion": 6,
+          "health_potion": 7,
           "petal_basic": 4
         },
         "unique": {
@@ -74,10 +74,11 @@
           "petal_cutter": 4,
           "petal_clover": 1,
           "petal_yucca": 1,
-          "petal_lightning_cutter": 1
+          "petal_lightning_cutter": 1,
+          "petal_square": 1
         },
         "uncommon": {
-          "petal_rose": 33,
+          "petal_rose": 34,
           "petal_dandelion": 22,
           "petal_basic": 59,
           "petal_sand": 7,
@@ -144,12 +145,12 @@
           "petal_poison_cactus": 2,
           "petal_iris": 4,
           "petal_lightning": 5,
-          "petal_missile": 9,
+          "petal_missile": 10,
           "petal_leaf": 5,
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,
           "petal_yucca": 1,
-          "petal_wing": 13
+          "petal_wing": 15
         },
         "rare": {
           "petal_rock": 2,
@@ -216,7 +217,8 @@
           "petal_yggdrasil": 2,
           "petal_rock": 1,
           "petal_lightning": 1,
-          "petal_sand": 2
+          "petal_sand": 2,
+          "petal_square": 1
         }
       },
       "loadout": [
@@ -280,7 +282,7 @@
         null,
         null
       ],
-      "tp": 14,
+      "tp": 15,
       "skills": {
         "damage": "unique",
         "petalHealth": "mythic"

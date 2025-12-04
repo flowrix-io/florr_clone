@@ -660,6 +660,21 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 </svg>`,
         isAdminPetal: false
     },
+    square: {
+        name: "Square Petal",
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 1000,
+        description: "A square that deals damage to the target",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<rect width="28" height="28" x="2" y="2" fill="#ffe869"/>
+<path d="M 2 2 L 2 30 M 2 30 L 30 30 M 30 30 L 30 2 M 30 2 L 2 2 M 2 2 Z" stroke="#cfbc55" stroke-linecap="round" stroke-width="3"/>
+</svg>`,
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,

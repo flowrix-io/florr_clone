@@ -2243,6 +2243,19 @@ exports.MOB_DROP_TABLES = {
                 maxQuantity: 1
             }
         ]
+    },
+    target_dummy: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'square',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 2
+            }
+        ]
     }
 };
 // Function to calculate drops for a mob based on its rarity

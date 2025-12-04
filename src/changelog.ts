@@ -73,6 +73,14 @@ export const CHANGELOG: ChangelogEntry[] = [
             'New petal: Wing',
             'New biome: Sewers',
         ]
+    },
+    {
+        date: 'December 3, 2025',
+        changes: [
+            'Some UI changes',
+            'Recolored some biomes',
+            'New petal: Square',
+        ]
     }
 ];
 
