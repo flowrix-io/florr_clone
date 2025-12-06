@@ -82,8 +82,11 @@ export interface ServerPlayer {
   inputs: {
     keys: string[];
     useMouse?: boolean;
-    mouseX?: number;
-    mouseY?: number;
+    mouseX?: number; // Deprecated - kept for backwards compatibility
+    mouseY?: number; // Deprecated - kept for backwards compatibility
+    mouseDirectionX?: number; // Normalized direction X (-1 to 1)
+    mouseDirectionY?: number; // Normalized direction Y (-1 to 1)
+    mouseSpeedMultiplier?: number; // Speed multiplier calculated on client (0.15 to 1.0)
     petalExtension?: number;
   };
   // Cross-server transfer properties

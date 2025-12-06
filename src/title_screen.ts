@@ -362,7 +362,7 @@ export class TitleScreen {
             pointer-events: auto;
         `;
         document.body.style.cssText = `
-            background: rgb(0, 216, 133);
+            background: rgb(0, 0, 0);
         `;
         this.loadingScreen = document.getElementById('loadingScreen') as HTMLElement;
         if (this.loadingScreen) {

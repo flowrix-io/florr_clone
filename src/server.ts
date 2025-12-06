@@ -2359,22 +2359,16 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
     let targetVelocityX = 0;
     let targetVelocityY = 0;
 
-    if (player.inputs.useMouse && player.inputs.mouseX !== undefined && player.inputs.mouseY !== undefined) {
-        const dx = player.inputs.mouseX - player.x;
-        const dy = player.inputs.mouseY - player.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance > 1) {
-            // Nonlinear speed calculation: small distances = slower, large distances = faster
-            // Uses a power curve: speed scales with (distance/scale)^exponent
-            // This gives fine control for small movements and faster response for large movements
-            const normalizedDistance = Math.min(distance / MOUSE_NONLINEAR_SCALE, 1.0);
-            const speedMultiplier = Math.pow(normalizedDistance, MOUSE_NONLINEAR_EXPONENT);
-            const speed = MAX_SPEED * player.speed_boost * getSpeedMultiplier(player) * speedMultiplier;
-            targetVelocityX = (dx / distance) * speed;
-            targetVelocityY = (dy / distance) * speed;
-            player.angle = Math.atan2(dy, dx);
-        }
+    if (player.inputs.useMouse && 
+        player.inputs.mouseDirectionX !== undefined && 
+        player.inputs.mouseDirectionY !== undefined &&
+        player.inputs.mouseSpeedMultiplier !== undefined) {
+        // Client has already calculated the direction and speed multiplier
+        // Server just needs to apply MAX_SPEED, speed_boost, and other multipliers
+        const speed = MAX_SPEED * player.speed_boost * getSpeedMultiplier(player) * player.inputs.mouseSpeedMultiplier;
+        targetVelocityX = player.inputs.mouseDirectionX * speed;
+        targetVelocityY = player.inputs.mouseDirectionY * speed;
+        player.angle = Math.atan2(player.inputs.mouseDirectionY, player.inputs.mouseDirectionX);
     } else if (player.inputs.keys) {
         if (player.inputs.keys.includes('ArrowLeft') || player.inputs.keys.includes('a')) targetVelocityX -= 1;
         if (player.inputs.keys.includes('ArrowRight') || player.inputs.keys.includes('d')) targetVelocityX += 1;

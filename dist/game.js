@@ -79,6 +79,11 @@ class Game {
         this.useMouseControls = false;
         this.mouseX = 0;
         this.mouseY = 0;
+        this.normalizedMouseXOnScreen = 0;
+        this.normalizedMouseYOnScreen = 0;
+        this.lastMouseTargetX = 0;
+        this.lastMouseTargetY = 0;
+        this.hasValidMouseTarget = false;
         this.showHitboxes = false; // Changed from true to false
         this.showStats = false; // Combined setting for FPS, counters, and memory
         this.fpsCounter = 0;
@@ -263,8 +268,25 @@ class Game {
         this.canvas.addEventListener('mousemove', (event) => {
             const rect = this.canvas.getBoundingClientRect();
             // Convert screen coordinates to world coordinates accounting for zoom
-            this.mouseX = (event.clientX - rect.left) / this.zoomLevel + this.cameraX;
-            this.mouseY = (event.clientY - rect.top) / this.zoomLevel + this.cameraY;
+            // Formula: worldX = (screenX / zoom) + cameraX
+            // This gives the absolute world position of the mouse cursor
+            const screenX = event.clientX - rect.left;
+            const screenY = event.clientY - rect.top;
+            const worldX = screenX / this.zoomLevel + this.cameraX;
+            const worldY = screenY / this.zoomLevel + this.cameraY;
+            // Calculate normalized screen coordinates (-1 to 1, where 0,0 is center of screen)
+            // X: -1 is left edge, 0 is center, 1 is right edge
+            // Y: -1 is top edge, 0 is center, 1 is bottom edge
+            this.normalizedMouseXOnScreen = (screenX / this.canvas.width) * 2 - 1;
+            this.normalizedMouseYOnScreen = (screenY / this.canvas.height) * 2 - 1;
+            // Update current mouse position (for eye tracking, etc.)
+            this.mouseX = worldX;
+            this.mouseY = worldY;
+            // Store the target position in world coordinates for continuous movement
+            // This target will remain fixed even as the camera moves
+            this.lastMouseTargetX = worldX;
+            this.lastMouseTargetY = worldY;
+            this.hasValidMouseTarget = true;
         });
         // Add mouse button listeners for petal extension/retraction
         this.canvas.addEventListener('mousedown', (event) => {
@@ -739,8 +761,10 @@ class Game {
         const targetX = player.x - scaledWidth / 2;
         const targetY = player.y - scaledHeight / 2;
         // Clamp camera to world bounds with proper dimensions
-        this.cameraX = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH - scaledWidth, targetX));
-        this.cameraY = Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - scaledHeight, targetY));
+        // this.cameraX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - scaledWidth, targetX)); // messes up mouse control
+        // this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - scaledHeight, targetY));
+        this.cameraX = targetX;
+        this.cameraY = targetY;
         this.graphics.setCamera(this.cameraX, this.cameraY, this.zoomLevel);
         // Automatically follow player on minimap
         this.graphics.followPlayerOnMinimap(player.x, player.y);
@@ -901,21 +925,116 @@ class Game {
         if (this.keysPressed.has(this.controls.move_right) || this.keysPressed.has('ArrowRight')) {
             dx += 1;
         }
+        // Check if any menu is open
+        const isAnyMenuOpen = this.isAnyMenuOpen();
         // Only send input, don't update position locally
         const inputData = {
             keys: Array.from(this.keysPressed),
             petalExtension: this.petalExtension
         };
-        // Include mouse data when mouse controls are enabled
-        if (this.useMouseControls) {
-            inputData.useMouse = true;
-            inputData.mouseX = this.mouseX;
-            inputData.mouseY = this.mouseY;
+        // Calculate mouse movement direction on client when mouse controls are enabled
+        if (this.useMouseControls && !isAnyMenuOpen) {
+            // Always use the stored target position (in world coordinates)
+            // This ensures the target doesn't drift as the camera moves
+            let targetX;
+            let targetY;
+            if (this.hasValidMouseTarget &&
+                isFinite(this.lastMouseTargetX) && isFinite(this.lastMouseTargetY) &&
+                !isNaN(this.lastMouseTargetX) && !isNaN(this.lastMouseTargetY)) {
+                targetX = this.lastMouseTargetX;
+                targetY = this.lastMouseTargetY;
+            }
+            else {
+                // If no valid target yet, use current mouse position and set it as target
+                if (isFinite(this.mouseX) && isFinite(this.mouseY) &&
+                    !isNaN(this.mouseX) && !isNaN(this.mouseY)) {
+                    this.lastMouseTargetX = this.mouseX;
+                    this.lastMouseTargetY = this.mouseY;
+                    this.hasValidMouseTarget = true;
+                    targetX = this.mouseX;
+                    targetY = this.mouseY;
+                }
+                else {
+                    inputData.useMouse = false;
+                    this.socket.emit('playerInput', inputData);
+                    return;
+                }
+            }
+            // Use normalized screen coordinates as direction vector (-1 to 1)
+            // These represent the direction from center of screen to mouse cursor
+            const dirX = this.normalizedMouseXOnScreen;
+            const dirY = this.normalizedMouseYOnScreen;
+            const distance = Math.sqrt(dirX * dirX + dirY * dirY);
+            // Only send mouse input if distance is significant (greater than 0.01 to allow small movements)
+            if (distance > 0.01) {
+                // Normalize the direction vector to ensure it's a unit vector
+                const normalizedDirX = dirX / distance;
+                const normalizedDirY = dirY / distance;
+                // Calculate nonlinear speed multiplier based on distance from center
+                // Distance is already normalized (0 to ~1.414 for corner), so we can use it directly
+                const normalizedDistance = Math.min(distance, 1.0);
+                const speedMultiplier = Math.pow(normalizedDistance, constants_1.MOUSE_NONLINEAR_EXPONENT);
+                // Add minimum speed multiplier to prevent movement from becoming too slow when close to center
+                const minSpeedMultiplier = 0.15;
+                const finalSpeedMultiplier = Math.max(speedMultiplier, minSpeedMultiplier);
+                // Send normalized direction and speed multiplier to server
+                // Server will apply MAX_SPEED, speed_boost, and other multipliers
+                inputData.useMouse = true;
+                inputData.mouseDirectionX = normalizedDirX;
+                inputData.mouseDirectionY = normalizedDirY;
+                inputData.mouseSpeedMultiplier = finalSpeedMultiplier;
+            }
+            else {
+                inputData.useMouse = false;
+            }
         }
         else {
             inputData.useMouse = false;
+            // Clear mouse target when menus open or mouse controls disabled
+            if (isAnyMenuOpen || !this.useMouseControls) {
+                this.hasValidMouseTarget = false;
+            }
         }
         this.socket.emit('playerInput', inputData);
+    }
+    isAnyMenuOpen() {
+        // Check inventory (check both Game property and DOM)
+        if (this.isInventoryOpen) {
+            return true;
+        }
+        const inventoryPanel = document.getElementById('inventoryPanel');
+        if (inventoryPanel && inventoryPanel.style.display === 'block') {
+            return true;
+        }
+        // Check crafting (check both Game property and DOM)
+        if (this.isCraftingOpen) {
+            return true;
+        }
+        const craftingPanel = document.querySelector('.crafting-panel');
+        if (craftingPanel) {
+            const style = window.getComputedStyle(craftingPanel);
+            if (style.display !== 'none' && style.visibility !== 'hidden') {
+                return true;
+            }
+        }
+        // Check skills
+        if (this.skillsManager?.isSkillsOpen()) {
+            return true;
+        }
+        // Check settings menu (if it doesn't have 'hidden' class, it's open)
+        const settingsMenu = document.getElementById('settingsMenu');
+        if (settingsMenu && !settingsMenu.classList.contains('hidden')) {
+            return true;
+        }
+        // Check changelog (check if changelog panel exists and is visible)
+        const changelogPanel = document.querySelector('.changelog-panel');
+        if (changelogPanel) {
+            const style = window.getComputedStyle(changelogPanel);
+            if (style.display !== 'none' && style.visibility !== 'hidden') {
+                return true;
+            }
+        }
+        return false;
     }
     updatePlayerEye() {
         const player = this.players.get(this.socket?.id ?? '');

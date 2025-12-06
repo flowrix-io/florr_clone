@@ -2102,7 +2102,17 @@ class Graphics {
         // If background texture is not loaded or is broken, just fill with a color
         if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
             this.ctx.fillStyle = '#00d885'; // Default green color from the SVG
-            this.ctx.fillRect(this.cameraX, this.cameraY, this.canvas.width / this.zoomLevel, this.canvas.height / this.zoomLevel);
+            // Calculate visible area and clamp to world boundaries
+            const visibleWidth = this.canvas.width / this.zoomLevel;
+            const visibleHeight = this.canvas.height / this.zoomLevel;
+            const fillX = Math.max(0, this.cameraX);
+            const fillY = Math.max(0, this.cameraY);
+            const fillWidth = Math.min(visibleWidth, constants_1.ACTUAL_WORLD_WIDTH - fillX);
+            const fillHeight = Math.min(visibleHeight, constants_1.ACTUAL_WORLD_HEIGHT - fillY);
+            // Only fill if there's a valid area within world bounds
+            if (fillWidth > 0 && fillHeight > 0 && fillX < constants_1.ACTUAL_WORLD_WIDTH && fillY < constants_1.ACTUAL_WORLD_HEIGHT) {
+                this.ctx.fillRect(fillX, fillY, fillWidth, fillHeight);
+            }
             return;
         }
         // Calculate the visible area in world coordinates
@@ -2117,11 +2127,47 @@ class Graphics {
         // Calculate how many tiles we need to draw
         const tilesX = Math.ceil(visibleWidth / defaultBgWidth) + 1;
         const tilesY = Math.ceil(visibleHeight / defaultBgHeight) + 1;
-        // Draw the tiled background
+        // Draw the tiled background, but only within world boundaries
         for (let i = 0; i <= tilesX; i++) {
             for (let j = 0; j <= tilesY; j++) {
                 const tileX = startX + (i * defaultBgWidth);
                 const tileY = startY + (j * defaultBgHeight);
+                // Check if tile is within world boundaries
+                // Only draw if tile overlaps with world bounds (0 to ACTUAL_WORLD_WIDTH/HEIGHT)
+                const tileRight = tileX + defaultBgWidth;
+                const tileBottom = tileY + defaultBgHeight;
+                // Skip tiles that are completely outside world boundaries
+                if (tileRight <= 0 || tileX >= constants_1.ACTUAL_WORLD_WIDTH ||
+                    tileBottom <= 0 || tileY >= constants_1.ACTUAL_WORLD_HEIGHT) {
+                    continue;
+                }
+                // Clamp tile position and size to world boundaries if partially outside
+                let drawX = tileX;
+                let drawY = tileY;
+                let drawWidth = defaultBgWidth;
+                let drawHeight = defaultBgHeight;
+                let sourceX = 0;
+                let sourceY = 0;
+                // Clamp to left boundary
+                if (tileX < 0) {
+                    sourceX = -tileX;
+                    drawWidth -= sourceX;
+                    drawX = 0;
+                }
+                // Clamp to top boundary
+                if (tileY < 0) {
+                    sourceY = -tileY;
+                    drawHeight -= sourceY;
+                    drawY = 0;
+                }
+                // Clamp to right boundary
+                if (tileRight > constants_1.ACTUAL_WORLD_WIDTH) {
+                    drawWidth = constants_1.ACTUAL_WORLD_WIDTH - drawX;
+                }
+                // Clamp to bottom boundary
+                if (tileBottom > constants_1.ACTUAL_WORLD_HEIGHT) {
+                    drawHeight = constants_1.ACTUAL_WORLD_HEIGHT - drawY;
+                }
                 // Check if this tile overlaps with any biome
                 const biome = this.getBiomeAtPosition(tileX + defaultBgWidth / 2, tileY + defaultBgHeight / 2);
                 if (biome && biome.properties?.biomeName && biome.properties?.backgroundTexture) {
@@ -2130,16 +2176,17 @@ class Graphics {
                     if (biomeTexture && biomeTexture.complete && biomeTexture.naturalWidth > 0) {
                         const biomeWidth = biomeTexture.width;
                         const biomeHeight = biomeTexture.height;
-                        this.ctx.drawImage(biomeTexture, tileX, tileY, biomeWidth, biomeHeight);
+                        // For biome textures, use the same clamping logic
+                        this.ctx.drawImage(biomeTexture, sourceX, sourceY, drawWidth, drawHeight, drawX, drawY, drawWidth, drawHeight);
                     }
                     else {
                         // Fallback to default texture if biome texture not loaded
-                        this.ctx.drawImage(this.backgroundTexture, tileX, tileY, defaultBgWidth, defaultBgHeight);
+                        this.ctx.drawImage(this.backgroundTexture, sourceX, sourceY, drawWidth, drawHeight, drawX, drawY, drawWidth, drawHeight);
                     }
                 }
                 else {
                     // Use default texture
-                    this.ctx.drawImage(this.backgroundTexture, tileX, tileY, defaultBgWidth, defaultBgHeight);
+                    this.ctx.drawImage(this.backgroundTexture, sourceX, sourceY, drawWidth, drawHeight, drawX, drawY, drawWidth, drawHeight);
                 }
             }
         }
