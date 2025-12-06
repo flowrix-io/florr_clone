@@ -1507,58 +1507,42 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   <g transform="rotate(180 0 0)">
   
     <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="-128; -116; -128; -140; -128" 
-        dur="0.8s" repeatCount="indefinite" />
+      <animateTransform attributeName="transform" type="rotate" values="-5; -17; -29; -17; -5" dur="0.8s" repeatCount="indefinite" />
       <use href="#leg" />
     </g>
 
     <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="-151; -163; -175; -163; -151" 
-        dur="0.8s" repeatCount="indefinite" />
+      <animateTransform attributeName="transform" type="rotate" values="17; 5; 17; 29; 17" dur="0.8s" repeatCount="indefinite" />
       <use href="#leg" />
     </g>
 
     <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="163; 175; 163; 151; 163" 
-        dur="0.8s" repeatCount="indefinite" />
+      <animateTransform attributeName="transform" type="rotate" values="40; 52; 64; 52; 40" dur="0.8s" repeatCount="indefinite" />
       <use href="#leg" />
     </g>
 
     <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="117; 129; 141; 129; 117" 
-        dur="0.8s" repeatCount="indefinite" />
+      <animateTransform attributeName="transform" type="rotate" values="163; 175; 163; 151; 163" dur="0.8s" repeatCount="indefinite" />
       <use href="#leg" />
     </g>
 
     <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="-52; -64; -52; -40; -52" 
-        dur="0.8s" repeatCount="indefinite" />
+      <animateTransform attributeName="transform" type="rotate" values="-52; -64; -52; -40; -52" dur="0.8s" repeatCount="indefinite" />
       <use href="#leg" />
     </g>
 
     <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="-5; -17; -29; -17; -5" 
-        dur="0.8s" repeatCount="indefinite" />
+      <animateTransform attributeName="transform" type="rotate" values="-128; -116; -128; -140; -128" dur="0.8s" repeatCount="indefinite" />
       <use href="#leg" />
     </g>
 
     <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="17; 5; 17; 29; 17" 
-        dur="0.8s" repeatCount="indefinite" />
+      <animateTransform attributeName="transform" type="rotate" values="117; 129; 141; 129; 117" dur="0.8s" repeatCount="indefinite" />
       <use href="#leg" />
     </g>
 
     <g>
-      <animateTransform attributeName="transform" type="rotate"
-        values="40; 52; 64; 52; 40" 
-        dur="0.8s" repeatCount="indefinite" />
+      <animateTransform attributeName="transform" type="rotate" values="-151; -163; -175; -163; -151" dur="0.8s" repeatCount="indefinite" />
       <use href="#leg" />
     </g>
 
