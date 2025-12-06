@@ -2402,7 +2402,6 @@ export function calculateMobDrops(mobType: string, mobRarity: string): DropItem[
                 }
                 // Otherwise keep same rarity (10% chance)
             // }
-            console.log('adjustedDrop', adjustedDrop);
             
             // Check if this drop should occur
             if (Math.random() < adjustedDrop.probability) {

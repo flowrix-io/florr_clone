@@ -52,11 +52,8 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
     
     // If no players dealt damage, don't drop anything
     if (eligiblePlayers.length === 0) {
-        console.log(`[DROP] Mob ${enemy.type} (${enemy.tier}) died with no damage contributors - no drops`);
         return;
     }
-    
-    console.log(`[DROP] Mob ${enemy.type} (${enemy.tier}) drops for ${eligiblePlayers.length} eligible players`);
     
     for (const drop of drops) {
         // Determine quantity
@@ -75,7 +72,6 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
             const upgradeChance = getDropUpgradeChance(drop.rarity);
             if (upgradeChance > 0 && Math.random() * 100 < upgradeChance) {
                 finalRarity = upgradeRarity(drop.rarity);
-                console.log(`[DROP] Item upgraded from ${drop.rarity} to ${finalRarity} (${upgradeChance.toFixed(2)}% chance)`);
             }
             
             const newItem: WorldItem = {
@@ -114,8 +110,6 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
                             io.to(playerId).emit('itemRemoved', itemId);
                         }
                     }
-                    
-                    console.log(`[DROP] Item ${itemId} (${finalRarity}) expired after ${expirationTime}ms`);
                 }
             }, expirationTime);
         }
