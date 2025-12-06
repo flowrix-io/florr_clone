@@ -1504,55 +1504,63 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     <path id="leg" d="M0,0 Q 2 15 0 35" stroke="#333333" stroke-width="5" stroke-linecap="round" fill="none" />
   </defs>
 
-  <g transform="rotate(180)">
+  <g transform="rotate(180 0 0)">
   
-    <use href="#leg">
+    <g>
       <animateTransform attributeName="transform" type="rotate"
         values="-128; -116; -128; -140; -128" 
         dur="0.8s" repeatCount="indefinite" />
-    </use>
+      <use href="#leg" />
+    </g>
 
-    <use href="#leg">
+    <g>
       <animateTransform attributeName="transform" type="rotate"
         values="-151; -163; -175; -163; -151" 
         dur="0.8s" repeatCount="indefinite" />
-    </use>
+      <use href="#leg" />
+    </g>
 
-    <use href="#leg">
+    <g>
       <animateTransform attributeName="transform" type="rotate"
         values="163; 175; 163; 151; 163" 
         dur="0.8s" repeatCount="indefinite" />
-    </use>
+      <use href="#leg" />
+    </g>
 
-    <use href="#leg">
+    <g>
       <animateTransform attributeName="transform" type="rotate"
         values="117; 129; 141; 129; 117" 
         dur="0.8s" repeatCount="indefinite" />
-    </use>
+      <use href="#leg" />
+    </g>
 
-    <use href="#leg">
+    <g>
       <animateTransform attributeName="transform" type="rotate"
         values="-52; -64; -52; -40; -52" 
         dur="0.8s" repeatCount="indefinite" />
-    </use>
+      <use href="#leg" />
+    </g>
 
-    <use href="#leg">
+    <g>
       <animateTransform attributeName="transform" type="rotate"
         values="-5; -17; -29; -17; -5" 
         dur="0.8s" repeatCount="indefinite" />
-    </use>
+      <use href="#leg" />
+    </g>
 
-    <use href="#leg">
+    <g>
       <animateTransform attributeName="transform" type="rotate"
         values="17; 5; 17; 29; 17" 
         dur="0.8s" repeatCount="indefinite" />
-    </use>
+      <use href="#leg" />
+    </g>
 
-    <use href="#leg">
+    <g>
       <animateTransform attributeName="transform" type="rotate"
         values="40; 52; 64; 52; 40" 
         dur="0.8s" repeatCount="indefinite" />
-    </use>
+      <use href="#leg" />
+    </g>
 
     <circle cx="0" cy="0" r="14" fill="#4f412e" stroke="#3e3223" stroke-width="5" />
     

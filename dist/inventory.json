@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 112733983,
+      "totalXP": 112745063,
       "inventory": {
         "common": {
           "shield": 72,
@@ -22,7 +22,7 @@
           "petal_jelly": 19,
           "petal_leaf": 3,
           "petal_cutter": 2,
-          "petal_wing": 127,
+          "petal_wing": 136,
           "petal_rose": 23,
           "health_potion": 16,
           "petal_basic": 9,
@@ -104,7 +104,7 @@
           "petal_lightning_cutter": 1,
           "petal_yucca": 2,
           "petal_square": 1,
-          "petal_wing": 13
+          "petal_wing": 17
         },
         "legendary": {
           "speed_boost": 83,
@@ -154,10 +154,10 @@
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,
           "petal_yucca": 1,
-          "petal_wing": 31,
+          "petal_wing": 32,
           "petal_square": 3,
           "petal_healing": 1,
-          "petal_golden_leaf": 5
+          "petal_golden_leaf": 6
         },
         "rare": {
           "petal_rock": 9,
