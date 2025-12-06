@@ -8,6 +8,16 @@ const constants_1 = require("../constants");
 const gameState_1 = require("./gameState");
 const constants_2 = require("../constants");
 const mobs_1 = require("../mobs");
+// Tier order from lowest to highest
+const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+// Helper function to upgrade a tier by one level (if possible)
+function upgradeTier(tier) {
+    const currentIndex = TIER_ORDER.indexOf(tier);
+    if (currentIndex >= 0 && currentIndex < TIER_ORDER.length - 1) {
+        return TIER_ORDER[currentIndex + 1];
+    }
+    return tier; // Already at max tier
+}
 // Helper function to get spawn zone type for a given position
 function getSpawnZoneType(x, y) {
     for (const element of constants_2.WORLD_MAP) {
@@ -199,6 +209,10 @@ function createEnemy(helpers) {
             }
             mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
         }
+        // Tier upgrade: 2% chance to spawn as one tier higher
+        if (Math.random() < 0.02) {
+            tier = upgradeTier(tier);
+        }
     }
     else {
         // Check if position is in a spawn zone
@@ -218,6 +232,10 @@ function createEnemy(helpers) {
                     break;
                 }
             }
+        }
+        // Tier upgrade: 2% chance to spawn as one tier higher
+        if (Math.random() < 0.02) {
+            tier = upgradeTier(tier);
         }
         // Select mob type (fish, octopus, or shark)
         // Filter out biome-only mobs when spawning outside biomes

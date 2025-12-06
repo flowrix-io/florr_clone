@@ -2801,7 +2801,7 @@ setInterval(() => {
             // }
         }
     }
-}, 2000); // 2 seconds
+}, 500); // 0.5 seconds
 // Add special mob spawning timer (every 1 minute)
 setInterval(() => {
     const playerCount = Object.keys(constants_2.players).length;

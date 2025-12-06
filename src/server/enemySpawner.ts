@@ -25,6 +25,18 @@ import {
 } from '../constants';
 import { getMobStats, getAllMobTypes } from '../mobs';
 
+// Tier order from lowest to highest
+const TIER_ORDER: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+
+// Helper function to upgrade a tier by one level (if possible)
+function upgradeTier(tier: Enemy['tier']): Enemy['tier'] {
+    const currentIndex = TIER_ORDER.indexOf(tier);
+    if (currentIndex >= 0 && currentIndex < TIER_ORDER.length - 1) {
+        return TIER_ORDER[currentIndex + 1];
+    }
+    return tier; // Already at max tier
+}
+
 // Helper function to get spawn zone type for a given position
 function getSpawnZoneType(x: number, y: number): string | null {
     for (const element of WORLD_MAP) {
@@ -258,6 +270,11 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             }
             mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
         }
+        
+        // Tier upgrade: 2% chance to spawn as one tier higher
+        if (Math.random() < 0.02) {
+            tier = upgradeTier(tier);
+        }
     } else {
         // Check if position is in a spawn zone
         const spawnZoneType = getSpawnZoneType(x, y);
@@ -277,6 +294,11 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
                     break;
                 }
             }
+        }
+        
+        // Tier upgrade: 2% chance to spawn as one tier higher
+        if (Math.random() < 0.02) {
+            tier = upgradeTier(tier);
         }
 
         // Select mob type (fish, octopus, or shark)
