@@ -1,15 +1,15 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 111122647,
+      "totalXP": 111195187,
       "inventory": {
         "common": {
-          "shield": 65,
+          "shield": 71,
           "petal_light": 15,
           "petal_dandelion": 13,
           "petal_stinger": 20,
           "petal_yggdrasil": 9,
-          "speed_boost": 14,
+          "speed_boost": 16,
           "petal_sand": 42,
           "petal_rock": 122,
           "petal_clover": 29,
@@ -17,9 +17,9 @@
           "petal_cactus": 11,
           "petal_iris": 9,
           "petal_poison_cactus": 12,
-          "petal_lightning": 29,
+          "petal_lightning": 35,
           "petal_missile": 23,
-          "petal_jelly": 7,
+          "petal_jelly": 11,
           "petal_leaf": 2,
           "petal_cutter": 2,
           "petal_wing": 67,
@@ -94,9 +94,9 @@
           "petal_bone": 40,
           "petal_poison_cactus": 139,
           "petal_iris": 11,
-          "petal_lightning": 26,
+          "petal_lightning": 29,
           "petal_missile": 28,
-          "petal_jelly": 4,
+          "petal_jelly": 8,
           "petal_leaf": 9,
           "petal_cactus": 3,
           "petal_cutter": 4,
@@ -133,7 +133,7 @@
           "petal_stinger": 34,
           "speed_boost": 63,
           "petal_basic": 51,
-          "petal_rose": 86,
+          "petal_rose": 87,
           "petal_sand": 15,
           "petal_yggdrasil": 3,
           "health_potion": 31,
@@ -156,7 +156,7 @@
           "petal_square": 2
         },
         "rare": {
-          "petal_rock": 4,
+          "petal_rock": 6,
           "petal_rose": 9,
           "petal_light": 15,
           "health_potion": 17,

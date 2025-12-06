@@ -1595,6 +1595,10 @@ class TitleScreen {
         // Calculate the starting position for tiling (offset by camera position)
         const startX = Math.floor(cameraX / bgWidth) * bgWidth;
         const startY = Math.floor(cameraY / bgHeight) * bgHeight;
+        // Scale each tile up by 2 pixels to prevent rendering artifacts and gaps
+        const TILE_OVERLAP = 2;
+        const scaledWidth = bgWidth + TILE_OVERLAP;
+        const scaledHeight = bgHeight + TILE_OVERLAP;
         // Calculate how many tiles we need to draw
         const tilesX = Math.ceil(visibleWidth / bgWidth) + 2;
         const tilesY = Math.ceil(visibleHeight / bgHeight) + 2;
@@ -1602,9 +1606,14 @@ class TitleScreen {
         try {
             for (let i = 0; i <= tilesX; i++) {
                 for (let j = 0; j <= tilesY; j++) {
-                    const x = startX + (i * bgWidth) - cameraX;
-                    const y = startY + (j * bgHeight) - cameraY;
-                    this.backgroundCtx.drawImage(this.backgroundTexture, x, y, bgWidth, bgHeight);
+                    // Calculate base position
+                    const baseX = startX + (i * bgWidth) - cameraX;
+                    const baseY = startY + (j * bgHeight) - cameraY;
+                    // Adjust position to center the overlap (draw 1 pixel to the left and top)
+                    const x = Math.floor(baseX - TILE_OVERLAP / 2);
+                    const y = Math.floor(baseY - TILE_OVERLAP / 2);
+                    // Draw tile scaled up by 2 pixels to ensure no gaps
+                    this.backgroundCtx.drawImage(this.backgroundTexture, x, y, scaledWidth, scaledHeight);
                 }
             }
         }
