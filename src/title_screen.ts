@@ -583,6 +583,11 @@ export class TitleScreen {
                             High Quality Mobs (Pre-render frames per rarity - uses more memory)
                         </label>
                         <br/><br/>
+                        <label>
+                            <input type="checkbox" id="dynamicSkyboxCheckbox">
+                            Dynamic Skybox (Tile wall/biome textures for out of bounds areas)
+                        </label>
+                        <br/><br/>
                         <h3>Tutorial</h3>
                         <button id="resetTutorialButton" class="tab-button">Reset Tutorial</button>
                     </div>
@@ -1017,6 +1022,17 @@ export class TitleScreen {
             });
         }
 
+        const dynamicSkyboxCheckbox = this.settingsMenu.querySelector('#dynamicSkyboxCheckbox') as HTMLInputElement;
+        if (dynamicSkyboxCheckbox) {
+            dynamicSkyboxCheckbox.addEventListener('change', () => {
+                localStorage.setItem('dynamicSkybox', dynamicSkyboxCheckbox.checked.toString());
+                // Update graphics if game is running
+                if (window.currentGame && window.currentGame.graphics) {
+                    window.currentGame.graphics.dynamicSkybox = dynamicSkyboxCheckbox.checked;
+                }
+            });
+        }
+
         // Reset tutorial button
         const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
         if (resetTutorialButton) {
@@ -1214,6 +1230,12 @@ export class TitleScreen {
         const highQualityMobsCheckbox = this.settingsMenu.querySelector('#highQualityMobs') as HTMLInputElement;
         if (highQualityMobsCheckbox) {
             highQualityMobsCheckbox.checked = highQualityMobs;
+        }
+
+        const dynamicSkybox = localStorage.getItem('dynamicSkybox') === 'true';
+        const dynamicSkyboxCheckbox = this.settingsMenu.querySelector('#dynamicSkyboxCheckbox') as HTMLInputElement;
+        if (dynamicSkyboxCheckbox) {
+            dynamicSkyboxCheckbox.checked = dynamicSkybox;
         }
     }
 
@@ -1623,6 +1645,11 @@ export class TitleScreen {
 
     public getShowStats(): boolean {
         const checkbox = this.settingsMenu.querySelector('#showStats') as HTMLInputElement;
+        return checkbox ? checkbox.checked : false;
+    }
+
+    public getDynamicSkybox(): boolean {
+        const checkbox = this.settingsMenu.querySelector('#dynamicSkyboxCheckbox') as HTMLInputElement;
         return checkbox ? checkbox.checked : false;
     }
 

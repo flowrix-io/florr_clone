@@ -57,7 +57,7 @@ export class Game {
     private shieldActive: boolean = false;
     private debugCollision: boolean = false; // Toggle for collision debugging
     public canvas: HTMLCanvasElement;
-    private graphics: Graphics;
+    public graphics: Graphics;
     private socket!: Socket;  // Using the definite assignment assertion
     private players: Map<string, Player> = new Map();
     private dots: { x: number, y: number }[] = [];
@@ -217,11 +217,11 @@ export class Game {
     private controls!: { [key: string]: string };
     private tutorial: Tutorial;
 
-    constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null, shadersEnabled: boolean = false, showStats: boolean = false) {
+    constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null, shadersEnabled: boolean = false, showStats: boolean = false, dynamicSkybox: boolean = false) {
         this.showHitboxes = showHitboxes;
         this.showStats = showStats;
         this.loadControls();
-        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled, 'show stats:', showStats);
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled, 'show stats:', showStats, 'dynamic skybox:', dynamicSkybox);
         
         // Initialize asset loader
         this.assetLoader = new AssetLoader();
@@ -248,6 +248,7 @@ export class Game {
             this.assetLoader.backgroundTexture
         );
         this.graphics.showHitboxes = this.showHitboxes;
+        this.graphics.dynamicSkybox = dynamicSkybox;
 
         // Initialize shaders if enabled
         if (shadersEnabled && window.shaderManager) {

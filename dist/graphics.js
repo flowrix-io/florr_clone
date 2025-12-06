@@ -105,6 +105,7 @@ class Graphics {
             unique: '#bf00ff'
         };
         this.showHitboxes = false;
+        this.dynamicSkybox = false;
         this.itemSprites = {};
         this.petalImageCache = {}; // Canvas for static, array for animated
         this.mobSVGCache = {}; // Store original SVG strings for WASM rendering
@@ -325,6 +326,76 @@ class Graphics {
             }
         }
         return null;
+    }
+    // Method to find the closest wall or biome edge to an out-of-bounds position
+    // Returns the texture to use for tiling (wall texture or biome texture)
+    getClosestEdgeTexture(x, y) {
+        // Check if position is out of bounds
+        const isOutOfBounds = x < 0 || x >= constants_1.ACTUAL_WORLD_WIDTH || y < 0 || y >= constants_1.ACTUAL_WORLD_HEIGHT;
+        if (!isOutOfBounds) {
+            return { texture: null, isBiome: false };
+        }
+        let closestDistance = Infinity;
+        let closestElement = null;
+        let closestIsWall = false;
+        // Check walls first
+        for (const element of this.mapData) {
+            if (element.type === 'wall') {
+                // Calculate distance to wall edges
+                const wallLeft = element.x;
+                const wallRight = element.x + element.width;
+                const wallTop = element.y;
+                const wallBottom = element.y + element.height;
+                // Find closest point on wall rectangle to (x, y)
+                const closestX = Math.max(wallLeft, Math.min(x, wallRight));
+                const closestY = Math.max(wallTop, Math.min(y, wallBottom));
+                const distance = Math.sqrt((x - closestX) ** 2 + (y - closestY) ** 2);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestElement = element;
+                    closestIsWall = true;
+                }
+            }
+        }
+        // Check biomes
+        for (const element of this.mapData) {
+            if (element.type === 'biome') {
+                // Calculate distance to biome edges
+                const biomeLeft = element.x;
+                const biomeRight = element.x + element.width;
+                const biomeTop = element.y;
+                const biomeBottom = element.y + element.height;
+                // Find closest point on biome rectangle to (x, y)
+                const closestX = Math.max(biomeLeft, Math.min(x, biomeRight));
+                const closestY = Math.max(biomeTop, Math.min(y, biomeBottom));
+                const distance = Math.sqrt((x - closestX) ** 2 + (y - closestY) ** 2);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestElement = element;
+                    closestIsWall = false;
+                }
+            }
+        }
+        // Return appropriate texture
+        if (closestElement) {
+            if (closestIsWall) {
+                return { texture: this.wallTexture, isBiome: false };
+            }
+            else {
+                // It's a biome - get its texture
+                const biomeName = closestElement.properties?.biomeName;
+                if (biomeName) {
+                    const biomeTexture = this.biomeTextures.get(biomeName);
+                    if (biomeTexture && biomeTexture.complete && biomeTexture.naturalWidth > 0) {
+                        return { texture: biomeTexture, isBiome: true };
+                    }
+                }
+                // Fallback to default background if biome texture not available
+                return { texture: this.backgroundTexture, isBiome: false };
+            }
+        }
+        // Default fallback
+        return { texture: this.backgroundTexture, isBiome: false };
     }
     clear() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -2137,9 +2208,29 @@ class Graphics {
                 // Only draw if tile overlaps with world bounds (0 to ACTUAL_WORLD_WIDTH/HEIGHT)
                 const tileRight = tileX + defaultBgWidth;
                 const tileBottom = tileY + defaultBgHeight;
-                // Skip tiles that are completely outside world boundaries
-                if (tileRight <= 0 || tileX >= constants_1.ACTUAL_WORLD_WIDTH ||
-                    tileBottom <= 0 || tileY >= constants_1.ACTUAL_WORLD_HEIGHT) {
+                // Check if tile is completely outside world boundaries
+                const isCompletelyOutOfBounds = tileRight <= 0 || tileX >= constants_1.ACTUAL_WORLD_WIDTH ||
+                    tileBottom <= 0 || tileY >= constants_1.ACTUAL_WORLD_HEIGHT;
+                // If dynamic skybox is enabled and tile is out of bounds, use closest edge texture
+                if (isCompletelyOutOfBounds) {
+                    if (this.dynamicSkybox) {
+                        // Get the center of the tile to find closest edge
+                        const tileCenterX = tileX + defaultBgWidth / 2;
+                        const tileCenterY = tileY + defaultBgHeight / 2;
+                        const edgeTexture = this.getClosestEdgeTexture(tileCenterX, tileCenterY);
+                        if (edgeTexture.texture && edgeTexture.texture.complete && edgeTexture.texture.naturalWidth > 0) {
+                            const TILE_OVERLAP = 2;
+                            const textureWidth = edgeTexture.texture.width;
+                            const textureHeight = edgeTexture.texture.height;
+                            const scaledWidth = textureWidth + TILE_OVERLAP;
+                            const scaledHeight = textureHeight + TILE_OVERLAP;
+                            const adjustedTileX = tileX - TILE_OVERLAP / 2;
+                            const adjustedTileY = tileY - TILE_OVERLAP / 2;
+                            // Draw the edge texture tiled
+                            this.ctx.drawImage(edgeTexture.texture, adjustedTileX, adjustedTileY, scaledWidth, scaledHeight);
+                        }
+                    }
+                    // Skip tiles that are completely outside world boundaries (when dynamic skybox is off)
                     continue;
                 }
                 // Scale each tile up by 2 pixels to prevent rendering artifacts and gaps

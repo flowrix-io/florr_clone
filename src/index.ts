@@ -341,8 +341,9 @@ function setupGameEventListeners() {
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
             const shadersEnabled = titleScreen?.getShadersEnabled() || false;
             const showStats = titleScreen?.getShowStats() || false;
+            const dynamicSkybox = titleScreen?.getDynamicSkybox() || false;
             
-            currentGame = new Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled, showStats);
+            currentGame = new Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled, showStats, dynamicSkybox);
             window.currentGame = currentGame;
             
             // Hide title screen and show game

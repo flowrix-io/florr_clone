@@ -11,7 +11,7 @@ const skills_1 = require("./skills");
 const tutorial_1 = require("./tutorial");
 const asset_loader_1 = require("./asset_loader");
 class Game {
-    constructor(showHitboxes, serverIp, preloadedAssets, shadersEnabled = false, showStats = false) {
+    constructor(showHitboxes, serverIp, preloadedAssets, shadersEnabled = false, showStats = false, dynamicSkybox = false) {
         this.speedBoostActive = false;
         this.shieldActive = false;
         this.debugCollision = false; // Toggle for collision debugging
@@ -138,7 +138,7 @@ class Game {
         this.showHitboxes = showHitboxes;
         this.showStats = showStats;
         this.loadControls();
-        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled, 'show stats:', showStats);
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled, 'show stats:', showStats, 'dynamic skybox:', dynamicSkybox);
         // Initialize asset loader
         this.assetLoader = new asset_loader_1.AssetLoader();
         // Wait for canvas to be ready before proceeding
@@ -151,6 +151,7 @@ class Game {
         }
         this.graphics = new graphics_1.Graphics(this.canvas, this.assetLoader.playerSprite, this.assetLoader.wallTexture, this.assetLoader.octopusSprite, this.assetLoader.fishSprite, this.assetLoader.healthPotionSprite, this.assetLoader.speedBoostSprite, this.assetLoader.shieldSprite, this.assetLoader.backgroundTexture);
         this.graphics.showHitboxes = this.showHitboxes;
+        this.graphics.dynamicSkybox = dynamicSkybox;
         // Initialize shaders if enabled
         if (shadersEnabled && window.shaderManager) {
             window.shaderManager.setShadersEnabled(true);
