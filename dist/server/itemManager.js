@@ -4,6 +4,34 @@ exports.handleMobDrops = handleMobDrops;
 const mobs_1 = require("../mobs");
 const gameState_1 = require("./gameState");
 const utils_1 = require("./utils");
+// Rarity order from lowest to highest
+const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+// Calculate crafting chance for upgrading from one rarity to the next
+function getCraftingChance(rarityIndex) {
+    const baseChance = 64;
+    return baseChance / Math.pow(2, rarityIndex);
+}
+// Calculate upgrade chance for a drop (crafting chance of upgraded rarity / 3)
+// The crafting chance for upgrading TO a rarity is calculated FROM the previous rarity
+function getDropUpgradeChance(currentRarity) {
+    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
+    if (currentIndex === -1 || currentIndex >= RARITY_ORDER.length - 1) {
+        return 0; // Invalid rarity or already at max tier
+    }
+    // Crafting chance for upgrading TO the next tier is calculated FROM the current tier
+    // (same as crafting from currentRarity to nextRarity)
+    const craftingChance = getCraftingChance(currentIndex);
+    // Upgrade chance is crafting chance divided by 3
+    return craftingChance / 3;
+}
+// Upgrade a rarity by one tier if possible
+function upgradeRarity(rarity) {
+    const currentIndex = RARITY_ORDER.indexOf(rarity);
+    if (currentIndex >= 0 && currentIndex < RARITY_ORDER.length - 1) {
+        return RARITY_ORDER[currentIndex + 1];
+    }
+    return rarity; // Already at max tier
+}
 // Function to handle mob drops when a mob dies
 function handleMobDrops(enemy, io) {
     const mobType = enemy.type || 'bee'; // Default to bee if type is not set
@@ -25,12 +53,19 @@ function handleMobDrops(enemy, io) {
             const offsetY = (Math.random() - 0.5) * 100;
             const itemId = Math.random().toString(36).substr(2, 9);
             const spawnTime = Date.now();
+            // Apply drop upgrade chance: upgrade to next tier based on crafting chance / 3
+            let finalRarity = drop.rarity;
+            const upgradeChance = getDropUpgradeChance(drop.rarity);
+            if (upgradeChance > 0 && Math.random() * 100 < upgradeChance) {
+                finalRarity = upgradeRarity(drop.rarity);
+                console.log(`[DROP] Item upgraded from ${drop.rarity} to ${finalRarity} (${upgradeChance.toFixed(2)}% chance)`);
+            }
             const newItem = {
                 id: itemId,
                 type: drop.type === 'consumable' ? drop.itemType : 'petal',
                 x: enemy.x + offsetX,
                 y: enemy.y + offsetY,
-                rarity: drop.rarity,
+                rarity: finalRarity,
                 petalType: drop.type === 'petal' ? drop.itemType : undefined,
                 eligiblePlayers: eligiblePlayers,
                 pickedUpBy: new Set(),
@@ -44,7 +79,7 @@ function handleMobDrops(enemy, io) {
                 io.to(playerId).emit('itemSpawned', newItem);
             }
             // Schedule automatic removal after expiration time
-            const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[drop.rarity] || 10000;
+            const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[finalRarity] || 10000;
             setTimeout(() => {
                 const itemIndex = gameState_1.items.findIndex(item => item.id === itemId);
                 if (itemIndex !== -1) {
@@ -56,7 +91,7 @@ function handleMobDrops(enemy, io) {
                             io.to(playerId).emit('itemRemoved', itemId);
                         }
                     }
-                    console.log(`[DROP] Item ${itemId} (${drop.rarity}) expired after ${expirationTime}ms`);
+                    console.log(`[DROP] Item ${itemId} (${finalRarity}) expired after ${expirationTime}ms`);
                 }
             }, expirationTime);
         }
