@@ -504,8 +504,23 @@ const BASE_PETAL_CONFIGS = {
         color: "#000000",
         count: 1,
         actions: "heal 10;",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<path d="M 32 0 A 25 25 0 0 1 5 27 M 5 27 A 25 25 0 0 1 32 0 M 0 32 L 32 0" fill="#0b8a26" stroke="#006e18"/>
+        image: `<svg width="32" height="32" viewBox="-21.5 -10.5 38 21" xmlns="http://www.w3.org/2000/svg">
+  <path d="M -20 0 
+           L -15 0 
+           C -10 -12, 5 -12, 15 0 
+           C 5 12, -10 12, -15 0" 
+        fill="#39b54a" 
+        stroke="#2e933c" 
+        stroke-width="3" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+  <path d="M -9 0 
+           Q 0 -1.5, 7.5 0" 
+        fill="none" 
+        stroke="#2e933c" 
+        stroke-width="3" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
 </svg>`,
         isAdminPetal: false
     },
@@ -595,6 +610,35 @@ const BASE_PETAL_CONFIGS = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <rect width="28" height="28" x="2" y="2" fill="#ffe869"/>
 <path d="M 2 2 L 2 30 M 2 30 L 30 30 M 30 30 L 30 2 M 30 2 L 2 2 M 2 2 Z" stroke="#cfbc55" stroke-linecap="round" stroke-width="3"/>
+</svg>`,
+        isAdminPetal: false
+    },
+    golden_leaf: {
+        name: "Golden Leaf Petal",
+        damage: 1,
+        health: 100,
+        size: 1.2,
+        cooldown: 200,
+        description: "A golden leaf that heals the player when spawned",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="-21.5 -10.5 38 21" xmlns="http://www.w3.org/2000/svg">
+  <path d="M -20 0 
+           L -15 0 
+           C -10 -12, 5 -12, 15 0 
+           C 5 12, -10 12, -15 0" 
+        fill="#ebeb34" 
+        stroke="#bebe2a" 
+        stroke-width="3" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+  <path d="M -9 0 
+           Q 0 -1.5, 7.5 0" 
+        fill="none" 
+        stroke="#bebe2a" 
+        stroke-width="3" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
 </svg>`,
         isAdminPetal: false
     },

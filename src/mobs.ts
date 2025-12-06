@@ -2376,6 +2376,19 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 maxQuantity: 1
             }
         ]
+    },
+    roach: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'golden_leaf',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
     }
 };
 
