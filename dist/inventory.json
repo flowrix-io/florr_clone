@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 112727733,
+      "totalXP": 112733983,
       "inventory": {
         "common": {
           "shield": 72,
@@ -12,7 +12,7 @@
           "speed_boost": 16,
           "petal_sand": 42,
           "petal_rock": 123,
-          "petal_clover": 30,
+          "petal_clover": 31,
           "petal_bone": 49,
           "petal_cactus": 11,
           "petal_iris": 9,
@@ -22,7 +22,7 @@
           "petal_jelly": 19,
           "petal_leaf": 3,
           "petal_cutter": 2,
-          "petal_wing": 123,
+          "petal_wing": 127,
           "petal_rose": 23,
           "health_potion": 16,
           "petal_basic": 9,
@@ -154,18 +154,18 @@
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,
           "petal_yucca": 1,
-          "petal_wing": 30,
+          "petal_wing": 31,
           "petal_square": 3,
           "petal_healing": 1,
           "petal_golden_leaf": 5
         },
         "rare": {
-          "petal_rock": 8,
+          "petal_rock": 9,
           "petal_rose": 11,
           "petal_light": 18,
           "health_potion": 17,
           "shield": 37,
-          "petal_sand": 4,
+          "petal_sand": 5,
           "petal_basic": 23,
           "speed_boost": 35,
           "petal_stinger": 17,
@@ -180,12 +180,13 @@
           "petal_jelly": 2,
           "petal_cutter": 2,
           "petal_lightning_cutter": 5,
-          "petal_wing": 22,
+          "petal_wing": 24,
           "petal_dandelion": 5,
           "petal_square": 1,
           "petal_sparkle": 2,
           "petal_poison_cactus": 1,
-          "petal_cactus": 1
+          "petal_cactus": 1,
+          "petal_golden_leaf": 1
         },
         "ultra": {
           "speed_boost": 3,

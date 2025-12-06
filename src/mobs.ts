@@ -1488,6 +1488,79 @@ const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         biomeOnly: true,
+    },
+    spider: {
+        name: "Spider",
+        health: 100,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 2.2,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "A spider",
+        color: "#000000",
+        image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <path id="leg" d="M0,0 Q 2 15 0 35" stroke="#333333" stroke-width="5" stroke-linecap="round" fill="none" />
+  </defs>
+
+  <g transform="rotate(180)">
+  
+    <use href="#leg">
+      <animateTransform attributeName="transform" type="rotate"
+        values="-128; -116; -128; -140; -128" 
+        dur="0.8s" repeatCount="indefinite" />
+    </use>
+
+    <use href="#leg">
+      <animateTransform attributeName="transform" type="rotate"
+        values="-151; -163; -175; -163; -151" 
+        dur="0.8s" repeatCount="indefinite" />
+    </use>
+
+    <use href="#leg">
+      <animateTransform attributeName="transform" type="rotate"
+        values="163; 175; 163; 151; 163" 
+        dur="0.8s" repeatCount="indefinite" />
+    </use>
+
+    <use href="#leg">
+      <animateTransform attributeName="transform" type="rotate"
+        values="117; 129; 141; 129; 117" 
+        dur="0.8s" repeatCount="indefinite" />
+    </use>
+
+    <use href="#leg">
+      <animateTransform attributeName="transform" type="rotate"
+        values="-52; -64; -52; -40; -52" 
+        dur="0.8s" repeatCount="indefinite" />
+    </use>
+
+    <use href="#leg">
+      <animateTransform attributeName="transform" type="rotate"
+        values="-5; -17; -29; -17; -5" 
+        dur="0.8s" repeatCount="indefinite" />
+    </use>
+
+    <use href="#leg">
+      <animateTransform attributeName="transform" type="rotate"
+        values="17; 5; 17; 29; 17" 
+        dur="0.8s" repeatCount="indefinite" />
+    </use>
+
+    <use href="#leg">
+      <animateTransform attributeName="transform" type="rotate"
+        values="40; 52; 64; 52; 40" 
+        dur="0.8s" repeatCount="indefinite" />
+    </use>
+
+    <circle cx="0" cy="0" r="14" fill="#4f412e" stroke="#3e3223" stroke-width="5" />
+    
+  </g>
+</svg>`,
+        is_hostile: true,
+        range: 100,
+        biomeOnly: true,
     }
 }
 
