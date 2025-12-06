@@ -4,6 +4,7 @@ import { WorldItem, Item } from '../item';
 import { calculateMobDrops, DropItem } from '../mobs';
 import { items, ITEM_EXPIRATION_TIMES } from './gameState';
 import { getEligiblePlayers, checkItemWallCollisions } from './utils';
+import { getAllPetalTypes, getPetalStats } from '../petals';
 
 // Rarity type
 type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
@@ -74,13 +75,30 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
                 finalRarity = upgradeRarity(drop.rarity);
             }
             
+            // Handle random petal selection for garbage mob
+            let petalType = drop.type === 'petal' ? drop.itemType : undefined;
+            if (petalType === 'random') {
+                const allPetalTypes = getAllPetalTypes();
+                // Filter out admin petals and cutter types
+                const eligiblePetalTypes = allPetalTypes.filter(type => {
+                    const stats = getPetalStats(type, 'common');
+                    return stats && !stats.isAdminPetal && type !== 'cutter' && type !== 'lightning_cutter';
+                });
+                if (eligiblePetalTypes.length > 0) {
+                    petalType = eligiblePetalTypes[Math.floor(Math.random() * eligiblePetalTypes.length)];
+                } else {
+                    // Fallback to basic if no eligible petals (shouldn't happen)
+                    petalType = 'basic';
+                }
+            }
+            
             const newItem: WorldItem = {
                 id: itemId,
                 type: drop.type === 'consumable' ? drop.itemType as Item['type'] : 'petal',
                 x: enemy.x + offsetX,
                 y: enemy.y + offsetY,
                 rarity: finalRarity,
-                petalType: drop.type === 'petal' ? drop.itemType : undefined,
+                petalType: petalType,
                 eligiblePlayers: eligiblePlayers,
                 pickedUpBy: new Set(),
                 spawnTime: spawnTime

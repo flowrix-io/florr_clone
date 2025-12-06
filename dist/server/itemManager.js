@@ -4,6 +4,7 @@ exports.handleMobDrops = handleMobDrops;
 const mobs_1 = require("../mobs");
 const gameState_1 = require("./gameState");
 const utils_1 = require("./utils");
+const petals_1 = require("../petals");
 // Rarity order from lowest to highest
 const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
 // Calculate crafting chance for upgrading from one rarity to the next
@@ -57,13 +58,30 @@ function handleMobDrops(enemy, io) {
             if (upgradeChance > 0 && Math.random() * 100 < upgradeChance) {
                 finalRarity = upgradeRarity(drop.rarity);
             }
+            // Handle random petal selection for garbage mob
+            let petalType = drop.type === 'petal' ? drop.itemType : undefined;
+            if (petalType === 'random') {
+                const allPetalTypes = (0, petals_1.getAllPetalTypes)();
+                // Filter out admin petals and cutter types
+                const eligiblePetalTypes = allPetalTypes.filter(type => {
+                    const stats = (0, petals_1.getPetalStats)(type, 'common');
+                    return stats && !stats.isAdminPetal && type !== 'cutter' && type !== 'lightning_cutter';
+                });
+                if (eligiblePetalTypes.length > 0) {
+                    petalType = eligiblePetalTypes[Math.floor(Math.random() * eligiblePetalTypes.length)];
+                }
+                else {
+                    // Fallback to basic if no eligible petals (shouldn't happen)
+                    petalType = 'basic';
+                }
+            }
             const newItem = {
                 id: itemId,
                 type: drop.type === 'consumable' ? drop.itemType : 'petal',
                 x: enemy.x + offsetX,
                 y: enemy.y + offsetY,
                 rarity: finalRarity,
-                petalType: drop.type === 'petal' ? drop.itemType : undefined,
+                petalType: petalType,
                 eligiblePlayers: eligiblePlayers,
                 pickedUpBy: new Set(),
                 spawnTime: spawnTime

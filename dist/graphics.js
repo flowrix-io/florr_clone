@@ -1645,6 +1645,14 @@ class Graphics {
         if (enemy.reversed || mobStats?.reversed) {
             this.ctx.scale(-1, 1);
         }
+        // Special rendering for garbage mob - render as a pile of random petals
+        if (enemy.type === 'garbage') {
+            this.drawGarbagePile(enemy, enemySize);
+            this.ctx.restore();
+            // Draw health bar and tier (after restore, so we need to set up transforms again)
+            this.drawEnemyHealthBar(enemy, enemySize);
+            return;
+        }
         // Disable anti-aliasing for mobs (pixelated look)
         this.ctx.imageSmoothingEnabled = false;
         // Debug: Always draw something visible to verify coordinates work
@@ -1753,7 +1761,92 @@ class Graphics {
             this.ctx.arc(0, 0, baseSize / 2, 0, Math.PI * 2);
             this.ctx.stroke();
         }
-        // Draw health bar (before restore, so it's in enemy's coordinate space)
+        this.ctx.restore();
+        // Draw health bar and tier
+        this.drawEnemyHealthBar(enemy, enemySize);
+    }
+    /**
+     * Draw a garbage mob as a pile of random petals
+     */
+    drawGarbagePile(enemy, enemySize) {
+        // Get base size for hitbox calculation
+        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+        const baseSize = mobStats ? mobStats.size * 40 : 40;
+        // Use enemy position as seed for deterministic random petal selection
+        const seed = Math.floor(enemy.x * 1000 + enemy.y * 1000);
+        const allPetalTypes = (0, petals_1.getAllPetalTypes)();
+        // Filter out admin petals and cutter types
+        const eligiblePetalTypes = allPetalTypes.filter(petalType => {
+            const stats = (0, petals_1.getPetalStats)(petalType, 'common');
+            return stats && !stats.isAdminPetal && petalType !== 'cutter' && petalType !== 'lightning_cutter';
+        });
+        const numPetals = 5 + Math.floor((seed % 5)); // 5-9 petals
+        // Disable anti-aliasing for pixelated look
+        this.ctx.imageSmoothingEnabled = false;
+        // Draw multiple petals in a pile formation
+        for (let i = 0; i < numPetals; i++) {
+            // Use seeded random for consistent petal selection per garbage mob
+            const petalSeed = (seed + i * 1000) % 1000000;
+            const randomValue = (petalSeed / 1000000);
+            const petalType = eligiblePetalTypes[Math.floor(randomValue * eligiblePetalTypes.length)];
+            const rarity = 'common'; // Use common rarity for garbage pile
+            const stats = (0, petals_1.getPetalStats)(petalType, rarity);
+            if (!stats)
+                continue;
+            // Calculate position in pile - spread out to fill the hitbox
+            const angle = (i / numPetals) * Math.PI * 2;
+            // Use larger radius to fill the hitbox area (baseSize is the hitbox diameter)
+            const maxRadius = (baseSize / 2) * 0.8; // 80% of hitbox radius
+            const radiusVariation = (petalSeed % 300) / 1000; // 0-0.3 variation
+            const radius = maxRadius * (0.7 + radiusVariation); // 70-100% of max radius
+            const petalX = Math.cos(angle) * radius;
+            const petalY = Math.sin(angle) * radius + ((i % 3) * 3); // Slight stacking
+            // Random rotation for each petal
+            const rotation = (petalSeed % 360) * (Math.PI / 180);
+            // Draw petal - make it large enough to fill the hitbox
+            this.ctx.save();
+            this.ctx.translate(petalX, petalY);
+            this.ctx.rotate(rotation);
+            // Make petals large - use baseSize to ensure they fill the hitbox
+            // Each petal should be about 60-80% of the hitbox diameter
+            const petalBaseSize = baseSize * (0.6 + (petalSeed % 200) / 1000); // 60-80% of hitbox
+            const size = petalBaseSize * stats.size;
+            const petalKey = `${petalType}_${rarity}`;
+            const petalCanvas = this.getPetalCanvas(petalKey, Date.now());
+            if (petalCanvas) {
+                this.ctx.drawImage(petalCanvas, -size / 2, -size / 2, size, size);
+            }
+            else {
+                // Fallback to colored circle
+                this.ctx.fillStyle = stats.color;
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 1;
+                this.ctx.beginPath();
+                this.ctx.ellipse(0, 0, size / 2, size / 2, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+            }
+            this.ctx.restore();
+        }
+        // Draw hitbox if enabled
+        if (this.showHitboxes) {
+            const baseSize = enemySize;
+            this.ctx.strokeStyle = this.ENEMY_COLORS[enemy.tier];
+            this.ctx.lineWidth = 2;
+            this.ctx.globalAlpha = 1.0;
+            this.ctx.shadowBlur = 0;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, baseSize / 2, 0, Math.PI * 2);
+            this.ctx.stroke();
+        }
+    }
+    /**
+     * Draw health bar and tier for an enemy
+     */
+    drawEnemyHealthBar(enemy, enemySize) {
+        // Draw health bar
+        this.ctx.save();
+        this.ctx.translate(enemy.x, enemy.y);
         const healthBarWidth = enemySize;
         const healthBarHeight = 5;
         const healthBarY = -enemySize / 2 - 10;
@@ -1762,12 +1855,12 @@ class Graphics {
         this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
         this.ctx.fillRect(-healthBarWidth / 2, healthBarY, (enemy.health / enemy.maxHealth) * healthBarWidth, healthBarHeight);
         this.ctx.restore();
-        // Draw enemy tier with tier color (after restore, so we need to set up transforms again)
+        // Draw enemy tier with tier color
         this.ctx.save();
         this.ctx.translate(enemy.x, enemy.y);
         this.ctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
         this.ctx.textAlign = 'center';
-        this.ctx.font = '12px Ubuntu, sans-serif'; // Made text bold for better visibility
+        this.ctx.font = '12px Ubuntu, sans-serif';
         // Add black outline to text for better visibility
         this.ctx.strokeStyle = 'white';
         this.ctx.lineWidth = 1;

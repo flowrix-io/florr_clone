@@ -1306,8 +1306,8 @@ const BASE_MOB_CONFIGS = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <ellipse cx="21" cy="16" rx="11" ry="8" fill="#a33c00" stroke-width="2" stroke="#732a00"/>
 <circle cx="12" cy="16" r="5" fill="#3b1600"/>
-<path d="M 9 14 A 12 12 0 0 1 0 8" stroke="#333333"/>
-<path d="M 9 18 A 12 12 0 0 0 0 24" stroke="#333333"/>
+<path d="M 9 14 A 12 12 0 0 1 5 10" stroke="#333333" stroke-linecap="round"/>
+<path d="M 9 18 A 12 12 0 0 0 5 22" stroke="#333333" stroke-linecap="round"/>
 </svg>`,
         is_hostile: false,
         range: 100,
@@ -1324,15 +1324,7 @@ const BASE_MOB_CONFIGS = {
         cooldown: 2000,
         description: "A garbage",
         color: "#000000",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="7" r="4" fill="#333333"/>
-<circle cx="16" cy="19" r="13" fill="#333333"/>
-<circle cx="2" cy="2" r="0.5" fill="#3b1600"/>
-<circle cx="1" cy="28" r="0.5" fill="#3b1600"/>
-<circle cx="3" cy="25" r="0.5" fill="#3b1600"/>
-<circle cx="31" cy="28" r="0.5" fill="#3b1600"/>
-<circle cx="29" cy="4" r="0.5" fill="#3b1600"/>
-</svg>`,
+        image: `<svg></svg>`,
         is_hostile: false,
         range: 100,
         biomeOnly: true,
@@ -1368,8 +1360,8 @@ const BASE_MOB_CONFIGS = {
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
-  <path d="M 10 13 Q 5 10 3 5" stroke="#000000"/>
-  <path d="M 10 19 Q 5 22 3 27" stroke="#000000"/>
+  <path d="M 10 13 Q 5 10 3 5" stroke="#000000" stroke-linecap="round"/>
+  <path d="M 10 19 Q 5 22 3 27" stroke="#000000" stroke-linecap="round"/>
 </svg>`,
         is_hostile: false,
         range: 100,
@@ -2254,6 +2246,19 @@ exports.MOB_DROP_TABLES = {
                 probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 2
+            }
+        ]
+    },
+    garbage: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'random', // Special marker for random petal
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     }
