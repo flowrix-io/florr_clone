@@ -28,6 +28,17 @@ import { getMobStats, getAllMobTypes } from '../mobs';
 // Tier order from lowest to highest
 const TIER_ORDER: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
 
+// Boundary threshold for out-of-bounds zone (same as wall extension threshold)
+const BOUNDARY_THRESHOLD = 100;
+
+// Helper function to check if a position is in the out-of-bounds zone
+function isInOutOfBoundsZone(x: number, y: number): boolean {
+    return x < BOUNDARY_THRESHOLD || 
+           x > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD ||
+           y < BOUNDARY_THRESHOLD || 
+           y > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
+}
+
 // Helper function to upgrade a tier by one level (if possible)
 function upgradeTier(tier: Enemy['tier']): Enemy['tier'] {
     const currentIndex = TIER_ORDER.indexOf(tier);
@@ -119,6 +130,24 @@ function getRandomPositionInZoneType(zoneType: string): { x: number, y: number }
     x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
     y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
     
+    // Skip if position is in out-of-bounds zone (retry if needed)
+    if (isInOutOfBoundsZone(x, y)) {
+        // Try one more time with a different zone if available
+        if (zones.length > 1) {
+            const otherZone = zones.find(z => z !== zone) || zones[0];
+            x = (otherZone.x + Math.random() * otherZone.width) * SCALE_FACTOR;
+            y = (otherZone.y + Math.random() * otherZone.height) * SCALE_FACTOR;
+            x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
+            y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
+            // If still in out-of-bounds zone, return null
+            if (isInOutOfBoundsZone(x, y)) {
+                return null;
+            }
+        } else {
+            return null;
+        }
+    }
+    
     return { x, y };
 }
 
@@ -186,6 +215,11 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         // Clamp to world boundaries
         x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
         y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
+
+        // Skip if position is in out-of-bounds zone
+        if (isInOutOfBoundsZone(x, y)) {
+            continue;
+        }
 
         // Check if position is in a safe zone
         const inSafeZone = WORLD_MAP.some(element =>
@@ -363,6 +397,11 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
             y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
 
+            // Skip if position is in out-of-bounds zone
+            if (isInOutOfBoundsZone(x, y)) {
+                continue;
+            }
+
             // Check if position is in a safe zone
             const inSafeZone = WORLD_MAP.some(element =>
                 element.type === 'safe_zone' &&
@@ -437,6 +476,11 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             // Clamp to world boundaries
             x = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, x));
             y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
+
+            // Skip if position is in out-of-bounds zone
+            if (isInOutOfBoundsZone(x, y)) {
+                continue;
+            }
 
             // Check if position is in a safe zone
             const inSafeZone = WORLD_MAP.some(element =>
@@ -532,7 +576,7 @@ export function createSpecialMob(
         zoneType = 'mythic';
     }
     
-    const position = getRandomPositionInZoneType(zoneType);
+    let position = getRandomPositionInZoneType(zoneType);
     if (!position) {
         console.error(`No ${zoneType} zones found for ${tier} mob spawning`);
         return null;
@@ -557,6 +601,18 @@ export function createSpecialMob(
     if (!mobStats) {
         console.error(`No mob stats found for ${mobType} ${tier}`);
         return null;
+    }
+    
+    // Check if position is in out-of-bounds zone
+    if (isInOutOfBoundsZone(position.x, position.y)) {
+        console.error(`Spawn position for ${tier} mob is in out-of-bounds zone. Trying alternative position...`);
+        // Try to find a new position in the same zone type
+        const newPosition = getRandomPositionInZoneType(zoneType);
+        if (!newPosition || isInOutOfBoundsZone(newPosition.x, newPosition.y)) {
+            console.error(`Could not find valid position for ${tier} mob outside out-of-bounds zone`);
+            return null;
+        }
+        position = newPosition;
     }
     
     // Check if the spawn position would overlap with any player's petal range

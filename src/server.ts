@@ -592,6 +592,19 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
         spawnX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, spawnX));
         spawnY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, spawnY));
         
+        // Check if position is in out-of-bounds zone
+        const BOUNDARY_THRESHOLD = 100;
+        const isInOutOfBoundsZone = spawnX < BOUNDARY_THRESHOLD || 
+                                    spawnX > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD ||
+                                    spawnY < BOUNDARY_THRESHOLD || 
+                                    spawnY > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
+        
+        if (isInOutOfBoundsZone) {
+            console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) are in out-of-bounds zone. Finding alternative position...`);
+            spawnX = undefined;
+            spawnY = undefined;
+        }
+        
         // Check if position is in a safe zone
         const inSafeZone = WORLD_MAP.some(element =>
             element.type === 'safe_zone' &&
@@ -643,6 +656,17 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
             spawnX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, spawnX));
             spawnY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, spawnY));
 
+            // Skip if position is in out-of-bounds zone
+            const BOUNDARY_THRESHOLD = 100;
+            const isInOutOfBoundsZone = spawnX! < BOUNDARY_THRESHOLD || 
+                                        spawnX! > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD ||
+                                        spawnY! < BOUNDARY_THRESHOLD || 
+                                        spawnY! > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
+            
+            if (isInOutOfBoundsZone) {
+                continue;
+            }
+
             // Check if position is in a safe zone
             const inSafeZone = WORLD_MAP.some(element =>
                 element.type === 'safe_zone' &&
@@ -671,6 +695,17 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
                 attempts++;
                 spawnX = Math.random() * ACTUAL_WORLD_WIDTH;
                 spawnY = Math.random() * ACTUAL_WORLD_HEIGHT;
+
+                // Skip if position is in out-of-bounds zone
+                const BOUNDARY_THRESHOLD = 100;
+                const isInOutOfBoundsZone = spawnX! < BOUNDARY_THRESHOLD || 
+                                            spawnX! > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD ||
+                                            spawnY! < BOUNDARY_THRESHOLD || 
+                                            spawnY! > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
+                
+                if (isInOutOfBoundsZone) {
+                    continue;
+                }
 
                 // Check if position is in a safe zone
                 const inSafeZone = WORLD_MAP.some(element =>
