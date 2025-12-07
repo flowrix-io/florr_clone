@@ -615,7 +615,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
     },
     cutter: {
         name: "Cutter Petal",
-        damage: 30,
+        damage: 1,
         health: 100000000,
         size: 7.0,
         cooldown: 1,
@@ -644,7 +644,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
     },
     lightning_cutter: {
         name: "Lightning Cutter Petal",
-        damage: 30,
+        damage: 1,
         health: 100000000,
         size: 7.0,
         cooldown: 1,
