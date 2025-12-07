@@ -39,7 +39,8 @@ import {
     calculateDPS, 
     getEligiblePlayers, 
     sendBossMobDefeatedMessage,
-    checkItemWallCollisions
+    checkItemWallCollisions,
+    getExtendedWallForCollision
 } from './server/utils';
 import { 
     items, 
@@ -2225,16 +2226,19 @@ function moveEnemies() {
                 height: wall.height * SCALE_FACTOR
             };
 
+            // Extend wall to boundaries if it's close to them
+            const extendedWall = getExtendedWallForCollision(scaledWall);
+
             // Check if enemy (with size) overlaps with wall
             const enemyLeft = enemy.x - halfSize;
             const enemyRight = enemy.x + halfSize;
             const enemyTop = enemy.y - halfSize;
             const enemyBottom = enemy.y + halfSize;
 
-            const wallLeft = scaledWall.x;
-            const wallRight = scaledWall.x + scaledWall.width;
-            const wallTop = scaledWall.y;
-            const wallBottom = scaledWall.y + scaledWall.height;
+            const wallLeft = extendedWall.x;
+            const wallRight = extendedWall.x + extendedWall.width;
+            const wallTop = extendedWall.y;
+            const wallBottom = extendedWall.y + extendedWall.height;
 
             // Check for overlap
             if (enemyRight > wallLeft && enemyLeft < wallRight && 
@@ -2350,13 +2354,16 @@ function updateMobProjectiles(deltaTimeMs: number) {
                 height: wall.height * SCALE_FACTOR
             };
             
+            // Extend wall to boundaries if it's close to them
+            const extendedWall = getExtendedWallForCollision(scaledWall);
+            
             const projLeft = projectile.x - halfSize;
             const projRight = projectile.x + halfSize;
             const projTop = projectile.y - halfSize;
             const projBottom = projectile.y + halfSize;
             
-            if (projRight > scaledWall.x && projLeft < scaledWall.x + scaledWall.width &&
-                projBottom > scaledWall.y && projTop < scaledWall.y + scaledWall.height) {
+            if (projRight > extendedWall.x && projLeft < extendedWall.x + extendedWall.width &&
+                projBottom > extendedWall.y && projTop < extendedWall.y + extendedWall.height) {
                 hitWall = true;
             }
         });
@@ -2550,13 +2557,16 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
                 height: wall.height * SCALE_FACTOR
             };
             
+            // Extend wall to boundaries if it's close to them
+            const extendedWall = getExtendedWallForCollision(scaledWall);
+            
             const projLeft = projectile.x - halfSize;
             const projRight = projectile.x + halfSize;
             const projTop = projectile.y - halfSize;
             const projBottom = projectile.y + halfSize;
             
-            if (projRight > scaledWall.x && projLeft < scaledWall.x + scaledWall.width &&
-                projBottom > scaledWall.y && projTop < scaledWall.y + scaledWall.height) {
+            if (projRight > extendedWall.x && projLeft < extendedWall.x + extendedWall.width &&
+                projBottom > extendedWall.y && projTop < extendedWall.y + extendedWall.height) {
                 hitWall = true;
             }
         });
@@ -2743,16 +2753,24 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
             const wallWidth = element.width * SCALE_FACTOR;
             const wallHeight = element.height * SCALE_FACTOR;
 
+            // Extend wall to boundaries if it's close to them
+            const extendedWall = getExtendedWallForCollision({
+                x: wallX,
+                y: wallY,
+                width: wallWidth,
+                height: wallHeight
+            });
+
             if (
-                newX < wallX + wallWidth &&
-                newX + PLAYER_SIZE > wallX &&
-                newY < wallY + wallHeight &&
-                newY + PLAYER_SIZE > wallY
+                newX < extendedWall.x + extendedWall.width &&
+                newX + PLAYER_SIZE > extendedWall.x &&
+                newY < extendedWall.y + extendedWall.height &&
+                newY + PLAYER_SIZE > extendedWall.y
             ) {
-                const overlapX = (newX + PLAYER_SIZE / 2) - (wallX + wallWidth / 2);
-                const overlapY = (newY + PLAYER_SIZE / 2) - (wallY + wallHeight / 2);
-                const combinedHalfWidths = PLAYER_SIZE / 2 + wallWidth / 2;
-                const combinedHalfHeights = PLAYER_SIZE / 2 + wallHeight / 2;
+                const overlapX = (newX + PLAYER_SIZE / 2) - (extendedWall.x + extendedWall.width / 2);
+                const overlapY = (newY + PLAYER_SIZE / 2) - (extendedWall.y + extendedWall.height / 2);
+                const combinedHalfWidths = PLAYER_SIZE / 2 + extendedWall.width / 2;
+                const combinedHalfHeights = PLAYER_SIZE / 2 + extendedWall.height / 2;
 
                 if (Math.abs(overlapX) < combinedHalfWidths && Math.abs(overlapY) < combinedHalfHeights) {
                     const penX = combinedHalfWidths - Math.abs(overlapX);
@@ -3841,6 +3859,61 @@ function executeServerCommand(command: string, executor?: string): void {
             console.log('    spawn octopus legendary 1000 2000');
             console.log(`Available mob types: ${getAllMobTypes().join(', ')}`);
             console.log('Valid rarities: common, uncommon, rare, epic, legendary, mythic, ultra, super, unique');
+        }
+    } else if (trimmedCommand.startsWith('teleport ') || trimmedCommand.startsWith('tp ')) {
+        const parts = trimmedCommand.split(' ');
+        if (parts.length === 4) {
+            // teleport <playerId/name> <x> <y>
+            const playerIdentifier = parts[1];
+            const x = parseFloat(parts[2]);
+            const y = parseFloat(parts[3]);
+            
+            if (isNaN(x) || isNaN(y)) {
+                console.log('Invalid coordinates. Usage: teleport <playerId/name> <x> <y>');
+                return;
+            }
+            
+            // Try to find player by ID first, then by name
+            let targetPlayer: ServerPlayer | undefined;
+            let targetPlayerId: string | undefined;
+            
+            // Check if it's a socket ID
+            if (players[playerIdentifier]) {
+                targetPlayer = players[playerIdentifier];
+                targetPlayerId = playerIdentifier;
+            } else {
+                // Search by name
+                for (const [socketId, player] of Object.entries(players)) {
+                    if (player.name.toLowerCase() === playerIdentifier.toLowerCase()) {
+                        targetPlayer = player;
+                        targetPlayerId = socketId;
+                        break;
+                    }
+                }
+            }
+            
+            if (targetPlayer && targetPlayerId) {
+                // Teleport the player
+                targetPlayer.x = x;
+                targetPlayer.y = y;
+                
+                // Emit teleport event to client for visual effects
+                io.to(targetPlayerId).emit('playerTeleported', {
+                    newX: x,
+                    newY: y,
+                    playerId: targetPlayerId
+                });
+                
+                console.log(`Teleported player ${targetPlayer.name} (${targetPlayerId}) to (${x}, ${y})`);
+            } else {
+                console.log(`Player "${playerIdentifier}" not found. Use list-players to see available players.`);
+            }
+        } else {
+            console.log('Usage: teleport <playerId/name> <x> <y>');
+            console.log('  Examples:');
+            console.log('    teleport abc123 1000 2000');
+            console.log('    teleport PlayerName 5000 3000');
+            console.log('    tp abc123 1000 2000  (shorthand)');
         }
     }
 }

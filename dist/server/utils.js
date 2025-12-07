@@ -4,6 +4,7 @@ exports.trackDamage = trackDamage;
 exports.calculateDPS = calculateDPS;
 exports.getEligiblePlayers = getEligiblePlayers;
 exports.sendBossMobDefeatedMessage = sendBossMobDefeatedMessage;
+exports.getExtendedWallForCollision = getExtendedWallForCollision;
 exports.checkItemWallCollisions = checkItemWallCollisions;
 const constants_1 = require("../constants");
 // Helper function to track damage dealt to an enemy
@@ -95,6 +96,47 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
         timestamp: Date.now()
     });
 }
+// Helper function to extend walls near world boundaries for collision
+// Returns an extended wall that reaches the nearest boundary if the wall is close to it
+function getExtendedWallForCollision(wall) {
+    const BOUNDARY_THRESHOLD = 100; // Distance threshold to consider a wall "close" to boundary
+    const extendedWall = { ...wall };
+    // Check left boundary (x = 0)
+    if (wall.x < BOUNDARY_THRESHOLD) {
+        const extension = wall.x;
+        extendedWall.x = 0;
+        extendedWall.width += extension;
+    }
+    // Check right boundary (x = ACTUAL_WORLD_WIDTH)
+    if (wall.x + wall.width > constants_1.ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD) {
+        const extension = constants_1.ACTUAL_WORLD_WIDTH - (wall.x + wall.width);
+        if (extension > 0) {
+            extendedWall.width += extension;
+        }
+        else {
+            // Wall already extends beyond, clamp to boundary
+            extendedWall.width = constants_1.ACTUAL_WORLD_WIDTH - wall.x;
+        }
+    }
+    // Check top boundary (y = 0)
+    if (wall.y < BOUNDARY_THRESHOLD) {
+        const extension = wall.y;
+        extendedWall.y = 0;
+        extendedWall.height += extension;
+    }
+    // Check bottom boundary (y = ACTUAL_WORLD_HEIGHT)
+    if (wall.y + wall.height > constants_1.ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD) {
+        const extension = constants_1.ACTUAL_WORLD_HEIGHT - (wall.y + wall.height);
+        if (extension > 0) {
+            extendedWall.height += extension;
+        }
+        else {
+            // Wall already extends beyond, clamp to boundary
+            extendedWall.height = constants_1.ACTUAL_WORLD_HEIGHT - wall.y;
+        }
+    }
+    return extendedWall;
+}
 // Check and fix item-wall collisions
 function checkItemWallCollisions(item) {
     const ITEM_SIZE = 15; // Item radius (30x30 hitbox)
@@ -107,15 +149,17 @@ function checkItemWallCollisions(item) {
             width: wall.width * constants_1.SCALE_FACTOR,
             height: wall.height * constants_1.SCALE_FACTOR
         };
+        // Extend wall to boundaries if it's close to them
+        const extendedWall = getExtendedWallForCollision(scaledWall);
         // Check if item (with size) overlaps with wall
         const itemLeft = item.x - halfSize;
         const itemRight = item.x + halfSize;
         const itemTop = item.y - halfSize;
         const itemBottom = item.y + halfSize;
-        const wallLeft = scaledWall.x;
-        const wallRight = scaledWall.x + scaledWall.width;
-        const wallTop = scaledWall.y;
-        const wallBottom = scaledWall.y + scaledWall.height;
+        const wallLeft = extendedWall.x;
+        const wallRight = extendedWall.x + extendedWall.width;
+        const wallTop = extendedWall.y;
+        const wallBottom = extendedWall.y + extendedWall.height;
         // Check for overlap
         if (itemRight > wallLeft && itemLeft < wallRight &&
             itemBottom > wallTop && itemTop < wallBottom) {

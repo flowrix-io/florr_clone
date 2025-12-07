@@ -117,6 +117,51 @@ export function sendBossMobDefeatedMessage(
     });
 }
 
+// Helper function to extend walls near world boundaries for collision
+// Returns an extended wall that reaches the nearest boundary if the wall is close to it
+export function getExtendedWallForCollision(wall: { x: number; y: number; width: number; height: number }): { x: number; y: number; width: number; height: number } {
+    const BOUNDARY_THRESHOLD = 100; // Distance threshold to consider a wall "close" to boundary
+    const extendedWall = { ...wall };
+    
+    // Check left boundary (x = 0)
+    if (wall.x < BOUNDARY_THRESHOLD) {
+        const extension = wall.x;
+        extendedWall.x = 0;
+        extendedWall.width += extension;
+    }
+    
+    // Check right boundary (x = ACTUAL_WORLD_WIDTH)
+    if (wall.x + wall.width > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD) {
+        const extension = ACTUAL_WORLD_WIDTH - (wall.x + wall.width);
+        if (extension > 0) {
+            extendedWall.width += extension;
+        } else {
+            // Wall already extends beyond, clamp to boundary
+            extendedWall.width = ACTUAL_WORLD_WIDTH - wall.x;
+        }
+    }
+    
+    // Check top boundary (y = 0)
+    if (wall.y < BOUNDARY_THRESHOLD) {
+        const extension = wall.y;
+        extendedWall.y = 0;
+        extendedWall.height += extension;
+    }
+    
+    // Check bottom boundary (y = ACTUAL_WORLD_HEIGHT)
+    if (wall.y + wall.height > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD) {
+        const extension = ACTUAL_WORLD_HEIGHT - (wall.y + wall.height);
+        if (extension > 0) {
+            extendedWall.height += extension;
+        } else {
+            // Wall already extends beyond, clamp to boundary
+            extendedWall.height = ACTUAL_WORLD_HEIGHT - wall.y;
+        }
+    }
+    
+    return extendedWall;
+}
+
 // Check and fix item-wall collisions
 export function checkItemWallCollisions(item: WorldItem): void {
     const ITEM_SIZE = 15; // Item radius (30x30 hitbox)
@@ -131,16 +176,19 @@ export function checkItemWallCollisions(item: WorldItem): void {
             height: wall.height * SCALE_FACTOR
         };
 
+        // Extend wall to boundaries if it's close to them
+        const extendedWall = getExtendedWallForCollision(scaledWall);
+
         // Check if item (with size) overlaps with wall
         const itemLeft = item.x - halfSize;
         const itemRight = item.x + halfSize;
         const itemTop = item.y - halfSize;
         const itemBottom = item.y + halfSize;
 
-        const wallLeft = scaledWall.x;
-        const wallRight = scaledWall.x + scaledWall.width;
-        const wallTop = scaledWall.y;
-        const wallBottom = scaledWall.y + scaledWall.height;
+        const wallLeft = extendedWall.x;
+        const wallRight = extendedWall.x + extendedWall.width;
+        const wallTop = extendedWall.y;
+        const wallBottom = extendedWall.y + extendedWall.height;
 
         // Check for overlap
         if (itemRight > wallLeft && itemLeft < wallRight && 
