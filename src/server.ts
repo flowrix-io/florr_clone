@@ -1203,6 +1203,106 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
     });
 
+    /**
+     * Validates inventory structure and checks if items in loadout exist in inventory
+     * When an item is equipped, it's removed from inventory, so we need to check:
+     * 1. If item is newly equipped (not in old loadout), it must exist in the old inventory (before equipping)
+     * 2. If item is already equipped (in old loadout), we allow it to stay (it was already validated)
+     * 3. If item doesn't exist in old inventory and wasn't in old loadout, unequip it
+     * 
+     * @param newInventory - The new inventory sent by client (after equipping changes)
+     * @param newLoadout - The new loadout sent by client
+     * @param oldLoadout - The previous loadout on the server
+     * @param oldInventory - The previous inventory on the server (before client changes)
+     * @returns A validated loadout with missing items unequipped (set to null)
+     */
+    function validateInventoryAndLoadout(
+        newInventory: PlayerInventory, 
+        newLoadout: (Item | null)[], 
+        oldLoadout: (Item | null)[],
+        oldInventory: PlayerInventory
+    ): (Item | null)[] {
+        // Validate inventory structure
+        if (!newInventory || typeof newInventory !== 'object') {
+            console.warn('[SERVER] Invalid inventory structure, using empty inventory');
+            newInventory = {};
+        }
+
+        // Create a validated copy of the loadout
+        const validatedLoadout = [...newLoadout];
+        let hasChanges = false;
+
+        // Helper function to check if an item exists in inventory
+        function itemExistsInInventory(inventory: PlayerInventory, item: Item): boolean {
+            if (!item.rarity) return false;
+            
+            let inventoryKey: string;
+            if (item.type === 'petal') {
+                if (!item.petalType) return false;
+                inventoryKey = `petal_${item.petalType}`;
+            } else {
+                inventoryKey = item.type;
+            }
+
+            const rarityInventory = inventory[item.rarity];
+            if (!rarityInventory || typeof rarityInventory !== 'object') {
+                return false;
+            }
+
+            const itemCount = rarityInventory[inventoryKey];
+            return itemCount !== undefined && itemCount !== null && itemCount > 0;
+        }
+
+        // Helper function to check if an item matches (same type, rarity, petalType)
+        function itemsMatch(item1: Item | null, item2: Item | null): boolean {
+            if (!item1 || !item2) return false;
+            if (item1.type !== item2.type) return false;
+            if (item1.rarity !== item2.rarity) return false;
+            if (item1.type === 'petal') {
+                return item1.petalType === item2.petalType;
+            }
+            return true;
+        }
+
+        // Check each item in the new loadout
+        validatedLoadout.forEach((item, index) => {
+            if (!item) {
+                return; // Skip null items
+            }
+
+            if (!item.rarity) {
+                console.warn(`[SERVER] Item at slot ${index} missing rarity, unequipping`);
+                validatedLoadout[index] = null;
+                hasChanges = true;
+                return;
+            }
+
+            // Check if this item was already in the old loadout
+            const oldItem = oldLoadout[index];
+            const wasAlreadyEquipped = itemsMatch(item, oldItem);
+
+            if (wasAlreadyEquipped) {
+                // Item was already equipped, allow it to stay (it's already removed from inventory)
+                return;
+            }
+
+            // Item is newly equipped or changed - check if it exists in the old inventory
+            // (before the client removed it for equipping)
+            if (!itemExistsInInventory(oldInventory, item)) {
+                console.warn(`[SERVER] Item ${item.type === 'petal' ? `petal_${item.petalType}` : item.type} (${item.rarity}) not found in inventory, unequipping`);
+                validatedLoadout[index] = null;
+                hasChanges = true;
+                return;
+            }
+        });
+
+        if (hasChanges) {
+            console.log('[SERVER] Loadout validation: Some items were unequipped due to missing inventory');
+        }
+
+        return validatedLoadout;
+    }
+
     socket.on('updateLoadout', (data: { loadout: (Item | null)[]; inventory: PlayerInventory }) => {
         console.log('[SERVER] updateLoadout received from socket:', socket.id, 'player exists:', !!players[socket.id], 'authenticated:', !!socket.username);
         const player = players[socket.id];
@@ -1215,11 +1315,73 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             return;
         }
         if (player) {
-            // Track which slots had petals before to detect changes
+            // Track which slots had items before to detect changes
             const oldLoadout = player.loadout || [];
+            const oldInventory = player.inventory || {};
+            
+            // IMPORTANT: Use server's inventory as source of truth, NOT client's
+            // This prevents console-added items from being accepted
+            const serverInventory = { ...oldInventory };
+            
+            // Validate inventory and loadout - unequip items that don't exist in inventory
+            const validatedLoadout = validateInventoryAndLoadout(serverInventory, data.loadout, oldLoadout, serverInventory);
+            
+            // Calculate inventory changes based on loadout changes
+            // Items that were unequipped should be added back to inventory
+            // Items that were newly equipped should be removed from inventory
+            oldLoadout.forEach((oldItem, index) => {
+                const newItem = validatedLoadout[index];
+                
+                // Helper to get inventory key for an item
+                const getInventoryKey = (item: Item | null): string | null => {
+                    if (!item || !item.rarity) return null;
+                    if (item.type === 'petal') {
+                        if (!item.petalType) return null;
+                        return `petal_${item.petalType}`;
+                    }
+                    return item.type;
+                };
+                
+                // Helper to check if items match
+                const itemsMatch = (item1: Item | null, item2: Item | null): boolean => {
+                    if (!item1 || !item2) return false;
+                    if (item1.type !== item2.type) return false;
+                    if (item1.rarity !== item2.rarity) return false;
+                    if (item1.type === 'petal') {
+                        return item1.petalType === item2.petalType;
+                    }
+                    return true;
+                };
+                
+                const oldKey = getInventoryKey(oldItem);
+                const newKey = getInventoryKey(newItem);
+                
+                // If old item was unequipped (slot is now empty or different item)
+                if (oldItem && (!newItem || !itemsMatch(oldItem, newItem))) {
+                    if (oldKey && oldItem.rarity) {
+                        // Add item back to inventory
+                        addItem(serverInventory, oldItem.rarity, oldKey, 1);
+                        console.log(`[SERVER] Item ${oldKey} (${oldItem.rarity}) unequipped, added back to inventory`);
+                    }
+                }
+                
+                // If new item was equipped (slot had different item or was empty)
+                if (newItem && (!oldItem || !itemsMatch(oldItem, newItem))) {
+                    if (newKey && newItem.rarity) {
+                        // Remove item from inventory (if it exists)
+                        const rarityInv = serverInventory[newItem.rarity];
+                        if (rarityInv && rarityInv[newKey] && rarityInv[newKey] > 0) {
+                            removeItem(serverInventory, newItem.rarity, newKey, 1);
+                            console.log(`[SERVER] Item ${newKey} (${newItem.rarity}) equipped, removed from inventory`);
+                        } else {
+                            console.warn(`[SERVER] Attempted to equip ${newKey} (${newItem.rarity}) but it doesn't exist in inventory`);
+                        }
+                    }
+                }
+            });
             
             // Apply petal health bonuses to all petals in loadout
-            data.loadout.forEach((petal, index) => {
+            validatedLoadout.forEach((petal, index) => {
                 if (petal && petal.type === 'petal') {
                     applyPetalHealthBonus(petal, player);
                     
@@ -1264,8 +1426,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                     }
                 }
             });
-            player.loadout = data.loadout;
-            player.inventory = data.inventory;
+            
+            // Use validated loadout and server's authoritative inventory
+            player.loadout = validatedLoadout;
+            player.inventory = serverInventory; // Use server's inventory, not client's
             io.emit('playerUpdated', player);
         }
     });

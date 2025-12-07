@@ -278,7 +278,7 @@ class Game {
             // Calculate normalized screen coordinates (-1 to 1, where 0,0 is center of screen)
             // X: -1 is left edge, 0 is center, 1 is right edge
             // Y: -1 is top edge, 0 is center, 1 is bottom edge
-            this.normalizedMouseXOnScreen = (screenX / this.canvas.width) * 2 - 1;
+            this.normalizedMouseXOnScreen = ((screenX / this.canvas.width) * 2 - 1) / (this.canvas.height / this.canvas.width);
             this.normalizedMouseYOnScreen = (screenY / this.canvas.height) * 2 - 1;
             // Update current mouse position (for eye tracking, etc.)
             this.mouseX = worldX;
