@@ -4,6 +4,7 @@ exports.handleMobDrops = handleMobDrops;
 const mobs_1 = require("../mobs");
 const gameState_1 = require("./gameState");
 const utils_1 = require("./utils");
+const physics_1 = require("./physics");
 const petals_1 = require("../petals");
 // Rarity order from lowest to highest
 const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
@@ -87,7 +88,7 @@ function handleMobDrops(enemy, io) {
                 spawnTime: spawnTime
             };
             // Check and fix wall collisions before adding item
-            (0, utils_1.checkItemWallCollisions)(newItem);
+            (0, physics_1.checkItemWallCollisions)(newItem);
             gameState_1.items.push(newItem);
             // Only send itemSpawned event to eligible players
             for (const playerId of eligiblePlayers) {

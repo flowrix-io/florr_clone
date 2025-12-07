@@ -1,7 +1,6 @@
 import { Enemy } from '../server_utils';
 import { ServerPlayer } from '../player';
-import { ENEMY_TIERS, WORLD_MAP, isWall, SCALE_FACTOR, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT } from '../constants';
-import { WorldItem } from '../item';
+import { ENEMY_TIERS } from '../constants';
 
 // Helper function to track damage dealt to an enemy
 export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
@@ -117,109 +116,5 @@ export function sendBossMobDefeatedMessage(
     });
 }
 
-// Helper function to extend walls near world boundaries for collision
-// Returns an extended wall that reaches the nearest boundary if the wall is close to it
-export function getExtendedWallForCollision(wall: { x: number; y: number; width: number; height: number }): { x: number; y: number; width: number; height: number } {
-    const BOUNDARY_THRESHOLD = 100; // Distance threshold to consider a wall "close" to boundary
-    const extendedWall = { ...wall };
-    
-    // Check left boundary (x = 0)
-    if (wall.x < BOUNDARY_THRESHOLD) {
-        const extension = wall.x;
-        extendedWall.x = 0;
-        extendedWall.width += extension;
-    }
-    
-    // Check right boundary (x = ACTUAL_WORLD_WIDTH)
-    if (wall.x + wall.width > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD) {
-        const extension = ACTUAL_WORLD_WIDTH - (wall.x + wall.width);
-        if (extension > 0) {
-            extendedWall.width += extension;
-        } else {
-            // Wall already extends beyond, clamp to boundary
-            extendedWall.width = ACTUAL_WORLD_WIDTH - wall.x;
-        }
-    }
-    
-    // Check top boundary (y = 0)
-    if (wall.y < BOUNDARY_THRESHOLD) {
-        const extension = wall.y;
-        extendedWall.y = 0;
-        extendedWall.height += extension;
-    }
-    
-    // Check bottom boundary (y = ACTUAL_WORLD_HEIGHT)
-    if (wall.y + wall.height > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD) {
-        const extension = ACTUAL_WORLD_HEIGHT - (wall.y + wall.height);
-        if (extension > 0) {
-            extendedWall.height += extension;
-        } else {
-            // Wall already extends beyond, clamp to boundary
-            extendedWall.height = ACTUAL_WORLD_HEIGHT - wall.y;
-        }
-    }
-    
-    return extendedWall;
-}
-
-// Check and fix item-wall collisions
-export function checkItemWallCollisions(item: WorldItem): void {
-    const ITEM_SIZE = 15; // Item radius (30x30 hitbox)
-    const halfSize = ITEM_SIZE;
-    
-    // Check for wall collisions
-    WORLD_MAP.filter(isWall).forEach(wall => {
-        const scaledWall = {
-            x: wall.x * SCALE_FACTOR,
-            y: wall.y * SCALE_FACTOR,
-            width: wall.width * SCALE_FACTOR,
-            height: wall.height * SCALE_FACTOR
-        };
-
-        // Extend wall to boundaries if it's close to them
-        const extendedWall = getExtendedWallForCollision(scaledWall);
-
-        // Check if item (with size) overlaps with wall
-        const itemLeft = item.x - halfSize;
-        const itemRight = item.x + halfSize;
-        const itemTop = item.y - halfSize;
-        const itemBottom = item.y + halfSize;
-
-        const wallLeft = extendedWall.x;
-        const wallRight = extendedWall.x + extendedWall.width;
-        const wallTop = extendedWall.y;
-        const wallBottom = extendedWall.y + extendedWall.height;
-
-        // Check for overlap
-        if (itemRight > wallLeft && itemLeft < wallRight && 
-            itemBottom > wallTop && itemTop < wallBottom) {
-            
-            // Calculate overlap amounts
-            const overlapLeft = itemRight - wallLeft;
-            const overlapRight = wallRight - itemLeft;
-            const overlapTop = itemBottom - wallTop;
-            const overlapBottom = wallBottom - itemTop;
-
-            // Find the minimum overlap to determine push direction
-            const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
-
-            // Push item away from wall in the direction of minimum overlap
-            if (minOverlap === overlapLeft) {
-                // Push left
-                item.x = wallLeft - halfSize - 5; // 5px buffer
-            } else if (minOverlap === overlapRight) {
-                // Push right
-                item.x = wallRight + halfSize + 5; // 5px buffer
-            } else if (minOverlap === overlapTop) {
-                // Push up
-                item.y = wallTop - halfSize - 5; // 5px buffer
-            } else if (minOverlap === overlapBottom) {
-                // Push down
-                item.y = wallBottom + halfSize + 5; // 5px buffer
-            }
-
-            // No boundary clamping - items can go out of bounds and will be deleted
-        }
-    });
-}
+// Collision detection functions have been moved to physics.ts
 

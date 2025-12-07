@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 114946594,
+      "totalXP": 114998636,
       "inventory": {
         "common": {
           "shield": 82,
@@ -12,13 +12,13 @@
           "speed_boost": 20,
           "petal_sand": 42,
           "petal_rock": 126,
-          "petal_clover": 33,
+          "petal_clover": 34,
           "petal_bone": 50,
           "petal_cactus": 11,
           "petal_iris": 9,
           "petal_poison_cactus": 12,
           "petal_lightning": 46,
-          "petal_missile": 34,
+          "petal_missile": 35,
           "petal_jelly": 20,
           "petal_leaf": 4,
           "petal_cutter": 2,
@@ -26,7 +26,7 @@
           "petal_rose": 25,
           "health_potion": 17,
           "petal_basic": 16,
-          "petal_square": 7,
+          "petal_square": 8,
           "petal_shield": 1,
           "petal_golden_leaf": 2
         },
@@ -79,7 +79,7 @@
           "petal_clover": 1,
           "petal_yucca": 1,
           "petal_lightning_cutter": 1,
-          "petal_square": 4,
+          "petal_square": 5,
           "petal_wing": 3,
           "petal_jelly": 1,
           "petal_golden_leaf": 1
@@ -90,7 +90,7 @@
           "petal_basic": 63,
           "petal_sand": 7,
           "speed_boost": 34,
-          "petal_stinger": 28,
+          "petal_stinger": 29,
           "shield": 45,
           "petal_clover": 31,
           "petal_light": 25,
@@ -108,7 +108,7 @@
           "petal_cutter": 4,
           "petal_lightning_cutter": 1,
           "petal_yucca": 2,
-          "petal_square": 1,
+          "petal_square": 2,
           "petal_wing": 42,
           "petal_golden_leaf": 2
         },
@@ -141,18 +141,18 @@
         },
         "epic": {
           "petal_stinger": 38,
-          "speed_boost": 70,
+          "speed_boost": 71,
           "petal_basic": 61,
           "petal_rose": 95,
           "petal_sand": 16,
           "petal_yggdrasil": 3,
-          "health_potion": 36,
+          "health_potion": 37,
           "petal_light": 39,
           "petal_rock": 102,
-          "shield": 6,
+          "shield": 7,
           "petal_dandelion": 97,
           "petal_clover": 36,
-          "petal_bone": 68,
+          "petal_bone": 69,
           "petal_cactus": 5,
           "petal_poison_cactus": 2,
           "petal_iris": 5,
@@ -219,7 +219,7 @@
           "petal_light": 1,
           "petal_cutter": 1,
           "petal_iris": 2,
-          "petal_square": 4,
+          "petal_square": 5,
           "petal_wing": 1
         },
         "super": {

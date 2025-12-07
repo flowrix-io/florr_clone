@@ -38,10 +38,16 @@ import {
     trackDamage, 
     calculateDPS, 
     getEligiblePlayers, 
-    sendBossMobDefeatedMessage,
-    checkItemWallCollisions,
-    getExtendedWallForCollision
+    sendBossMobDefeatedMessage
 } from './server/utils';
+import {
+    checkPlayerWallCollisions,
+    checkEnemyWallCollisions,
+    checkItemWallCollisions,
+    checkProjectileWallCollision,
+    checkEnemyEnemyCollisions,
+    checkPlayerEnemyCollision
+} from './server/physics';
 import { 
     items, 
     ultraMobCount, 
@@ -2252,101 +2258,12 @@ function moveEnemies() {
             return;
         }
 
-        // Check for wall collisions with proper size consideration
-        WORLD_MAP.filter(isWall).forEach(wall => {
-            const scaledWall = {
-                x: wall.x * SCALE_FACTOR,
-                y: wall.y * SCALE_FACTOR,
-                width: wall.width * SCALE_FACTOR,
-                height: wall.height * SCALE_FACTOR
-            };
-
-            // Extend wall to boundaries if it's close to them
-            const extendedWall = getExtendedWallForCollision(scaledWall);
-
-            // Check if enemy (with size) overlaps with wall
-            const enemyLeft = enemy.x - halfSize;
-            const enemyRight = enemy.x + halfSize;
-            const enemyTop = enemy.y - halfSize;
-            const enemyBottom = enemy.y + halfSize;
-
-            const wallLeft = extendedWall.x;
-            const wallRight = extendedWall.x + extendedWall.width;
-            const wallTop = extendedWall.y;
-            const wallBottom = extendedWall.y + extendedWall.height;
-
-            // Check for overlap
-            if (enemyRight > wallLeft && enemyLeft < wallRight && 
-                enemyBottom > wallTop && enemyTop < wallBottom) {
-                
-                // Calculate overlap amounts
-                const overlapLeft = enemyRight - wallLeft;
-                const overlapRight = wallRight - enemyLeft;
-                const overlapTop = enemyBottom - wallTop;
-                const overlapBottom = wallBottom - enemyTop;
-
-                // Find the minimum overlap to determine push direction
-                const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
-
-                // Push enemy away from wall in the direction of minimum overlap
-                if (minOverlap === overlapLeft) {
-                    // Push left
-                    enemy.x = wallLeft - halfSize - 5; // 5px buffer
-                } else if (minOverlap === overlapRight) {
-                    // Push right
-                    enemy.x = wallRight + halfSize + 5; // 5px buffer
-                } else if (minOverlap === overlapTop) {
-                    // Push up
-                    enemy.y = wallTop - halfSize - 5; // 5px buffer
-                } else if (minOverlap === overlapBottom) {
-                    // Push down
-                    enemy.y = wallBottom + halfSize + 5; // 5px buffer
-                }
-
-                // No boundary clamping - enemies can go out of bounds and will be killed
-            }
-        });
-
-        // Check for mob-to-mob collisions (only check enemies that come after this one to avoid double-processing)
-        // Only apply collision resolution if at least one mob is hostile or chasing (passive mobs don't push)
-        const currentIndex = enemies.indexOf(enemy);
-        for (let i = currentIndex + 1; i < enemies.length; i++) {
-            const otherEnemy = enemies[i];
-            
-            // Skip collision resolution if both mobs are passive and not chasing
-            const thisMobIsPassive = !enemy.isHostile && !enemy.isChasing;
-            const otherMobIsPassive = !otherEnemy.isHostile && !otherEnemy.isChasing;
-            if (thisMobIsPassive && otherMobIsPassive) {
-                continue; // Both are passive, don't push each other
-            }
-            
-            // Get other enemy's size
-            const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
-            const otherEnemySize = otherMobStats ? otherMobStats.size * 40 : ENEMY_SIZE;
-            const otherHalfSize = otherEnemySize / 2;
-
-            // Calculate distance between mobs
-            const dx = otherEnemy.x - enemy.x;
-            const dy = otherEnemy.y - enemy.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            const minDistance = halfSize + otherHalfSize + 5; // 5px buffer between mobs
-
-            // Check if mobs are colliding
-            if (distance < minDistance && distance > 0) {
-                // Calculate push direction (away from each other)
-                const pushX = (dx / distance) * (minDistance - distance) / 2;
-                const pushY = (dy / distance) * (minDistance - distance) / 2;
-
-                // Push both mobs away from each other
-                enemy.x -= pushX;
-                enemy.y -= pushY;
-                otherEnemy.x += pushX;
-                otherEnemy.y += pushY;
-
-                // No boundary clamping - enemies can go out of bounds and will be killed
-            }
-        }
+        // Check for wall collisions
+        checkEnemyWallCollisions(enemy);
     });
+
+    // Check for mob-to-mob collisions
+    checkEnemyEnemyCollisions(enemies);
 
     io.emit('enemiesUpdate', enemies);
 }
@@ -2379,31 +2296,8 @@ function updateMobProjectiles(deltaTimeMs: number) {
         // Check for wall collisions
         const projectileSize = projectile.size * 20; // Convert to pixels
         const halfSize = projectileSize / 2;
-        let hitWall = false;
         
-        WORLD_MAP.filter(isWall).forEach(wall => {
-            const scaledWall = {
-                x: wall.x * SCALE_FACTOR,
-                y: wall.y * SCALE_FACTOR,
-                width: wall.width * SCALE_FACTOR,
-                height: wall.height * SCALE_FACTOR
-            };
-            
-            // Extend wall to boundaries if it's close to them
-            const extendedWall = getExtendedWallForCollision(scaledWall);
-            
-            const projLeft = projectile.x - halfSize;
-            const projRight = projectile.x + halfSize;
-            const projTop = projectile.y - halfSize;
-            const projBottom = projectile.y + halfSize;
-            
-            if (projRight > extendedWall.x && projLeft < extendedWall.x + extendedWall.width &&
-                projBottom > extendedWall.y && projTop < extendedWall.y + extendedWall.height) {
-                hitWall = true;
-            }
-        });
-        
-        if (hitWall) {
+        if (checkProjectileWallCollision(projectile.x, projectile.y, halfSize)) {
             mobProjectiles.splice(i, 1);
             continue;
         }
@@ -2582,31 +2476,8 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
         // Check for wall collisions
         const projectileSize = projectile.size * 20; // Convert to pixels
         const halfSize = projectileSize / 2;
-        let hitWall = false;
         
-        WORLD_MAP.filter(isWall).forEach(wall => {
-            const scaledWall = {
-                x: wall.x * SCALE_FACTOR,
-                y: wall.y * SCALE_FACTOR,
-                width: wall.width * SCALE_FACTOR,
-                height: wall.height * SCALE_FACTOR
-            };
-            
-            // Extend wall to boundaries if it's close to them
-            const extendedWall = getExtendedWallForCollision(scaledWall);
-            
-            const projLeft = projectile.x - halfSize;
-            const projRight = projectile.x + halfSize;
-            const projTop = projectile.y - halfSize;
-            const projBottom = projectile.y + halfSize;
-            
-            if (projRight > extendedWall.x && projLeft < extendedWall.x + extendedWall.width &&
-                projBottom > extendedWall.y && projTop < extendedWall.y + extendedWall.height) {
-                hitWall = true;
-            }
-        });
-        
-        if (hitWall) {
+        if (checkProjectileWallCollision(projectile.x, projectile.y, halfSize)) {
             playerProjectiles.splice(i, 1);
             continue;
         }
@@ -2781,69 +2652,18 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
         newY = player.y;
     }
 
-    for (const element of WORLD_MAP) {
-        if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-            const wallX = element.x * SCALE_FACTOR;
-            const wallY = element.y * SCALE_FACTOR;
-            const wallWidth = element.width * SCALE_FACTOR;
-            const wallHeight = element.height * SCALE_FACTOR;
-
-            // Extend wall to boundaries if it's close to them
-            const extendedWall = getExtendedWallForCollision({
-                x: wallX,
-                y: wallY,
-                width: wallWidth,
-                height: wallHeight
-            });
-
-            if (
-                newX < extendedWall.x + extendedWall.width &&
-                newX + PLAYER_SIZE > extendedWall.x &&
-                newY < extendedWall.y + extendedWall.height &&
-                newY + PLAYER_SIZE > extendedWall.y
-            ) {
-                const overlapX = (newX + PLAYER_SIZE / 2) - (extendedWall.x + extendedWall.width / 2);
-                const overlapY = (newY + PLAYER_SIZE / 2) - (extendedWall.y + extendedWall.height / 2);
-                const combinedHalfWidths = PLAYER_SIZE / 2 + extendedWall.width / 2;
-                const combinedHalfHeights = PLAYER_SIZE / 2 + extendedWall.height / 2;
-
-                if (Math.abs(overlapX) < combinedHalfWidths && Math.abs(overlapY) < combinedHalfHeights) {
-                    const penX = combinedHalfWidths - Math.abs(overlapX);
-                    const penY = combinedHalfHeights - Math.abs(overlapY);
-
-                    const oldX = newX;
-                    const oldY = newY;
-
-                    if (penX < penY) {
-                        if (overlapX > 0) newX += penX; else newX -= penX;
-                    } else {
-                        if (overlapY > 0) newY += penY; else newY -= penY;
-                    }
-
-                    // Debug: Log wall collision
-                    // console.log(`[SERVER] Player ${player.id} wall collision: wall(${wallX.toFixed(1)}, ${wallY.toFixed(1)}, ${wallWidth.toFixed(1)}x${wallHeight.toFixed(1)}) player moved (${oldX.toFixed(1)}, ${oldY.toFixed(1)}) -> (${newX.toFixed(1)}, ${newY.toFixed(1)})`);
-                }
-            }
-        }
-    }
+    // Check for wall collisions
+    const wallCollision = checkPlayerWallCollisions(newX, newY, PLAYER_SIZE);
+    newX = wallCollision.x;
+    newY = wallCollision.y;
 
     let collision = false;
     for (const enemy of enemies) {
-        // Get enemy size based on mob stats
-        const mobStats = getMobStats(enemy.type, enemy.tier);
-        const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
-        const enemyRadius = enemySize / 2;
-        const playerRadius = PLAYER_SIZE / 2;
-
-        // Use circular hitbox collision (matching mob-to-mob collision)
-        // Both player and enemy positions are center points
-        const dx = enemy.x - newX;
-        const dy = enemy.y - newY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const minDistance = enemyRadius + playerRadius;
-
-        if (distance < minDistance && distance > 0) {
+        const collisionInfo = checkPlayerEnemyCollision(newX, newY, PLAYER_SIZE, enemy);
+        
+        if (collisionInfo.collided) {
             collision = true;
+            const { distance, dx, dy } = collisionInfo;
             // Don't damage dead players (corpses)
             if (!player.isDead) {
                 // Calculate knockback direction (reuse distance calculation from collision check)

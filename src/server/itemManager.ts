@@ -3,7 +3,8 @@ import { Enemy } from '../server_utils';
 import { WorldItem, Item } from '../item';
 import { calculateMobDrops, DropItem } from '../mobs';
 import { items, ITEM_EXPIRATION_TIMES } from './gameState';
-import { getEligiblePlayers, checkItemWallCollisions } from './utils';
+import { getEligiblePlayers } from './utils';
+import { checkItemWallCollisions } from './physics';
 import { getAllPetalTypes, getPetalStats } from '../petals';
 
 // Rarity type

@@ -608,7 +608,11 @@ export function createSpecialMob(
         console.error(`Spawn position for ${tier} mob is in out-of-bounds zone. Trying alternative position...`);
         // Try to find a new position in the same zone type
         const newPosition = getRandomPositionInZoneType(zoneType);
-        if (!newPosition || isInOutOfBoundsZone(newPosition.x, newPosition.y)) {
+        if (!newPosition) {
+            console.error(`Could not find valid position for ${tier} mob outside out-of-bounds zone`);
+            return null;
+        }
+        if (isInOutOfBoundsZone(newPosition.x, newPosition.y)) {
             console.error(`Could not find valid position for ${tier} mob outside out-of-bounds zone`);
             return null;
         }
