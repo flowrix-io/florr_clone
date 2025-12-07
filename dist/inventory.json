@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 112887601,
+      "totalXP": 112889862,
       "inventory": {
         "common": {
           "shield": 72,
@@ -31,8 +31,8 @@
         },
         "unique": {
           "petal_stinger": 1004,
-          "petal_basic": 1009,
-          "petal_rose": 1003,
+          "petal_basic": 1003,
+          "petal_rose": 1004,
           "petal_light": 1000,
           "petal_rock": 1000,
           "petal_yggdrasil": 1002,
@@ -237,7 +237,7 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "rose"
+          "petalType": "basic"
         },
         {
           "type": "petal",
@@ -254,15 +254,35 @@
           "rarity": "unique",
           "petalType": "basic"
         },
-        null,
-        null,
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "basic"
+        },
         {
           "type": "speed_boost",
           "rarity": "unique"
         },
-        null,
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "basic"
+        },
         null,
         null,
         null,

@@ -489,8 +489,20 @@ const BASE_PETAL_CONFIGS = {
         color: "#000000",
         count: 1,
         actions: "heal 10;",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<path d="M 32 0 A 32 32 0 0 1 0 32 M 0 32 A 32 32 0 0 1 32 0 Z" fill="#00bf29" stroke="#006e18"/>
+        image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <path d="M30 16 Q16 4 2 16 Q16 28 30 16 Z" 
+        fill="#74b53f" 
+        stroke="#5e9333" 
+        stroke-width="3" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" />
+        
+  <path d="M30 16 Q16 13 2 16" 
+        fill="none" 
+        stroke="#5e9333" 
+        stroke-width="2" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" />
 </svg>`,
         isAdminPetal: false
     },
