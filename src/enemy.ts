@@ -24,6 +24,8 @@ export interface MobProjectile {
   petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
   damage: number;
   size: number;
+  health: number; // Health of the projectile (can be destroyed by player petals)
+  maxHealth: number; // Maximum health of the projectile
 }
 
 export interface PlayerProjectile {
@@ -41,6 +43,8 @@ export interface PlayerProjectile {
   petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
   damage: number;
   size: number;
+  health: number; // Health of the projectile (can be destroyed by enemy petals)
+  maxHealth: number; // Maximum health of the projectile
 }
 
 export interface Enemy {

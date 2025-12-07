@@ -1640,8 +1640,10 @@ function moveEnemies() {
                     const projectileSpeed = projectileConfig.speed || 200; // pixels per second
                     const spreadAngle = projectileConfig.spreadAngle || 0.2; // radians
                     const projectileCount = projectileConfig.count || 1;
-                    // Get petal stats for damage and size
-                    const petalStats = (0, petals_2.getPetalStats)(projectileConfig.petalType, projectileConfig.petalRarity);
+                    // Use enemy's tier/rarity for the projectile instead of hardcoded petalRarity
+                    const projectileRarity = enemy.tier;
+                    // Get petal stats for damage and size using enemy's rarity
+                    const petalStats = (0, petals_2.getPetalStats)(projectileConfig.petalType, projectileRarity);
                     if (petalStats) {
                         // Create projectiles
                         for (let i = 0; i < projectileCount; i++) {
@@ -1663,9 +1665,11 @@ function moveEnemies() {
                                 distance: 0,
                                 maxDistance: projectileConfig.distance,
                                 petalType: projectileConfig.petalType,
-                                petalRarity: projectileConfig.petalRarity,
+                                petalRarity: projectileRarity,
                                 damage: petalStats.damage,
-                                size: petalStats.size
+                                size: petalStats.size,
+                                health: petalStats.health,
+                                maxHealth: petalStats.health
                             };
                             gameState_1.mobProjectiles.push(projectile);
                         }
@@ -1802,6 +1806,11 @@ function updateMobProjectiles(deltaTimeMs) {
     const currentTime = Date.now();
     for (let i = gameState_1.mobProjectiles.length - 1; i >= 0; i--) {
         const projectile = gameState_1.mobProjectiles[i];
+        // Remove projectile if it has no health
+        if (projectile.health <= 0) {
+            gameState_1.mobProjectiles.splice(i, 1);
+            continue;
+        }
         // Move projectile (speed is already in pixels per millisecond)
         const moveDistance = projectile.speed * deltaTimeMs;
         projectile.x += Math.cos(projectile.angle) * moveDistance;
@@ -1836,43 +1845,125 @@ function updateMobProjectiles(deltaTimeMs) {
             gameState_1.mobProjectiles.splice(i, 1);
             continue;
         }
-        // Check for player collisions
+        // Check for collision with player petals first (treat mob projectiles as enemy petals)
+        let hitPlayerPetal = false;
         const playerArray = Object.values(constants_2.players);
         for (const player of playerArray) {
-            if (player.isDead)
+            if (player.isDead || !player.loadout)
                 continue;
-            const dx = player.x - projectile.x;
-            const dy = player.y - projectile.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            const hitRadius = constants_2.PLAYER_SIZE / 2 + halfSize;
-            if (distance < hitRadius) {
-                // Hit player
-                if (!player.isInvulnerable) {
-                    player.health -= projectile.damage;
-                    io.emit('playerDamaged', {
-                        playerId: player.id,
-                        health: player.health,
-                        maxHealth: player.maxHealth,
-                        isInvulnerable: player.isInvulnerable
-                    });
-                    // Apply knockback
-                    if (distance > 0) {
-                        const knockbackForce = 250;
-                        const normalizedDx = dx / distance;
-                        const normalizedDy = dy / distance;
-                        player.knockbackX = normalizedDx * knockbackForce;
-                        player.knockbackY = normalizedDy * knockbackForce;
-                    }
-                    // Check if player dies
-                    if (player.health <= 0) {
-                        player.isDead = true;
-                        player.health = 0;
-                        io.emit('playerDied', { playerId: player.id });
+            // Build array of petal instances considering count property
+            const petalInstances = [];
+            try {
+                for (let loadoutIdx = 0; loadoutIdx < player.loadout.length; loadoutIdx++) {
+                    const petal = player.loadout[loadoutIdx];
+                    if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
+                        const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity);
+                        if (!petalStats)
+                            continue;
+                        const count = petalStats.count || 1;
+                        if (typeof count !== 'number' || count < 1 || !isFinite(count)) {
+                            continue;
+                        }
+                        for (let j = 0; j < count; j++) {
+                            petalInstances.push({ petal: petal, instanceIndex: j, loadoutIndex: loadoutIdx });
+                        }
                     }
                 }
-                // Remove projectile after hitting player
-                gameState_1.mobProjectiles.splice(i, 1);
-                break;
+            }
+            catch (error) {
+                console.error('Error building petal instances for projectile collision:', error);
+                continue;
+            }
+            if (petalInstances.length === 0)
+                continue;
+            const currentTime = Date.now();
+            const petalExtension = player.inputs?.petalExtension || 1.0;
+            const baseRadius = 60 * petalExtension;
+            const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
+            for (let idx = 0; idx < petalInstances.length; idx++) {
+                const { petal, instanceIndex, loadoutIndex } = petalInstances[idx];
+                if (!petal || !petal.health || petal.health <= 0 || petal.onCooldown) {
+                    continue;
+                }
+                const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity);
+                if (!petalStats)
+                    continue;
+                const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002;
+                const baseAngle = idx * angleStep;
+                const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
+                const totalAngle = baseAngle + rotationAngle;
+                const petalRange = petalStats.range ?? 1.0;
+                const petalRadius = baseRadius * petalRange;
+                const petalX = player.x + Math.cos(totalAngle) * petalRadius;
+                const petalY = player.y + Math.sin(totalAngle) * petalRadius;
+                const petalSize = 40 * petalStats.size;
+                const petalRadiusSize = petalSize / 2;
+                const dx = projectile.x - petalX;
+                const dy = projectile.y - petalY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const minDistance = halfSize + petalRadiusSize;
+                if (distance < minDistance && distance > 0) {
+                    // Mob projectile hits player petal - deal damage to both
+                    const projectilePetalStats = (0, petals_2.getPetalStats)(projectile.petalType, projectile.petalRarity);
+                    const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : projectile.damage;
+                    // Damage the player petal
+                    petal.health -= projectileDamage;
+                    // Damage the mob projectile
+                    projectile.health -= petalStats.damage;
+                    hitPlayerPetal = true;
+                    // Remove projectile if destroyed
+                    if (projectile.health <= 0) {
+                        gameState_1.mobProjectiles.splice(i, 1);
+                        hitPlayerPetal = true; // Mark as hit so we skip player collision check
+                        break; // Exit petal loop
+                    }
+                    // If petal breaks, we continue to check other petals
+                    // The petal breaking logic will be handled in updatePlayerState
+                    break; // Exit petal loop
+                }
+            }
+            if (hitPlayerPetal) {
+                break; // Exit player loop if we hit a petal
+            }
+        }
+        // Only check for direct player collision if we didn't hit a petal and projectile still exists
+        if (!hitPlayerPetal && projectile.health > 0) {
+            for (const player of playerArray) {
+                if (player.isDead)
+                    continue;
+                const dx = player.x - projectile.x;
+                const dy = player.y - projectile.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const hitRadius = constants_2.PLAYER_SIZE / 2 + halfSize;
+                if (distance < hitRadius) {
+                    // Hit player
+                    if (!player.isInvulnerable) {
+                        player.health -= projectile.damage;
+                        io.emit('playerDamaged', {
+                            playerId: player.id,
+                            health: player.health,
+                            maxHealth: player.maxHealth,
+                            isInvulnerable: player.isInvulnerable
+                        });
+                        // Apply knockback
+                        if (distance > 0) {
+                            const knockbackForce = 250;
+                            const normalizedDx = dx / distance;
+                            const normalizedDy = dy / distance;
+                            player.knockbackX = normalizedDx * knockbackForce;
+                            player.knockbackY = normalizedDy * knockbackForce;
+                        }
+                        // Check if player dies
+                        if (player.health <= 0) {
+                            player.isDead = true;
+                            player.health = 0;
+                            io.emit('playerDied', { playerId: player.id });
+                        }
+                    }
+                    // Remove projectile after hitting player
+                    gameState_1.mobProjectiles.splice(i, 1);
+                    break;
+                }
             }
         }
     }
@@ -1884,6 +1975,11 @@ function updatePlayerProjectiles(deltaTimeMs) {
     const currentTime = Date.now();
     for (let i = gameState_1.playerProjectiles.length - 1; i >= 0; i--) {
         const projectile = gameState_1.playerProjectiles[i];
+        // Remove projectile if it has no health
+        if (projectile.health <= 0) {
+            gameState_1.playerProjectiles.splice(i, 1);
+            continue;
+        }
         // Move projectile
         const moveDistance = projectile.speed * deltaTimeMs;
         projectile.x += Math.cos(projectile.angle) * moveDistance;
@@ -1916,6 +2012,42 @@ function updatePlayerProjectiles(deltaTimeMs) {
         });
         if (hitWall) {
             gameState_1.playerProjectiles.splice(i, 1);
+            continue;
+        }
+        // Check for collision with mob projectiles (projectile vs projectile)
+        for (let mobProjIdx = gameState_1.mobProjectiles.length - 1; mobProjIdx >= 0; mobProjIdx--) {
+            const mobProjectile = gameState_1.mobProjectiles[mobProjIdx];
+            // Skip destroyed projectiles
+            if (!mobProjectile || mobProjectile.health <= 0) {
+                continue;
+            }
+            const mobProjSize = mobProjectile.size * 20;
+            const mobProjHalfSize = mobProjSize / 2;
+            const dx = mobProjectile.x - projectile.x;
+            const dy = mobProjectile.y - projectile.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minDistance = halfSize + mobProjHalfSize;
+            if (distance < minDistance && distance > 0) {
+                // Player projectile hits mob projectile - deal damage to both
+                const playerProjPetalStats = (0, petals_2.getPetalStats)(projectile.petalType, projectile.petalRarity);
+                const playerProjDamage = playerProjPetalStats ? playerProjPetalStats.damage : projectile.damage;
+                const mobProjPetalStats = (0, petals_2.getPetalStats)(mobProjectile.petalType, mobProjectile.petalRarity);
+                const mobProjDamage = mobProjPetalStats ? mobProjPetalStats.damage : mobProjectile.damage;
+                // Damage both projectiles
+                projectile.health -= mobProjDamage;
+                mobProjectile.health -= playerProjDamage;
+                // Remove projectiles if destroyed
+                if (projectile.health <= 0) {
+                    gameState_1.playerProjectiles.splice(i, 1);
+                    break; // Exit mob projectile loop
+                }
+                if (mobProjectile.health <= 0) {
+                    gameState_1.mobProjectiles.splice(mobProjIdx, 1);
+                }
+            }
+        }
+        // Skip enemy collision if projectile was destroyed
+        if (projectile.health <= 0) {
             continue;
         }
         // Check for enemy collisions
@@ -2263,7 +2395,9 @@ function updatePlayerState(player, deltaTime) {
                             petalType: petal.petalType,
                             petalRarity: petal.rarity,
                             damage: petalStats.damage,
-                            size: petalStats.size
+                            size: petalStats.size,
+                            health: petalStats.health,
+                            maxHealth: petalStats.health
                         };
                         gameState_1.playerProjectiles.push(projectile);
                     }
@@ -2417,6 +2551,37 @@ function updatePlayerState(player, deltaTime) {
                                 }
                             }, expirationTime);
                             console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
+                        }
+                    }
+                    // Check collision with mob projectiles (treat them as enemy petals)
+                    for (let projIdx = gameState_1.mobProjectiles.length - 1; projIdx >= 0; projIdx--) {
+                        const mobProjectile = gameState_1.mobProjectiles[projIdx];
+                        // Skip destroyed projectiles
+                        if (!mobProjectile || mobProjectile.health <= 0) {
+                            continue;
+                        }
+                        const projectileSize = mobProjectile.size * 20; // Convert to pixels
+                        const projectileRadius = projectileSize / 2;
+                        const petalSize = 40 * petalStats.size;
+                        const petalRadius = petalSize / 2;
+                        const dx = mobProjectile.x - petalX;
+                        const dy = mobProjectile.y - petalY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const minDistance = projectileRadius + petalRadius;
+                        if (distance < minDistance && distance > 0) {
+                            // Player petal hits mob projectile - deal damage to both
+                            const damageMultiplier = (0, petal_actions_1.getDamageMultiplier)(player);
+                            const finalDamage = petalStats.damage * damageMultiplier;
+                            // Damage the mob projectile
+                            mobProjectile.health -= finalDamage;
+                            // Damage the player petal (mob projectile acts as enemy petal)
+                            const projectilePetalStats = (0, petals_2.getPetalStats)(mobProjectile.petalType, mobProjectile.petalRarity);
+                            const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : mobProjectile.damage;
+                            petal.health -= projectileDamage;
+                            // Remove projectile if destroyed
+                            if (mobProjectile.health <= 0) {
+                                gameState_1.mobProjectiles.splice(projIdx, 1);
+                            }
                         }
                     }
                     // Handle petal collision for wait_until_collision actions
