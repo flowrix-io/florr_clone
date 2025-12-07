@@ -2197,9 +2197,24 @@ function moveEnemies() {
         const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
         const halfSize = enemySize / 2;
 
-        // Constrain to world boundaries (accounting for enemy size)
-        enemy.x = Math.max(halfSize, Math.min(ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
-        enemy.y = Math.max(halfSize, Math.min(ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
+        // Check if enemy goes out of bounds - kill them
+        if (enemy.x < 0 || enemy.x >= ACTUAL_WORLD_WIDTH || enemy.y < 0 || enemy.y >= ACTUAL_WORLD_HEIGHT) {
+            enemy.health = 0;
+            // Remove enemy immediately if out of bounds
+            const index = enemies.findIndex(e => e.id === enemy.id);
+            if (index !== -1) {
+                enemies.splice(index, 1);
+                io.emit('enemyDestroyed', enemy.id);
+                updateSpecialMobCounts();
+                // Try to spawn a new enemy to replace the one that went out of bounds
+                const newEnemy = createEnemy();
+                if (newEnemy) {
+                    enemies.push(newEnemy);
+                }
+            }
+            // Skip wall collision checks if enemy is being removed
+            return;
+        }
 
         // Check for wall collisions with proper size consideration
         WORLD_MAP.filter(isWall).forEach(wall => {
@@ -2249,9 +2264,7 @@ function moveEnemies() {
                     enemy.y = wallBottom + halfSize + 5; // 5px buffer
                 }
 
-                // Ensure enemy stays within world boundaries after push
-                enemy.x = Math.max(halfSize, Math.min(ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
-                enemy.y = Math.max(halfSize, Math.min(ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
+                // No boundary clamping - enemies can go out of bounds and will be killed
             }
         });
 
@@ -2291,11 +2304,7 @@ function moveEnemies() {
                 otherEnemy.x += pushX;
                 otherEnemy.y += pushY;
 
-                // Ensure both mobs stay within world boundaries after push
-                enemy.x = Math.max(halfSize, Math.min(ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
-                enemy.y = Math.max(halfSize, Math.min(ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
-                otherEnemy.x = Math.max(otherHalfSize, Math.min(ACTUAL_WORLD_WIDTH - otherHalfSize, otherEnemy.x));
-                otherEnemy.y = Math.max(otherHalfSize, Math.min(ACTUAL_WORLD_HEIGHT - otherHalfSize, otherEnemy.y));
+                // No boundary clamping - enemies can go out of bounds and will be killed
             }
         }
     });
@@ -2718,12 +2727,14 @@ function updatePlayerState(player: ServerPlayer, deltaTime: number) {
     let newX = player.x + player.velocityX * deltaTime;
     let newY = player.y + player.velocityY * deltaTime;
 
-    const padding = 5;
-    const clampedX = Math.max(PLAYER_SIZE / 2 + padding, Math.min(ACTUAL_WORLD_WIDTH - PLAYER_SIZE / 2 - padding, newX));
-    const clampedY = Math.max(PLAYER_SIZE / 2 + padding, Math.min(ACTUAL_WORLD_HEIGHT - PLAYER_SIZE / 2 - padding, newY));
-
-    newX = clampedX;
-    newY = clampedY;
+    // Check if player goes out of bounds - kill them
+    if (newX < 0 || newX >= ACTUAL_WORLD_WIDTH || newY < 0 || newY >= ACTUAL_WORLD_HEIGHT) {
+        player.health = 0;
+        player.killedBy = { type: 'out_of_bounds', tier: 'common' };
+        // Don't update position, let them die at the boundary
+        newX = player.x;
+        newY = player.y;
+    }
 
     for (const element of WORLD_MAP) {
         if (element.type === 'wall' && element.width > 0 && element.height > 0) {
@@ -3581,6 +3592,20 @@ function start_loop() {
         // Check and fix item-wall collisions for all items
         for (const item of items) {
             checkItemWallCollisions(item);
+        }
+
+        // Delete items that go out of bounds
+        for (let i = items.length - 1; i >= 0; i--) {
+            const item = items[i];
+            if (item.x < 0 || item.x >= ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= ACTUAL_WORLD_HEIGHT) {
+                // Notify eligible players that item is being removed
+                if (item.eligiblePlayers) {
+                    for (const playerId of item.eligiblePlayers) {
+                        io.to(playerId).emit('itemRemoved', item.id);
+                    }
+                }
+                items.splice(i, 1);
+            }
         }
 
         const playersForBroadcast = Object.values(players).map(p => ({

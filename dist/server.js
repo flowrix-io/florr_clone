@@ -1857,9 +1857,24 @@ function moveEnemies() {
         const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
         const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
         const halfSize = enemySize / 2;
-        // Constrain to world boundaries (accounting for enemy size)
-        enemy.x = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
-        enemy.y = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
+        // Check if enemy goes out of bounds - kill them
+        if (enemy.x < 0 || enemy.x >= constants_2.ACTUAL_WORLD_WIDTH || enemy.y < 0 || enemy.y >= constants_2.ACTUAL_WORLD_HEIGHT) {
+            enemy.health = 0;
+            // Remove enemy immediately if out of bounds
+            const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
+            if (index !== -1) {
+                constants_2.enemies.splice(index, 1);
+                io.emit('enemyDestroyed', enemy.id);
+                updateSpecialMobCounts();
+                // Try to spawn a new enemy to replace the one that went out of bounds
+                const newEnemy = createEnemy();
+                if (newEnemy) {
+                    constants_2.enemies.push(newEnemy);
+                }
+            }
+            // Skip wall collision checks if enemy is being removed
+            return;
+        }
         // Check for wall collisions with proper size consideration
         constants_2.WORLD_MAP.filter(constants_2.isWall).forEach(wall => {
             const scaledWall = {
@@ -1904,9 +1919,7 @@ function moveEnemies() {
                     // Push down
                     enemy.y = wallBottom + halfSize + 5; // 5px buffer
                 }
-                // Ensure enemy stays within world boundaries after push
-                enemy.x = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
-                enemy.y = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
+                // No boundary clamping - enemies can go out of bounds and will be killed
             }
         });
         // Check for mob-to-mob collisions (only check enemies that come after this one to avoid double-processing)
@@ -1939,11 +1952,7 @@ function moveEnemies() {
                 enemy.y -= pushY;
                 otherEnemy.x += pushX;
                 otherEnemy.y += pushY;
-                // Ensure both mobs stay within world boundaries after push
-                enemy.x = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_WIDTH - halfSize, enemy.x));
-                enemy.y = Math.max(halfSize, Math.min(constants_2.ACTUAL_WORLD_HEIGHT - halfSize, enemy.y));
-                otherEnemy.x = Math.max(otherHalfSize, Math.min(constants_2.ACTUAL_WORLD_WIDTH - otherHalfSize, otherEnemy.x));
-                otherEnemy.y = Math.max(otherHalfSize, Math.min(constants_2.ACTUAL_WORLD_HEIGHT - otherHalfSize, otherEnemy.y));
+                // No boundary clamping - enemies can go out of bounds and will be killed
             }
         }
     });
@@ -2299,11 +2308,14 @@ function updatePlayerState(player, deltaTime) {
     player.velocityY = targetVelocityY;
     let newX = player.x + player.velocityX * deltaTime;
     let newY = player.y + player.velocityY * deltaTime;
-    const padding = 5;
-    const clampedX = Math.max(constants_2.PLAYER_SIZE / 2 + padding, Math.min(constants_2.ACTUAL_WORLD_WIDTH - constants_2.PLAYER_SIZE / 2 - padding, newX));
-    const clampedY = Math.max(constants_2.PLAYER_SIZE / 2 + padding, Math.min(constants_2.ACTUAL_WORLD_HEIGHT - constants_2.PLAYER_SIZE / 2 - padding, newY));
-    newX = clampedX;
-    newY = clampedY;
+    // Check if player goes out of bounds - kill them
+    if (newX < 0 || newX >= constants_2.ACTUAL_WORLD_WIDTH || newY < 0 || newY >= constants_2.ACTUAL_WORLD_HEIGHT) {
+        player.health = 0;
+        player.killedBy = { type: 'out_of_bounds', tier: 'common' };
+        // Don't update position, let them die at the boundary
+        newX = player.x;
+        newY = player.y;
+    }
     for (const element of constants_2.WORLD_MAP) {
         if (element.type === 'wall' && element.width > 0 && element.height > 0) {
             const wallX = element.x * constants_2.SCALE_FACTOR;
@@ -3026,6 +3038,19 @@ function start_loop() {
         // Check and fix item-wall collisions for all items
         for (const item of gameState_1.items) {
             (0, utils_1.checkItemWallCollisions)(item);
+        }
+        // Delete items that go out of bounds
+        for (let i = gameState_1.items.length - 1; i >= 0; i--) {
+            const item = gameState_1.items[i];
+            if (item.x < 0 || item.x >= constants_2.ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= constants_2.ACTUAL_WORLD_HEIGHT) {
+                // Notify eligible players that item is being removed
+                if (item.eligiblePlayers) {
+                    for (const playerId of item.eligiblePlayers) {
+                        io.to(playerId).emit('itemRemoved', item.id);
+                    }
+                }
+                gameState_1.items.splice(i, 1);
+            }
         }
         const playersForBroadcast = Object.values(constants_2.players).map(p => ({
             id: p.id,

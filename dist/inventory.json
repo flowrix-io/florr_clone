@@ -1,15 +1,15 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 114577228,
+      "totalXP": 114583914,
       "inventory": {
         "common": {
-          "shield": 76,
+          "shield": 77,
           "petal_light": 15,
           "petal_dandelion": 16,
           "petal_stinger": 23,
           "petal_yggdrasil": 9,
-          "speed_boost": 18,
+          "speed_boost": 19,
           "petal_sand": 42,
           "petal_rock": 126,
           "petal_clover": 32,
@@ -22,7 +22,7 @@
           "petal_jelly": 20,
           "petal_leaf": 4,
           "petal_cutter": 2,
-          "petal_wing": 156,
+          "petal_wing": 159,
           "petal_rose": 23,
           "health_potion": 17,
           "petal_basic": 15,
@@ -87,7 +87,7 @@
         "uncommon": {
           "petal_rose": 43,
           "petal_dandelion": 31,
-          "petal_basic": 60,
+          "petal_basic": 61,
           "petal_sand": 7,
           "speed_boost": 33,
           "petal_stinger": 27,
@@ -104,12 +104,13 @@
           "petal_missile": 32,
           "petal_jelly": 12,
           "petal_leaf": 9,
-          "petal_cactus": 3,
+          "petal_cactus": 4,
           "petal_cutter": 4,
           "petal_lightning_cutter": 1,
           "petal_yucca": 2,
           "petal_square": 1,
-          "petal_wing": 27
+          "petal_wing": 28,
+          "petal_golden_leaf": 1
         },
         "legendary": {
           "speed_boost": 88,
@@ -118,7 +119,7 @@
           "petal_sand": 17,
           "petal_rose": 82,
           "health_potion": 37,
-          "petal_light": 60,
+          "petal_light": 61,
           "petal_stinger": 49,
           "petal_rock": 57,
           "petal_yggdrasil": 12,
@@ -126,7 +127,7 @@
           "petal_poison_cactus": 6,
           "petal_bone": 149,
           "petal_iris": 25,
-          "petal_missile": 76,
+          "petal_missile": 77,
           "petal_jelly": 6,
           "shield": 55,
           "petal_leaf": 4,
@@ -145,7 +146,7 @@
           "petal_rose": 94,
           "petal_sand": 16,
           "petal_yggdrasil": 3,
-          "health_potion": 35,
+          "health_potion": 36,
           "petal_light": 39,
           "petal_rock": 101,
           "shield": 6,
@@ -156,7 +157,7 @@
           "petal_poison_cactus": 2,
           "petal_iris": 5,
           "petal_lightning": 5,
-          "petal_missile": 26,
+          "petal_missile": 27,
           "petal_leaf": 6,
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,

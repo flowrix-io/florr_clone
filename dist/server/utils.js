@@ -143,9 +143,7 @@ function checkItemWallCollisions(item) {
                 // Push down
                 item.y = wallBottom + halfSize + 5; // 5px buffer
             }
-            // Ensure item stays within world boundaries after push
-            item.x = Math.max(halfSize, Math.min(constants_1.ACTUAL_WORLD_WIDTH - halfSize, item.x));
-            item.y = Math.max(halfSize, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - halfSize, item.y));
+            // No boundary clamping - items can go out of bounds and will be deleted
         }
     });
 }
