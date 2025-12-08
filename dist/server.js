@@ -1887,24 +1887,24 @@ function moveEnemies() {
         const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
         const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
         const halfSize = enemySize / 2;
-        // Check if enemy goes out of bounds - kill them
-        if (enemy.x < 0 || enemy.x >= constants_2.ACTUAL_WORLD_WIDTH || enemy.y < 0 || enemy.y >= constants_2.ACTUAL_WORLD_HEIGHT) {
-            enemy.health = 0;
-            // Remove enemy immediately if out of bounds
-            const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
-            if (index !== -1) {
-                constants_2.enemies.splice(index, 1);
-                io.emit('enemyDestroyed', enemy.id);
-                updateSpecialMobCounts();
-                // Try to spawn a new enemy to replace the one that went out of bounds
-                const newEnemy = createEnemy();
-                if (newEnemy) {
-                    constants_2.enemies.push(newEnemy);
-                }
-            }
-            // Skip wall collision checks if enemy is being removed
-            return;
-        }
+        // // Check if enemy goes out of bounds - kill them -- no longer needed since enemies no longer spawn out of bounds
+        // if (enemy.x < 0 || enemy.x >= ACTUAL_WORLD_WIDTH || enemy.y < 0 || enemy.y >= ACTUAL_WORLD_HEIGHT) {
+        //     enemy.health = 0;
+        //     // Remove enemy immediately if out of bounds
+        //     const index = enemies.findIndex(e => e.id === enemy.id);
+        //     if (index !== -1) {
+        //         enemies.splice(index, 1);
+        //         io.emit('enemyDestroyed', enemy.id);
+        //         updateSpecialMobCounts();
+        //         // Try to spawn a new enemy to replace the one that went out of bounds
+        //         const newEnemy = createEnemy();
+        //         if (newEnemy) {
+        //             enemies.push(newEnemy);
+        //         }
+        //     }
+        //     // Skip wall collision checks if enemy is being removed
+        //     return;
+        // }
         // Check for wall collisions
         (0, physics_1.checkEnemyWallCollisions)(enemy);
     });
@@ -2228,14 +2228,14 @@ function updatePlayerState(player, deltaTime) {
     player.velocityY = targetVelocityY;
     let newX = player.x + player.velocityX * deltaTime;
     let newY = player.y + player.velocityY * deltaTime;
-    // Check if player goes out of bounds - kill them
-    if (newX < 0 || newX >= constants_2.ACTUAL_WORLD_WIDTH || newY < 0 || newY >= constants_2.ACTUAL_WORLD_HEIGHT) {
-        player.health = 0;
-        player.killedBy = { type: 'out_of_bounds', tier: 'common' };
-        // Don't update position, let them die at the boundary
-        newX = player.x;
-        newY = player.y;
-    }
+    // // Check if player goes out of bounds - kill them
+    // if (newX < 0 || newX >= ACTUAL_WORLD_WIDTH || newY < 0 || newY >= ACTUAL_WORLD_HEIGHT) {
+    //     player.health = 0;
+    //     player.killedBy = { type: 'out_of_bounds', tier: 'common' };
+    //     // Don't update position, let them die at the boundary
+    //     newX = player.x;
+    //     newY = player.y;
+    // }
     // Check for wall collisions
     const wallCollision = (0, physics_1.checkPlayerWallCollisions)(newX, newY, constants_2.PLAYER_SIZE);
     newX = wallCollision.x;
