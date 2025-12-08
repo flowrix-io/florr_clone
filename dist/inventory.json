@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 115916097,
+      "totalXP": 116115557,
       "inventory": {
         "common": {
           "shield": 83,
@@ -18,7 +18,7 @@
           "petal_iris": 9,
           "petal_poison_cactus": 12,
           "petal_lightning": 46,
-          "petal_missile": 37,
+          "petal_missile": 38,
           "petal_jelly": 20,
           "petal_leaf": 4,
           "petal_cutter": 2,
@@ -86,7 +86,7 @@
         },
         "uncommon": {
           "petal_rose": 44,
-          "petal_dandelion": 34,
+          "petal_dandelion": 35,
           "petal_basic": 64,
           "petal_sand": 7,
           "speed_boost": 34,
@@ -142,7 +142,7 @@
         "epic": {
           "petal_stinger": 39,
           "speed_boost": 72,
-          "petal_basic": 62,
+          "petal_basic": 63,
           "petal_rose": 96,
           "petal_sand": 16,
           "petal_yggdrasil": 3,

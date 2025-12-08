@@ -48,6 +48,13 @@ import {
     checkEnemyEnemyCollisions,
     checkPlayerEnemyCollision
 } from './server/physics';
+import {
+    executeServerCommand,
+    handleAdminCommand,
+    setupStdinCommandHandler,
+    getAdminHelpText,
+    CommandHandlerDependencies
+} from './server/commands';
 import { 
     items, 
     ultraMobCount, 
@@ -879,6 +886,45 @@ function savePlayerProgress(player: ServerPlayer, userId: string) {
     savePlayerProgressModule(player, userId, database);
 }
 
+// Function to adjust enemy count based on player count
+function adjustEnemyCount() {
+    const playerCount = Object.keys(players).length;
+    const targetEnemyCount = playerCount > 0 ? ENEMIES_PER_VIEWPORT * playerCount : ENEMY_COUNT.value;
+    
+    // Remove excess enemies if current count is higher than target
+    while (enemies.length > targetEnemyCount) {
+        const removedEnemy = enemies.pop();
+        if (removedEnemy) {
+            io.emit('enemyDestroyed', removedEnemy.id);
+        }
+    }
+
+    // Add new enemies if current count is lower than target
+    while (enemies.length < targetEnemyCount) {
+        const enemy = createEnemy();
+        if (enemy) {
+            enemies.push(enemy);
+        } else {
+            // If we can't spawn more enemies (no valid positions), break the loop
+            break;
+        }
+    }
+
+    // Update all clients with the new enemy state
+    io.emit('enemiesUpdate', enemies);
+    console.log(`[SERVER] Adjusted enemy count to ${enemies.length}/${targetEnemyCount} (${playerCount} players)`);
+}
+
+// Command handler dependencies (defined after all functions it depends on)
+const commandDeps: CommandHandlerDependencies = {
+    io,
+    savePlayerProgress,
+    spawnMob,
+    spawnSpecialMobs,
+    createEnemy,
+    adjustEnemyCount
+};
+
 io.on('connection', (socket: AuthenticatedSocket) => {
     console.log('A user connected');
 
@@ -1491,30 +1537,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     socket.on('chatMessage', (message: string) => {
         if (!socket.username) return;  // Ensure user is authenticated
 
-        // Check for admin commands (only admins can use /admin or /cmd)
-        if ((message.startsWith('/admin ') || message.startsWith('/cmd ')) && socket.username) {
-            const isAdmin = database.isUserAdmin(socket.username);
-            if (isAdmin) {
-                // Extract the command after /admin or /cmd
-                const command = message.substring(message.indexOf(' ') + 1);
-                executeServerCommand(command, socket.username);
-                
-                // Send confirmation to admin
-                io.to(socket.id).emit('chatMessage', {
-                    sender: 'System',
-                    content: `[ADMIN] Command executed: ${command}`,
-                    timestamp: Date.now()
-                });
+        // Check for admin commands
+        if (handleAdminCommand(message, socket, io, commandDeps)) {
                 return; // Don't process as regular chat message
-            } else {
-                // Not an admin - pretend command doesn't exist
-                io.to(socket.id).emit('chatMessage', {
-                    sender: 'System',
-                    content: 'Command does not exist.',
-                    timestamp: Date.now()
-                });
-                return;
-            }
         }
 
         // Check for commands
@@ -1530,10 +1555,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 helpText += '<br/>Chat supports HTML tags: <b>bold</b>, <i>italic</i>, <u>underline</u>, <span style="color: red">colored text</span>, <blink>blinking text</blink>';
                 
                 if (isAdmin) {
-                    helpText += '<br/><br/>Admin commands:<br/>';
-                    helpText += '/admin <command> - Execute server command\n';
-                    helpText += '/cmd <command> - Execute server command (alternative)\n';
-                    helpText += 'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y]';
+                    helpText += getAdminHelpText();
                 }
                 
                 io.to(socket.id).emit('chatMessage', {
@@ -3636,177 +3658,6 @@ app.post('/admin/save-progress', (req, res) => {
     }
 });
 
-// Function to execute server commands (can be called from stdin or chat)
-function executeServerCommand(command: string, executor?: string): void {
-    const trimmedCommand = command.trim();
-    
-    if (executor) {
-        console.log(`[ADMIN] ${executor} executed: ${trimmedCommand}`);
-    }
-
-    if (trimmedCommand.startsWith('save')) {
-        const parts = trimmedCommand.split(' ');
-        if (parts.length === 2) {
-            const playerId = parts[1];
-            const player = players[playerId];
-            const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
-
-            if (player && socket?.userId) {
-                savePlayerProgress(player, socket.userId);
-                socket.emit('savePlayerProgress', player);
-                // console.log(`Progress saved for player ${playerId}`);
-            } else {
-                // console.log(`Player ${playerId} not found or not authenticated`);
-            }
-        } else if (parts.length === 1) {
-            // Save all players
-            let savedCount = 0;
-            Object.entries(players).forEach(([socketId, player]) => {
-                const socket = io.sockets.sockets.get(socketId) as AuthenticatedSocket;
-                if (socket?.userId) {
-                    savePlayerProgress(player, socket.userId);
-                    savedCount++;
-                }
-            });
-            // console.log(`Saved progress for ${savedCount} players`);
-        }
-    } else if (trimmedCommand === 'list-players') {
-        Object.entries(players).forEach(([socketId, player]) => {
-            console.log(`Player ID: ${socketId}, Name: ${player.name}, Level: ${player.level}`);
-        });
-    } else if (trimmedCommand === 'list-sockets') {
-        io.sockets.sockets.forEach((socket) => {
-            console.log(`Socket ID: ${socket.id}`);
-        });
-    } else if (trimmedCommand.startsWith('set_max_enemies')) {
-        const newCount = parseInt(trimmedCommand.split(' ')[1]);
-        if (!isNaN(newCount) && newCount >= 0) {
-            ENEMY_COUNT.value = newCount;
-            console.log(`Max enemies set to ${ENEMY_COUNT.value}`);
-            adjustEnemyCount();
-        } else {
-            console.log('Invalid enemy count. Please provide a valid number.');
-        }
-    } else if (trimmedCommand === 'spawn_special_mobs') {
-        spawnSpecialMobs();
-    } else if (trimmedCommand.startsWith('spawn')) {
-        const parts = trimmedCommand.split(' ');
-        if (parts.length === 3) {
-            // spawn <mobType> <rarity>
-            const mobType = parts[1];
-            const rarity = parts[2];
-            spawnMob(mobType, rarity);
-        } else if (parts.length === 5) {
-            // spawn <mobType> <rarity> <x> <y>
-            const mobType = parts[1];
-            const rarity = parts[2];
-            const x = parseFloat(parts[3]);
-            const y = parseFloat(parts[4]);
-            if (isNaN(x) || isNaN(y)) {
-                console.log('Invalid coordinates. Usage: spawn <mobType> <rarity> [x] [y]');
-            } else {
-                spawnMob(mobType, rarity, x, y);
-            }
-        } else {
-            console.log('Usage: spawn <mobType> <rarity> [x] [y]');
-            console.log('  Examples:');
-            console.log('    spawn bee rare');
-            console.log('    spawn octopus legendary 1000 2000');
-            console.log(`Available mob types: ${getAllMobTypes().join(', ')}`);
-            console.log('Valid rarities: common, uncommon, rare, epic, legendary, mythic, ultra, super, unique');
-        }
-    } else if (trimmedCommand.startsWith('teleport ') || trimmedCommand.startsWith('tp ')) {
-        const parts = trimmedCommand.split(' ');
-        if (parts.length === 4) {
-            // teleport <playerId/name> <x> <y>
-            const playerIdentifier = parts[1];
-            const x = parseFloat(parts[2]);
-            const y = parseFloat(parts[3]);
-            
-            if (isNaN(x) || isNaN(y)) {
-                console.log('Invalid coordinates. Usage: teleport <playerId/name> <x> <y>');
-                return;
-            }
-            
-            // Try to find player by ID first, then by name
-            let targetPlayer: ServerPlayer | undefined;
-            let targetPlayerId: string | undefined;
-            
-            // Check if it's a socket ID
-            if (players[playerIdentifier]) {
-                targetPlayer = players[playerIdentifier];
-                targetPlayerId = playerIdentifier;
-            } else {
-                // Search by name
-                for (const [socketId, player] of Object.entries(players)) {
-                    if (player.name.toLowerCase() === playerIdentifier.toLowerCase()) {
-                        targetPlayer = player;
-                        targetPlayerId = socketId;
-                        break;
-                    }
-                }
-            }
-            
-            if (targetPlayer && targetPlayerId) {
-                // Teleport the player
-                targetPlayer.x = x;
-                targetPlayer.y = y;
-                
-                // Emit teleport event to client for visual effects
-                io.to(targetPlayerId).emit('playerTeleported', {
-                    newX: x,
-                    newY: y,
-                    playerId: targetPlayerId
-                });
-                
-                console.log(`Teleported player ${targetPlayer.name} (${targetPlayerId}) to (${x}, ${y})`);
-            } else {
-                console.log(`Player "${playerIdentifier}" not found. Use list-players to see available players.`);
-            }
-        } else {
-            console.log('Usage: teleport <playerId/name> <x> <y>');
-            console.log('  Examples:');
-            console.log('    teleport abc123 1000 2000');
-            console.log('    teleport PlayerName 5000 3000');
-            console.log('    tp abc123 1000 2000  (shorthand)');
-        }
-    }
-}
-
-// Add console command handler after the httpsServer.listen() call
-process.stdin.on('data', (data) => {
-    const command = data.toString().trim();
-    executeServerCommand(command);
-});
-
-// Add this function after the command handler
-function adjustEnemyCount() {
-    const playerCount = Object.keys(players).length;
-    const targetEnemyCount = playerCount > 0 ? ENEMIES_PER_VIEWPORT * playerCount : ENEMY_COUNT.value;
-    
-    // Remove excess enemies if current count is higher than target
-    while (enemies.length > targetEnemyCount) {
-        const removedEnemy = enemies.pop();
-        if (removedEnemy) {
-            io.emit('enemyDestroyed', removedEnemy.id);
-        }
-    }
-
-    // Add new enemies if current count is lower than target
-    while (enemies.length < targetEnemyCount) {
-        const enemy = createEnemy();
-        if (enemy) {
-            enemies.push(enemy);
-        } else {
-            // If we can't spawn more enemies (no valid positions), break the loop
-            break;
-        }
-    }
-
-    // Update all clients with the new enemy state
-    io.emit('enemiesUpdate', enemies);
-    console.log(`[SERVER] Adjusted enemy count to ${enemies.length}/${targetEnemyCount} (${playerCount} players)`);
-}
 
 // Add after other app.use declarations
 app.use('/assets', (req, res, next) => {
@@ -3828,5 +3679,8 @@ app.use('/assets', express.static(path.join(__dirname, '../assets'), {
 
 // Add near the top with other static file configurations
 app.use('/favicon.ico', express.static(path.join(__dirname, '../assets/favicon.ico')));
+
+// Setup stdin command handler
+setupStdinCommandHandler(commandDeps);
 
 start_loop();
