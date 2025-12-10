@@ -2181,7 +2181,8 @@ function start_loop() {
             health: p.health,
             maxHealth: p.maxHealth,
             level: p.level,
-            score: p.score
+            score: p.score,
+            petalExtension: p.inputs?.petalExtension || 1.0
         }));
         io.emit('gameStateUpdate', {
             players: playersForBroadcast,

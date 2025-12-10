@@ -3077,8 +3077,12 @@ export class Graphics {
                     // Draw corpse for dead players
                     this.drawCorpse(player.x, player.y, player.angle);
                 } else {
+                    // Use each player's own petal extension, or fallback to the passed value (for current player)
+                    const playerPetalExtension = player.id === currentPlayerId 
+                        ? petalExtension 
+                        : (player.petalExtension || 1.0);
                     // Draw normal player
-                    this.drawPlayer(player, currentPlayerId, petalExtension);
+                    this.drawPlayer(player, currentPlayerId, playerPetalExtension);
                 }
             }
         }

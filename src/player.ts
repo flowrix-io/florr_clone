@@ -36,6 +36,7 @@ export interface Player {
   eye?: {x: number, y: number};
   targetEye?: {x: number, y: number};
   isDead?: boolean;
+  petalExtension?: number; // Petal extension value from server (per-player)
   tp?: number; // Talent Points
   skills?: {
     damage?: string; // Rarity tier: common, uncommon, rare, etc.

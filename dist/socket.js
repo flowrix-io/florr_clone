@@ -761,11 +761,15 @@ function setupSocketListeners(game) {
                 existingPlayer.health = serverPlayer.health;
                 existingPlayer.maxHealth = serverPlayer.maxHealth;
                 existingPlayer.level = serverPlayer.level;
+                // Sync petal extension from server (if available in gameStateUpdate)
+                if ('petalExtension' in serverPlayer) {
+                    existingPlayer.petalExtension = serverPlayer.petalExtension || 1.0;
+                }
                 // Preserve XP values - don't overwrite them from gameStateUpdate
                 // as they are managed separately by xpGained events
             }
             else {
-                game.players.set(serverPlayer.id, {
+                const newPlayer = {
                     ...serverPlayer,
                     imageLoaded: true,
                     score: 0,
@@ -776,7 +780,12 @@ function setupSocketListeners(game) {
                     // Initialize XP values for new players
                     xp: 0,
                     xpToNextLevel: 100
-                });
+                };
+                // Sync petal extension if available
+                if ('petalExtension' in serverPlayer) {
+                    newPlayer.petalExtension = serverPlayer.petalExtension || 1.0;
+                }
+                game.players.set(serverPlayer.id, newPlayer);
             }
         });
         if (serverEnemies) {
@@ -815,6 +824,8 @@ function setupSocketListeners(game) {
                 player.xpToNextLevel = serverPlayer.xpToNextLevel;
                 player.lastDamageTime = serverPlayer.lastDamageTime;
                 player.speed_boost = serverPlayer.speed_boost;
+                // Sync petal extension from server
+                player.petalExtension = serverPlayer.inputs?.petalExtension || 1.0;
             }
             else {
                 // Add new player
