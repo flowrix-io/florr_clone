@@ -52,8 +52,17 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
     // Get list of eligible players based on damage ranking
     const eligiblePlayers = getEligiblePlayers(enemy);
     
+    // Debug log to verify eligible players
+    if (eligiblePlayers.length > 0) {
+        console.log(`[DROPS] Enemy ${enemy.id} (${enemy.type}, ${enemy.tier}) killed. Eligible players:`, eligiblePlayers);
+        if (enemy.damageContributors) {
+            console.log(`[DROPS] Damage contributors:`, Array.from(enemy.damageContributors.entries()));
+        }
+    }
+    
     // If no players dealt damage, don't drop anything
     if (eligiblePlayers.length === 0) {
+        console.log(`[DROPS] No eligible players for enemy ${enemy.id} - no drops`);
         return;
     }
     

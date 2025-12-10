@@ -54,6 +54,7 @@ class Game {
         this.obstacles = [];
         this.ENEMY_CORAL_MAX_HEALTH = 50;
         this.items = new Map();
+        this.pickedUpItems = new Set(); // Track items picked up by this player
         this.isInventoryOpen = false;
         this.gameLoopId = null;
         this.socketHandlers = new Map();
@@ -862,7 +863,14 @@ class Game {
             }
         }
         this.update();
-        this.graphics.render(this.players, this.enemies, this.items, this.mobProjectiles, this.playerProjectiles, this.socket?.id ?? '', this.petalExtension);
+        // Filter out items that this player has already picked up
+        const visibleItems = new Map();
+        for (const [itemId, item] of this.items.entries()) {
+            if (!this.pickedUpItems.has(itemId)) {
+                visibleItems.set(itemId, item);
+            }
+        }
+        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
     update() {

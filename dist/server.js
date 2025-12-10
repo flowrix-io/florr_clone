@@ -40,6 +40,7 @@ const utils_1 = require("./server/utils");
 Object.defineProperty(exports, "trackDamage", { enumerable: true, get: function () { return utils_1.trackDamage; } });
 Object.defineProperty(exports, "sendBossMobDefeatedMessage", { enumerable: true, get: function () { return utils_1.sendBossMobDefeatedMessage; } });
 const physics_1 = require("./server/physics");
+const playerState_1 = require("./server/playerState");
 const commands_1 = require("./server/commands");
 const gameState_1 = require("./server/gameState");
 const itemManager_1 = require("./server/itemManager");
@@ -131,6 +132,7 @@ app.post('/auth/logout', (req, res) => {
 // Cross-server player transfer endpoints - setup will be called after io is created
 // Serve static files from the dist directory
 app.use(express_1.default.static(path_1.default.join(__dirname, '../dist'), {
+    index: 'index.html',
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.js')) {
             res.setHeader('Content-Type', 'application/javascript');
@@ -140,6 +142,27 @@ app.use(express_1.default.static(path_1.default.join(__dirname, '../dist'), {
         }
     }
 }));
+// Explicitly serve index.html for root route (fallback)
+app.get('/', (req, res) => {
+    res.sendFile(path_1.default.join(__dirname, '../dist/index.html'));
+});
+// Serve assets with CORS headers
+app.use('/assets', (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+});
+app.use('/assets', express_1.default.static(path_1.default.join(__dirname, '../assets'), {
+    setHeaders: (res, filePath) => {
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+        if (filePath.endsWith('.js')) {
+            res.setHeader('Content-Type', 'application/javascript');
+        }
+    }
+}));
+// Serve favicon from dist directory (it's copied there during build)
+app.use('/favicon.ico', express_1.default.static(path_1.default.join(__dirname, '../dist/favicon.ico')));
 // Create server based on protocol configuration
 let server;
 if (constants_1.USE_HTTPS) {
@@ -184,9 +207,9 @@ const CURRENT_SERVER_CONFIG = (0, constants_2.getServerConfigByPort)(CURRENT_SER
 (0, crossServer_1.setupTransferEndpoints)(app, io, CURRENT_SERVER_CONFIG, CURRENT_SERVER_PORT);
 // Create helper functions object for enemy spawner (must be defined before functions that use it)
 const enemySpawnerHelpers = {
-    getPlayerViewports,
-    isPositionInPlayerPetalRange,
-    getEnemiesInViewportCount
+    getPlayerViewports: playerState_1.getPlayerViewports,
+    isPositionInPlayerPetalRange: playerState_1.isPositionInPlayerPetalRange,
+    getEnemiesInViewportCount: playerState_1.getEnemiesInViewportCount
 };
 // Remove or comment out these lines since we're not using grid generation anymore
 // const MAZE_CELL_SIZE = 1000;
@@ -196,125 +219,19 @@ const gameState_2 = require("./server/gameState");
 // Update the server initialization code
 // Replace the old obstacle initialization with:
 constants_2.obstacles.push(...(0, gameState_2.initializeMapObstacles)());
-// Viewport optimization functions
-function getPlayerViewports() {
-    const viewports = [];
-    for (const playerId in constants_2.players) {
-        const player = constants_2.players[playerId];
-        if (player && player.x !== undefined && player.y !== undefined &&
-            !isNaN(player.x) && !isNaN(player.y) &&
-            player.x >= 0 && player.x <= constants_2.ACTUAL_WORLD_WIDTH &&
-            player.y >= 0 && player.y <= constants_2.ACTUAL_WORLD_HEIGHT) {
-            viewports.push({
-                x: player.x - constants_2.VIEWPORT_WIDTH / 2,
-                y: player.y - constants_2.VIEWPORT_HEIGHT / 2,
-                width: constants_2.VIEWPORT_WIDTH,
-                height: constants_2.VIEWPORT_HEIGHT
-            });
-        }
-    }
-    return viewports;
-}
-function isPositionInAnyViewport(x, y) {
-    const viewports = getPlayerViewports();
-    // If no players are connected, allow spawning anywhere (for initial server startup)
-    if (viewports.length === 0) {
-        return true;
-    }
-    for (const viewport of viewports) {
-        const extendedViewport = {
-            x: viewport.x - constants_2.VIEWPORT_BUFFER,
-            y: viewport.y - constants_2.VIEWPORT_BUFFER,
-            width: viewport.width + (constants_2.VIEWPORT_BUFFER * 2),
-            height: viewport.height + (constants_2.VIEWPORT_BUFFER * 2)
-        };
-        if (x >= extendedViewport.x && x <= extendedViewport.x + extendedViewport.width &&
-            y >= extendedViewport.y && y <= extendedViewport.y + extendedViewport.height) {
-            return true;
-        }
-    }
-    return false;
-}
-function isPositionInPlayerPetalRange(x, y, mobSize) {
-    // Check if the mob spawn position would overlap with any player's petal range
-    for (const playerId in constants_2.players) {
-        const player = constants_2.players[playerId];
-        if (!player || !player.loadout)
-            continue;
-        // Calculate player's maximum petal range
-        const petalExtension = player.inputs?.petalExtension || 1.0;
-        const baseRadius = 60 * petalExtension;
-        // Find the largest petal size and range in the player's loadout
-        let maxPetalSize = 0;
-        let maxPetalRange = 1.0;
-        for (const item of player.loadout) {
-            if (item && item.type === 'petal' && item.petalType && item.rarity) {
-                const petalStats = (0, petals_2.getPetalStats)(item.petalType, item.rarity);
-                if (petalStats) {
-                    const petalSize = 40 * petalStats.size;
-                    maxPetalSize = Math.max(maxPetalSize, petalSize);
-                    const petalRange = petalStats.range ?? 1.0;
-                    maxPetalRange = Math.max(maxPetalRange, petalRange);
-                }
-            }
-        }
-        // Calculate the maximum range from player center (base radius * max range multiplier + half petal size + half mob size)
-        const maxRange = (baseRadius * maxPetalRange) + (maxPetalSize / 2) + (mobSize / 2);
-        // Check if the mob spawn position is within this range
-        const dx = x - player.x;
-        const dy = y - player.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance <= maxRange) {
-            return true; // Position is within petal range
-        }
-    }
-    return false; // Position is safe from petal range
-}
-function getEnemiesInViewportCount() {
-    const viewports = getPlayerViewports();
-    // If no players are connected, count all enemies (for initial server startup)
-    if (viewports.length === 0) {
-        return constants_2.enemies.length;
-    }
-    let count = 0;
-    for (const enemy of constants_2.enemies) {
-        if (isPositionInAnyViewport(enemy.x, enemy.y)) {
-            count++;
-        }
-    }
-    return count;
-}
+// Viewport optimization functions moved to playerState module
 function updateEnemyViewportStatus() {
     const currentTime = Date.now();
     for (const enemy of constants_2.enemies) {
-        if (isPositionInAnyViewport(enemy.x, enemy.y)) {
+        if ((0, playerState_1.isPositionInAnyViewport)(enemy.x, enemy.y)) {
             enemy.lastViewportCheck = currentTime;
-        }
-    }
-}
-function validatePlayerPositions() {
-    // Clean up any invalid player positions that might affect viewport calculations
-    for (const playerId in constants_2.players) {
-        const player = constants_2.players[playerId];
-        if (player) {
-            // Reset invalid positions to a safe default
-            if (isNaN(player.x) || isNaN(player.y) ||
-                player.x < 0 || player.x > constants_2.ACTUAL_WORLD_WIDTH ||
-                player.y < 0 || player.y > constants_2.ACTUAL_WORLD_HEIGHT) {
-                console.log(`[SERVER] Fixing invalid position for player ${playerId}: (${player.x}, ${player.y})`);
-                // Reset to center of world
-                player.x = constants_2.ACTUAL_WORLD_WIDTH / 2;
-                player.y = constants_2.ACTUAL_WORLD_HEIGHT / 2;
-                // Notify client of position correction
-                io.to(playerId).emit('positionCorrected', { x: player.x, y: player.y });
-            }
         }
     }
 }
 function calculateCurrentDensity() {
     const playerCount = Object.keys(constants_2.players).length;
     const totalEnemies = constants_2.enemies.length;
-    const enemiesInViewport = getEnemiesInViewportCount();
+    const enemiesInViewport = (0, playerState_1.getEnemiesInViewportCount)();
     if (playerCount > 0) {
         const totalViewportArea = constants_2.VIEWPORT_WITH_BUFFER_AREA * playerCount;
         const currentDensity = enemiesInViewport / totalViewportArea;
@@ -339,7 +256,7 @@ function calculateCurrentDensity() {
 function triggerViewportUpdate() {
     // console.log(`[SERVER] Triggering viewport update for ${Object.keys(players).length} players`);
     // Validate and fix any invalid player positions first
-    validatePlayerPositions();
+    (0, playerState_1.validatePlayerPositions)(io);
     // Force update all enemy viewport statuses
     updateEnemyViewportStatus();
     // Despawn any enemies that have been outside viewport for too long
@@ -353,7 +270,7 @@ function triggerViewportUpdate() {
     const playerCount = Object.keys(constants_2.players).length;
     if (playerCount > 0) {
         // Calculate target enemy count based on current viewport density
-        const viewports = getPlayerViewports();
+        const viewports = (0, playerState_1.getPlayerViewports)();
         const totalViewportArea = viewports.reduce((total, viewport) => {
             const extendedViewport = {
                 x: viewport.x - constants_2.VIEWPORT_BUFFER,
@@ -365,7 +282,7 @@ function triggerViewportUpdate() {
         }, 0);
         const targetDensity = constants_2.ORIGINAL_ENEMY_COUNT / constants_2.TOTAL_WORLD_AREA;
         const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
-        const currentViewportEnemies = getEnemiesInViewportCount();
+        const currentViewportEnemies = (0, playerState_1.getEnemiesInViewportCount)();
         if (currentViewportEnemies < targetEnemyCount) {
             const enemiesToSpawn = Math.min(5, targetEnemyCount - currentViewportEnemies);
             let spawned = 0;
@@ -396,7 +313,7 @@ function despawnDistantEnemies() {
             continue;
         }
         // Check if enemy is currently outside any player's viewport
-        const inViewport = isPositionInAnyViewport(enemy.x, enemy.y);
+        const inViewport = (0, playerState_1.isPositionInAnyViewport)(enemy.x, enemy.y);
         if (!inViewport) {
             // If enemy is outside viewport, update or set the last viewport check time
             if (!enemy.lastViewportCheck) {
@@ -731,6 +648,21 @@ const commandDeps = {
     spawnSpecialMobs,
     createEnemy,
     adjustEnemyCount
+};
+// Player state handler dependencies
+const playerStateDeps = {
+    io,
+    addXPToPlayer,
+    handleMobDrops,
+    sendBossMobDefeatedMessage: utils_1.sendBossMobDefeatedMessage,
+    updateSpecialMobCounts,
+    createEnemy,
+    savePlayerProgress,
+    transferPlayerToServer: crossServer_1.transferPlayerToServer,
+    currentServerConfig: CURRENT_SERVER_CONFIG,
+    currentServerPort: CURRENT_SERVER_PORT,
+    useHttps: constants_1.USE_HTTPS,
+    database: database_1.database
 };
 io.on('connection', (socket) => {
     console.log('A user connected');
@@ -1730,8 +1662,10 @@ function updatePoisonEffects(deltaTime) {
                 (0, utils_1.trackDamage)(enemy, poison.playerId, poison.damage * deltaTime * 1000);
             });
             io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
-            // Check if enemy dies from poison
-            if (enemy.health <= 0) {
+            // Check if enemy dies from poison (only process once per enemy)
+            if (enemy.health <= 0 && !enemy.isDead) {
+                // Mark enemy as dead to prevent multiple death handlers
+                enemy.isDead = true;
                 const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
                 if (index !== -1) {
                     // Award XP to all players who contributed poison damage
@@ -1751,7 +1685,7 @@ function updatePoisonEffects(deltaTime) {
                     if (topContributor && constants_2.players[topContributor]) {
                         addXPToPlayer(constants_2.players[topContributor], xpGained, topContributor);
                     }
-                    // Handle mob drops
+                    // Handle mob drops (includes all eligible players)
                     handleMobDrops(enemy);
                     (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
                     constants_2.enemies.splice(index, 1);
@@ -2159,7 +2093,12 @@ function updatePlayerProjectiles(deltaTimeMs) {
                 }
                 const damageMultiplier = (0, petal_actions_1.getDamageMultiplier)(player);
                 const finalDamage = projectile.damage * damageMultiplier;
+                // Track damage dealt by this player (always track, even if enemy is dead)
                 (0, utils_1.trackDamage)(enemy, projectile.playerId, finalDamage);
+                // Skip further processing if enemy is already dead (being processed)
+                if (enemy.isDead) {
+                    continue;
+                }
                 enemy.health -= finalDamage;
                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
                 // Apply knockback, accounting for mass (heavier mobs are harder to knock back)
@@ -2173,8 +2112,10 @@ function updatePlayerProjectiles(deltaTimeMs) {
                     enemy.knockbackX = normalizedDx * effectiveKnockback;
                     enemy.knockbackY = normalizedDy * effectiveKnockback;
                 }
-                // Check if enemy dies
-                if (enemy.health <= 0) {
+                // Check if enemy dies (only process once per enemy)
+                if (enemy.health <= 0 && !enemy.isDead) {
+                    // Mark enemy as dead to prevent multiple death handlers
+                    enemy.isDead = true;
                     const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                     addXPToPlayer(player, xpGained, projectile.playerId);
                     handleMobDrops(enemy);
@@ -2192,725 +2133,14 @@ function updatePlayerProjectiles(deltaTimeMs) {
     // Emit projectile updates to clients
     io.emit('playerProjectilesUpdate', gameState_1.playerProjectiles);
 }
-function updatePlayerState(player, deltaTime) {
-    if (!player || !player.inputs) {
-        return;
-    }
-    // Don't update movement for dead players
-    if (player.isDead) {
-        return;
-    }
-    // Update player effects
-    (0, petal_actions_1.updatePlayerEffects)(player, deltaTime);
-    let targetVelocityX = 0;
-    let targetVelocityY = 0;
-    if (player.inputs.useMouse &&
-        player.inputs.mouseDirectionX !== undefined &&
-        player.inputs.mouseDirectionY !== undefined &&
-        player.inputs.mouseSpeedMultiplier !== undefined) {
-        // Client has already calculated the direction and speed multiplier
-        // Server just needs to apply MAX_SPEED, speed_boost, and other multipliers
-        const speed = constants_2.MAX_SPEED * player.speed_boost * (0, petal_actions_1.getSpeedMultiplier)(player) * player.inputs.mouseSpeedMultiplier;
-        targetVelocityX = player.inputs.mouseDirectionX * speed;
-        targetVelocityY = player.inputs.mouseDirectionY * speed;
-        player.angle = Math.atan2(player.inputs.mouseDirectionY, player.inputs.mouseDirectionX);
-    }
-    else if (player.inputs.keys) {
-        if (player.inputs.keys.includes('ArrowLeft') || player.inputs.keys.includes('a'))
-            targetVelocityX -= 1;
-        if (player.inputs.keys.includes('ArrowRight') || player.inputs.keys.includes('d'))
-            targetVelocityX += 1;
-        if (player.inputs.keys.includes('ArrowUp') || player.inputs.keys.includes('w'))
-            targetVelocityY -= 1;
-        if (player.inputs.keys.includes('ArrowDown') || player.inputs.keys.includes('s'))
-            targetVelocityY += 1;
-        if (targetVelocityX !== 0 && targetVelocityY !== 0) {
-            const length = Math.sqrt(targetVelocityX * targetVelocityX + targetVelocityY * targetVelocityY);
-            targetVelocityX /= length;
-            targetVelocityY /= length;
-        }
-        const speed = constants_2.MAX_SPEED * player.speed_boost * (0, petal_actions_1.getSpeedMultiplier)(player);
-        targetVelocityX *= speed;
-        targetVelocityY *= speed;
-        if (targetVelocityX !== 0 || targetVelocityY !== 0) {
-            player.angle = Math.atan2(targetVelocityY, targetVelocityX);
-        }
-    }
-    player.velocityX = targetVelocityX;
-    player.velocityY = targetVelocityY;
-    let newX = player.x + player.velocityX * deltaTime;
-    let newY = player.y + player.velocityY * deltaTime;
-    // // Check if player goes out of bounds - kill them
-    // if (newX < 0 || newX >= ACTUAL_WORLD_WIDTH || newY < 0 || newY >= ACTUAL_WORLD_HEIGHT) {
-    //     player.health = 0;
-    //     player.killedBy = { type: 'out_of_bounds', tier: 'common' };
-    //     // Don't update position, let them die at the boundary
-    //     newX = player.x;
-    //     newY = player.y;
-    // }
-    // Check for wall collisions
-    const wallCollision = (0, physics_1.checkPlayerWallCollisions)(newX, newY, constants_2.PLAYER_SIZE);
-    newX = wallCollision.x;
-    newY = wallCollision.y;
-    let collision = false;
-    for (const enemy of constants_2.enemies) {
-        const collisionInfo = (0, physics_1.checkPlayerEnemyCollision)(newX, newY, constants_2.PLAYER_SIZE, enemy);
-        if (collisionInfo.collided) {
-            collision = true;
-            const { distance, dx, dy } = collisionInfo;
-            // Don't damage dead players (corpses)
-            if (!player.isDead) {
-                // Calculate knockback direction (reuse distance calculation from collision check)
-                // Apply knockback for all enemies, including item spawner
-                const normalizedDx = dx / distance;
-                const normalizedDy = dy / distance;
-                const knockbackDistance = 25;
-                const knockbackX = -normalizedDx * knockbackDistance;
-                const knockbackY = -normalizedDy * knockbackDistance;
-                // Apply knockback to player position
-                newX -= normalizedDx * knockbackDistance;
-                newY -= normalizedDy * knockbackDistance;
-                // Item spawner doesn't deal damage to players, but still applies knockback
-                if (enemy.type !== 'item_spawner') {
-                    const shieldAmount = (0, petal_actions_1.getShieldAmount)(player);
-                    const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
-                    player.health -= damageToPlayer;
-                    player.lastDamageTime = Date.now();
-                    player.isInvulnerable = true;
-                    // Track which enemy dealt the killing blow
-                    if (player.health <= 0) {
-                        player.killedBy = { type: enemy.type, tier: enemy.tier };
-                    }
-                    // Set invulnerability timer (1 second after taking damage)
-                    setTimeout(() => {
-                        if (constants_2.players[player.id]) {
-                            constants_2.players[player.id].isInvulnerable = false;
-                            // Notify client that invulnerability has ended
-                            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
-                        }
-                    }, 1000);
-                    io.emit('playerDamaged', {
-                        playerId: player.id,
-                        health: player.health,
-                        maxHealth: player.maxHealth,
-                        isInvulnerable: player.isInvulnerable,
-                        knockbackX: knockbackX,
-                        knockbackY: knockbackY
-                    });
-                }
-                else {
-                    // Emit knockback event for item spawner (without damage)
-                    io.emit('playerDamaged', {
-                        playerId: player.id,
-                        health: player.health,
-                        maxHealth: player.maxHealth,
-                        isInvulnerable: player.isInvulnerable,
-                        knockbackX: knockbackX,
-                        knockbackY: knockbackY
-                    });
-                }
-                // Track damage dealt by this player (even for item spawner, so players can still damage it)
-                (0, utils_1.trackDamage)(enemy, player.id, player.damage);
-                enemy.health -= player.damage;
-                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
-                if (enemy.health <= 0) {
-                    const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
-                    if (index !== -1) {
-                        const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
-                        addXPToPlayer(player, xpGained, player.id);
-                        // Handle mob drops using the new drop table system
-                        handleMobDrops(enemy);
-                        (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
-                        constants_2.enemies.splice(index, 1);
-                        updateSpecialMobCounts();
-                        io.emit('enemyDestroyed', enemy.id);
-                        // Try to spawn a new enemy, but only if we can find a valid position
-                        const newEnemy = createEnemy();
-                        if (newEnemy) {
-                            constants_2.enemies.push(newEnemy);
-                        }
-                    }
-                }
-                if (player.health <= 0) {
-                    break;
-                }
-            }
-            break;
-        }
-    }
-    // Check for petal-enemy collisions
-    if (player.loadout) {
-        // Build array of petal instances considering count property
-        const petalInstances = [];
-        try {
-            for (let i = 0; i < player.loadout.length; i++) {
-                const petal = player.loadout[i];
-                if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
-                    const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity);
-                    if (!petalStats)
-                        continue;
-                    const count = petalStats.count || 1; // Use count from stats, default to 1
-                    // Validate count is a valid number
-                    if (typeof count !== 'number' || count < 1 || !isFinite(count)) {
-                        console.warn('Invalid petal count:', count, 'for', petal.petalType, petal.rarity);
-                        continue;
-                    }
-                    // Create multiple instances based on count
-                    for (let j = 0; j < count; j++) {
-                        petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i });
-                        // Execute petal actions immediately when spawned
-                        if (petalStats.actions) {
-                            const petalId = `${player.id}_${i}_${j}`;
-                            const actionContext = {
-                                player: player,
-                                petalX: player.x, // Will be updated with actual position in game loop
-                                petalY: player.y, // Will be updated with actual position in game loop
-                                petalSize: petalStats.size * 40,
-                                petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                                enemies: constants_2.enemies,
-                                io: io,
-                                petalId: petalId,
-                                loadoutIndex: i,
-                                instanceIndex: j
-                            };
-                            (0, petal_actions_1.executePetalActionsOnSpawn)(petalStats.actions, actionContext);
-                        }
-                    }
-                }
-            }
-        }
-        catch (error) {
-            console.error('Error building petal instances:', error);
-        }
-        const currentTime = Date.now();
-        const petalExtension = player.inputs.petalExtension || 1.0;
-        const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
-        const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
-        for (let idx = 0; idx < petalInstances.length; idx++) {
-            const { petal, instanceIndex, loadoutIndex } = petalInstances[idx];
-            if (!petal || !petal.health || petal.health <= 0) {
-                continue;
-            }
-            // Skip petals that are on cooldown
-            if (petal.onCooldown) {
-                continue;
-            }
-            const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity);
-            if (!petalStats)
-                continue;
-            const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002; // Convert to radians per ms
-            const baseAngle = idx * angleStep;
-            const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
-            const totalAngle = baseAngle + rotationAngle;
-            // Apply petal range multiplier to base radius
-            const petalRange = petalStats.range ?? 1.0;
-            const petalRadius = baseRadius * petalRange;
-            const petalX = player.x + Math.cos(totalAngle) * petalRadius;
-            const petalY = player.y + Math.sin(totalAngle) * petalRadius;
-            // Update petal position in action context
-            const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
-            (0, petal_actions_1.updatePetalPosition)(petalId, petalX, petalY);
-            // Check if petal can shoot projectiles (only when extended)
-            if (petalExtension > 1.0 && petalStats.projectile) {
-                const projectileConfig = petalStats.projectile;
-                const lastShotTime = gameState_1.petalLastProjectileTime.get(petalId) || 0;
-                const cooldown = petalStats.cooldown || 2000;
-                // Check if cooldown has passed
-                if (currentTime - lastShotTime >= cooldown) {
-                    // Calculate projectile angle - shoot in the direction the petal is facing (tangent to rotation)
-                    // The petal is at totalAngle, so the projectile should go in that direction
-                    const projectileAngle = totalAngle;
-                    const projectileSpeed = projectileConfig.speed || 200; // pixels per second
-                    const spreadAngle = projectileConfig.spreadAngle || 0.2; // radians
-                    const projectileCount = projectileConfig.count || 1;
-                    // Create projectiles
-                    for (let i = 0; i < projectileCount; i++) {
-                        // Calculate spread angle for multiple projectiles
-                        let finalAngle = projectileAngle;
-                        if (projectileCount > 1) {
-                            const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
-                            finalAngle = projectileAngle + spreadOffset;
-                        }
-                        const projectile = {
-                            id: `${petalId}_projectile_${currentTime}_${i}`,
-                            playerId: player.id,
-                            x: petalX,
-                            y: petalY,
-                            startX: petalX,
-                            startY: petalY,
-                            angle: finalAngle,
-                            speed: projectileSpeed / 1000, // Convert to pixels per millisecond
-                            distance: 0,
-                            maxDistance: projectileConfig.distance,
-                            petalType: petal.petalType,
-                            petalRarity: petal.rarity,
-                            damage: petalStats.damage,
-                            size: petalStats.size,
-                            health: petalStats.health,
-                            maxHealth: petalStats.health
-                        };
-                        gameState_1.playerProjectiles.push(projectile);
-                    }
-                    // Update last shot time for this petal instance
-                    gameState_1.petalLastProjectileTime.set(petalId, currentTime);
-                }
-            }
-            // Check collision with enemies
-            for (const enemy of constants_2.enemies) {
-                // Get mob stats to determine proper hitbox size
-                const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-                const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE; // Use mob size or fallback to base size
-                const petalSize = 40 * petalStats.size; // Use same base size as enemies for consistency
-                // Use circular hitbox collision (matching player-to-mob and mob-to-mob collision)
-                // Both petal and enemy positions are center points
-                const enemyRadius = enemySize / 2;
-                const petalRadius = petalSize / 2;
-                const dx = enemy.x - petalX;
-                const dy = enemy.y - petalY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const minDistance = enemyRadius + petalRadius;
-                if (distance < minDistance && distance > 0) {
-                    // Petal hits enemy - deal damage to both
-                    const damageMultiplier = (0, petal_actions_1.getDamageMultiplier)(player);
-                    const finalDamage = petalStats.damage * damageMultiplier;
-                    // Track damage dealt by this player
-                    (0, utils_1.trackDamage)(enemy, player.id, finalDamage);
-                    enemy.health -= finalDamage;
-                    petal.health -= mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
-                    // Apply poison effect if the petal has poison
-                    if (petalStats.poison && petalStats.poison > 0 && petalStats.poisonDuration && petalStats.poisonDuration > 0) {
-                        if (!enemy.poisonEffects) {
-                            enemy.poisonEffects = [];
-                        }
-                        // Add or refresh poison effect
-                        const currentTime = Date.now();
-                        const endTime = currentTime + petalStats.poisonDuration;
-                        // Check if there's already a poison effect from this player
-                        const existingPoisonIndex = enemy.poisonEffects.findIndex(p => p.playerId === player.id);
-                        if (existingPoisonIndex >= 0) {
-                            // Refresh the existing poison effect with the new damage and duration
-                            enemy.poisonEffects[existingPoisonIndex] = {
-                                damage: petalStats.poison,
-                                endTime: endTime,
-                                playerId: player.id
-                            };
-                        }
-                        else {
-                            // Add a new poison effect
-                            enemy.poisonEffects.push({
-                                damage: petalStats.poison,
-                                endTime: endTime,
-                                playerId: player.id
-                            });
-                        }
-                    }
-                    // Apply knockback to enemy
-                    const knockbackForce = petalStats.knockback || 0;
-                    if (knockbackForce > 0) {
-                        // Calculate knockback direction from petal to enemy
-                        const dx = enemy.x - petalX;
-                        const dy = enemy.y - petalY;
-                        const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-                        const normalizedDx = dx / distance;
-                        const normalizedDy = dy / distance;
-                        // Apply knockback to enemy, accounting for mass (heavier mobs are harder to knock back)
-                        // Mass is already calculated from size (which includes rarity), so higher rarity = more mass
-                        const mobMass = mobStats ? mobStats.mass : 1.0; // Default mass of 1.0 if mobStats is null
-                        const effectiveKnockback = knockbackForce / mobMass; // Divide by mass so heavier mobs resist knockback more
-                        enemy.knockbackX = normalizedDx * effectiveKnockback;
-                        enemy.knockbackY = normalizedDy * effectiveKnockback;
-                    }
-                    io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
-                    // Check if item spawner was hit and has 1% chance to spawn a random petal
-                    if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
-                        // Get all petal types and filter out admin petals
-                        const allPetalTypes = (0, petals_2.getAllPetalTypes)();
-                        const nonAdminPetalTypes = allPetalTypes.filter(petalType => {
-                            // Check if the petal is an admin petal by checking any rarity
-                            const commonStats = (0, petals_2.getPetalStats)(petalType, 'common');
-                            return !commonStats?.isAdminPetal;
-                        });
-                        if (nonAdminPetalTypes.length > 0) {
-                            // Pick a random petal type
-                            const randomPetalType = nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)];
-                            // Pick a random rarity with weighted probabilities (rarer items are much rarer)
-                            // Weighted distribution: common is most common, rarer items are exponentially rarer
-                            const rarityWeights = {
-                                'common': 30.0, // 50%
-                                'uncommon': 10.0, // 20%
-                                'rare': 10.0, // 12%
-                                'epic': 5.0, // 8%
-                                'legendary': 5.0, // 5%
-                                'mythic': 5.0, // 3%
-                                'ultra': 5.0, // 1.5%
-                                'super': 5.0, // 0.4%
-                                'unique': 0.05 // 0.1%
-                            };
-                            // Calculate total weight
-                            const totalWeight = petals_1.RARITY_LEVELS.reduce((sum, rarity) => sum + (rarityWeights[rarity] || 0), 0);
-                            // Pick a rarity based on weighted probability
-                            let randomRarity = 'common'; // Default fallback
-                            const random = Math.random() * totalWeight;
-                            let cumulativeWeight = 0;
-                            for (const rarity of petals_1.RARITY_LEVELS) {
-                                cumulativeWeight += rarityWeights[rarity] || 0;
-                                if (random <= cumulativeWeight) {
-                                    randomRarity = rarity;
-                                    break;
-                                }
-                            }
-                            // Calculate spawner's hitbox radius to ensure items spawn outside it
-                            const spawnerMobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-                            const spawnerSize = spawnerMobStats ? spawnerMobStats.size * 40 : constants_2.ENEMY_SIZE;
-                            const spawnerRadius = spawnerSize / 2;
-                            const minSpawnDistance = spawnerRadius + 30; // Spawn at least 30px outside the hitbox
-                            const maxSpawnDistance = spawnerRadius + 100; // Spawn up to 100px away
-                            // Spawn item at a random angle and distance outside the spawner's hitbox
-                            const spawnAngle = Math.random() * Math.PI * 2;
-                            const spawnDistance = minSpawnDistance + Math.random() * (maxSpawnDistance - minSpawnDistance);
-                            const offsetX = Math.cos(spawnAngle) * spawnDistance;
-                            const offsetY = Math.sin(spawnAngle) * spawnDistance;
-                            const itemId = Math.random().toString(36).substr(2, 9);
-                            const spawnTime = Date.now();
-                            const newItem = {
-                                id: itemId,
-                                type: 'petal',
-                                x: enemy.x + offsetX,
-                                y: enemy.y + offsetY,
-                                rarity: randomRarity,
-                                petalType: randomPetalType,
-                                eligiblePlayers: [player.id], // Only the player who hit it can pick it up
-                                pickedUpBy: new Set(),
-                                spawnTime: spawnTime
-                            };
-                            // Check and fix wall collisions before adding item
-                            (0, physics_1.checkItemWallCollisions)(newItem);
-                            gameState_1.items.push(newItem);
-                            // Send itemSpawned event to the player
-                            io.to(player.id).emit('itemSpawned', newItem);
-                            // Schedule automatic removal after expiration time
-                            const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
-                            setTimeout(() => {
-                                const itemIndex = gameState_1.items.findIndex(item => item.id === itemId);
-                                if (itemIndex !== -1) {
-                                    const expiredItem = gameState_1.items[itemIndex];
-                                    gameState_1.items.splice(itemIndex, 1);
-                                    // Notify the player that item expired
-                                    io.to(player.id).emit('itemRemoved', itemId);
-                                    console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
-                                }
-                            }, expirationTime);
-                            console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
-                        }
-                    }
-                    // Check collision with mob projectiles (treat them as enemy petals)
-                    for (let projIdx = gameState_1.mobProjectiles.length - 1; projIdx >= 0; projIdx--) {
-                        const mobProjectile = gameState_1.mobProjectiles[projIdx];
-                        // Skip destroyed projectiles
-                        if (!mobProjectile || mobProjectile.health <= 0) {
-                            continue;
-                        }
-                        const projectileSize = mobProjectile.size * 20; // Convert to pixels
-                        const projectileRadius = projectileSize / 2;
-                        const petalSize = 40 * petalStats.size;
-                        const petalRadius = petalSize / 2;
-                        const dx = mobProjectile.x - petalX;
-                        const dy = mobProjectile.y - petalY;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        const minDistance = projectileRadius + petalRadius;
-                        if (distance < minDistance && distance > 0) {
-                            // Player petal hits mob projectile - deal damage to both
-                            const damageMultiplier = (0, petal_actions_1.getDamageMultiplier)(player);
-                            const finalDamage = petalStats.damage * damageMultiplier;
-                            // Damage the mob projectile
-                            mobProjectile.health -= finalDamage;
-                            // Damage the player petal (mob projectile acts as enemy petal)
-                            const projectilePetalStats = (0, petals_2.getPetalStats)(mobProjectile.petalType, mobProjectile.petalRarity);
-                            const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : mobProjectile.damage;
-                            petal.health -= projectileDamage;
-                            // Remove projectile if destroyed
-                            if (mobProjectile.health <= 0) {
-                                gameState_1.mobProjectiles.splice(projIdx, 1);
-                            }
-                        }
-                    }
-                    // Handle petal collision for wait_until_collision actions
-                    const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
-                    const collisionContext = {
-                        player: player,
-                        petalX: petalX,
-                        petalY: petalY,
-                        petalSize: petalSize,
-                        petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                        enemies: constants_2.enemies,
-                        io: io,
-                        petalId: petalId,
-                        loadoutIndex: loadoutIndex,
-                        instanceIndex: instanceIndex
-                    };
-                    (0, petal_actions_1.handlePetalCollision)(petalId, collisionContext);
-                    // Check if petal breaks
-                    if (petal.health <= 0) {
-                        // Execute petal actions before breaking
-                        if (petalStats.actions) {
-                            const actionContext = {
-                                player: player,
-                                petalX: petalX,
-                                petalY: petalY,
-                                petalSize: petalSize,
-                                petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                                enemies: constants_2.enemies,
-                                io: io
-                            };
-                            (0, petal_actions_1.executePetalActions)(petalStats.actions, actionContext, 'on_break');
-                        }
-                        // Petal breaks - set on cooldown instead of removing
-                        petal.onCooldown = true;
-                        // Store original petal data for restoration
-                        const originalPetal = {
-                            type: petal.type,
-                            petalType: petal.petalType,
-                            rarity: petal.rarity,
-                            maxHealth: petal.maxHealth
-                        };
-                        // Add cooldown (similar to other items)
-                        const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
-                        setTimeout(() => {
-                            if (constants_2.players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex].onCooldown) {
-                                // Restore petal after cooldown
-                                const restoredPetal = {
-                                    ...originalPetal,
-                                    health: originalPetal.maxHealth, // Restore full health
-                                    onCooldown: false
-                                };
-                                // Apply petal health bonus
-                                (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
-                                player.loadout[loadoutIndex] = restoredPetal;
-                                io.emit('petalRestored', {
-                                    playerId: player.id,
-                                    slotIndex: loadoutIndex,
-                                    petal: player.loadout[loadoutIndex]
-                                });
-                                // console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
-                            }
-                        }, cooldownTime);
-                        io.emit('petalBroken', {
-                            playerId: player.id,
-                            slotIndex: loadoutIndex,
-                            petalType: petal.petalType,
-                            rarity: petal.rarity
-                        });
-                    }
-                    // Check if enemy dies
-                    if (enemy.health <= 0) {
-                        const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
-                        if (index !== -1) {
-                            const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
-                            addXPToPlayer(player, xpGained, player.id);
-                            // Handle mob drops using the new drop table system
-                            handleMobDrops(enemy);
-                            (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
-                            constants_2.enemies.splice(index, 1);
-                            updateSpecialMobCounts();
-                            io.emit('enemyDestroyed', enemy.id);
-                            // Try to spawn a new enemy, but only if we can find a valid position
-                            const newEnemy = createEnemy();
-                            if (newEnemy) {
-                                constants_2.enemies.push(newEnemy);
-                            }
-                        }
-                    }
-                }
-            }
-            // Check for corpse revival if this is a yggdrasil petal (always active)
-            if (petal.petalType === 'yggdrasil') {
-                const revivalRange = 80; // Range for automatic revival
-                for (const [otherPlayerId, otherPlayer] of Object.entries(constants_2.players)) {
-                    if (otherPlayerId !== player.id && otherPlayer.isDead) {
-                        const distance = Math.sqrt((petalX - otherPlayer.x) ** 2 + (petalY - otherPlayer.y) ** 2);
-                        if (distance <= revivalRange) {
-                            // Break the yggdrasil petal when it revives someone
-                            petal.health = 0; // This will trigger the petal breaking logic below
-                            // Revive the target player
-                            otherPlayer.isDead = false;
-                            otherPlayer.health = otherPlayer.maxHealth;
-                            otherPlayer.isInvulnerable = true;
-                            otherPlayer.lastDamageTime = 0;
-                            // Notify all clients about the revival
-                            io.emit('playerRevived', {
-                                revivedPlayerId: otherPlayerId,
-                                revivingPlayerId: player.id,
-                                revivedPlayerName: otherPlayer.name,
-                                revivingPlayerName: player.name
-                            });
-                            // Give revived player temporary invulnerability
-                            setTimeout(() => {
-                                if (constants_2.players[otherPlayerId]) {
-                                    constants_2.players[otherPlayerId].isInvulnerable = false;
-                                    io.emit('playerInvulnerabilityEnded', { playerId: otherPlayerId });
-                                }
-                            }, constants_2.RESPAWN_INVULNERABILITY_TIME);
-                            console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal (petal broke)`);
-                            // Break out of the loop since we've used the petal
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // Check for item collisions (independent of enemy collisions)
-    for (let i = gameState_1.items.length - 1; i >= 0; i--) {
-        const item = gameState_1.items[i];
-        const distance = Math.sqrt((newX - item.x) ** 2 + (newY - item.y) ** 2);
-        if (distance < constants_2.PLAYER_SIZE) {
-            // Check if player has already picked up this item
-            if (item.pickedUpBy && item.pickedUpBy.has(player.id)) {
-                continue; // Skip if already picked up by this player
-            }
-            // Check if player is eligible to pick up this item
-            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                if (!item.eligiblePlayers.includes(player.id)) {
-                    // Player is not eligible - skip this item
-                    continue;
-                }
-            }
-            // Add item to player's inventory
-            const rarity = item.rarity || 'common';
-            const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
-            (0, playerManager_1.addItem)(player.inventory, rarity, itemKey, 1);
-            // Mark as picked up by this player (don't remove from world)
-            if (!item.pickedUpBy) {
-                item.pickedUpBy = new Set();
-            }
-            item.pickedUpBy.add(player.id);
-            // Emit events to update client
-            // Only send itemPickedUp to the player who picked it up, not to everyone
-            io.to(player.id).emit('itemPickedUp', item.id);
-            io.to(player.id).emit('inventoryUpdated', player.inventory);
-            // Save player progress to persist inventory changes
-            const userId = gameState_1.playerUserIds[player.id];
-            if (userId) {
-                savePlayerProgress(player, userId);
-            }
-            // Remove item from world if all eligible players have picked it up
-            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                const allPickedUp = item.eligiblePlayers.every(playerId => item.pickedUpBy && item.pickedUpBy.has(playerId));
-                if (allPickedUp) {
-                    gameState_1.items.splice(i, 1);
-                    // Notify only eligible players that the item is gone
-                    for (const playerId of item.eligiblePlayers) {
-                        io.to(playerId).emit('itemRemoved', item.id);
-                    }
-                }
-            }
-        }
-    }
-    // Check for teleporter interactions with 1-second delay
-    let currentTeleporter = null;
-    const currentTime = Date.now();
-    // Check if player is currently in a teleporter
-    for (const element of constants_2.WORLD_MAP.filter(constants_2.isTeleporter)) {
-        const teleporterId = `teleporter_${element.x}_${element.y}_${element.width}_${element.height}`;
-        const teleporterX = element.x * constants_2.SCALE_FACTOR;
-        const teleporterY = element.y * constants_2.SCALE_FACTOR;
-        const teleporterWidth = element.width * constants_2.SCALE_FACTOR;
-        const teleporterHeight = element.height * constants_2.SCALE_FACTOR;
-        // Check if player is inside teleporter bounds (using proper collision detection)
-        if (newX + constants_2.PLAYER_SIZE > teleporterX &&
-            newX < teleporterX + teleporterWidth &&
-            newY + constants_2.PLAYER_SIZE > teleporterY &&
-            newY < teleporterY + teleporterHeight &&
-            element.properties?.teleportTo) {
-            currentTeleporter = teleporterId;
-            // Check if player just entered this teleporter
-            if (player.currentTeleporter !== teleporterId) {
-                player.currentTeleporter = teleporterId;
-                player.teleporterEnterTime = currentTime;
-                // Notify client that player entered teleporter (for UI feedback)
-                io.to(player.id).emit('teleporterEntered', {
-                    teleporterId,
-                    timeRequired: 1000, // 1 second
-                    teleportTo: element.properties.teleportTo
-                });
-                console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
-            }
-            // Check if player has been in teleporter for 1 second and is not on cooldown
-            const timeInTeleporter = currentTime - (player.teleporterEnterTime || currentTime);
-            const isOnCooldown = player.teleportCooldown && currentTime < player.teleportCooldown;
-            if (timeInTeleporter >= 1000 && !isOnCooldown) {
-                const teleportTo = element.properties.teleportTo;
-                // Set cooldown to prevent rapid teleportations
-                player.teleportCooldown = currentTime + 2000; // 2 second cooldown
-                // Check if this is a cross-server teleporter
-                if (teleportTo.serverPort && teleportTo.serverPort !== CURRENT_SERVER_PORT) {
-                    // Cross-server teleportation
-                    console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
-                    // Reset teleporter state
-                    player.currentTeleporter = undefined;
-                    player.teleporterEnterTime = undefined;
-                    // Attempt to transfer player to target server
-                    (0, crossServer_1.transferPlayerToServer)(player, teleportTo.serverPort, teleportTo.x * constants_2.SCALE_FACTOR, teleportTo.y * constants_2.SCALE_FACTOR, io, database_1.database, constants_1.USE_HTTPS, CURRENT_SERVER_CONFIG, CURRENT_SERVER_PORT).catch(error => {
-                        console.error(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Failed to transfer player ${player.name}:`, error);
-                        // Optionally notify the player about the failed transfer
-                        io.to(player.id).emit('transferFailed', { message: 'Failed to connect to target server' });
-                        // Reset cooldown on failure
-                        player.teleportCooldown = undefined;
-                    });
-                    // Don't update player position this tick as they're being transferred
-                    return;
-                }
-                else {
-                    // Same-server teleportation
-                    newX = teleportTo.x * constants_2.SCALE_FACTOR;
-                    newY = teleportTo.y * constants_2.SCALE_FACTOR;
-                    // Reset teleporter state
-                    player.currentTeleporter = undefined;
-                    player.teleporterEnterTime = undefined;
-                    console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
-                    // Emit teleport event to client for visual effects
-                    io.to(player.id).emit('playerTeleported', {
-                        newX,
-                        newY,
-                        playerId: player.id
-                    });
-                }
-            }
-            break; // Player can only be in one teleporter at a time
-        }
-    }
-    // If player is no longer in any teleporter, reset teleporter state
-    if (!currentTeleporter && player.currentTeleporter) {
-        console.log(`[SERVER ${CURRENT_SERVER_CONFIG.name}] Player ${player.name} left teleporter`);
-        player.currentTeleporter = undefined;
-        player.teleporterEnterTime = undefined;
-        // Notify client that player left teleporter
-        io.to(player.id).emit('teleporterExited');
-    }
-    player.x = newX;
-    player.y = newY;
-    if (player.health <= 0 && !player.isDead) {
-        // Mark player as dead instead of respawning immediately
-        player.isDead = true;
-        // Set random rotation for the corpse
-        player.angle = Math.random() * Math.PI * 2;
-        io.emit('playerDied', {
-            playerId: player.id,
-            x: player.x,
-            y: player.y,
-            angle: player.angle,
-            killedBy: player.killedBy
-        });
-        // No automatic respawn - player must manually respawn via continue button
-    }
-}
+// updatePlayerState moved to playerState module - using imported function
 function start_loop() {
     const TICK_RATE = 30;
     const TICK_INTERVAL = 1000 / TICK_RATE;
     const deltaTime = 1 / TICK_RATE;
     setInterval(() => {
         for (const id in constants_2.players) {
-            updatePlayerState(constants_2.players[id], deltaTime);
+            (0, playerState_1.updatePlayerState)(constants_2.players[id], deltaTime, playerStateDeps);
         }
         // Update petal actions
         (0, petal_actions_1.updatePetalActions)(deltaTime);
@@ -2956,47 +2186,25 @@ function start_loop() {
         io.emit('gameStateUpdate', {
             players: playersForBroadcast,
             enemies: constants_2.enemies,
+            // Items are sent via itemSpawned/itemRemoved events to eligible players only
+            // Don't send items here to avoid showing items to ineligible players
+            items: [],
+            dots: constants_2.dots,
+            timestamp: Date.now()
         });
     }, TICK_INTERVAL);
 }
+// Start the server
 server.listen(PORT, () => {
     console.log(`Server is running on ${constants_1.SERVER_PROTOCOL}://localhost:${PORT}`);
 });
-// Add these constants at the top with other constants
-const HEALTH_REGEN_RATE = 5; // Health points recovered per tick
-const HEALTH_REGEN_INTERVAL = 1000; // Milliseconds between health regeneration ticks
-const HEALTH_REGEN_COMBAT_DELAY = 0; // Delay before health starts regenerating after taking damage
-// Add health regeneration interval
-setInterval(() => {
-    Object.values(constants_2.players).forEach(player => {
-        // Check if enough time has passed since last damage
-        const now = Date.now();
-        if (player.lastDamageTime && now - player.lastDamageTime < HEALTH_REGEN_COMBAT_DELAY) {
-            return; // Skip regeneration if player was recently damaged
-        }
-        // Regenerate health if not at max
-        if (player.health < player.maxHealth) {
-            player.health = Math.min(player.maxHealth, player.health + HEALTH_REGEN_RATE);
-            io.emit('playerUpdated', player);
-        }
-    });
-}, HEALTH_REGEN_INTERVAL);
-// Add viewport refresh interval (every 10 seconds)
-setInterval(() => {
-    // console.log(`[SERVER] Refreshing viewport status for ${Object.keys(players).length} players`);
-    // Validate and fix any invalid player positions first
-    validatePlayerPositions();
-    // Force update all enemy viewport statuses
-    updateEnemyViewportStatus();
-    // Despawn any enemies that have been outside viewport for too long
-    despawnDistantEnemies();
-}, 10000); // 10 seconds
-// Add density maintenance interval (every 2 seconds)
+start_loop();
+// Add density maintenance interval (every 0.5 seconds) to spawn enemies as viewport moves
 setInterval(() => {
     const playerCount = Object.keys(constants_2.players).length;
     if (playerCount > 0) {
         // Calculate target enemy count based on current viewport density
-        const viewports = getPlayerViewports();
+        const viewports = (0, playerState_1.getPlayerViewports)();
         const totalViewportArea = viewports.reduce((total, viewport) => {
             const extendedViewport = {
                 x: viewport.x - constants_2.VIEWPORT_BUFFER,
@@ -3008,7 +2216,7 @@ setInterval(() => {
         }, 0);
         const targetDensity = constants_2.ORIGINAL_ENEMY_COUNT / constants_2.TOTAL_WORLD_AREA;
         const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
-        const currentViewportEnemies = getEnemiesInViewportCount();
+        const currentViewportEnemies = (0, playerState_1.getEnemiesInViewportCount)();
         if (currentViewportEnemies < targetEnemyCount) {
             const enemiesToSpawn = Math.min(3, targetEnemyCount - currentViewportEnemies);
             let spawned = 0;
@@ -3020,7 +2228,7 @@ setInterval(() => {
                 }
             }
             // if (spawned > 0) {
-            // console.log(`[SERVER] Density maintenance: spawned ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
+            //     console.log(`[SERVER] Density maintenance: spawned ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
             // }
         }
     }
@@ -3036,11 +2244,9 @@ setInterval(() => {
 setTimeout(() => {
     spawnSpecialMobs();
 }, 5000); // 5 seconds after server start
-// Update DPS for target dummies every second
 setInterval(() => {
     updateTargetDummyDPS();
 }, 1000); // 1 second
-// savePlayerProgress moved to playerManager module - using wrapper function defined earlier
 // Add periodic saving
 const SAVE_INTERVAL = 60000; // Save every minute
 setInterval(() => {
@@ -3052,44 +2258,3 @@ setInterval(() => {
         }
     });
 }, SAVE_INTERVAL);
-// Add after other app.use declarations but before socket.io setup
-app.post('/admin/save-progress', (req, res) => {
-    const { playerId } = req.body;
-    if (!playerId) {
-        return res.status(400).json({ message: 'Player ID is required' });
-    }
-    const player = constants_2.players[playerId];
-    const socket = io.sockets.sockets.get(playerId);
-    if (!player || !socket?.userId) {
-        return res.status(404).json({ message: 'Player not found or not authenticated' });
-    }
-    try {
-        savePlayerProgress(player, socket.userId);
-        res.json({ message: 'Progress saved successfully' });
-    }
-    catch (error) {
-        console.error('Error saving progress:', error);
-        res.status(500).json({ message: 'Failed to save progress' });
-    }
-});
-// Add after other app.use declarations
-app.use('/assets', (req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
-    next();
-});
-// If you're serving assets from a specific directory, update the static file serving
-app.use('/assets', express_1.default.static(path_1.default.join(__dirname, '../assets'), {
-    setHeaders: (res, path) => {
-        res.header('Access-Control-Allow-Origin', '*');
-        res.header('Cross-Origin-Resource-Policy', 'cross-origin');
-        if (path.endsWith('.js')) {
-            res.setHeader('Content-Type', 'application/javascript');
-        }
-    }
-}));
-// Add near the top with other static file configurations
-app.use('/favicon.ico', express_1.default.static(path_1.default.join(__dirname, '../assets/favicon.ico')));
-// Setup stdin command handler
-(0, commands_1.setupStdinCommandHandler)(commandDeps);
-start_loop();

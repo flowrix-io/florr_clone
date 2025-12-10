@@ -98,6 +98,7 @@ export class Game {
     private obstacles: Obstacle[] = [];
     private readonly ENEMY_CORAL_MAX_HEALTH = 50;
     private items: Map<string, WorldItem> = new Map();
+    private pickedUpItems: Set<string> = new Set(); // Track items picked up by this player
     private isInventoryOpen: boolean = false;
     private gameLoopId: number | null = null;
     private socketHandlers: Map<string, Function> = new Map();
@@ -1114,7 +1115,16 @@ export class Game {
         }
 
         this.update();
-        this.graphics.render(this.players, this.enemies, this.items, this.mobProjectiles, this.playerProjectiles, this.socket?.id ?? '', this.petalExtension);
+        
+        // Filter out items that this player has already picked up
+        const visibleItems = new Map<string, WorldItem>();
+        for (const [itemId, item] of this.items.entries()) {
+            if (!this.pickedUpItems.has(itemId)) {
+                visibleItems.set(itemId, item);
+            }
+        }
+        
+        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, this.socket?.id ?? '', this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
 
