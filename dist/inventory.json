@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 118680889,
+      "totalXP": 118700473,
       "inventory": {
         "common": {
           "shield": 88,
@@ -11,19 +11,19 @@
           "petal_yggdrasil": 9,
           "speed_boost": 23,
           "petal_sand": 42,
-          "petal_rock": 131,
+          "petal_rock": 132,
           "petal_clover": 37,
           "petal_bone": 51,
           "petal_cactus": 11,
           "petal_iris": 9,
           "petal_poison_cactus": 12,
           "petal_lightning": 46,
-          "petal_missile": 42,
+          "petal_missile": 44,
           "petal_jelly": 20,
           "petal_leaf": 4,
           "petal_cutter": 2,
           "petal_wing": 194,
-          "petal_rose": 33,
+          "petal_rose": 34,
           "health_potion": 22,
           "petal_basic": 21,
           "petal_square": 9,
@@ -43,8 +43,8 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 1004,
-          "petal_poison_cactus": 994,
+          "petal_sparkle": 1005,
+          "petal_poison_cactus": 999,
           "petal_lightning": 1001,
           "petal_iris": 998,
           "petal_jelly": 1002,
@@ -55,7 +55,9 @@
           "petal_bone": 6,
           "petal_wing": 999,
           "petal_sand": 1,
-          "petal_leaf": 4
+          "petal_leaf": 4,
+          "petal_blood_leaf": 993,
+          "petal_action_test": 1
         },
         "mythic": {
           "speed_boost": 9,
@@ -86,7 +88,7 @@
         },
         "uncommon": {
           "petal_rose": 45,
-          "petal_dandelion": 38,
+          "petal_dandelion": 39,
           "petal_basic": 65,
           "petal_sand": 7,
           "speed_boost": 36,
@@ -251,32 +253,32 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "sparkle"
+          "petalType": "blood_leaf"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "action_test"
+          "petalType": "blood_leaf"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "poison_cactus"
+          "petalType": "blood_leaf"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "poison_cactus"
+          "petalType": "blood_leaf"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "poison_cactus"
+          "petalType": "blood_leaf"
         },
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "poison_cactus"
+          "petalType": "blood_leaf"
         },
         {
           "type": "speed_boost",

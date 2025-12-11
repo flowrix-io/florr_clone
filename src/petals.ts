@@ -1,4 +1,5 @@
 import { test_petal_action } from "./petal_action/test.action";
+import { blood_leaf_action } from "./petal_action/blood_leaf.action";
 export interface PlayerModifiers {
     damage?: number; // Multiplier for player damage (e.g., 1.2 = +20% damage)
     maxHealth?: number; // Multiplier for player max health (e.g., 1.15 = +15% health)
@@ -749,6 +750,36 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
            Q 0 -1.5, 7.5 0" 
         fill="none" 
         stroke="#bebe2a" 
+        stroke-width="3" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+</svg>`,
+        isAdminPetal: false
+    },
+    blood_leaf: {
+        name: "Blood Leaf Petal",
+        damage: 1,
+        health: 500,
+        size: 0.5,
+        cooldown: 1500,
+        description: "A blood leaf that heals the player when spawned",
+        color: "#000000",
+        count: 1,
+        actions: blood_leaf_action,
+        image: `<svg width="32" height="32" viewBox="-21.5 -10.5 38 21" xmlns="http://www.w3.org/2000/svg">
+  <path d="M -20 0 
+           L -15 0 
+           C -10 -12, 5 -12, 15 0 
+           C 5 12, -10 12, -15 0" 
+        fill="#ad0000" 
+        stroke="#780000" 
+        stroke-width="3" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+  <path d="M -9 0 
+           Q 0 -1.5, 7.5 0" 
+        fill="none" 
+        stroke="#780000" 
         stroke-width="3" 
         stroke-linecap="round" 
         stroke-linejoin="round"/>
