@@ -300,14 +300,21 @@ function getDamageMultiplier(player) {
     }
     return multiplier;
 }
-// Get current speed multiplier from effects
+// Get current speed multiplier from effects and petal modifiers
 function getSpeedMultiplier(player) {
-    if (!player.effects)
-        return 1.0;
     let multiplier = 1.0;
-    for (const effect of player.effects) {
-        if (effect.type === 'speed_boost') {
-            multiplier *= effect.value;
+    // Apply petal modifiers first
+    const { calculatePlayerModifiers } = require('./server/playerManager');
+    const petalModifiers = calculatePlayerModifiers(player);
+    if (petalModifiers.speed !== undefined) {
+        multiplier *= petalModifiers.speed;
+    }
+    // Then apply temporary effect multipliers
+    if (player.effects) {
+        for (const effect of player.effects) {
+            if (effect.type === 'speed_boost') {
+                multiplier *= effect.value;
+            }
         }
     }
     return multiplier;

@@ -741,7 +741,7 @@ function updatePlayerState(player, deltaTime, deps) {
                 item.pickedUpBy = new Set();
             }
             item.pickedUpBy.add(player.id);
-            console.log(`[PICKUP] Player ${player.id} (${player.name}) picked up item ${item.id} (${itemKey}, ${rarity})`);
+            // console.log(`[PICKUP] Player ${player.id} (${player.name}) picked up item ${item.id} (${itemKey}, ${rarity})`);
             // Emit events to update client
             // Only send itemPickedUp to the player who picked it up, not to everyone
             io.to(player.id).emit('itemPickedUp', item.id);

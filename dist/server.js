@@ -775,9 +775,9 @@ io.on('connection', (socket) => {
                 score: 0,
                 velocityX: 0,
                 velocityY: 0,
-                health: Math.round(baseMaxHealth * (0, playerManager_1.getSkillMultiplier)(savedSkills.playerHealth)),
-                maxHealth: Math.round(baseMaxHealth * (0, playerManager_1.getSkillMultiplier)(savedSkills.playerHealth)),
-                damage: Math.round(baseDamage * (0, playerManager_1.getSkillMultiplier)(savedSkills.damage)),
+                health: baseMaxHealth, // Will be recalculated with modifiers
+                maxHealth: baseMaxHealth, // Will be recalculated with modifiers
+                damage: baseDamage, // Will be recalculated with modifiers
                 inventory: savedProgress?.inventory || (0, playerManager_1.createInitialInventory)(),
                 loadout: reconstructedLoadout,
                 isInvulnerable: true,
@@ -791,6 +791,8 @@ io.on('connection', (socket) => {
                 tp: currentTP,
                 skills: savedSkills
             };
+            // Recalculate player stats with modifiers after loadout is set
+            (0, playerManager_1.recalculatePlayerStats)(constants_2.players[socket.id], io);
             // Start cooldown timers for all petals that are on cooldown
             const player = constants_2.players[socket.id];
             if (player && player.loadout) {
@@ -1195,6 +1197,8 @@ io.on('connection', (socket) => {
             // Use validated loadout and server's authoritative inventory
             player.loadout = validatedLoadout;
             player.inventory = serverInventory; // Use server's inventory, not client's
+            // Recalculate player stats based on equipped petal modifiers
+            (0, playerManager_1.recalculatePlayerStats)(player, io);
             io.emit('playerUpdated', player);
         }
     });
@@ -1415,11 +1419,8 @@ io.on('connection', (socket) => {
         // Upgrade the skill to the new tier
         player.skills[skillKey] = data.rarity;
         player.tp -= tpCost;
-        // Apply skill multipliers to player stats
-        const healthMultiplier = (0, playerManager_1.getSkillMultiplier)(player.skills.playerHealth);
-        const damageMultiplier = (0, playerManager_1.getSkillMultiplier)(player.skills.damage);
-        player.maxHealth = Math.round((0, playerManager_1.calculateMaxHealthFromLevel)(player.level) * healthMultiplier);
-        player.damage = Math.round((0, playerManager_1.calculateDamageFromLevel)(player.level) * damageMultiplier);
+        // Recalculate player stats based on level, skills, and petal modifiers
+        (0, playerManager_1.recalculatePlayerStats)(player, io);
         // Ensure health doesn't exceed max health
         if (player.health > player.maxHealth) {
             player.health = player.maxHealth;
@@ -1484,9 +1485,8 @@ io.on('connection', (socket) => {
         player.skills = {};
         // Refund all TP (player's level gives TP, so refund = level - current TP)
         player.tp = player.level;
-        // Recalculate player stats without skill multipliers
-        player.maxHealth = (0, playerManager_1.calculateMaxHealthFromLevel)(player.level);
-        player.damage = (0, playerManager_1.calculateDamageFromLevel)(player.level);
+        // Recalculate player stats (without skill multipliers, but with petal modifiers)
+        (0, playerManager_1.recalculatePlayerStats)(player, io);
         // Ensure health doesn't exceed max health
         if (player.health > player.maxHealth) {
             player.health = player.maxHealth;

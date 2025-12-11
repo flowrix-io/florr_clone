@@ -17,6 +17,8 @@ exports.calculateMaxHealthFromLevel = calculateMaxHealthFromLevel;
 exports.calculateDamageFromLevel = calculateDamageFromLevel;
 exports.getSkillMultiplier = getSkillMultiplier;
 exports.applyPetalHealthBonus = applyPetalHealthBonus;
+exports.calculatePlayerModifiers = calculatePlayerModifiers;
+exports.recalculatePlayerStats = recalculatePlayerStats;
 exports.addXPToPlayer = addXPToPlayer;
 exports.savePlayerProgress = savePlayerProgress;
 const petals_1 = require("../petals");
@@ -228,6 +230,62 @@ function applyPetalHealthBonus(petal, player) {
         petal.health = Math.min(petal.health, maxHealth);
     }
 }
+/**
+ * Calculate combined player modifiers from all equipped petals
+ */
+function calculatePlayerModifiers(player) {
+    const modifiers = {
+        damage: 1.0,
+        maxHealth: 1.0,
+        speed: 1.0
+    };
+    if (!player.loadout)
+        return modifiers;
+    // Sum up modifiers from all equipped petals
+    for (const item of player.loadout) {
+        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
+            continue;
+        const petalStats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+        if (!petalStats || !petalStats.playerModifiers)
+            continue;
+        const petalModifiers = petalStats.playerModifiers;
+        // Multiplicative stacking: multiply all modifiers together
+        if (petalModifiers.damage !== undefined && modifiers.damage !== undefined) {
+            modifiers.damage *= petalModifiers.damage;
+        }
+        if (petalModifiers.maxHealth !== undefined && modifiers.maxHealth !== undefined) {
+            modifiers.maxHealth *= petalModifiers.maxHealth;
+        }
+        if (petalModifiers.speed !== undefined && modifiers.speed !== undefined) {
+            modifiers.speed *= petalModifiers.speed;
+        }
+    }
+    return modifiers;
+}
+/**
+ * Recalculate and apply player stats based on level, skills, and equipped petal modifiers
+ */
+function recalculatePlayerStats(player, io) {
+    // Get base stats from level
+    const baseMaxHealth = calculateMaxHealthFromLevel(player.level);
+    const baseDamage = calculateDamageFromLevel(player.level);
+    // Apply skill multipliers
+    const healthMultiplier = getSkillMultiplier(player.skills?.playerHealth);
+    const damageMultiplier = getSkillMultiplier(player.skills?.damage);
+    // Get petal modifiers
+    const petalModifiers = calculatePlayerModifiers(player);
+    // Apply all multipliers (use 1.0 as fallback if modifier is undefined)
+    player.maxHealth = Math.round(baseMaxHealth * healthMultiplier * (petalModifiers.maxHealth ?? 1.0));
+    player.damage = Math.round(baseDamage * damageMultiplier * (petalModifiers.damage ?? 1.0));
+    // Ensure health doesn't exceed maxHealth
+    if (player.health > player.maxHealth) {
+        player.health = player.maxHealth;
+    }
+    // Emit update if io is provided
+    if (io) {
+        io.emit('playerUpdated', player);
+    }
+}
 function addXPToPlayer(player, xp, socketId, io) {
     // Calculate current total XP
     const currentTotalXP = calculateTotalXP(player.level, player.xp);
@@ -252,11 +310,8 @@ function addXPToPlayer(player, xp, socketId, io) {
         if (!player.skills) {
             player.skills = {};
         }
-        // Update maxHealth and damage based on new level and skills (using multipliers)
-        const healthMultiplier = getSkillMultiplier(player.skills.playerHealth);
-        const damageMultiplier = getSkillMultiplier(player.skills.damage);
-        player.maxHealth = Math.round(calculateMaxHealthFromLevel(newLevel) * healthMultiplier);
-        player.damage = Math.round(calculateDamageFromLevel(newLevel) * damageMultiplier);
+        // Update maxHealth and damage based on new level, skills, and petal modifiers
+        recalculatePlayerStats(player, io);
         // Heal to full when leveling up
         player.health = player.maxHealth;
         // Emit level up event for each level gained

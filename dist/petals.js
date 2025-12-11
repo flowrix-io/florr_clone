@@ -378,6 +378,9 @@ const BASE_PETAL_CONFIGS = {
           r="8"
           fill="#74d68f" />
 </svg>`,
+        playerModifiers: {
+            maxHealth: 1.1,
+        },
         isAdminPetal: false
     },
     poison_cactus: {
@@ -861,6 +864,44 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         poison = overrides.poison ?? poison; // Apply override or use scaled value
         cooldown = overrides.cooldown ?? cooldown;
     }
+    // Scale player modifiers with rarity if they exist
+    // Modifiers scale linearly from 1x (common) to 4x (unique)
+    // Formula: 1 + (rarityIndex / 8) * 3
+    let playerModifiers = undefined;
+    if (baseConfig.playerModifiers || overrides.playerModifiers) {
+        const baseModifiers = baseConfig.playerModifiers || {};
+        const overrideModifiers = overrides.playerModifiers || {};
+        // Calculate rarity scaling multiplier for player modifiers
+        // common (0): 1.0x, unique (8): 4.0x
+        const modifierRarityMultiplier = 1 + (rarityIndex / 8) * 3;
+        // For modifiers, we can either:
+        // 1. Use override if provided (for rarity-specific scaling) - overrides are NOT scaled
+        // 2. Scale base modifiers by rarity multiplier
+        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined) {
+            // Use override modifiers directly (not scaled, as they're already rarity-specific)
+            playerModifiers = {
+                damage: overrideModifiers.damage ?? baseModifiers.damage,
+                maxHealth: overrideModifiers.maxHealth ?? baseModifiers.maxHealth,
+                speed: overrideModifiers.speed ?? baseModifiers.speed
+            };
+        }
+        else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined) {
+            // Scale base modifiers by rarity multiplier
+            // Formula: baseValue * (1 + (rarityIndex / 8) * 3)
+            // This scales from 1x at common to 4x at unique
+            playerModifiers = {
+                damage: baseModifiers.damage !== undefined
+                    ? 1 + (baseModifiers.damage - 1) * modifierRarityMultiplier
+                    : undefined,
+                maxHealth: baseModifiers.maxHealth !== undefined
+                    ? 1 + (baseModifiers.maxHealth - 1) * modifierRarityMultiplier
+                    : undefined,
+                speed: baseModifiers.speed !== undefined
+                    ? 1 + (baseModifiers.speed - 1) * modifierRarityMultiplier
+                    : undefined
+            };
+        }
+    }
     return {
         name,
         damage,
@@ -878,7 +919,8 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         actions: overrides.actions ?? baseConfig.actions,
         isAdminPetal: baseConfig.isAdminPetal ?? false,
         range: baseConfig.range ?? 1.0, // Default range multiplier
-        projectile: baseConfig.projectile // Include projectile config if present
+        projectile: baseConfig.projectile, // Include projectile config if present
+        playerModifiers: playerModifiers // Include player modifiers if present
     };
 }
 // Generate the full petal configuration
