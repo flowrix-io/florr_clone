@@ -1187,10 +1187,6 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 }, 3000 * multiplier);
                 break;
             case 'petal':
-                if (item.petalType === 'yggdrasil') {
-                    // Yggdrasil petals are now always active - no activation needed
-                    console.log(`Player ${player.name} used yggdrasil petal (always active)`);
-                }
                 break;
         }
 
@@ -1311,15 +1307,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             }
         });
 
-        if (hasChanges) {
-            console.log('[SERVER] Loadout validation: Some items were unequipped due to missing inventory');
-        }
-
         return validatedLoadout;
     }
 
     socket.on('updateLoadout', (data: { loadout: (Item | null)[]; inventory: PlayerInventory }) => {
-        console.log('[SERVER] updateLoadout received from socket:', socket.id, 'player exists:', !!players[socket.id], 'authenticated:', !!socket.username);
         const player = players[socket.id];
         if (!player) {
             console.warn('[SERVER] updateLoadout: Player not found for socket:', socket.id);
@@ -1376,7 +1367,6 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                     if (oldKey && oldItem.rarity) {
                         // Add item back to inventory
                         addItem(serverInventory, oldItem.rarity, oldKey, 1);
-                        console.log(`[SERVER] Item ${oldKey} (${oldItem.rarity}) unequipped, added back to inventory`);
                     }
                 }
                 
@@ -1387,7 +1377,6 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                         const rarityInv = serverInventory[newItem.rarity];
                         if (rarityInv && rarityInv[newKey] && rarityInv[newKey] > 0) {
                             removeItem(serverInventory, newItem.rarity, newKey, 1);
-                            console.log(`[SERVER] Item ${newKey} (${newItem.rarity}) equipped, removed from inventory`);
                         } else {
                             console.warn(`[SERVER] Attempted to equip ${newKey} (${newItem.rarity}) but it doesn't exist in inventory`);
                         }
@@ -1710,12 +1699,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         player.tp -= tpCost;
 
         // Recalculate player stats based on level, skills, and petal modifiers
+        // This will automatically scale health proportionally if maxHealth changes
         recalculatePlayerStats(player, io);
-        
-        // Ensure health doesn't exceed max health
-        if (player.health > player.maxHealth) {
-            player.health = player.maxHealth;
-        }
 
         // Apply petal health bonuses to all equipped petals and respawn them
         if (player.loadout) {
@@ -1786,12 +1771,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         player.tp = player.level;
 
         // Recalculate player stats (without skill multipliers, but with petal modifiers)
+        // This will automatically scale health proportionally if maxHealth changes
         recalculatePlayerStats(player, io);
-        
-        // Ensure health doesn't exceed max health
-        if (player.health > player.maxHealth) {
-            player.health = player.maxHealth;
-        }
 
         // Reconstruct all petals without petal health bonuses
         if (player.loadout) {

@@ -604,8 +604,6 @@ function setupSocketListeners(game: any) {
                     20
                 );
             }
-            
-            console.log(`[CLIENT] Player ${data.playerId} healed for ${data.healAmount} HP`);
         }
     });
 

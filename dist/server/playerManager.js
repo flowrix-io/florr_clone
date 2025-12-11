@@ -274,12 +274,27 @@ function recalculatePlayerStats(player, io) {
     const damageMultiplier = getSkillMultiplier(player.skills?.damage);
     // Get petal modifiers
     const petalModifiers = calculatePlayerModifiers(player);
+    // Store old maxHealth to calculate health percentage
+    const oldMaxHealth = player.maxHealth || 0;
     // Apply all multipliers (use 1.0 as fallback if modifier is undefined)
-    player.maxHealth = Math.round(baseMaxHealth * healthMultiplier * (petalModifiers.maxHealth ?? 1.0));
+    const newMaxHealth = Math.round(baseMaxHealth * healthMultiplier * (petalModifiers.maxHealth ?? 1.0));
     player.damage = Math.round(baseDamage * damageMultiplier * (petalModifiers.damage ?? 1.0));
-    // Ensure health doesn't exceed maxHealth
+    // Scale current health proportionally if maxHealth changed
+    if (oldMaxHealth > 0 && oldMaxHealth !== newMaxHealth) {
+        // Calculate health percentage (0.0 to 1.0)
+        const healthPercentage = Math.max(0, Math.min(1, player.health / oldMaxHealth));
+        // Scale to new maxHealth, maintaining the same percentage
+        player.health = Math.round(newMaxHealth * healthPercentage);
+    }
+    // Update maxHealth after scaling health
+    player.maxHealth = newMaxHealth;
+    // Ensure health doesn't exceed maxHealth (safety check)
     if (player.health > player.maxHealth) {
         player.health = player.maxHealth;
+    }
+    // Ensure health is not negative
+    if (player.health < 0) {
+        player.health = 0;
     }
     // Emit update if io is provided
     if (io) {

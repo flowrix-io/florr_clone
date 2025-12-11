@@ -140,7 +140,6 @@ function healPlayer(player: ServerPlayer, healAmount: number, io: any): void {
             health: player.health,
             healAmount: player.health - oldHealth
         });
-        console.log(`Player ${player.id} healed for ${player.health - oldHealth} HP`);
     }
 }
 

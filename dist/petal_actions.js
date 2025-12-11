@@ -100,7 +100,6 @@ function healPlayer(player, healAmount, io) {
             health: player.health,
             healAmount: player.health - oldHealth
         });
-        console.log(`Player ${player.id} healed for ${player.health - oldHealth} HP`);
     }
 }
 // Apply damage boost to player

@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 116900335,
+      "totalXP": 116987145,
       "inventory": {
         "common": {
           "shield": 87,
@@ -43,7 +43,7 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 999,
+          "petal_sparkle": 1005,
           "petal_poison_cactus": 1000,
           "petal_lightning": 1001,
           "petal_iris": 998,
@@ -69,7 +69,7 @@
           "petal_bone": 21,
           "petal_iris": 4,
           "petal_stinger": 10,
-          "petal_dandelion": 7,
+          "petal_dandelion": 8,
           "petal_leaf": 6,
           "petal_missile": 6,
           "petal_poison_cactus": 1,
@@ -113,11 +113,11 @@
           "petal_golden_leaf": 2
         },
         "legendary": {
-          "speed_boost": 94,
+          "speed_boost": 95,
           "petal_clover": 49,
           "petal_dandelion": 134,
           "petal_sand": 17,
-          "petal_rose": 82,
+          "petal_rose": 83,
           "health_potion": 39,
           "petal_light": 62,
           "petal_stinger": 49,
@@ -125,11 +125,11 @@
           "petal_yggdrasil": 12,
           "petal_cactus": 9,
           "petal_poison_cactus": 6,
-          "petal_bone": 149,
+          "petal_bone": 150,
           "petal_iris": 25,
-          "petal_missile": 90,
+          "petal_missile": 93,
           "petal_jelly": 6,
-          "shield": 66,
+          "shield": 67,
           "petal_leaf": 4,
           "petal_lightning": 4,
           "petal_cutter": 2,
@@ -150,7 +150,7 @@
           "petal_light": 43,
           "petal_rock": 103,
           "shield": 8,
-          "petal_dandelion": 100,
+          "petal_dandelion": 101,
           "petal_clover": 36,
           "petal_bone": 70,
           "petal_cactus": 5,
@@ -214,7 +214,6 @@
           "petal_jelly": 2,
           "petal_stinger": 1,
           "petal_poison_cactus": 2,
-          "petal_cactus": 4,
           "petal_yucca": 3,
           "petal_light": 1,
           "petal_cutter": 1,
@@ -244,41 +243,33 @@
       "loadout": [
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
+          "rarity": "ultra",
+          "petalType": "cactus"
         },
+        null,
+        null,
+        null,
+        null,
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
+          "rarity": "ultra",
+          "petalType": "cactus"
         },
         null,
         {
           "type": "speed_boost",
           "rarity": "unique"
         },
-        null,
-        null,
+        {
+          "type": "petal",
+          "rarity": "ultra",
+          "petalType": "cactus"
+        },
+        {
+          "type": "petal",
+          "rarity": "ultra",
+          "petalType": "cactus"
+        },
         null,
         null,
         null,

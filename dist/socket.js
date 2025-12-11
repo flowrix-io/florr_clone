@@ -501,7 +501,6 @@ function setupSocketListeners(game) {
             if (data.healAmount > 0) {
                 game.showFloatingText(player.x, player.y - 20, `+${data.healAmount}`, '#00FF00', 20);
             }
-            console.log(`[CLIENT] Player ${data.playerId} healed for ${data.healAmount} HP`);
         }
     });
     game.socket.on('petalExplosion', (data) => {
