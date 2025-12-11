@@ -38,7 +38,7 @@ function executeAction(action, context, trigger) {
     const { player, petalX, petalY, petalSize, enemies, io } = context;
     switch (action.type) {
         case 'heal':
-            healPlayer(player, action.value || 10, io);
+            healPlayer(player, action.value || 10, io, context);
             break;
         case 'break':
             // This action is handled by the petal breaking logic in the server
@@ -129,11 +129,22 @@ function getSkillMultiplier(skillTier) {
     return SKILL_MULTIPLIERS[skillTier] || 1.0;
 }
 // Heal the player
-function healPlayer(player, healAmount, io) {
+function healPlayer(player, healAmount, io, context) {
     const oldHealth = player.health;
+    // Apply rarity scaling (sqrt(3) per rarity level)
+    let rarityMultiplier = 1.0;
+    if (context && context.loadoutIndex !== undefined) {
+        const petal = player.loadout[context.loadoutIndex];
+        if (petal && petal.type === 'petal' && petal.rarity) {
+            const rarityIndex = petals_1.RARITY_LEVELS.indexOf(petal.rarity);
+            if (rarityIndex >= 0) {
+                rarityMultiplier = Math.pow(Math.sqrt(3), rarityIndex);
+            }
+        }
+    }
     // Apply healing multiplier skill bonus
     const healingMultiplier = getSkillMultiplier(player.skills?.healingMultiplier);
-    const modifiedHealAmount = healAmount * healingMultiplier;
+    const modifiedHealAmount = healAmount * rarityMultiplier * healingMultiplier;
     player.health = Math.min(player.maxHealth, player.health + modifiedHealAmount);
     if (player.health !== oldHealth) {
         io.emit('playerHealed', {
@@ -756,7 +767,7 @@ function executeNextAction(petalId, deltaTime) {
     }
     switch (action.type) {
         case 'heal':
-            healPlayer(player, action.value || 10, io);
+            healPlayer(player, action.value || 10, io, actionState.context);
             actionState.currentActionIndex++;
             break;
         case 'damage_boost':

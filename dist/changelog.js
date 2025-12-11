@@ -78,6 +78,14 @@ exports.CHANGELOG = [
             'New petal: Square',
             'A global notification is now shown when a rare petal is crafted',
         ]
+    },
+    {
+        date: 'December 10, 2025',
+        changes: [
+            'New petal: Blood Leaf, it damages the player when exploding',
+            'Healing and self-damage now scales by rarity',
+            'Cactus and Poison Cactus now give max health to the player',
+        ]
     }
 ];
 class ChangelogManager {

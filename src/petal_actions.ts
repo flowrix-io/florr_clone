@@ -1,4 +1,4 @@
-import { PetalAction, parsePetalActions } from './petals';
+import { PetalAction, parsePetalActions, RARITY_LEVELS } from './petals';
 import { ServerPlayer } from './player';
 import { Enemy, getXPFromEnemy } from './server_utils';
 import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
@@ -78,7 +78,7 @@ function executeAction(action: PetalAction, context: ActionContext, trigger: 'on
 
     switch (action.type) {
         case 'heal':
-                healPlayer(player, action.value || 10, io);
+                healPlayer(player, action.value || 10, io, context);
             break;
 
         case 'break':
@@ -179,11 +179,24 @@ function getSkillMultiplier(skillTier: string | undefined): number {
 }
 
 // Heal the player
-function healPlayer(player: ServerPlayer, healAmount: number, io: any): void {
+function healPlayer(player: ServerPlayer, healAmount: number, io: any, context?: ActionContext): void {
     const oldHealth = player.health;
+    
+    // Apply rarity scaling (sqrt(3) per rarity level)
+    let rarityMultiplier = 1.0;
+    if (context && context.loadoutIndex !== undefined) {
+        const petal = player.loadout[context.loadoutIndex];
+        if (petal && petal.type === 'petal' && petal.rarity) {
+            const rarityIndex = RARITY_LEVELS.indexOf(petal.rarity);
+            if (rarityIndex >= 0) {
+                rarityMultiplier = Math.pow(Math.sqrt(3), rarityIndex);
+            }
+        }
+    }
+    
     // Apply healing multiplier skill bonus
     const healingMultiplier = getSkillMultiplier(player.skills?.healingMultiplier);
-    const modifiedHealAmount = healAmount * healingMultiplier;
+    const modifiedHealAmount = healAmount * rarityMultiplier * healingMultiplier;
     player.health = Math.min(player.maxHealth, player.health + modifiedHealAmount);
     
     if (player.health !== oldHealth) {
@@ -894,7 +907,7 @@ function executeNextAction(petalId: string, deltaTime: number): void {
 
     switch (action.type) {
         case 'heal':
-            healPlayer(player, action.value || 10, io);
+            healPlayer(player, action.value || 10, io, actionState.context);
             actionState.currentActionIndex++;
             break;
 
