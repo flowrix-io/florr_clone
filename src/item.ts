@@ -5,6 +5,8 @@ export interface Item {
   health?: number; // For petals: current health
   maxHealth?: number; // For petals: maximum health
   onCooldown?: boolean; // For all items: cooldown state
+  customDamage?: number; // Custom damage override (writable via memory)
+  customSize?: number; // Custom size override (writable via memory)
 }
 
 export interface WorldItem extends Item {

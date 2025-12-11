@@ -141,7 +141,8 @@ export function isPositionInPlayerPetalRange(x: number, y: number, mobSize: numb
             if (item && item.type === 'petal' && item.petalType && item.rarity) {
                 const petalStats = getPetalStats(item.petalType, item.rarity);
                 if (petalStats) {
-                    const petalSize = 40 * petalStats.size;
+                    const effectiveSize = (item as any).customSize !== undefined ? (item as any).customSize : petalStats.size;
+                    const petalSize = 40 * effectiveSize;
                     maxPetalSize = Math.max(maxPetalSize, petalSize);
                     const petalRange = petalStats.range ?? 1.0;
                     maxPetalRange = Math.max(maxPetalRange, petalRange);
@@ -414,11 +415,12 @@ export function updatePlayerState(
                         // Execute petal actions immediately when spawned
                         if (petalStats.actions) {
                             const petalId = `${player.id}_${i}_${j}`;
+                            const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
                             const actionContext = {
                                 player: player,
                                 petalX: player.x, // Will be updated with actual position in game loop
                                 petalY: player.y, // Will be updated with actual position in game loop
-                                petalSize: petalStats.size * 40,
+                                petalSize: effectiveSize * 40,
                                 petalDamage: petalStats.damage, // Include petal damage for rarity scaling
                                 enemies: enemies,
                                 io: io,
@@ -454,6 +456,9 @@ export function updatePlayerState(
 
             const petalStats = getPetalStats(petal.petalType, petal.rarity);
             if (!petalStats) continue;
+            
+            // Get effective size (custom size if set, otherwise base stats)
+            const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
             
             const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002; // Convert to radians per ms
             const baseAngle = idx * angleStep;
@@ -508,7 +513,7 @@ export function updatePlayerState(
                             petalType: petal.petalType,
                             petalRarity: petal.rarity,
                             damage: petalStats.damage,
-                            size: petalStats.size,
+                            size: effectiveSize,
                             health: petalStats.health,
                             maxHealth: petalStats.health
                         };
@@ -526,7 +531,7 @@ export function updatePlayerState(
                 // Get mob stats to determine proper hitbox size
                 const mobStats = getMobStats(enemy.type, enemy.tier);
                 const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE; // Use mob size or fallback to base size
-                const petalSize = 40 * petalStats.size; // Use same base size as enemies for consistency
+                const petalSize = 40 * effectiveSize; // Use effective size (custom or base)
 
                 // Use circular hitbox collision (matching player-to-mob and mob-to-mob collision)
                 // Both petal and enemy positions are center points
@@ -713,7 +718,7 @@ export function updatePlayerState(
                 
                 const projectileSize = mobProjectile.size * 20; // Convert to pixels
                 const projectileRadius = projectileSize / 2;
-                const petalSize = 40 * petalStats.size;
+                const petalSize = 40 * effectiveSize; // Use effective size (custom or base)
                 const petalRadius = petalSize / 2;
                 
                 const dx = mobProjectile.x - petalX;

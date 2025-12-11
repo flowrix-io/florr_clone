@@ -1916,7 +1916,9 @@ export class Graphics {
             const petalY = Math.sin(totalAngle) * petalRadius;
 
             // Draw petal - set up transforms first (same pattern as mobs)
-            const size = 12 * stats.size;
+            // Check for custom size first, then use base stats
+            const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : stats.size;
+            const size = 12 * effectiveSize;
             const petalSize = size;
             
             // Save context state before drawing this petal

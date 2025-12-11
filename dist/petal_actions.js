@@ -31,7 +31,9 @@ function executePetalActions(actionString, context, trigger = 'on_break') {
         executeAction(action, context, trigger);
     }
 }
-// Execute a single action
+// Execute a single action (legacy function for immediate execution like on_break)
+// Note: Control flow actions (if/else/endif, loop/endloop, delay, etc.) are not supported here
+// They should use the state-based execution system via executePetalActionsOnSpawn
 function executeAction(action, context, trigger) {
     const { player, petalX, petalY, petalSize, enemies, io } = context;
     switch (action.type) {
@@ -57,8 +59,56 @@ function executeAction(action, context, trigger) {
         case 'lightning':
             strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, context.petalDamage);
             break;
+        // Control flow and state-based actions are not supported in immediate execution
+        // These should use executePetalActionsOnSpawn instead
+        case 'delay':
+        case 'restart':
+        case 'wait_until_collision':
+        case 'if':
+        case 'else':
+        case 'endif':
+        case 'loop':
+        case 'endloop':
+        case 'goto':
+        case 'label':
+        case 'set_memory':
+        case 'get_memory':
+        case 'add_memory':
+        case 'multiply_memory':
+        case 'set_petal_damage':
+        case 'set_petal_health':
+        case 'set_petal_size':
+        case 'add_petal_damage':
+        case 'add_petal_health':
+        case 'add_petal_size':
+        case 'set_player_damage':
+        case 'set_player_max_health':
+        case 'set_player_speed':
+        case 'add_player_damage':
+        case 'add_player_max_health':
+        case 'add_player_speed':
+        case 'compare':
+        case 'compare_gt':
+        case 'compare_lt':
+        case 'compare_gte':
+        case 'compare_lte':
+        case 'compare_eq':
+        case 'compare_neq':
+            // These actions require state-based execution and are not supported in immediate mode
+            // Silently skip them to avoid console spam
+            break;
         default:
-            console.warn(`Unknown action type: ${action.type}`);
+            // Only warn about truly unknown action types
+            if (!['heal', 'break', 'damage_boost', 'speed_boost', 'shield', 'explode', 'lightning',
+                'delay', 'restart', 'wait_until_collision', 'if', 'else', 'endif', 'loop', 'endloop',
+                'goto', 'label', 'set_memory', 'get_memory', 'add_memory', 'multiply_memory',
+                'set_petal_damage', 'set_petal_health', 'set_petal_size', 'add_petal_damage',
+                'add_petal_health', 'add_petal_size', 'set_player_damage', 'set_player_max_health',
+                'set_player_speed', 'add_player_damage', 'add_player_max_health', 'add_player_speed',
+                'compare', 'compare_gt', 'compare_lt', 'compare_gte', 'compare_lte', 'compare_eq', 'compare_neq'].includes(action.type)) {
+                console.warn(`Unknown action type: ${action.type}`);
+            }
+            break;
     }
 }
 // Skill multipliers based on rarity tier
@@ -427,7 +477,10 @@ function getMemoryValue(key, context) {
                     case 'onCooldown':
                         return petal.onCooldown ? 1 : 0;
                     case 'damage':
-                        // Get petal damage from stats
+                        // Get petal damage - check custom value first, then base stats
+                        if (petal.customDamage !== undefined) {
+                            return petal.customDamage;
+                        }
                         if (petal.petalType && petal.rarity) {
                             const { getPetalStats } = require('./petals');
                             const petalStats = getPetalStats(petal.petalType, petal.rarity);
@@ -435,7 +488,10 @@ function getMemoryValue(key, context) {
                         }
                         return 0;
                     case 'size':
-                        // Get petal size from stats
+                        // Get petal size - check custom value first, then base stats
+                        if (petal.customSize !== undefined) {
+                            return petal.customSize;
+                        }
                         if (petal.petalType && petal.rarity) {
                             const { getPetalStats } = require('./petals');
                             const petalStats = getPetalStats(petal.petalType, petal.rarity);
@@ -459,12 +515,22 @@ function getMemoryValue(key, context) {
             if (!player || !player.loadout)
                 continue;
             for (const item of player.loadout) {
-                if (item && item.type === 'petal' && item.petalType === petalType && item.rarity) {
+                if (item && item.type === 'petal' && item.petalType === petalType) {
                     const { getPetalStats } = require('./petals');
-                    const petalStats = getPetalStats(item.petalType, item.rarity);
-                    if (petalStats) {
-                        const count = petalStats.count || 1;
-                        totalCount += count;
+                    if (item.rarity) {
+                        const petalStats = getPetalStats(item.petalType, item.rarity);
+                        if (petalStats) {
+                            const count = petalStats.count || 1;
+                            totalCount += count;
+                        }
+                        else {
+                            // If no stats found, count as 1
+                            totalCount += 1;
+                        }
+                    }
+                    else {
+                        // If no rarity, count as 1
+                        totalCount += 1;
                     }
                 }
             }
@@ -565,10 +631,8 @@ function evaluateCondition(condition, context, state) {
                 return false;
         }
     })();
-    // Debug logging for important conditions
-    if (left.includes('extended') || left.includes('counter')) {
-        console.log(`[CONDITION] ${condition} -> ${leftValue} ${operator} ${right} = ${result}`);
-    }
+    // Only log condition errors, not successful evaluations
+    // (removed verbose logging to reduce console spam)
     return result;
 }
 // Build label map for goto support
@@ -628,9 +692,6 @@ function executePetalActionsOnSpawn(actionString, context) {
 function executeNextAction(petalId, deltaTime) {
     const actionState = petalActionStates.get(petalId);
     if (!actionState || !actionState.isActive) {
-        if (!actionState) {
-            console.log(`[PETAL_ACTIONS] No action state found for ${petalId}`);
-        }
         return;
     }
     // Don't execute if we're waiting for collision
@@ -688,10 +749,7 @@ function executeNextAction(petalId, deltaTime) {
     }
     const action = actions[currentActionIndex];
     const { player, petalX, petalY, petalSize, enemies, io } = actionState.context;
-    // Debug logging for action execution (only log important actions to reduce spam)
-    if (action.type === 'lightning' || action.type === 'speed_boost' || action.type === 'restart') {
-        console.log(`[PETAL_ACTIONS] ${petalId} executing action ${currentActionIndex}/${actions.length}: ${action.type}`);
-    }
+    // Removed verbose action logging to reduce console spam
     // Debug: log action type if it's not recognized
     if (!['heal', 'damage_boost', 'speed_boost', 'shield', 'explode', 'lightning', 'break', 'delay', 'restart', 'wait_until_collision', 'if', 'else', 'endif', 'loop', 'endloop', 'goto', 'label', 'set_memory', 'get_memory', 'add_memory', 'multiply_memory', 'set_petal_damage', 'set_petal_health', 'set_petal_size', 'add_petal_damage', 'add_petal_health', 'add_petal_size', 'set_player_damage', 'set_player_max_health', 'set_player_speed', 'add_player_damage', 'add_player_max_health', 'add_player_speed', 'compare', 'compare_gt', 'compare_lt', 'compare_gte', 'compare_lte', 'compare_eq', 'compare_neq'].includes(action.type)) {
         console.warn(`[DEBUG] Unrecognized action type: "${action.type}" (typeof: ${typeof action.type})`);
@@ -706,7 +764,6 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'speed_boost':
-            console.log(`[SPEED_BOOST] Applying speed boost: ${action.value || 1.5}x for ${action.duration || 5000}ms`);
             applySpeedBoost(player, action.value || 1.5, action.duration || 5000);
             actionState.currentActionIndex++;
             break;
@@ -719,7 +776,6 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'lightning':
-            console.log(`[LIGHTNING] Striking lightning at (${petalX}, ${petalY}) with radius ${action.value || 100}, enemies: ${enemies.length}`);
             strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, actionState.context.petalDamage);
             actionState.currentActionIndex++;
             break;
@@ -734,7 +790,6 @@ function executeNextAction(petalId, deltaTime) {
             break;
         case 'restart':
             // Restart from beginning
-            console.log(`[RESTART] Restarting petal actions for ${petalId}`);
             actionState.currentActionIndex = 0;
             controlFlow.ifStack = [];
             controlFlow.loopStack = [];
@@ -746,7 +801,8 @@ function executeNextAction(petalId, deltaTime) {
             break;
         case 'if':
             // Evaluate condition
-            const conditionResult = evaluateCondition(action.condition || '', actionState.context, actionState);
+            const conditionStr = action.condition || '';
+            const conditionResult = evaluateCondition(conditionStr, actionState.context, actionState);
             controlFlow.ifStack.push(conditionResult);
             actionState.currentActionIndex++;
             break;
@@ -832,11 +888,39 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'set_memory':
-            // Set global memory value (only for regular memory keys, not special keys)
+            // Set global memory value or writable petal stats
             const memKey = action.stringValue || '';
-            const memValue = action.value || 0;
-            // Only allow setting regular memory keys (not special keys like player:, loadout:, petal:count:)
-            if (!memKey.startsWith('player:') && !memKey.startsWith('loadout:') && !memKey.startsWith('petal:count:')) {
+            // Check if value is a memory reference (stored in condition field as a workaround)
+            let memValue = action.value || 0;
+            if (isNaN(memValue) && action.condition && action.condition.startsWith('memory:')) {
+                // Resolve memory reference
+                const memRefKey = action.condition.substring(7);
+                memValue = getMemoryValue(memRefKey, actionState.context);
+            }
+            // Handle writable loadout stats: loadout:<slot>:damage, loadout:<slot>:size
+            if (memKey.startsWith('loadout:')) {
+                const parts = memKey.substring(8).split(':');
+                if (parts.length >= 2) {
+                    const slotIndex = parseInt(parts[0]);
+                    const property = parts[1];
+                    if (!isNaN(slotIndex) && slotIndex >= 0 && slotIndex < player.loadout.length) {
+                        const petal = player.loadout[slotIndex];
+                        if (petal && petal.type === 'petal') {
+                            if (property === 'damage') {
+                                petal.customDamage = memValue;
+                            }
+                            else if (property === 'size') {
+                                petal.customSize = memValue;
+                            }
+                            else {
+                                console.warn(`Cannot set loadout property: ${property} (only damage and size are writable)`);
+                            }
+                        }
+                    }
+                }
+            }
+            else if (!memKey.startsWith('player:') && !memKey.startsWith('petal:count:')) {
+                // Regular memory key
                 exports.globalPetalMemory.set(memKey, memValue);
             }
             else {
@@ -850,11 +934,35 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'add_memory':
-            // Add to global memory value (only for regular memory keys)
+            // Add to global memory value or writable petal stats
             const addMemKey = action.stringValue || '';
             const addMemValue = action.value || 0;
-            // Only allow modifying regular memory keys
-            if (!addMemKey.startsWith('player:') && !addMemKey.startsWith('loadout:') && !addMemKey.startsWith('petal:count:')) {
+            // Handle writable loadout stats: loadout:<slot>:damage, loadout:<slot>:size
+            if (addMemKey.startsWith('loadout:')) {
+                const parts = addMemKey.substring(8).split(':');
+                if (parts.length >= 2) {
+                    const slotIndex = parseInt(parts[0]);
+                    const property = parts[1];
+                    if (!isNaN(slotIndex) && slotIndex >= 0 && slotIndex < player.loadout.length) {
+                        const petal = player.loadout[slotIndex];
+                        if (petal && petal.type === 'petal') {
+                            if (property === 'damage') {
+                                const currentValue = getMemoryValue(`loadout:${slotIndex}:damage`, actionState.context);
+                                petal.customDamage = currentValue + addMemValue;
+                            }
+                            else if (property === 'size') {
+                                const currentValue = getMemoryValue(`loadout:${slotIndex}:size`, actionState.context);
+                                petal.customSize = currentValue + addMemValue;
+                            }
+                            else {
+                                console.warn(`Cannot modify loadout property: ${property} (only damage and size are writable)`);
+                            }
+                        }
+                    }
+                }
+            }
+            else if (!addMemKey.startsWith('player:') && !addMemKey.startsWith('petal:count:')) {
+                // Regular memory key
                 const currentMemValue = exports.globalPetalMemory.get(addMemKey) || 0;
                 exports.globalPetalMemory.set(addMemKey, currentMemValue + addMemValue);
             }
@@ -864,11 +972,35 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'multiply_memory':
-            // Multiply global memory value (only for regular memory keys)
+            // Multiply global memory value or writable petal stats
             const multMemKey = action.stringValue || '';
             const multMemValue = action.value || 1;
-            // Only allow modifying regular memory keys
-            if (!multMemKey.startsWith('player:') && !multMemKey.startsWith('loadout:') && !multMemKey.startsWith('petal:count:')) {
+            // Handle writable loadout stats: loadout:<slot>:damage, loadout:<slot>:size
+            if (multMemKey.startsWith('loadout:')) {
+                const parts = multMemKey.substring(8).split(':');
+                if (parts.length >= 2) {
+                    const slotIndex = parseInt(parts[0]);
+                    const property = parts[1];
+                    if (!isNaN(slotIndex) && slotIndex >= 0 && slotIndex < player.loadout.length) {
+                        const petal = player.loadout[slotIndex];
+                        if (petal && petal.type === 'petal') {
+                            if (property === 'damage') {
+                                const currentValue = getMemoryValue(`loadout:${slotIndex}:damage`, actionState.context);
+                                petal.customDamage = currentValue * multMemValue;
+                            }
+                            else if (property === 'size') {
+                                const currentValue = getMemoryValue(`loadout:${slotIndex}:size`, actionState.context);
+                                petal.customSize = currentValue * multMemValue;
+                            }
+                            else {
+                                console.warn(`Cannot modify loadout property: ${property} (only damage and size are writable)`);
+                            }
+                        }
+                    }
+                }
+            }
+            else if (!multMemKey.startsWith('player:') && !multMemKey.startsWith('petal:count:')) {
+                // Regular memory key
                 const currentMultMemValue = exports.globalPetalMemory.get(multMemKey) || 0;
                 exports.globalPetalMemory.set(multMemKey, currentMultMemValue * multMemValue);
             }
@@ -878,8 +1010,15 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'set_petal_damage':
-            // Set petal damage (modifies context)
+            // Set petal damage (modifies context and petal object)
             actionState.context.petalDamage = action.value || 0;
+            // Also store on petal object for memory access
+            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
+                const petal = player.loadout[actionState.loadoutIndex];
+                if (petal && petal.type === 'petal') {
+                    petal.customDamage = action.value || 0;
+                }
+            }
             actionState.currentActionIndex++;
             break;
         case 'set_petal_health':
@@ -894,13 +1033,40 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'set_petal_size':
-            // Set petal size (modifies context)
-            actionState.context.petalSize = action.value || 1;
+            // Set petal size (modifies context and petal object)
+            // Support memory references in stringValue if value is not provided
+            let sizeValue = action.value;
+            if (sizeValue === undefined || sizeValue === null || isNaN(sizeValue)) {
+                // Try to get from stringValue if it's a memory reference
+                if (action.stringValue && action.stringValue.startsWith('memory:')) {
+                    const memKey = action.stringValue.substring(7);
+                    sizeValue = getMemoryValue(memKey, actionState.context);
+                }
+                else {
+                    sizeValue = 1; // Default
+                }
+            }
+            actionState.context.petalSize = sizeValue;
+            // Also store on petal object for memory access
+            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
+                const petal = player.loadout[actionState.loadoutIndex];
+                if (petal && petal.type === 'petal') {
+                    petal.customSize = sizeValue;
+                }
+            }
             actionState.currentActionIndex++;
             break;
         case 'add_petal_damage':
-            // Add to petal damage
+            // Add to petal damage (modifies context and petal object)
             actionState.context.petalDamage += action.value || 0;
+            // Also update petal object
+            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
+                const petal = player.loadout[actionState.loadoutIndex];
+                if (petal && petal.type === 'petal') {
+                    const currentValue = getMemoryValue(`loadout:${actionState.loadoutIndex}:damage`, actionState.context);
+                    petal.customDamage = currentValue + (action.value || 0);
+                }
+            }
             actionState.currentActionIndex++;
             break;
         case 'add_petal_health':
@@ -914,8 +1080,16 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'add_petal_size':
-            // Add to petal size
+            // Add to petal size (modifies context and petal object)
             actionState.context.petalSize += action.value || 0;
+            // Also update petal object
+            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
+                const petal = player.loadout[actionState.loadoutIndex];
+                if (petal && petal.type === 'petal') {
+                    const currentValue = getMemoryValue(`loadout:${actionState.loadoutIndex}:size`, actionState.context);
+                    petal.customSize = currentValue + (action.value || 0);
+                }
+            }
             actionState.currentActionIndex++;
             break;
         case 'set_player_damage':

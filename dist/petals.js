@@ -1069,8 +1069,19 @@ function parsePetalActions(actionString) {
                 break;
             case 'set_memory':
                 const memKey = params[0] || '';
-                const memValue = params.length > 1 ? parseFloat(params[1]) : 0;
-                actions.push({ type: 'set_memory', stringValue: memKey, value: memValue });
+                const memValueParam = params.length > 1 ? params[1] : '0';
+                const memValue = parseFloat(memValueParam);
+                // If value is a memory reference, store it in a special format
+                if (memValueParam.startsWith('memory:')) {
+                    // Store as stringValue with special prefix to indicate it's a memory reference value
+                    actions.push({ type: 'set_memory', stringValue: memKey, value: NaN, condition: memValueParam });
+                }
+                else if (!isNaN(memValue)) {
+                    actions.push({ type: 'set_memory', stringValue: memKey, value: memValue });
+                }
+                else {
+                    actions.push({ type: 'set_memory', stringValue: memKey, value: 0 });
+                }
                 break;
             case 'get_memory':
                 const getMemKey = params[0] || '';
@@ -1095,8 +1106,18 @@ function parsePetalActions(actionString) {
                 actions.push({ type: 'set_petal_health', value: petalHp });
                 break;
             case 'set_petal_size':
-                const petalSz = params.length > 0 ? parseFloat(params[0]) : 1;
-                actions.push({ type: 'set_petal_size', value: petalSz });
+                const petalSzParam = params.length > 0 ? params[0] : '1';
+                const petalSz = parseFloat(petalSzParam);
+                // If it's a memory reference, store in stringValue instead
+                if (petalSzParam.startsWith('memory:')) {
+                    actions.push({ type: 'set_petal_size', stringValue: petalSzParam });
+                }
+                else if (!isNaN(petalSz)) {
+                    actions.push({ type: 'set_petal_size', value: petalSz });
+                }
+                else {
+                    actions.push({ type: 'set_petal_size', value: 1 }); // Default
+                }
                 break;
             case 'add_petal_damage':
                 const addPetalDmg = params.length > 0 ? parseFloat(params[0]) : 0;
