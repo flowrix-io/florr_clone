@@ -7,6 +7,7 @@ exports.getPetalStats = getPetalStats;
 exports.getAllPetalTypes = getAllPetalTypes;
 exports.getPetalRarities = getPetalRarities;
 exports.parsePetalActions = parsePetalActions;
+const test_action_1 = require("./petal_action/test.action");
 // Rarity levels in order from lowest to highest
 exports.RARITY_LEVELS = [
     'common',
@@ -765,6 +766,22 @@ const BASE_PETAL_CONFIGS = {
 `,
         isAdminPetal: true
     },
+    action_test: {
+        name: "Action Test Petal",
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 1000,
+        description: "A petal that tests actions",
+        color: "#000000",
+        count: 1,
+        actions: test_action_1.test_petal_action,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#000000" stroke="#000000" stroke-width="4"/>
+<path d="M8 8 L24 24 M24 8 L8 24" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+</svg>`,
+        isAdminPetal: true
+    }
 };
 // Rarity color mappings
 const RARITY_COLORS = {
@@ -993,6 +1010,110 @@ function parsePetalActions(actionString) {
                 break;
             case 'wait_until_collision':
                 actions.push({ type: 'wait_until_collision' });
+                break;
+            case 'if':
+                const condition = params.join(' ');
+                actions.push({ type: 'if', condition: condition });
+                break;
+            case 'else':
+                actions.push({ type: 'else' });
+                break;
+            case 'endif':
+                actions.push({ type: 'endif' });
+                break;
+            case 'loop':
+                const loopCount = params.length > 0 ? parseFloat(params[0]) : -1; // -1 means infinite
+                actions.push({ type: 'loop', value: loopCount });
+                break;
+            case 'endloop':
+                actions.push({ type: 'endloop' });
+                break;
+            case 'goto':
+                const labelName = params[0] || '';
+                actions.push({ type: 'goto', stringValue: labelName });
+                break;
+            case 'label':
+                const label = params[0] || '';
+                actions.push({ type: 'label', stringValue: label });
+                break;
+            case 'set_memory':
+                const memKey = params[0] || '';
+                const memValue = params.length > 1 ? parseFloat(params[1]) : 0;
+                actions.push({ type: 'set_memory', stringValue: memKey, value: memValue });
+                break;
+            case 'get_memory':
+                const getMemKey = params[0] || '';
+                actions.push({ type: 'get_memory', stringValue: getMemKey });
+                break;
+            case 'add_memory':
+                const addMemKey = params[0] || '';
+                const addMemValue = params.length > 1 ? parseFloat(params[1]) : 0;
+                actions.push({ type: 'add_memory', stringValue: addMemKey, value: addMemValue });
+                break;
+            case 'multiply_memory':
+                const multMemKey = params[0] || '';
+                const multMemValue = params.length > 1 ? parseFloat(params[1]) : 1;
+                actions.push({ type: 'multiply_memory', stringValue: multMemKey, value: multMemValue });
+                break;
+            case 'set_petal_damage':
+                const petalDmg = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'set_petal_damage', value: petalDmg });
+                break;
+            case 'set_petal_health':
+                const petalHp = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'set_petal_health', value: petalHp });
+                break;
+            case 'set_petal_size':
+                const petalSz = params.length > 0 ? parseFloat(params[0]) : 1;
+                actions.push({ type: 'set_petal_size', value: petalSz });
+                break;
+            case 'add_petal_damage':
+                const addPetalDmg = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'add_petal_damage', value: addPetalDmg });
+                break;
+            case 'add_petal_health':
+                const addPetalHp = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'add_petal_health', value: addPetalHp });
+                break;
+            case 'add_petal_size':
+                const addPetalSz = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'add_petal_size', value: addPetalSz });
+                break;
+            case 'set_player_damage':
+                const playerDmg = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'set_player_damage', value: playerDmg });
+                break;
+            case 'set_player_max_health':
+                const playerHp = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'set_player_max_health', value: playerHp });
+                break;
+            case 'set_player_speed':
+                const playerSpd = params.length > 0 ? parseFloat(params[0]) : 1;
+                actions.push({ type: 'set_player_speed', value: playerSpd });
+                break;
+            case 'add_player_damage':
+                const addPlayerDmg = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'add_player_damage', value: addPlayerDmg });
+                break;
+            case 'add_player_max_health':
+                const addPlayerHp = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'add_player_max_health', value: addPlayerHp });
+                break;
+            case 'add_player_speed':
+                const addPlayerSpd = params.length > 0 ? parseFloat(params[0]) : 0;
+                actions.push({ type: 'add_player_speed', value: addPlayerSpd });
+                break;
+            case 'compare':
+            case 'compare_gt':
+            case 'compare_lt':
+            case 'compare_gte':
+            case 'compare_lte':
+            case 'compare_eq':
+            case 'compare_neq':
+                const compareType = actionType.replace('compare_', '');
+                const compareLeft = params[0] || '';
+                const compareRight = params.length > 1 ? parseFloat(params[1]) : 0;
+                actions.push({ type: actionType, stringValue: compareLeft, value: compareRight, comparisonType: compareType });
                 break;
             default:
                 console.warn(`Unknown petal action type: ${actionType}`);
