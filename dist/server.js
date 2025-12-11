@@ -1126,7 +1126,6 @@ io.on('connection', (socket) => {
                     if (oldKey && oldItem.rarity) {
                         // Add item back to inventory
                         (0, playerManager_1.addItem)(serverInventory, oldItem.rarity, oldKey, 1);
-                        console.log(`[SERVER] Item ${oldKey} (${oldItem.rarity}) unequipped, added back to inventory`);
                     }
                 }
                 // If new item was equipped (slot had different item or was empty)

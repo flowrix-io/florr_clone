@@ -492,6 +492,9 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
           r="8"
           fill="#cea0db" />
 </svg>`,
+        playerModifiers: {
+            maxHealth: 1.06,
+        },
         isAdminPetal: false
     },
     iris: {
