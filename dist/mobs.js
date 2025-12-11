@@ -2162,6 +2162,22 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.2, // 20% chance for bone
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'blood_leaf',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for blood leaf
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'blood_leaf',
+                rarity: 'uncommon',
+                probability: 0.2, // 20% chance for blood leaf
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
