@@ -6,6 +6,7 @@ exports.createInitialInventory = createInitialInventory;
 exports.addItem = addItem;
 exports.removeItem = removeItem;
 exports.hasItem = hasItem;
+exports.findSafeSpawnPosition = findSafeSpawnPosition;
 exports.respawnPlayer = respawnPlayer;
 exports.isBiomeSafeForSpawn = isBiomeSafeForSpawn;
 exports.getSpawnPositionInBiome = getSpawnPositionInBiome;
@@ -23,6 +24,7 @@ exports.addXPToPlayer = addXPToPlayer;
 exports.savePlayerProgress = savePlayerProgress;
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
+const physics_1 = require("./physics");
 const RARITY_TP_COSTS = {
     common: 0,
     uncommon: 1,
@@ -84,22 +86,137 @@ function removeItem(inventory, rarity, type, count) {
 function hasItem(inventory, rarity, type, count) {
     return inventory[rarity]?.[type] >= count;
 }
+/**
+ * Check if a position is inside a wall
+ */
+function isPositionInsideWall(x, y, playerSize = constants_1.PLAYER_SIZE) {
+    for (const element of constants_1.WORLD_MAP) {
+        if (element.type === 'wall' && element.width > 0 && element.height > 0) {
+            const wallX = element.x * constants_1.SCALE_FACTOR;
+            const wallY = element.y * constants_1.SCALE_FACTOR;
+            const wallWidth = element.width * constants_1.SCALE_FACTOR;
+            const wallHeight = element.height * constants_1.SCALE_FACTOR;
+            // Extend wall to boundaries if it's close to them
+            const extendedWall = (0, physics_1.getExtendedWallForCollision)({
+                x: wallX,
+                y: wallY,
+                width: wallWidth,
+                height: wallHeight
+            });
+            // Check if player position overlaps with wall
+            if (x < extendedWall.x + extendedWall.width &&
+                x + playerSize > extendedWall.x &&
+                y < extendedWall.y + extendedWall.height &&
+                y + playerSize > extendedWall.y) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+/**
+ * Check if there are too many hostile mobs near a position
+ * @param x X coordinate
+ * @param y Y coordinate
+ * @param radius Radius to check for mobs (default 200 pixels)
+ * @param maxMobs Maximum number of mobs allowed in the radius (default 5)
+ * @returns true if there are too many mobs nearby
+ */
+function hasTooManyMobsNearby(x, y, radius = 200, maxMobs = 5) {
+    let mobCount = 0;
+    for (const enemy of constants_1.enemies) {
+        const dx = enemy.x - x;
+        const dy = enemy.y - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance <= radius) {
+            mobCount++;
+            if (mobCount > maxMobs) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+/**
+ * Check if a spawn position is safe (not in wall and not too many mobs nearby)
+ */
+function isSafeSpawnPosition(x, y, playerSize = constants_1.PLAYER_SIZE) {
+    // Check if position is inside a wall
+    if (isPositionInsideWall(x, y, playerSize)) {
+        return false;
+    }
+    // Check if there are too many mobs nearby
+    if (hasTooManyMobsNearby(x, y)) {
+        return false;
+    }
+    return true;
+}
+/**
+ * Find a safe spawn position by trying multiple random positions
+ * @param spawnArea The spawn area to search within
+ * @param maxAttempts Maximum number of attempts to find a safe position (default 50)
+ * @returns A safe spawn position or null if none found
+ */
+function findSafeSpawnPosition(spawnArea, maxAttempts = 50) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const x = (spawnArea.x + Math.random() * spawnArea.width) * constants_1.SCALE_FACTOR;
+        const y = (spawnArea.y + Math.random() * spawnArea.height) * constants_1.SCALE_FACTOR;
+        if (isSafeSpawnPosition(x, y)) {
+            return { x, y };
+        }
+    }
+    // If no safe position found after maxAttempts, return null
+    return null;
+}
 function respawnPlayer(player, io) {
     // Find valid spawn points for player's level
     const validSpawnPoints = constants_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
         element.properties?.spawnType === getSpawnTypeForLevel(player.level));
+    let spawnPosition = null;
     if (validSpawnPoints.length > 0) {
-        // Choose random spawn point
-        const spawn = validSpawnPoints[Math.floor(Math.random() * validSpawnPoints.length)];
-        player.x = (spawn.x + Math.random() * spawn.width) * constants_1.SCALE_FACTOR;
-        player.y = (spawn.y + Math.random() * spawn.height) * constants_1.SCALE_FACTOR;
+        // Try to find a safe spawn position in valid spawn points
+        // Shuffle spawn points to try different ones
+        const shuffledSpawnPoints = [...validSpawnPoints].sort(() => Math.random() - 0.5);
+        for (const spawn of shuffledSpawnPoints) {
+            const safePosition = findSafeSpawnPosition(spawn);
+            if (safePosition) {
+                spawnPosition = safePosition;
+                break;
+            }
+        }
     }
-    else {
-        // Fallback to old spawn logic if no valid spawn points
-        console.warn('No valid spawn points found for level', player.level);
-        player.x = Math.random() * constants_1.ACTUAL_WORLD_WIDTH;
-        player.y = Math.random() * constants_1.ACTUAL_WORLD_HEIGHT;
+    // If no safe position found in spawn points, try fallback
+    if (!spawnPosition) {
+        console.warn('No safe spawn position found in spawn points for level', player.level, '- trying fallback');
+        // Try random positions in the world as fallback
+        for (let attempt = 0; attempt < 50; attempt++) {
+            const x = Math.random() * constants_1.ACTUAL_WORLD_WIDTH;
+            const y = Math.random() * constants_1.ACTUAL_WORLD_HEIGHT;
+            if (isSafeSpawnPosition(x, y)) {
+                spawnPosition = { x, y };
+                break;
+            }
+        }
     }
+    // Final fallback: use first spawn point or center of world (even if not safe)
+    if (!spawnPosition) {
+        console.warn('No safe spawn position found after all attempts - using unsafe fallback');
+        if (validSpawnPoints.length > 0) {
+            const spawn = validSpawnPoints[0];
+            spawnPosition = {
+                x: (spawn.x + spawn.width / 2) * constants_1.SCALE_FACTOR,
+                y: (spawn.y + spawn.height / 2) * constants_1.SCALE_FACTOR
+            };
+        }
+        else {
+            spawnPosition = {
+                x: constants_1.ACTUAL_WORLD_WIDTH / 2,
+                y: constants_1.ACTUAL_WORLD_HEIGHT / 2
+            };
+        }
+    }
+    player.x = spawnPosition.x;
+    player.y = spawnPosition.y;
     // Rest of respawnPlayer remains the same
     player.health = player.maxHealth;
     player.score = Math.max(0, player.score - 10);
@@ -159,13 +276,32 @@ function getSpawnPositionInBiome(biomeName) {
         console.warn(`No safe spawn areas found in ${biomeName} biome (all areas have rare+ mobs)`);
         return null;
     }
-    // Choose a random biome from the safe ones
-    const biome = safeBiomes[Math.floor(Math.random() * safeBiomes.length)];
-    // Generate a random position within the biome, with some padding from edges
-    const padding = 50; // Padding from biome edges
+    // Shuffle biomes to try different ones
+    const shuffledBiomes = [...safeBiomes].sort(() => Math.random() - 0.5);
+    // Try to find a safe spawn position in any of the safe biomes
+    for (const biome of shuffledBiomes) {
+        // Generate spawn area with padding from edges
+        const padding = 50; // Padding from biome edges
+        const spawnArea = {
+            x: biome.x + padding,
+            y: biome.y + padding,
+            width: Math.max(0, biome.width - padding * 2),
+            height: Math.max(0, biome.height - padding * 2)
+        };
+        if (spawnArea.width > 0 && spawnArea.height > 0) {
+            const safePosition = findSafeSpawnPosition(spawnArea);
+            if (safePosition) {
+                console.log(`Spawning in ${biomeName} biome at (${safePosition.x.toFixed(0)}, ${safePosition.y.toFixed(0)})`);
+                return safePosition;
+            }
+        }
+    }
+    // Fallback: return a position even if not completely safe (better than nothing)
+    const biome = safeBiomes[0];
+    const padding = 50;
     const x = biome.x + padding + Math.random() * Math.max(0, biome.width - padding * 2);
     const y = biome.y + padding + Math.random() * Math.max(0, biome.height - padding * 2);
-    console.log(`Spawning in ${biomeName} biome at (${x.toFixed(0)}, ${y.toFixed(0)})`);
+    console.warn(`Could not find completely safe spawn in ${biomeName} biome, using fallback position`);
     return { x: x * constants_1.SCALE_FACTOR, y: y * constants_1.SCALE_FACTOR };
 }
 // XP calculation functions

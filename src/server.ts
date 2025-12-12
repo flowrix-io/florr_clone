@@ -93,6 +93,7 @@ import {
     respawnPlayer as respawnPlayerModule,
     getSpawnPositionInBiome,
     isBiomeSafeForSpawn,
+    findSafeSpawnPosition,
     calculateXPRequirement,
     calculateTotalXP,
     calculateLevelFromTotalXP,
@@ -903,9 +904,28 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 );
                 
                 if (validSpawnPoints.length > 0) {
-                    const spawn = validSpawnPoints[Math.floor(Math.random() * validSpawnPoints.length)];
-                    spawnX = (spawn.x + Math.random() * spawn.width) * SCALE_FACTOR;
-                    spawnY = (spawn.y + Math.random() * spawn.height) * SCALE_FACTOR;
+                    // Try to find a safe spawn position in valid spawn points
+                    // Shuffle spawn points to try different ones
+                    const shuffledSpawnPoints = [...validSpawnPoints].sort(() => Math.random() - 0.5);
+                    
+                    let safeSpawnPosition: { x: number; y: number } | null = null;
+                    for (const spawn of shuffledSpawnPoints) {
+                        safeSpawnPosition = findSafeSpawnPosition(spawn);
+                        if (safeSpawnPosition) {
+                            break;
+                        }
+                    }
+                    
+                    if (safeSpawnPosition) {
+                        spawnX = safeSpawnPosition.x;
+                        spawnY = safeSpawnPosition.y;
+                    } else {
+                        // Fallback: use random position in first spawn point (even if not completely safe)
+                        console.warn('No safe spawn position found in common spawn zones, using fallback');
+                        const spawn = validSpawnPoints[0];
+                        spawnX = (spawn.x + spawn.width / 2) * SCALE_FACTOR;
+                        spawnY = (spawn.y + spawn.height / 2) * SCALE_FACTOR;
+                    }
                 }
             }
 
