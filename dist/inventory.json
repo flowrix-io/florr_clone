@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 119170197,
+      "totalXP": 119171027,
       "inventory": {
         "common": {
           "shield": 97,
@@ -307,11 +307,8 @@
         null,
         null
       ],
-      "tp": 0,
-      "skills": {
-        "damage": "unique",
-        "petalHealth": "ultra"
-      }
+      "tp": 149,
+      "skills": {}
     },
     "1g99g1gfk": {
       "totalXP": 32,

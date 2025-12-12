@@ -2079,6 +2079,42 @@ class TitleScreenInventoryManager {
         this.initializeCraftingPanel();
         this.setupSocketListeners();
         this.setupGlobalDragAndDrop();
+        
+        // Setup ALT key tracking for tooltip value display (only once globally)
+        if (!(window as any).altKeyTrackingSetup) {
+            (window as any).altKeyPressed = false;
+            (window as any).altKeyTrackingSetup = true;
+            (window as any).titleScreenInventoryManagers = [];
+            document.addEventListener('keydown', (e: KeyboardEvent) => {
+                if (e.key === 'Alt') {
+                    (window as any).altKeyPressed = true;
+                    // Update all tooltips
+                    const managers = (window as any).titleScreenInventoryManagers || [];
+                    managers.forEach((manager: TitleScreenInventoryManager) => {
+                        if (manager.tooltipElement) {
+                            manager.updateTooltipValues(true);
+                        }
+                    });
+                }
+            });
+            document.addEventListener('keyup', (e: KeyboardEvent) => {
+                if (e.key === 'Alt') {
+                    (window as any).altKeyPressed = false;
+                    // Update all tooltips
+                    const managers = (window as any).titleScreenInventoryManagers || [];
+                    managers.forEach((manager: TitleScreenInventoryManager) => {
+                        if (manager.tooltipElement) {
+                            manager.updateTooltipValues(false);
+                        }
+                    });
+                }
+            });
+        }
+        // Register this instance
+        if (!(window as any).titleScreenInventoryManagers) {
+            (window as any).titleScreenInventoryManagers = [];
+        }
+        (window as any).titleScreenInventoryManagers.push(this);
     }
     
     private setupGlobalDragAndDrop(): void {
@@ -2949,6 +2985,21 @@ class TitleScreenInventoryManager {
         return SKILL_MULTIPLIERS[skillTier] || 1.0;
     }
 
+    private abbreviateNumber(value: number): string {
+        if (value < 1000) {
+            return value.toString();
+        } else if (value < 1000000) {
+            const k = value / 1000;
+            return k % 1 === 0 ? `${k}K` : `${k.toFixed(1)}K`;
+        } else if (value < 1000000000) {
+            const m = value / 1000000;
+            return m % 1 === 0 ? `${m}M` : `${m.toFixed(1)}M`;
+        } else {
+            const b = value / 1000000000;
+            return b % 1 === 0 ? `${b}B` : `${b.toFixed(1)}B`;
+        }
+    }
+
     private calculateFinalPetalDamage(petalType: string, rarity: string): number {
         if (!this.playerData) return 0;
         const stats = getPetalStats(petalType, rarity);
@@ -3007,11 +3058,13 @@ class TitleScreenInventoryManager {
 
         const hpDiv = document.createElement('div');
         hpDiv.style.cssText = 'margin-bottom: 4px;';
-        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> ${finalHealth}`;
+        hpDiv.setAttribute('data-full-value', finalHealth.toString());
+        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> <span class="tooltip-value">${this.abbreviateNumber(finalHealth)}</span>`;
         tooltip.appendChild(hpDiv);
 
         const damageDiv = document.createElement('div');
-        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> ${finalDamage}`;
+        damageDiv.setAttribute('data-full-value', finalDamage.toString());
+        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> <span class="tooltip-value">${this.abbreviateNumber(finalDamage)}</span>`;
         tooltip.appendChild(damageDiv);
 
         document.body.appendChild(tooltip);
@@ -3055,6 +3108,25 @@ class TitleScreenInventoryManager {
         this.hoveredElement = null;
     }
 
+    private updateTooltipValues(showFull: boolean): void {
+        if (!this.tooltipElement) return;
+
+        const valueElements = this.tooltipElement.querySelectorAll('.tooltip-value');
+        valueElements.forEach((valueEl) => {
+            const parent = valueEl.parentElement;
+            if (parent && parent.hasAttribute('data-full-value')) {
+                const fullValue = parent.getAttribute('data-full-value');
+                if (fullValue) {
+                    if (showFull) {
+                        valueEl.textContent = fullValue;
+                    } else {
+                        valueEl.textContent = this.abbreviateNumber(parseInt(fullValue));
+                    }
+                }
+            }
+        });
+    }
+
     private setupTooltip(element: HTMLElement, petalType: string, rarity: string): void {
         let isDragging = false;
         let mouseDownTime = 0;
@@ -3065,6 +3137,8 @@ class TitleScreenInventoryManager {
             this.tooltipTimeout = window.setTimeout(() => {
                 if (this.hoveredElement === element && !isDragging) {
                     this.showTooltip(element, petalType, rarity);
+                    // Check initial ALT state
+                    this.updateTooltipValues((window as any).altKeyPressed || false);
                 }
             }, 200);
         };

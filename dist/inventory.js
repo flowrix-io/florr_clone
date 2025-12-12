@@ -56,6 +56,26 @@ class InventoryManager {
         return SKILL_MULTIPLIERS[skillTier] || 1.0;
     }
     /**
+     * Abbreviate a number (e.g., 1000 -> "1K", 1500 -> "1.5K")
+     */
+    abbreviateNumber(value) {
+        if (value < 1000) {
+            return value.toString();
+        }
+        else if (value < 1000000) {
+            const k = value / 1000;
+            return k % 1 === 0 ? `${k}K` : `${k.toFixed(1)}K`;
+        }
+        else if (value < 1000000000) {
+            const m = value / 1000000;
+            return m % 1 === 0 ? `${m}M` : `${m.toFixed(1)}M`;
+        }
+        else {
+            const b = value / 1000000000;
+            return b % 1 === 0 ? `${b}B` : `${b.toFixed(1)}B`;
+        }
+    }
+    /**
      * Calculate final petal damage with skills and player modifiers
      */
     calculateFinalPetalDamage(petalType, rarity) {
@@ -128,14 +148,16 @@ class InventoryManager {
             descDiv.textContent = stats.description;
             tooltip.appendChild(descDiv);
         }
-        // HP
+        // HP - with abbreviation support
         const hpDiv = document.createElement('div');
         hpDiv.style.cssText = 'margin-bottom: 4px;';
-        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> ${finalHealth}`;
+        hpDiv.setAttribute('data-full-value', finalHealth.toString());
+        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> <span class="tooltip-value">${this.abbreviateNumber(finalHealth)}</span>`;
         tooltip.appendChild(hpDiv);
-        // Damage
+        // Damage - with abbreviation support
         const damageDiv = document.createElement('div');
-        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> ${finalDamage}`;
+        damageDiv.setAttribute('data-full-value', finalDamage.toString());
+        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> <span class="tooltip-value">${this.abbreviateNumber(finalDamage)}</span>`;
         tooltip.appendChild(damageDiv);
         document.body.appendChild(tooltip);
         this.tooltipElement = tooltip;
@@ -181,6 +203,28 @@ class InventoryManager {
         this.hoveredElement = null;
     }
     /**
+     * Update tooltip values based on ALT key state
+     */
+    updateTooltipValues(showFull) {
+        if (!this.tooltipElement)
+            return;
+        const valueElements = this.tooltipElement.querySelectorAll('.tooltip-value');
+        valueElements.forEach((valueEl) => {
+            const parent = valueEl.parentElement;
+            if (parent && parent.hasAttribute('data-full-value')) {
+                const fullValue = parent.getAttribute('data-full-value');
+                if (fullValue) {
+                    if (showFull) {
+                        valueEl.textContent = fullValue;
+                    }
+                    else {
+                        valueEl.textContent = this.abbreviateNumber(parseInt(fullValue));
+                    }
+                }
+            }
+        });
+    }
+    /**
      * Setup hover tooltip for an element
      */
     setupTooltip(element, petalType, rarity) {
@@ -193,6 +237,8 @@ class InventoryManager {
             this.tooltipTimeout = window.setTimeout(() => {
                 if (this.hoveredElement === element && !isDragging) {
                     this.showTooltip(element, petalType, rarity);
+                    // Check initial ALT state
+                    this.updateTooltipValues(window.altKeyPressed || false);
                 }
             }, 200); // 0.2 seconds
         };
@@ -274,6 +320,20 @@ class InventoryManager {
         this.game = game;
         this.chat = chat;
         this.allPetalTypes = (0, petals_1.getAllPetalTypes)();
+        // Setup ALT key tracking for tooltip value display
+        window.altKeyPressed = false;
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Alt') {
+                window.altKeyPressed = true;
+                this.updateTooltipValues(true);
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Alt') {
+                window.altKeyPressed = false;
+                this.updateTooltipValues(false);
+            }
+        });
         // Create loadout bar (or use existing one if it already exists)
         let loadoutBar = document.getElementById('loadoutBar');
         if (!loadoutBar) {

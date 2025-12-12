@@ -1830,6 +1830,41 @@ class TitleScreenInventoryManager {
         this.initializeCraftingPanel();
         this.setupSocketListeners();
         this.setupGlobalDragAndDrop();
+        // Setup ALT key tracking for tooltip value display (only once globally)
+        if (!window.altKeyTrackingSetup) {
+            window.altKeyPressed = false;
+            window.altKeyTrackingSetup = true;
+            window.titleScreenInventoryManagers = [];
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Alt') {
+                    window.altKeyPressed = true;
+                    // Update all tooltips
+                    const managers = window.titleScreenInventoryManagers || [];
+                    managers.forEach((manager) => {
+                        if (manager.tooltipElement) {
+                            manager.updateTooltipValues(true);
+                        }
+                    });
+                }
+            });
+            document.addEventListener('keyup', (e) => {
+                if (e.key === 'Alt') {
+                    window.altKeyPressed = false;
+                    // Update all tooltips
+                    const managers = window.titleScreenInventoryManagers || [];
+                    managers.forEach((manager) => {
+                        if (manager.tooltipElement) {
+                            manager.updateTooltipValues(false);
+                        }
+                    });
+                }
+            });
+        }
+        // Register this instance
+        if (!window.titleScreenInventoryManagers) {
+            window.titleScreenInventoryManagers = [];
+        }
+        window.titleScreenInventoryManagers.push(this);
     }
     setupGlobalDragAndDrop() {
         // Handle dropping items outside loadout slots to move them back to inventory
@@ -2607,6 +2642,23 @@ class TitleScreenInventoryManager {
         };
         return SKILL_MULTIPLIERS[skillTier] || 1.0;
     }
+    abbreviateNumber(value) {
+        if (value < 1000) {
+            return value.toString();
+        }
+        else if (value < 1000000) {
+            const k = value / 1000;
+            return k % 1 === 0 ? `${k}K` : `${k.toFixed(1)}K`;
+        }
+        else if (value < 1000000000) {
+            const m = value / 1000000;
+            return m % 1 === 0 ? `${m}M` : `${m.toFixed(1)}M`;
+        }
+        else {
+            const b = value / 1000000000;
+            return b % 1 === 0 ? `${b}B` : `${b.toFixed(1)}B`;
+        }
+    }
     calculateFinalPetalDamage(petalType, rarity) {
         if (!this.playerData)
             return 0;
@@ -2662,10 +2714,12 @@ class TitleScreenInventoryManager {
         }
         const hpDiv = document.createElement('div');
         hpDiv.style.cssText = 'margin-bottom: 4px;';
-        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> ${finalHealth}`;
+        hpDiv.setAttribute('data-full-value', finalHealth.toString());
+        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> <span class="tooltip-value">${this.abbreviateNumber(finalHealth)}</span>`;
         tooltip.appendChild(hpDiv);
         const damageDiv = document.createElement('div');
-        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> ${finalDamage}`;
+        damageDiv.setAttribute('data-full-value', finalDamage.toString());
+        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> <span class="tooltip-value">${this.abbreviateNumber(finalDamage)}</span>`;
         tooltip.appendChild(damageDiv);
         document.body.appendChild(tooltip);
         this.tooltipElement = tooltip;
@@ -2699,6 +2753,25 @@ class TitleScreenInventoryManager {
         }
         this.hoveredElement = null;
     }
+    updateTooltipValues(showFull) {
+        if (!this.tooltipElement)
+            return;
+        const valueElements = this.tooltipElement.querySelectorAll('.tooltip-value');
+        valueElements.forEach((valueEl) => {
+            const parent = valueEl.parentElement;
+            if (parent && parent.hasAttribute('data-full-value')) {
+                const fullValue = parent.getAttribute('data-full-value');
+                if (fullValue) {
+                    if (showFull) {
+                        valueEl.textContent = fullValue;
+                    }
+                    else {
+                        valueEl.textContent = this.abbreviateNumber(parseInt(fullValue));
+                    }
+                }
+            }
+        });
+    }
     setupTooltip(element, petalType, rarity) {
         let isDragging = false;
         let mouseDownTime = 0;
@@ -2709,6 +2782,8 @@ class TitleScreenInventoryManager {
             this.tooltipTimeout = window.setTimeout(() => {
                 if (this.hoveredElement === element && !isDragging) {
                     this.showTooltip(element, petalType, rarity);
+                    // Check initial ALT state
+                    this.updateTooltipValues(window.altKeyPressed || false);
                 }
             }, 200);
         };
