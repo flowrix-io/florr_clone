@@ -499,7 +499,9 @@ function setupSocketListeners(game) {
             player.health = data.health;
             // Show healing effect
             if (data.healAmount > 0) {
-                game.showFloatingText(player.x, player.y - 20, `+${data.healAmount}`, '#00FF00', 20);
+                const roundedHeal = Math.round(data.healAmount * 10) / 10;
+                const formattedHeal = roundedHeal % 1 === 0 ? roundedHeal.toString() : roundedHeal.toFixed(1);
+                game.showFloatingText(player.x, player.y - 20, `+${formattedHeal}`, '#00FF00', 20);
             }
         }
     });

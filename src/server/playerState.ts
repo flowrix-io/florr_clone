@@ -236,6 +236,52 @@ export function updatePlayerState(
     // Update player effects
     updatePlayerEffects(player, deltaTime);
 
+    // Apply passive healing from petals
+    if (player.loadout && !player.isDead) {
+        let totalPassiveHeal = 0;
+        for (const petal of player.loadout) {
+            if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
+                const petalStats = getPetalStats(petal.petalType, petal.rarity);
+                if (petalStats && petalStats.passiveHeal) {
+                    // Passive heal is already scaled by rarity (sqrt(3) per level) in generatePetalStats
+                    // Now apply healing skill multiplier
+                    const SKILL_MULTIPLIERS: Record<string, number> = {
+                        common: 1.0,
+                        uncommon: 1.1,
+                        rare: 1.2,
+                        epic: 1.35,
+                        legendary: 1.6,
+                        mythic: 2.0,
+                        ultra: 2.6,
+                        super: 3.3,
+                        unique: 4.0
+                    };
+                    const healingMultiplier = player.skills?.healingMultiplier 
+                        ? (SKILL_MULTIPLIERS[player.skills.healingMultiplier] || 1.0)
+                        : 1.0;
+                    
+                    // Calculate heal per second, then multiply by deltaTime (in seconds)
+                    const healPerSecond = petalStats.passiveHeal * healingMultiplier;
+                    const healThisFrame = healPerSecond * deltaTime;
+                    totalPassiveHeal += healThisFrame;
+                }
+            }
+        }
+        
+        if (totalPassiveHeal > 0) {
+            const oldHealth = player.health;
+            player.health = Math.min(player.maxHealth, player.health + totalPassiveHeal);
+            
+            if (player.health !== oldHealth) {
+                io.emit('playerHealed', {
+                    playerId: player.id,
+                    health: player.health,
+                    healAmount: player.health - oldHealth
+                });
+            }
+        }
+    }
+
     let targetVelocityX = 0;
     let targetVelocityY = 0;
 

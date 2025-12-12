@@ -21,6 +21,7 @@ export interface PetalStats {
     image?: string; // 32x32 SVG image (optional)
     count: number; // Number of petals to spawn per equipped item (default 1)
     actions?: string; // Action sequence string like "heal 20; break;" (optional)
+    passiveHeal?: number; // Passive healing per second (optional)
     isAdminPetal?: boolean; // Whether the petal is an admin petal (default false)
     range?: number; // Multiplier for how much the petal extends from player (default 1.0)
     projectile?: {
@@ -87,6 +88,7 @@ interface BasePetalConfig {
     poison?: number; // Poison damage per millisecond applied to units (optional)
     poisonDuration?: number; // Duration in milliseconds that poison effect lasts (optional)
     actions?: string; // Action sequence string like "heal 20; break;"
+    passiveHeal?: number; // Passive healing per second (optional)
     isAdminPetal?: boolean; // Whether the petal is an admin petal (default false)
     range?: number; // Multiplier for how much the petal extends from player (default 1.0)
     projectile?: {
@@ -316,7 +318,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
             description: "It heals, but not very good at combat",
             color: "#FF69B4",
         count: 1,
-            actions: "delay 1500; heal 100; break;",
+            passiveHeal: 1000 / 27, // Base heal: ~37.037 HP/sec. Ultra (index 6) = 1000 HP/sec
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -590,7 +592,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         description: "It heals",
         color: "#000000",
         count: 1,
-        actions: "heal 10;",
+        passiveHeal: 1000 / 27, // Base heal: ~37.037 HP/sec. Ultra (index 6) = 1000 HP/sec
         image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <path d="M30 16 Q16 4 2 16 Q16 28 30 16 Z" 
         fill="#74b53f" 
@@ -617,7 +619,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         description: "It heals",
         color: "#000000",
         count: 1,
-        actions: "heal 10;",
+        passiveHeal: 1000 / 27, // Base heal: ~37.037 HP/sec. Ultra (index 6) = 1000 HP/sec
         image: `<svg width="32" height="32" viewBox="-21.5 -10.5 38 21" xmlns="http://www.w3.org/2000/svg">
   <path d="M -20 0 
            L -15 0 
@@ -1009,6 +1011,8 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
     let damage = baseConfig.damage * multiplier;
     let health = baseConfig.health * multiplier;
     let poison = baseConfig.poison ? baseConfig.poison * multiplier : undefined; // Scale poison with rarity
+    // Scale passiveHeal with sqrt(3) per rarity level (same as heal action)
+    let passiveHeal = baseConfig.passiveHeal ? baseConfig.passiveHeal * Math.pow(Math.sqrt(3), rarityIndex) : undefined;
     let cooldown = baseConfig.cooldown;
     
     if (petalType === 'yggdrasil') {
@@ -1020,6 +1024,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         damage = overrides.damage ?? damage;
         health = overrides.health ?? health;
         poison = overrides.poison ?? poison; // Apply override or use scaled value
+        // Note: passiveHeal doesn't have overrides, it's always scaled from base
         cooldown = overrides.cooldown ?? cooldown;
     }
     
@@ -1078,6 +1083,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         image: overrides.image ?? baseConfig.image ?? findSvgFallback(petalType, rarity),
         count: overrides.count ?? baseConfig.count,
         actions: overrides.actions ?? baseConfig.actions,
+        passiveHeal: passiveHeal, // Scaled passive healing per second
         isAdminPetal: baseConfig.isAdminPetal ?? false,
         range: baseConfig.range ?? 1.0, // Default range multiplier
         projectile: baseConfig.projectile, // Include projectile config if present

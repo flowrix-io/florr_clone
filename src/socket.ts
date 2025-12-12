@@ -596,10 +596,12 @@ function setupSocketListeners(game: any) {
             
             // Show healing effect
             if (data.healAmount > 0) {
+                const roundedHeal = Math.round(data.healAmount * 10) / 10;
+                const formattedHeal = roundedHeal % 1 === 0 ? roundedHeal.toString() : roundedHeal.toFixed(1);
                 game.showFloatingText(
                     player.x,
                     player.y - 20,
-                    `+${data.healAmount}`,
+                    `+${formattedHeal}`,
                     '#00FF00',
                     20
                 );
