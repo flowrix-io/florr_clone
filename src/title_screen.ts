@@ -2070,6 +2070,9 @@ class TitleScreenInventoryManager {
         super: '#2bffa4',
         unique: '#bf00ff'
     };
+    private tooltipElement: HTMLDivElement | null = null;
+    private tooltipTimeout: number | null = null;
+    private hoveredElement: HTMLElement | null = null;
 
     constructor() {
         this.initializeLoadoutBar();
@@ -2471,6 +2474,11 @@ class TitleScreenInventoryManager {
                                 z-index: 10;
                             `;
                             slotElement.appendChild(nameLabel);
+                        }
+
+                        // Setup tooltip for loadout petal
+                        if (item.rarity) {
+                            this.setupTooltip(slotElement, item.petalType, item.rarity);
                         }
                     }
                 } else if (item.type) {
@@ -2896,6 +2904,9 @@ class TitleScreenInventoryManager {
                             `;
                                 itemElement.appendChild(nameLabel);
                             }
+
+                            // Setup tooltip for petal items
+                            this.setupTooltip(itemElement, petalType, rarity);
                         }
 
                         grid.appendChild(itemElement);
@@ -2920,6 +2931,183 @@ class TitleScreenInventoryManager {
         const newG = Math.round(g * factor);
         const newB = Math.round(b * factor);
         return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
+    }
+
+    private getSkillMultiplier(skillTier: string | undefined): number {
+        if (!skillTier) return 1.0;
+        const SKILL_MULTIPLIERS: Record<string, number> = {
+            common: 1.0,
+            uncommon: 1.1,
+            rare: 1.2,
+            epic: 1.35,
+            legendary: 1.6,
+            mythic: 2.0,
+            ultra: 2.6,
+            super: 3.3,
+            unique: 4.0
+        };
+        return SKILL_MULTIPLIERS[skillTier] || 1.0;
+    }
+
+    private calculateFinalPetalDamage(petalType: string, rarity: string): number {
+        if (!this.playerData) return 0;
+        const stats = getPetalStats(petalType, rarity);
+        if (!stats) return 0;
+        const baseDamage = stats.damage;
+        const damageSkillMultiplier = this.getSkillMultiplier(this.playerData.skills?.damage);
+        return Math.round(baseDamage * damageSkillMultiplier);
+    }
+
+    private calculateFinalPetalHealth(petalType: string, rarity: string): number {
+        if (!this.playerData) return 0;
+        const stats = getPetalStats(petalType, rarity);
+        if (!stats) return 0;
+        const baseHealth = stats.health;
+        const petalHealthMultiplier = this.getSkillMultiplier(this.playerData.skills?.petalHealth);
+        return Math.round(baseHealth * petalHealthMultiplier);
+    }
+
+    private showTooltip(element: HTMLElement, petalType: string, rarity: string): void {
+        const stats = getPetalStats(petalType, rarity);
+        if (!stats) return;
+
+        this.hideTooltip();
+
+        const tooltip = document.createElement('div');
+        tooltip.className = 'petal-tooltip';
+        tooltip.style.cssText = `
+            position: fixed;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 10000;
+            pointer-events: none;
+            max-width: 250px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+
+        const finalDamage = this.calculateFinalPetalDamage(petalType, rarity);
+        const finalHealth = this.calculateFinalPetalHealth(petalType, rarity);
+
+        const nameDiv = document.createElement('div');
+        nameDiv.style.cssText = 'font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ' + (this.ITEM_RARITY_COLORS[rarity] || '#fff') + ';';
+        nameDiv.textContent = stats.name;
+        tooltip.appendChild(nameDiv);
+
+        if (stats.description) {
+            const descDiv = document.createElement('div');
+            descDiv.style.cssText = 'margin-bottom: 8px; color: #ccc; line-height: 1.4;';
+            descDiv.textContent = stats.description;
+            tooltip.appendChild(descDiv);
+        }
+
+        const hpDiv = document.createElement('div');
+        hpDiv.style.cssText = 'margin-bottom: 4px;';
+        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> ${finalHealth}`;
+        tooltip.appendChild(hpDiv);
+
+        const damageDiv = document.createElement('div');
+        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> ${finalDamage}`;
+        tooltip.appendChild(damageDiv);
+
+        document.body.appendChild(tooltip);
+        this.tooltipElement = tooltip;
+
+        this.updateTooltipPosition(element, tooltip);
+    }
+
+    private updateTooltipPosition(element: HTMLElement, tooltip: HTMLDivElement): void {
+        const rect = element.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        
+        let left = rect.right + 10;
+        let top = rect.top;
+
+        if (left + tooltipRect.width > window.innerWidth) {
+            left = rect.left - tooltipRect.width - 10;
+        }
+
+        if (top + tooltipRect.height > window.innerHeight) {
+            top = window.innerHeight - tooltipRect.height - 10;
+        }
+
+        if (top < 0) {
+            top = 10;
+        }
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+    }
+
+    private hideTooltip(): void {
+        if (this.tooltipTimeout !== null) {
+            clearTimeout(this.tooltipTimeout);
+            this.tooltipTimeout = null;
+        }
+        if (this.tooltipElement) {
+            this.tooltipElement.remove();
+            this.tooltipElement = null;
+        }
+        this.hoveredElement = null;
+    }
+
+    private setupTooltip(element: HTMLElement, petalType: string, rarity: string): void {
+        let isDragging = false;
+        let mouseDownTime = 0;
+
+        const handleMouseEnter = () => {
+            if (isDragging) return;
+            this.hoveredElement = element;
+            this.tooltipTimeout = window.setTimeout(() => {
+                if (this.hoveredElement === element && !isDragging) {
+                    this.showTooltip(element, petalType, rarity);
+                }
+            }, 200);
+        };
+
+        const handleMouseLeave = () => {
+            this.hideTooltip();
+        };
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (this.tooltipElement && this.hoveredElement === element) {
+                this.updateTooltipPosition(element, this.tooltipElement);
+            }
+        };
+
+        const handleMouseDown = () => {
+            mouseDownTime = Date.now();
+            this.hideTooltip();
+        };
+
+        const handleMouseUp = () => {
+            if (Date.now() - mouseDownTime < 200) {
+                this.hideTooltip();
+            }
+        };
+
+        const handleDragStart = () => {
+            isDragging = true;
+            this.hideTooltip();
+        };
+
+        const handleDragEnd = () => {
+            setTimeout(() => {
+                isDragging = false;
+            }, 100);
+        };
+
+        element.addEventListener('mouseenter', handleMouseEnter);
+        element.addEventListener('mouseleave', handleMouseLeave);
+        element.addEventListener('mousemove', handleMouseMove);
+        element.addEventListener('mousedown', handleMouseDown);
+        element.addEventListener('mouseup', handleMouseUp);
+        element.addEventListener('dragstart', handleDragStart);
+        element.addEventListener('dragend', handleDragEnd);
     }
 
     public toggleInventory(): void {
