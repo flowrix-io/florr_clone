@@ -86,6 +86,14 @@ exports.CHANGELOG = [
             'Healing and self-damage now scales by rarity',
             'Cactus and Poison Cactus now give max health to the player',
         ]
+    },
+    {
+        date: 'December 11, 2025',
+        changes: [
+            'New petal: Ant Egg',
+            'New petal: Fire Ant Egg',
+            'Some rebalancing of mobs',
+        ]
     }
 ];
 class ChangelogManager {

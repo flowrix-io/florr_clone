@@ -412,6 +412,24 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
     });
 }
 
+// Helper function to find a player's pet by mob type
+function findPlayerPetByMobType(ownerId: string, mobType: string): Enemy | undefined {
+    return enemies.find(enemy => 
+        enemy.ownerId === ownerId && 
+        enemy.type === mobType
+    );
+}
+
+// Helper function to despawn a pet
+export function despawnPet(pet: Enemy, io: any): void {
+    const index = enemies.findIndex(e => e.id === pet.id);
+    if (index !== -1) {
+        enemies.splice(index, 1);
+        io.emit('enemyDestroyed', pet.id);
+        console.log(`Despawned pet ${pet.tier} ${pet.type} for player ${pet.ownerId}`);
+    }
+}
+
 // Spawn a pet mob that belongs to a player
 export function spawnPet(mobType: string, rarity: string, x: number, y: number, ownerId: string, io: any): void {
     // Validate mob type
@@ -426,6 +444,13 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     if (!validRarities.includes(rarity.toLowerCase())) {
         console.log(`Invalid rarity for pet: ${rarity}`);
         return;
+    }
+
+    // Check if player already has a pet of this mob type - despawn it first
+    const existingPet = findPlayerPetByMobType(ownerId, mobType);
+    if (existingPet) {
+        console.log(`[PET] Player ${ownerId} already has a ${mobType} pet, despawning old one`);
+        despawnPet(existingPet, io);
     }
 
     const tier = rarity.toLowerCase() as Enemy['tier'];

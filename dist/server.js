@@ -1165,6 +1165,18 @@ io.on('connection', (socket) => {
                         // Add item back to inventory
                         (0, playerManager_1.addItem)(serverInventory, oldItem.rarity, oldKey, 1);
                     }
+                    // If the unequipped item was a petal with petMobType, despawn the pet
+                    if (oldItem.type === 'petal' && oldItem.petalType && oldItem.rarity) {
+                        const oldPetalStats = (0, petals_2.getPetalStats)(oldItem.petalType, oldItem.rarity);
+                        if (oldPetalStats?.petMobType) {
+                            const petToDespawn = constants_2.enemies.find(e => e.ownerId === player.id &&
+                                e.type === oldPetalStats.petMobType);
+                            if (petToDespawn) {
+                                console.log(`[PET] Despawning pet ${oldPetalStats.petMobType} for player ${player.id} when petal unequipped`);
+                                (0, petal_actions_1.despawnPet)(petToDespawn, io);
+                            }
+                        }
+                    }
                 }
                 // If new item was equipped (slot had different item or was empty)
                 if (newItem && (!oldItem || !itemsMatch(oldItem, newItem))) {
