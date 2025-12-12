@@ -439,7 +439,7 @@ const BASE_MOB_CONFIGS = {
         cooldown: 2000,
         description: "A small, hostile soldier ant that flies aggressively",
         color: "#87CEEB",
-        image: `<svg width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+        image: `<svg id="soldier-ant-svg" width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
   <circle cx="-12" cy="0" r="10" fill="#555555" stroke="#444444" stroke-width="7" />
 
   <g fill="#eeeeee" fill-opacity="0.5">
@@ -525,7 +525,7 @@ const BASE_MOB_CONFIGS = {
         cooldown: 2000,
         description: "A small, hostile soldier fire ant that flies aggressively",
         color: "#87CEEB",
-        image: `<svg width="32" height="32" viewBox="-35 -40 80 80" xmlns="http://www.w3.org/2000/svg">
+        image: `<svg id="soldier-fire-ant-svg" width="32" height="32" viewBox="-35 -40 80 80" xmlns="http://www.w3.org/2000/svg">
   <circle cx="-12" cy="0" r="10" fill="#b02a22" stroke="#8c221b" stroke-width="7" />
 
   <g fill="#ffdddd" fill-opacity="0.37">
@@ -1510,6 +1510,110 @@ const BASE_MOB_CONFIGS = {
         is_hostile: true,
         range: 100,
         biomeOnly: true,
+    },
+    soldier_ant_pet: {
+        name: "Soldier Ant Pet",
+        health: 100,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "A soldier ant pet",
+        color: "#000000",
+        image: `<svg id="soldier-ant-pet-svg" width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#ffe863" stroke="#b3a245" stroke-width="7" />
+
+  <g fill="#eeeeee" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(0)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(0)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  </g>
+
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="1s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+             </path>
+
+  <circle cx="4" cy="0" r="14" fill="#ffe863" stroke="#b3a245" stroke-width="7" />
+
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
+    },
+    soldier_fire_ant_pet: {
+        name: "Soldier Fire Ant Pet",
+        health: 100,
+        damage: 20,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 1.0,
+        cooldown: 2000,
+        description: "A soldier fire ant pet",
+        color: "#000000",
+        image: `<svg id="soldier-fire-ant-pet-svg" width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#ffa763" stroke="#b37545" stroke-width="7" />
+
+  <g fill="#eeeeee" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(0)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(0)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  </g>
+
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="1s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+             </path>
+
+  <circle cx="4" cy="0" r="14" fill="#ffa763" stroke="#b37545" stroke-width="7" />
+
+</svg>`,
+        is_hostile: false,
+        range: 100,
+        biomeOnly: true,
     }
 };
 // Rarity-specific overrides for special cases
@@ -1978,6 +2082,22 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.1,
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'ant_egg',
+                rarity: 'common',
+                probability: 0.1,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'ant_egg',
+                rarity: 'uncommon',
+                probability: 0.1,
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
@@ -2041,6 +2161,22 @@ exports.MOB_DROP_TABLES = {
                 itemType: 'yucca',
                 rarity: 'common',
                 probability: 0.4, // 40% chance for yucca
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'fire_ant_egg',
+                rarity: 'common',
+                probability: 0.4, // 40% chance for fire ant egg
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'fire_ant_egg',
+                rarity: 'uncommon',
+                probability: 0.2, // 20% chance for fire ant egg
                 minQuantity: 1,
                 maxQuantity: 1
             }
