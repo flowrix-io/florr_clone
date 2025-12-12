@@ -363,6 +363,61 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
         ultra: 100,
         super: 100,
         unique: 100
+    },
+    fly: {
+        common: 1,
+        uncommon: 1,
+        rare: 2,
+        epic: 22,
+        legendary: 206,
+        mythic: 3100,
+        ultra: 19800,
+        super: 2100000,
+        unique: 6800000
+    },
+    moth: {
+        common: 1,
+        uncommon: 1,
+        rare: 2,
+        epic: 22,
+        legendary: 206,
+        mythic: 3100,
+        ultra: 19800,
+        super: 2100000,
+        unique: 6800000
+    },
+    roach: {
+        common: 1,
+        uncommon: 1,
+        rare: 2,
+        epic: 22,
+        legendary: 206,
+        mythic: 3100,
+        ultra: 19800,
+        super: 2100000,
+        unique: 6800000
+    },
+    garbage: {
+        common: 1,
+        uncommon: 1,
+        rare: 2,
+        epic: 22,
+        legendary: 206,
+        mythic: 3100,
+        ultra: 19800,
+        super: 2100000,
+        unique: 6800000
+    },
+    spider: {
+        common: 1,
+        uncommon: 1,
+        rare: 2,
+        epic: 22,
+        legendary: 206,
+        mythic: 3100,
+        ultra: 19800,
+        super: 2100000,
+        unique: 6800000
     }
 };
 
