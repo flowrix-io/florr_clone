@@ -3070,26 +3070,7 @@ export class Graphics {
             bottom: this.cameraY + scaledHeight
         };
 
-        // Draw players
-        for (const player of players.values()) {
-            if (player.x > viewport.left - PLAYER_SIZE && player.x < viewport.right + PLAYER_SIZE &&
-                player.y > viewport.top - PLAYER_SIZE && player.y < viewport.bottom + PLAYER_SIZE) {
-                
-                if (player.isDead) {
-                    // Draw corpse for dead players
-                    this.drawCorpse(player.x, player.y, player.angle);
-                } else {
-                    // Use each player's own petal extension, or fallback to the passed value (for current player)
-                    const playerPetalExtension = player.id === currentPlayerId 
-                        ? petalExtension 
-                        : (player.petalExtension || 1.0);
-                    // Draw normal player
-                    this.drawPlayer(player, currentPlayerId, playerPetalExtension);
-                }
-            }
-        }
-
-        // Draw enemies
+        // Draw enemies first (including pets) - below players and petals
         const enemyCount = enemies.size;
         
         for (const enemy of enemies.values()) {
@@ -3127,6 +3108,25 @@ export class Graphics {
                     this.ctx.restore();
                 } catch (fallbackError) {
                     console.error('[Graphics] Fallback rendering also failed:', fallbackError);
+                }
+            }
+        }
+
+        // Draw players (with petals) - above enemies
+        for (const player of players.values()) {
+            if (player.x > viewport.left - PLAYER_SIZE && player.x < viewport.right + PLAYER_SIZE &&
+                player.y > viewport.top - PLAYER_SIZE && player.y < viewport.bottom + PLAYER_SIZE) {
+                
+                if (player.isDead) {
+                    // Draw corpse for dead players
+                    this.drawCorpse(player.x, player.y, player.angle);
+                } else {
+                    // Use each player's own petal extension, or fallback to the passed value (for current player)
+                    const playerPetalExtension = player.id === currentPlayerId 
+                        ? petalExtension 
+                        : (player.petalExtension || 1.0);
+                    // Draw normal player
+                    this.drawPlayer(player, currentPlayerId, playerPetalExtension);
                 }
             }
         }

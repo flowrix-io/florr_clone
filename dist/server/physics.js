@@ -287,24 +287,19 @@ function checkEnemyEnemyCollisions(enemies, io) {
                 otherEnemy.x += pushX;
                 otherEnemy.y += pushY;
                 // Handle melee combat between pets and wild mobs
-                // Pet attacks wild mob OR wild mob attacks pet
+                // Pet attacks wild mob OR wild mob attacks pet - damage every tick (no cooldown)
                 if ((thisMobIsPet && !otherMobIsPet) || (!thisMobIsPet && otherMobIsPet)) {
-                    // Check if enemy can attack (cooldown check)
-                    const enemyLastAttack = enemy.lastMeleeAttackTime || 0;
-                    if (currentTime - enemyLastAttack >= MELEE_ATTACK_COOLDOWN) {
-                        // Enemy attacks other enemy
+                    // Enemy attacks otherEnemy
+                    if (thisMobIsPet && !otherMobIsPet && enemy.ownerId) {
+                        // Enemy (pet) attacks otherEnemy (wild mob)
                         if (!otherEnemy.isDead && otherEnemy.health > 0) {
-                            // Track damage if this is a pet attacking a wild mob
-                            if (thisMobIsPet && enemy.ownerId) {
-                                const { trackDamage } = require('../server');
-                                trackDamage(otherEnemy, enemy.ownerId, enemy.damage);
-                            }
+                            // Track damage with pet owner's ID
+                            const { trackDamage } = require('../server');
+                            trackDamage(otherEnemy, enemy.ownerId, enemy.damage);
                             otherEnemy.health -= enemy.damage;
-                            enemy.lastMeleeAttackTime = currentTime;
                             if (io) {
                                 io.emit('enemyDamaged', { enemyId: otherEnemy.id, health: otherEnemy.health });
                             }
-                            // Check if other enemy dies
                             if (otherEnemy.health <= 0) {
                                 otherEnemy.isDead = true;
                                 if (io) {
@@ -313,22 +308,47 @@ function checkEnemyEnemyCollisions(enemies, io) {
                             }
                         }
                     }
-                    // Check if other enemy can attack (cooldown check)
-                    const otherEnemyLastAttack = otherEnemy.lastMeleeAttackTime || 0;
-                    if (currentTime - otherEnemyLastAttack >= MELEE_ATTACK_COOLDOWN) {
-                        // Other enemy attacks enemy
-                        if (!enemy.isDead && enemy.health > 0) {
-                            // Track damage if this is a pet attacking a wild mob
-                            if (otherMobIsPet && otherEnemy.ownerId) {
-                                const { trackDamage } = require('../server');
-                                trackDamage(enemy, otherEnemy.ownerId, otherEnemy.damage);
+                    else if (!thisMobIsPet && otherMobIsPet) {
+                        // Enemy (wild mob) attacks otherEnemy (pet)
+                        if (!otherEnemy.isDead && otherEnemy.health > 0) {
+                            otherEnemy.health -= enemy.damage;
+                            if (io) {
+                                io.emit('enemyDamaged', { enemyId: otherEnemy.id, health: otherEnemy.health });
                             }
+                            if (otherEnemy.health <= 0) {
+                                otherEnemy.isDead = true;
+                                if (io) {
+                                    io.emit('enemyDestroyed', otherEnemy.id);
+                                }
+                            }
+                        }
+                    }
+                    // otherEnemy attacks enemy
+                    if (otherMobIsPet && !thisMobIsPet && otherEnemy.ownerId) {
+                        // otherEnemy (pet) attacks enemy (wild mob)
+                        if (!enemy.isDead && enemy.health > 0) {
+                            // Track damage with pet owner's ID
+                            const { trackDamage } = require('../server');
+                            trackDamage(enemy, otherEnemy.ownerId, otherEnemy.damage);
                             enemy.health -= otherEnemy.damage;
-                            otherEnemy.lastMeleeAttackTime = currentTime;
                             if (io) {
                                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
                             }
-                            // Check if enemy dies
+                            if (enemy.health <= 0) {
+                                enemy.isDead = true;
+                                if (io) {
+                                    io.emit('enemyDestroyed', enemy.id);
+                                }
+                            }
+                        }
+                    }
+                    else if (!otherMobIsPet && thisMobIsPet) {
+                        // otherEnemy (wild mob) attacks enemy (pet)
+                        if (!enemy.isDead && enemy.health > 0) {
+                            enemy.health -= otherEnemy.damage;
+                            if (io) {
+                                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                            }
                             if (enemy.health <= 0) {
                                 enemy.isDead = true;
                                 if (io) {

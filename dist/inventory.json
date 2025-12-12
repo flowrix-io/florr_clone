@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 119871080,
+      "totalXP": 119875820,
       "inventory": {
         "common": {
           "shield": 101,
@@ -92,7 +92,7 @@
           "petal_dandelion": 40,
           "petal_basic": 70,
           "petal_sand": 7,
-          "speed_boost": 39,
+          "speed_boost": 40,
           "petal_stinger": 33,
           "shield": 49,
           "petal_clover": 34,
