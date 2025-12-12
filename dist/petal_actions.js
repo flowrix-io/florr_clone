@@ -331,7 +331,7 @@ function despawnPet(pet, io) {
     if (index !== -1) {
         constants_1.enemies.splice(index, 1);
         io.emit('enemyDestroyed', pet.id);
-        console.log(`Despawned pet ${pet.tier} ${pet.type} for player ${pet.ownerId}`);
+        // console.log(`Despawned pet ${pet.tier} ${pet.type} for player ${pet.ownerId}`);
     }
 }
 // Spawn a pet mob that belongs to a player
@@ -351,7 +351,7 @@ function spawnPet(mobType, rarity, x, y, ownerId, io) {
     // Check if player already has a pet of this mob type - despawn it first
     const existingPet = findPlayerPetByMobType(ownerId, mobType);
     if (existingPet) {
-        console.log(`[PET] Player ${ownerId} already has a ${mobType} pet, despawning old one`);
+        // console.log(`[PET] Player ${ownerId} already has a ${mobType} pet, despawning old one`);
         despawnPet(existingPet, io);
     }
     const tier = rarity.toLowerCase();
@@ -392,7 +392,7 @@ function spawnPet(mobType, rarity, x, y, ownerId, io) {
     constants_1.enemies.push(pet);
     // Notify all clients
     io.emit('enemySpawned', pet);
-    console.log(`Spawned pet ${tier} ${mobType} for player ${ownerId} at (${Math.round(x)}, ${Math.round(y)})`);
+    // console.log(`Spawned pet ${tier} ${mobType} for player ${ownerId} at (${Math.round(x)}, ${Math.round(y)})`);
 }
 // Mark petal for breaking
 function markPetalForBreak(petalId, context) {

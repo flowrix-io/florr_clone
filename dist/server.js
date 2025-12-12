@@ -822,7 +822,7 @@ io.on('connection', (socket) => {
                         if (petalStats?.petMobType && !petal.onCooldown && petal.rarity) {
                             const petMobType = petalStats.petMobType;
                             // Pet inherits the petal's rarity
-                            console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${player.id} on spawn`);
+                            // console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${player.id} on spawn`);
                             (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, player.x, player.y, player.id, io);
                         }
                         // Handle cooldown timers
@@ -853,7 +853,7 @@ io.on('connection', (socket) => {
                                         // Pet inherits the petal's rarity
                                         const restoredPlayer = constants_2.players[socket.id];
                                         if (restoredPlayer && !restoredPlayer.isDead) {
-                                            console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${restoredPlayer.id} when petal restored on spawn`);
+                                            // console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${restoredPlayer.id} when petal restored on spawn`);
                                             (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, restoredPlayer.x, restoredPlayer.y, restoredPlayer.id, io);
                                         }
                                     }
@@ -1108,7 +1108,7 @@ io.on('connection', (socket) => {
         return validatedLoadout;
     }
     socket.on('updateLoadout', (data) => {
-        console.log('[PET DEBUG] updateLoadout called for socket:', socket.id);
+        // console.log('[PET DEBUG] updateLoadout called for socket:', socket.id);
         const player = constants_2.players[socket.id];
         if (!player) {
             console.warn('[SERVER] updateLoadout: Player not found for socket:', socket.id);
@@ -1118,7 +1118,7 @@ io.on('connection', (socket) => {
             console.warn('[SERVER] updateLoadout: Socket not authenticated');
             return;
         }
-        console.log('[PET DEBUG] updateLoadout: Player found, processing loadout...');
+        // console.log('[PET DEBUG] updateLoadout: Player found, processing loadout...');
         if (player) {
             // Track which slots had items before to detect changes
             const oldLoadout = player.loadout || [];
@@ -1172,7 +1172,7 @@ io.on('connection', (socket) => {
                             const petToDespawn = constants_2.enemies.find(e => e.ownerId === player.id &&
                                 e.type === oldPetalStats.petMobType);
                             if (petToDespawn) {
-                                console.log(`[PET] Despawning pet ${oldPetalStats.petMobType} for player ${player.id} when petal unequipped`);
+                                // console.log(`[PET] Despawning pet ${oldPetalStats.petMobType} for player ${player.id} when petal unequipped`);
                                 (0, petal_actions_1.despawnPet)(petToDespawn, io);
                             }
                         }
@@ -1202,12 +1202,12 @@ io.on('connection', (socket) => {
                         oldPetal.type !== 'petal' ||
                         oldPetal.petalType !== petal.petalType ||
                         oldPetal.rarity !== petal.rarity;
-                    console.log(`[PET DEBUG] Petal at index ${index}: type=${petal.petalType}, rarity=${petal.rarity}, isNewPetal=${isNewPetal}`);
+                    // console.log(`[PET DEBUG] Petal at index ${index}: type=${petal.petalType}, rarity=${petal.rarity}, isNewPetal=${isNewPetal}`);
                     // If it's a new petal, set it on cooldown and start the cooldown timer
                     if (isNewPetal && petal.petalType) {
                         petal.onCooldown = true;
                         const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity || 'common');
-                        console.log(`[PET DEBUG] Petal stats for ${petal.petalType}:`, petalStats ? { petMobType: petalStats.petMobType, petMobRarity: petalStats.petMobRarity } : 'null');
+                        // console.log(`[PET DEBUG] Petal stats for ${petal.petalType}:`, petalStats ? { petMobType: petalStats.petMobType, petMobRarity: petalStats.petMobRarity } : 'null');
                         if (petalStats) {
                             const cooldownTime = petalStats.cooldown || 10000;
                             setTimeout(() => {
@@ -1234,25 +1234,25 @@ io.on('connection', (socket) => {
                                     // Get fresh petal stats to ensure we have the latest petMobType
                                     if (restoredPetal.petalType && restoredPetal.rarity) {
                                         const restoredPetalStats = (0, petals_2.getPetalStats)(restoredPetal.petalType, restoredPetal.rarity);
-                                        console.log(`[PET DEBUG] Restored petal stats:`, restoredPetalStats ? { petMobType: restoredPetalStats.petMobType, petMobRarity: restoredPetalStats.petMobRarity } : 'null');
+                                        // console.log(`[PET DEBUG] Restored petal stats:`, restoredPetalStats ? { petMobType: restoredPetalStats.petMobType, petMobRarity: restoredPetalStats.petMobRarity } : 'null');
                                         if (restoredPetalStats?.petMobType && restoredPetal.rarity) {
                                             const petMobType = restoredPetalStats.petMobType;
                                             // Pet inherits the petal's rarity
                                             const player = constants_2.players[socket.id];
                                             if (player && !player.isDead) {
-                                                console.log(`[PET] Spawning pet ${petMobType} (${restoredPetal.rarity}) for player ${player.id} when petal restored`);
+                                                // console.log(`[PET] Spawning pet ${petMobType} (${restoredPetal.rarity}) for player ${player.id} when petal restored`);
                                                 (0, petal_actions_1.spawnPet)(petMobType, restoredPetal.rarity, player.x, player.y, player.id, io);
                                             }
                                             else {
-                                                console.log(`[PET DEBUG] Player check failed: player=${!!player}, isDead=${player?.isDead}`);
+                                                // console.log(`[PET DEBUG] Player check failed: player=${!!player}, isDead=${player?.isDead}`);
                                             }
                                         }
                                         else {
-                                            console.log(`[PET DEBUG] No petMobType in restored petal stats`);
+                                            // console.log(`[PET DEBUG] No petMobType in restored petal stats`);
                                         }
                                     }
                                     else {
-                                        console.log(`[PET DEBUG] Missing petalType or rarity: petalType=${restoredPetal.petalType}, rarity=${restoredPetal.rarity}`);
+                                        // console.log(`[PET DEBUG] Missing petalType or rarity: petalType=${restoredPetal.petalType}, rarity=${restoredPetal.rarity}`);
                                     }
                                 }
                             }, cooldownTime);
@@ -1261,23 +1261,23 @@ io.on('connection', (socket) => {
                     // Check if this petal should spawn a pet when first equipped (spawn immediately)
                     if (isNewPetal && petal.petalType) {
                         const petalStatsForSpawn = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity || 'common');
-                        console.log(`[PET DEBUG] Checking for immediate spawn: petalStatsForSpawn=`, petalStatsForSpawn ? { petMobType: petalStatsForSpawn.petMobType, petMobRarity: petalStatsForSpawn.petMobRarity } : 'null');
+                        // console.log(`[PET DEBUG] Checking for immediate spawn: petalStatsForSpawn=`, petalStatsForSpawn ? { petMobType: petalStatsForSpawn.petMobType, petMobRarity: petalStatsForSpawn.petMobRarity } : 'null');
                         if (petalStatsForSpawn?.petMobType && petal.rarity) {
                             const petMobType = petalStatsForSpawn.petMobType;
                             // Pet inherits the petal's rarity
                             // Spawn pet immediately when petal is first equipped
                             const player = constants_2.players[socket.id];
-                            console.log(`[PET DEBUG] Player check: player=`, !!player, `isDead=`, player?.isDead);
+                            // console.log(`[PET DEBUG] Player check: player=`, !!player, `isDead=`, player?.isDead);
                             if (player && !player.isDead) {
-                                console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${player.id} when petal equipped`);
+                                // console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${player.id} when petal equipped`);
                                 (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, player.x, player.y, player.id, io);
                             }
                             else {
-                                console.log(`[PET DEBUG] Failed to spawn: player=${!!player}, isDead=${player?.isDead}`);
+                                // console.log(`[PET DEBUG] Failed to spawn: player=${!!player}, isDead=${player?.isDead}`);
                             }
                         }
                         else {
-                            console.log(`[PET DEBUG] No petMobType found in petalStatsForSpawn`);
+                            // console.log(`[PET DEBUG] No petMobType found in petalStatsForSpawn`);
                         }
                     }
                 }

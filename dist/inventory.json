@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 119952723,
+      "totalXP": 120057542,
       "inventory": {
         "common": {
           "shield": 112,
@@ -9,7 +9,7 @@
           "petal_dandelion": 20,
           "petal_stinger": 27,
           "petal_yggdrasil": 9,
-          "speed_boost": 36,
+          "speed_boost": 37,
           "petal_sand": 42,
           "petal_rock": 134,
           "petal_clover": 42,
@@ -30,8 +30,8 @@
           "petal_shield": 1,
           "petal_golden_leaf": 2,
           "petal_ant_egg": 3,
-          "petal_fire_ant_egg": 5,
-          "petal_yucca": 3
+          "petal_fire_ant_egg": 6,
+          "petal_yucca": 4
         },
         "unique": {
           "petal_stinger": 1004,
@@ -97,7 +97,7 @@
           "petal_dandelion": 40,
           "petal_basic": 71,
           "petal_sand": 7,
-          "speed_boost": 50,
+          "speed_boost": 51,
           "petal_stinger": 33,
           "shield": 60,
           "petal_clover": 37,
@@ -123,7 +123,7 @@
           "petal_ant_egg": 1
         },
         "legendary": {
-          "speed_boost": 100,
+          "speed_boost": 101,
           "petal_clover": 51,
           "petal_dandelion": 144,
           "petal_sand": 17,
@@ -187,16 +187,16 @@
           "shield": 45,
           "petal_sand": 5,
           "petal_basic": 27,
-          "speed_boost": 44,
+          "speed_boost": 45,
           "petal_stinger": 22,
           "petal_yggdrasil": 8,
-          "petal_bone": 21,
+          "petal_bone": 23,
           "petal_clover": 14,
           "petal_lightning": 4,
           "petal_missile": 38,
           "petal_leaf": 3,
           "petal_iris": 4,
-          "petal_yucca": 3,
+          "petal_yucca": 4,
           "petal_jelly": 2,
           "petal_cutter": 2,
           "petal_lightning_cutter": 5,
@@ -207,7 +207,8 @@
           "petal_poison_cactus": 1,
           "petal_cactus": 2,
           "petal_golden_leaf": 5,
-          "petal_ant_egg": 1
+          "petal_ant_egg": 1,
+          "petal_fire_ant_egg": 2
         },
         "ultra": {
           "speed_boost": 3,
