@@ -961,7 +961,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <ellipse cx="16" cy="16" rx="12" ry="14" fill="#FFD700" stroke="#FFA500" stroke-width="2"/>
 <ellipse cx="16" cy="14" rx="8" ry="10" fill="#FFF8DC"/>
-</svg>`
+</svg>`,
+        isAdminPetal: true
     }
 };
 
