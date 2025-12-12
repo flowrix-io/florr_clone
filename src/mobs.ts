@@ -119,23 +119,23 @@ const HEALTH_SCALING = {
     uncommon: 3.75,
     rare: 13.5,
     epic: 54,
-    legendary: 405,
-    mythic: 2430,
-    ultra: 29160,
-    super: 1312200,
-    unique: 19683000
+    legendary: 324,
+    mythic: 3159,
+    ultra: 126830,
+    super: 2374000,
+    unique: 10000000
 };
 
 const DAMAGE_SCALING = {
     common: 1,
-    uncommon: 3.75,
-    rare: 13.5,
-    epic: 54,
-    legendary: 405,
-    mythic: 2430,
-    ultra: 29160,
-    super: 1312200,
-    unique: 19683000
+    uncommon: 3,
+    rare: 9,
+    epic: 27,
+    legendary: 81,
+    mythic: 243,
+    ultra: 729,
+    super: 2187,
+    unique: 6561
 };
 
 const SIZE_SCALING = {
