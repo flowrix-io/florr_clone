@@ -256,10 +256,14 @@ function checkEnemyEnemyCollisions(enemies) {
         for (let j = i + 1; j < enemies.length; j++) {
             const otherEnemy = enemies[j];
             // Skip collision resolution if both mobs are passive and not chasing
+            // BUT allow pets (enemies with ownerId) to collide with each other
             const thisMobIsPassive = !enemy.isHostile && !enemy.isChasing;
             const otherMobIsPassive = !otherEnemy.isHostile && !otherEnemy.isChasing;
-            if (thisMobIsPassive && otherMobIsPassive) {
-                continue; // Both are passive, don't push each other
+            const thisMobIsPet = !!enemy.ownerId;
+            const otherMobIsPet = !!otherEnemy.ownerId;
+            // Allow pet-to-pet collisions, but skip if both are passive wild mobs
+            if (thisMobIsPassive && otherMobIsPassive && !thisMobIsPet && !otherMobIsPet) {
+                continue; // Both are passive wild mobs, don't push each other
             }
             // Get other enemy's size
             const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);

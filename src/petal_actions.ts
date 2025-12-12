@@ -2,7 +2,8 @@ import { PetalAction, parsePetalActions, RARITY_LEVELS } from './petals';
 import { ServerPlayer } from './player';
 import { Enemy, getXPFromEnemy } from './server_utils';
 import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
-import { players } from './constants';
+import { players, enemies } from './constants';
+import { getMobStats, getAllMobTypes } from './mobs';
 
 // Action execution context
 export interface ActionContext {
@@ -291,6 +292,12 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
     // Process enemies in reverse order to avoid index issues when removing
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
+        
+        // Skip pets that belong to the player (pets should not be damaged by their owner)
+        if (player && enemy.ownerId === player.id) {
+            continue;
+        }
+        
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
         
         if (distance <= explosionRadius) {
@@ -349,6 +356,12 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
     // Find all enemies within the lightning radius
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
+        
+        // Skip pets that belong to the player (pets should not be damaged by their owner)
+        if (player && enemy.ownerId === player.id) {
+            continue;
+        }
+        
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
         
         if (distance <= radius) {
@@ -397,6 +410,69 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
         targets: targets,
         damage: petalDamage || 25
     });
+}
+
+// Spawn a pet mob that belongs to a player
+export function spawnPet(mobType: string, rarity: string, x: number, y: number, ownerId: string, io: any): void {
+    // Validate mob type
+    const allMobTypes = getAllMobTypes();
+    if (!allMobTypes.includes(mobType)) {
+        console.log(`Invalid mob type for pet: ${mobType}`);
+        return;
+    }
+
+    // Validate rarity
+    const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    if (!validRarities.includes(rarity.toLowerCase())) {
+        console.log(`Invalid rarity for pet: ${rarity}`);
+        return;
+    }
+
+    const tier = rarity.toLowerCase() as Enemy['tier'];
+    const mobStats = getMobStats(mobType, tier);
+    
+    if (!mobStats) {
+        console.log(`No stats found for pet ${mobType} with rarity ${tier}`);
+        return;
+    }
+
+    // Calculate range bonus: +200 per rarity level
+    const { RARITY_LEVELS } = require('./petals');
+    const rarityIndex = RARITY_LEVELS.indexOf(rarity.toLowerCase() as any);
+    const rangeBonus = rarityIndex >= 0 ? rarityIndex * 200 : 0;
+    const petRange = (mobStats.range || 0) + rangeBonus;
+
+    // Create the pet enemy
+    const currentTime = Date.now();
+    const pet: Enemy = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: mobType as Enemy['type'],
+        tier: tier,
+        x: x,
+        y: y,
+        angle: Math.random() * Math.PI * 2,
+        health: mobStats.health,
+        maxHealth: mobStats.health,
+        speed: mobStats.speed,
+        damage: mobStats.damage,
+        knockbackX: 0,
+        knockbackY: 0,
+        isHostile: false, // Pets are not hostile to players
+        range: petRange,
+        reversed: mobStats.reversed ?? false,
+        ownerId: ownerId, // Set the owner
+        spawnTime: currentTime,
+        lastViewportCheck: currentTime,
+        petImage: mobStats.petImage // Use pet image if available
+    };
+
+    // Add to enemies array
+    enemies.push(pet);
+    
+    // Notify all clients
+    io.emit('enemySpawned', pet);
+    
+    console.log(`Spawned pet ${tier} ${mobType} for player ${ownerId} at (${Math.round(x)}, ${Math.round(y)})`);
 }
 
 // Mark petal for breaking

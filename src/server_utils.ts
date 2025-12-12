@@ -37,6 +37,8 @@ export interface Enemy {
   poisonEffects?: PoisonEffect[];  // Active poison effects on this enemy
   lastProjectileTime?: number;  // Last time this enemy shot a projectile
   reversed?: boolean;  // Whether the mob image should be flipped horizontally
+  ownerId?: string;  // ID of the player who owns this pet (if this is a pet)
+  petImage?: string;  // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
   // DPS tracking for target dummies
   dpsHistory?: Array<{ time: number; damage: number }>;  // History of damage events with timestamps
   dpsStartTime?: number;  // When DPS tracking started

@@ -31,6 +31,8 @@ export interface PetalStats {
         spreadAngle?: number; // Spread angle in radians for multiple projectiles (default: 0.2)
     };
     playerModifiers?: PlayerModifiers; // Player stat modifiers when petal is equipped (optional)
+    petMobType?: string; // Optional mob type to spawn as a pet when this petal is equipped (e.g., 'bee', 'ladybug')
+    petMobRarity?: string; // Optional rarity for the pet mob (defaults to petal's rarity if not specified)
 }
 
 export interface PetalConfig {
@@ -98,6 +100,8 @@ interface BasePetalConfig {
         spreadAngle?: number; // Spread angle in radians for multiple projectiles (default: 0.2)
     };
     playerModifiers?: PlayerModifiers; // Player stat modifiers when petal is equipped (optional)
+    petMobType?: string; // Optional mob type to spawn as a pet when this petal is equipped (e.g., 'bee', 'ladybug')
+    petMobRarity?: string; // Optional rarity for the pet mob (defaults to petal's rarity if not specified)
 }
 
 // Special rarity overrides for specific petals
@@ -114,6 +118,8 @@ interface RarityOverride {
     actions?: string; // Action sequence string like "heal 20; break;"
     range?: number; // Multiplier for how much the petal extends from player (optional)
     playerModifiers?: PlayerModifiers; // Player stat modifiers when petal is equipped (optional)
+    petMobType?: string; // Optional mob type to spawn as a pet when this petal is equipped (e.g., 'bee', 'ladybug')
+    petMobRarity?: string; // Optional rarity for the pet mob (defaults to petal's rarity if not specified)
 }
 
 // Rarity-specific overrides for special cases
@@ -908,6 +914,22 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 <path d="M8 8 L24 24 M24 8 L8 24" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
 </svg>`,
         isAdminPetal: true
+    },
+    egg: {
+        name: "Egg Petal",
+        damage: 5,
+        health: 5,
+        size: 1.0,
+        cooldown: 1000,
+        description: "Spawns a pet mob that fights alongside you",
+        color: "#FFD700",
+        count: 1,
+        petMobType: "bee",
+        petMobRarity: "common",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<ellipse cx="16" cy="16" rx="12" ry="14" fill="#FFD700" stroke="#FFA500" stroke-width="2"/>
+<ellipse cx="16" cy="14" rx="8" ry="10" fill="#FFF8DC"/>
+</svg>`
     }
 };
 
@@ -1087,7 +1109,9 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         isAdminPetal: baseConfig.isAdminPetal ?? false,
         range: baseConfig.range ?? 1.0, // Default range multiplier
         projectile: baseConfig.projectile, // Include projectile config if present
-        playerModifiers: playerModifiers // Include player modifiers if present
+        playerModifiers: playerModifiers, // Include player modifiers if present
+        petMobType: baseConfig.petMobType, // Include pet mob type if present
+        petMobRarity: baseConfig.petMobRarity // Include pet mob rarity if present
     };
 }
 

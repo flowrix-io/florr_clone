@@ -816,9 +816,17 @@ io.on('connection', (socket) => {
             if (player && player.loadout) {
                 for (let i = 0; i < player.loadout.length; i++) {
                     const petal = player.loadout[i];
-                    if (petal && petal.type === 'petal' && petal.petalType && petal.rarity && petal.onCooldown) {
+                    if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
                         const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity);
-                        if (petalStats) {
+                        // Spawn pets for equipped petals with petMobType (only if not on cooldown)
+                        if (petalStats?.petMobType && !petal.onCooldown && petal.rarity) {
+                            const petMobType = petalStats.petMobType;
+                            // Pet inherits the petal's rarity
+                            console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${player.id} on spawn`);
+                            (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, player.x, player.y, player.id, io);
+                        }
+                        // Handle cooldown timers
+                        if (petal.onCooldown && petalStats) {
                             const cooldownTime = petalStats.cooldown || 10000;
                             setTimeout(() => {
                                 if (constants_2.players[socket.id] && constants_2.players[socket.id].loadout[i] && constants_2.players[socket.id].loadout[i].onCooldown) {
@@ -839,6 +847,16 @@ io.on('connection', (socket) => {
                                         slotIndex: i,
                                         petal: constants_2.players[socket.id].loadout[i]
                                     });
+                                    // Spawn pet when petal is restored (if it has petMobType)
+                                    if (petalStats.petMobType && petal.rarity) {
+                                        const petMobType = petalStats.petMobType;
+                                        // Pet inherits the petal's rarity
+                                        const restoredPlayer = constants_2.players[socket.id];
+                                        if (restoredPlayer && !restoredPlayer.isDead) {
+                                            console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${restoredPlayer.id} when petal restored on spawn`);
+                                            (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, restoredPlayer.x, restoredPlayer.y, restoredPlayer.id, io);
+                                        }
+                                    }
                                 }
                             }, cooldownTime);
                         }
@@ -1090,6 +1108,7 @@ io.on('connection', (socket) => {
         return validatedLoadout;
     }
     socket.on('updateLoadout', (data) => {
+        console.log('[PET DEBUG] updateLoadout called for socket:', socket.id);
         const player = constants_2.players[socket.id];
         if (!player) {
             console.warn('[SERVER] updateLoadout: Player not found for socket:', socket.id);
@@ -1099,6 +1118,7 @@ io.on('connection', (socket) => {
             console.warn('[SERVER] updateLoadout: Socket not authenticated');
             return;
         }
+        console.log('[PET DEBUG] updateLoadout: Player found, processing loadout...');
         if (player) {
             // Track which slots had items before to detect changes
             const oldLoadout = player.loadout || [];
@@ -1170,10 +1190,12 @@ io.on('connection', (socket) => {
                         oldPetal.type !== 'petal' ||
                         oldPetal.petalType !== petal.petalType ||
                         oldPetal.rarity !== petal.rarity;
+                    console.log(`[PET DEBUG] Petal at index ${index}: type=${petal.petalType}, rarity=${petal.rarity}, isNewPetal=${isNewPetal}`);
                     // If it's a new petal, set it on cooldown and start the cooldown timer
                     if (isNewPetal && petal.petalType) {
                         petal.onCooldown = true;
                         const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity || 'common');
+                        console.log(`[PET DEBUG] Petal stats for ${petal.petalType}:`, petalStats ? { petMobType: petalStats.petMobType, petMobRarity: petalStats.petMobRarity } : 'null');
                         if (petalStats) {
                             const cooldownTime = petalStats.cooldown || 10000;
                             setTimeout(() => {
@@ -1196,8 +1218,54 @@ io.on('connection', (socket) => {
                                         slotIndex: index,
                                         petal: constants_2.players[socket.id].loadout[index]
                                     });
+                                    // Check if this petal should spawn a pet when restored
+                                    // Get fresh petal stats to ensure we have the latest petMobType
+                                    if (restoredPetal.petalType && restoredPetal.rarity) {
+                                        const restoredPetalStats = (0, petals_2.getPetalStats)(restoredPetal.petalType, restoredPetal.rarity);
+                                        console.log(`[PET DEBUG] Restored petal stats:`, restoredPetalStats ? { petMobType: restoredPetalStats.petMobType, petMobRarity: restoredPetalStats.petMobRarity } : 'null');
+                                        if (restoredPetalStats?.petMobType && restoredPetal.rarity) {
+                                            const petMobType = restoredPetalStats.petMobType;
+                                            // Pet inherits the petal's rarity
+                                            const player = constants_2.players[socket.id];
+                                            if (player && !player.isDead) {
+                                                console.log(`[PET] Spawning pet ${petMobType} (${restoredPetal.rarity}) for player ${player.id} when petal restored`);
+                                                (0, petal_actions_1.spawnPet)(petMobType, restoredPetal.rarity, player.x, player.y, player.id, io);
+                                            }
+                                            else {
+                                                console.log(`[PET DEBUG] Player check failed: player=${!!player}, isDead=${player?.isDead}`);
+                                            }
+                                        }
+                                        else {
+                                            console.log(`[PET DEBUG] No petMobType in restored petal stats`);
+                                        }
+                                    }
+                                    else {
+                                        console.log(`[PET DEBUG] Missing petalType or rarity: petalType=${restoredPetal.petalType}, rarity=${restoredPetal.rarity}`);
+                                    }
                                 }
                             }, cooldownTime);
+                        }
+                    }
+                    // Check if this petal should spawn a pet when first equipped (spawn immediately)
+                    if (isNewPetal && petal.petalType) {
+                        const petalStatsForSpawn = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity || 'common');
+                        console.log(`[PET DEBUG] Checking for immediate spawn: petalStatsForSpawn=`, petalStatsForSpawn ? { petMobType: petalStatsForSpawn.petMobType, petMobRarity: petalStatsForSpawn.petMobRarity } : 'null');
+                        if (petalStatsForSpawn?.petMobType && petal.rarity) {
+                            const petMobType = petalStatsForSpawn.petMobType;
+                            // Pet inherits the petal's rarity
+                            // Spawn pet immediately when petal is first equipped
+                            const player = constants_2.players[socket.id];
+                            console.log(`[PET DEBUG] Player check: player=`, !!player, `isDead=`, player?.isDead);
+                            if (player && !player.isDead) {
+                                console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${player.id} when petal equipped`);
+                                (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, player.x, player.y, player.id, io);
+                            }
+                            else {
+                                console.log(`[PET DEBUG] Failed to spawn: player=${!!player}, isDead=${player?.isDead}`);
+                            }
+                        }
+                        else {
+                            console.log(`[PET DEBUG] No petMobType found in petalStatsForSpawn`);
                         }
                     }
                 }
@@ -1719,109 +1787,178 @@ function moveEnemies() {
             if (Math.abs(enemy.knockbackY) < 0.1)
                 enemy.knockbackY = 0;
         }
-        // Find closest living player
-        let closestPlayer;
-        let closestDistance = Infinity;
-        // Convert players object to array and explicitly type it
-        const playerArray = Object.values(constants_2.players);
-        playerArray.forEach(player => {
-            // Skip dead players (corpses)
-            if (player.isDead) {
-                return;
-            }
-            const dx = player.x - enemy.x;
-            const dy = player.y - enemy.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance < closestDistance) {
-                closestDistance = distance;
-                closestPlayer = player;
-            }
-        });
-        // Move enemy based on behavior
-        if (closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE) && enemy.isHostile) {
-            // Chase player
-            enemy.isChasing = true;
-            const dx = closestPlayer.x - enemy.x;
-            const dy = closestPlayer.y - enemy.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance > 0) {
-                const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
-                enemy.x += (dx / distance) * speed;
-                enemy.y += (dy / distance) * speed;
-                // Only update angle if mob has speed > 0
-                if (enemy.speed > 0) {
+        // Check if this is a pet (has ownerId)
+        const isPet = !!enemy.ownerId;
+        if (isPet) {
+            // Pet behavior: follow owner and attack wild mobs
+            const owner = constants_2.players[enemy.ownerId];
+            if (owner && !owner.isDead) {
+                // Follow owner
+                const dx = owner.x - enemy.x;
+                const dy = owner.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                // Follow owner if not too close (maintain some distance)
+                const followDistance = 100; // Distance to maintain from owner
+                if (distance > followDistance && enemy.speed > 0) {
+                    const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
+                    enemy.x += (dx / distance) * speed;
+                    enemy.y += (dy / distance) * speed;
                     enemy.angle = Math.atan2(dy, dx);
                 }
-            }
-            // Check if mob can shoot projectiles
-            const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-            if (mobStats?.projectile && closestPlayer) {
-                const projectileConfig = mobStats.projectile;
-                const lastShotTime = enemy.lastProjectileTime || 0;
-                const cooldown = mobStats.cooldown || 2000;
-                // Check if cooldown has passed
-                if (currentTime - lastShotTime >= cooldown) {
-                    // Calculate angle to player
-                    const angleToPlayer = Math.atan2(dy, dx);
-                    const projectileSpeed = projectileConfig.speed || 200; // pixels per second
-                    const spreadAngle = projectileConfig.spreadAngle || 0.2; // radians
-                    const projectileCount = projectileConfig.count || 1;
-                    // Use enemy's tier/rarity for the projectile instead of hardcoded petalRarity
-                    const projectileRarity = enemy.tier;
-                    // Get petal stats for damage and size using enemy's rarity
-                    const petalStats = (0, petals_2.getPetalStats)(projectileConfig.petalType, projectileRarity);
-                    if (petalStats) {
-                        // Create projectiles
-                        for (let i = 0; i < projectileCount; i++) {
-                            // Calculate spread angle for multiple projectiles
-                            let projectileAngle = angleToPlayer;
-                            if (projectileCount > 1) {
-                                const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
-                                projectileAngle = angleToPlayer + spreadOffset;
-                            }
-                            const projectile = {
-                                id: `${enemy.id}_projectile_${currentTime}_${i}`,
-                                enemyId: enemy.id,
-                                x: enemy.x,
-                                y: enemy.y,
-                                startX: enemy.x,
-                                startY: enemy.y,
-                                angle: projectileAngle,
-                                speed: projectileSpeed / 1000, // Convert to pixels per millisecond
-                                distance: 0,
-                                maxDistance: projectileConfig.distance,
-                                petalType: projectileConfig.petalType,
-                                petalRarity: projectileRarity,
-                                damage: petalStats.damage,
-                                size: petalStats.size,
-                                health: petalStats.health,
-                                maxHealth: petalStats.health
-                            };
-                            gameState_1.mobProjectiles.push(projectile);
+                // Attack wild mobs (enemies without ownerId) if pet is movable
+                if (enemy.speed > 0) {
+                    let closestWildMob;
+                    let closestWildMobDistance = Infinity;
+                    for (const otherEnemy of constants_2.enemies) {
+                        // Skip self, pets, and enemies without ownerId are wild
+                        if (otherEnemy.id === enemy.id || otherEnemy.ownerId) {
+                            continue;
                         }
-                        // Update last shot time
-                        enemy.lastProjectileTime = currentTime;
+                        const mobDx = otherEnemy.x - enemy.x;
+                        const mobDy = otherEnemy.y - enemy.y;
+                        const mobDistance = Math.sqrt(mobDx * mobDx + mobDy * mobDy);
+                        if (mobDistance < closestWildMobDistance && mobDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
+                            closestWildMobDistance = mobDistance;
+                            closestWildMob = otherEnemy;
+                        }
+                    }
+                    // Attack closest wild mob
+                    if (closestWildMob) {
+                        const mobDx = closestWildMob.x - enemy.x;
+                        const mobDy = closestWildMob.y - enemy.y;
+                        const mobDistance = Math.sqrt(mobDx * mobDx + mobDy * mobDy);
+                        if (mobDistance > 0) {
+                            const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
+                            enemy.x += (mobDx / mobDistance) * speed;
+                            enemy.y += (mobDy / mobDistance) * speed;
+                            enemy.angle = Math.atan2(mobDy, mobDx);
+                            enemy.isChasing = true;
+                        }
+                    }
+                    else {
+                        enemy.isChasing = false;
                     }
                 }
             }
+            else {
+                // Owner is dead or disconnected, pet wanders
+                enemy.isChasing = false;
+                if (!enemy.wanderTarget || currentTime - (enemy.lastWanderTime || 0) > 3000) {
+                    enemy.wanderTarget = {
+                        x: enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE,
+                        y: enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE
+                    };
+                    enemy.lastWanderTime = currentTime;
+                }
+                if (enemy.wanderTarget && enemy.speed > 0) {
+                    const dx = enemy.wanderTarget.x - enemy.x;
+                    const dy = enemy.wanderTarget.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance > 5) {
+                        const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5;
+                        enemy.x += (dx / distance) * speed;
+                        enemy.y += (dy / distance) * speed;
+                        enemy.angle = Math.atan2(dy, dx);
+                    }
+                }
+            }
+            // Handle pet projectiles (same as regular enemies)
+            const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+            if (mobStats?.projectile && enemy.speed > 0) {
+                // Find closest wild mob for projectile target
+                let projectileTarget;
+                let projectileTargetDistance = Infinity;
+                for (const otherEnemy of constants_2.enemies) {
+                    if (otherEnemy.id === enemy.id || otherEnemy.ownerId) {
+                        continue;
+                    }
+                    const mobDx = otherEnemy.x - enemy.x;
+                    const mobDy = otherEnemy.y - enemy.y;
+                    const mobDistance = Math.sqrt(mobDx * mobDx + mobDy * mobDy);
+                    if (mobDistance < projectileTargetDistance && mobDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
+                        projectileTargetDistance = mobDistance;
+                        projectileTarget = otherEnemy;
+                    }
+                }
+                if (projectileTarget) {
+                    const projectileConfig = mobStats.projectile;
+                    const lastShotTime = enemy.lastProjectileTime || 0;
+                    const cooldown = mobStats.cooldown || 2000;
+                    if (currentTime - lastShotTime >= cooldown) {
+                        const dx = projectileTarget.x - enemy.x;
+                        const dy = projectileTarget.y - enemy.y;
+                        const angleToTarget = Math.atan2(dy, dx);
+                        const projectileSpeed = projectileConfig.speed || 200;
+                        const spreadAngle = projectileConfig.spreadAngle || 0.2;
+                        const projectileCount = projectileConfig.count || 1;
+                        const projectileRarity = enemy.tier;
+                        const petalStats = (0, petals_2.getPetalStats)(projectileConfig.petalType, projectileRarity);
+                        if (petalStats) {
+                            for (let i = 0; i < projectileCount; i++) {
+                                let projectileAngle = angleToTarget;
+                                if (projectileCount > 1) {
+                                    const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
+                                    projectileAngle = angleToTarget + spreadOffset;
+                                }
+                                const projectile = {
+                                    id: `${enemy.id}_projectile_${currentTime}_${i}`,
+                                    enemyId: enemy.id,
+                                    x: enemy.x,
+                                    y: enemy.y,
+                                    startX: enemy.x,
+                                    startY: enemy.y,
+                                    angle: projectileAngle,
+                                    speed: projectileSpeed / 1000,
+                                    distance: 0,
+                                    maxDistance: projectileConfig.distance,
+                                    petalType: projectileConfig.petalType,
+                                    petalRarity: projectileRarity,
+                                    damage: petalStats.damage,
+                                    size: petalStats.size,
+                                    health: petalStats.health,
+                                    maxHealth: petalStats.health
+                                };
+                                gameState_1.mobProjectiles.push(projectile);
+                            }
+                            enemy.lastProjectileTime = currentTime;
+                        }
+                    }
+                }
+            }
+            // Skip regular enemy behavior for pets - handle wall collisions and move to next enemy
+            const mobStatsForSize = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+            (0, physics_1.checkEnemyWallCollisions)(enemy);
+            // Continue to next iteration (pets skip regular enemy behavior)
         }
         else {
-            // Not chasing
-            enemy.isChasing = false;
-            // Wander randomly
-            if (!enemy.wanderTarget || currentTime - (enemy.lastWanderTime || 0) > 3000) {
-                enemy.wanderTarget = {
-                    x: enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE,
-                    y: enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE
-                };
-                enemy.lastWanderTime = currentTime;
-            }
-            if (enemy.wanderTarget) {
-                const dx = enemy.wanderTarget.x - enemy.x;
-                const dy = enemy.wanderTarget.y - enemy.y;
+            // Regular enemy behavior (not a pet)
+            // Find closest living player
+            let closestPlayer;
+            let closestDistance = Infinity;
+            // Convert players object to array and explicitly type it
+            const playerArray = Object.values(constants_2.players);
+            playerArray.forEach(player => {
+                // Skip dead players (corpses)
+                if (player.isDead) {
+                    return;
+                }
+                const dx = player.x - enemy.x;
+                const dy = player.y - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance > 5) {
-                    const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5; // Slower wandering
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestPlayer = player;
+                }
+            });
+            // Move enemy based on behavior
+            if (closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE) && enemy.isHostile) {
+                // Chase player
+                enemy.isChasing = true;
+                const dx = closestPlayer.x - enemy.x;
+                const dy = closestPlayer.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance > 0) {
+                    const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
                     enemy.x += (dx / distance) * speed;
                     enemy.y += (dy / distance) * speed;
                     // Only update angle if mob has speed > 0
@@ -1829,32 +1966,109 @@ function moveEnemies() {
                         enemy.angle = Math.atan2(dy, dx);
                     }
                 }
+                // Check if mob can shoot projectiles
+                const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                if (mobStats?.projectile && closestPlayer) {
+                    const projectileConfig = mobStats.projectile;
+                    const lastShotTime = enemy.lastProjectileTime || 0;
+                    const cooldown = mobStats.cooldown || 2000;
+                    // Check if cooldown has passed
+                    if (currentTime - lastShotTime >= cooldown) {
+                        // Calculate angle to player
+                        const angleToPlayer = Math.atan2(dy, dx);
+                        const projectileSpeed = projectileConfig.speed || 200; // pixels per second
+                        const spreadAngle = projectileConfig.spreadAngle || 0.2; // radians
+                        const projectileCount = projectileConfig.count || 1;
+                        // Use enemy's tier/rarity for the projectile instead of hardcoded petalRarity
+                        const projectileRarity = enemy.tier;
+                        // Get petal stats for damage and size using enemy's rarity
+                        const petalStats = (0, petals_2.getPetalStats)(projectileConfig.petalType, projectileRarity);
+                        if (petalStats) {
+                            // Create projectiles
+                            for (let i = 0; i < projectileCount; i++) {
+                                // Calculate spread angle for multiple projectiles
+                                let projectileAngle = angleToPlayer;
+                                if (projectileCount > 1) {
+                                    const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
+                                    projectileAngle = angleToPlayer + spreadOffset;
+                                }
+                                const projectile = {
+                                    id: `${enemy.id}_projectile_${currentTime}_${i}`,
+                                    enemyId: enemy.id,
+                                    x: enemy.x,
+                                    y: enemy.y,
+                                    startX: enemy.x,
+                                    startY: enemy.y,
+                                    angle: projectileAngle,
+                                    speed: projectileSpeed / 1000, // Convert to pixels per millisecond
+                                    distance: 0,
+                                    maxDistance: projectileConfig.distance,
+                                    petalType: projectileConfig.petalType,
+                                    petalRarity: projectileRarity,
+                                    damage: petalStats.damage,
+                                    size: petalStats.size,
+                                    health: petalStats.health,
+                                    maxHealth: petalStats.health
+                                };
+                                gameState_1.mobProjectiles.push(projectile);
+                            }
+                            // Update last shot time
+                            enemy.lastProjectileTime = currentTime;
+                        }
+                    }
+                }
             }
+            else {
+                // Not chasing
+                enemy.isChasing = false;
+                // Wander randomly
+                if (!enemy.wanderTarget || currentTime - (enemy.lastWanderTime || 0) > 3000) {
+                    enemy.wanderTarget = {
+                        x: enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE,
+                        y: enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE
+                    };
+                    enemy.lastWanderTime = currentTime;
+                }
+                if (enemy.wanderTarget) {
+                    const dx = enemy.wanderTarget.x - enemy.x;
+                    const dy = enemy.wanderTarget.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance > 5) {
+                        const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5; // Slower wandering
+                        enemy.x += (dx / distance) * speed;
+                        enemy.y += (dy / distance) * speed;
+                        // Only update angle if mob has speed > 0
+                        if (enemy.speed > 0) {
+                            enemy.angle = Math.atan2(dy, dx);
+                        }
+                    }
+                }
+            }
+            // Get enemy size based on mob stats
+            const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+            const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
+            const halfSize = enemySize / 2;
+            // // Check if enemy goes out of bounds - kill them -- no longer needed since enemies no longer spawn out of bounds
+            // if (enemy.x < 0 || enemy.x >= ACTUAL_WORLD_WIDTH || enemy.y < 0 || enemy.y >= ACTUAL_WORLD_HEIGHT) {
+            //     enemy.health = 0;
+            //     // Remove enemy immediately if out of bounds
+            //     const index = enemies.findIndex(e => e.id === enemy.id);
+            //     if (index !== -1) {
+            //         enemies.splice(index, 1);
+            //         io.emit('enemyDestroyed', enemy.id);
+            //         updateSpecialMobCounts();
+            //         // Try to spawn a new enemy to replace the one that went out of bounds
+            //         const newEnemy = createEnemy();
+            //         if (newEnemy) {
+            //             enemies.push(newEnemy);
+            //         }
+            //     }
+            //     // Skip wall collision checks if enemy is being removed
+            //     return;
+            // }
+            // Check for wall collisions
+            (0, physics_1.checkEnemyWallCollisions)(enemy);
         }
-        // Get enemy size based on mob stats
-        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-        const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
-        const halfSize = enemySize / 2;
-        // // Check if enemy goes out of bounds - kill them -- no longer needed since enemies no longer spawn out of bounds
-        // if (enemy.x < 0 || enemy.x >= ACTUAL_WORLD_WIDTH || enemy.y < 0 || enemy.y >= ACTUAL_WORLD_HEIGHT) {
-        //     enemy.health = 0;
-        //     // Remove enemy immediately if out of bounds
-        //     const index = enemies.findIndex(e => e.id === enemy.id);
-        //     if (index !== -1) {
-        //         enemies.splice(index, 1);
-        //         io.emit('enemyDestroyed', enemy.id);
-        //         updateSpecialMobCounts();
-        //         // Try to spawn a new enemy to replace the one that went out of bounds
-        //         const newEnemy = createEnemy();
-        //         if (newEnemy) {
-        //             enemies.push(newEnemy);
-        //         }
-        //     }
-        //     // Skip wall collision checks if enemy is being removed
-        //     return;
-        // }
-        // Check for wall collisions
-        (0, physics_1.checkEnemyWallCollisions)(enemy);
     });
     // Check for mob-to-mob collisions
     (0, physics_1.checkEnemyEnemyCollisions)(constants_2.enemies);
@@ -1971,7 +2185,10 @@ function updateMobProjectiles(deltaTimeMs) {
             }
         }
         // Only check for direct player collision if we didn't hit a petal and projectile still exists
-        if (!hitPlayerPetal && projectile.health > 0) {
+        // Skip projectiles from pets (enemies with ownerId)
+        const projectileEnemy = constants_2.enemies.find(e => e.id === projectile.enemyId);
+        const isPetProjectile = projectileEnemy?.ownerId;
+        if (!hitPlayerPetal && projectile.health > 0 && !isPetProjectile) {
             for (const player of playerArray) {
                 if (player.isDead)
                     continue;
@@ -2080,6 +2297,10 @@ function updatePlayerProjectiles(deltaTimeMs) {
         // Check for enemy collisions
         for (let j = constants_2.enemies.length - 1; j >= 0; j--) {
             const enemy = constants_2.enemies[j];
+            // Skip pets that belong to the player who shot this projectile (pets should not be damaged by their owner)
+            if (enemy.ownerId === projectile.playerId) {
+                continue;
+            }
             const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
             const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
             const enemyHalfSize = enemySize / 2;

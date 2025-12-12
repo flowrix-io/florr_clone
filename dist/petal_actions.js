@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.globalPetalMemory = void 0;
 exports.executePetalActions = executePetalActions;
+exports.spawnPet = spawnPet;
 exports.updatePlayerEffects = updatePlayerEffects;
 exports.getDamageMultiplier = getDamageMultiplier;
 exports.getSpeedMultiplier = getSpeedMultiplier;
@@ -15,6 +16,7 @@ const petals_1 = require("./petals");
 const server_utils_1 = require("./server_utils");
 const server_1 = require("./server");
 const constants_1 = require("./constants");
+const mobs_1 = require("./mobs");
 // Global state for tracking petal actions
 const petalActionStates = new Map();
 // Global memory for petal actions (shared across all petals)
@@ -220,6 +222,10 @@ function explodePetal(x, y, petalSize, damage, enemies, io, player) {
     // Process enemies in reverse order to avoid index issues when removing
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
+        // Skip pets that belong to the player (pets should not be damaged by their owner)
+        if (player && enemy.ownerId === player.id) {
+            continue;
+        }
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
         if (distance <= explosionRadius) {
             // Track damage if player is provided
@@ -268,6 +274,10 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage) {
     // Find all enemies within the lightning radius
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
+        // Skip pets that belong to the player (pets should not be damaged by their owner)
+        if (player && enemy.ownerId === player.id) {
+            continue;
+        }
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
         if (distance <= radius) {
             targets.push({
@@ -308,6 +318,60 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage) {
         targets: targets,
         damage: petalDamage || 25
     });
+}
+// Spawn a pet mob that belongs to a player
+function spawnPet(mobType, rarity, x, y, ownerId, io) {
+    // Validate mob type
+    const allMobTypes = (0, mobs_1.getAllMobTypes)();
+    if (!allMobTypes.includes(mobType)) {
+        console.log(`Invalid mob type for pet: ${mobType}`);
+        return;
+    }
+    // Validate rarity
+    const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    if (!validRarities.includes(rarity.toLowerCase())) {
+        console.log(`Invalid rarity for pet: ${rarity}`);
+        return;
+    }
+    const tier = rarity.toLowerCase();
+    const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
+    if (!mobStats) {
+        console.log(`No stats found for pet ${mobType} with rarity ${tier}`);
+        return;
+    }
+    // Calculate range bonus: +200 per rarity level
+    const { RARITY_LEVELS } = require('./petals');
+    const rarityIndex = RARITY_LEVELS.indexOf(rarity.toLowerCase());
+    const rangeBonus = rarityIndex >= 0 ? rarityIndex * 200 : 0;
+    const petRange = (mobStats.range || 0) + rangeBonus;
+    // Create the pet enemy
+    const currentTime = Date.now();
+    const pet = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: mobType,
+        tier: tier,
+        x: x,
+        y: y,
+        angle: Math.random() * Math.PI * 2,
+        health: mobStats.health,
+        maxHealth: mobStats.health,
+        speed: mobStats.speed,
+        damage: mobStats.damage,
+        knockbackX: 0,
+        knockbackY: 0,
+        isHostile: false, // Pets are not hostile to players
+        range: petRange,
+        reversed: mobStats.reversed ?? false,
+        ownerId: ownerId, // Set the owner
+        spawnTime: currentTime,
+        lastViewportCheck: currentTime,
+        petImage: mobStats.petImage // Use pet image if available
+    };
+    // Add to enemies array
+    constants_1.enemies.push(pet);
+    // Notify all clients
+    io.emit('enemySpawned', pet);
+    console.log(`Spawned pet ${tier} ${mobType} for player ${ownerId} at (${Math.round(x)}, ${Math.round(y)})`);
 }
 // Mark petal for breaking
 function markPetalForBreak(petalId, context) {

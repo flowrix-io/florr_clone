@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 119866871,
+      "totalXP": 119871008,
       "inventory": {
         "common": {
           "shield": 101,
@@ -53,11 +53,12 @@
           "petal_yucca": 4,
           "petal_missile": 2,
           "petal_bone": 3,
-          "petal_wing": 996,
+          "petal_wing": 997,
           "petal_sand": 1,
           "petal_leaf": 3,
           "petal_blood_leaf": 999,
-          "petal_action_test": 1
+          "petal_action_test": 1,
+          "petal_egg": 999
         },
         "mythic": {
           "speed_boost": 9,
@@ -147,7 +148,7 @@
           "petal_stinger": 40,
           "speed_boost": 79,
           "petal_basic": 69,
-          "petal_rose": 101,
+          "petal_rose": 102,
           "petal_sand": 16,
           "petal_yggdrasil": 3,
           "health_potion": 42,
@@ -185,7 +186,7 @@
           "petal_bone": 21,
           "petal_clover": 13,
           "petal_lightning": 4,
-          "petal_missile": 37,
+          "petal_missile": 38,
           "petal_leaf": 3,
           "petal_iris": 4,
           "petal_yucca": 3,
@@ -250,7 +251,7 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "wing"
+          "petalType": "egg"
         },
         {
           "type": "petal",

@@ -15,6 +15,7 @@ export interface MobStats {
     biomeOnly: boolean; // Whether this mob can only spawn in biomes
     visual_scale?: number; // Visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Whether the mob image should be flipped horizontally
+    petImage?: string; // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
     projectile?: {
         count: number; // Number of projectiles to shoot
         distance: number; // Maximum distance projectiles travel
@@ -77,6 +78,7 @@ interface BaseMobConfig {
     biomeOnly?: boolean; // Optional: whether this mob can only spawn in biomes
     visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Optional: whether the mob image should be flipped horizontally
+    petImage?: string; // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
     projectile?: {
         count: number;
         distance: number;
@@ -103,6 +105,7 @@ interface RarityOverride {
     biomeOnly?: boolean;
     visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Optional: whether the mob image should be flipped horizontally
+    petImage?: string; // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
     projectile?: {
         count: number;
         distance: number;

@@ -239,6 +239,10 @@ function updatePlayerState(player, deltaTime, deps) {
     newY = wallCollision.y;
     let collision = false;
     for (const enemy of constants_1.enemies) {
+        // Skip pets (enemies with ownerId) - they don't damage players
+        if (enemy.ownerId) {
+            continue;
+        }
         const collisionInfo = (0, physics_1.checkPlayerEnemyCollision)(newX, newY, constants_1.PLAYER_SIZE, enemy);
         if (collisionInfo.collided) {
             collision = true;
@@ -452,6 +456,10 @@ function updatePlayerState(player, deltaTime, deps) {
             }
             // Check collision with enemies
             for (const enemy of constants_1.enemies) {
+                // Skip pets that belong to this player (pets should not be damaged by their owner)
+                if (enemy.ownerId === player.id) {
+                    continue;
+                }
                 // Get mob stats to determine proper hitbox size
                 const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
                 const enemySize = mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE; // Use mob size or fallback to base size
