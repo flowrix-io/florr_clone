@@ -314,10 +314,12 @@ export function checkProjectileWallCollision(
 }
 
 /**
- * Check and resolve enemy-enemy collisions
+ * Check and resolve enemy-enemy collisions and melee combat
  */
-export function checkEnemyEnemyCollisions(enemies: Enemy[]): void {
+export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
     const MOB_COLLISION_BUFFER = 5; // Buffer between mobs
+    const MELEE_ATTACK_COOLDOWN = 1000; // 1 second cooldown between melee attacks
+    const currentTime = Date.now();
 
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
@@ -363,6 +365,66 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[]): void {
                 enemy.y -= pushY;
                 otherEnemy.x += pushX;
                 otherEnemy.y += pushY;
+                
+                // Handle melee combat between pets and wild mobs
+                // Pet attacks wild mob OR wild mob attacks pet
+                if ((thisMobIsPet && !otherMobIsPet) || (!thisMobIsPet && otherMobIsPet)) {
+                    // Check if enemy can attack (cooldown check)
+                    const enemyLastAttack = enemy.lastMeleeAttackTime || 0;
+                    if (currentTime - enemyLastAttack >= MELEE_ATTACK_COOLDOWN) {
+                        // Enemy attacks other enemy
+                        if (!(otherEnemy as any).isDead && otherEnemy.health > 0) {
+                            // Track damage if this is a pet attacking a wild mob
+                            if (thisMobIsPet && enemy.ownerId) {
+                                const { trackDamage } = require('../server');
+                                trackDamage(otherEnemy, enemy.ownerId, enemy.damage);
+                            }
+                            
+                            otherEnemy.health -= enemy.damage;
+                            enemy.lastMeleeAttackTime = currentTime;
+                            
+                            if (io) {
+                                io.emit('enemyDamaged', { enemyId: otherEnemy.id, health: otherEnemy.health });
+                            }
+                            
+                            // Check if other enemy dies
+                            if (otherEnemy.health <= 0) {
+                                (otherEnemy as any).isDead = true;
+                                if (io) {
+                                    io.emit('enemyDestroyed', otherEnemy.id);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Check if other enemy can attack (cooldown check)
+                    const otherEnemyLastAttack = otherEnemy.lastMeleeAttackTime || 0;
+                    if (currentTime - otherEnemyLastAttack >= MELEE_ATTACK_COOLDOWN) {
+                        // Other enemy attacks enemy
+                        if (!(enemy as any).isDead && enemy.health > 0) {
+                            // Track damage if this is a pet attacking a wild mob
+                            if (otherMobIsPet && otherEnemy.ownerId) {
+                                const { trackDamage } = require('../server');
+                                trackDamage(enemy, otherEnemy.ownerId, otherEnemy.damage);
+                            }
+                            
+                            enemy.health -= otherEnemy.damage;
+                            otherEnemy.lastMeleeAttackTime = currentTime;
+                            
+                            if (io) {
+                                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                            }
+                            
+                            // Check if enemy dies
+                            if (enemy.health <= 0) {
+                                (enemy as any).isDead = true;
+                                if (io) {
+                                    io.emit('enemyDestroyed', enemy.id);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

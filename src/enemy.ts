@@ -67,6 +67,7 @@ export interface Enemy {
   poisonEffects?: PoisonEffect[];  // Active poison effects on this enemy
   range?: number;
   lastProjectileTime?: number;  // Last time this enemy shot a projectile
+  lastMeleeAttackTime?: number;  // Last time this enemy performed a melee attack
   reversed?: boolean;  // Whether the mob image should be flipped horizontally
   ownerId?: string;  // ID of the player who owns this pet (if this is a pet)
   petImage?: string;  // Optional image to use when this mob is spawned as a pet (32x32 SVG image)

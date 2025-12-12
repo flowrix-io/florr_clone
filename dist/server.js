@@ -1950,12 +1950,34 @@ function moveEnemies() {
                     closestPlayer = player;
                 }
             });
+            // Find closest pet (enemy with ownerId) as alternative target
+            let closestPet;
+            let closestPetDistance = Infinity;
+            for (const otherEnemy of constants_2.enemies) {
+                if (otherEnemy.ownerId && otherEnemy.id !== enemy.id) {
+                    const petDx = otherEnemy.x - enemy.x;
+                    const petDy = otherEnemy.y - enemy.y;
+                    const petDistance = Math.sqrt(petDx * petDx + petDy * petDy);
+                    if (petDistance < closestPetDistance && petDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
+                        closestPetDistance = petDistance;
+                        closestPet = otherEnemy;
+                    }
+                }
+            }
+            // Prioritize players, but target pets if no player is in range
+            const target = closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE)
+                ? closestPlayer
+                : (closestPet ? closestPet : null);
             // Move enemy based on behavior
-            if (closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE) && enemy.isHostile) {
-                // Chase player
+            if (target && enemy.isHostile) {
+                const isTargetingPlayer = target === closestPlayer;
+                const targetX = isTargetingPlayer ? closestPlayer.x : closestPet.x;
+                const targetY = isTargetingPlayer ? closestPlayer.y : closestPet.y;
+                const targetDistance = isTargetingPlayer ? closestDistance : closestPetDistance;
+                // Chase target (player or pet)
                 enemy.isChasing = true;
-                const dx = closestPlayer.x - enemy.x;
-                const dy = closestPlayer.y - enemy.y;
+                const dx = targetX - enemy.x;
+                const dy = targetY - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance > 0) {
                     const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
@@ -1968,14 +1990,14 @@ function moveEnemies() {
                 }
                 // Check if mob can shoot projectiles
                 const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-                if (mobStats?.projectile && closestPlayer) {
+                if (mobStats?.projectile && target) {
                     const projectileConfig = mobStats.projectile;
                     const lastShotTime = enemy.lastProjectileTime || 0;
                     const cooldown = mobStats.cooldown || 2000;
                     // Check if cooldown has passed
                     if (currentTime - lastShotTime >= cooldown) {
-                        // Calculate angle to player
-                        const angleToPlayer = Math.atan2(dy, dx);
+                        // Calculate angle to target (player or pet)
+                        const angleToTarget = Math.atan2(dy, dx);
                         const projectileSpeed = projectileConfig.speed || 200; // pixels per second
                         const spreadAngle = projectileConfig.spreadAngle || 0.2; // radians
                         const projectileCount = projectileConfig.count || 1;
@@ -1987,10 +2009,10 @@ function moveEnemies() {
                             // Create projectiles
                             for (let i = 0; i < projectileCount; i++) {
                                 // Calculate spread angle for multiple projectiles
-                                let projectileAngle = angleToPlayer;
+                                let projectileAngle = angleToTarget;
                                 if (projectileCount > 1) {
                                     const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
-                                    projectileAngle = angleToPlayer + spreadOffset;
+                                    projectileAngle = angleToTarget + spreadOffset;
                                 }
                                 const projectile = {
                                     id: `${enemy.id}_projectile_${currentTime}_${i}`,
@@ -2070,8 +2092,36 @@ function moveEnemies() {
             (0, physics_1.checkEnemyWallCollisions)(enemy);
         }
     });
-    // Check for mob-to-mob collisions
-    (0, physics_1.checkEnemyEnemyCollisions)(constants_2.enemies);
+    // Check for mob-to-mob collisions and melee combat
+    (0, physics_1.checkEnemyEnemyCollisions)(constants_2.enemies, io);
+    // Remove dead enemies after melee combat and handle XP/loot
+    for (let i = constants_2.enemies.length - 1; i >= 0; i--) {
+        const enemy = constants_2.enemies[i];
+        if (enemy.isDead || enemy.health <= 0) {
+            // Check if this was killed by a pet - find the pet that killed it
+            // We'll use damage contributors to determine who gets XP/loot
+            if (enemy.damageContributors && enemy.damageContributors.size > 0) {
+                // Find the top contributor (could be a pet owner)
+                let topContributor;
+                let maxDamage = 0;
+                enemy.damageContributors.forEach((damage, playerId) => {
+                    if (damage > maxDamage) {
+                        maxDamage = damage;
+                        topContributor = playerId;
+                    }
+                });
+                // Award XP and handle drops for the top contributor
+                if (topContributor && constants_2.players[topContributor]) {
+                    const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
+                    addXPToPlayer(constants_2.players[topContributor], xpGained, topContributor);
+                    handleMobDrops(enemy);
+                    (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
+                }
+            }
+            constants_2.enemies.splice(i, 1);
+            updateSpecialMobCounts();
+        }
+    }
     io.emit('enemiesUpdate', constants_2.enemies);
 }
 // Update and move mob projectiles
@@ -2184,10 +2234,70 @@ function updateMobProjectiles(deltaTimeMs) {
                 break; // Exit player loop if we hit a petal
             }
         }
-        // Only check for direct player collision if we didn't hit a petal and projectile still exists
-        // Skip projectiles from pets (enemies with ownerId)
+        // Check for collision with wild mobs (enemies without ownerId) if this is a pet projectile
         const projectileEnemy = constants_2.enemies.find(e => e.id === projectile.enemyId);
         const isPetProjectile = projectileEnemy?.ownerId;
+        const petOwnerId = projectileEnemy?.ownerId;
+        if (!hitPlayerPetal && projectile.health > 0 && isPetProjectile && petOwnerId) {
+            // Pet projectile can hit wild mobs
+            for (let j = constants_2.enemies.length - 1; j >= 0; j--) {
+                const targetEnemy = constants_2.enemies[j];
+                // Skip if target is a pet or the same enemy that shot the projectile
+                if (targetEnemy.ownerId || targetEnemy.id === projectile.enemyId) {
+                    continue;
+                }
+                const targetMobStats = (0, mobs_1.getMobStats)(targetEnemy.type, targetEnemy.tier);
+                const targetEnemySize = targetMobStats ? targetMobStats.size * 40 : constants_2.ENEMY_SIZE;
+                const targetEnemyHalfSize = targetEnemySize / 2;
+                const dx = targetEnemy.x - projectile.x;
+                const dy = targetEnemy.y - projectile.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const hitRadius = targetEnemyHalfSize + halfSize;
+                if (distance < hitRadius) {
+                    // Pet projectile hits wild mob
+                    const projectilePetalStats = (0, petals_2.getPetalStats)(projectile.petalType, projectile.petalRarity);
+                    const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : projectile.damage;
+                    // Track damage with pet owner's ID
+                    (0, utils_1.trackDamage)(targetEnemy, petOwnerId, projectileDamage);
+                    // Skip further processing if enemy is already dead
+                    if (targetEnemy.isDead) {
+                        gameState_1.mobProjectiles.splice(i, 1);
+                        break;
+                    }
+                    targetEnemy.health -= projectileDamage;
+                    io.emit('enemyDamaged', { enemyId: targetEnemy.id, health: targetEnemy.health });
+                    // Apply knockback
+                    if (distance > 0) {
+                        const knockbackForce = 20;
+                        const normalizedDx = dx / distance;
+                        const normalizedDy = dy / distance;
+                        const mobMass = targetMobStats ? targetMobStats.mass : 1.0;
+                        const effectiveKnockback = knockbackForce / mobMass;
+                        targetEnemy.knockbackX = normalizedDx * effectiveKnockback;
+                        targetEnemy.knockbackY = normalizedDy * effectiveKnockback;
+                    }
+                    // Check if enemy dies
+                    if (targetEnemy.health <= 0 && !targetEnemy.isDead) {
+                        targetEnemy.isDead = true;
+                        const owner = constants_2.players[petOwnerId];
+                        if (owner) {
+                            const xpGained = (0, server_utils_1.getXPFromEnemy)(targetEnemy);
+                            addXPToPlayer(owner, xpGained, petOwnerId);
+                            handleMobDrops(targetEnemy);
+                            (0, utils_1.sendBossMobDefeatedMessage)(targetEnemy, io, constants_2.players);
+                        }
+                        updateSpecialMobCounts();
+                        constants_2.enemies.splice(j, 1);
+                        io.emit('enemyDestroyed', targetEnemy.id);
+                    }
+                    // Remove projectile after hitting enemy
+                    gameState_1.mobProjectiles.splice(i, 1);
+                    break;
+                }
+            }
+        }
+        // Only check for direct player collision if we didn't hit a petal and projectile still exists
+        // Skip projectiles from pets (enemies with ownerId)
         if (!hitPlayerPetal && projectile.health > 0 && !isPetProjectile) {
             for (const player of playerArray) {
                 if (player.isDead)
