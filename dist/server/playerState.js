@@ -456,8 +456,8 @@ function updatePlayerState(player, deltaTime, deps) {
             }
             // Check collision with enemies
             for (const enemy of constants_1.enemies) {
-                // Skip pets that belong to this player (pets should not be damaged by their owner)
-                if (enemy.ownerId === player.id) {
+                // Skip all pets (pets should not be damaged by any player's petals)
+                if (enemy.ownerId) {
                     continue;
                 }
                 // Get mob stats to determine proper hitbox size

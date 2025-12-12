@@ -2856,8 +2856,8 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
         for (let j = enemies.length - 1; j >= 0; j--) {
             const enemy = enemies[j];
             
-            // Skip pets that belong to the player who shot this projectile (pets should not be damaged by their owner)
-            if (enemy.ownerId === projectile.playerId) {
+            // Skip all pets (pets should not be damaged by any player's projectiles)
+            if (enemy.ownerId) {
                 continue;
             }
             

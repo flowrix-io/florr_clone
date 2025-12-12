@@ -222,8 +222,8 @@ function explodePetal(x, y, petalSize, damage, enemies, io, player) {
     // Process enemies in reverse order to avoid index issues when removing
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
-        // Skip pets that belong to the player (pets should not be damaged by their owner)
-        if (player && enemy.ownerId === player.id) {
+        // Skip all pets (pets should not be damaged by any player's explosions)
+        if (enemy.ownerId) {
             continue;
         }
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
@@ -274,8 +274,8 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage) {
     // Find all enemies within the lightning radius
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
-        // Skip pets that belong to the player (pets should not be damaged by their owner)
-        if (player && enemy.ownerId === player.id) {
+        // Skip all pets (pets should not be damaged by any player's lightning)
+        if (enemy.ownerId) {
             continue;
         }
         const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);

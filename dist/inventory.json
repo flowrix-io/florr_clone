@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 119875820,
+      "totalXP": 119878092,
       "inventory": {
         "common": {
           "shield": 101,
@@ -312,11 +312,12 @@
       "skills": {}
     },
     "1g99g1gfk": {
-      "totalXP": 32,
+      "totalXP": 62,
       "inventory": {
         "common": {
           "petal_basic": 5,
-          "speed_boost": 1
+          "speed_boost": 1,
+          "petal_missile": 1
         },
         "epic": {
           "petal_rock": 1,

@@ -293,8 +293,8 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
         
-        // Skip pets that belong to the player (pets should not be damaged by their owner)
-        if (player && enemy.ownerId === player.id) {
+        // Skip all pets (pets should not be damaged by any player's explosions)
+        if (enemy.ownerId) {
             continue;
         }
         
@@ -357,8 +357,8 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
         
-        // Skip pets that belong to the player (pets should not be damaged by their owner)
-        if (player && enemy.ownerId === player.id) {
+        // Skip all pets (pets should not be damaged by any player's lightning)
+        if (enemy.ownerId) {
             continue;
         }
         
