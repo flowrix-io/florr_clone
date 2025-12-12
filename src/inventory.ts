@@ -33,6 +33,9 @@ export class InventoryManager {
     private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
     private readonly allPetalTypes: string[];
     private chat: Chat | null = null;
+    private tooltipElement: HTMLDivElement | null = null;
+    private tooltipTimeout: number | null = null;
+    private hoveredElement: HTMLElement | null = null;
     private readonly ITEM_RARITY_COLORS: Record<string, string> = {
         common: '#7eef6d',
         uncommon: '#ffe65d',
@@ -80,6 +83,232 @@ export class InventoryManager {
         let itemName = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
         itemName = itemName.replace('_', ' ');
         return itemName;
+    }
+
+    /**
+     * Get skill multiplier based on skill tier
+     */
+    private getSkillMultiplier(skillTier: string | undefined): number {
+        if (!skillTier) return 1.0;
+        const SKILL_MULTIPLIERS: Record<string, number> = {
+            common: 1.0,
+            uncommon: 1.1,
+            rare: 1.2,
+            epic: 1.35,
+            legendary: 1.6,
+            mythic: 2.0,
+            ultra: 2.6,
+            super: 3.3,
+            unique: 4.0
+        };
+        return SKILL_MULTIPLIERS[skillTier] || 1.0;
+    }
+
+    /**
+     * Calculate final petal damage with skills and player modifiers
+     */
+    private calculateFinalPetalDamage(petalType: string, rarity: string): number {
+        const player = this.game.getLocalPlayer();
+        if (!player) return 0;
+
+        const stats = getPetalStats(petalType, rarity);
+        if (!stats) return 0;
+
+        const baseDamage = stats.damage;
+        
+        // Apply skill multiplier
+        const damageSkillMultiplier = this.getSkillMultiplier(player.skills?.damage);
+        
+        // Note: Player modifiers (from other petals) affect player damage, not petal damage
+        // Petal damage is only affected by damage skill
+        return Math.round(baseDamage * damageSkillMultiplier);
+    }
+
+    /**
+     * Calculate final petal health with skills
+     */
+    private calculateFinalPetalHealth(petalType: string, rarity: string): number {
+        const player = this.game.getLocalPlayer();
+        if (!player) return 0;
+
+        const stats = getPetalStats(petalType, rarity);
+        if (!stats) return 0;
+
+        const baseHealth = stats.health;
+        
+        // Apply petal health skill multiplier
+        const petalHealthMultiplier = this.getSkillMultiplier(player.skills?.petalHealth);
+        
+        return Math.round(baseHealth * petalHealthMultiplier);
+    }
+
+    /**
+     * Create and show tooltip for a petal item
+     */
+    private showTooltip(element: HTMLElement, petalType: string, rarity: string): void {
+        const stats = getPetalStats(petalType, rarity);
+        if (!stats) return;
+
+        // Remove existing tooltip if any
+        this.hideTooltip();
+
+        // Create tooltip element
+        const tooltip = document.createElement('div');
+        tooltip.className = 'petal-tooltip';
+        tooltip.style.cssText = `
+            position: fixed;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 10000;
+            pointer-events: none;
+            max-width: 250px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+
+        // Calculate final stats
+        const finalDamage = this.calculateFinalPetalDamage(petalType, rarity);
+        const finalHealth = this.calculateFinalPetalHealth(petalType, rarity);
+
+        // Petal name
+        const nameDiv = document.createElement('div');
+        nameDiv.style.cssText = 'font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ' + (this.ITEM_RARITY_COLORS[rarity] || '#fff') + ';';
+        nameDiv.textContent = stats.name;
+        tooltip.appendChild(nameDiv);
+
+        // Description
+        if (stats.description) {
+            const descDiv = document.createElement('div');
+            descDiv.style.cssText = 'margin-bottom: 8px; color: #ccc; line-height: 1.4;';
+            descDiv.textContent = stats.description;
+            tooltip.appendChild(descDiv);
+        }
+
+        // HP
+        const hpDiv = document.createElement('div');
+        hpDiv.style.cssText = 'margin-bottom: 4px;';
+        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> ${finalHealth}`;
+        tooltip.appendChild(hpDiv);
+
+        // Damage
+        const damageDiv = document.createElement('div');
+        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> ${finalDamage}`;
+        tooltip.appendChild(damageDiv);
+
+        document.body.appendChild(tooltip);
+        this.tooltipElement = tooltip;
+
+        // Position tooltip
+        this.updateTooltipPosition(element, tooltip);
+    }
+
+    /**
+     * Update tooltip position relative to the hovered element
+     */
+    private updateTooltipPosition(element: HTMLElement, tooltip: HTMLDivElement): void {
+        const rect = element.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        
+        // Position to the right of the element, or left if not enough space
+        let left = rect.right + 10;
+        let top = rect.top;
+
+        // If tooltip would go off screen to the right, position to the left
+        if (left + tooltipRect.width > window.innerWidth) {
+            left = rect.left - tooltipRect.width - 10;
+        }
+
+        // If tooltip would go off screen at bottom, adjust
+        if (top + tooltipRect.height > window.innerHeight) {
+            top = window.innerHeight - tooltipRect.height - 10;
+        }
+
+        // If tooltip would go off screen at top, adjust
+        if (top < 0) {
+            top = 10;
+        }
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+    }
+
+    /**
+     * Hide tooltip
+     */
+    private hideTooltip(): void {
+        if (this.tooltipTimeout !== null) {
+            clearTimeout(this.tooltipTimeout);
+            this.tooltipTimeout = null;
+        }
+        if (this.tooltipElement) {
+            this.tooltipElement.remove();
+            this.tooltipElement = null;
+        }
+        this.hoveredElement = null;
+    }
+
+    /**
+     * Setup hover tooltip for an element
+     */
+    private setupTooltip(element: HTMLElement, petalType: string, rarity: string): void {
+        let isDragging = false;
+        let mouseDownTime = 0;
+
+        const handleMouseEnter = () => {
+            if (isDragging) return;
+            this.hoveredElement = element;
+            this.tooltipTimeout = window.setTimeout(() => {
+                if (this.hoveredElement === element && !isDragging) {
+                    this.showTooltip(element, petalType, rarity);
+                }
+            }, 200); // 0.2 seconds
+        };
+
+        const handleMouseLeave = () => {
+            this.hideTooltip();
+        };
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (this.tooltipElement && this.hoveredElement === element) {
+                this.updateTooltipPosition(element, this.tooltipElement);
+            }
+        };
+
+        const handleMouseDown = () => {
+            mouseDownTime = Date.now();
+            this.hideTooltip();
+        };
+
+        const handleMouseUp = () => {
+            // If mouse was down for less than 200ms, treat as click and hide tooltip
+            if (Date.now() - mouseDownTime < 200) {
+                this.hideTooltip();
+            }
+        };
+
+        const handleDragStart = () => {
+            isDragging = true;
+            this.hideTooltip();
+        };
+
+        const handleDragEnd = () => {
+            // Reset dragging flag after a short delay to allow mouse events to settle
+            setTimeout(() => {
+                isDragging = false;
+            }, 100);
+        };
+
+        element.addEventListener('mouseenter', handleMouseEnter);
+        element.addEventListener('mouseleave', handleMouseLeave);
+        element.addEventListener('mousemove', handleMouseMove);
+        element.addEventListener('mousedown', handleMouseDown);
+        element.addEventListener('mouseup', handleMouseUp);
+        element.addEventListener('dragstart', handleDragStart);
+        element.addEventListener('dragend', handleDragEnd);
     }
 
     /**
@@ -718,6 +947,11 @@ export class InventoryManager {
                             `;
                             slot.appendChild(nameLabel);
                         }
+
+                        // Setup tooltip for loadout petal
+                        if (item.rarity) {
+                            this.setupTooltip(slotElement, item.petalType, item.rarity);
+                        }
                     }
                 } else {
                     // Regular items (health potion, speed boost, shield)
@@ -1145,6 +1379,9 @@ export class InventoryManager {
                             `;
                             itemElement.appendChild(nameLabel);
                         }
+
+                        // Setup tooltip for petal items
+                        this.setupTooltip(itemElement, petalType, rarity);
                     }
 
                     grid.appendChild(itemElement);
