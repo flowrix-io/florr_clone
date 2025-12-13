@@ -27,6 +27,7 @@ import {
     mobProjectiles,
     playerProjectiles,
     petalLastProjectileTime,
+    itemExpirationTimeouts,
     ITEM_EXPIRATION_TIMES
 } from './gameState';
 import {
@@ -49,7 +50,7 @@ import {
 } from '../petal_actions';
 import { getMobStats } from '../mobs';
 import { addItem, applyPetalHealthBonus } from './playerManager';
-import { trackDamage, sendBossMobDefeatedMessage } from './utils';
+import { trackDamage, sendBossMobDefeatedMessage, cleanupEnemy } from './utils';
 import { transferPlayerToServer as transferPlayerToServerModule } from './crossServer';
 
 // Interface for player state dependencies
@@ -746,7 +747,8 @@ export function updatePlayerState(
                             
                             // Schedule automatic removal after expiration time
                             const expirationTime = ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
-                            setTimeout(() => {
+                            const timeout = setTimeout(() => {
+                                itemExpirationTimeouts.delete(itemId);
                                 const itemIndex = items.findIndex(item => item.id === itemId);
                                 if (itemIndex !== -1) {
                                     const expiredItem = items[itemIndex];
@@ -758,6 +760,7 @@ export function updatePlayerState(
                                     console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
                                 }
                             }, expirationTime);
+                            itemExpirationTimeouts.set(itemId, timeout);
                             
                             console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
                         }
@@ -889,6 +892,8 @@ export function updatePlayerState(
                             // Handle mob drops using the new drop table system (includes all eligible players)
                             handleMobDrops(enemy);
                             sendBossMobDefeatedMessage(enemy, io, players);
+                            // Clean up enemy data structures before removal to prevent memory leaks
+                            cleanupEnemy(enemy);
                             enemies.splice(index, 1);
                             updateSpecialMobCounts();
                             io.emit('enemyDestroyed', enemy.id);
@@ -999,6 +1004,12 @@ export function updatePlayerState(
                     item.pickedUpBy && item.pickedUpBy.has(playerId)
                 );
                 if (allPickedUp) {
+                    // Clean up expiration timeout if item is removed early
+                    const timeout = itemExpirationTimeouts.get(item.id);
+                    if (timeout) {
+                        clearTimeout(timeout);
+                        itemExpirationTimeouts.delete(item.id);
+                    }
                     items.splice(i, 1);
                     // Notify only eligible players that the item is gone
                     for (const playerId of item.eligiblePlayers) {

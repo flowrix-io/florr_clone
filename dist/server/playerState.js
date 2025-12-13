@@ -597,7 +597,8 @@ function updatePlayerState(player, deltaTime, deps) {
                             io.to(player.id).emit('itemSpawned', newItem);
                             // Schedule automatic removal after expiration time
                             const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
-                            setTimeout(() => {
+                            const timeout = setTimeout(() => {
+                                gameState_1.itemExpirationTimeouts.delete(itemId);
                                 const itemIndex = gameState_1.items.findIndex(item => item.id === itemId);
                                 if (itemIndex !== -1) {
                                     const expiredItem = gameState_1.items[itemIndex];
@@ -607,6 +608,7 @@ function updatePlayerState(player, deltaTime, deps) {
                                     console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
                                 }
                             }, expirationTime);
+                            gameState_1.itemExpirationTimeouts.set(itemId, timeout);
                             console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
                         }
                     }
@@ -719,6 +721,8 @@ function updatePlayerState(player, deltaTime, deps) {
                             // Handle mob drops using the new drop table system (includes all eligible players)
                             handleMobDrops(enemy);
                             sendBossMobDefeatedMessage(enemy, io, constants_1.players);
+                            // Clean up enemy data structures before removal to prevent memory leaks
+                            (0, utils_1.cleanupEnemy)(enemy);
                             constants_1.enemies.splice(index, 1);
                             updateSpecialMobCounts();
                             io.emit('enemyDestroyed', enemy.id);
@@ -809,6 +813,12 @@ function updatePlayerState(player, deltaTime, deps) {
             if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
                 const allPickedUp = item.eligiblePlayers.every(playerId => item.pickedUpBy && item.pickedUpBy.has(playerId));
                 if (allPickedUp) {
+                    // Clean up expiration timeout if item is removed early
+                    const timeout = gameState_1.itemExpirationTimeouts.get(item.id);
+                    if (timeout) {
+                        clearTimeout(timeout);
+                        gameState_1.itemExpirationTimeouts.delete(item.id);
+                    }
                     gameState_1.items.splice(i, 1);
                     // Notify only eligible players that the item is gone
                     for (const playerId of item.eligiblePlayers) {

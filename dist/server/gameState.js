@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ITEM_EXPIRATION_TIMES = exports.petalLastProjectileTime = exports.playerProjectiles = exports.mobProjectiles = exports.playerUserIds = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
+exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.petalLastProjectileTime = exports.playerProjectiles = exports.mobProjectiles = exports.playerUserIds = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
 exports.getUltraMobCount = getUltraMobCount;
 exports.setUltraMobCount = setUltraMobCount;
 exports.getSuperMobCount = getSuperMobCount;
@@ -40,6 +40,10 @@ exports.playerUserIds = {}; // Maps player ID to user ID
 exports.mobProjectiles = []; // Track all active mob projectiles
 exports.playerProjectiles = []; // Track all active player projectiles
 exports.petalLastProjectileTime = new Map(); // Track last projectile time per petal instance
+// Track item expiration timeouts for cleanup
+exports.itemExpirationTimeouts = new Map();
+// Track petal cooldown timeouts for cleanup (key: `${socketId}-${loadoutIndex}`)
+exports.petalCooldownTimeouts = new Map();
 // Item expiration times based on rarity (in milliseconds)
 exports.ITEM_EXPIRATION_TIMES = {
     common: 10000, // 10 seconds

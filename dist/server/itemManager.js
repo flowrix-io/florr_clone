@@ -104,7 +104,8 @@ function handleMobDrops(enemy, io) {
             }
             // Schedule automatic removal after expiration time
             const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[finalRarity] || 10000;
-            setTimeout(() => {
+            const timeout = setTimeout(() => {
+                gameState_1.itemExpirationTimeouts.delete(itemId);
                 const itemIndex = gameState_1.items.findIndex(item => item.id === itemId);
                 if (itemIndex !== -1) {
                     const expiredItem = gameState_1.items[itemIndex];
@@ -117,6 +118,7 @@ function handleMobDrops(enemy, io) {
                     }
                 }
             }, expirationTime);
+            gameState_1.itemExpirationTimeouts.set(itemId, timeout);
         }
     }
 }

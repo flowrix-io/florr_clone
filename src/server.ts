@@ -38,7 +38,8 @@ import {
     trackDamage, 
     calculateDPS, 
     getEligiblePlayers, 
-    sendBossMobDefeatedMessage
+    sendBossMobDefeatedMessage,
+    cleanupEnemy
 } from './server/utils';
 import {
     checkPlayerWallCollisions,
@@ -76,6 +77,8 @@ import {
     mobProjectiles,
     playerProjectiles,
     petalLastProjectileTime,
+    itemExpirationTimeouts,
+    petalCooldownTimeouts,
     ITEM_EXPIRATION_TIMES,
     getItems,
     getMobProjectiles,
@@ -453,6 +456,8 @@ function despawnDistantEnemies() {
     // Remove enemies and notify clients
     for (const index of enemiesToRemove) {
         const enemy = enemies[index];
+        // Clean up enemy data structures before removal to prevent memory leaks
+        cleanupEnemy(enemy);
         enemies.splice(index, 1);
         io.emit('enemyDestroyed', enemy.id);
         // console.log(`[SERVER] Despawned enemy ${enemy.id} (${enemy.type} ${enemy.tier}) - outside viewport for 30+ seconds`);
@@ -1033,7 +1038,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                         // Handle cooldown timers
                         if (petal.onCooldown && petalStats) {
                             const cooldownTime = petalStats.cooldown || 10000;
-                            setTimeout(() => {
+                            const timeoutKey = `${socket.id}-${i}`;
+                            const timeout = setTimeout(() => {
+                                petalCooldownTimeouts.delete(timeoutKey);
                                 if (players[socket.id] && players[socket.id].loadout[i] && players[socket.id].loadout[i]!.onCooldown) {
                                     // Restore petal after cooldown
                                     const restoredPetal = {
@@ -1066,6 +1073,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                                     }
                                 }
                             }, cooldownTime);
+                            petalCooldownTimeouts.set(timeoutKey, timeout);
                         }
                     }
                 }
@@ -1142,12 +1150,44 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             // console.log('Saving player progress for userId:', socket.userId);
             savePlayerProgress(players[socket.id], socket.userId);
         }
+        
+        // Clean up petal cooldown timeouts for this player
+        for (let i = 0; i < 10; i++) {
+            const timeoutKey = `${socket.id}-${i}`;
+            const timeout = petalCooldownTimeouts.get(timeoutKey);
+            if (timeout) {
+                clearTimeout(timeout);
+                petalCooldownTimeouts.delete(timeoutKey);
+            }
+        }
+        
+        // Clean up petalLastProjectileTime entries for this player
+        const keysToDelete: string[] = [];
+        petalLastProjectileTime.forEach((value, key) => {
+            if (key.startsWith(socket.id)) {
+                keysToDelete.push(key);
+            }
+        });
+        keysToDelete.forEach(key => petalLastProjectileTime.delete(key));
+        
         delete players[socket.id];
         delete playerUserIds[socket.id]; // Clean up the mapping
-        io.emit('playerDisconnected', socket.id);
         
-        // Trigger viewport update when player disconnects
-        triggerViewportUpdate();
+        // Remove all event listeners to prevent memory leaks
+        // Socket.IO will handle cleanup, but we can be explicit for unauthenticated connections
+        socket.removeAllListeners();
+        
+        // Only emit to authenticated players (not to unauthenticated title screen connections)
+        const authenticatedSockets = Array.from(io.sockets.sockets.values())
+            .filter((s: any) => (s as AuthenticatedSocket).userId);
+        if (authenticatedSockets.length > 0) {
+            io.emit('playerDisconnected', socket.id);
+        }
+        
+        // Trigger viewport update when player disconnects (only if there are authenticated players)
+        if (Object.keys(players).length > 0) {
+            triggerViewportUpdate();
+        }
     });
 
     socket.on('collectDot', (dotIndex: number) => {
@@ -2117,6 +2157,8 @@ function updatePoisonEffects(deltaTime: number) {
                     // Handle mob drops (includes all eligible players)
                     handleMobDrops(enemy);
                     sendBossMobDefeatedMessage(enemy, io, players);
+                    // Clean up enemy data structures before removal to prevent memory leaks
+                    cleanupEnemy(enemy);
                     enemies.splice(index, 1);
                     updateSpecialMobCounts();
                     io.emit('enemyDestroyed', enemy.id);
@@ -2512,17 +2554,19 @@ function moveEnemies() {
                     }
                 });
                 
-                // Award XP and handle drops for the top contributor
-                if (topContributor && players[topContributor]) {
-                    const xpGained = getXPFromEnemy(enemy);
-                    addXPToPlayer(players[topContributor], xpGained, topContributor);
-                    handleMobDrops(enemy);
-                    sendBossMobDefeatedMessage(enemy, io, players);
-                }
+            // Award XP and handle drops for the top contributor
+            if (topContributor && players[topContributor]) {
+                const xpGained = getXPFromEnemy(enemy);
+                addXPToPlayer(players[topContributor], xpGained, topContributor);
+                handleMobDrops(enemy);
+                sendBossMobDefeatedMessage(enemy, io, players);
             }
-            
-            enemies.splice(i, 1);
-            updateSpecialMobCounts();
+        }
+        
+        // Clean up enemy data structures before removal to prevent memory leaks
+        cleanupEnemy(enemy);
+        enemies.splice(i, 1);
+        updateSpecialMobCounts();
         }
     }
     
@@ -2725,6 +2769,8 @@ function updateMobProjectiles(deltaTimeMs: number) {
                             handleMobDrops(targetEnemy);
                             sendBossMobDefeatedMessage(targetEnemy, io, players);
                         }
+                        // Clean up enemy data structures before removal to prevent memory leaks
+                        cleanupEnemy(targetEnemy);
                         updateSpecialMobCounts();
                         enemies.splice(j, 1);
                         io.emit('enemyDestroyed', targetEnemy.id);
@@ -2929,6 +2975,8 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
                     addXPToPlayer(player, xpGained, projectile.playerId);
                     handleMobDrops(enemy);
                     sendBossMobDefeatedMessage(enemy, io, players);
+                    // Clean up enemy data structures before removal to prevent memory leaks
+                    cleanupEnemy(enemy);
                     updateSpecialMobCounts();
                     enemies.splice(j, 1);
                     io.emit('enemyDestroyed', enemy.id);
@@ -2953,6 +3001,17 @@ function start_loop() {
     const deltaTime = 1 / TICK_RATE;
 
     setInterval(() => {
+        // Get count of authenticated players (players with userId)
+        const authenticatedPlayerIds = Object.keys(players).filter(id => {
+            const socket = io.sockets.sockets.get(id) as AuthenticatedSocket;
+            return socket && socket.userId;
+        });
+        
+        // Skip game processing if there are no authenticated players
+        if (authenticatedPlayerIds.length === 0) {
+            return;
+        }
+
         for (const id in players) {
             updatePlayerState(players[id], deltaTime, playerStateDeps);
         }
@@ -2986,6 +3045,12 @@ function start_loop() {
         for (let i = items.length - 1; i >= 0; i--) {
             const item = items[i];
             if (item.x < 0 || item.x >= ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= ACTUAL_WORLD_HEIGHT) {
+                // Clean up expiration timeout
+                const timeout = itemExpirationTimeouts.get(item.id);
+                if (timeout) {
+                    clearTimeout(timeout);
+                    itemExpirationTimeouts.delete(item.id);
+                }
                 // Notify eligible players that item is being removed
                 if (item.eligiblePlayers) {
                     for (const playerId of item.eligiblePlayers) {
@@ -2994,6 +3059,40 @@ function start_loop() {
                 }
                 items.splice(i, 1);
             }
+        }
+        
+        // Periodic cleanup: Remove expired items (check every tick)
+        const currentTime = Date.now();
+        for (let i = items.length - 1; i >= 0; i--) {
+            const item = items[i];
+            if (item.spawnTime && item.rarity) {
+                const expirationTime = ITEM_EXPIRATION_TIMES[item.rarity] || 10000;
+                if (currentTime - item.spawnTime >= expirationTime) {
+                    // Clean up expiration timeout if it still exists
+                    const timeout = itemExpirationTimeouts.get(item.id);
+                    if (timeout) {
+                        clearTimeout(timeout);
+                        itemExpirationTimeouts.delete(item.id);
+                    }
+                    // Notify eligible players that item expired
+                    if (item.eligiblePlayers) {
+                        for (const playerId of item.eligiblePlayers) {
+                            io.to(playerId).emit('itemRemoved', item.id);
+                        }
+                    }
+                    items.splice(i, 1);
+                }
+            }
+        }
+        
+        // Periodic cleanup: Clean up old petalLastProjectileTime entries (keep only last 1000 entries)
+        if (petalLastProjectileTime.size > 1000) {
+            // Sort by value (time) and keep only the most recent 1000
+            const entries = Array.from(petalLastProjectileTime.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 1000);
+            petalLastProjectileTime.clear();
+            entries.forEach(([key, value]) => petalLastProjectileTime.set(key, value));
         }
 
         const playersForBroadcast = Object.values(players).map(p => ({
@@ -3009,17 +3108,21 @@ function start_loop() {
             petalExtension: p.inputs?.petalExtension || 1.0
         }));
 
-        io.emit('gameStateUpdate',
-            {
-            players: playersForBroadcast,
-            enemies: enemies,
-                // Items are sent via itemSpawned/itemRemoved events to eligible players only
-                // Don't send items here to avoid showing items to ineligible players
-                items: [],
-                dots: dots,
-                timestamp: Date.now()
-            }
-        );
+        // Only emit gameStateUpdate to authenticated players, not all sockets
+        // This prevents memory leaks from sending updates to unauthenticated title screen connections
+        for (const playerId of authenticatedPlayerIds) {
+            io.to(playerId).emit('gameStateUpdate',
+                {
+                players: playersForBroadcast,
+                enemies: enemies,
+                    // Items are sent via itemSpawned/itemRemoved events to eligible players only
+                    // Don't send items here to avoid showing items to ineligible players
+                    items: [],
+                    dots: dots,
+                    timestamp: Date.now()
+                }
+            );
+        }
     }, TICK_INTERVAL);
 }
 

@@ -332,6 +332,8 @@ function despawnDistantEnemies() {
     // Remove enemies and notify clients
     for (const index of enemiesToRemove) {
         const enemy = constants_2.enemies[index];
+        // Clean up enemy data structures before removal to prevent memory leaks
+        (0, utils_1.cleanupEnemy)(enemy);
         constants_2.enemies.splice(index, 1);
         io.emit('enemyDestroyed', enemy.id);
         // console.log(`[SERVER] Despawned enemy ${enemy.id} (${enemy.type} ${enemy.tier}) - outside viewport for 30+ seconds`);
@@ -828,7 +830,9 @@ io.on('connection', (socket) => {
                         // Handle cooldown timers
                         if (petal.onCooldown && petalStats) {
                             const cooldownTime = petalStats.cooldown || 10000;
-                            setTimeout(() => {
+                            const timeoutKey = `${socket.id}-${i}`;
+                            const timeout = setTimeout(() => {
+                                gameState_1.petalCooldownTimeouts.delete(timeoutKey);
                                 if (constants_2.players[socket.id] && constants_2.players[socket.id].loadout[i] && constants_2.players[socket.id].loadout[i].onCooldown) {
                                     // Restore petal after cooldown
                                     const restoredPetal = {
@@ -859,6 +863,7 @@ io.on('connection', (socket) => {
                                     }
                                 }
                             }, cooldownTime);
+                            gameState_1.petalCooldownTimeouts.set(timeoutKey, timeout);
                         }
                     }
                 }
@@ -924,11 +929,38 @@ io.on('connection', (socket) => {
             // console.log('Saving player progress for userId:', socket.userId);
             savePlayerProgress(constants_2.players[socket.id], socket.userId);
         }
+        // Clean up petal cooldown timeouts for this player
+        for (let i = 0; i < 10; i++) {
+            const timeoutKey = `${socket.id}-${i}`;
+            const timeout = gameState_1.petalCooldownTimeouts.get(timeoutKey);
+            if (timeout) {
+                clearTimeout(timeout);
+                gameState_1.petalCooldownTimeouts.delete(timeoutKey);
+            }
+        }
+        // Clean up petalLastProjectileTime entries for this player
+        const keysToDelete = [];
+        gameState_1.petalLastProjectileTime.forEach((value, key) => {
+            if (key.startsWith(socket.id)) {
+                keysToDelete.push(key);
+            }
+        });
+        keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
         delete constants_2.players[socket.id];
         delete gameState_1.playerUserIds[socket.id]; // Clean up the mapping
-        io.emit('playerDisconnected', socket.id);
-        // Trigger viewport update when player disconnects
-        triggerViewportUpdate();
+        // Remove all event listeners to prevent memory leaks
+        // Socket.IO will handle cleanup, but we can be explicit for unauthenticated connections
+        socket.removeAllListeners();
+        // Only emit to authenticated players (not to unauthenticated title screen connections)
+        const authenticatedSockets = Array.from(io.sockets.sockets.values())
+            .filter((s) => s.userId);
+        if (authenticatedSockets.length > 0) {
+            io.emit('playerDisconnected', socket.id);
+        }
+        // Trigger viewport update when player disconnects (only if there are authenticated players)
+        if (Object.keys(constants_2.players).length > 0) {
+            triggerViewportUpdate();
+        }
     });
     socket.on('collectDot', (dotIndex) => {
         if (dotIndex >= 0 && dotIndex < constants_2.dots.length) {
@@ -1770,6 +1802,8 @@ function updatePoisonEffects(deltaTime) {
                     // Handle mob drops (includes all eligible players)
                     handleMobDrops(enemy);
                     (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
+                    // Clean up enemy data structures before removal to prevent memory leaks
+                    (0, utils_1.cleanupEnemy)(enemy);
                     constants_2.enemies.splice(index, 1);
                     updateSpecialMobCounts();
                     io.emit('enemyDestroyed', enemy.id);
@@ -2130,6 +2164,8 @@ function moveEnemies() {
                     (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
                 }
             }
+            // Clean up enemy data structures before removal to prevent memory leaks
+            (0, utils_1.cleanupEnemy)(enemy);
             constants_2.enemies.splice(i, 1);
             updateSpecialMobCounts();
         }
@@ -2298,6 +2334,8 @@ function updateMobProjectiles(deltaTimeMs) {
                             handleMobDrops(targetEnemy);
                             (0, utils_1.sendBossMobDefeatedMessage)(targetEnemy, io, constants_2.players);
                         }
+                        // Clean up enemy data structures before removal to prevent memory leaks
+                        (0, utils_1.cleanupEnemy)(targetEnemy);
                         updateSpecialMobCounts();
                         constants_2.enemies.splice(j, 1);
                         io.emit('enemyDestroyed', targetEnemy.id);
@@ -2467,6 +2505,8 @@ function updatePlayerProjectiles(deltaTimeMs) {
                     addXPToPlayer(player, xpGained, projectile.playerId);
                     handleMobDrops(enemy);
                     (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
+                    // Clean up enemy data structures before removal to prevent memory leaks
+                    (0, utils_1.cleanupEnemy)(enemy);
                     updateSpecialMobCounts();
                     constants_2.enemies.splice(j, 1);
                     io.emit('enemyDestroyed', enemy.id);
@@ -2486,6 +2526,15 @@ function start_loop() {
     const TICK_INTERVAL = 1000 / TICK_RATE;
     const deltaTime = 1 / TICK_RATE;
     setInterval(() => {
+        // Get count of authenticated players (players with userId)
+        const authenticatedPlayerIds = Object.keys(constants_2.players).filter(id => {
+            const socket = io.sockets.sockets.get(id);
+            return socket && socket.userId;
+        });
+        // Skip game processing if there are no authenticated players
+        if (authenticatedPlayerIds.length === 0) {
+            return;
+        }
         for (const id in constants_2.players) {
             (0, playerState_1.updatePlayerState)(constants_2.players[id], deltaTime, playerStateDeps);
         }
@@ -2510,6 +2559,12 @@ function start_loop() {
         for (let i = gameState_1.items.length - 1; i >= 0; i--) {
             const item = gameState_1.items[i];
             if (item.x < 0 || item.x >= constants_2.ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= constants_2.ACTUAL_WORLD_HEIGHT) {
+                // Clean up expiration timeout
+                const timeout = gameState_1.itemExpirationTimeouts.get(item.id);
+                if (timeout) {
+                    clearTimeout(timeout);
+                    gameState_1.itemExpirationTimeouts.delete(item.id);
+                }
                 // Notify eligible players that item is being removed
                 if (item.eligiblePlayers) {
                     for (const playerId of item.eligiblePlayers) {
@@ -2518,6 +2573,38 @@ function start_loop() {
                 }
                 gameState_1.items.splice(i, 1);
             }
+        }
+        // Periodic cleanup: Remove expired items (check every tick)
+        const currentTime = Date.now();
+        for (let i = gameState_1.items.length - 1; i >= 0; i--) {
+            const item = gameState_1.items[i];
+            if (item.spawnTime && item.rarity) {
+                const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[item.rarity] || 10000;
+                if (currentTime - item.spawnTime >= expirationTime) {
+                    // Clean up expiration timeout if it still exists
+                    const timeout = gameState_1.itemExpirationTimeouts.get(item.id);
+                    if (timeout) {
+                        clearTimeout(timeout);
+                        gameState_1.itemExpirationTimeouts.delete(item.id);
+                    }
+                    // Notify eligible players that item expired
+                    if (item.eligiblePlayers) {
+                        for (const playerId of item.eligiblePlayers) {
+                            io.to(playerId).emit('itemRemoved', item.id);
+                        }
+                    }
+                    gameState_1.items.splice(i, 1);
+                }
+            }
+        }
+        // Periodic cleanup: Clean up old petalLastProjectileTime entries (keep only last 1000 entries)
+        if (gameState_1.petalLastProjectileTime.size > 1000) {
+            // Sort by value (time) and keep only the most recent 1000
+            const entries = Array.from(gameState_1.petalLastProjectileTime.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 1000);
+            gameState_1.petalLastProjectileTime.clear();
+            entries.forEach(([key, value]) => gameState_1.petalLastProjectileTime.set(key, value));
         }
         const playersForBroadcast = Object.values(constants_2.players).map(p => ({
             id: p.id,
@@ -2531,15 +2618,19 @@ function start_loop() {
             score: p.score,
             petalExtension: p.inputs?.petalExtension || 1.0
         }));
-        io.emit('gameStateUpdate', {
-            players: playersForBroadcast,
-            enemies: constants_2.enemies,
-            // Items are sent via itemSpawned/itemRemoved events to eligible players only
-            // Don't send items here to avoid showing items to ineligible players
-            items: [],
-            dots: constants_2.dots,
-            timestamp: Date.now()
-        });
+        // Only emit gameStateUpdate to authenticated players, not all sockets
+        // This prevents memory leaks from sending updates to unauthenticated title screen connections
+        for (const playerId of authenticatedPlayerIds) {
+            io.to(playerId).emit('gameStateUpdate', {
+                players: playersForBroadcast,
+                enemies: constants_2.enemies,
+                // Items are sent via itemSpawned/itemRemoved events to eligible players only
+                // Don't send items here to avoid showing items to ineligible players
+                items: [],
+                dots: constants_2.dots,
+                timestamp: Date.now()
+            });
+        }
     }, TICK_INTERVAL);
 }
 // Start the server

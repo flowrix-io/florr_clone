@@ -4,6 +4,7 @@ exports.trackDamage = trackDamage;
 exports.calculateDPS = calculateDPS;
 exports.getEligiblePlayers = getEligiblePlayers;
 exports.sendBossMobDefeatedMessage = sendBossMobDefeatedMessage;
+exports.cleanupEnemy = cleanupEnemy;
 const constants_1 = require("../constants");
 // Helper function to track damage dealt to an enemy
 function trackDamage(enemy, playerId, damage) {
@@ -93,5 +94,32 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
         content: `<b style="color: ${constants_1.ENEMY_TIERS[enemy.tier].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`,
         timestamp: Date.now()
     });
+}
+// Helper function to clean up enemy data structures before removal
+// This helps prevent memory leaks by clearing Maps and arrays
+function cleanupEnemy(enemy) {
+    // Clear damage contributors Map
+    if (enemy.damageContributors) {
+        enemy.damageContributors.clear();
+        delete enemy.damageContributors;
+    }
+    // Clear poison effects array
+    if (enemy.poisonEffects) {
+        enemy.poisonEffects.length = 0;
+        delete enemy.poisonEffects;
+    }
+    // Clear DPS history for target dummies
+    if (enemy.dpsHistory) {
+        enemy.dpsHistory.length = 0;
+        delete enemy.dpsHistory;
+    }
+    // Clear other optional properties
+    delete enemy.dpsStartTime;
+    delete enemy.currentDPS;
+    delete enemy.wanderTarget;
+    delete enemy.lastWanderTime;
+    delete enemy.lastViewportCheck;
+    delete enemy.lastProjectileTime;
+    delete enemy.lastMeleeAttackTime;
 }
 // Collision detection functions have been moved to physics.ts

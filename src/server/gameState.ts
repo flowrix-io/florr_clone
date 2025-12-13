@@ -43,6 +43,12 @@ export const mobProjectiles: MobProjectile[] = []; // Track all active mob proje
 export const playerProjectiles: PlayerProjectile[] = []; // Track all active player projectiles
 export const petalLastProjectileTime: Map<string, number> = new Map(); // Track last projectile time per petal instance
 
+// Track item expiration timeouts for cleanup
+export const itemExpirationTimeouts: Map<string, NodeJS.Timeout> = new Map();
+
+// Track petal cooldown timeouts for cleanup (key: `${socketId}-${loadoutIndex}`)
+export const petalCooldownTimeouts: Map<string, NodeJS.Timeout> = new Map();
+
 // Item expiration times based on rarity (in milliseconds)
 export const ITEM_EXPIRATION_TIMES: Record<string, number> = {
     common: 10000,      // 10 seconds

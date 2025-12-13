@@ -2,7 +2,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { Enemy } from '../server_utils';
 import { WorldItem, Item } from '../item';
 import { calculateMobDrops, DropItem } from '../mobs';
-import { items, ITEM_EXPIRATION_TIMES } from './gameState';
+import { items, ITEM_EXPIRATION_TIMES, itemExpirationTimeouts } from './gameState';
 import { getEligiblePlayers } from './utils';
 import { checkItemWallCollisions } from './physics';
 import { getAllPetalTypes, getPetalStats } from '../petals';
@@ -126,7 +126,8 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
             
             // Schedule automatic removal after expiration time
             const expirationTime = ITEM_EXPIRATION_TIMES[finalRarity] || 10000;
-            setTimeout(() => {
+            const timeout = setTimeout(() => {
+                itemExpirationTimeouts.delete(itemId);
                 const itemIndex = items.findIndex(item => item.id === itemId);
                 if (itemIndex !== -1) {
                     const expiredItem = items[itemIndex];
@@ -140,6 +141,7 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
                     }
                 }
             }, expirationTime);
+            itemExpirationTimeouts.set(itemId, timeout);
         }
     }
 }
