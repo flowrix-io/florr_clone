@@ -213,7 +213,7 @@ export class Game {
     private chat: Chat | null = null;
 
     // Add property
-    private inventoryManager!: InventoryManager;
+    public inventoryManager!: InventoryManager;
     private skillsManager!: SkillsManager;
     private controls!: { [key: string]: string };
     private tutorial: Tutorial;
@@ -789,6 +789,11 @@ export class Game {
                 return;
             }
 
+            if (event.key === 'g' || event.key === 'G') {
+                this.inventoryManager.toggleMobGallery();
+                return;
+            }
+
             if (event.key === this.controls.toggle_mouse_controls) {
                 this.useMouseControls = !this.useMouseControls;
                 this.showFloatingText(
@@ -1296,6 +1301,18 @@ export class Game {
         // Check skills
         if (this.skillsManager?.isSkillsOpen()) {
             return true;
+        }
+        
+        // Check mob gallery
+        if (this.inventoryManager && (this.inventoryManager as any).isMobGalleryOpen) {
+            return true;
+        }
+        const mobGalleryPanel = document.getElementById('mobGalleryPanel');
+        if (mobGalleryPanel) {
+            const style = window.getComputedStyle(mobGalleryPanel);
+            if (style.display !== 'none' && style.visibility !== 'hidden') {
+                return true;
+            }
         }
         
         // Check settings menu (if it doesn't have 'hidden' class, it's open)

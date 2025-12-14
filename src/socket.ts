@@ -839,6 +839,10 @@ function setupSocketListeners(game: any) {
             // Check if loadout actually changed before updating
             const loadoutChanged = JSON.stringify(player.loadout) !== JSON.stringify(updatedPlayer.loadout);
             const inventoryChanged = JSON.stringify(player.inventory) !== JSON.stringify(updatedPlayer.inventory);
+            // Check if mobKills changed (handle undefined cases)
+            const oldMobKills = player.mobKills || {};
+            const newMobKills = updatedPlayer.mobKills || {};
+            const mobKillsChanged = JSON.stringify(oldMobKills) !== JSON.stringify(newMobKills);
             
             Object.assign(player, updatedPlayer);
             // Update displays if this is the current player
@@ -849,6 +853,10 @@ function setupSocketListeners(game: any) {
                 // Only update loadout display if loadout actually changed
                 if (game.inventoryManager && loadoutChanged) {
                     game.inventoryManager.updateLoadoutDisplay();
+                }
+                // Update mob gallery if mobKills changed and gallery is open
+                if (game.inventoryManager && mobKillsChanged) {
+                    game.inventoryManager.updateMobGalleryIfOpen();
                 }
                 // Update skills menu if open
                 if (game.skillsManager && updatedPlayer.tp !== undefined && updatedPlayer.skills) {
@@ -1036,6 +1044,22 @@ function setupSocketListeners(game: any) {
                 player.speed_boost = serverPlayer.speed_boost;
                 // Sync petal extension from server
                 player.petalExtension = serverPlayer.inputs?.petalExtension || 1.0;
+                // Update mobKills if it changed
+                if (serverPlayer.mobKills !== undefined) {
+                    const mobKillsChanged = JSON.stringify(player.mobKills) !== JSON.stringify(serverPlayer.mobKills);
+                    player.mobKills = serverPlayer.mobKills;
+                    // Update mob gallery if it's open and mobKills changed
+                    if (mobKillsChanged && serverPlayer.id === game.socket?.id && game.inventoryManager) {
+                        game.inventoryManager.updateMobGalleryIfOpen();
+                    }
+                }
+                // Also update tp and skills if present
+                if (serverPlayer.tp !== undefined) {
+                    player.tp = serverPlayer.tp;
+                }
+                if (serverPlayer.skills !== undefined) {
+                    player.skills = serverPlayer.skills;
+                }
             } else {
                 // Add new player
                 player = {

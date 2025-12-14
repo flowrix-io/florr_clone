@@ -610,6 +610,10 @@ class Game {
                 this.skillsManager.toggle();
                 return;
             }
+            if (event.key === 'g' || event.key === 'G') {
+                this.inventoryManager.toggleMobGallery();
+                return;
+            }
             if (event.key === this.controls.toggle_mouse_controls) {
                 this.useMouseControls = !this.useMouseControls;
                 this.showFloatingText(this.canvas.width / 2, 50, `Controls: ${this.useMouseControls ? 'Mouse' : 'Keyboard'}`, '#FFFFFF', 20);
@@ -1029,6 +1033,17 @@ class Game {
         // Check skills
         if (this.skillsManager?.isSkillsOpen()) {
             return true;
+        }
+        // Check mob gallery
+        if (this.inventoryManager && this.inventoryManager.isMobGalleryOpen) {
+            return true;
+        }
+        const mobGalleryPanel = document.getElementById('mobGalleryPanel');
+        if (mobGalleryPanel) {
+            const style = window.getComputedStyle(mobGalleryPanel);
+            if (style.display !== 'none' && style.visibility !== 'hidden') {
+                return true;
+            }
         }
         // Check settings menu (if it doesn't have 'hidden' class, it's open)
         const settingsMenu = document.getElementById('settingsMenu');

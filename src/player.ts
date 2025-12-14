@@ -44,6 +44,7 @@ export interface Player {
     playerHealth?: string;
     healingMultiplier?: string;
   };
+  mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
@@ -56,6 +57,7 @@ export interface PlayerProgress {
     playerHealth?: string;
     healingMultiplier?: string;
   };
+  mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
 }
 
 export interface ServerPlayer {
@@ -107,4 +109,5 @@ export interface ServerPlayer {
     playerHealth?: string;
     healingMultiplier?: string;
   };
+  mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
 }

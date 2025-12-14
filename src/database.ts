@@ -23,6 +23,7 @@ export interface PlayerProgress {
     totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
     inventory?: PlayerInventory;
     loadout?: (Item | null)[];
+    mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
 }
 
 interface User {

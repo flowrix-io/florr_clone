@@ -592,6 +592,7 @@ class TitleScreen {
         const craftIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'craft')?.value || '';
         const inventoryIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'inventory')?.value || '';
         const skillsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'skills')?.value || '';
+        const mobGalleryIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'mob_gallery')?.value || '';
         // Update SVGs to be 32x32 - craft icon has different attributes than inventory
         const formattedCraftIcon = craftIcon
             .replace('width="512px"', 'width="32"')
@@ -604,15 +605,21 @@ class TitleScreen {
         const formattedSkillsIcon = skillsIcon
             .replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"')
             .replace('<svg', '<svg style="pointer-events: none;"'); // Prevent SVG from capturing clicks
+        const formattedMobGalleryIcon = mobGalleryIcon
+            .replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"')
+            .replace('<svg', '<svg style="pointer-events: none;"'); // Prevent SVG from capturing clicks
         console.log('Craft icon HTML:', formattedCraftIcon.substring(0, 100));
         console.log('Inventory icon HTML:', formattedInventoryIcon.substring(0, 100));
-        // Order: inventory (top), skills (middle), craft (bottom)
+        // Order: inventory (top), skills, mob gallery, craft (bottom)
         bottomLeftButtons.innerHTML = `
-            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #00b3ff; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 3; pointer-events: auto;" title="Inventory (I)">
+            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #00b3ff; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 4; pointer-events: auto;" title="Inventory (I)">
                 ${formattedInventoryIcon}
             </div>
-            <div id="skillsButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #9d4edd; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 2; pointer-events: auto;" title="Skills (K)">
+            <div id="skillsButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #9d4edd; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 3; pointer-events: auto;" title="Skills (K)">
                 ${formattedSkillsIcon}
+            </div>
+            <div id="mobGalleryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #8B4513; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 2; pointer-events: auto;" title="Mob Gallery (G)">
+                ${formattedMobGalleryIcon}
             </div>
             <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #ff9d00; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 1; pointer-events: auto;" title="Craft (R)">
                 ${formattedCraftIcon}
@@ -801,6 +808,27 @@ class TitleScreen {
                     else {
                         // Toggle inventory panel directly on title screen
                         this.toggleInventoryOnTitleScreen();
+                    }
+                    return false;
+                }, true);
+            }
+            const mobGalleryButtonIcon = document.getElementById('mobGalleryButtonIcon');
+            if (mobGalleryButtonIcon) {
+                // Remove any existing listeners by cloning
+                const newMobGalleryButton = mobGalleryButtonIcon.cloneNode(true);
+                mobGalleryButtonIcon.parentNode?.replaceChild(newMobGalleryButton, mobGalleryButtonIcon);
+                newMobGalleryButton.addEventListener('click', (e) => {
+                    console.log('Mob Gallery button clicked');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Check if game is running
+                    if (window.currentGame && window.currentGame.inventoryManager) {
+                        window.currentGame.inventoryManager.toggleMobGallery();
+                    }
+                    else {
+                        // On title screen, could show a message or do nothing
+                        console.log('Mob Gallery only available in-game');
                     }
                     return false;
                 }, true);

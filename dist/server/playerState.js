@@ -150,7 +150,7 @@ function updatePlayerState(player, deltaTime, deps) {
     if (player.isDead) {
         return;
     }
-    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, createEnemy, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
+    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, createEnemy, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database, trackMobKill } = deps;
     // Update player effects
     (0, petal_actions_1.updatePlayerEffects)(player, deltaTime);
     // Apply passive healing from petals
@@ -314,6 +314,8 @@ function updatePlayerState(player, deltaTime, deps) {
                     if (index !== -1) {
                         const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                         addXPToPlayer(player, xpGained, player.id);
+                        // Track mob kill for eligible players
+                        trackMobKill(enemy, constants_1.players, gameState_1.playerUserIds, database, io);
                         // Handle mob drops using the new drop table system (includes all eligible players)
                         handleMobDrops(enemy);
                         sendBossMobDefeatedMessage(enemy, io, constants_1.players);
@@ -718,6 +720,8 @@ function updatePlayerState(player, deltaTime, deps) {
                         if (index !== -1) {
                             const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                             addXPToPlayer(player, xpGained, player.id);
+                            // Track mob kill for eligible players
+                            trackMobKill(enemy, constants_1.players, gameState_1.playerUserIds, database, io);
                             // Handle mob drops using the new drop table system (includes all eligible players)
                             handleMobDrops(enemy);
                             sendBossMobDefeatedMessage(enemy, io, constants_1.players);

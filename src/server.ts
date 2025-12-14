@@ -39,7 +39,8 @@ import {
     calculateDPS, 
     getEligiblePlayers, 
     sendBossMobDefeatedMessage,
-    cleanupEnemy
+    cleanupEnemy,
+    trackMobKill
 } from './server/utils';
 import {
     checkPlayerWallCollisions,
@@ -852,7 +853,8 @@ const playerStateDeps: PlayerStateDependencies = {
     currentServerConfig: CURRENT_SERVER_CONFIG,
     currentServerPort: CURRENT_SERVER_PORT,
     useHttps: USE_HTTPS,
-    database
+    database,
+    trackMobKill
 };
 
 io.on('connection', (socket: AuthenticatedSocket) => {
@@ -1013,7 +1015,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 inputs: { keys: [] },
                 speed_boost: 1,
                 tp: currentTP,
-                skills: savedSkills
+                skills: savedSkills,
+                mobKills: (savedProgress as any)?.mobKills || {}
             };
             
             // Recalculate player stats with modifiers after loadout is set
@@ -2154,6 +2157,8 @@ function updatePoisonEffects(deltaTime: number) {
                         addXPToPlayer(players[topContributor], xpGained, topContributor);
                     }
                     
+                    // Track mob kill for eligible players
+                    trackMobKill(enemy, players, playerUserIds, database, io);
                     // Handle mob drops (includes all eligible players)
                     handleMobDrops(enemy);
                     sendBossMobDefeatedMessage(enemy, io, players);
@@ -2558,6 +2563,7 @@ function moveEnemies() {
             if (topContributor && players[topContributor]) {
                 const xpGained = getXPFromEnemy(enemy);
                 addXPToPlayer(players[topContributor], xpGained, topContributor);
+                trackMobKill(enemy, players, playerUserIds, database);
                 handleMobDrops(enemy);
                 sendBossMobDefeatedMessage(enemy, io, players);
             }
@@ -2766,6 +2772,7 @@ function updateMobProjectiles(deltaTimeMs: number) {
                         if (owner) {
                             const xpGained = getXPFromEnemy(targetEnemy);
                             addXPToPlayer(owner, xpGained, petOwnerId);
+                            trackMobKill(targetEnemy, players, playerUserIds, database);
                             handleMobDrops(targetEnemy);
                             sendBossMobDefeatedMessage(targetEnemy, io, players);
                         }
@@ -2973,6 +2980,7 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
                     
                     const xpGained = getXPFromEnemy(enemy);
                     addXPToPlayer(player, xpGained, projectile.playerId);
+                    trackMobKill(enemy, players, playerUserIds, database, io);
                     handleMobDrops(enemy);
                     sendBossMobDefeatedMessage(enemy, io, players);
                     // Clean up enemy data structures before removal to prevent memory leaks

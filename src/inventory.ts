@@ -1,9 +1,10 @@
 import { Item, ItemWithRarity } from './item';
 import { Player, PlayerInventory } from './player';
 import { Socket } from './socket';
-import { getPetalStats, getAllPetalTypes } from './petals';
+import { getPetalStats, getAllPetalTypes, RARITY_LEVELS } from './petals';
 import { Chat } from './chat';
 import { Game } from './game';
+import { getAllMobTypes, getMobStats, getMobRarities, MOB_DROP_TABLES, Rarity } from './mobs';
 
 interface CraftingSlot {
     index: number;
@@ -25,9 +26,11 @@ export class InventoryManager {
     private game: GameInterface;
     private inventoryPanel: HTMLDivElement | null = null;
     private craftingPanel: HTMLDivElement | null = null;
+    private mobGalleryPanel: HTMLDivElement | null = null;
     private craftingItems: Item[] = [];
     private isInventoryOpen: boolean = false;
     private isCraftingOpen: boolean = false;
+    private isMobGalleryOpen: boolean = false;
     private successDisplayShownAt: number = 0; // Timestamp when success display was shown
     private readonly LOADOUT_SLOTS = 10;
     private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
@@ -510,6 +513,36 @@ export class InventoryManager {
         this.craftingPanel.appendChild(craftingContent);
         document.body.appendChild(this.craftingPanel);
 
+        // Create mob gallery panel
+        this.mobGalleryPanel = document.createElement('div');
+        this.mobGalleryPanel.id = 'mobGalleryPanel';
+        this.mobGalleryPanel.className = 'mob-gallery-panel';
+        this.mobGalleryPanel.style.display = 'none';
+
+        const galleryContent = document.createElement('div');
+        galleryContent.className = 'mob-gallery-content';
+        galleryContent.style.cssText = `
+            height: 100%;
+            overflow-y: auto;
+            padding: 10px;
+            box-sizing: border-box;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        `;
+
+        const galleryTitle = document.createElement('h2');
+        galleryTitle.textContent = 'Mob Gallery';
+        galleryTitle.style.cssText = 'margin: 0 0 20px 0; text-align: center; color: white; font-size: 24px;';
+        galleryContent.appendChild(galleryTitle);
+
+        const galleryGrid = document.createElement('div');
+        galleryGrid.className = 'mob-gallery-grid';
+        galleryContent.appendChild(galleryGrid);
+
+        this.mobGalleryPanel.appendChild(galleryContent);
+        document.body.appendChild(this.mobGalleryPanel);
+
         // Add click handler to clear success display when clicking on crafting slots
         // (with minimum display time enforced in clearCraftingSuccessDisplay)
         this.craftingPanel.addEventListener('click', (e) => {
@@ -631,6 +664,93 @@ export class InventoryManager {
                 from { height: 100%; }
                 to { height: 0%; }
             }
+            .mob-gallery-panel {
+                position: fixed;
+                top: 33.33vh; /* Start at 1/3 from top, leaving top empty */
+                left: -300px; /* Start off-screen to the left */
+                width: 300px;
+                height: 66.67vh; /* 2/3 of viewport height */
+                background: #8B4513; /* Brown background color */
+                transition: transform 0.3s ease-out;
+                z-index: 1000;
+                padding: 20px;
+                box-sizing: border-box;
+                color: white;
+                display: flex;
+                flex-direction: column;
+                border-right: 3px solid #6B3410; /* Add a subtle border */
+            }
+            .mob-gallery-panel.open {
+                transform: translateX(300px); /* Slide in from the left */
+            }
+            .mob-gallery-content {
+                color: white;
+            }
+            .mob-gallery-grid {
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            }
+            .mob-gallery-header-row,
+            .mob-gallery-row {
+                display: grid;
+                gap: 5px;
+            }
+            .mob-gallery-header {
+                padding: 8px;
+                text-align: center;
+                font-weight: bold;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 5px;
+            }
+            .mob-gallery-type-cell {
+                padding: 8px;
+                display: flex;
+                align-items: center;
+                font-weight: bold;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 5px;
+            }
+            .mob-gallery-cell {
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 5px;
+                transition: transform 0.2s, box-shadow 0.2s;
+            }
+            .mob-gallery-cell:hover {
+                transform: scale(1.1);
+                box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+                z-index: 10;
+            }
+            .mob-gallery-cell svg {
+                width: 40px;
+                height: 40px;
+            }
+            .inventory-tabs {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 15px;
+                padding: 10px;
+                border-bottom: 2px solid #444;
+            }
+            .inventory-tab {
+                padding: 8px 16px;
+                background: #666;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 14px;
+                transition: background 0.2s;
+            }
+            .inventory-tab:hover {
+                background: #777;
+            }
+            .inventory-tab.active {
+                background: #4CAF50;
+            }
         `;
         document.head.appendChild(style);
 
@@ -706,6 +826,313 @@ export class InventoryManager {
             }, 300);
         }
         this.isCraftingOpen = !isOpen;
+    }
+
+    public toggleMobGallery() {
+        if (!this.mobGalleryPanel) return;
+
+        const isOpen = this.mobGalleryPanel.style.display === 'block';
+        if (!isOpen) {
+            this.mobGalleryPanel.style.display = 'block';
+            this.hideChat();
+            setTimeout(() => {
+                this.mobGalleryPanel?.classList.add('open');
+            }, 10);
+            this.updateMobGalleryDisplay();
+        } else {
+            this.mobGalleryPanel.classList.remove('open');
+            this.showChat();
+            setTimeout(() => {
+                if (this.mobGalleryPanel) {
+                    this.mobGalleryPanel.style.display = 'none';
+                }
+            }, 300);
+        }
+        this.isMobGalleryOpen = !isOpen;
+    }
+
+    public updateMobGalleryIfOpen() {
+        if (this.isMobGalleryOpen && this.mobGalleryPanel) {
+            this.updateMobGalleryDisplay();
+        }
+    }
+
+    public updateMobGalleryDisplay() {
+        if (!this.mobGalleryPanel) return;
+
+        const galleryGrid = this.mobGalleryPanel.querySelector('.mob-gallery-grid') as HTMLElement;
+        if (!galleryGrid) return;
+
+        galleryGrid.innerHTML = '';
+
+        const player = this.game.getLocalPlayer();
+        const mobKills = player?.mobKills || {};
+
+        // Get all mob types and rarities
+        const allMobTypes = getAllMobTypes();
+        
+        // Create header row with rarity columns
+        const headerRow = document.createElement('div');
+        headerRow.className = 'mob-gallery-header-row';
+        headerRow.style.display = 'grid';
+        headerRow.style.gridTemplateColumns = `150px repeat(${RARITY_LEVELS.length}, 1fr)`;
+        headerRow.style.gap = '5px';
+        headerRow.style.marginBottom = '5px';
+
+        const emptyHeader = document.createElement('div');
+        emptyHeader.className = 'mob-gallery-header';
+        headerRow.appendChild(emptyHeader);
+
+        for (const rarity of RARITY_LEVELS) {
+            const header = document.createElement('div');
+            header.className = 'mob-gallery-header';
+            header.textContent = rarity.charAt(0).toUpperCase() + rarity.slice(1);
+            header.style.color = this.ITEM_RARITY_COLORS[rarity] || '#fff';
+            header.style.fontWeight = 'bold';
+            headerRow.appendChild(header);
+        }
+
+        galleryGrid.appendChild(headerRow);
+
+        // Create rows for each mob type
+        for (const mobType of allMobTypes) {
+            const row = document.createElement('div');
+            row.className = 'mob-gallery-row';
+            row.style.display = 'grid';
+            row.style.gridTemplateColumns = `150px repeat(${RARITY_LEVELS.length}, 1fr)`;
+            row.style.gap = '5px';
+            row.style.marginBottom = '5px';
+
+            // Mob type name
+            const mobTypeCell = document.createElement('div');
+            mobTypeCell.className = 'mob-gallery-type-cell';
+            mobTypeCell.textContent = mobType.charAt(0).toUpperCase() + mobType.slice(1).replace('_', ' ');
+            mobTypeCell.style.padding = '5px';
+            mobTypeCell.style.display = 'flex';
+            mobTypeCell.style.alignItems = 'center';
+            row.appendChild(mobTypeCell);
+
+            // Create cells for each rarity
+            const mobRarities = getMobRarities(mobType);
+            for (const rarity of RARITY_LEVELS) {
+                const cell = document.createElement('div');
+                cell.className = 'mob-gallery-cell';
+                cell.style.width = '60px';
+                cell.style.height = '60px';
+                cell.style.border = '2px solid #555';
+                cell.style.borderRadius = '5px';
+                cell.style.display = 'flex';
+                cell.style.alignItems = 'center';
+                cell.style.justifyContent = 'center';
+                cell.style.position = 'relative';
+                cell.style.cursor = 'pointer';
+
+                const killCount = mobKills[mobType]?.[rarity] || 0;
+                const hasKilled = killCount > 0;
+
+                if (hasKilled && mobRarities.includes(rarity)) {
+                    // Mob has been killed - show it
+                    const mobStats = getMobStats(mobType, rarity);
+                    if (mobStats) {
+                        cell.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+                        cell.style.borderColor = this.ITEM_RARITY_COLORS[rarity] || '#fff';
+                        
+                        // Create mob image/icon
+                        const mobIcon = document.createElement('div');
+                        mobIcon.innerHTML = mobStats.image;
+                        mobIcon.style.width = '40px';
+                        mobIcon.style.height = '40px';
+                        mobIcon.style.display = 'flex';
+                        mobIcon.style.alignItems = 'center';
+                        mobIcon.style.justifyContent = 'center';
+                        cell.appendChild(mobIcon);
+
+                        // Kill count badge
+                        const countBadge = document.createElement('div');
+                        countBadge.textContent = killCount.toString();
+                        countBadge.style.position = 'absolute';
+                        countBadge.style.top = '2px';
+                        countBadge.style.right = '2px';
+                        countBadge.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+                        countBadge.style.color = '#fff';
+                        countBadge.style.padding = '2px 4px';
+                        countBadge.style.borderRadius = '3px';
+                        countBadge.style.fontSize = '10px';
+                        cell.appendChild(countBadge);
+
+                        // Setup tooltip
+                        this.setupMobTooltip(cell, mobType, rarity);
+                    }
+                } else if (mobRarities.includes(rarity)) {
+                    // Mob exists but hasn't been killed - show as locked
+                    cell.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
+                    cell.style.borderColor = '#333';
+                    cell.style.opacity = '0.5';
+                    
+                    const lockIcon = document.createElement('div');
+                    lockIcon.textContent = '?';
+                    lockIcon.style.color = '#666';
+                    lockIcon.style.fontSize = '24px';
+                    cell.appendChild(lockIcon);
+                } else {
+                    // Mob doesn't exist at this rarity
+                    cell.style.backgroundColor = 'rgba(0, 0, 0, 0.1)';
+                    cell.style.borderColor = '#222';
+                    cell.style.opacity = '0.3';
+                }
+
+                row.appendChild(cell);
+            }
+
+            galleryGrid.appendChild(row);
+        }
+    }
+
+    private setupMobTooltip(element: HTMLElement, mobType: string, rarity: string): void {
+        element.addEventListener('mouseenter', () => {
+            this.showMobTooltip(element, mobType, rarity);
+        });
+
+        element.addEventListener('mouseleave', () => {
+            this.hideTooltip();
+        });
+
+        element.addEventListener('mousemove', (e) => {
+            if (this.tooltipElement) {
+                this.updateTooltipPosition(element, this.tooltipElement);
+            }
+        });
+    }
+
+    private showMobTooltip(element: HTMLElement, mobType: string, rarity: string): void {
+        const mobStats = getMobStats(mobType, rarity);
+        if (!mobStats) return;
+
+        // Remove existing tooltip
+        this.hideTooltip();
+
+        // Create tooltip
+        const tooltip = document.createElement('div');
+        tooltip.className = 'mob-tooltip';
+        tooltip.style.cssText = `
+            position: fixed;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 10000;
+            pointer-events: none;
+            max-width: 300px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+
+        // Mob name
+        const nameDiv = document.createElement('div');
+        nameDiv.style.cssText = `font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};`;
+        nameDiv.textContent = `${rarity.charAt(0).toUpperCase() + rarity.slice(1)} ${mobType.charAt(0).toUpperCase() + mobType.slice(1).replace('_', ' ')}`;
+        tooltip.appendChild(nameDiv);
+
+        // Description
+        if (mobStats.description) {
+            const descDiv = document.createElement('div');
+            descDiv.style.cssText = 'margin-bottom: 8px; color: #ccc; line-height: 1.4;';
+            descDiv.textContent = mobStats.description;
+            tooltip.appendChild(descDiv);
+        }
+
+        // Stats
+        const statsDiv = document.createElement('div');
+        statsDiv.style.cssText = 'margin-bottom: 8px;';
+        statsDiv.innerHTML = `
+            <div style="margin-bottom: 4px;"><span style="color: #4CAF50;">HP:</span> <span>${this.abbreviateNumber(mobStats.health)}</span></div>
+            <div style="margin-bottom: 4px;"><span style="color: #f44336;">Damage:</span> <span>${this.abbreviateNumber(mobStats.damage)}</span></div>
+            <div style="margin-bottom: 4px;"><span style="color: #2196F3;">Speed:</span> <span>${mobStats.speed.toFixed(1)}</span></div>
+            <div style="margin-bottom: 4px;"><span style="color: #FF9800;">XP:</span> <span>${this.abbreviateNumber(mobStats.xp)}</span></div>
+        `;
+        tooltip.appendChild(statsDiv);
+
+        // Drops section
+        const dropTable = MOB_DROP_TABLES[mobType];
+        if (dropTable) {
+            const dropsDiv = document.createElement('div');
+            dropsDiv.style.cssText = 'margin-top: 8px; padding-top: 8px; border-top: 1px solid #555;';
+            
+            const dropsTitle = document.createElement('div');
+            dropsTitle.style.cssText = 'font-weight: bold; margin-bottom: 4px; color: #FFD700;';
+            dropsTitle.textContent = 'Drops:';
+            dropsDiv.appendChild(dropsTitle);
+
+            // Calculate final drops with upgrade/downgrade chances
+            const drops = dropTable.drops;
+            for (const drop of drops) {
+                const dropItemDiv = document.createElement('div');
+                dropItemDiv.style.cssText = 'margin-bottom: 4px; padding-left: 10px; font-size: 12px;';
+                
+                const itemName = drop.type === 'petal' ? drop.itemType : drop.itemType;
+                const baseRarity = drop.rarity;
+                
+                // Calculate upgrade/downgrade chances (same logic as itemManager.ts)
+                const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+                const getCraftingChance = (rarityIndex: number): number => {
+                    const baseChance = 64;
+                    return baseChance / Math.pow(2, rarityIndex);
+                };
+                
+                const getDropUpgradeChance = (currentRarity: Rarity): number => {
+                    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
+                    if (currentIndex === -1 || currentIndex >= RARITY_ORDER.length - 1) {
+                        return 0;
+                    }
+                    const craftingChance = getCraftingChance(currentIndex);
+                    return (craftingChance / 3) * 100; // Convert to percentage
+                };
+                
+                const getDropDowngradeChance = (currentRarity: Rarity): number => {
+                    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
+                    if (currentIndex === -1 || currentIndex === 0) {
+                        return 0;
+                    }
+                    const craftingChanceToCurrentRarity = getCraftingChance(currentIndex - 1);
+                    return (1 / (1 + craftingChanceToCurrentRarity)) * 100; // Convert to percentage
+                };
+
+                const upgradeChance = getDropUpgradeChance(baseRarity);
+                const downgradeChance = getDropDowngradeChance(baseRarity);
+                const sameChance = 100 - upgradeChance - downgradeChance;
+
+                let dropText = `${(drop.probability * 100).toFixed(0)}% - ${itemName} (${baseRarity})`;
+                
+                if (upgradeChance > 0 || downgradeChance > 0) {
+                    dropText += ` [`;
+                    const chances: string[] = [];
+                    if (upgradeChance > 0) {
+                        chances.push(`↑${upgradeChance.toFixed(1)}%`);
+                    }
+                    if (downgradeChance > 0) {
+                        chances.push(`↓${downgradeChance.toFixed(1)}%`);
+                    }
+                    if (sameChance > 0 && (upgradeChance > 0 || downgradeChance > 0)) {
+                        chances.push(`=${sameChance.toFixed(1)}%`);
+                    }
+                    dropText += chances.join(' ') + `]`;
+                }
+                
+                dropItemDiv.textContent = dropText;
+                dropItemDiv.style.color = this.ITEM_RARITY_COLORS[baseRarity] || '#fff';
+                dropsDiv.appendChild(dropItemDiv);
+            }
+
+            tooltip.appendChild(dropsDiv);
+        }
+
+        document.body.appendChild(tooltip);
+        this.tooltipElement = tooltip;
+
+        // Position tooltip
+        this.updateTooltipPosition(element, tooltip);
     }
 
     public equipItemToLoadout(rarity: string, type: string, loadoutSlot: number) {

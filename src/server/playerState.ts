@@ -50,7 +50,7 @@ import {
 } from '../petal_actions';
 import { getMobStats } from '../mobs';
 import { addItem, applyPetalHealthBonus } from './playerManager';
-import { trackDamage, sendBossMobDefeatedMessage, cleanupEnemy } from './utils';
+import { trackDamage, sendBossMobDefeatedMessage, cleanupEnemy, trackMobKill } from './utils';
 import { transferPlayerToServer as transferPlayerToServerModule } from './crossServer';
 
 // Interface for player state dependencies
@@ -67,6 +67,7 @@ export interface PlayerStateDependencies {
     currentServerPort: number;
     useHttps: boolean;
     database: any;
+    trackMobKill: (enemy: Enemy, players: Record<string, ServerPlayer>, playerUserIds: Record<string, string>, database: any, io: SocketIOServer) => void;
 }
 
 /**
@@ -232,7 +233,7 @@ export function updatePlayerState(
         return;
     }
 
-    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, createEnemy, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
+    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, createEnemy, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database, trackMobKill } = deps;
 
     // Update player effects
     updatePlayerEffects(player, deltaTime);
@@ -419,6 +420,8 @@ export function updatePlayerState(
                     if (index !== -1) {
                         const xpGained = getXPFromEnemy(enemy);
                         addXPToPlayer(player, xpGained, player.id);
+                        // Track mob kill for eligible players
+                        trackMobKill(enemy, players, playerUserIds, database, io);
                         // Handle mob drops using the new drop table system (includes all eligible players)
                         handleMobDrops(enemy);
                         sendBossMobDefeatedMessage(enemy, io, players);
@@ -889,6 +892,8 @@ export function updatePlayerState(
                         if (index !== -1) {
                             const xpGained = getXPFromEnemy(enemy);
                             addXPToPlayer(player, xpGained, player.id);
+                            // Track mob kill for eligible players
+                            trackMobKill(enemy, players, playerUserIds, database, io);
                             // Handle mob drops using the new drop table system (includes all eligible players)
                             handleMobDrops(enemy);
                             sendBossMobDefeatedMessage(enemy, io, players);

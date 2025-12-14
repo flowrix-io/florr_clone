@@ -4,6 +4,7 @@ exports.trackDamage = trackDamage;
 exports.calculateDPS = calculateDPS;
 exports.getEligiblePlayers = getEligiblePlayers;
 exports.sendBossMobDefeatedMessage = sendBossMobDefeatedMessage;
+exports.trackMobKill = trackMobKill;
 exports.cleanupEnemy = cleanupEnemy;
 const constants_1 = require("../constants");
 // Helper function to track damage dealt to an enemy
@@ -94,6 +95,37 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
         content: `<b style="color: ${constants_1.ENEMY_TIERS[enemy.tier].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`,
         timestamp: Date.now()
     });
+}
+// Helper function to track mob kills for eligible players
+function trackMobKill(enemy, players, playerUserIds, database, io) {
+    const eligiblePlayers = getEligiblePlayers(enemy);
+    for (const playerId of eligiblePlayers) {
+        const player = players[playerId];
+        if (!player)
+            continue;
+        // Initialize mobKills if it doesn't exist
+        if (!player.mobKills) {
+            player.mobKills = {};
+        }
+        // Initialize mob type entry if it doesn't exist
+        if (!player.mobKills[enemy.type]) {
+            player.mobKills[enemy.type] = {};
+        }
+        // Increment kill count for this mob type and rarity
+        const currentCount = player.mobKills[enemy.type][enemy.tier] || 0;
+        player.mobKills[enemy.type][enemy.tier] = currentCount + 1;
+        // Save to database if user is logged in
+        const userId = playerUserIds[playerId];
+        if (userId && database) {
+            database.savePlayer(userId, {
+                mobKills: player.mobKills
+            });
+        }
+        // Emit playerUpdated event to notify client of mobKills change
+        if (io) {
+            io.emit('playerUpdated', player);
+        }
+    }
 }
 // Helper function to clean up enemy data structures before removal
 // This helps prevent memory leaks by clearing Maps and arrays

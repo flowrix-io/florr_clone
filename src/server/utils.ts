@@ -116,6 +116,43 @@ export function sendBossMobDefeatedMessage(
     });
 }
 
+// Helper function to track mob kills for eligible players
+export function trackMobKill(enemy: Enemy, players: Record<string, ServerPlayer>, playerUserIds: Record<string, string>, database: any, io?: any): void {
+    const eligiblePlayers = getEligiblePlayers(enemy);
+    
+    for (const playerId of eligiblePlayers) {
+        const player = players[playerId];
+        if (!player) continue;
+        
+        // Initialize mobKills if it doesn't exist
+        if (!player.mobKills) {
+            player.mobKills = {};
+        }
+        
+        // Initialize mob type entry if it doesn't exist
+        if (!player.mobKills[enemy.type]) {
+            player.mobKills[enemy.type] = {};
+        }
+        
+        // Increment kill count for this mob type and rarity
+        const currentCount = player.mobKills[enemy.type][enemy.tier] || 0;
+        player.mobKills[enemy.type][enemy.tier] = currentCount + 1;
+        
+        // Save to database if user is logged in
+        const userId = playerUserIds[playerId];
+        if (userId && database) {
+            database.savePlayer(userId, {
+                mobKills: player.mobKills
+            } as any);
+        }
+        
+        // Emit playerUpdated event to notify client of mobKills change
+        if (io) {
+            io.emit('playerUpdated', player);
+        }
+    }
+}
+
 // Helper function to clean up enemy data structures before removal
 // This helps prevent memory leaks by clearing Maps and arrays
 export function cleanupEnemy(enemy: Enemy): void {
