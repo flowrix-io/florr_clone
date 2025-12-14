@@ -836,21 +836,21 @@ class InventoryManager {
                         cell.style.backgroundColor = rarityColor;
                         cell.style.borderColor = darkenedColor;
                         cell.style.borderWidth = '3px';
-                        // Create mob image/icon using data URL (same approach as items use canvas)
+                        // Create mob image/icon by converting SVG to bitmap first
                         const mobIcon = document.createElement('img');
                         mobIcon.style.width = '40px';
                         mobIcon.style.height = '40px';
                         mobIcon.style.objectFit = 'contain';
                         mobIcon.draggable = false;
-                        // Create data URL from SVG string (same as how items use canvas data URLs)
+                        // Convert SVG to bitmap canvas, then use canvas data URL
                         if (mobStats.image) {
-                            try {
-                                const base64 = btoa(unescape(encodeURIComponent(mobStats.image)));
-                                mobIcon.src = `data:image/svg+xml;base64,${base64}`;
-                            }
-                            catch (error) {
-                                console.error(`[Inventory] Error creating mob icon for ${mobType}_${rarity}:`, error);
-                            }
+                            this.convertSVGToBitmap(mobStats.image, 32, 32).then((dataUrl) => {
+                                if (dataUrl) {
+                                    mobIcon.src = dataUrl;
+                                }
+                            }).catch((error) => {
+                                console.error(`[Inventory] Error converting mob icon to bitmap for ${mobType}_${rarity}:`, error);
+                            });
                         }
                         cell.appendChild(mobIcon);
                         // Mob name with text stroke (like items)
@@ -912,6 +912,62 @@ class InventoryManager {
                 row.appendChild(cell);
             }
             galleryGrid.appendChild(row);
+        }
+    }
+    async convertSVGToBitmap(svgString, width, height) {
+        try {
+            // Create canvas
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                return null;
+            }
+            // Check if createImageBitmap is available
+            if (typeof createImageBitmap === 'undefined') {
+                // Fallback to direct SVG data URL
+                const base64 = btoa(unescape(encodeURIComponent(svgString)));
+                return `data:image/svg+xml;base64,${base64}`;
+            }
+            // Create data URL from SVG
+            const base64 = btoa(unescape(encodeURIComponent(svgString)));
+            const dataUrl = `data:image/svg+xml;base64,${base64}`;
+            // Create Image element and convert to bitmap
+            const img = new Image();
+            const imageBitmap = await new Promise((resolve, reject) => {
+                img.onload = async () => {
+                    try {
+                        // Use createImageBitmap to convert to bitmap
+                        const bitmap = await createImageBitmap(img, { resizeWidth: width, resizeHeight: height });
+                        resolve(bitmap);
+                    }
+                    catch (error) {
+                        reject(error);
+                    }
+                };
+                img.onerror = () => {
+                    reject(new Error('Failed to load SVG image'));
+                };
+                img.src = dataUrl;
+            });
+            // Draw bitmap to canvas
+            ctx.clearRect(0, 0, width, height);
+            ctx.drawImage(imageBitmap, 0, 0, width, height);
+            imageBitmap.close(); // Free memory
+            // Return canvas data URL (bitmap)
+            return canvas.toDataURL('image/png');
+        }
+        catch (error) {
+            console.error('[Inventory] Error converting SVG to bitmap:', error);
+            // Fallback to direct SVG data URL
+            try {
+                const base64 = btoa(unescape(encodeURIComponent(svgString)));
+                return `data:image/svg+xml;base64,${base64}`;
+            }
+            catch (fallbackError) {
+                return null;
+            }
         }
     }
     setupMobTooltip(element, mobType, rarity) {
