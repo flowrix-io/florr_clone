@@ -927,6 +927,78 @@ class InventoryManager {
             }
         });
     }
+    createDropItemElement(itemName, finalRarity, finalProb, itemType, dropType) {
+        const dropItemDiv = document.createElement('div');
+        dropItemDiv.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 0;
+            font-size: 10px;
+        `;
+        // Create icon container
+        const iconContainer = document.createElement('div');
+        iconContainer.style.cssText = `
+            width: 32px;
+            height: 32px;
+            position: relative;
+            flex-shrink: 0;
+        `;
+        // Set background color based on rarity
+        const rarityColor = this.ITEM_RARITY_COLORS[finalRarity] || '#fff';
+        const darkenedColor = this.darkenColor(rarityColor);
+        iconContainer.style.backgroundColor = rarityColor;
+        iconContainer.style.border = `2px solid ${darkenedColor}`;
+        iconContainer.style.borderRadius = '4px';
+        iconContainer.style.display = 'flex';
+        iconContainer.style.alignItems = 'center';
+        iconContainer.style.justifyContent = 'center';
+        // Create icon based on item type
+        if (dropType === 'petal') {
+            const petalCanvas = this.game.getPetalCanvas?.(itemType, finalRarity, Date.now());
+            if (petalCanvas) {
+                const img = document.createElement('img');
+                img.src = petalCanvas.toDataURL('image/png');
+                img.style.width = '28px';
+                img.style.height = '28px';
+                img.style.objectFit = 'contain';
+                iconContainer.appendChild(img);
+            }
+        }
+        else {
+            // Consumable item
+            const dataUrl = this.game.getItemSpriteDataUrl?.(itemType);
+            if (dataUrl) {
+                const img = document.createElement('img');
+                img.src = dataUrl;
+                img.style.width = '28px';
+                img.style.height = '28px';
+                img.style.objectFit = 'contain';
+                iconContainer.appendChild(img);
+            }
+            else {
+                // Fallback
+                const img = document.createElement('img');
+                img.src = `./assets/${itemType}.png`;
+                img.style.width = '28px';
+                img.style.height = '28px';
+                img.style.objectFit = 'contain';
+                iconContainer.appendChild(img);
+            }
+        }
+        dropItemDiv.appendChild(iconContainer);
+        // Create text with probability
+        const textDiv = document.createElement('div');
+        textDiv.style.cssText = `
+            color: ${rarityColor};
+            text-align: center;
+            font-weight: bold;
+        `;
+        textDiv.textContent = `${finalProb}%`;
+        dropItemDiv.appendChild(textDiv);
+        return dropItemDiv;
+    }
     showMobTooltip(element, mobType, rarity) {
         const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);
         if (!mobStats)
@@ -1043,111 +1115,164 @@ class InventoryManager {
                     const downgradeChance10 = getDropDowngradeChance(baseRarity10);
                     const sameChance10 = Math.max(0, 100 - upgradeChance10 - downgradeChance10);
                     const itemName = drop.type === 'petal' ? drop.itemType : drop.itemType;
-                    // Show 90% path outcomes as separate entries
+                    // Show 90% path outcomes in a grid
                     // baseProb90 is the probability (0-1) of the 90% path occurring
                     const baseProb90 = drop.probability * 0.9;
-                    // Upgrade outcome (90% path)
-                    // upgradeChance90 is a percentage (e.g., 0.67 means 0.67%), so divide by 100
-                    if (upgradeChance90 > 0) {
-                        const upgradedRarity = upgradeRarity(baseRarity90);
-                        // Final probability = base probability * (upgrade chance / 100) * 100 to show as percentage
-                        const finalProb = (baseProb90 * upgradeChance90 / 100 * 100).toFixed(2);
-                        const dropItemDiv = document.createElement('div');
-                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
-                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${upgradedRarity})`;
-                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[upgradedRarity] || '#fff';
-                        dropsDiv.appendChild(dropItemDiv);
-                    }
-                    // Same outcome (90% path)
-                    // sameChance90 is already a percentage (100 - upgrade - downgrade)
-                    if (sameChance90 > 0) {
-                        const finalProb = (baseProb90 * sameChance90 / 100 * 100).toFixed(2);
-                        const dropItemDiv = document.createElement('div');
-                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
-                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${baseRarity90})`;
-                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[baseRarity90] || '#fff';
-                        dropsDiv.appendChild(dropItemDiv);
-                    }
+                    // Create grid container for 90% path
+                    const grid90 = document.createElement('div');
+                    grid90.style.cssText = `
+                        display: grid;
+                        grid-template-columns: 1fr 1fr 1fr;
+                        gap: 0;
+                        margin-bottom: 8px;
+                        padding: 0;
+                        background: rgba(0, 0, 0, 0.2);
+                        border-radius: 4px;
+                    `;
+                    // Show outcomes in order: downgrade (left), same (middle), upgrade (right)
                     // Downgrade outcome (90% path)
-                    // downgradeChance90 is a decimal (e.g., 0.2 means 20%), already multiplied by 100 in the function
                     if (downgradeChance90 > 0) {
                         const downgradedRarity = downgradeRarity(baseRarity90);
                         const finalProb = (baseProb90 * downgradeChance90 / 100 * 100).toFixed(2);
-                        const dropItemDiv = document.createElement('div');
-                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
-                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${downgradedRarity})`;
-                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[downgradedRarity] || '#fff';
-                        dropsDiv.appendChild(dropItemDiv);
+                        const dropItemDiv = this.createDropItemElement(itemName, downgradedRarity, finalProb, drop.itemType, drop.type);
+                        grid90.appendChild(dropItemDiv);
                     }
-                    // Show 10% path outcomes as separate entries
+                    else {
+                        // Empty cell
+                        const emptyCell = document.createElement('div');
+                        grid90.appendChild(emptyCell);
+                    }
+                    // Same outcome (90% path)
+                    if (sameChance90 > 0) {
+                        const finalProb = (baseProb90 * sameChance90 / 100 * 100).toFixed(2);
+                        const dropItemDiv = this.createDropItemElement(itemName, baseRarity90, finalProb, drop.itemType, drop.type);
+                        grid90.appendChild(dropItemDiv);
+                    }
+                    else {
+                        // Empty cell
+                        const emptyCell = document.createElement('div');
+                        grid90.appendChild(emptyCell);
+                    }
+                    // Upgrade outcome (90% path)
+                    if (upgradeChance90 > 0) {
+                        const upgradedRarity = upgradeRarity(baseRarity90);
+                        const finalProb = (baseProb90 * upgradeChance90 / 100 * 100).toFixed(2);
+                        const dropItemDiv = this.createDropItemElement(itemName, upgradedRarity, finalProb, drop.itemType, drop.type);
+                        grid90.appendChild(dropItemDiv);
+                    }
+                    else {
+                        // Empty cell
+                        const emptyCell = document.createElement('div');
+                        grid90.appendChild(emptyCell);
+                    }
+                    dropsDiv.appendChild(grid90);
+                    // Show 10% path outcomes in a grid
                     const baseProb10 = drop.probability * 0.1;
-                    // Upgrade outcome (10% path)
-                    if (upgradeChance10 > 0) {
-                        const upgradedRarity = upgradeRarity(baseRarity10);
-                        const finalProb = (baseProb10 * upgradeChance10 / 100 * 100).toFixed(2);
-                        const dropItemDiv = document.createElement('div');
-                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
-                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${upgradedRarity})`;
-                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[upgradedRarity] || '#fff';
-                        dropsDiv.appendChild(dropItemDiv);
-                    }
-                    // Same outcome (10% path)
-                    if (sameChance10 > 0) {
-                        const finalProb = (baseProb10 * sameChance10 / 100 * 100).toFixed(2);
-                        const dropItemDiv = document.createElement('div');
-                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
-                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${baseRarity10})`;
-                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[baseRarity10] || '#fff';
-                        dropsDiv.appendChild(dropItemDiv);
-                    }
+                    // Create grid container for 10% path
+                    const grid10 = document.createElement('div');
+                    grid10.style.cssText = `
+                        display: grid;
+                        grid-template-columns: 1fr 1fr 1fr;
+                        gap: 0;
+                        margin-bottom: 8px;
+                        padding: 0;
+                        background: rgba(0, 0, 0, 0.2);
+                        border-radius: 4px;
+                    `;
+                    // Show outcomes in order: downgrade (left), same (middle), upgrade (right)
                     // Downgrade outcome (10% path)
                     if (downgradeChance10 > 0) {
                         const downgradedRarity = downgradeRarity(baseRarity10);
                         const finalProb = (baseProb10 * downgradeChance10 / 100 * 100).toFixed(2);
-                        const dropItemDiv = document.createElement('div');
-                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
-                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${downgradedRarity})`;
-                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[downgradedRarity] || '#fff';
-                        dropsDiv.appendChild(dropItemDiv);
+                        const dropItemDiv = this.createDropItemElement(itemName, downgradedRarity, finalProb, drop.itemType, drop.type);
+                        grid10.appendChild(dropItemDiv);
                     }
+                    else {
+                        // Empty cell
+                        const emptyCell = document.createElement('div');
+                        grid10.appendChild(emptyCell);
+                    }
+                    // Same outcome (10% path)
+                    if (sameChance10 > 0) {
+                        const finalProb = (baseProb10 * sameChance10 / 100 * 100).toFixed(2);
+                        const dropItemDiv = this.createDropItemElement(itemName, baseRarity10, finalProb, drop.itemType, drop.type);
+                        grid10.appendChild(dropItemDiv);
+                    }
+                    else {
+                        // Empty cell
+                        const emptyCell = document.createElement('div');
+                        grid10.appendChild(emptyCell);
+                    }
+                    // Upgrade outcome (10% path)
+                    if (upgradeChance10 > 0) {
+                        const upgradedRarity = upgradeRarity(baseRarity10);
+                        const finalProb = (baseProb10 * upgradeChance10 / 100 * 100).toFixed(2);
+                        const dropItemDiv = this.createDropItemElement(itemName, upgradedRarity, finalProb, drop.itemType, drop.type);
+                        grid10.appendChild(dropItemDiv);
+                    }
+                    else {
+                        // Empty cell
+                        const emptyCell = document.createElement('div');
+                        grid10.appendChild(emptyCell);
+                    }
+                    dropsDiv.appendChild(grid10);
                 }
                 else {
-                    // For common mobs, show outcomes as separate entries
+                    // For common mobs, show outcomes in a grid
                     const itemName = drop.type === 'petal' ? drop.itemType : drop.itemType;
                     const baseRarity = drop.rarity;
                     const baseProb = drop.probability;
                     const upgradeChance = getDropUpgradeChance(baseRarity);
                     const downgradeChance = getDropDowngradeChance(baseRarity);
                     const sameChance = Math.max(0, 100 - upgradeChance - downgradeChance);
-                    // Upgrade outcome
-                    if (upgradeChance > 0) {
-                        const upgradedRarity = upgradeRarity(baseRarity);
-                        const finalProb = (baseProb * upgradeChance / 100 * 100).toFixed(2);
-                        const dropItemDiv = document.createElement('div');
-                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 10px; font-size: 11px;';
-                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${upgradedRarity})`;
-                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[upgradedRarity] || '#fff';
-                        dropsDiv.appendChild(dropItemDiv);
-                    }
-                    // Same outcome
-                    if (sameChance > 0) {
-                        const finalProb = (baseProb * sameChance / 100 * 100).toFixed(2);
-                        const dropItemDiv = document.createElement('div');
-                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 10px; font-size: 11px;';
-                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${baseRarity})`;
-                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[baseRarity] || '#fff';
-                        dropsDiv.appendChild(dropItemDiv);
-                    }
+                    // Create grid container
+                    const grid = document.createElement('div');
+                    grid.style.cssText = `
+                        display: grid;
+                        grid-template-columns: 1fr 1fr 1fr;
+                        gap: 0;
+                        margin-bottom: 8px;
+                        padding: 0;
+                        background: rgba(0, 0, 0, 0.2);
+                        border-radius: 4px;
+                    `;
+                    // Show outcomes in order: downgrade (left), same (middle), upgrade (right)
                     // Downgrade outcome
                     if (downgradeChance > 0) {
                         const downgradedRarity = downgradeRarity(baseRarity);
                         const finalProb = (baseProb * downgradeChance / 100 * 100).toFixed(2);
-                        const dropItemDiv = document.createElement('div');
-                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 10px; font-size: 11px;';
-                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${downgradedRarity})`;
-                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[downgradedRarity] || '#fff';
-                        dropsDiv.appendChild(dropItemDiv);
+                        const dropItemDiv = this.createDropItemElement(itemName, downgradedRarity, finalProb, drop.itemType, drop.type);
+                        grid.appendChild(dropItemDiv);
                     }
+                    else {
+                        // Empty cell
+                        const emptyCell = document.createElement('div');
+                        grid.appendChild(emptyCell);
+                    }
+                    // Same outcome
+                    if (sameChance > 0) {
+                        const finalProb = (baseProb * sameChance / 100 * 100).toFixed(2);
+                        const dropItemDiv = this.createDropItemElement(itemName, baseRarity, finalProb, drop.itemType, drop.type);
+                        grid.appendChild(dropItemDiv);
+                    }
+                    else {
+                        // Empty cell
+                        const emptyCell = document.createElement('div');
+                        grid.appendChild(emptyCell);
+                    }
+                    // Upgrade outcome
+                    if (upgradeChance > 0) {
+                        const upgradedRarity = upgradeRarity(baseRarity);
+                        const finalProb = (baseProb * upgradeChance / 100 * 100).toFixed(2);
+                        const dropItemDiv = this.createDropItemElement(itemName, upgradedRarity, finalProb, drop.itemType, drop.type);
+                        grid.appendChild(dropItemDiv);
+                    }
+                    else {
+                        // Empty cell
+                        const emptyCell = document.createElement('div');
+                        grid.appendChild(emptyCell);
+                    }
+                    dropsDiv.appendChild(grid);
                 }
             }
             tooltip.appendChild(dropsDiv);

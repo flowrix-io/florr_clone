@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 132277766,
+      "totalXP": 132352259,
       "inventory": {
         "common": {
           "shield": 116,
@@ -23,8 +23,8 @@
           "petal_leaf": 5,
           "petal_cutter": 2,
           "petal_wing": 203,
-          "petal_rose": 48,
-          "health_potion": 28,
+          "petal_rose": 49,
+          "health_potion": 29,
           "petal_basic": 29,
           "petal_square": 9,
           "petal_shield": 1,
@@ -46,7 +46,7 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 1005,
+          "petal_sparkle": 1004,
           "petal_poison_cactus": 1001,
           "petal_lightning": 1001,
           "petal_iris": 998,
@@ -95,12 +95,12 @@
         },
         "uncommon": {
           "petal_rose": 52,
-          "petal_dandelion": 44,
+          "petal_dandelion": 46,
           "petal_basic": 74,
           "petal_sand": 7,
           "speed_boost": 54,
           "petal_stinger": 34,
-          "shield": 61,
+          "shield": 62,
           "petal_clover": 38,
           "petal_light": 30,
           "health_potion": 16,
@@ -153,17 +153,17 @@
           "petal_ant_egg": 3
         },
         "epic": {
-          "petal_stinger": 42,
-          "speed_boost": 83,
+          "petal_stinger": 44,
+          "speed_boost": 84,
           "petal_basic": 76,
           "petal_rose": 107,
           "petal_sand": 16,
           "petal_yggdrasil": 3,
           "health_potion": 46,
           "petal_light": 47,
-          "petal_rock": 113,
+          "petal_rock": 114,
           "shield": 26,
-          "petal_dandelion": 113,
+          "petal_dandelion": 114,
           "petal_clover": 37,
           "petal_bone": 73,
           "petal_cactus": 5,
@@ -188,14 +188,14 @@
           "health_potion": 18,
           "shield": 46,
           "petal_sand": 5,
-          "petal_basic": 27,
+          "petal_basic": 28,
           "speed_boost": 47,
           "petal_stinger": 22,
           "petal_yggdrasil": 8,
           "petal_bone": 24,
           "petal_clover": 14,
           "petal_lightning": 4,
-          "petal_missile": 40,
+          "petal_missile": 41,
           "petal_leaf": 3,
           "petal_iris": 4,
           "petal_yucca": 4,
@@ -280,7 +280,11 @@
           "rarity": "unique",
           "petalType": "bone"
         },
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "sparkle"
+        },
         {
           "type": "petal",
           "rarity": "unique",
@@ -315,47 +319,51 @@
       "skills": {},
       "mobKills": {
         "ladybug": {
-          "common": 2,
+          "common": 5,
           "legendary": 1,
           "uncommon": 1,
           "mythic": 2
         },
         "soldier_ant": {
-          "epic": 1,
-          "legendary": 3,
+          "epic": 2,
+          "legendary": 4,
           "common": 2,
           "rare": 1,
           "mythic": 1,
           "ultra": 1
         },
         "rock": {
-          "legendary": 3,
+          "legendary": 4,
           "ultra": 1,
-          "common": 2,
+          "common": 3,
           "mythic": 2
         },
         "dark_ladybug": {
           "common": 7,
-          "legendary": 2,
+          "legendary": 3,
           "mythic": 1
         },
         "hornet": {
           "common": 6,
-          "legendary": 3,
+          "legendary": 5,
           "mythic": 1,
-          "uncommon": 1,
-          "rare": 1
+          "uncommon": 2,
+          "rare": 1,
+          "epic": 1
         },
         "dandelion": {
-          "legendary": 1,
-          "common": 2,
-          "mythic": 2
+          "legendary": 2,
+          "common": 4,
+          "mythic": 2,
+          "uncommon": 1,
+          "unique": 1
         },
         "bee": {
           "common": 3,
           "epic": 1,
           "mythic": 3,
-          "uncommon": 1
+          "uncommon": 1,
+          "legendary": 2
         },
         "bubble": {
           "ultra": 1
