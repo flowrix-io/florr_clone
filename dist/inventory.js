@@ -831,17 +831,51 @@ class InventoryManager {
                     // Mob has been killed - show it
                     const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);
                     if (mobStats) {
-                        cell.style.backgroundColor = this.ITEM_RARITY_COLORS[rarity] || '#fff';
-                        cell.style.borderColor = this.ITEM_RARITY_COLORS[rarity] || '#fff';
-                        // Create mob image/icon
-                        const mobIcon = document.createElement('div');
-                        mobIcon.innerHTML = mobStats.image;
+                        const rarityColor = this.ITEM_RARITY_COLORS[rarity] || '#fff';
+                        const darkenedColor = this.darkenColor(rarityColor);
+                        cell.style.backgroundColor = rarityColor;
+                        cell.style.borderColor = darkenedColor;
+                        cell.style.borderWidth = '3px';
+                        // Create mob image/icon using data URL (same approach as items use canvas)
+                        const mobIcon = document.createElement('img');
                         mobIcon.style.width = '40px';
                         mobIcon.style.height = '40px';
-                        mobIcon.style.display = 'flex';
-                        mobIcon.style.alignItems = 'center';
-                        mobIcon.style.justifyContent = 'center';
+                        mobIcon.style.objectFit = 'contain';
+                        mobIcon.draggable = false;
+                        // Create data URL from SVG string (same as how items use canvas data URLs)
+                        if (mobStats.image) {
+                            try {
+                                const base64 = btoa(unescape(encodeURIComponent(mobStats.image)));
+                                mobIcon.src = `data:image/svg+xml;base64,${base64}`;
+                            }
+                            catch (error) {
+                                console.error(`[Inventory] Error creating mob icon for ${mobType}_${rarity}:`, error);
+                            }
+                        }
                         cell.appendChild(mobIcon);
+                        // Mob name with text stroke (like items)
+                        const mobName = document.createElement('div');
+                        mobName.textContent = mobStats.name || mobType.charAt(0).toUpperCase() + mobType.slice(1).replace('_', ' ');
+                        mobName.style.cssText = `
+                            position: absolute;
+                            bottom: 2px;
+                            left: 2px;
+                            right: 2px;
+                            font-size: 8px;
+                            font-weight: bold;
+                            text-align: center;
+                            color: #fff;
+                            text-shadow: 
+                                -1px -1px 0 #000,
+                                1px -1px 0 #000,
+                                -1px 1px 0 #000,
+                                1px 1px 0 #000;
+                            pointer-events: none;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                        `;
+                        cell.appendChild(mobName);
                         // Kill count badge
                         const countBadge = document.createElement('div');
                         countBadge.textContent = killCount.toString();
@@ -938,7 +972,7 @@ class InventoryManager {
             <div style="margin-bottom: 4px;"><span style="color: #FF9800;">XP:</span> <span>${this.abbreviateNumber(mobStats.xp)}</span></div>
         `;
         tooltip.appendChild(statsDiv);
-        // Drops section
+        // Drops section - use server logic
         const dropTable = mobs_1.MOB_DROP_TABLES[mobType];
         if (dropTable) {
             const dropsDiv = document.createElement('div');
@@ -947,56 +981,174 @@ class InventoryManager {
             dropsTitle.style.cssText = 'font-weight: bold; margin-bottom: 4px; color: #FFD700;';
             dropsTitle.textContent = 'Drops:';
             dropsDiv.appendChild(dropsTitle);
-            // Calculate final drops with upgrade/downgrade chances
-            const drops = dropTable.drops;
-            for (const drop of drops) {
-                const dropItemDiv = document.createElement('div');
-                dropItemDiv.style.cssText = 'margin-bottom: 4px; padding-left: 10px; font-size: 12px;';
-                const itemName = drop.type === 'petal' ? drop.itemType : drop.itemType;
-                const baseRarity = drop.rarity;
-                // Calculate upgrade/downgrade chances (same logic as itemManager.ts)
-                const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
-                const getCraftingChance = (rarityIndex) => {
-                    const baseChance = 64;
-                    return baseChance / Math.pow(2, rarityIndex);
-                };
-                const getDropUpgradeChance = (currentRarity) => {
-                    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
-                    if (currentIndex === -1 || currentIndex >= RARITY_ORDER.length - 1) {
-                        return 0;
-                    }
-                    const craftingChance = getCraftingChance(currentIndex);
-                    return (craftingChance / 3) * 100; // Convert to percentage
-                };
-                const getDropDowngradeChance = (currentRarity) => {
-                    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
-                    if (currentIndex === -1 || currentIndex === 0) {
-                        return 0;
-                    }
-                    const craftingChanceToCurrentRarity = getCraftingChance(currentIndex - 1);
-                    return (1 / (1 + craftingChanceToCurrentRarity)) * 100; // Convert to percentage
-                };
-                const upgradeChance = getDropUpgradeChance(baseRarity);
-                const downgradeChance = getDropDowngradeChance(baseRarity);
-                const sameChance = 100 - upgradeChance - downgradeChance;
-                let dropText = `${(drop.probability * 100).toFixed(0)}% - ${itemName} (${baseRarity})`;
-                if (upgradeChance > 0 || downgradeChance > 0) {
-                    dropText += ` [`;
-                    const chances = [];
-                    if (upgradeChance > 0) {
-                        chances.push(`↑${upgradeChance.toFixed(1)}%`);
-                    }
-                    if (downgradeChance > 0) {
-                        chances.push(`↓${downgradeChance.toFixed(1)}%`);
-                    }
-                    if (sameChance > 0 && (upgradeChance > 0 || downgradeChance > 0)) {
-                        chances.push(`=${sameChance.toFixed(1)}%`);
-                    }
-                    dropText += chances.join(' ') + `]`;
+            // Calculate drops using server logic (same as calculateMobDrops and handleMobDrops)
+            const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+            // Helper functions from server/itemManager.ts
+            const getCraftingChance = (rarityIndex) => {
+                const baseChance = 64;
+                return baseChance / Math.pow(2, rarityIndex);
+            };
+            const getDropUpgradeChance = (currentRarity) => {
+                const currentIndex = RARITY_ORDER.indexOf(currentRarity);
+                if (currentIndex === -1 || currentIndex >= RARITY_ORDER.length - 1) {
+                    return 0;
                 }
-                dropItemDiv.textContent = dropText;
-                dropItemDiv.style.color = this.ITEM_RARITY_COLORS[baseRarity] || '#fff';
-                dropsDiv.appendChild(dropItemDiv);
+                const craftingChance = getCraftingChance(currentIndex);
+                return craftingChance / 3; // Returns percentage (e.g., 0.67 for mythic->ultra)
+            };
+            const getDropDowngradeChance = (currentRarity) => {
+                const currentIndex = RARITY_ORDER.indexOf(currentRarity);
+                if (currentIndex === -1 || currentIndex === 0) {
+                    return 0;
+                }
+                const craftingChanceToCurrentRarity = getCraftingChance(currentIndex - 1);
+                return (1 / (1 + craftingChanceToCurrentRarity)) * 100; // Returns percentage (e.g., 20 for mythic->legendary)
+            };
+            const upgradeRarity = (rarity) => {
+                const currentIndex = RARITY_ORDER.indexOf(rarity);
+                if (currentIndex >= 0 && currentIndex < RARITY_ORDER.length - 1) {
+                    return RARITY_ORDER[currentIndex + 1];
+                }
+                return rarity;
+            };
+            const downgradeRarity = (rarity) => {
+                const currentIndex = RARITY_ORDER.indexOf(rarity);
+                if (currentIndex > 0 && currentIndex < RARITY_ORDER.length) {
+                    return RARITY_ORDER[currentIndex - 1];
+                }
+                return rarity;
+            };
+            // Process drops based on mob rarity (same logic as calculateMobDrops)
+            const rarityIndex = RARITY_ORDER.indexOf(rarity);
+            const isCommon = rarity === 'common';
+            for (const drop of dropTable.drops) {
+                // For non-common mobs, apply 90% downgrade / 10% same rarity logic
+                // The drop rarity is adjusted based on the mob's rarity, not the drop's original rarity
+                if (!isCommon && rarityIndex > 0 && rarityIndex < RARITY_ORDER.length) {
+                    // 90% chance: drop rarity is one tier lower than mob rarity
+                    // 10% chance: drop rarity stays as the original drop.rarity
+                    const lowerRarity = RARITY_ORDER[rarityIndex - 1];
+                    // Safety check: ensure lowerRarity is valid
+                    if (!lowerRarity) {
+                        continue; // Skip this drop if we can't determine lower rarity
+                    }
+                    // Show both possibilities: 90% chance of lower rarity, 10% chance of original drop rarity
+                    const baseRarity90 = lowerRarity;
+                    const baseRarity10 = drop.rarity;
+                    // Calculate upgrade/downgrade chances for both rarities
+                    const upgradeChance90 = getDropUpgradeChance(baseRarity90);
+                    const downgradeChance90 = getDropDowngradeChance(baseRarity90);
+                    const sameChance90 = Math.max(0, 100 - upgradeChance90 - downgradeChance90);
+                    const upgradeChance10 = getDropUpgradeChance(baseRarity10);
+                    const downgradeChance10 = getDropDowngradeChance(baseRarity10);
+                    const sameChance10 = Math.max(0, 100 - upgradeChance10 - downgradeChance10);
+                    const itemName = drop.type === 'petal' ? drop.itemType : drop.itemType;
+                    // Show 90% path outcomes as separate entries
+                    // baseProb90 is the probability (0-1) of the 90% path occurring
+                    const baseProb90 = drop.probability * 0.9;
+                    // Upgrade outcome (90% path)
+                    // upgradeChance90 is a percentage (e.g., 0.67 means 0.67%), so divide by 100
+                    if (upgradeChance90 > 0) {
+                        const upgradedRarity = upgradeRarity(baseRarity90);
+                        // Final probability = base probability * (upgrade chance / 100) * 100 to show as percentage
+                        const finalProb = (baseProb90 * upgradeChance90 / 100 * 100).toFixed(2);
+                        const dropItemDiv = document.createElement('div');
+                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
+                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${upgradedRarity})`;
+                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[upgradedRarity] || '#fff';
+                        dropsDiv.appendChild(dropItemDiv);
+                    }
+                    // Same outcome (90% path)
+                    // sameChance90 is already a percentage (100 - upgrade - downgrade)
+                    if (sameChance90 > 0) {
+                        const finalProb = (baseProb90 * sameChance90 / 100 * 100).toFixed(2);
+                        const dropItemDiv = document.createElement('div');
+                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
+                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${baseRarity90})`;
+                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[baseRarity90] || '#fff';
+                        dropsDiv.appendChild(dropItemDiv);
+                    }
+                    // Downgrade outcome (90% path)
+                    // downgradeChance90 is a decimal (e.g., 0.2 means 20%), already multiplied by 100 in the function
+                    if (downgradeChance90 > 0) {
+                        const downgradedRarity = downgradeRarity(baseRarity90);
+                        const finalProb = (baseProb90 * downgradeChance90 / 100 * 100).toFixed(2);
+                        const dropItemDiv = document.createElement('div');
+                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
+                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${downgradedRarity})`;
+                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[downgradedRarity] || '#fff';
+                        dropsDiv.appendChild(dropItemDiv);
+                    }
+                    // Show 10% path outcomes as separate entries
+                    const baseProb10 = drop.probability * 0.1;
+                    // Upgrade outcome (10% path)
+                    if (upgradeChance10 > 0) {
+                        const upgradedRarity = upgradeRarity(baseRarity10);
+                        const finalProb = (baseProb10 * upgradeChance10 / 100 * 100).toFixed(2);
+                        const dropItemDiv = document.createElement('div');
+                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
+                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${upgradedRarity})`;
+                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[upgradedRarity] || '#fff';
+                        dropsDiv.appendChild(dropItemDiv);
+                    }
+                    // Same outcome (10% path)
+                    if (sameChance10 > 0) {
+                        const finalProb = (baseProb10 * sameChance10 / 100 * 100).toFixed(2);
+                        const dropItemDiv = document.createElement('div');
+                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
+                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${baseRarity10})`;
+                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[baseRarity10] || '#fff';
+                        dropsDiv.appendChild(dropItemDiv);
+                    }
+                    // Downgrade outcome (10% path)
+                    if (downgradeChance10 > 0) {
+                        const downgradedRarity = downgradeRarity(baseRarity10);
+                        const finalProb = (baseProb10 * downgradeChance10 / 100 * 100).toFixed(2);
+                        const dropItemDiv = document.createElement('div');
+                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 20px; font-size: 11px;';
+                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${downgradedRarity})`;
+                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[downgradedRarity] || '#fff';
+                        dropsDiv.appendChild(dropItemDiv);
+                    }
+                }
+                else {
+                    // For common mobs, show outcomes as separate entries
+                    const itemName = drop.type === 'petal' ? drop.itemType : drop.itemType;
+                    const baseRarity = drop.rarity;
+                    const baseProb = drop.probability;
+                    const upgradeChance = getDropUpgradeChance(baseRarity);
+                    const downgradeChance = getDropDowngradeChance(baseRarity);
+                    const sameChance = Math.max(0, 100 - upgradeChance - downgradeChance);
+                    // Upgrade outcome
+                    if (upgradeChance > 0) {
+                        const upgradedRarity = upgradeRarity(baseRarity);
+                        const finalProb = (baseProb * upgradeChance / 100 * 100).toFixed(2);
+                        const dropItemDiv = document.createElement('div');
+                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 10px; font-size: 11px;';
+                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${upgradedRarity})`;
+                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[upgradedRarity] || '#fff';
+                        dropsDiv.appendChild(dropItemDiv);
+                    }
+                    // Same outcome
+                    if (sameChance > 0) {
+                        const finalProb = (baseProb * sameChance / 100 * 100).toFixed(2);
+                        const dropItemDiv = document.createElement('div');
+                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 10px; font-size: 11px;';
+                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${baseRarity})`;
+                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[baseRarity] || '#fff';
+                        dropsDiv.appendChild(dropItemDiv);
+                    }
+                    // Downgrade outcome
+                    if (downgradeChance > 0) {
+                        const downgradedRarity = downgradeRarity(baseRarity);
+                        const finalProb = (baseProb * downgradeChance / 100 * 100).toFixed(2);
+                        const dropItemDiv = document.createElement('div');
+                        dropItemDiv.style.cssText = 'margin-bottom: 2px; padding-left: 10px; font-size: 11px;';
+                        dropItemDiv.textContent = `${finalProb}% - ${itemName} (${downgradedRarity})`;
+                        dropItemDiv.style.color = this.ITEM_RARITY_COLORS[downgradedRarity] || '#fff';
+                        dropsDiv.appendChild(dropItemDiv);
+                    }
+                }
             }
             tooltip.appendChild(dropsDiv);
         }

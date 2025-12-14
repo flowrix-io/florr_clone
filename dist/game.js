@@ -1321,6 +1321,44 @@ class Game {
             return petalImage;
         }
     }
+    getMobCanvas(mobType, rarity) {
+        // Get the SVG string from graphics cache
+        const cacheKey = `${mobType}_${rarity}`;
+        const svgString = this.graphics.mobSVGCache?.[cacheKey];
+        if (!svgString) {
+            return null;
+        }
+        // Render SVG to canvas using data URL
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 32;
+            canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                return null;
+            }
+            // Create data URL from SVG
+            const base64 = btoa(unescape(encodeURIComponent(svgString)));
+            const dataUrl = `data:image/svg+xml;base64,${base64}`;
+            // Create image and draw to canvas
+            const img = new Image();
+            img.onload = () => {
+                ctx.clearRect(0, 0, 32, 32);
+                ctx.drawImage(img, 0, 0, 32, 32);
+            };
+            img.onerror = () => {
+                console.error(`[Game] Failed to load mob image for ${cacheKey}`);
+            };
+            img.src = dataUrl;
+            // Return canvas (image will load asynchronously and draw when ready)
+            // For gallery use, the img element approach is better, but this works for canvas-based rendering
+            return canvas;
+        }
+        catch (error) {
+            console.error(`[Game] Error creating mob canvas for ${cacheKey}:`, error);
+            return null;
+        }
+    }
     loadControls() {
         const savedControls = localStorage.getItem('controls');
         if (savedControls) {
