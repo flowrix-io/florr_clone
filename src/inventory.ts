@@ -670,7 +670,7 @@ export class InventoryManager {
                 left: -300px; /* Start off-screen to the left */
                 width: 300px;
                 height: 66.67vh; /* 2/3 of viewport height */
-                background: #8B4513; /* Brown background color */
+                background: #e6d64c;
                 transition: transform 0.3s ease-out;
                 z-index: 1000;
                 padding: 20px;
@@ -678,7 +678,7 @@ export class InventoryManager {
                 color: white;
                 display: flex;
                 flex-direction: column;
-                border-right: 3px solid #6B3410; /* Add a subtle border */
+                border-right: 3px solid #a89d36; /* Add a subtle border */
             }
             .mob-gallery-panel.open {
                 transform: translateX(300px); /* Slide in from the left */
@@ -934,7 +934,7 @@ export class InventoryManager {
                     // Mob has been killed - show it
                     const mobStats = getMobStats(mobType, rarity);
                     if (mobStats) {
-                        cell.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+                        cell.style.backgroundColor = this.ITEM_RARITY_COLORS[rarity] || '#fff';
                         cell.style.borderColor = this.ITEM_RARITY_COLORS[rarity] || '#fff';
                         
                         // Create mob image/icon
