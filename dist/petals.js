@@ -878,14 +878,14 @@ const RARITY_COLORS = {
 // Rarity name prefixes
 const RARITY_PREFIXES = {
     common: "",
-    uncommon: "Enhanced",
-    rare: "Superior",
-    epic: "Elite",
-    legendary: "Legendary",
-    mythic: "Mythic",
-    ultra: "Ultra",
-    super: "Super",
-    unique: "Unique"
+    uncommon: "",
+    rare: "",
+    epic: "",
+    legendary: "",
+    mythic: "",
+    ultra: "",
+    super: "",
+    unique: ""
 };
 // Lightning damage scaling table by rarity
 // Shows how lightning damage scales with the 3x multiplier per rarity level

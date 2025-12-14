@@ -982,14 +982,14 @@ const RARITY_COLORS: { [key in Rarity]: string } = {
 // Rarity name prefixes
 const RARITY_PREFIXES: { [key in Rarity]: string } = {
     common: "",
-    uncommon: "Enhanced",
-    rare: "Superior", 
-    epic: "Elite",
-    legendary: "Legendary",
-    mythic: "Mythic",
-    ultra: "Ultra",
-    super: "Super",
-    unique: "Unique"
+    uncommon: "",
+    rare: "", 
+    epic: "",
+    legendary: "",
+    mythic: "",
+    ultra: "",
+    super: "",
+    unique: ""
 };
 
 // Lightning damage scaling table by rarity
