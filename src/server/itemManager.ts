@@ -44,6 +44,31 @@ function upgradeRarity(rarity: Rarity): Rarity {
     return rarity; // Already at max tier
 }
 
+// Calculate downgrade chance for a drop (1 / (1 + craft chance to that rarity))
+// The crafting chance for upgrading TO a rarity is calculated FROM the previous rarity
+function getDropDowngradeChance(currentRarity: Rarity): number {
+    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
+    if (currentIndex === -1 || currentIndex === 0) {
+        return 0; // Invalid rarity or already at lowest tier (common)
+    }
+    
+    // Crafting chance for upgrading TO the current tier is calculated FROM the previous tier
+    // (craft chance from currentIndex-1 to currentIndex)
+    const craftingChanceToCurrentRarity = getCraftingChance(currentIndex - 1);
+    
+    // Downgrade chance is 1 / (1 + craft chance to that rarity)
+    return 1 / (1 + craftingChanceToCurrentRarity);
+}
+
+// Downgrade a rarity by one tier if possible
+function downgradeRarity(rarity: Rarity): Rarity {
+    const currentIndex = RARITY_ORDER.indexOf(rarity);
+    if (currentIndex > 0 && currentIndex < RARITY_ORDER.length) {
+        return RARITY_ORDER[currentIndex - 1];
+    }
+    return rarity; // Already at lowest tier
+}
+
 // Function to handle mob drops when a mob dies
 export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
     const mobType = enemy.type || 'bee'; // Default to bee if type is not set
@@ -78,11 +103,21 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
             const itemId = Math.random().toString(36).substr(2, 9);
             const spawnTime = Date.now();
             
-            // Apply drop upgrade chance: upgrade to next tier based on crafting chance / 3
+            // Apply drop upgrade or downgrade chance (mutually exclusive)
+            // Try upgrade first, if it doesn't happen, try downgrade
             let finalRarity = drop.rarity;
             const upgradeChance = getDropUpgradeChance(drop.rarity);
-            if (upgradeChance > 0 && Math.random() * 100 < upgradeChance) {
+            const upgradeRoll = upgradeChance > 0 ? Math.random() * 100 : 1;
+            
+            if (upgradeRoll < upgradeChance) {
+                // Upgrade succeeded
                 finalRarity = upgradeRarity(drop.rarity);
+            } else {
+                // Upgrade didn't happen, try downgrade
+                const downgradeChance = getDropDowngradeChance(drop.rarity);
+                if (downgradeChance > 0 && Math.random() < downgradeChance) {
+                    finalRarity = downgradeRarity(drop.rarity);
+                }
             }
             
             // Handle random petal selection for garbage mob

@@ -48,6 +48,38 @@ function upgradeTier(tier: Enemy['tier']): Enemy['tier'] {
     return tier; // Already at max tier
 }
 
+// Helper function to downgrade a tier by one level (if possible)
+function downgradeTier(tier: Enemy['tier']): Enemy['tier'] {
+    const currentIndex = TIER_ORDER.indexOf(tier);
+    if (currentIndex > 0 && currentIndex < TIER_ORDER.length) {
+        return TIER_ORDER[currentIndex - 1];
+    }
+    return tier; // Already at lowest tier
+}
+
+// Calculate crafting chance for upgrading from one rarity to the next
+// (same formula as in itemManager.ts)
+function getCraftingChance(rarityIndex: number): number {
+    const baseChance = 64;
+    return baseChance / Math.pow(2, rarityIndex);
+}
+
+// Calculate downgrade chance for a mob (1 / (1 + craft chance to that rarity))
+// The crafting chance for upgrading TO a rarity is calculated FROM the previous rarity
+function getMobDowngradeChance(currentTier: Enemy['tier']): number {
+    const currentIndex = TIER_ORDER.indexOf(currentTier);
+    if (currentIndex === -1 || currentIndex === 0) {
+        return 0; // Invalid tier or already at lowest tier (common)
+    }
+    
+    // Crafting chance for upgrading TO the current tier is calculated FROM the previous tier
+    // (craft chance from currentIndex-1 to currentIndex)
+    const craftingChanceToCurrentTier = getCraftingChance(currentIndex - 1);
+    
+    // Downgrade chance is 1 / (1 + craft chance to that rarity)
+    return 1 / (1 + craftingChanceToCurrentTier);
+}
+
 // Helper function to get spawn zone type for a given position
 function getSpawnZoneType(x: number, y: number): string | null {
     for (const element of WORLD_MAP) {
@@ -305,9 +337,18 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
         }
         
-        // Tier upgrade: 2% chance to spawn as one tier higher
-        if (Math.random() < 0.02) {
+        // Tier upgrade or downgrade (mutually exclusive)
+        // Try upgrade first, if it doesn't happen, try downgrade
+        const upgradeRoll = Math.random();
+        if (upgradeRoll < 0.02) {
+            // Upgrade succeeded
             tier = upgradeTier(tier);
+        } else {
+            // Upgrade didn't happen, try downgrade
+            const downgradeChance = getMobDowngradeChance(tier);
+            if (downgradeChance > 0 && Math.random() < downgradeChance) {
+                tier = downgradeTier(tier);
+            }
         }
     } else {
         // Check if position is in a spawn zone
@@ -330,9 +371,18 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             }
         }
         
-        // Tier upgrade: 2% chance to spawn as one tier higher
-        if (Math.random() < 0.02) {
+        // Tier upgrade or downgrade (mutually exclusive)
+        // Try upgrade first, if it doesn't happen, try downgrade
+        const upgradeRoll = Math.random();
+        if (upgradeRoll < 0.02) {
+            // Upgrade succeeded
             tier = upgradeTier(tier);
+        } else {
+            // Upgrade didn't happen, try downgrade
+            const downgradeChance = getMobDowngradeChance(tier);
+            if (downgradeChance > 0 && Math.random() < downgradeChance) {
+                tier = downgradeTier(tier);
+            }
         }
 
         // Select mob type (fish, octopus, or shark)
