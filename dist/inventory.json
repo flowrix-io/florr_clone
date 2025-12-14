@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 136918746,
+      "totalXP": 136975590,
       "inventory": {
         "common": {
           "shield": 122,
@@ -175,7 +175,7 @@
           "petal_cutter": 3,
           "petal_yucca": 1,
           "petal_wing": 54,
-          "petal_square": 6,
+          "petal_square": 7,
           "petal_healing": 1,
           "petal_golden_leaf": 17,
           "petal_ant_egg": 3
@@ -385,6 +385,9 @@
         "jellyfish": {
           "uncommon": 1,
           "ultra": 1
+        },
+        "target_dummy": {
+          "legendary": 1
         }
       }
     },
