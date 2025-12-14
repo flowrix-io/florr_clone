@@ -581,8 +581,8 @@ class InventoryManager {
             .mob-gallery-panel {
                 position: fixed;
                 top: 33.33vh; /* Start at 1/3 from top, leaving top empty */
-                left: -300px; /* Start off-screen to the left */
-                width: 300px;
+                left: -700px; /* Start off-screen to the left */
+                width: 700px;
                 height: 66.67vh; /* 2/3 of viewport height */
                 background: #e6d64c;
                 transition: transform 0.3s ease-out;
@@ -595,7 +595,7 @@ class InventoryManager {
                 border-right: 3px solid #a89d36; /* Add a subtle border */
             }
             .mob-gallery-panel.open {
-                transform: translateX(300px); /* Slide in from the left */
+                transform: translateX(700px); /* Slide in from the left */
             }
             .mob-gallery-content {
                 color: white;
@@ -782,41 +782,14 @@ class InventoryManager {
         const mobKills = player?.mobKills || {};
         // Get all mob types and rarities
         const allMobTypes = (0, mobs_1.getAllMobTypes)();
-        // Create header row with rarity columns
-        const headerRow = document.createElement('div');
-        headerRow.className = 'mob-gallery-header-row';
-        headerRow.style.display = 'grid';
-        headerRow.style.gridTemplateColumns = `150px repeat(${petals_1.RARITY_LEVELS.length}, 1fr)`;
-        headerRow.style.gap = '0';
-        headerRow.style.marginBottom = '5px';
-        const emptyHeader = document.createElement('div');
-        emptyHeader.className = 'mob-gallery-header';
-        headerRow.appendChild(emptyHeader);
-        for (const rarity of petals_1.RARITY_LEVELS) {
-            const header = document.createElement('div');
-            header.className = 'mob-gallery-header';
-            header.textContent = rarity.charAt(0).toUpperCase() + rarity.slice(1);
-            header.style.color = this.ITEM_RARITY_COLORS[rarity] || '#fff';
-            header.style.fontWeight = 'bold';
-            headerRow.appendChild(header);
-        }
-        galleryGrid.appendChild(headerRow);
         // Create rows for each mob type
         for (const mobType of allMobTypes) {
             const row = document.createElement('div');
             row.className = 'mob-gallery-row';
             row.style.display = 'grid';
-            row.style.gridTemplateColumns = `150px repeat(${petals_1.RARITY_LEVELS.length}, 1fr)`;
+            row.style.gridTemplateColumns = `repeat(${petals_1.RARITY_LEVELS.length}, 1fr)`;
             row.style.gap = '0';
             row.style.marginBottom = '5px';
-            // Mob type name
-            const mobTypeCell = document.createElement('div');
-            mobTypeCell.className = 'mob-gallery-type-cell';
-            mobTypeCell.textContent = mobType.charAt(0).toUpperCase() + mobType.slice(1).replace('_', ' ');
-            mobTypeCell.style.padding = '5px';
-            mobTypeCell.style.display = 'flex';
-            mobTypeCell.style.alignItems = 'center';
-            row.appendChild(mobTypeCell);
             // Create cells for each rarity
             const mobRarities = (0, mobs_1.getMobRarities)(mobType);
             for (const rarity of petals_1.RARITY_LEVELS) {
