@@ -1987,7 +1987,7 @@ exports.MOB_DROP_TABLES = {
                 rarity: 'common',
                 probability: 0.5,
                 minQuantity: 1,
-                maxQuantity: 2
+                maxQuantity: 1
             },
             {
                 type: 'petal',
@@ -2018,7 +2018,7 @@ exports.MOB_DROP_TABLES = {
                 rarity: 'common',
                 probability: 0.5,
                 minQuantity: 1,
-                maxQuantity: 2
+                maxQuantity: 1
             },
             {
                 type: 'petal',
@@ -2048,7 +2048,7 @@ exports.MOB_DROP_TABLES = {
                 rarity: 'common',
                 probability: 0.4, // 40% chance for basic petal
                 minQuantity: 1,
-                maxQuantity: 2
+                maxQuantity: 1
             },
             // Rarity-based drops
             {
@@ -2057,7 +2057,7 @@ exports.MOB_DROP_TABLES = {
                 rarity: 'common',
                 probability: 0.5,
                 minQuantity: 1,
-                maxQuantity: 2
+                maxQuantity: 1
             },
             {
                 type: 'petal',
@@ -2517,7 +2517,7 @@ exports.MOB_DROP_TABLES = {
                 rarity: 'common',
                 probability: 1.0,
                 minQuantity: 1,
-                maxQuantity: 2
+                maxQuantity: 3
             }
         ]
     },

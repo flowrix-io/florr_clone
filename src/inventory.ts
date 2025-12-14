@@ -695,10 +695,13 @@ export class InventoryManager {
             .mob-gallery-header-row,
             .mob-gallery-row {
                 display: grid;
-                gap: 5px;
+                gap: 0;
+                margin: 0;
+                padding: 0;
             }
             .mob-gallery-header {
                 padding: 8px;
+                margin: 0;
                 text-align: center;
                 font-weight: bold;
                 background: rgba(255, 255, 255, 0.1);
@@ -706,6 +709,7 @@ export class InventoryManager {
             }
             .mob-gallery-type-cell {
                 padding: 8px;
+                margin: 0;
                 display: flex;
                 align-items: center;
                 font-weight: bold;
@@ -717,6 +721,8 @@ export class InventoryManager {
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                margin: 0;
+                padding: 0;
                 border-radius: 5px;
                 transition: transform 0.2s, box-shadow 0.2s;
             }
@@ -877,7 +883,7 @@ export class InventoryManager {
         headerRow.className = 'mob-gallery-header-row';
         headerRow.style.display = 'grid';
         headerRow.style.gridTemplateColumns = `150px repeat(${RARITY_LEVELS.length}, 1fr)`;
-        headerRow.style.gap = '5px';
+        headerRow.style.gap = '0';
         headerRow.style.marginBottom = '5px';
 
         const emptyHeader = document.createElement('div');
@@ -901,7 +907,7 @@ export class InventoryManager {
             row.className = 'mob-gallery-row';
             row.style.display = 'grid';
             row.style.gridTemplateColumns = `150px repeat(${RARITY_LEVELS.length}, 1fr)`;
-            row.style.gap = '5px';
+            row.style.gap = '0';
             row.style.marginBottom = '5px';
 
             // Mob type name
@@ -927,6 +933,8 @@ export class InventoryManager {
                 cell.style.justifyContent = 'center';
                 cell.style.position = 'relative';
                 cell.style.cursor = 'pointer';
+                cell.style.margin = '0';
+                cell.style.padding = '0';
 
                 const killCount = mobKills[mobType]?.[rarity] || 0;
                 const hasKilled = killCount > 0;
@@ -1285,7 +1293,55 @@ export class InventoryManager {
             const rarityIndex = RARITY_ORDER.indexOf(rarity as Rarity);
             const isCommon = rarity === 'common';
 
-            for (const drop of dropTable.drops) {
+            // For non-common mobs, group drops by itemType and type to combine common/uncommon variants
+            let processedDrops: typeof dropTable.drops;
+            if (!isCommon) {
+                // Group drops by itemType and type
+                const dropGroups = new Map<string, typeof dropTable.drops>();
+                for (const drop of dropTable.drops) {
+                    const key = `${drop.type}_${drop.itemType}`;
+                    if (!dropGroups.has(key)) {
+                        dropGroups.set(key, []);
+                    }
+                    dropGroups.get(key)!.push(drop);
+                }
+                
+                // Combine common/uncommon variants into single drops
+                processedDrops = [];
+                for (const [key, group] of dropGroups.entries()) {
+                    // Check if group has common and/or uncommon variants
+                    const commonDrop = group.find(d => d.rarity === 'common');
+                    const uncommonDrop = group.find(d => d.rarity === 'uncommon');
+                    const otherDrops = group.filter(d => d.rarity !== 'common' && d.rarity !== 'uncommon');
+                    
+                    if (commonDrop && uncommonDrop) {
+                        // Combine common and uncommon into single drop with combined probability
+                        // Use uncommon as base rarity for the 10% path (higher rarity)
+                        const combinedDrop: typeof commonDrop = {
+                            ...uncommonDrop,
+                            probability: commonDrop.probability + uncommonDrop.probability,
+                            minQuantity: Math.min(commonDrop.minQuantity || 1, uncommonDrop.minQuantity || 1),
+                            maxQuantity: Math.max(commonDrop.maxQuantity || 1, uncommonDrop.maxQuantity || 1),
+                            rarity: 'uncommon' // Use uncommon as base for 10% path
+                        };
+                        processedDrops.push(combinedDrop);
+                        // Add other rarities separately
+                        processedDrops.push(...otherDrops);
+                    } else {
+                        // No combination needed, add all drops from group
+                        processedDrops.push(...group);
+                    }
+                }
+            } else {
+                // For common mobs, use drops as-is
+                processedDrops = dropTable.drops;
+            }
+
+            for (const drop of processedDrops) {
+                // Check if this drop has a quantity multiplier
+                const hasMultiplier = drop.maxQuantity && drop.maxQuantity > 1;
+                const multiplierValue = hasMultiplier ? drop.maxQuantity : null;
+                
                 // For non-common mobs, apply 90% downgrade / 10% same rarity logic
                 // The drop rarity is adjusted based on the mob's rarity, not the drop's original rarity
                 if (!isCommon && rarityIndex > 0 && rarityIndex < RARITY_ORDER.length) {
@@ -1296,6 +1352,19 @@ export class InventoryManager {
                     // Safety check: ensure lowerRarity is valid
                     if (!lowerRarity) {
                         continue; // Skip this drop if we can't determine lower rarity
+                    }
+                    
+                    // Show multiplier once if applicable
+                    if (hasMultiplier && multiplierValue) {
+                        const multiplierDiv = document.createElement('div');
+                        multiplierDiv.style.cssText = `
+                            font-weight: bold;
+                            color: #FFD700;
+                            margin-bottom: 4px;
+                            font-size: 12px;
+                        `;
+                        multiplierDiv.textContent = `x${multiplierValue}`;
+                        dropsDiv.appendChild(multiplierDiv);
                     }
                     
                     // Show both possibilities: 90% chance of lower rarity, 10% chance of original drop rarity
@@ -1424,6 +1493,19 @@ export class InventoryManager {
                     const itemName = drop.type === 'petal' ? drop.itemType : drop.itemType;
                     const baseRarity = drop.rarity;
                     const baseProb = drop.probability;
+                    
+                    // Show multiplier once if applicable
+                    if (hasMultiplier && multiplierValue) {
+                        const multiplierDiv = document.createElement('div');
+                        multiplierDiv.style.cssText = `
+                            font-weight: bold;
+                            color: #FFD700;
+                            margin-bottom: 4px;
+                            font-size: 12px;
+                        `;
+                        multiplierDiv.textContent = `x${multiplierValue}`;
+                        dropsDiv.appendChild(multiplierDiv);
+                    }
                     
                     const upgradeChance = getDropUpgradeChance(baseRarity);
                     const downgradeChance = getDropDowngradeChance(baseRarity);
