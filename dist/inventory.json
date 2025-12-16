@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 140121119,
+      "totalXP": 140122791,
       "inventory": {
         "common": {
           "shield": 134,
@@ -405,7 +405,7 @@
       "skills": {},
       "mobKills": {
         "ladybug": {
-          "common": 26,
+          "common": 27,
           "legendary": 18,
           "uncommon": 5,
           "mythic": 16,
@@ -415,7 +415,7 @@
         },
         "soldier_ant": {
           "epic": 4,
-          "legendary": 28,
+          "legendary": 29,
           "common": 23,
           "rare": 7,
           "mythic": 30,
@@ -447,7 +447,7 @@
           "mythic": 12,
           "uncommon": 9,
           "rare": 9,
-          "epic": 9,
+          "epic": 10,
           "ultra": 5
         },
         "dandelion": {
@@ -461,7 +461,7 @@
           "epic": 2
         },
         "bee": {
-          "common": 13,
+          "common": 14,
           "epic": 6,
           "mythic": 12,
           "uncommon": 8,

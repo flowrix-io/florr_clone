@@ -620,7 +620,7 @@ class TitleScreen {
             <div id="skillsButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #9d4edd; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 3; pointer-events: auto;" title="Skills (K)">
                 ${formattedSkillsIcon}
             </div>
-            <div id="mobGalleryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #ffff00; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 2; pointer-events: auto;" title="Mob Gallery (G)">
+            <div id="mobGalleryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #d6c206; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 2; pointer-events: auto;" title="Mob Gallery (G)">
                 ${formattedMobGalleryIcon}
             </div>
             <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #ff9d00; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 1; pointer-events: auto;" title="Craft (R)">
