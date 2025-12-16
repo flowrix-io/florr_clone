@@ -98,6 +98,14 @@ export const CHANGELOG: ChangelogEntry[] = [
             'New petal: Fire Ant Egg',
             'Some rebalancing of mobs',
         ]
+    },
+    {
+        date: 'December 15, 2025',
+        changes: [
+            'All mobs now have eggs',
+            'Added mob gallery',
+            'Some optimizations'
+        ]
     }
 ];
 
