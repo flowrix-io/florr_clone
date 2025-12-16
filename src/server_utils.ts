@@ -28,6 +28,7 @@ export interface Enemy {
   knockbackY?: number;
   isHostile?: boolean;
   isChasing?: boolean;  // Whether the enemy is currently chasing a player
+  targetPlayerId?: string;  // ID of the player currently being targeted (persists until player is out of range)
   range?: number;
   wanderTarget?: { x: number; y: number };
   lastWanderTime?: number;

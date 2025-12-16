@@ -1843,17 +1843,102 @@ function moveEnemies() {
             // Pet behavior: follow owner and attack wild mobs
             const owner = constants_2.players[enemy.ownerId];
             if (owner && !owner.isDead) {
-                // Follow owner
-                const dx = owner.x - enemy.x;
-                const dy = owner.y - enemy.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                // Follow owner if not too close (maintain some distance)
-                const followDistance = 100; // Distance to maintain from owner
-                if (distance > followDistance && enemy.speed > 0) {
-                    const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
-                    enemy.x += (dx / distance) * speed;
-                    enemy.y += (dy / distance) * speed;
-                    enemy.angle = Math.atan2(dy, dx);
+                // Check if there's a clear line of sight to owner
+                const hasLOS = (0, physics_1.hasLineOfSight)(enemy.x, enemy.y, owner.x, owner.y);
+                if (hasLOS) {
+                    // Follow owner if there's line of sight (no distance limit)
+                    const dx = owner.x - enemy.x;
+                    const dy = owner.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance > 0 && enemy.speed > 0) {
+                        const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
+                        enemy.x += (dx / distance) * speed;
+                        enemy.y += (dy / distance) * speed;
+                        enemy.angle = Math.atan2(dy, dx);
+                    }
+                }
+                else {
+                    // No line of sight - teleport pet to near owner
+                    // Try positions around the owner in a circle
+                    const teleportDistance = 80; // Distance from owner to teleport
+                    const angles = [0, Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4, Math.PI, 5 * Math.PI / 4, 3 * Math.PI / 2, 7 * Math.PI / 4];
+                    let teleported = false;
+                    for (const angle of angles) {
+                        const teleportX = owner.x + Math.cos(angle) * teleportDistance;
+                        const teleportY = owner.y + Math.sin(angle) * teleportDistance;
+                        // Check if this position is safe (not in wall) and has line of sight to owner
+                        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                        const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
+                        const halfSize = enemySize / 2;
+                        // Check if position is inside a wall
+                        let isInWall = false;
+                        for (const element of constants_2.WORLD_MAP) {
+                            if (element.type === 'wall' && element.width > 0 && element.height > 0) {
+                                const wallX = element.x * constants_2.SCALE_FACTOR;
+                                const wallY = element.y * constants_2.SCALE_FACTOR;
+                                const wallWidth = element.width * constants_2.SCALE_FACTOR;
+                                const wallHeight = element.height * constants_2.SCALE_FACTOR;
+                                const extendedWall = (0, physics_1.getExtendedWallForCollision)({
+                                    x: wallX,
+                                    y: wallY,
+                                    width: wallWidth,
+                                    height: wallHeight
+                                });
+                                if (teleportX - halfSize < extendedWall.x + extendedWall.width &&
+                                    teleportX + halfSize > extendedWall.x &&
+                                    teleportY - halfSize < extendedWall.y + extendedWall.height &&
+                                    teleportY + halfSize > extendedWall.y) {
+                                    isInWall = true;
+                                    break;
+                                }
+                            }
+                        }
+                        // If position is safe and has line of sight, teleport there
+                        if (!isInWall && (0, physics_1.hasLineOfSight)(teleportX, teleportY, owner.x, owner.y)) {
+                            enemy.x = teleportX;
+                            enemy.y = teleportY;
+                            const dx = owner.x - enemy.x;
+                            const dy = owner.y - enemy.y;
+                            if (dx !== 0 || dy !== 0) {
+                                enemy.angle = Math.atan2(dy, dx);
+                            }
+                            teleported = true;
+                            break;
+                        }
+                    }
+                    // If no good teleport position found, try owner's position directly
+                    if (!teleported) {
+                        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                        const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
+                        const halfSize = enemySize / 2;
+                        // Check if owner's position is safe for pet
+                        let isOwnerPosInWall = false;
+                        for (const element of constants_2.WORLD_MAP) {
+                            if (element.type === 'wall' && element.width > 0 && element.height > 0) {
+                                const wallX = element.x * constants_2.SCALE_FACTOR;
+                                const wallY = element.y * constants_2.SCALE_FACTOR;
+                                const wallWidth = element.width * constants_2.SCALE_FACTOR;
+                                const wallHeight = element.height * constants_2.SCALE_FACTOR;
+                                const extendedWall = (0, physics_1.getExtendedWallForCollision)({
+                                    x: wallX,
+                                    y: wallY,
+                                    width: wallWidth,
+                                    height: wallHeight
+                                });
+                                if (owner.x - halfSize < extendedWall.x + extendedWall.width &&
+                                    owner.x + halfSize > extendedWall.x &&
+                                    owner.y - halfSize < extendedWall.y + extendedWall.height &&
+                                    owner.y + halfSize > extendedWall.y) {
+                                    isOwnerPosInWall = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!isOwnerPosInWall) {
+                            enemy.x = owner.x;
+                            enemy.y = owner.y;
+                        }
+                    }
                 }
                 // Attack wild mobs (enemies without ownerId) if pet is movable
                 if (enemy.speed > 0) {
@@ -1867,9 +1952,12 @@ function moveEnemies() {
                         const mobDx = otherEnemy.x - enemy.x;
                         const mobDy = otherEnemy.y - enemy.y;
                         const mobDistance = Math.sqrt(mobDx * mobDx + mobDy * mobDy);
+                        // Only consider mobs with line of sight
                         if (mobDistance < closestWildMobDistance && mobDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
-                            closestWildMobDistance = mobDistance;
-                            closestWildMob = otherEnemy;
+                            if ((0, physics_1.hasLineOfSight)(enemy.x, enemy.y, otherEnemy.x, otherEnemy.y)) {
+                                closestWildMobDistance = mobDistance;
+                                closestWildMob = otherEnemy;
+                            }
                         }
                     }
                     // Attack closest wild mob
@@ -1925,9 +2013,12 @@ function moveEnemies() {
                     const mobDx = otherEnemy.x - enemy.x;
                     const mobDy = otherEnemy.y - enemy.y;
                     const mobDistance = Math.sqrt(mobDx * mobDx + mobDy * mobDy);
+                    // Only consider mobs with line of sight
                     if (mobDistance < projectileTargetDistance && mobDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
-                        projectileTargetDistance = mobDistance;
-                        projectileTarget = otherEnemy;
+                        if ((0, physics_1.hasLineOfSight)(enemy.x, enemy.y, otherEnemy.x, otherEnemy.y)) {
+                            projectileTargetDistance = mobDistance;
+                            projectileTarget = otherEnemy;
+                        }
                     }
                 }
                 if (projectileTarget) {
@@ -1982,53 +2073,99 @@ function moveEnemies() {
         }
         else {
             // Regular enemy behavior (not a pet)
-            // Find closest living player
-            let closestPlayer;
-            let closestDistance = Infinity;
-            // Convert players object to array and explicitly type it
-            const playerArray = Object.values(constants_2.players);
-            playerArray.forEach(player => {
-                // Skip dead players (corpses)
-                if (player.isDead) {
-                    return;
+            // Calculate 5x view distance threshold
+            const MAX_TARGET_DISTANCE = constants_2.VIEWPORT_WIDTH * 5;
+            // Check if we have an existing target that's still in range
+            let targetPlayer;
+            let targetDistance = Infinity;
+            if (enemy.targetPlayerId && constants_2.players[enemy.targetPlayerId]) {
+                const existingTarget = constants_2.players[enemy.targetPlayerId];
+                if (!existingTarget.isDead) {
+                    const dx = existingTarget.x - enemy.x;
+                    const dy = existingTarget.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    // Keep targeting if within 5x view distance AND has line of sight
+                    // If wall blocks line of sight, stop targeting
+                    if (distance <= MAX_TARGET_DISTANCE && (0, physics_1.hasLineOfSight)(enemy.x, enemy.y, existingTarget.x, existingTarget.y)) {
+                        targetPlayer = existingTarget;
+                        targetDistance = distance;
+                    }
+                    else {
+                        // Player moved too far away or wall blocking, clear target
+                        enemy.targetPlayerId = undefined;
+                    }
                 }
-                const dx = player.x - enemy.x;
-                const dy = player.y - enemy.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    closestPlayer = player;
+                else {
+                    // Target is dead, clear target
+                    enemy.targetPlayerId = undefined;
                 }
-            });
-            // Find closest pet (enemy with ownerId) as alternative target
+            }
+            // If no existing target or existing target is out of range, look for new targets
+            if (!targetPlayer) {
+                // Find closest living player with line of sight (for initial targeting)
+                let closestPlayer;
+                let closestDistance = Infinity;
+                // Convert players object to array and explicitly type it
+                const playerArray = Object.values(constants_2.players);
+                playerArray.forEach(player => {
+                    // Skip dead players (corpses)
+                    if (player.isDead) {
+                        return;
+                    }
+                    const dx = player.x - enemy.x;
+                    const dy = player.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    // Only consider players with line of sight for initial targeting
+                    if (distance < closestDistance && (0, physics_1.hasLineOfSight)(enemy.x, enemy.y, player.x, player.y)) {
+                        closestDistance = distance;
+                        closestPlayer = player;
+                    }
+                });
+                // If we found a new target within chase range, start targeting them
+                if (closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
+                    enemy.targetPlayerId = closestPlayer.id;
+                    targetPlayer = closestPlayer;
+                    targetDistance = closestDistance;
+                }
+            }
+            // Find closest pet (enemy with ownerId) as alternative target (only if no player target)
             let closestPet;
             let closestPetDistance = Infinity;
-            for (const otherEnemy of constants_2.enemies) {
-                if (otherEnemy.ownerId && otherEnemy.id !== enemy.id) {
-                    const petDx = otherEnemy.x - enemy.x;
-                    const petDy = otherEnemy.y - enemy.y;
-                    const petDistance = Math.sqrt(petDx * petDx + petDy * petDy);
-                    if (petDistance < closestPetDistance && petDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
-                        closestPetDistance = petDistance;
-                        closestPet = otherEnemy;
+            if (!targetPlayer) {
+                for (const otherEnemy of constants_2.enemies) {
+                    if (otherEnemy.ownerId && otherEnemy.id !== enemy.id) {
+                        const petDx = otherEnemy.x - enemy.x;
+                        const petDy = otherEnemy.y - enemy.y;
+                        const petDistance = Math.sqrt(petDx * petDx + petDy * petDy);
+                        // Only consider pets with line of sight
+                        if (petDistance < closestPetDistance && petDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
+                            if ((0, physics_1.hasLineOfSight)(enemy.x, enemy.y, otherEnemy.x, otherEnemy.y)) {
+                                closestPetDistance = petDistance;
+                                closestPet = otherEnemy;
+                            }
+                        }
                     }
                 }
             }
             // Prioritize players, but target pets if no player is in range
-            const target = closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE)
-                ? closestPlayer
+            const target = targetPlayer
+                ? targetPlayer
                 : (closestPet ? closestPet : null);
             // Move enemy based on behavior
             if (target && enemy.isHostile) {
-                const isTargetingPlayer = target === closestPlayer;
-                const targetX = isTargetingPlayer ? closestPlayer.x : closestPet.x;
-                const targetY = isTargetingPlayer ? closestPlayer.y : closestPet.y;
-                const targetDistance = isTargetingPlayer ? closestDistance : closestPetDistance;
+                const isTargetingPlayer = target === targetPlayer;
+                const targetX = isTargetingPlayer ? targetPlayer.x : closestPet.x;
+                const targetY = isTargetingPlayer ? targetPlayer.y : closestPet.y;
+                const currentTargetDistance = isTargetingPlayer ? targetDistance : closestPetDistance;
                 // Chase target (player or pet)
                 enemy.isChasing = true;
                 const dx = targetX - enemy.x;
                 const dy = targetY - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
+                // Update target distance for player targets
+                if (isTargetingPlayer) {
+                    targetDistance = distance;
+                }
                 if (distance > 0) {
                     const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
                     enemy.x += (dx / distance) * speed;
@@ -2091,8 +2228,23 @@ function moveEnemies() {
                 }
             }
             else {
-                // Not chasing
+                // Not chasing - clear target if we had one
                 enemy.isChasing = false;
+                if (enemy.targetPlayerId) {
+                    // Check if target is still within max distance
+                    const existingTarget = constants_2.players[enemy.targetPlayerId];
+                    if (existingTarget && !existingTarget.isDead) {
+                        const dx = existingTarget.x - enemy.x;
+                        const dy = existingTarget.y - enemy.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        if (distance > MAX_TARGET_DISTANCE) {
+                            enemy.targetPlayerId = undefined;
+                        }
+                    }
+                    else {
+                        enemy.targetPlayerId = undefined;
+                    }
+                }
                 // Wander randomly
                 if (!enemy.wanderTarget || currentTime - (enemy.lastWanderTime || 0) > 3000) {
                     enemy.wanderTarget = {

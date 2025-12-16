@@ -5,6 +5,7 @@ exports.checkPlayerWallCollisions = checkPlayerWallCollisions;
 exports.checkEnemyWallCollisions = checkEnemyWallCollisions;
 exports.checkItemWallCollisions = checkItemWallCollisions;
 exports.checkProjectileWallCollision = checkProjectileWallCollision;
+exports.hasLineOfSight = hasLineOfSight;
 exports.checkEnemyEnemyCollisions = checkEnemyEnemyCollisions;
 exports.checkPlayerEnemyCollision = checkPlayerEnemyCollision;
 const constants_1 = require("../constants");
@@ -241,6 +242,49 @@ function checkProjectileWallCollision(projectileX, projectileY, projectileHalfSi
         }
     }
     return false;
+}
+/**
+ * Check if there's a clear line of sight between two points (no walls blocking)
+ * Uses raycasting with sample points along the line
+ */
+function hasLineOfSight(x1, y1, x2, y2, sampleCount = 20) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    // If points are very close, assume clear line of sight
+    if (distance < 10) {
+        return true;
+    }
+    // Sample points along the line
+    for (let i = 0; i <= sampleCount; i++) {
+        const t = i / sampleCount;
+        const sampleX = x1 + dx * t;
+        const sampleY = y1 + dy * t;
+        // Check if this sample point is inside any wall
+        for (const element of constants_1.WORLD_MAP) {
+            if (element.type === 'wall' && element.width > 0 && element.height > 0) {
+                const wallX = element.x * constants_1.SCALE_FACTOR;
+                const wallY = element.y * constants_1.SCALE_FACTOR;
+                const wallWidth = element.width * constants_1.SCALE_FACTOR;
+                const wallHeight = element.height * constants_1.SCALE_FACTOR;
+                // Extend wall to boundaries if it's close to them
+                const extendedWall = getExtendedWallForCollision({
+                    x: wallX,
+                    y: wallY,
+                    width: wallWidth,
+                    height: wallHeight
+                });
+                // Check if sample point is inside the wall
+                if (sampleX >= extendedWall.x &&
+                    sampleX <= extendedWall.x + extendedWall.width &&
+                    sampleY >= extendedWall.y &&
+                    sampleY <= extendedWall.y + extendedWall.height) {
+                    return false; // Wall blocking line of sight
+                }
+            }
+        }
+    }
+    return true; // Clear line of sight
 }
 /**
  * Check and resolve enemy-enemy collisions and melee combat
