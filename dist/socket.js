@@ -392,8 +392,18 @@ function setupSocketListeners(game) {
         game.generateDot();
     });
     game.socket.on('enemiesUpdate', (enemies) => {
-        game.enemies.clear();
-        enemies.forEach(enemy => game.enemies.set(enemy.id, enemy));
+        // Optimize: Only update changed enemies instead of clearing entire map
+        const serverEnemyIds = new Set(enemies.map(e => e.id));
+        // Remove enemies that no longer exist
+        for (const [enemyId] of game.enemies) {
+            if (!serverEnemyIds.has(enemyId)) {
+                game.enemies.delete(enemyId);
+            }
+        }
+        // Update or add enemies
+        enemies.forEach(enemy => {
+            game.enemies.set(enemy.id, enemy);
+        });
     });
     game.socket.on('mobProjectilesUpdate', (projectiles) => {
         game.mobProjectiles.clear();
@@ -443,11 +453,11 @@ function setupSocketListeners(game) {
         if (enemy) {
             const oldHealth = enemy.health;
             enemy.health = data.health;
-            // Calculate damage dealt and show floating damage number
+            // Calculate damage dealt and show floating damage number (throttled)
             if (oldHealth > data.health) {
                 const damage = oldHealth - data.health;
-                // Show damage number at enemy position
-                game.showFloatingText(enemy.x, enemy.y - 20, `-${Math.round(damage)}`, '#ff0000', 16);
+                // Use throttled damage text to prevent spam when many enemies are damaged
+                game.graphics.showDamageText(data.enemyId, enemy.x, enemy.y, damage);
             }
         }
     });
@@ -458,6 +468,17 @@ function setupSocketListeners(game) {
         }
     });
     game.socket.on('enemyDestroyed', (enemyId) => {
+        // Show any accumulated damage before cleaning up
+        const enemy = game.enemies.get(enemyId);
+        if (enemy) {
+            const accumulated = game.graphics.getAccumulatedDamage(enemyId);
+            if (accumulated > 0) {
+                // Show final accumulated damage
+                game.graphics.showFloatingText(enemy.x, enemy.y - 20, `-${Math.round(accumulated)}`, '#ff0000', 16);
+            }
+        }
+        // Clean up accumulated damage for this enemy
+        game.graphics.clearEnemyDamage(enemyId);
         game.enemies.delete(enemyId);
     });
     game.socket.on('playerInvulnerabilityEnded', (data) => {
@@ -662,16 +683,32 @@ function setupSocketListeners(game) {
     game.socket.on('sandsUpdate', (sands) => {
         game.sands = sands;
     });
+    // Debounce mob gallery updates to prevent lag when multiple mobs die
+    let mobGalleryUpdateTimeout = null;
     game.socket.on('playerUpdated', (updatedPlayer) => {
         const player = game.players.get(updatedPlayer.id);
         if (player) {
-            // Check if loadout actually changed before updating
-            const loadoutChanged = JSON.stringify(player.loadout) !== JSON.stringify(updatedPlayer.loadout);
-            const inventoryChanged = JSON.stringify(player.inventory) !== JSON.stringify(updatedPlayer.inventory);
-            // Check if mobKills changed (handle undefined cases)
-            const oldMobKills = player.mobKills || {};
-            const newMobKills = updatedPlayer.mobKills || {};
-            const mobKillsChanged = JSON.stringify(oldMobKills) !== JSON.stringify(newMobKills);
+            // Optimize: Only check changes if we need to update UI
+            // Use reference comparison first (faster), then deep comparison only if needed
+            let loadoutChanged = false;
+            let inventoryChanged = false;
+            let mobKillsChanged = false;
+            // Only do expensive JSON.stringify if we need to update UI
+            if (updatedPlayer.id === game.socket?.id) {
+                // Quick reference check first
+                if (player.loadout !== updatedPlayer.loadout) {
+                    loadoutChanged = JSON.stringify(player.loadout) !== JSON.stringify(updatedPlayer.loadout);
+                }
+                if (player.inventory !== updatedPlayer.inventory) {
+                    inventoryChanged = JSON.stringify(player.inventory) !== JSON.stringify(updatedPlayer.inventory);
+                }
+                // Check mobKills (handle undefined cases)
+                const oldMobKills = player.mobKills || {};
+                const newMobKills = updatedPlayer.mobKills || {};
+                if (oldMobKills !== newMobKills) {
+                    mobKillsChanged = JSON.stringify(oldMobKills) !== JSON.stringify(newMobKills);
+                }
+            }
             Object.assign(player, updatedPlayer);
             // Update displays if this is the current player
             if (updatedPlayer.id === game.socket?.id) {
@@ -682,9 +719,15 @@ function setupSocketListeners(game) {
                 if (game.inventoryManager && loadoutChanged) {
                     game.inventoryManager.updateLoadoutDisplay();
                 }
-                // Update mob gallery if mobKills changed and gallery is open
+                // Debounce mob gallery update to prevent lag when multiple mobs die quickly
                 if (game.inventoryManager && mobKillsChanged) {
-                    game.inventoryManager.updateMobGalleryIfOpen();
+                    if (mobGalleryUpdateTimeout) {
+                        clearTimeout(mobGalleryUpdateTimeout);
+                    }
+                    mobGalleryUpdateTimeout = setTimeout(() => {
+                        game.inventoryManager.updateMobGalleryIfOpen();
+                        mobGalleryUpdateTimeout = null;
+                    }, 100); // Small delay to batch multiple updates
                 }
                 // Update skills menu if open
                 if (game.skillsManager && updatedPlayer.tp !== undefined && updatedPlayer.skills) {
@@ -798,7 +841,15 @@ function setupSocketListeners(game) {
             }
         });
         if (serverEnemies) {
-            game.enemies.clear();
+            // Optimize: Only update changed enemies instead of clearing entire map
+            const serverEnemyIds = new Set(serverEnemies.map(e => e.id));
+            // Remove enemies that no longer exist
+            for (const [enemyId] of game.enemies) {
+                if (!serverEnemyIds.has(enemyId)) {
+                    game.enemies.delete(enemyId);
+                }
+            }
+            // Update or add enemies
             serverEnemies.forEach(enemy => {
                 game.enemies.set(enemy.id, enemy);
             });

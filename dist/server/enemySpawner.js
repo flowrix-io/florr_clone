@@ -593,10 +593,23 @@ function createSpecialMob(tier, helpers) {
  * Function to update special mob counts
  */
 function updateSpecialMobCounts() {
-    // Exclude target dummies from boss mob counting
-    gameState_1.ultraMobCount.value = constants_1.enemies.filter((e) => e.tier === 'ultra' && e.type !== 'target_dummy').length;
-    gameState_1.superMobCount.value = constants_1.enemies.filter((e) => e.tier === 'super' && e.type !== 'target_dummy').length;
-    gameState_1.uniqueMobCount.value = constants_1.enemies.filter((e) => e.tier === 'unique' && e.type !== 'target_dummy').length;
+    // Optimize: count in single pass instead of 3 separate filters
+    let ultra = 0;
+    let super_ = 0;
+    let unique = 0;
+    for (const enemy of constants_1.enemies) {
+        if (enemy.type === 'target_dummy')
+            continue;
+        if (enemy.tier === 'ultra')
+            ultra++;
+        else if (enemy.tier === 'super')
+            super_++;
+        else if (enemy.tier === 'unique')
+            unique++;
+    }
+    gameState_1.ultraMobCount.value = ultra;
+    gameState_1.superMobCount.value = super_;
+    gameState_1.uniqueMobCount.value = unique;
 }
 /**
  * Function to spawn special mobs

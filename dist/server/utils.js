@@ -97,7 +97,7 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
     });
 }
 // Helper function to track mob kills for eligible players
-function trackMobKill(enemy, players, playerUserIds, database, io) {
+function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress) {
     const eligiblePlayers = getEligiblePlayers(enemy);
     for (const playerId of eligiblePlayers) {
         const player = players[playerId];
@@ -114,12 +114,19 @@ function trackMobKill(enemy, players, playerUserIds, database, io) {
         // Increment kill count for this mob type and rarity
         const currentCount = player.mobKills[enemy.type][enemy.tier] || 0;
         player.mobKills[enemy.type][enemy.tier] = currentCount + 1;
-        // Save to database if user is logged in
+        // Use debounced save if provided, otherwise fall back to direct save (for backwards compatibility)
         const userId = playerUserIds[playerId];
-        if (userId && database) {
-            database.savePlayer(userId, {
-                mobKills: player.mobKills
-            });
+        if (userId) {
+            if (savePlayerProgress) {
+                // Use debounced save to prevent lag
+                savePlayerProgress(player, userId);
+            }
+            else if (database) {
+                // Fallback: direct save (should be avoided in production)
+                database.savePlayer(userId, {
+                    mobKills: player.mobKills
+                });
+            }
         }
         // Emit playerUpdated event to notify client of mobKills change
         if (io) {

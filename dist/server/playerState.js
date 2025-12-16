@@ -305,7 +305,7 @@ function updatePlayerState(player, deltaTime, deps) {
                 if (enemy.isDead) {
                     continue;
                 }
-                enemy.health -= player.damage;
+                enemy.health = Math.max(0, enemy.health - player.damage);
                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
                 if (enemy.health <= 0 && !enemy.isDead) {
                     // Mark enemy as dead to prevent multiple death handlers
@@ -314,19 +314,21 @@ function updatePlayerState(player, deltaTime, deps) {
                     if (index !== -1) {
                         const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                         addXPToPlayer(player, xpGained, player.id);
-                        // Track mob kill for eligible players
-                        trackMobKill(enemy, constants_1.players, gameState_1.playerUserIds, database, io);
+                        // Track mob kill for eligible players (use debounced save to prevent lag)
+                        trackMobKill(enemy, constants_1.players, gameState_1.playerUserIds, database, io, savePlayerProgress);
                         // Handle mob drops using the new drop table system (includes all eligible players)
                         handleMobDrops(enemy);
                         sendBossMobDefeatedMessage(enemy, io, constants_1.players);
                         constants_1.enemies.splice(index, 1);
                         updateSpecialMobCounts();
                         io.emit('enemyDestroyed', enemy.id);
-                        // Try to spawn a new enemy, but only if we can find a valid position
-                        const newEnemy = createEnemy();
-                        if (newEnemy) {
-                            constants_1.enemies.push(newEnemy);
-                        }
+                        // Defer enemy spawn to next tick to avoid blocking frame
+                        setImmediate(() => {
+                            const newEnemy = createEnemy();
+                            if (newEnemy) {
+                                constants_1.enemies.push(newEnemy);
+                            }
+                        });
                     }
                 }
                 if (player.health <= 0) {
@@ -484,7 +486,7 @@ function updatePlayerState(player, deltaTime, deps) {
                     if (enemy.isDead) {
                         continue;
                     }
-                    enemy.health -= finalDamage;
+                    enemy.health = Math.max(0, enemy.health - finalDamage);
                     petal.health -= mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
                     // Apply poison effect if the petal has poison
                     if (petalStats.poison && petalStats.poison > 0 && petalStats.poisonDuration && petalStats.poisonDuration > 0) {
@@ -720,8 +722,8 @@ function updatePlayerState(player, deltaTime, deps) {
                         if (index !== -1) {
                             const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
                             addXPToPlayer(player, xpGained, player.id);
-                            // Track mob kill for eligible players
-                            trackMobKill(enemy, constants_1.players, gameState_1.playerUserIds, database, io);
+                            // Track mob kill for eligible players (use debounced save to prevent lag)
+                            trackMobKill(enemy, constants_1.players, gameState_1.playerUserIds, database, io, savePlayerProgress);
                             // Handle mob drops using the new drop table system (includes all eligible players)
                             handleMobDrops(enemy);
                             sendBossMobDefeatedMessage(enemy, io, constants_1.players);
@@ -730,11 +732,14 @@ function updatePlayerState(player, deltaTime, deps) {
                             constants_1.enemies.splice(index, 1);
                             updateSpecialMobCounts();
                             io.emit('enemyDestroyed', enemy.id);
-                            // Try to spawn a new enemy, but only if we can find a valid position
-                            const newEnemy = createEnemy();
-                            if (newEnemy) {
-                                constants_1.enemies.push(newEnemy);
-                            }
+                            // Defer enemy spawn to next tick to avoid blocking frame
+                            // This prevents frame skipping when multiple enemies die
+                            setImmediate(() => {
+                                const newEnemy = createEnemy();
+                                if (newEnemy) {
+                                    constants_1.enemies.push(newEnemy);
+                                }
+                            });
                         }
                     }
                 }
@@ -777,10 +782,14 @@ function updatePlayerState(player, deltaTime, deps) {
         }
     }
     // Check for item collisions (independent of enemy collisions)
+    // Optimize: use squared distance comparison to avoid Math.sqrt
+    const pickupRadiusSquared = constants_1.PLAYER_SIZE * constants_1.PLAYER_SIZE;
     for (let i = gameState_1.items.length - 1; i >= 0; i--) {
         const item = gameState_1.items[i];
-        const distance = Math.sqrt((newX - item.x) ** 2 + (newY - item.y) ** 2);
-        if (distance < constants_1.PLAYER_SIZE) {
+        const dx = newX - item.x;
+        const dy = newY - item.y;
+        const distanceSquared = dx * dx + dy * dy;
+        if (distanceSquared < pickupRadiusSquared) {
             // Check if player has already picked up this item
             if (item.pickedUpBy && item.pickedUpBy.has(player.id)) {
                 continue; // Skip if already picked up by this player

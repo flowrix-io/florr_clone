@@ -117,7 +117,14 @@ export function sendBossMobDefeatedMessage(
 }
 
 // Helper function to track mob kills for eligible players
-export function trackMobKill(enemy: Enemy, players: Record<string, ServerPlayer>, playerUserIds: Record<string, string>, database: any, io?: any): void {
+export function trackMobKill(
+    enemy: Enemy, 
+    players: Record<string, ServerPlayer>, 
+    playerUserIds: Record<string, string>, 
+    database: any, 
+    io?: any,
+    savePlayerProgress?: (player: ServerPlayer, userId: string) => void
+): void {
     const eligiblePlayers = getEligiblePlayers(enemy);
     
     for (const playerId of eligiblePlayers) {
@@ -138,12 +145,18 @@ export function trackMobKill(enemy: Enemy, players: Record<string, ServerPlayer>
         const currentCount = player.mobKills[enemy.type][enemy.tier] || 0;
         player.mobKills[enemy.type][enemy.tier] = currentCount + 1;
         
-        // Save to database if user is logged in
+        // Use debounced save if provided, otherwise fall back to direct save (for backwards compatibility)
         const userId = playerUserIds[playerId];
-        if (userId && database) {
-            database.savePlayer(userId, {
-                mobKills: player.mobKills
-            } as any);
+        if (userId) {
+            if (savePlayerProgress) {
+                // Use debounced save to prevent lag
+                savePlayerProgress(player, userId);
+            } else if (database) {
+                // Fallback: direct save (should be avoided in production)
+                database.savePlayer(userId, {
+                    mobKills: player.mobKills
+                } as any);
+            }
         }
         
         // Emit playerUpdated event to notify client of mobKills change

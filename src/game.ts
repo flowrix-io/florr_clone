@@ -375,7 +375,10 @@ export class Game {
             const player = this.getLocalPlayer();
             if (player) {
                 player.inventory = inventory;
-                this.inventoryManager.updateInventoryDisplay();
+                // Only update display if inventory UI is open to avoid unnecessary DOM updates
+                if (this.isInventoryOpen) {
+                    this.inventoryManager.updateInventoryDisplay();
+                }
             }
         });
 

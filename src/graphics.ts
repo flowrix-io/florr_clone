@@ -88,6 +88,10 @@ export class Graphics {
     private zoomLevel: number = 1.0;
     private playerSprite: HTMLImageElement;
     private floatingTexts: FloatingText[] = [];
+    private lastDamageTextTime: Map<string, number> = new Map(); // Track last damage text time per enemy
+    private accumulatedDamage: Map<string, number> = new Map(); // Accumulate throttled damage per enemy
+    private readonly MAX_FLOATING_TEXTS = 50; // Limit total floating texts
+    private readonly DAMAGE_TEXT_COOLDOWN = 100; // Minimum ms between damage texts per enemy
     private explosionEffects: ExplosionEffect[] = [];
     private petalBreakEffects: PetalBreakEffect[] = [];
     private lightningEffects: LightningEffect[] = [];
@@ -540,6 +544,12 @@ export class Graphics {
     }
 
     public showFloatingText(x: number, y: number, text: string, color: string, fontSize: number) {
+        // Limit total floating texts to prevent performance issues
+        if (this.floatingTexts.length >= this.MAX_FLOATING_TEXTS) {
+            // Remove oldest text
+            this.floatingTexts.shift();
+        }
+        
         this.floatingTexts.push({
             x,
             y,
@@ -550,6 +560,40 @@ export class Graphics {
             yOffset: 0,
             lifetime: 100
         });
+    }
+    
+    // Throttled version for damage text to prevent spam - accumulates damage when throttled
+    public showDamageText(enemyId: string, x: number, y: number, damage: number) {
+        const now = Date.now();
+        const lastTime = this.lastDamageTextTime.get(enemyId) || 0;
+        
+        // Accumulate damage if throttled
+        if (now - lastTime < this.DAMAGE_TEXT_COOLDOWN) {
+            const currentAccumulated = this.accumulatedDamage.get(enemyId) || 0;
+            this.accumulatedDamage.set(enemyId, currentAccumulated + damage);
+            return; // Will show accumulated damage when cooldown expires
+        }
+        
+        // Show accumulated damage if any, otherwise show current damage
+        const accumulated = this.accumulatedDamage.get(enemyId) || 0;
+        const totalDamage = accumulated + damage;
+        
+        if (totalDamage > 0) {
+            this.lastDamageTextTime.set(enemyId, now);
+            this.accumulatedDamage.delete(enemyId); // Clear accumulated damage
+            this.showFloatingText(x, y - 20, `-${Math.round(totalDamage)}`, '#ff0000', 16);
+        }
+    }
+    
+    // Get accumulated damage for an enemy (for showing on death)
+    public getAccumulatedDamage(enemyId: string): number {
+        return this.accumulatedDamage.get(enemyId) || 0;
+    }
+    
+    // Clean up accumulated damage when enemy dies
+    public clearEnemyDamage(enemyId: string) {
+        this.lastDamageTextTime.delete(enemyId);
+        this.accumulatedDamage.delete(enemyId);
     }
 
     public showExplosionEffect(x: number, y: number, radius: number) {
@@ -2368,10 +2412,12 @@ export class Graphics {
         this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth, healthBarHeight);
 
         this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
+        // Clamp health to prevent negative values from causing rendering issues
+        const clampedHealth = Math.max(0, Math.min(enemy.health, enemy.maxHealth));
         this.ctx.fillRect(
             -healthBarWidth / 2,
             healthBarY,
-            (enemy.health / enemy.maxHealth) * healthBarWidth,
+            (clampedHealth / enemy.maxHealth) * healthBarWidth,
             healthBarHeight
         );
         

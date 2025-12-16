@@ -307,7 +307,7 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
                 trackDamage(enemy, player.id, damage);
             }
             
-            enemy.health -= damage;
+            enemy.health = Math.max(0, enemy.health - damage);
             
             // Apply knockback
             const knockbackForce = 20;
@@ -380,7 +380,7 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
                 trackDamage(enemy, player.id, damage);
             }
             
-            enemy.health -= damage;
+            enemy.health = Math.max(0, enemy.health - damage);
             
             io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
             

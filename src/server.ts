@@ -798,8 +798,36 @@ function respawnPlayer(player: ServerPlayer) {
     respawnPlayerModule(player, ioInstance);
 }
 
-// Wrapper for savePlayerProgress that passes database
+// Debounced save mechanism to prevent lag from frequent saves
+const pendingSaves = new Map<string, NodeJS.Timeout>();
+
+// Wrapper for savePlayerProgress that passes database with debouncing
 function savePlayerProgress(player: ServerPlayer, userId: string) {
+    // Clear existing timeout for this player
+    const existingTimeout = pendingSaves.get(userId);
+    if (existingTimeout) {
+        clearTimeout(existingTimeout);
+    }
+    
+    // Set a new timeout to save after 2 seconds of no activity
+    // This batches multiple rapid pickups into a single save
+    const timeout = setTimeout(() => {
+        savePlayerProgressModule(player, userId, database);
+        pendingSaves.delete(userId);
+    }, 2000);
+    
+    pendingSaves.set(userId, timeout);
+}
+
+// Immediate save function for critical operations (disconnect, etc.)
+function savePlayerProgressImmediate(player: ServerPlayer, userId: string) {
+    // Clear any pending debounced save
+    const existingTimeout = pendingSaves.get(userId);
+    if (existingTimeout) {
+        clearTimeout(existingTimeout);
+        pendingSaves.delete(userId);
+    }
+    // Save immediately
     savePlayerProgressModule(player, userId, database);
 }
 
@@ -1153,7 +1181,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         console.log('A user disconnected');
         if (players[socket.id] && socket.userId) {
             // console.log('Saving player progress for userId:', socket.userId);
-            savePlayerProgress(players[socket.id], socket.userId);
+            savePlayerProgressImmediate(players[socket.id], socket.userId);
         }
         
         // Clean up petal cooldown timeouts for this player
@@ -2122,7 +2150,7 @@ function updatePoisonEffects(deltaTime: number) {
         // Apply poison damage
         if (totalPoisonDamage > 0) {
             const poisonDamageThisTick = totalPoisonDamage * deltaTime * 1000; // Convert deltaTime (seconds) to milliseconds
-            enemy.health -= poisonDamageThisTick;
+            enemy.health = Math.max(0, enemy.health - poisonDamageThisTick);
             
             // Track poison damage for all contributing players
             activePoisons.forEach(poison => {
@@ -2159,8 +2187,8 @@ function updatePoisonEffects(deltaTime: number) {
                         addXPToPlayer(players[topContributor], xpGained, topContributor);
                     }
                     
-                    // Track mob kill for eligible players
-                    trackMobKill(enemy, players, playerUserIds, database, io);
+                    // Track mob kill for eligible players (use debounced save to prevent lag)
+                    trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
                     // Handle mob drops (includes all eligible players)
                     handleMobDrops(enemy);
                     sendBossMobDefeatedMessage(enemy, io, players);
@@ -2735,7 +2763,7 @@ function moveEnemies() {
             if (topContributor && players[topContributor]) {
                 const xpGained = getXPFromEnemy(enemy);
                 addXPToPlayer(players[topContributor], xpGained, topContributor);
-                trackMobKill(enemy, players, playerUserIds, database);
+                trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
                 handleMobDrops(enemy);
                 sendBossMobDefeatedMessage(enemy, io, players);
             }
@@ -2922,7 +2950,7 @@ function updateMobProjectiles(deltaTimeMs: number) {
                         break;
                     }
                     
-                    targetEnemy.health -= projectileDamage;
+                    targetEnemy.health = Math.max(0, targetEnemy.health - projectileDamage);
                     io.emit('enemyDamaged', { enemyId: targetEnemy.id, health: targetEnemy.health });
                     
                     // Apply knockback
@@ -2944,7 +2972,7 @@ function updateMobProjectiles(deltaTimeMs: number) {
                         if (owner) {
                             const xpGained = getXPFromEnemy(targetEnemy);
                             addXPToPlayer(owner, xpGained, petOwnerId);
-                            trackMobKill(targetEnemy, players, playerUserIds, database);
+                            trackMobKill(targetEnemy, players, playerUserIds, database, io, savePlayerProgress);
                             handleMobDrops(targetEnemy);
                             sendBossMobDefeatedMessage(targetEnemy, io, players);
                         }
@@ -3130,7 +3158,7 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
                     continue;
                 }
                 
-                enemy.health -= finalDamage;
+                enemy.health = Math.max(0, enemy.health - finalDamage);
                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
                 
                 // Apply knockback, accounting for mass (heavier mobs are harder to knock back)
@@ -3152,7 +3180,7 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
                     
                     const xpGained = getXPFromEnemy(enemy);
                     addXPToPlayer(player, xpGained, projectile.playerId);
-                    trackMobKill(enemy, players, playerUserIds, database, io);
+                    trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
                     handleMobDrops(enemy);
                     sendBossMobDefeatedMessage(enemy, io, players);
                     // Clean up enemy data structures before removal to prevent memory leaks

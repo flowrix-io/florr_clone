@@ -234,7 +234,7 @@ function explodePetal(x, y, petalSize, damage, enemies, io, player) {
                 const { trackDamage } = require('./server');
                 trackDamage(enemy, player.id, damage);
             }
-            enemy.health -= damage;
+            enemy.health = Math.max(0, enemy.health - damage);
             // Apply knockback
             const knockbackForce = 20;
             const dx = enemy.x - x;
@@ -293,7 +293,7 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage) {
                 const { trackDamage } = require('./server');
                 trackDamage(enemy, player.id, damage);
             }
-            enemy.health -= damage;
+            enemy.health = Math.max(0, enemy.health - damage);
             io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
             // Check if enemy dies
             if (enemy.health <= 0) {

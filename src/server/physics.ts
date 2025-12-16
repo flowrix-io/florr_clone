@@ -429,7 +429,7 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             const { trackDamage } = require('../server');
                             trackDamage(otherEnemy, enemy.ownerId, enemy.damage);
                             
-                            otherEnemy.health -= enemy.damage;
+                            otherEnemy.health = Math.max(0, otherEnemy.health - enemy.damage);
                             
                             if (io) {
                                 io.emit('enemyDamaged', { enemyId: otherEnemy.id, health: otherEnemy.health });
@@ -445,7 +445,7 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                     } else if (!thisMobIsPet && otherMobIsPet) {
                         // Enemy (wild mob) attacks otherEnemy (pet)
                         if (!(otherEnemy as any).isDead && otherEnemy.health > 0) {
-                            otherEnemy.health -= enemy.damage;
+                            otherEnemy.health = Math.max(0, otherEnemy.health - enemy.damage);
                             
                             if (io) {
                                 io.emit('enemyDamaged', { enemyId: otherEnemy.id, health: otherEnemy.health });
@@ -468,7 +468,7 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             const { trackDamage } = require('../server');
                             trackDamage(enemy, otherEnemy.ownerId, otherEnemy.damage);
                             
-                            enemy.health -= otherEnemy.damage;
+                            enemy.health = Math.max(0, enemy.health - otherEnemy.damage);
                             
                             if (io) {
                                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
@@ -484,7 +484,7 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                     } else if (!otherMobIsPet && thisMobIsPet) {
                         // otherEnemy (wild mob) attacks enemy (pet)
                         if (!(enemy as any).isDead && enemy.health > 0) {
-                            enemy.health -= otherEnemy.damage;
+                            enemy.health = Math.max(0, enemy.health - otherEnemy.damage);
                             
                             if (io) {
                                 io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
