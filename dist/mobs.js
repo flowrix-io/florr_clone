@@ -2019,22 +2019,6 @@ exports.MOB_DROP_TABLES = {
                 minQuantity: 1,
                 maxQuantity: 1
             },
-            {
-                type: 'petal',
-                itemType: 'soldier_ant_egg',
-                rarity: 'common',
-                probability: 0.1,
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'soldier_ant_egg',
-                rarity: 'uncommon',
-                probability: 0.1,
-                minQuantity: 1,
-                maxQuantity: 1
-            }
         ]
     },
     rock: {
@@ -2100,22 +2084,6 @@ exports.MOB_DROP_TABLES = {
                 minQuantity: 1,
                 maxQuantity: 1
             },
-            {
-                type: 'petal',
-                itemType: 'soldier_fire_ant_egg',
-                rarity: 'common',
-                probability: 0.4, // 40% chance for fire ant egg
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'soldier_fire_ant_egg',
-                rarity: 'uncommon',
-                probability: 0.2, // 20% chance for fire ant egg
-                minQuantity: 1,
-                maxQuantity: 1
-            }
         ]
     },
     shiny_ladybug: {
@@ -2484,6 +2452,38 @@ exports.MOB_DROP_TABLES = {
         ]
     }
 };
+// Ensure every mob type drops its egg with 100% chance for common rarity
+for (const mobType in exports.BASE_MOB_CONFIGS) {
+    // Skip pet mobs (they end with _pet)
+    if (mobType.endsWith('_pet')) {
+        continue;
+    }
+    const eggName = `${mobType}_egg`;
+    // Get or create drop table for this mob
+    if (!exports.MOB_DROP_TABLES[mobType]) {
+        exports.MOB_DROP_TABLES[mobType] = {
+            guaranteed: true,
+            drops: []
+        };
+    }
+    // Check if egg drop already exists
+    const existingEggIndex = exports.MOB_DROP_TABLES[mobType].drops.findIndex(drop => drop.type === 'petal' && drop.itemType === eggName && drop.rarity === 'common');
+    if (existingEggIndex >= 0) {
+        // Update existing egg drop to 100% probability
+        exports.MOB_DROP_TABLES[mobType].drops[existingEggIndex].probability = 1.0;
+    }
+    else {
+        // Add new egg drop with 100% probability for common
+        exports.MOB_DROP_TABLES[mobType].drops.unshift({
+            type: 'petal',
+            itemType: eggName,
+            rarity: 'common',
+            probability: 1.0,
+            minQuantity: 1,
+            maxQuantity: 1
+        });
+    }
+}
 // Function to calculate drops for a mob based on its rarity
 function calculateMobDrops(mobType, mobRarity) {
     const dropTable = exports.MOB_DROP_TABLES[mobType];
