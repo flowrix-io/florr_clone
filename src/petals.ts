@@ -1,5 +1,6 @@
 import { test_petal_action } from "./petal_action/test.action";
 import { blood_leaf_action } from "./petal_action/blood_leaf.action";
+import { BASE_MOB_CONFIGS } from "./mobs";
 export interface PlayerModifiers {
     damage?: number; // Multiplier for player damage (e.g., 1.2 = +20% damage)
     maxHealth?: number; // Multiplier for player max health (e.g., 1.15 = +15% health)
@@ -794,38 +795,38 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 </svg>`,
         isAdminPetal: false
     },
-    ant_egg: {
-        name: "Ant Egg Petal",
-        damage: 10,
-        health: 10,
-        size: 1.0,
-        cooldown: 5000,
-        description: "A petal that spawns an ant pet",
-        color: "#000000",
-        count: 1,
-        petMobType: "soldier_ant_pet",
-        petMobRarity: "common",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle r="13" cx="16" cy="16" fill="#4f4f4f" stroke="#666666" stroke-width="4"/>
-</svg>`,
-        isAdminPetal: false
-    },
-    fire_ant_egg: {
-        name: "Fire Ant Egg Petal",
-        damage: 10,
-        health: 10,
-        size: 1.0,
-        cooldown: 10000,
-        description: "A petal that spawns a fire ant pet",
-        color: "#000000",
-        count: 1,
-        petMobType: "soldier_fire_ant_pet",
-        petMobRarity: "common",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle r="13" cx="16" cy="16" fill="#78563c" stroke="#c78f63" stroke-width="4"/>
-</svg>`,
-        isAdminPetal: false
-    },
+//     soldier_ant_egg: {
+//         name: "Ant Egg Petal",
+//         damage: 10,
+//         health: 10,
+//         size: 1.0,
+//         cooldown: 5000,
+//         description: "A petal that spawns an ant pet",
+//         color: "#000000",
+//         count: 1,
+//         petMobType: "soldier_ant_pet",
+//         petMobRarity: "common",
+//         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+// <circle r="13" cx="16" cy="16" fill="#4f4f4f" stroke="#666666" stroke-width="4"/>
+// </svg>`,
+//         isAdminPetal: false
+//     },
+//     soldier_fire_ant_egg: {
+//         name: "Fire Ant Egg Petal",
+//         damage: 10,
+//         health: 10,
+//         size: 1.0,
+//         cooldown: 10000,
+//         description: "A petal that spawns a fire ant pet",
+//         color: "#000000",
+//         count: 1,
+//         petMobType: "soldier_fire_ant_pet",
+//         petMobRarity: "common",
+//         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+// <circle r="13" cx="16" cy="16" fill="#78563c" stroke="#c78f63" stroke-width="4"/>
+// </svg>`,
+//         isAdminPetal: false
+//     },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
@@ -965,6 +966,73 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         isAdminPetal: true
     }
 };
+
+// Helper function to darken a hex color for egg stroke
+function darkenColor(hex: string, factor: number = 0.7): string {
+    // Remove # if present
+    hex = hex.replace('#', '');
+    
+    // Parse RGB values
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    
+    // Darken by factor (0.7 = 70% of original brightness)
+    const darkenedR = Math.floor(r * factor);
+    const darkenedG = Math.floor(g * factor);
+    const darkenedB = Math.floor(b * factor);
+    
+    // Convert back to hex
+    return `#${darkenedR.toString(16).padStart(2, '0')}${darkenedG.toString(16).padStart(2, '0')}${darkenedB.toString(16).padStart(2, '0')}`;
+}
+
+// Helper function to generate an egg SVG based on mob color
+function generateEggSVG(mobColor: string): string {
+    const strokeColor = darkenColor(mobColor, 0.7);
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle r="13" cx="16" cy="16" fill="${mobColor}" stroke="${strokeColor}" stroke-width="4"/>
+</svg>`;
+}
+
+// Auto-generate eggs for all mobs that don't have them
+for (const mobType in BASE_MOB_CONFIGS) {
+    // Skip pet mobs (they end with _pet)
+    if (mobType.endsWith('_pet')) {
+        continue;
+    }
+    
+    const eggName = `${mobType}_egg`;
+    
+    // Skip if egg already exists
+    if (BASE_PETAL_CONFIGS[eggName]) {
+        continue;
+    }
+    
+    // Get mob config to extract color
+    const mobConfig = BASE_MOB_CONFIGS[mobType];
+    if (!mobConfig) {
+        continue;
+    }
+    
+    // Determine pet mob type (check if there's a _pet version, otherwise use the mob type itself)
+    const petMobType = BASE_MOB_CONFIGS[`${mobType}_pet`] ? `${mobType}_pet` : mobType;
+    
+    // Create the egg config
+    BASE_PETAL_CONFIGS[eggName] = {
+        name: `${mobConfig.name} Egg Petal`,
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 5000,
+        description: `A petal that spawns a ${mobConfig.name.toLowerCase()} pet`,
+        color: "#000000",
+        count: 1,
+        petMobType: petMobType,
+        petMobRarity: "common",
+        image: generateEggSVG(mobConfig.color),
+        isAdminPetal: false
+    };
+}
 
 // Rarity color mappings
 const RARITY_COLORS: { [key in Rarity]: string } = {

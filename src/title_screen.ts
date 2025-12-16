@@ -38,7 +38,10 @@ class FloatingPetalManager {
         
         // Get random petal type and rarity from actual petals.ts
         const petalTypes = Object.keys(PETAL_CONFIG);
-        const nonAdminPetalTypes = petalTypes.filter(type => !PETAL_CONFIG[type]['common']?.isAdminPetal);
+        const nonAdminPetalTypes = petalTypes.filter(type => 
+            !PETAL_CONFIG[type]['common']?.isAdminPetal && 
+            !type.endsWith('_egg') // Exclude eggs from title screen
+        );
         const petalType = nonAdminPetalTypes.length > 0 ? nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)] : 'basic';
         const rarity = RARITY_LEVELS[Math.floor(Math.random() * RARITY_LEVELS.length)];
         
@@ -2854,6 +2857,10 @@ class TitleScreenInventoryManager {
               `;
 
                 Object.entries(items).forEach(([type, count]) => {
+                    // Skip eggs on title screen
+                    if (type.startsWith('petal_') && type.replace('petal_', '').endsWith('_egg')) {
+                        return;
+                    }
                     const itemCount = typeof count === 'number' ? count : 0;
                     if (itemCount > 0) {
                         const itemElement = document.createElement('div');

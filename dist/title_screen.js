@@ -23,7 +23,9 @@ class FloatingPetalManager {
         petal.className = 'floating-petal';
         // Get random petal type and rarity from actual petals.ts
         const petalTypes = Object.keys(petals_1.PETAL_CONFIG);
-        const nonAdminPetalTypes = petalTypes.filter(type => !petals_1.PETAL_CONFIG[type]['common']?.isAdminPetal);
+        const nonAdminPetalTypes = petalTypes.filter(type => !petals_1.PETAL_CONFIG[type]['common']?.isAdminPetal &&
+            !type.endsWith('_egg') // Exclude eggs from title screen
+        );
         const petalType = nonAdminPetalTypes.length > 0 ? nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)] : 'basic';
         const rarity = petals_1.RARITY_LEVELS[Math.floor(Math.random() * petals_1.RARITY_LEVELS.length)];
         // Get petal stats from actual petals.ts
@@ -2523,6 +2525,10 @@ class TitleScreenInventoryManager {
                   border: 1px solid ${this.ITEM_RARITY_COLORS[rarity]}40;
               `;
                 Object.entries(items).forEach(([type, count]) => {
+                    // Skip eggs on title screen
+                    if (type.startsWith('petal_') && type.replace('petal_', '').endsWith('_egg')) {
+                        return;
+                    }
                     const itemCount = typeof count === 'number' ? count : 0;
                     if (itemCount > 0) {
                         const itemElement = document.createElement('div');

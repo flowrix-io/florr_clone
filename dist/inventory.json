@@ -1,10 +1,10 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 136975590,
+      "totalXP": 137150606,
       "inventory": {
         "common": {
-          "shield": 122,
+          "shield": 123,
           "petal_light": 29,
           "petal_dandelion": 24,
           "petal_stinger": 29,
@@ -55,15 +55,16 @@
           "petal_lightning_cutter": 998,
           "petal_yucca": 4,
           "petal_missile": 2,
-          "petal_bone": 4,
+          "petal_bone": 5,
           "petal_wing": 997,
           "petal_sand": 1,
           "petal_leaf": 2,
           "petal_blood_leaf": 999,
           "petal_action_test": 1,
           "petal_egg": 1000,
-          "petal_ant_egg": 999,
-          "petal_fire_ant_egg": 1001
+          "petal_soldier_ant_egg": 999,
+          "petal_soldier_fire_ant_egg": 1001,
+          "petal_beetle_egg": 999
         },
         "mythic": {
           "speed_boost": 12,
@@ -94,7 +95,7 @@
           "petal_ant_egg": 1
         },
         "uncommon": {
-          "petal_rose": 55,
+          "petal_rose": 56,
           "petal_dandelion": 46,
           "petal_basic": 75,
           "petal_sand": 7,
@@ -152,24 +153,24 @@
           "petal_ant_egg": 5
         },
         "epic": {
-          "petal_stinger": 46,
-          "speed_boost": 88,
+          "petal_stinger": 47,
+          "speed_boost": 89,
           "petal_basic": 77,
-          "petal_rose": 110,
+          "petal_rose": 111,
           "petal_sand": 16,
           "petal_yggdrasil": 3,
-          "health_potion": 48,
+          "health_potion": 49,
           "petal_light": 47,
-          "petal_rock": 115,
-          "shield": 31,
+          "petal_rock": 118,
+          "shield": 32,
           "petal_dandelion": 118,
-          "petal_clover": 39,
-          "petal_bone": 73,
+          "petal_clover": 41,
+          "petal_bone": 74,
           "petal_cactus": 5,
           "petal_poison_cactus": 2,
           "petal_iris": 5,
           "petal_lightning": 5,
-          "petal_missile": 65,
+          "petal_missile": 67,
           "petal_leaf": 6,
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,
@@ -178,7 +179,7 @@
           "petal_square": 7,
           "petal_healing": 1,
           "petal_golden_leaf": 17,
-          "petal_ant_egg": 3
+          "petal_ant_egg": 5
         },
         "rare": {
           "petal_rock": 16,
@@ -281,7 +282,7 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "bone"
+          "petalType": "beetle_egg"
         },
         {
           "type": "petal",
@@ -331,7 +332,7 @@
         },
         "soldier_ant": {
           "epic": 2,
-          "legendary": 12,
+          "legendary": 13,
           "common": 7,
           "rare": 1,
           "mythic": 19,
@@ -342,7 +343,7 @@
           "legendary": 4,
           "ultra": 1,
           "common": 6,
-          "mythic": 11,
+          "mythic": 12,
           "epic": 1,
           "rare": 1
         },
@@ -355,7 +356,7 @@
         },
         "hornet": {
           "common": 15,
-          "legendary": 10,
+          "legendary": 12,
           "mythic": 2,
           "uncommon": 4,
           "rare": 1,
