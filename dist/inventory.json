@@ -1,10 +1,10 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 142074034,
+      "totalXP": 142088493,
       "inventory": {
         "common": {
-          "shield": 140,
+          "shield": 142,
           "petal_light": 32,
           "petal_dandelion": 24,
           "petal_stinger": 29,
@@ -13,7 +13,7 @@
           "petal_sand": 42,
           "petal_rock": 143,
           "petal_clover": 44,
-          "petal_bone": 69,
+          "petal_bone": 70,
           "petal_cactus": 11,
           "petal_iris": 9,
           "petal_poison_cactus": 12,
@@ -31,11 +31,11 @@
           "petal_golden_leaf": 7,
           "petal_ant_egg": 6,
           "petal_fire_ant_egg": 6,
-          "petal_yucca": 4,
+          "petal_yucca": 5,
           "petal_hornet_egg": 9,
           "petal_dandelion_egg": 16,
           "petal_ladybug_egg": 7,
-          "petal_soldier_ant_egg": 19,
+          "petal_soldier_ant_egg": 22,
           "petal_dark_ladybug_egg": 6,
           "petal_bee_egg": 8,
           "petal_fly_egg": 19,
@@ -47,7 +47,8 @@
           "petal_spider_egg": 2,
           "petal_moth_egg": 1,
           "petal_garbage_egg": 2,
-          "petal_hel_beetle_egg": 2
+          "petal_hel_beetle_egg": 2,
+          "petal_soldier_fire_ant_egg": 3
         },
         "unique": {
           "petal_stinger": 1004,
@@ -125,7 +126,7 @@
         "uncommon": {
           "petal_rose": 59,
           "petal_dandelion": 53,
-          "petal_basic": 83,
+          "petal_basic": 84,
           "petal_sand": 7,
           "speed_boost": 59,
           "petal_stinger": 36,
@@ -135,7 +136,7 @@
           "health_potion": 16,
           "petal_rock": 19,
           "petal_yggdrasil": 7,
-          "petal_bone": 59,
+          "petal_bone": 64,
           "petal_poison_cactus": 139,
           "petal_iris": 11,
           "petal_lightning": 38,
@@ -156,13 +157,14 @@
           "petal_ladybug_egg": 5,
           "petal_bee_egg": 3,
           "petal_hornet_egg": 7,
-          "petal_soldier_ant_egg": 5,
+          "petal_soldier_ant_egg": 6,
           "petal_fly_egg": 6,
           "petal_garbage_egg": 7,
           "petal_roach_egg": 4,
           "petal_moth_egg": 4,
           "petal_bush_egg": 7,
-          "petal_rock_egg": 2
+          "petal_rock_egg": 2,
+          "petal_soldier_fire_ant_egg": 4
         },
         "legendary": {
           "speed_boost": 6,
@@ -210,7 +212,7 @@
         },
         "epic": {
           "petal_stinger": 52,
-          "speed_boost": 92,
+          "speed_boost": 93,
           "petal_basic": 85,
           "petal_rose": 122,
           "petal_sand": 16,
@@ -221,7 +223,7 @@
           "shield": 46,
           "petal_dandelion": 122,
           "petal_clover": 44,
-          "petal_bone": 84,
+          "petal_bone": 86,
           "petal_cactus": 5,
           "petal_poison_cactus": 2,
           "petal_iris": 7,
@@ -253,7 +255,8 @@
           "petal_hel_beetle_egg": 9,
           "petal_blood_leaf": 2,
           "petal_jelly": 2,
-          "petal_jellyfish_egg": 3
+          "petal_jellyfish_egg": 3,
+          "petal_soldier_fire_ant_egg": 1
         },
         "rare": {
           "petal_rock": 16,
@@ -296,7 +299,8 @@
           "petal_dandelion_egg": 1,
           "petal_bush_egg": 2,
           "petal_spider_egg": 2,
-          "petal_fly_egg": 1
+          "petal_fly_egg": 1,
+          "petal_soldier_fire_ant_egg": 1
         },
         "ultra": {
           "speed_boost": 3,
@@ -422,11 +426,11 @@
         "soldier_ant": {
           "epic": 4,
           "legendary": 31,
-          "common": 48,
+          "common": 49,
           "rare": 9,
           "mythic": 45,
           "ultra": 3,
-          "uncommon": 9
+          "uncommon": 25
         },
         "rock": {
           "legendary": 22,
@@ -541,6 +545,14 @@
           "mythic": 22,
           "ultra": 2,
           "legendary": 4
+        },
+        "soldier_fire_ant": {
+          "uncommon": 21,
+          "common": 1,
+          "rare": 9,
+          "epic": 3,
+          "mythic": 1,
+          "legendary": 12
         }
       }
     },
