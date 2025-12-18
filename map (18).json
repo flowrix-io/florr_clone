@@ -3541,22 +3541,13 @@
     "width": 2280,
     "height": 2040,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
-          "tier": "rare",
+          "tier": "uncommon",
           "weight": 5,
-          "mobType": "fish"
-        },
-        {
-          "tier": "epic",
-          "weight": 3,
-          "mobType": "octopus"
-        },
-        {
-          "tier": "legendary",
-          "weight": 2
+          "mobType": "soldier_ant"
         }
       ]
     }
@@ -4842,8 +4833,8 @@
     "width": 1780,
     "height": 1610,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -4860,8 +4851,8 @@
     "width": 2490,
     "height": 2600,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -4878,8 +4869,8 @@
     "width": 1790,
     "height": 2200,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -4896,8 +4887,8 @@
     "width": 1050,
     "height": 1750,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -4914,8 +4905,8 @@
     "width": 1440,
     "height": 1320,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -4932,8 +4923,8 @@
     "width": 4040,
     "height": 2350,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -4950,8 +4941,8 @@
     "width": 3090,
     "height": 3420,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -4968,8 +4959,8 @@
     "width": 1270,
     "height": 2480,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -4986,8 +4977,8 @@
     "width": 780,
     "height": 1350,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "mythic",
@@ -5004,8 +4995,8 @@
     "width": 1770,
     "height": 1190,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "mythic",
@@ -5022,8 +5013,8 @@
     "width": 4340,
     "height": 2460,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "mythic",
@@ -5040,8 +5031,8 @@
     "width": 1600,
     "height": 5340,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "mythic",
@@ -5058,8 +5049,8 @@
     "width": 5090,
     "height": 3640,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "mythic",
@@ -5076,8 +5067,8 @@
     "width": 930,
     "height": 500,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "mythic",
@@ -5094,8 +5085,8 @@
     "width": 2160,
     "height": 1850,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "mythic",
@@ -5112,8 +5103,8 @@
     "width": 4310,
     "height": 290,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "mythic",
@@ -5130,8 +5121,8 @@
     "width": 2690,
     "height": 1620,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "mythic",
@@ -5148,8 +5139,8 @@
     "width": 1260,
     "height": 290,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "common",
@@ -5166,8 +5157,8 @@
     "width": 2190,
     "height": 1790,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "uncommon",
@@ -5184,8 +5175,8 @@
     "width": 1400,
     "height": 100,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "uncommon",
@@ -5202,8 +5193,8 @@
     "width": 760,
     "height": 440,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "uncommon",
@@ -5220,8 +5211,8 @@
     "width": 1370,
     "height": 3330,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "uncommon",
@@ -5238,8 +5229,8 @@
     "width": 1520,
     "height": 550,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "rare",
@@ -5256,8 +5247,8 @@
     "width": 1050,
     "height": 2040,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "rare",
@@ -5274,8 +5265,8 @@
     "width": 3890,
     "height": 2230,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "rare",
@@ -5292,8 +5283,8 @@
     "width": 1870,
     "height": 2040,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "rare",
@@ -5310,8 +5301,8 @@
     "width": 1610,
     "height": 1280,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "epic",
@@ -5328,8 +5319,8 @@
     "width": 3520,
     "height": 1940,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "epic",
@@ -5346,8 +5337,8 @@
     "width": 1940,
     "height": 880,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "epic",
@@ -5364,8 +5355,8 @@
     "width": 1180,
     "height": 2570,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "epic",
@@ -5382,8 +5373,8 @@
     "width": 1460,
     "height": 2000,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -5400,8 +5391,8 @@
     "width": 5330,
     "height": 830,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -5418,8 +5409,8 @@
     "width": 5900,
     "height": 1110,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -5436,8 +5427,8 @@
     "width": 5050,
     "height": 1060,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -5454,8 +5445,8 @@
     "width": 6570,
     "height": 3000,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -5472,8 +5463,8 @@
     "width": 6440,
     "height": 450,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -5490,8 +5481,8 @@
     "width": 5580,
     "height": 1150,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
@@ -5508,8 +5499,8 @@
     "width": 5390,
     "height": 2540,
     "properties": {
-      "biomeName": "unnamed_biome",
-      "backgroundTexture": "land.svg",
+      "biomeName": "ant_hell",
+      "backgroundTexture": "ant_hell.svg",
       "spawnTable": [
         {
           "tier": "legendary",
