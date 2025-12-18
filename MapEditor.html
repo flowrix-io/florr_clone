@@ -160,16 +160,20 @@
                         <input type="text" id="backgroundTexture" placeholder="Texture File (e.g. coral.svg)">
                         <div style="font-size: 12px; color: #888; margin: 10px 0;">
                             <strong>Spawn Table:</strong><br>
-                            Add spawn entries below (format: mobType,tier,weight)<br>
-                            mobType is optional (leave empty for any mob)
+                            Enter JSON array of spawn entries<br>
+                            mobType is optional (omit for any mob)
                         </div>
-                        <textarea id="spawnTableEditor" placeholder="fish,rare,5&#10;octopus,epic,3&#10;,legendary,2" 
-                            style="height: 100px; font-family: monospace; resize: vertical;"></textarea>
+                        <textarea id="spawnTableEditor" 
+                            style="height: 120px; font-family: monospace; resize: vertical;">[
+  {"mobType": "fish", "tier": "rare", "weight": 5},
+  {"mobType": "octopus", "tier": "epic", "weight": 3},
+  {"tier": "legendary", "weight": 2}
+]</textarea>
                         <div style="font-size: 11px; color: #666; margin-top: 5px;">
-                            Example entries:<br>
-                            • fish,rare,5 (fish mobs, rare tier, weight 5)<br>
-                            • ,legendary,2 (any mob, legendary tier, weight 2)<br>
-                            • octopus,mythic,1 (octopus only, mythic tier, weight 1)
+                            Example format:<br>
+                            • {"mobType": "fish", "tier": "rare", "weight": 5}<br>
+                            • {"tier": "legendary", "weight": 2} (any mob type)<br>
+                            • {"mobType": "octopus", "tier": "mythic", "weight": 1}
                         </div>
                     </div>
                 </div>
@@ -209,8 +213,8 @@
                     <div style="margin: 5px 0;">
                         <span style="color: #FFD700;">♦</span> Cross-server indicator
                     </div>
-                    <div style="margin: 10px 0; padding-top: 10px; border-top: 1px solid #444;">
-                        <strong>Biomes</strong> allow custom mob spawns and background textures. Use CSV format in spawn table editor.
+                        <div style="margin: 10px 0; padding-top: 10px; border-top: 1px solid #444;">
+                        <strong>Biomes</strong> allow custom mob spawns and background textures. Use JSON format in spawn table editor.
                     </div>
                 </div>
             </div>
@@ -362,36 +366,43 @@
                 element.properties.biomeName = document.getElementById('biomeName').value || 'unnamed_biome';
                 element.properties.backgroundTexture = document.getElementById('backgroundTexture').value || 'land.svg';
                 
-                // Parse spawn table from textarea
-                const spawnTableText = document.getElementById('spawnTableEditor').value;
-                const spawnTable = [];
+                // Parse spawn table from textarea (JSON format)
+                const spawnTableText = document.getElementById('spawnTableEditor').value.trim();
+                let spawnTable = [];
                 
-                if (spawnTableText.trim()) {
-                    const lines = spawnTableText.split('\n');
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed) continue;
-                        
-                        const parts = trimmed.split(',').map(p => p.trim());
-                        if (parts.length >= 2) {
-                            const entry = {
-                                tier: parts[1] || 'common',
-                                weight: parseFloat(parts[2]) || 1
-                            };
-                            
-                            // Only add mobType if it's specified
-                            if (parts[0]) {
-                                entry.mobType = parts[0];
-                            }
-                            
-                            spawnTable.push(entry);
+                if (spawnTableText) {
+                    try {
+                        const parsed = JSON.parse(spawnTableText);
+                        if (Array.isArray(parsed)) {
+                            spawnTable = parsed.filter(entry => {
+                                // Validate entry structure
+                                return entry && 
+                                       typeof entry.tier === 'string' && 
+                                       typeof entry.weight === 'number' && 
+                                       entry.weight > 0;
+                            }).map(entry => {
+                                // Normalize entry - only include mobType if present
+                                const normalized = {
+                                    tier: entry.tier,
+                                    weight: entry.weight
+                                };
+                                if (entry.mobType && entry.mobType.trim()) {
+                                    normalized.mobType = entry.mobType.trim();
+                                }
+                                return normalized;
+                            });
+                        } else {
+                            console.warn('Spawn table must be a JSON array');
                         }
+                    } catch (e) {
+                        console.error('Failed to parse spawn table JSON:', e);
+                        alert('Invalid JSON format in spawn table. Please check your syntax.');
                     }
                 }
                 
-                // If no spawn table provided, use a default
+                // If no spawn table provided or parsing failed, use a default
                 if (spawnTable.length === 0) {
-                    spawnTable.push({ tier: 'common', weight: 1 });
+                    spawnTable = [{ tier: 'common', weight: 1 }];
                 }
                 
                 element.properties.spawnTable = spawnTable;
@@ -553,6 +564,17 @@
             spawnType.style.display = currentTool === 'spawn' ? 'block' : 'none';
             teleporterProps.style.display = currentTool === 'teleporter' ? 'block' : 'none';
             biomeProps.style.display = currentTool === 'biome' ? 'block' : 'none';
+            
+            // Reset biome properties to template when switching to biome tool (if no element selected)
+            if (currentTool === 'biome' && !selectedElement) {
+                document.getElementById('biomeName').value = '';
+                document.getElementById('backgroundTexture').value = '';
+                document.getElementById('spawnTableEditor').value = `[
+  {"mobType": "fish", "tier": "rare", "weight": 5},
+  {"mobType": "octopus", "tier": "epic", "weight": 3},
+  {"tier": "legendary", "weight": 2}
+]`;
+            }
         }
 
         function updateElementList() {
@@ -595,6 +617,88 @@
             });
         }
 
+        // Function to update selected element properties from UI
+        function updateElementFromProperties() {
+            if (!selectedElement) return;
+            
+            if (selectedElement.type === 'biome') {
+                selectedElement.properties.biomeName = document.getElementById('biomeName').value || 'unnamed_biome';
+                selectedElement.properties.backgroundTexture = document.getElementById('backgroundTexture').value || 'land.svg';
+                
+                // Parse spawn table from textarea (JSON format)
+                const spawnTableText = document.getElementById('spawnTableEditor').value.trim();
+                let spawnTable = [];
+                
+                if (spawnTableText) {
+                    try {
+                        const parsed = JSON.parse(spawnTableText);
+                        if (Array.isArray(parsed)) {
+                            spawnTable = parsed.filter(entry => {
+                                // Validate entry structure
+                                return entry && 
+                                       typeof entry.tier === 'string' && 
+                                       typeof entry.weight === 'number' && 
+                                       entry.weight > 0;
+                            }).map(entry => {
+                                // Normalize entry - only include mobType if present
+                                const normalized = {
+                                    tier: entry.tier,
+                                    weight: entry.weight
+                                };
+                                if (entry.mobType && entry.mobType.trim()) {
+                                    normalized.mobType = entry.mobType.trim();
+                                }
+                                return normalized;
+                            });
+                        } else {
+                            console.warn('Spawn table must be a JSON array');
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse spawn table JSON:', e);
+                        alert('Invalid JSON format in spawn table. Please check your syntax.');
+                    }
+                }
+                
+                // If no spawn table provided or parsing failed, use a default
+                if (spawnTable.length === 0) {
+                    spawnTable = [{ tier: 'common', weight: 1 }];
+                }
+                
+                selectedElement.properties.spawnTable = spawnTable;
+                updateElementList();
+            } else if (selectedElement.type === 'teleporter') {
+                const teleportTo = {
+                    x: parseInt(document.getElementById('teleportX').value) || 0,
+                    y: parseInt(document.getElementById('teleportY').value) || 0
+                };
+
+                // Handle server port configuration
+                const serverPortSelect = document.getElementById('serverPortSelect');
+                const customServerPort = document.getElementById('customServerPort');
+                
+                let serverPort = null;
+                if (serverPortSelect.value === 'custom') {
+                    const customPort = parseInt(customServerPort.value);
+                    if (customPort && customPort >= 1 && customPort <= 65535) {
+                        serverPort = customPort;
+                    }
+                } else if (serverPortSelect.value !== '') {
+                    serverPort = parseInt(serverPortSelect.value);
+                }
+
+                // Only add serverPort if it's different from current server
+                if (serverPort) {
+                    teleportTo.serverPort = serverPort;
+                }
+
+                selectedElement.properties.teleportTo = teleportTo;
+                updateElementList();
+            } else if (selectedElement.type === 'spawn') {
+                selectedElement.properties.spawnType = document.getElementById('spawnType').value;
+                updateElementList();
+            }
+        }
+
         // New function to update properties panel when selecting an element
         function updatePropertiesFromElement(element) {
             if (element.type === 'teleporter' && element.properties.teleportTo) {
@@ -631,12 +735,9 @@
                 document.getElementById('biomeName').value = element.properties.biomeName || '';
                 document.getElementById('backgroundTexture').value = element.properties.backgroundTexture || '';
                 
-                // Convert spawn table back to text format
+                // Convert spawn table back to JSON format
                 const spawnTable = element.properties.spawnTable || [];
-                const spawnTableText = spawnTable.map(entry => {
-                    const mobType = entry.mobType || '';
-                    return `${mobType},${entry.tier},${entry.weight}`;
-                }).join('\n');
+                const spawnTableText = JSON.stringify(spawnTable, null, 2);
                 
                 document.getElementById('spawnTableEditor').value = spawnTableText;
             }
@@ -875,6 +976,20 @@
             
             return results;
         };
+
+        // Add event listeners to update selected element when properties change
+        document.getElementById('biomeName').addEventListener('blur', updateElementFromProperties);
+        document.getElementById('biomeName').addEventListener('change', updateElementFromProperties);
+        document.getElementById('backgroundTexture').addEventListener('blur', updateElementFromProperties);
+        document.getElementById('backgroundTexture').addEventListener('change', updateElementFromProperties);
+        document.getElementById('spawnTableEditor').addEventListener('blur', updateElementFromProperties);
+        
+        // Also update when teleporter properties change
+        document.getElementById('teleportX').addEventListener('blur', updateElementFromProperties);
+        document.getElementById('teleportY').addEventListener('blur', updateElementFromProperties);
+        document.getElementById('serverPortSelect').addEventListener('change', updateElementFromProperties);
+        document.getElementById('customServerPort').addEventListener('blur', updateElementFromProperties);
+        document.getElementById('spawnType').addEventListener('change', updateElementFromProperties);
 
         // Initial render
         render();
