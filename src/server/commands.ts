@@ -5,6 +5,7 @@ import { database } from '../database';
 import { getAllMobTypes } from '../mobs';
 import { players, enemies, ENEMIES_PER_VIEWPORT } from '../constants';
 import { ENEMY_COUNT } from './gameState';
+import { redeemedCodes } from '../server';
 
 // AuthenticatedSocket interface (matches definition in server.ts)
 interface AuthenticatedSocket extends Socket {
@@ -159,7 +160,99 @@ export function executeServerCommand(
             console.log('    teleport PlayerName 5000 3000');
             console.log('    tp abc123 1000 2000  (shorthand)');
         }
+    } else if (trimmedCommand.startsWith('generate_code') || trimmedCommand.startsWith('gen_code')) {
+        // generate_code <stars> [maxUses]
+        const parts = trimmedCommand.split(' ');
+        if (parts.length >= 2) {
+            const stars = parseInt(parts[1]);
+            const maxUses = parts.length >= 3 ? parseInt(parts[2]) : undefined;
+            
+            if (isNaN(stars) || stars <= 0) {
+                console.log('Invalid stars amount. Usage: generate_code <stars> [maxUses]');
+                return;
+            }
+            
+            // Generate a unique code
+            let code: string;
+            let attempts = 0;
+            do {
+                code = generateCode();
+                attempts++;
+                if (attempts > 100) {
+                    console.log('Failed to generate unique code after 100 attempts');
+                    return;
+                }
+            } while (redeemedCodes.has(code));
+            
+            // Create the code entry
+            redeemedCodes.set(code, {
+                code: code,
+                stars: stars,
+                maxUses: maxUses,
+                uses: 0,
+                usedBy: [],
+                createdBy: executor,
+                createdAt: Date.now()
+            });
+            
+            console.log(`\n[CODE GENERATED]`);
+            console.log(`Code: ${code}`);
+            console.log(`Stars: ${stars}`);
+            if (maxUses) {
+                console.log(`Max Uses: ${maxUses}`);
+            } else {
+                console.log(`Max Uses: Unlimited`);
+            }
+            console.log(`Created by: ${executor || 'Console'}`);
+            console.log(`\nPlayers can redeem this code in the shop!\n`);
+        } else {
+            console.log('Usage: generate_code <stars> [maxUses]');
+            console.log('  Examples:');
+            console.log('    generate_code 100');
+            console.log('    generate_code 500 10  (max 10 uses)');
+            console.log('    gen_code 1000  (shorthand)');
+        }
+    } else if (trimmedCommand === 'list_codes') {
+        if (redeemedCodes.size === 0) {
+            console.log('No codes have been generated.');
+        } else {
+            console.log('\n[GENERATED CODES]');
+            redeemedCodes.forEach((codeData, code) => {
+                console.log(`\nCode: ${code}`);
+                console.log(`  Stars: ${codeData.stars}`);
+                console.log(`  Uses: ${codeData.uses}${codeData.maxUses ? `/${codeData.maxUses}` : ' (unlimited)'}`);
+                console.log(`  Created by: ${codeData.createdBy || 'Unknown'}`);
+                if (codeData.createdAt) {
+                    const date = new Date(codeData.createdAt);
+                    console.log(`  Created: ${date.toLocaleString()}`);
+                }
+            });
+            console.log('');
+        }
+    } else if (trimmedCommand.startsWith('delete_code ')) {
+        const parts = trimmedCommand.split(' ');
+        if (parts.length === 2) {
+            const code = parts[1].toUpperCase();
+            if (redeemedCodes.has(code)) {
+                redeemedCodes.delete(code);
+                console.log(`Code ${code} has been deleted.`);
+            } else {
+                console.log(`Code ${code} not found.`);
+            }
+        } else {
+            console.log('Usage: delete_code <code>');
+        }
     }
+}
+
+// Generate a random code
+function generateCode(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
 }
 
 /**

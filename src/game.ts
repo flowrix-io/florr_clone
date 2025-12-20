@@ -8,6 +8,7 @@ import { Chat } from './chat';
 import { initMultiPlayerMode, Socket } from './socket';
 import { InventoryManager } from './inventory';
 import { SkillsManager } from './skills';
+import { ShopManager } from './shop';
 import { PreloadedAssets } from './preloader';
 import { Tutorial } from './tutorial';
 import { ShaderManager } from './shader/shaderManager';
@@ -215,6 +216,7 @@ export class Game {
     // Add property
     public inventoryManager!: InventoryManager;
     private skillsManager!: SkillsManager;
+    public shopManager!: ShopManager;
     private controls!: { [key: string]: string };
     private tutorial: Tutorial;
 
@@ -574,6 +576,7 @@ export class Game {
         // Add to constructor after other UI initialization
         this.inventoryManager = new InventoryManager(this, this.chat);
         this.skillsManager = new SkillsManager(this);
+        this.shopManager = new ShopManager(this);
 
         this.svgLoader = new SVGLoader();
         this.assetLoader.loadAssets();
@@ -794,6 +797,11 @@ export class Game {
 
             if (event.key === 'g' || event.key === 'G') {
                 this.inventoryManager.toggleMobGallery();
+                return;
+            }
+
+            if (event.key === 's' || event.key === 'S') {
+                this.shopManager.toggleShop();
                 return;
             }
 
@@ -1313,6 +1321,18 @@ export class Game {
         const mobGalleryPanel = document.getElementById('mobGalleryPanel');
         if (mobGalleryPanel) {
             const style = window.getComputedStyle(mobGalleryPanel);
+            if (style.display !== 'none' && style.visibility !== 'hidden') {
+                return true;
+            }
+        }
+        
+        // Check shop
+        if (this.shopManager && this.shopManager.isShopOpenState()) {
+            return true;
+        }
+        const shopPanel = document.getElementById('shopPanel');
+        if (shopPanel) {
+            const style = window.getComputedStyle(shopPanel);
             if (style.display !== 'none' && style.visibility !== 'hidden') {
                 return true;
             }

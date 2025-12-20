@@ -24,6 +24,7 @@ export interface PlayerProgress {
     inventory?: PlayerInventory;
     loadout?: (Item | null)[];
     mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
+    stars?: number; // In-game currency earned from challenges and codes
 }
 
 interface User {

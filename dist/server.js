@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendBossMobDefeatedMessage = exports.trackDamage = void 0;
+exports.redeemedCodes = exports.sendBossMobDefeatedMessage = exports.trackDamage = void 0;
 exports.handleMobDrops = handleMobDrops;
 exports.updateSpecialMobCounts = updateSpecialMobCounts;
 exports.addXPToPlayer = addXPToPlayer;
@@ -614,6 +614,7 @@ function respawnPlayer(player) {
 }
 // Debounced save mechanism to prevent lag from frequent saves
 const pendingSaves = new Map();
+exports.redeemedCodes = new Map();
 // Wrapper for savePlayerProgress that passes database with debouncing
 function savePlayerProgress(player, userId) {
     // Clear existing timeout for this player
@@ -835,7 +836,8 @@ io.on('connection', (socket) => {
                 speed_boost: 1,
                 tp: currentTP,
                 skills: savedSkills,
-                mobKills: savedProgress?.mobKills || {}
+                mobKills: savedProgress?.mobKills || {},
+                stars: savedProgress?.stars || 0
             };
             // Recalculate player stats with modifiers after loadout is set
             (0, playerManager_1.recalculatePlayerStats)(constants_2.players[socket.id], io);
@@ -1768,6 +1770,103 @@ io.on('connection', (socket) => {
         catch (error) {
             console.error('[CRAFT] Error during crafting:', error);
             socket.emit('craftingFailed', 'An error occurred during crafting');
+        }
+    });
+    // Shop handlers
+    socket.on('shopBuy', (data) => {
+        try {
+            const player = constants_2.players[socket.id];
+            if (!player) {
+                socket.emit('shopPurchaseError', 'Player not found');
+                return;
+            }
+            const stars = player.stars || 0;
+            if (stars < data.price) {
+                socket.emit('shopPurchaseError', 'Insufficient stars');
+                return;
+            }
+            // Check if petal exists
+            const petalStats = (0, petals_2.getPetalStats)(data.petalType, data.rarity);
+            if (!petalStats) {
+                socket.emit('shopPurchaseError', 'Invalid petal');
+                return;
+            }
+            // Skip admin petals
+            if (petalStats.isAdminPetal) {
+                socket.emit('shopPurchaseError', 'Cannot purchase admin petals');
+                return;
+            }
+            // Deduct stars
+            player.stars = stars - data.price;
+            // Add item to inventory
+            const itemKey = `petal_${data.petalType}`;
+            (0, playerManager_1.addItem)(player.inventory, data.rarity, itemKey, 1);
+            // Save progress
+            const userId = gameState_1.playerUserIds[socket.id];
+            if (userId) {
+                savePlayerProgress(player, userId);
+            }
+            // Emit success
+            socket.emit('shopPurchaseSuccess', {
+                inventory: player.inventory,
+                stars: player.stars
+            });
+            io.emit('playerUpdated', player);
+        }
+        catch (error) {
+            console.error('[SHOP] Error during purchase:', error);
+            socket.emit('shopPurchaseError', 'An error occurred during purchase');
+        }
+    });
+    socket.on('redeemCode', (data) => {
+        try {
+            const player = constants_2.players[socket.id];
+            if (!player) {
+                socket.emit('codeRedeemError', 'Player not found');
+                return;
+            }
+            const code = data.code.trim().toUpperCase();
+            const redeemedCode = exports.redeemedCodes.get(code);
+            if (!redeemedCode) {
+                socket.emit('codeRedeemError', 'Invalid code');
+                return;
+            }
+            // Check if code is already used by this player
+            const userId = gameState_1.playerUserIds[socket.id];
+            if (redeemedCode.usedBy && redeemedCode.usedBy.includes(userId || socket.id)) {
+                socket.emit('codeRedeemError', 'Code already redeemed');
+                return;
+            }
+            // Check if code has usage limit
+            if (redeemedCode.maxUses && redeemedCode.uses >= redeemedCode.maxUses) {
+                socket.emit('codeRedeemError', 'Code has reached maximum uses');
+                return;
+            }
+            // Award stars
+            if (player.stars === undefined) {
+                player.stars = 0;
+            }
+            player.stars += redeemedCode.stars;
+            // Track usage
+            redeemedCode.uses++;
+            if (!redeemedCode.usedBy) {
+                redeemedCode.usedBy = [];
+            }
+            redeemedCode.usedBy.push(userId || socket.id);
+            // Save progress
+            if (userId) {
+                savePlayerProgress(player, userId);
+            }
+            // Emit success
+            socket.emit('codeRedeemSuccess', {
+                stars: redeemedCode.stars,
+                totalStars: player.stars
+            });
+            io.emit('playerUpdated', player);
+        }
+        catch (error) {
+            console.error('[SHOP] Error during code redemption:', error);
+            socket.emit('codeRedeemError', 'An error occurred during code redemption');
         }
     });
 });

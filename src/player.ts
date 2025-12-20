@@ -45,6 +45,7 @@ export interface Player {
     healingMultiplier?: string;
   };
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
+  stars?: number; // In-game currency earned from challenges and codes
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
@@ -58,6 +59,7 @@ export interface PlayerProgress {
     healingMultiplier?: string;
   };
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
+  stars?: number; // In-game currency earned from challenges and codes
 }
 
 export interface ServerPlayer {
@@ -110,4 +112,5 @@ export interface ServerPlayer {
     healingMultiplier?: string;
   };
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
+  stars?: number; // In-game currency earned from challenges and codes
 }

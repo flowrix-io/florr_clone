@@ -114,6 +114,32 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
         // Increment kill count for this mob type and rarity
         const currentCount = player.mobKills[enemy.type][enemy.tier] || 0;
         player.mobKills[enemy.type][enemy.tier] = currentCount + 1;
+        // Award stars for mythic+ mob kills (challenge system)
+        const mythicPlusTiers = ['mythic', 'ultra', 'super', 'unique'];
+        if (mythicPlusTiers.includes(enemy.tier)) {
+            // Initialize stars if it doesn't exist
+            if (player.stars === undefined) {
+                player.stars = 0;
+            }
+            // Award stars based on tier
+            const starRewards = {
+                mythic: 1,
+                ultra: 5,
+                super: 25,
+                unique: 100
+            };
+            const starsAwarded = starRewards[enemy.tier] || 0;
+            player.stars += starsAwarded;
+            // Notify player of stars earned
+            if (io && starsAwarded > 0) {
+                io.to(playerId).emit('starsEarned', {
+                    amount: starsAwarded,
+                    total: player.stars,
+                    mobName: enemy.type,
+                    tier: enemy.tier
+                });
+            }
+        }
         // Use debounced save if provided, otherwise fall back to direct save (for backwards compatibility)
         const userId = playerUserIds[playerId];
         if (userId) {

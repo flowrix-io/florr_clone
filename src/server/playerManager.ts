@@ -584,7 +584,8 @@ export function savePlayerProgress(
             loadout: cleanLoadout,
             tp: player.tp || 0,
             skills: player.skills || {},
-            mobKills: player.mobKills || {}
+            mobKills: player.mobKills || {},
+            stars: player.stars || 0
         } as any);
     }
 }

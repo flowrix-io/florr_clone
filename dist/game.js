@@ -8,6 +8,7 @@ const chat_1 = require("./chat");
 const socket_1 = require("./socket");
 const inventory_1 = require("./inventory");
 const skills_1 = require("./skills");
+const shop_1 = require("./shop");
 const tutorial_1 = require("./tutorial");
 const asset_loader_1 = require("./asset_loader");
 class Game {
@@ -432,6 +433,7 @@ class Game {
         // Add to constructor after other UI initialization
         this.inventoryManager = new inventory_1.InventoryManager(this, this.chat);
         this.skillsManager = new skills_1.SkillsManager(this);
+        this.shopManager = new shop_1.ShopManager(this);
         this.svgLoader = new SVGLoader_1.SVGLoader();
         this.assetLoader.loadAssets();
         // Check if we have preconnected map data
@@ -615,6 +617,10 @@ class Game {
             }
             if (event.key === 'g' || event.key === 'G') {
                 this.inventoryManager.toggleMobGallery();
+                return;
+            }
+            if (event.key === 's' || event.key === 'S') {
+                this.shopManager.toggleShop();
                 return;
             }
             if (event.key === this.controls.toggle_mouse_controls) {
@@ -1044,6 +1050,17 @@ class Game {
         const mobGalleryPanel = document.getElementById('mobGalleryPanel');
         if (mobGalleryPanel) {
             const style = window.getComputedStyle(mobGalleryPanel);
+            if (style.display !== 'none' && style.visibility !== 'hidden') {
+                return true;
+            }
+        }
+        // Check shop
+        if (this.shopManager && this.shopManager.isShopOpenState()) {
+            return true;
+        }
+        const shopPanel = document.getElementById('shopPanel');
+        if (shopPanel) {
+            const style = window.getComputedStyle(shopPanel);
             if (style.display !== 'none' && style.visibility !== 'hidden') {
                 return true;
             }

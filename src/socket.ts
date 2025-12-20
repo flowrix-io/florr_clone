@@ -1013,6 +1013,65 @@ function setupSocketListeners(game: any) {
         }
     });
 
+    // Shop handlers
+    game.socket.on('shopPurchaseSuccess', (data: { inventory: PlayerInventory, stars: number }) => {
+        console.log('[CLIENT] shopPurchaseSuccess received:', data);
+        const player = game.players.get(game.socket.id);
+        if (player) {
+            player.inventory = data.inventory;
+            player.stars = data.stars;
+            if (game.inventoryManager) {
+                game.inventoryManager.updateInventoryDisplay();
+            }
+            if (game.shopManager) {
+                game.shopManager.handlePurchaseSuccess();
+                game.shopManager.updateStarsDisplay();
+            }
+        }
+    });
+
+    game.socket.on('shopPurchaseError', (message: string) => {
+        console.log('[CLIENT] shopPurchaseError received:', message);
+        if (game.shopManager) {
+            game.shopManager.handlePurchaseError(message);
+        }
+    });
+
+    game.socket.on('codeRedeemSuccess', (data: { stars: number, totalStars: number }) => {
+        console.log('[CLIENT] codeRedeemSuccess received:', data);
+        const player = game.players.get(game.socket.id);
+        if (player) {
+            player.stars = data.totalStars;
+            if (game.shopManager) {
+                game.shopManager.handleCodeRedeemSuccess(data.stars);
+                game.shopManager.updateStarsDisplay();
+            }
+        }
+    });
+
+    game.socket.on('codeRedeemError', (message: string) => {
+        console.log('[CLIENT] codeRedeemError received:', message);
+        if (game.shopManager) {
+            game.shopManager.handleCodeRedeemError(message);
+        }
+    });
+
+    game.socket.on('starsEarned', (data: { amount: number, total: number, mobName: string, tier: string }) => {
+        console.log('[CLIENT] starsEarned received:', data);
+        const player = game.players.get(game.socket.id);
+        if (player) {
+            player.stars = data.total;
+            // Show floating text
+            game.showFloatingText(
+                game.canvas.width / 2,
+                game.canvas.height / 2,
+                `+${data.amount} ⭐ Stars!`,
+                '#ffd700',
+                24
+            );
+        }
+    });
+
     // Listen for server game state updates for better synchronization
     game.socket.on('gameStateUpdate', (data: { players: Player[], enemies: any[], items: any[], dots: any[], timestamp: number }) => {
         const serverPlayers = data.players;
@@ -1119,6 +1178,13 @@ function setupSocketListeners(game: any) {
                 }
                 if (serverPlayer.skills !== undefined) {
                     player.skills = serverPlayer.skills;
+                }
+                // Update stars if present
+                if (serverPlayer.stars !== undefined) {
+                    player.stars = serverPlayer.stars;
+                    if (game.shopManager && game.shopManager.isShopOpenState()) {
+                        game.shopManager.updateStarsDisplay();
+                    }
                 }
             } else {
                 // Add new player

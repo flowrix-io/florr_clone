@@ -680,6 +680,8 @@ export class TitleScreen {
         const inventoryIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'inventory')?.value || '';
         const skillsIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'skills')?.value || '';
         const mobGalleryIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'mob_gallery')?.value || '';
+        // Use a star icon for shop, or fallback to a simple SVG
+        const shopIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'shop' || icon.name === 'store' || icon.name === 'coin')?.value || '<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><text x="16" y="24" font-size="24" text-anchor="middle" fill="#ffd700">⭐</text></svg>';
         // Update SVGs to be 32x32 - craft icon has different attributes than inventory
         const formattedCraftIcon = craftIcon
             .replace('width="512px"', 'width="32"')
@@ -695,19 +697,25 @@ export class TitleScreen {
         const formattedMobGalleryIcon = mobGalleryIcon
             .replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"')
             .replace('<svg', '<svg style="pointer-events: none;"');  // Prevent SVG from capturing clicks
+        const formattedShopIcon = shopIcon.includes('viewBox') 
+            ? shopIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"').replace('<svg', '<svg style="pointer-events: none;"')
+            : shopIcon.replace('<svg', '<svg style="pointer-events: none;" width="32" height="32"');
         
         console.log('Craft icon HTML:', formattedCraftIcon.substring(0, 100));
         console.log('Inventory icon HTML:', formattedInventoryIcon.substring(0, 100));
-        // Order: inventory (top), skills, mob gallery, craft (bottom)
+        // Order: inventory (top), skills, mob gallery, shop, craft (bottom)
         bottomLeftButtons.innerHTML = `
-            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #00b3ff; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 4; pointer-events: auto;" title="Inventory (I)">
+            <div id="inventoryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #00b3ff; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 5; pointer-events: auto;" title="Inventory (I)">
                 ${formattedInventoryIcon}
             </div>
-            <div id="skillsButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #9d4edd; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 3; pointer-events: auto;" title="Skills (K)">
+            <div id="skillsButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #9d4edd; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 4; pointer-events: auto;" title="Skills (K)">
                 ${formattedSkillsIcon}
             </div>
-            <div id="mobGalleryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #d6c206; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 2; pointer-events: auto;" title="Mob Gallery (G)">
+            <div id="mobGalleryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #d6c206; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 3; pointer-events: auto;" title="Mob Gallery (G)">
                 ${formattedMobGalleryIcon}
+            </div>
+            <div id="shopButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #4CAF50; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 2; pointer-events: auto;" title="Shop (S)">
+                ${formattedShopIcon}
             </div>
             <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #ff9d00; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 1; pointer-events: auto;" title="Craft (R)">
                 ${formattedCraftIcon}
@@ -920,6 +928,26 @@ export class TitleScreen {
                     } else {
                         // Toggle inventory panel directly on title screen
                         this.toggleInventoryOnTitleScreen();
+                    }
+                    return false;
+                }, true);
+            }
+
+            const shopButtonIcon = document.getElementById('shopButtonIcon');
+            if (shopButtonIcon) {
+                // Remove any existing listeners by cloning
+                const newShopButton = shopButtonIcon.cloneNode(true);
+                shopButtonIcon.parentNode?.replaceChild(newShopButton, shopButtonIcon);
+                
+                newShopButton.addEventListener('click', (e) => {
+                    console.log('Shop button clicked');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    
+                    // Check if game is running
+                    if (window.currentGame && window.currentGame.shopManager) {
+                        window.currentGame.shopManager.toggleShop();
                     }
                     return false;
                 }, true);
