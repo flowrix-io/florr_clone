@@ -1058,7 +1058,8 @@ function setupSocketListeners(game: any) {
 
     game.socket.on('starsEarned', (data: { amount: number, total: number, mobName: string, tier: string }) => {
         console.log('[CLIENT] starsEarned received:', data);
-        const player = game.players.get(game.socket.id);
+        // Update player stars
+        const player = game.getLocalPlayer();
         if (player) {
             player.stars = data.total;
             // Show floating text
@@ -1069,6 +1070,10 @@ function setupSocketListeners(game: any) {
                 '#ffd700',
                 24
             );
+        }
+        // Update shop display (including challenges tab if open)
+        if (game.shopManager) {
+            game.shopManager.updateStarsDisplay();
         }
     });
 

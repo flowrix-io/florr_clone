@@ -174,6 +174,7 @@ export function trackMobKill(
                 });
             }
         }
+
         
         // Use debounced save if provided, otherwise fall back to direct save (for backwards compatibility)
         const userId = playerUserIds[playerId];

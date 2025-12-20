@@ -45,6 +45,9 @@ export interface Enemy {
   dpsHistory?: Array<{ time: number; damage: number }>;  // History of damage events with timestamps
   dpsStartTime?: number;  // When DPS tracking started
   currentDPS?: number;  // Current calculated DPS
+  // Challenge mob tracking
+  challengeOwnerId?: string;  // ID of the player who purchased this challenge
+  challengeStarsReward?: number;  // Stars to award when this challenge mob is killed
 }
 
 export interface Obstacle {

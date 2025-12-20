@@ -108,7 +108,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         ]
     },
     {
-        date: 'December 16, 2025',
+        date: 'December 18, 2025',
         changes: [
             'New ant hell map',
         ]

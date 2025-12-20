@@ -178,6 +178,49 @@ export class ShopManager {
 
         shopContent.appendChild(codeSection);
 
+        // Tabs
+        const tabsContainer = document.createElement('div');
+        tabsContainer.style.cssText = `
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+        `;
+
+        const shopTab = document.createElement('button');
+        shopTab.textContent = 'Shop';
+        shopTab.className = 'shop-tab active';
+        shopTab.style.cssText = `
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            border-bottom: 3px solid #ffffff;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        `;
+
+        const challengesTab = document.createElement('button');
+        challengesTab.textContent = 'Challenges';
+        challengesTab.className = 'shop-tab';
+        challengesTab.style.cssText = `
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.7);
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        `;
+
+        tabsContainer.appendChild(shopTab);
+        tabsContainer.appendChild(challengesTab);
+        shopContent.appendChild(tabsContainer);
+
         // Shop items grid
         const itemsGrid = document.createElement('div');
         itemsGrid.id = 'shopItemsGrid';
@@ -191,9 +234,48 @@ export class ShopManager {
             justify-content: start;
         `;
 
+        // Challenges display
+        const challengesContainer = document.createElement('div');
+        challengesContainer.id = 'shopChallengesContainer';
+        challengesContainer.style.cssText = `
+            display: none;
+            overflow-y: auto;
+            flex: 1;
+            padding: 10px;
+        `;
+
         shopContent.appendChild(itemsGrid);
+        shopContent.appendChild(challengesContainer);
         this.shopPanel.appendChild(shopContent);
         document.body.appendChild(this.shopPanel);
+
+        // Tab switching
+        shopTab.addEventListener('click', () => {
+            shopTab.classList.add('active');
+            shopTab.style.background = 'rgba(255, 255, 255, 0.2)';
+            shopTab.style.color = 'white';
+            shopTab.style.borderBottom = '3px solid #ffffff';
+            challengesTab.classList.remove('active');
+            challengesTab.style.background = 'rgba(255, 255, 255, 0.1)';
+            challengesTab.style.color = 'rgba(255, 255, 255, 0.7)';
+            challengesTab.style.borderBottom = '3px solid transparent';
+            itemsGrid.style.display = 'grid';
+            challengesContainer.style.display = 'none';
+        });
+
+        challengesTab.addEventListener('click', () => {
+            challengesTab.classList.add('active');
+            challengesTab.style.background = 'rgba(255, 255, 255, 0.2)';
+            challengesTab.style.color = 'white';
+            challengesTab.style.borderBottom = '3px solid #ffffff';
+            shopTab.classList.remove('active');
+            shopTab.style.background = 'rgba(255, 255, 255, 0.1)';
+            shopTab.style.color = 'rgba(255, 255, 255, 0.7)';
+            shopTab.style.borderBottom = '3px solid transparent';
+            itemsGrid.style.display = 'none';
+            challengesContainer.style.display = 'block';
+            this.updateChallengesDisplay();
+        });
 
         // Add styles
         this.addShopStyles();
@@ -422,9 +504,96 @@ export class ShopManager {
         codeInput.value = '';
     }
 
+    private updateChallengesDisplay(): void {
+        const challengesContainer = document.getElementById('shopChallengesContainer');
+        if (!challengesContainer) return;
+
+        const player = this.game.getLocalPlayer();
+        const currentStars = player?.stars || 0;
+
+        challengesContainer.innerHTML = '';
+
+        const title = document.createElement('h3');
+        title.textContent = 'Earn Stars by Defeating Mythic+ Mobs';
+        title.style.cssText = `
+            margin: 0 0 10px 0;
+            color: white;
+            font-size: 20px;
+            text-align: center;
+        `;
+        challengesContainer.appendChild(title);
+
+        const starsInfo = document.createElement('div');
+        starsInfo.innerHTML = `<span style="font-size: 24px;">⭐</span> <span style="font-weight: bold; font-size: 18px;">${currentStars.toLocaleString()} Stars</span>`;
+        starsInfo.style.cssText = `
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: #ffd700;
+            margin-bottom: 20px;
+            font-size: 18px;
+        `;
+        challengesContainer.appendChild(starsInfo);
+
+        const challengeTiers = [
+            { tier: 'mythic', stars: 1, color: '#1fdbde', description: 'Defeat any Mythic tier mob' },
+            { tier: 'ultra', stars: 5, color: '#de1f65', description: 'Defeat any Ultra tier mob' },
+            { tier: 'super', stars: 25, color: '#2bffa4', description: 'Defeat any Super tier mob' },
+            { tier: 'unique', stars: 100, color: '#bf00ff', description: 'Defeat any Unique tier mob' }
+        ];
+
+        for (const challenge of challengeTiers) {
+            const challengeCard = document.createElement('div');
+            challengeCard.style.cssText = `
+                background: ${challenge.color};
+                border: 2px solid rgba(0, 0, 0, 0.3);
+                border-radius: 10px;
+                padding: 15px;
+                margin-bottom: 15px;
+                color: white;
+            `;
+
+            const tierName = document.createElement('div');
+            tierName.textContent = challenge.tier.charAt(0).toUpperCase() + challenge.tier.slice(1) + ' Challenge';
+            tierName.style.cssText = `
+                font-size: 18px;
+                font-weight: bold;
+                margin-bottom: 10px;
+            `;
+            challengeCard.appendChild(tierName);
+
+            const description = document.createElement('div');
+            description.textContent = challenge.description;
+            description.style.cssText = `
+                font-size: 14px;
+                margin-bottom: 10px;
+                opacity: 0.9;
+            `;
+            challengeCard.appendChild(description);
+
+            const reward = document.createElement('div');
+            reward.innerHTML = `<span style="font-size: 20px;">⭐</span> <span style="font-weight: bold; font-size: 16px;">${challenge.stars} Star${challenge.stars !== 1 ? 's' : ''}</span>`;
+            reward.style.cssText = `
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                color: #ffd700;
+            `;
+            challengeCard.appendChild(reward);
+
+            challengesContainer.appendChild(challengeCard);
+        }
+    }
+
     public updateStarsDisplay(): void {
         if (!this.isShopOpen) return;
         this.updateShopDisplay();
+        // Also update challenges display if challenges tab is active
+        const challengesContainer = document.getElementById('shopChallengesContainer');
+        if (challengesContainer && challengesContainer.style.display !== 'none') {
+            this.updateChallengesDisplay();
+        }
     }
 
     public handlePurchaseSuccess(): void {

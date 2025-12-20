@@ -841,11 +841,16 @@ function setupSocketListeners(game) {
     });
     game.socket.on('starsEarned', (data) => {
         console.log('[CLIENT] starsEarned received:', data);
-        const player = game.players.get(game.socket.id);
+        // Update player stars
+        const player = game.getLocalPlayer();
         if (player) {
             player.stars = data.total;
             // Show floating text
             game.showFloatingText(game.canvas.width / 2, game.canvas.height / 2, `+${data.amount} ⭐ Stars!`, '#ffd700', 24);
+        }
+        // Update shop display (including challenges tab if open)
+        if (game.shopManager) {
+            game.shopManager.updateStarsDisplay();
         }
     });
     // Listen for server game state updates for better synchronization
