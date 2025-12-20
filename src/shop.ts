@@ -484,6 +484,16 @@ export class ShopManager {
             return;
         }
 
+        // Get petal stats for display
+        const stats = getPetalStats(petalType, rarity);
+        const petalName = stats?.name || petalType;
+        
+        // Show confirmation prompt
+        const confirmMessage = `Buy ${petalName} (${rarity}) for ${price.toLocaleString()} stars?`;
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
         socket.emit('shopBuy', { petalType, rarity, price });
     }
 

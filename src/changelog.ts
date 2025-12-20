@@ -117,6 +117,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         date: 'December 20, 2025',
         changes: [
             'Added shop, note that you cannot buy petals with real money, only stars',
+            'Stars are awarded for killing mobs or claiming codes'
         ]
     }
 ];
