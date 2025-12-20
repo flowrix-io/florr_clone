@@ -2189,6 +2189,12 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 return;
             }
 
+            // Skip unique rarity - not purchasable
+            if (data.rarity === 'unique') {
+                socket.emit('shopPurchaseError', 'Cannot purchase unique rarity petals');
+                return;
+            }
+
             // Deduct stars
             player.stars = stars - data.price;
 

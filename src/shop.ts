@@ -21,74 +21,44 @@ interface ShopItem {
     price: number;
 }
 
-// Shop pricing configuration
-const SHOP_PRICES: { [petalType: string]: { [rarity: string]: number } } = {
-    basic: {
-        common: 10,
-        uncommon: 30,
-        rare: 90,
-        epic: 270,
-        legendary: 810,
-        mythic: 2430,
-        ultra: 7290,
-        super: 21870,
-        unique: 65610
-    },
-    rose: {
-        common: 15,
-        uncommon: 45,
-        rare: 135,
-        epic: 405,
-        legendary: 1215,
-        mythic: 3645,
-        ultra: 10935,
-        super: 32805,
-        unique: 98415
-    },
-    stinger: {
-        common: 20,
-        uncommon: 60,
-        rare: 180,
-        epic: 540,
-        legendary: 1620,
-        mythic: 4860,
-        ultra: 14580,
-        super: 43740,
-        unique: 131220
-    },
-    light: {
-        common: 12,
-        uncommon: 36,
-        rare: 108,
-        epic: 324,
-        legendary: 972,
-        mythic: 2916,
-        ultra: 8748,
-        super: 26244,
-        unique: 78732
-    },
-    rock: {
-        common: 18,
-        uncommon: 54,
-        rare: 162,
-        epic: 486,
-        legendary: 1458,
-        mythic: 4374,
-        ultra: 13122,
-        super: 39366,
-        unique: 118098
-    }
+// Shop pricing configuration - single base price per petal type (applies to all rarities)
+const SHOP_PRICES: { [petalType: string]: number } = {
+    basic: 10,
+    rose: 15,
+    stinger: 20,
+    light: 12,
+    rock: 18,
+    sand: 14,
+    yggdrasil: 120,
+    dandelion: 13,
+    clover: 16,
+    bone: 17,
+    cactus: 19,
+    poison_cactus: 22,
+    iris: 18,
+    lightning: 25,
+    missile: 21,
+    jelly: 20,
+    yucca: 15,
+    leaf: 14,
+    cutter: 50,
+    lightning_cutter: 60,
+    wing: 23,
+    square: 1000,
+    golden_leaf: 18,
+    blood_leaf: 24,
+    target_dummy_egg: 100000000,
 };
 
-// Default prices for petals not in the config (3x multiplier per rarity)
-function getDefaultPrice(petalType: string, rarity: Rarity): number {
-    const rarityIndex = RARITY_LEVELS.indexOf(rarity);
-    const basePrice = 10;
-    return basePrice * Math.pow(3, rarityIndex);
-}
+// Default price for petals not in the config
+const DEFAULT_SHOP_PRICE = 10;
 
 function getShopPrice(petalType: string, rarity: Rarity): number {
-    return SHOP_PRICES[petalType]?.[rarity] || getDefaultPrice(petalType, rarity);
+    const basePrice = SHOP_PRICES[petalType] || DEFAULT_SHOP_PRICE;
+    const rarityIndex = RARITY_LEVELS.indexOf(rarity);
+    // Multiply by 3.5 for each rarity level and round down
+    const multiplier = Math.pow(3.5, rarityIndex);
+    return Math.floor(basePrice * multiplier);
 }
 
 export class ShopManager {
@@ -377,6 +347,9 @@ export class ShopManager {
             if (commonStats?.isAdminPetal) continue;
 
             for (const rarity of RARITY_LEVELS) {
+                // Skip unique rarity - not purchasable
+                if (rarity === 'unique') continue;
+                
                 const price = getShopPrice(petalType, rarity);
                 const stats = getPetalStats(petalType, rarity);
                 if (!stats) continue;
