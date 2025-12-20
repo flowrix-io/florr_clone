@@ -801,18 +801,47 @@ function respawnPlayer(player: ServerPlayer) {
 // Debounced save mechanism to prevent lag from frequent saves
 const pendingSaves = new Map<string, NodeJS.Timeout>();
 
-// Code redemption system
-interface RedeemedCode {
-    code: string;
-    stars: number;
-    maxUses?: number; // Optional: limit how many times code can be used
-    uses: number;
-    usedBy?: string[]; // Track which users have used this code
-    createdBy?: string; // Admin who created the code
-    createdAt?: number; // Timestamp when code was created
-}
+// Code redemption system - import from database
+import { RedeemedCode } from './database';
 
 export const redeemedCodes = new Map<string, RedeemedCode>();
+
+// Load codes from database on server startup
+function loadCodesFromDatabase(): void {
+    const savedCodes = database.getAllCodes();
+    redeemedCodes.clear();
+    let loadedCount = 0;
+    let removedCount = 0;
+    
+    for (const [code, codeData] of Object.entries(savedCodes)) {
+        // Check if code has reached max uses - if so, remove it from database
+        if (codeData.maxUses && codeData.uses >= codeData.maxUses) {
+            database.deleteCode(code);
+            removedCount++;
+        } else {
+            redeemedCodes.set(code, codeData);
+            loadedCount++;
+        }
+    }
+    
+    console.log(`[SERVER] Loaded ${loadedCount} codes from database`);
+    if (removedCount > 0) {
+        console.log(`[SERVER] Removed ${removedCount} fully used codes from database`);
+    }
+}
+
+// Save code to database
+export function saveCodeToDatabase(code: string, codeData: RedeemedCode): void {
+    database.saveCode(code, codeData);
+}
+
+// Delete code from database
+export function deleteCodeFromDatabase(code: string): void {
+    database.deleteCode(code);
+}
+
+// Load codes when server starts
+loadCodesFromDatabase();
 
 // Wrapper for savePlayerProgress that passes database with debouncing
 function savePlayerProgress(player: ServerPlayer, userId: string) {
@@ -2227,6 +2256,18 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 redeemedCode.usedBy = [];
             }
             redeemedCode.usedBy.push(userId || socket.id);
+
+            // Check if code has reached max uses
+            const hasReachedMaxUses = redeemedCode.maxUses && redeemedCode.uses >= redeemedCode.maxUses;
+            
+            if (hasReachedMaxUses) {
+                // Remove code from memory and database since it's fully used
+                redeemedCodes.delete(code);
+                deleteCodeFromDatabase(code);
+            } else {
+                // Save code usage to database (only if not fully used)
+                saveCodeToDatabase(code, redeemedCode);
+            }
 
             // Save progress
             if (userId) {

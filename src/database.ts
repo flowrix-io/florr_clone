@@ -35,9 +35,20 @@ interface User {
     admin?: boolean; // Admin flag for server command access
 }
 
+export interface RedeemedCode {
+    code: string;
+    stars: number;
+    maxUses?: number; // Optional: limit how many times code can be used
+    uses: number;
+    usedBy?: string[]; // Track which users have used this code
+    createdBy?: string; // Admin who created the code
+    createdAt?: number; // Timestamp when code was created
+}
+
 interface DatabaseData {
     players: { [userId: string]: PlayerProgress };
     users: { [username: string]: User };
+    codes?: { [code: string]: RedeemedCode }; // Store codes persistently
 }
 
 let db: DatabaseData = { players: {}, users: {} };
@@ -198,5 +209,37 @@ export const database = {
             console.log(`Successfully migrated ${migrated} players to new XP format`);
         }
         return migrated;
+    },
+
+    // Code-related functions
+    saveCode: (code: string, codeData: RedeemedCode) => {
+        if (!db.codes) {
+            db.codes = {};
+        }
+        db.codes[code] = codeData;
+        writeDatabase();
+        return true;
+    },
+
+    deleteCode: (code: string) => {
+        if (db.codes && db.codes[code]) {
+            delete db.codes[code];
+            writeDatabase();
+            return true;
+        }
+        return false;
+    },
+
+    getAllCodes: (): { [code: string]: RedeemedCode } => {
+        return db.codes || {};
+    },
+
+    updateCode: (code: string, codeData: RedeemedCode) => {
+        if (!db.codes) {
+            db.codes = {};
+        }
+        db.codes[code] = codeData;
+        writeDatabase();
+        return true;
     },
 }; 

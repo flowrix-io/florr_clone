@@ -1,15 +1,15 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 142099129,
+      "totalXP": 142106287,
       "inventory": {
         "common": {
-          "shield": 144,
+          "shield": 146,
           "petal_light": 33,
           "petal_dandelion": 25,
           "petal_stinger": 29,
           "petal_yggdrasil": 9,
-          "speed_boost": 54,
+          "speed_boost": 55,
           "petal_sand": 42,
           "petal_rock": 143,
           "petal_clover": 44,
@@ -23,7 +23,7 @@
           "petal_leaf": 9,
           "petal_cutter": 2,
           "petal_wing": 223,
-          "petal_rose": 60,
+          "petal_rose": 61,
           "health_potion": 33,
           "petal_basic": 32,
           "petal_square": 12,
@@ -34,8 +34,8 @@
           "petal_yucca": 5,
           "petal_hornet_egg": 9,
           "petal_dandelion_egg": 17,
-          "petal_ladybug_egg": 8,
-          "petal_soldier_ant_egg": 23,
+          "petal_ladybug_egg": 9,
+          "petal_soldier_ant_egg": 24,
           "petal_dark_ladybug_egg": 7,
           "petal_bee_egg": 9,
           "petal_fly_egg": 19,
@@ -80,7 +80,8 @@
           "petal_egg": 1000,
           "petal_soldier_ant_egg": 999,
           "petal_soldier_fire_ant_egg": 1001,
-          "petal_beetle_egg": 1000
+          "petal_beetle_egg": 1000,
+          "petal_garbage_egg": 1
         },
         "mythic": {
           "speed_boost": 15,
@@ -152,7 +153,7 @@
           "petal_golden_leaf": 5,
           "petal_blood_leaf": 1,
           "petal_ant_egg": 4,
-          "petal_dandelion_egg": 7,
+          "petal_dandelion_egg": 8,
           "petal_dark_ladybug_egg": 10,
           "petal_ladybug_egg": 5,
           "petal_bee_egg": 3,
@@ -163,7 +164,7 @@
           "petal_roach_egg": 4,
           "petal_moth_egg": 4,
           "petal_bush_egg": 7,
-          "petal_rock_egg": 2,
+          "petal_rock_egg": 3,
           "petal_soldier_fire_ant_egg": 4
         },
         "legendary": {
@@ -244,7 +245,7 @@
           "petal_dark_ladybug_egg": 17,
           "petal_soldier_ant_egg": 18,
           "petal_ladybug_egg": 13,
-          "petal_dandelion_egg": 13,
+          "petal_dandelion_egg": 14,
           "petal_fly_egg": 12,
           "petal_spider_egg": 8,
           "petal_garbage_egg": 10,
@@ -396,7 +397,11 @@
           "rarity": "unique",
           "petalType": "sand"
         },
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "target_dummy_egg"
+        },
         null,
         null,
         null,
@@ -415,27 +420,27 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 31,
+          "common": 35,
           "legendary": 23,
           "uncommon": 8,
           "mythic": 21,
-          "rare": 6,
+          "rare": 7,
           "ultra": 3,
           "epic": 3
         },
         "soldier_ant": {
           "epic": 5,
-          "legendary": 31,
-          "common": 54,
+          "legendary": 34,
+          "common": 62,
           "rare": 10,
           "mythic": 45,
           "ultra": 3,
-          "uncommon": 27
+          "uncommon": 28
         },
         "rock": {
           "legendary": 22,
           "ultra": 1,
-          "common": 22,
+          "common": 24,
           "mythic": 36,
           "epic": 9,
           "rare": 6,
@@ -443,26 +448,26 @@
           "super": 1
         },
         "dark_ladybug": {
-          "common": 39,
+          "common": 42,
           "legendary": 23,
           "mythic": 15,
           "uncommon": 17,
           "rare": 6,
-          "epic": 5,
+          "epic": 6,
           "ultra": 1
         },
         "hornet": {
-          "common": 30,
-          "legendary": 39,
+          "common": 35,
+          "legendary": 41,
           "mythic": 32,
-          "uncommon": 16,
+          "uncommon": 17,
           "rare": 17,
           "epic": 11,
           "ultra": 5
         },
         "dandelion": {
-          "legendary": 21,
-          "common": 19,
+          "legendary": 22,
+          "common": 21,
           "mythic": 18,
           "uncommon": 16,
           "unique": 1,
@@ -471,12 +476,12 @@
           "epic": 2
         },
         "bee": {
-          "common": 19,
+          "common": 22,
           "epic": 11,
           "mythic": 21,
           "uncommon": 9,
           "legendary": 26,
-          "rare": 8,
+          "rare": 10,
           "ultra": 2
         },
         "bubble": {
@@ -555,7 +560,7 @@
           "legendary": 12
         }
       },
-      "stars": 303170
+      "stars": 184950
     },
     "1g99g1gfk": {
       "totalXP": 62,
@@ -683,5 +688,6 @@
       "username": "User06617766",
       "password": "$2b$12$y6mBNBi873G7GRqGk7AJI.vKGect1m0qdMHizhcK12LgbsHKjXNoy"
     }
-  }
+  },
+  "codes": {}
 }

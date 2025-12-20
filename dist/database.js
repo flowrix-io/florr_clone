@@ -178,4 +178,32 @@ exports.database = {
         }
         return migrated;
     },
+    // Code-related functions
+    saveCode: (code, codeData) => {
+        if (!db.codes) {
+            db.codes = {};
+        }
+        db.codes[code] = codeData;
+        writeDatabase();
+        return true;
+    },
+    deleteCode: (code) => {
+        if (db.codes && db.codes[code]) {
+            delete db.codes[code];
+            writeDatabase();
+            return true;
+        }
+        return false;
+    },
+    getAllCodes: () => {
+        return db.codes || {};
+    },
+    updateCode: (code, codeData) => {
+        if (!db.codes) {
+            db.codes = {};
+        }
+        db.codes[code] = codeData;
+        writeDatabase();
+        return true;
+    },
 };
