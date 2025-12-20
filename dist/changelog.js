@@ -102,6 +102,18 @@ exports.CHANGELOG = [
             'Added mob gallery',
             'Some optimizations'
         ]
+    },
+    {
+        date: 'December 16, 2025',
+        changes: [
+            'New ant hell map',
+        ]
+    },
+    {
+        date: 'December 20, 2025',
+        changes: [
+            'Added shop, note that you cannot buy petals with real money, only stars',
+        ]
     }
 ];
 class ChangelogManager {
