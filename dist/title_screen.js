@@ -595,8 +595,8 @@ class TitleScreen {
         const inventoryIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'inventory')?.value || '';
         const skillsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'skills')?.value || '';
         const mobGalleryIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'mob_gallery')?.value || '';
-        // Use a star icon for shop, or fallback to a simple SVG
-        const shopIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'shop' || icon.name === 'store' || icon.name === 'coin')?.value || '<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><text x="16" y="24" font-size="24" text-anchor="middle" fill="#ffd700">⭐</text></svg>';
+        // Use the star icon for shop
+        const shopIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'stars')?.value || '<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><text x="16" y="24" font-size="24" text-anchor="middle" fill="#ffd700">⭐</text></svg>';
         // Update SVGs to be 32x32 - craft icon has different attributes than inventory
         const formattedCraftIcon = craftIcon
             .replace('width="512px"', 'width="32"')
@@ -613,8 +613,8 @@ class TitleScreen {
             .replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"')
             .replace('<svg', '<svg style="pointer-events: none;"'); // Prevent SVG from capturing clicks
         const formattedShopIcon = shopIcon.includes('viewBox')
-            ? shopIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"').replace('<svg', '<svg style="pointer-events: none;"')
-            : shopIcon.replace('<svg', '<svg style="pointer-events: none;" width="32" height="32"');
+            ? shopIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"').replace('<svg', '<svg style="pointer-events: none;"').replace('fill="#fff"', 'fill="#fff"').replace('fill="#ffd700"', 'fill="#fff"')
+            : shopIcon.replace('<svg', '<svg style="pointer-events: none;" width="32" height="32"').replace('fill="#ffd700"', 'fill="#fff"');
         console.log('Craft icon HTML:', formattedCraftIcon.substring(0, 100));
         console.log('Inventory icon HTML:', formattedInventoryIcon.substring(0, 100));
         // Order: inventory (top), skills, mob gallery, shop, craft (bottom)
@@ -628,7 +628,7 @@ class TitleScreen {
             <div id="mobGalleryButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #d6c206; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 3; pointer-events: auto;" title="Mob Gallery (G)">
                 ${formattedMobGalleryIcon}
             </div>
-            <div id="shopButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #4CAF50; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 2; pointer-events: auto;" title="Shop (S)">
+            <div id="shopButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #36d153; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 2; pointer-events: auto;" title="Shop (B)">
                 ${formattedShopIcon}
             </div>
             <div id="craftButtonIcon" style="width: 42px; height: 42px; cursor: pointer; background: #ff9d00; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; position: relative; z-index: 1; pointer-events: auto;" title="Craft (R)">

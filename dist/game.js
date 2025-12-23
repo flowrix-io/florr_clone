@@ -619,7 +619,7 @@ class Game {
                 this.inventoryManager.toggleMobGallery();
                 return;
             }
-            if (event.key === 's' || event.key === 'S') {
+            if (event.key === 'b' || event.key === 'B') {
                 this.shopManager.toggleShop();
                 return;
             }

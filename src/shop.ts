@@ -3,6 +3,7 @@ import { Player, PlayerInventory } from './player';
 import { Socket } from './socket';
 import { getPetalStats, getAllPetalTypes, RARITY_LEVELS, Rarity } from './petals';
 import { Game } from './game';
+import { GAME_ICONS_NET_ICONS } from './game-icons-net-icons';
 
 interface GameInterface {
     getLocalPlayer(): Player | undefined;
@@ -105,7 +106,7 @@ export class ShopManager {
 
         const title = document.createElement('h2');
         title.textContent = 'Shop';
-        title.style.cssText = 'margin: 0 0 20px 0; text-align: center; color: white; font-size: 24px;';
+        title.style.cssText = 'margin: 0 0 20px 0; text-align: center; color: white; font-size: 24px; font-family: Ubuntu, sans-serif;';
         shopContent.appendChild(title);
 
         const starsDisplay = document.createElement('div');
@@ -119,9 +120,12 @@ export class ShopManager {
             font-size: 24px;
             font-weight: bold;
             margin-bottom: 20px;
+            font-family: Ubuntu, sans-serif;
         `;
+        const starIcon = GAME_ICONS_NET_ICONS.find(icon => icon.name === 'stars');
+        const starIconHtml = starIcon ? `<span style="display: inline-flex; align-items: center; width: 32px; height: 32px;">${starIcon.value}</span>` : '<span style="font-size: 32px;">⭐</span>';
         starsDisplay.innerHTML = `
-            <span style="font-size: 32px;">⭐</span>
+            ${starIconHtml}
             <span id="shopStarsCount">0</span>
         `;
         shopContent.appendChild(starsDisplay);
@@ -138,7 +142,7 @@ export class ShopManager {
 
         const codeTitle = document.createElement('h3');
         codeTitle.textContent = 'Redeem Code';
-        codeTitle.style.cssText = 'margin: 0 0 10px 0; color: white; font-size: 18px;';
+        codeTitle.style.cssText = 'margin: 0 0 10px 0; color: white; font-size: 18px; font-family: Ubuntu, sans-serif;';
         codeSection.appendChild(codeTitle);
 
         const codeInputContainer = document.createElement('div');
@@ -156,6 +160,7 @@ export class ShopManager {
             background: rgba(255, 255, 255, 0.1);
             color: white;
             font-size: 16px;
+            font-family: Ubuntu, sans-serif;
         `;
 
         const redeemButton = document.createElement('button');
@@ -169,6 +174,7 @@ export class ShopManager {
             cursor: pointer;
             font-size: 16px;
             font-weight: bold;
+            font-family: Ubuntu, sans-serif;
         `;
         redeemButton.addEventListener('click', () => this.redeemCode());
 
@@ -200,6 +206,7 @@ export class ShopManager {
             font-size: 16px;
             font-weight: bold;
             transition: all 0.3s ease;
+            font-family: Ubuntu, sans-serif;
         `;
 
         const challengesTab = document.createElement('button');
@@ -215,6 +222,7 @@ export class ShopManager {
             font-size: 16px;
             font-weight: bold;
             transition: all 0.3s ease;
+            font-family: Ubuntu, sans-serif;
         `;
 
         tabsContainer.appendChild(shopTab);
@@ -290,7 +298,7 @@ export class ShopManager {
                 left: -700px;
                 width: 700px;
                 height: 66.67vh;
-                background: #4CAF50;
+                background: #42f563;
                 transition: transform 0.3s ease-out;
                 z-index: 1000;
                 padding: 20px;
@@ -298,13 +306,15 @@ export class ShopManager {
                 color: white;
                 display: flex;
                 flex-direction: column;
-                border-right: 3px solid #388e3c;
+                border-right: 3px solid #36d153;
+                font-family: Ubuntu, sans-serif;
             }
             .shop-panel.open {
                 transform: translateX(700px);
             }
             .shop-content {
                 color: white;
+                font-family: Ubuntu, sans-serif;
             }
             .shop-item-card {
                 width: 32px;
@@ -363,9 +373,15 @@ export class ShopManager {
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                font-family: Ubuntu, sans-serif;
             }
             .shop-item-price.insufficient {
                 color: #e74c3c;
+            }
+            .shop-panel svg {
+                width: 100%;
+                height: 100%;
+                fill: #ffd700;
             }
         `;
         document.head.appendChild(style);
@@ -530,11 +546,14 @@ export class ShopManager {
             color: white;
             font-size: 20px;
             text-align: center;
+            font-family: Ubuntu, sans-serif;
         `;
         challengesContainer.appendChild(title);
 
+        const starIcon = GAME_ICONS_NET_ICONS.find(icon => icon.name === 'stars');
+        const starIconHtml = starIcon ? `<span style="display: inline-flex; align-items: center; width: 24px; height: 24px;">${starIcon.value}</span>` : '<span style="font-size: 24px;">⭐</span>';
         const starsInfo = document.createElement('div');
-        starsInfo.innerHTML = `<span style="font-size: 24px;">⭐</span> <span style="font-weight: bold; font-size: 18px;">${currentStars.toLocaleString()} Stars</span>`;
+        starsInfo.innerHTML = `${starIconHtml} <span style="font-weight: bold; font-size: 18px; font-family: Ubuntu, sans-serif;">${currentStars.toLocaleString()} Stars</span>`;
         starsInfo.style.cssText = `
             display: flex;
             align-items: center;
@@ -543,6 +562,7 @@ export class ShopManager {
             color: #ffd700;
             margin-bottom: 20px;
             font-size: 18px;
+            font-family: Ubuntu, sans-serif;
         `;
         challengesContainer.appendChild(starsInfo);
 
@@ -570,6 +590,7 @@ export class ShopManager {
                 font-size: 18px;
                 font-weight: bold;
                 margin-bottom: 10px;
+                font-family: Ubuntu, sans-serif;
             `;
             challengeCard.appendChild(tierName);
 
@@ -579,16 +600,20 @@ export class ShopManager {
                 font-size: 14px;
                 margin-bottom: 10px;
                 opacity: 0.9;
+                font-family: Ubuntu, sans-serif;
             `;
             challengeCard.appendChild(description);
 
+            const starIcon = GAME_ICONS_NET_ICONS.find(icon => icon.name === 'stars');
+            const starIconHtml = starIcon ? `<span style="display: inline-flex; align-items: center; width: 20px; height: 20px;">${starIcon.value}</span>` : '<span style="font-size: 20px;">⭐</span>';
             const reward = document.createElement('div');
-            reward.innerHTML = `<span style="font-size: 20px;">⭐</span> <span style="font-weight: bold; font-size: 16px;">${challenge.stars} Star${challenge.stars !== 1 ? 's' : ''}</span>`;
+            reward.innerHTML = `${starIconHtml} <span style="font-weight: bold; font-size: 16px; font-family: Ubuntu, sans-serif;">${challenge.stars} Star${challenge.stars !== 1 ? 's' : ''}</span>`;
             reward.style.cssText = `
                 display: flex;
                 align-items: center;
                 gap: 8px;
                 color: #ffd700;
+                font-family: Ubuntu, sans-serif;
             `;
             challengeCard.appendChild(reward);
 
