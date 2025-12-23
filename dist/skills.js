@@ -46,20 +46,22 @@ class SkillsManager {
         this.skillsPanel = document.createElement('div');
         this.skillsPanel.className = 'skills-panel';
         this.skillsPanel.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 900px;
-            max-height: 700px;
-            background: #e3685f;
-            border: 2px solid #b3524b;
+            position: fixed;
+            top: 33.33vh;
+            left: -700px;
+            width: 700px;
+            height: 66.67vh;
+            background: #9d4edd;
+            border: 2px solid #7a3ba8;
             border-radius: 10px;
             padding: 20px;
-            z-index: 4000;
+            z-index: 1000;
             display: none;
             overflow-y: auto;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            box-sizing: border-box;
+            transition: transform 0.3s ease-out;
+            border-right: 3px solid #7a3ba8;
         `;
         const content = document.createElement('div');
         content.innerHTML = `
@@ -97,6 +99,9 @@ class SkillsManager {
         // Add custom scrollbar styles
         const style = document.createElement('style');
         style.textContent = `
+            .skills-panel.open {
+                transform: translateX(700px);
+            }
             .skills-panel::-webkit-scrollbar {
                 width: 10px;
             }
@@ -383,11 +388,19 @@ class SkillsManager {
             this.skillsPanel.style.display = 'block';
             this.isOpen = true;
             this.refreshSkills();
+            setTimeout(() => {
+                this.skillsPanel?.classList.add('open');
+            }, 10);
         }
     }
     hide() {
         if (this.skillsPanel) {
-            this.skillsPanel.style.display = 'none';
+            this.skillsPanel.classList.remove('open');
+            setTimeout(() => {
+                if (this.skillsPanel) {
+                    this.skillsPanel.style.display = 'none';
+                }
+            }, 300);
             this.isOpen = false;
         }
     }
