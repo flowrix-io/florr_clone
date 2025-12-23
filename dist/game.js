@@ -1103,6 +1103,9 @@ class Game {
     showExplosionEffect(x, y, radius) {
         this.graphics.showExplosionEffect(x, y, radius);
     }
+    showFallingStars() {
+        this.graphics.showFallingStars();
+    }
     showLightningEffect(x, y, targets, damage) {
         this.graphics.showLightningEffect(x, y, targets, damage);
     }

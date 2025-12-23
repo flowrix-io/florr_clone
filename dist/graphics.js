@@ -38,6 +38,8 @@ class Graphics {
         this.petalBreakEffects = [];
         this.lightningEffects = [];
         this.petalParticleEffects = [];
+        this.fallingStars = [];
+        this.MAX_FALLING_STARS = 20;
         this.mapData = [];
         this.MINIMAP_WIDTH = 200;
         this.MINIMAP_HEIGHT = 200;
@@ -500,6 +502,26 @@ class Graphics {
             lifetime: 300,
             startTime: Date.now()
         });
+    }
+    showFallingStars() {
+        // Limit to MAX_FALLING_STARS
+        const currentCount = this.fallingStars.length;
+        const starsToAdd = Math.min(this.MAX_FALLING_STARS - currentCount, this.MAX_FALLING_STARS);
+        if (starsToAdd <= 0)
+            return; // Already at max
+        for (let i = 0; i < starsToAdd; i++) {
+            this.fallingStars.push({
+                x: Math.random() * this.canvas.width,
+                y: -20 - Math.random() * 50, // Start above screen
+                vy: 2 + Math.random() * 3, // Falling speed
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.1,
+                size: 8 + Math.random() * 12,
+                alpha: 0.8 + Math.random() * 0.2,
+                lifetime: 2000 + Math.random() * 1000,
+                maxLife: 2000 + Math.random() * 1000
+            });
+        }
     }
     showLightningEffect(x, y, targets, damage) {
         // Create lightning effect
@@ -2208,6 +2230,50 @@ class Graphics {
             return true;
         });
     }
+    drawFallingStars() {
+        this.fallingStars = this.fallingStars.filter(star => {
+            // Update position
+            star.y += star.vy;
+            star.rotation += star.rotationSpeed;
+            // Update lifetime
+            star.lifetime -= 16; // Assuming ~60fps
+            const progress = star.lifetime / star.maxLife;
+            // Remove if off screen or lifetime expired
+            if (star.y > this.canvas.height + 50 || progress <= 0) {
+                return false;
+            }
+            // Draw star (in screen coordinates)
+            this.ctx.save();
+            this.ctx.globalAlpha = star.alpha * progress;
+            this.ctx.translate(star.x, star.y);
+            this.ctx.rotate(star.rotation);
+            // Draw a star shape
+            this.ctx.fillStyle = '#ffd700';
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 1;
+            const points = 5;
+            const outerRadius = star.size / 2;
+            const innerRadius = outerRadius * 0.4;
+            this.ctx.beginPath();
+            for (let i = 0; i < points * 2; i++) {
+                const angle = (i * Math.PI) / points - Math.PI / 2;
+                const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                if (i === 0) {
+                    this.ctx.moveTo(x, y);
+                }
+                else {
+                    this.ctx.lineTo(x, y);
+                }
+            }
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.restore();
+            return true;
+        });
+    }
     // Minimap scrolling methods
     scrollMinimap(deltaX, deltaY) {
         const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
@@ -2564,6 +2630,8 @@ class Graphics {
         this.ctx.restore();
         // Draw UI elements (not affected by camera)
         this.drawUI(players, currentPlayerId);
+        // Draw falling stars (screen coordinates)
+        this.drawFallingStars();
         // Draw boss bars for ultra, super, and unique mobs in view
         this.drawBossBars(enemies);
     }

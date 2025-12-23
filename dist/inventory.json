@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 148336932,
+      "totalXP": 148353263,
       "inventory": {
         "common": {
           "shield": 152,
@@ -33,7 +33,7 @@
           "petal_fire_ant_egg": 6,
           "petal_yucca": 7,
           "petal_hornet_egg": 13,
-          "petal_dandelion_egg": 19,
+          "petal_dandelion_egg": 20,
           "petal_ladybug_egg": 10,
           "petal_soldier_ant_egg": 35,
           "petal_dark_ladybug_egg": 10,
@@ -250,9 +250,9 @@
           "petal_rock_egg": 10,
           "petal_hornet_egg": 22,
           "petal_dark_ladybug_egg": 19,
-          "petal_soldier_ant_egg": 29,
+          "petal_soldier_ant_egg": 30,
           "petal_ladybug_egg": 17,
-          "petal_dandelion_egg": 17,
+          "petal_dandelion_egg": 18,
           "petal_fly_egg": 12,
           "petal_spider_egg": 8,
           "petal_garbage_egg": 10,
@@ -421,7 +421,7 @@
       "mobKills": {
         "ladybug": {
           "common": 47,
-          "legendary": 33,
+          "legendary": 34,
           "uncommon": 9,
           "mythic": 26,
           "rare": 9,
@@ -429,9 +429,9 @@
           "epic": 7
         },
         "soldier_ant": {
-          "epic": 46,
-          "legendary": 85,
-          "common": 74,
+          "epic": 47,
+          "legendary": 89,
+          "common": 75,
           "rare": 32,
           "mythic": 151,
           "ultra": 7,
@@ -439,7 +439,7 @@
           "super": 1
         },
         "rock": {
-          "legendary": 31,
+          "legendary": 32,
           "ultra": 2,
           "common": 32,
           "mythic": 42,
@@ -451,7 +451,7 @@
         },
         "dark_ladybug": {
           "common": 54,
-          "legendary": 33,
+          "legendary": 34,
           "mythic": 21,
           "uncommon": 22,
           "rare": 8,
@@ -459,17 +459,17 @@
           "ultra": 1
         },
         "hornet": {
-          "common": 63,
-          "legendary": 65,
+          "common": 65,
+          "legendary": 72,
           "mythic": 41,
-          "uncommon": 26,
-          "rare": 20,
+          "uncommon": 27,
+          "rare": 21,
           "epic": 17,
           "ultra": 9
         },
         "dandelion": {
-          "legendary": 35,
-          "common": 25,
+          "legendary": 36,
+          "common": 26,
           "mythic": 31,
           "uncommon": 20,
           "unique": 1,
@@ -566,7 +566,7 @@
           "legendary": 1
         }
       },
-      "stars": 75908
+      "stars": 96908
     },
     "1g99g1gfk": {
       "totalXP": 62,

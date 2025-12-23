@@ -1382,6 +1382,10 @@ export class Game {
         this.graphics.showExplosionEffect(x, y, radius);
     }
 
+    public showFallingStars() {
+        this.graphics.showFallingStars();
+    }
+
     public showLightningEffect(x: number, y: number, targets: { x: number; y: number; enemyId: string }[], damage: number) {
         this.graphics.showLightningEffect(x, y, targets, damage);
     }

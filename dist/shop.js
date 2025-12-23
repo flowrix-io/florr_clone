@@ -571,8 +571,20 @@ class ShopManager {
     }
     handleCodeRedeemSuccess(stars) {
         this.updateShopDisplay();
+        // Show falling stars animation
+        if (this.game.showFallingStars) {
+            this.game.showFallingStars();
+        }
         if (this.game.showFloatingText) {
-            this.game.showFloatingText(this.game.canvas.width / 2, this.game.canvas.height / 2, `+${stars} Stars!`, '#ffd700', 24);
+            const player = this.game.getLocalPlayer();
+            if (player) {
+                // Show success message at player position
+                this.game.showFloatingText(player.x, player.y - 30, `Code redeemed successfully! +${stars} Stars!`, '#ffd700', 24);
+            }
+            else {
+                // Fallback to center if player not found
+                this.game.showFloatingText(this.game.canvas.width / 2, this.game.canvas.height / 2, `Code redeemed successfully! +${stars} Stars!`, '#ffd700', 24);
+            }
         }
     }
     handleCodeRedeemError(message) {
