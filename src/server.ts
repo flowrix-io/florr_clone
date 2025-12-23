@@ -3062,7 +3062,7 @@ function updateMobProjectiles(deltaTimeMs: number) {
                     const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : projectile.damage;
                     
                     // Damage the player petal
-                    petal.health -= projectileDamage;
+                    petal.health = Math.max(0, petal.health - projectileDamage);
                     
                     // Damage the mob projectile
                     projectile.health -= petalStats.damage;

@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 148849818,
+      "totalXP": 148852353,
       "inventory": {
         "common": {
           "shield": 152,
@@ -9,7 +9,7 @@
           "petal_dandelion": 25,
           "petal_stinger": 31,
           "petal_yggdrasil": 9,
-          "speed_boost": 60,
+          "speed_boost": 61,
           "petal_sand": 42,
           "petal_rock": 143,
           "petal_clover": 45,
@@ -40,7 +40,7 @@
           "petal_bee_egg": 13,
           "petal_fly_egg": 19,
           "petal_bubble_egg": 1,
-          "petal_rock_egg": 5,
+          "petal_rock_egg": 6,
           "petal_bush_egg": 3,
           "petal_roach_egg": 2,
           "petal_cactus_egg": 1,
@@ -53,7 +53,7 @@
         },
         "unique": {
           "petal_stinger": 1004,
-          "petal_basic": 1011,
+          "petal_basic": 1013,
           "petal_rose": 1006,
           "petal_light": 1000,
           "petal_rock": 1000,
@@ -64,17 +64,17 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 1004,
+          "petal_sparkle": 1005,
           "petal_poison_cactus": 1001,
           "petal_lightning": 1001,
           "petal_iris": 1000,
           "petal_jelly": 1002,
-          "petal_cutter": 1001,
+          "petal_cutter": 1002,
           "petal_lightning_cutter": 999,
           "petal_yucca": 4,
           "petal_missile": 2,
-          "petal_bone": 5,
-          "petal_wing": 998,
+          "petal_bone": 6,
+          "petal_wing": 999,
           "petal_leaf": 4,
           "petal_blood_leaf": 999,
           "petal_action_test": 1,
@@ -83,7 +83,8 @@
           "petal_soldier_fire_ant_egg": 1001,
           "petal_beetle_egg": 1000,
           "petal_garbage_egg": 1,
-          "petal_target_dummy_egg": 1
+          "petal_target_dummy_egg": 1,
+          "petal_sand": 1
         },
         "mythic": {
           "speed_boost": 19,
@@ -159,7 +160,7 @@
           "petal_blood_leaf": 1,
           "petal_ant_egg": 4,
           "petal_dandelion_egg": 9,
-          "petal_dark_ladybug_egg": 12,
+          "petal_dark_ladybug_egg": 13,
           "petal_ladybug_egg": 8,
           "petal_bee_egg": 4,
           "petal_hornet_egg": 12,
@@ -242,7 +243,7 @@
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,
           "petal_yucca": 3,
-          "petal_wing": 65,
+          "petal_wing": 56,
           "petal_square": 7,
           "petal_healing": 1,
           "petal_golden_leaf": 22,
@@ -364,34 +365,38 @@
       "loadout": [
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "cutter"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
+          "rarity": "epic",
           "petalType": "wing"
         },
-        null,
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "bone"
+          "rarity": "epic",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "epic",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "epic",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "epic",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "epic",
+          "petalType": "wing"
+        },
+        {
+          "type": "petal",
+          "rarity": "epic",
+          "petalType": "wing"
         },
         {
           "type": "speed_boost",
@@ -399,10 +404,14 @@
         },
         {
           "type": "petal",
-          "rarity": "unique",
-          "petalType": "sand"
+          "rarity": "epic",
+          "petalType": "wing"
         },
-        null,
+        {
+          "type": "petal",
+          "rarity": "epic",
+          "petalType": "wing"
+        },
         null,
         null,
         null,
@@ -414,13 +423,13 @@
         null,
         null
       ],
-      "tp": 121,
+      "tp": 52,
       "skills": {
-        "damage": "mythic"
+        "playerHealth": "unique"
       },
       "mobKills": {
         "ladybug": {
-          "common": 50,
+          "common": 52,
           "legendary": 36,
           "uncommon": 10,
           "mythic": 28,
@@ -431,7 +440,7 @@
         "soldier_ant": {
           "epic": 53,
           "legendary": 92,
-          "common": 80,
+          "common": 82,
           "rare": 32,
           "mythic": 153,
           "ultra": 7,
@@ -441,7 +450,7 @@
         "rock": {
           "legendary": 32,
           "ultra": 2,
-          "common": 32,
+          "common": 33,
           "mythic": 43,
           "epic": 17,
           "rare": 8,
@@ -450,8 +459,8 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 55,
-          "legendary": 35,
+          "common": 58,
+          "legendary": 37,
           "mythic": 23,
           "uncommon": 24,
           "rare": 10,
@@ -459,17 +468,17 @@
           "ultra": 1
         },
         "hornet": {
-          "common": 72,
+          "common": 73,
           "legendary": 77,
           "mythic": 45,
-          "uncommon": 29,
+          "uncommon": 30,
           "rare": 23,
           "epic": 18,
           "ultra": 10
         },
         "dandelion": {
-          "legendary": 38,
-          "common": 28,
+          "legendary": 39,
+          "common": 30,
           "mythic": 37,
           "uncommon": 22,
           "unique": 1,
@@ -478,7 +487,7 @@
           "epic": 6
         },
         "bee": {
-          "common": 29,
+          "common": 30,
           "epic": 17,
           "mythic": 37,
           "uncommon": 14,

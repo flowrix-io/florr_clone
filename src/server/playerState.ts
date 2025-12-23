@@ -619,7 +619,8 @@ export function updatePlayerState(
                     }
                     
                     enemy.health = Math.max(0, enemy.health - finalDamage);
-                    petal.health -= mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
+                    const mobDamage = mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
+                    petal.health = Math.max(0, petal.health - mobDamage);
 
                     // Apply poison effect if the petal has poison
                     if (petalStats.poison && petalStats.poison > 0 && petalStats.poisonDuration && petalStats.poisonDuration > 0) {
@@ -801,7 +802,7 @@ export function updatePlayerState(
                     // Damage the player petal (mob projectile acts as enemy petal)
                     const projectilePetalStats = getPetalStats(mobProjectile.petalType, mobProjectile.petalRarity);
                     const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : mobProjectile.damage;
-                    petal.health -= projectileDamage;
+                    petal.health = Math.max(0, petal.health - projectileDamage);
                     
                     // Remove projectile if destroyed
                     if (mobProjectile.health <= 0) {
