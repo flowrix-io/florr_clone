@@ -186,9 +186,12 @@ class NotificationsManager {
             }
             // Check scrollbar
             if (this.panelBounds && this.contentHeight > this.PANEL_HEIGHT - 40) {
-                const scrollbarX = this.PANEL_X + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
+                const isInGame = !!window.currentGame;
+                const offsetX = isInGame ? this.PANEL_X : 0;
+                const offsetY = isInGame ? this.PANEL_Y : 0;
+                const scrollbarX = offsetX + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
                 if (x >= scrollbarX && x <= scrollbarX + this.SCROLLBAR_WIDTH &&
-                    y >= this.PANEL_Y + 40 && y <= this.PANEL_Y + this.PANEL_HEIGHT - 5) {
+                    y >= offsetY + 40 && y <= offsetY + this.PANEL_HEIGHT - 5) {
                     this.isDragging = true;
                     this.dragStartY = y;
                     this.dragStartScroll = this.scrollY;
@@ -217,8 +220,11 @@ class NotificationsManager {
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
             // Check if mouse is over panel
-            if (x >= this.PANEL_X && x <= this.PANEL_X + this.PANEL_WIDTH &&
-                y >= this.PANEL_Y && y <= this.PANEL_Y + this.PANEL_HEIGHT) {
+            const isInGame = !!window.currentGame;
+            const offsetX = isInGame ? this.PANEL_X : 0;
+            const offsetY = isInGame ? this.PANEL_Y : 0;
+            if (x >= offsetX && x <= offsetX + this.PANEL_WIDTH &&
+                y >= offsetY && y <= offsetY + this.PANEL_HEIGHT) {
                 e.preventDefault();
                 const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
                 this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY - e.deltaY));
@@ -233,13 +239,26 @@ class NotificationsManager {
         });
     }
     render() {
-        if (!this.ctx || !this.canvas || !this.isOpen)
+        if (!this.canvas || !this.isOpen) {
             return;
+        }
+        // Re-get context if it's null (might have been lost)
+        if (!this.ctx) {
+            this.ctx = this.canvas.getContext('2d');
+            if (!this.ctx) {
+                console.error('[NOTIFICATIONS] Failed to get context');
+                return;
+            }
+        }
         const ctx = this.ctx;
+        // Check if we're in-game (canvas is full-screen) or on title screen (canvas is resized)
+        const isInGame = !!window.currentGame;
+        const offsetX = isInGame ? this.PANEL_X : 0;
+        const offsetY = isInGame ? this.PANEL_Y : 0;
         // Save context state to restore after rendering
         ctx.save();
         // Calculate content height
-        let currentY = this.PANEL_Y + 40 + this.PADDING;
+        let currentY = offsetY + 40 + this.PADDING;
         ctx.font = '14px Ubuntu, sans-serif';
         ctx.textBaseline = 'top';
         if (this.notifications.length === 0 && !this.isLoading) {
@@ -252,7 +271,7 @@ class NotificationsManager {
             if (this.hasMore) {
                 currentY += 40; // Loading indicator
             }
-            this.contentHeight = currentY - (this.PANEL_Y + 40 + this.PADDING);
+            this.contentHeight = currentY - (offsetY + 40 + this.PADDING);
         }
         const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
         this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY));
@@ -260,7 +279,7 @@ class NotificationsManager {
         ctx.fillStyle = '#4a90e2';
         ctx.strokeStyle = '#357abd';
         ctx.lineWidth = 2;
-        this.roundRect(ctx, this.PANEL_X, this.PANEL_Y, this.PANEL_WIDTH, this.PANEL_HEIGHT, 10);
+        this.roundRect(ctx, offsetX, offsetY, this.PANEL_WIDTH, this.PANEL_HEIGHT, 10);
         ctx.fill();
         ctx.stroke();
         // Draw header (before clipping)
@@ -269,11 +288,11 @@ class NotificationsManager {
         ctx.fillStyle = '#FFFFFF';
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 2;
-        ctx.strokeText('Notifications', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
-        ctx.fillText('Notifications', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
+        ctx.strokeText('Notifications', offsetX + this.PADDING, offsetY + this.PADDING);
+        ctx.fillText('Notifications', offsetX + this.PADDING, offsetY + this.PADDING);
         // Draw mark all read button (before clipping)
-        const markAllReadButtonX = this.PANEL_X + this.PANEL_WIDTH - 180;
-        const markAllReadButtonY = this.PANEL_Y + 10;
+        const markAllReadButtonX = offsetX + this.PANEL_WIDTH - 180;
+        const markAllReadButtonY = offsetY + 10;
         const markAllReadButtonWidth = 120;
         const markAllReadButtonHeight = 30;
         this.markAllReadButtonBounds = {
@@ -292,8 +311,8 @@ class NotificationsManager {
         ctx.fillText('Mark All Read', markAllReadButtonX + markAllReadButtonWidth / 2, markAllReadButtonY + markAllReadButtonHeight / 2);
         ctx.textAlign = 'left';
         // Draw close button (before clipping)
-        const closeButtonX = this.PANEL_X + this.PANEL_WIDTH - 50;
-        const closeButtonY = this.PANEL_Y + 10;
+        const closeButtonX = offsetX + this.PANEL_WIDTH - 50;
+        const closeButtonY = offsetY + 10;
         const closeButtonWidth = 30;
         const closeButtonHeight = 30;
         this.closeButtonBounds = { x: closeButtonX, y: closeButtonY, width: closeButtonWidth, height: closeButtonHeight };
@@ -308,16 +327,16 @@ class NotificationsManager {
         // Clip to panel content area (after header and buttons)
         ctx.save();
         ctx.beginPath();
-        this.roundRect(ctx, this.PANEL_X + this.PADDING, this.PANEL_Y + 40, this.PANEL_WIDTH - this.PADDING * 2, this.PANEL_HEIGHT - 40 - this.PADDING, 8);
+        this.roundRect(ctx, offsetX + this.PADDING, offsetY + 40, this.PANEL_WIDTH - this.PADDING * 2, this.PANEL_HEIGHT - 40 - this.PADDING, 8);
         ctx.clip();
         // Draw content
-        let contentY = this.PANEL_Y + 40 + this.PADDING - this.scrollY;
+        let contentY = offsetY + 40 + this.PADDING - this.scrollY;
         this.notificationBounds.clear();
         if (this.notifications.length === 0 && !this.isLoading) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.font = '14px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('No notifications yet', this.PANEL_X + this.PANEL_WIDTH / 2, contentY + 20);
+            ctx.fillText('No notifications yet', offsetX + this.PANEL_WIDTH / 2, contentY + 20);
             ctx.textAlign = 'left';
         }
         else {
@@ -335,7 +354,7 @@ class NotificationsManager {
                 if (notification.type === 'star_code')
                     borderColor = '#ffd700';
                 // Draw entry background
-                const entryX = this.PANEL_X + this.PADDING;
+                const entryX = offsetX + this.PADDING;
                 const entryY = contentY;
                 const entryWidth = this.PANEL_WIDTH - this.PADDING * 2 - (this.contentHeight > this.PANEL_HEIGHT - 40 ? this.SCROLLBAR_WIDTH + 5 : 0);
                 const entryHeight = 70;
@@ -369,15 +388,15 @@ class NotificationsManager {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
                 ctx.font = '14px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(this.isLoading ? 'Loading...' : 'Scroll for more', this.PANEL_X + this.PANEL_WIDTH / 2, contentY + 10);
+                ctx.fillText(this.isLoading ? 'Loading...' : 'Scroll for more', offsetX + this.PANEL_WIDTH / 2, contentY + 10);
                 ctx.textAlign = 'left';
             }
         }
         ctx.restore();
         // Draw scrollbar if needed
         if (this.contentHeight > this.PANEL_HEIGHT - 40) {
-            const scrollbarX = this.PANEL_X + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
-            const scrollbarTrackY = this.PANEL_Y + 40;
+            const scrollbarX = offsetX + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
+            const scrollbarTrackY = offsetY + 40;
             const scrollbarTrackHeight = this.PANEL_HEIGHT - 40 - 5;
             // Track
             ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
@@ -391,8 +410,8 @@ class NotificationsManager {
             ctx.fill();
         }
         this.panelBounds = {
-            x: this.PANEL_X,
-            y: this.PANEL_Y,
+            x: offsetX,
+            y: offsetY,
             width: this.PANEL_WIDTH,
             height: this.PANEL_HEIGHT
         };
@@ -455,6 +474,14 @@ class NotificationsManager {
     show() {
         this.isOpen = true;
         this.scrollY = 0;
+        // Ensure canvas is visible and on top (but below UI elements which are 3000+)
+        if (this.canvas) {
+            const isInGame = !!window.currentGame;
+            // In-game: keep canvas z-index low so UI elements stay on top
+            // Title screen: set higher z-index for menu canvas
+            this.canvas.style.zIndex = isInGame ? '100' : '2000';
+            this.canvas.style.pointerEvents = 'auto';
+        }
         // Reload notifications when opening
         this.loadNotifications();
     }

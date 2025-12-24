@@ -3327,6 +3327,11 @@ export class Graphics {
         this.drawBossBars(enemies);
 
         // Draw changelog and notifications menus
+        // Ensure canvas z-index is low so UI elements stay on top
+        if (this.canvas) {
+            this.canvas.style.zIndex = '0';
+        }
+        
         if (this.changelogManager) {
             this.changelogManager.render();
         }

@@ -132,18 +132,28 @@ class TitleScreen {
         // Make notifications manager globally accessible
         window.notificationsManager = this.notificationsManager;
         // Set canvas on managers after canvas is available
+        const setupCanvas = (canvas) => {
+            // Ensure canvas has proper dimensions (not just CSS sizing)
+            if (canvas.width === 0 || canvas.height === 0) {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            // Ensure canvas is visible on title screen
+            canvas.style.zIndex = '1';
+            canvas.style.pointerEvents = 'auto';
+            this.changelogManager.setCanvas(canvas);
+            this.notificationsManager.setCanvas(canvas);
+        };
         const gameCanvas = document.getElementById('gameCanvas');
         if (gameCanvas) {
-            this.changelogManager.setCanvas(gameCanvas);
-            this.notificationsManager.setCanvas(gameCanvas);
+            setupCanvas(gameCanvas);
         }
         else {
             // Wait for canvas to be ready
             const checkCanvas = setInterval(() => {
                 const canvas = document.getElementById('gameCanvas');
                 if (canvas) {
-                    this.changelogManager.setCanvas(canvas);
-                    this.notificationsManager.setCanvas(canvas);
+                    setupCanvas(canvas);
                     clearInterval(checkCanvas);
                 }
             }, 100);
@@ -755,6 +765,7 @@ class TitleScreen {
         const notificationsButton = this.exitButtonContainer.querySelector('#notificationsButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
+        console.log('Setting up buttons - changelogButton:', !!changelogButton, 'notificationsButton:', !!notificationsButton);
         if (settingsButton) {
             settingsButton.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -762,16 +773,36 @@ class TitleScreen {
             });
         }
         if (changelogButton) {
-            changelogButton.addEventListener('click', () => {
+            changelogButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                console.log('[CHANGELOG] Button clicked, isOpen before:', this.changelogManager.isChangelogOpen());
                 this.changelogManager.toggle();
+                console.log('[CHANGELOG] Button clicked, isOpen after:', this.changelogManager.isChangelogOpen());
+                const gameCanvas = document.getElementById('gameCanvas');
+                console.log('[CHANGELOG] Canvas exists:', !!gameCanvas, 'Canvas width:', gameCanvas?.width, 'Canvas height:', gameCanvas?.height);
+                console.log('[CHANGELOG] Manager canvas:', !!this.changelogManager['canvas'], 'Manager ctx:', !!this.changelogManager['ctx']);
             });
         }
+        else {
+            console.error('[CHANGELOG] Button not found!');
+        }
         if (notificationsButton) {
-            notificationsButton.addEventListener('click', () => {
+            notificationsButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                console.log('[NOTIFICATIONS] Button clicked, isOpen before:', this.notificationsManager.isNotificationsOpen());
                 this.notificationsManager.toggle();
+                console.log('[NOTIFICATIONS] Button clicked, isOpen after:', this.notificationsManager.isNotificationsOpen());
+                const gameCanvas = document.getElementById('gameCanvas');
+                console.log('[NOTIFICATIONS] Canvas exists:', !!gameCanvas, 'Canvas width:', gameCanvas?.width, 'Canvas height:', gameCanvas?.height);
+                console.log('[NOTIFICATIONS] Manager canvas:', !!this.notificationsManager['canvas'], 'Manager ctx:', !!this.notificationsManager['ctx']);
             });
             // Set the button reference in notifications manager for badge updates
             this.notificationsManager.setNotificationButton(notificationsButton);
+        }
+        else {
+            console.error('[NOTIFICATIONS] Button not found!');
         }
         if (exitButton) {
             exitButton.addEventListener('click', () => {
@@ -1368,6 +1399,25 @@ class TitleScreen {
         this.hideBackgroundCanvas();
         // Hide all title screen panels
         this.hideTitleScreenPanels();
+        // Resize canvas back to full screen for game
+        const gameCanvas = document.getElementById('gameCanvas');
+        if (gameCanvas) {
+            // Resize canvas to full screen dimensions
+            gameCanvas.width = window.innerWidth;
+            gameCanvas.height = window.innerHeight;
+            // Reset canvas positioning to full screen
+            gameCanvas.style.position = 'absolute';
+            gameCanvas.style.left = '0px';
+            gameCanvas.style.top = '0px';
+            gameCanvas.style.width = '100%';
+            gameCanvas.style.height = '100%';
+            gameCanvas.style.zIndex = '0';
+            gameCanvas.style.pointerEvents = 'auto';
+            gameCanvas.style.display = 'block';
+            // Re-setup canvas on managers with full screen dimensions
+            this.changelogManager.setCanvas(gameCanvas);
+            this.notificationsManager.setCanvas(gameCanvas);
+        }
     }
     hideTitleScreenPanels() {
         // Hide inventory panel
@@ -1430,6 +1480,11 @@ class TitleScreen {
         this.showFloatingPetals();
         this.showBackgroundCanvas();
         this.startBackgroundAnimation();
+        // Hide game canvas initially (it will be shown when menus are opened)
+        const gameCanvas = document.getElementById('gameCanvas');
+        if (gameCanvas) {
+            gameCanvas.style.display = 'none';
+        }
     }
     showExitButton() {
         this.exitButtonContainer.style.display = 'flex';
@@ -1737,11 +1792,56 @@ class TitleScreen {
     animateBackground() {
         this.backgroundTime += 16; // ~60fps
         this.drawScrollingBackground();
-        // Render changelog and notifications menus on game canvas
-        const gameCanvas = document.getElementById('gameCanvas');
-        if (gameCanvas) {
-            this.changelogManager.render();
-            this.notificationsManager.render();
+        // Only handle canvas resizing on title screen (not in-game)
+        // In-game, the Graphics class handles menu rendering on the full-screen canvas
+        if (!window.currentGame) {
+            // Render changelog and notifications menus on game canvas (title screen only)
+            const gameCanvas = document.getElementById('gameCanvas');
+            if (gameCanvas) {
+                const changelogOpen = this.changelogManager.isChangelogOpen();
+                const notificationsOpen = this.notificationsManager.isNotificationsOpen();
+                if (changelogOpen || notificationsOpen) {
+                    // Menu is open - resize canvas to only cover menu area
+                    const PANEL_X = 20;
+                    const PANEL_Y = 72;
+                    const PANEL_WIDTH = 600;
+                    const PANEL_HEIGHT = 500;
+                    // Set canvas size to menu dimensions
+                    if (gameCanvas.width !== PANEL_WIDTH || gameCanvas.height !== PANEL_HEIGHT) {
+                        gameCanvas.width = PANEL_WIDTH;
+                        gameCanvas.height = PANEL_HEIGHT;
+                        // Re-setup canvas on managers if dimensions changed
+                        this.changelogManager.setCanvas(gameCanvas);
+                        this.notificationsManager.setCanvas(gameCanvas);
+                    }
+                    // Position canvas at menu location and show it
+                    gameCanvas.style.position = 'absolute';
+                    gameCanvas.style.left = `${PANEL_X}px`;
+                    gameCanvas.style.top = `${PANEL_Y}px`;
+                    gameCanvas.style.width = `${PANEL_WIDTH}px`;
+                    gameCanvas.style.height = `${PANEL_HEIGHT}px`;
+                    gameCanvas.style.zIndex = '2000';
+                    gameCanvas.style.pointerEvents = 'auto';
+                    gameCanvas.style.display = 'block';
+                    // Clear canvas before rendering
+                    const ctx = gameCanvas.getContext('2d');
+                    if (ctx) {
+                        ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+                    }
+                    // Render menus (coordinates are relative to canvas, which is now at menu position)
+                    this.changelogManager.render();
+                    this.notificationsManager.render();
+                }
+                else {
+                    // No menus open - hide canvas
+                    gameCanvas.style.display = 'none';
+                    // Clear canvas
+                    const ctx = gameCanvas.getContext('2d');
+                    if (ctx && gameCanvas.width > 0 && gameCanvas.height > 0) {
+                        ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+                    }
+                }
+            }
         }
         this.backgroundAnimationId = requestAnimationFrame(() => this.animateBackground());
     }
