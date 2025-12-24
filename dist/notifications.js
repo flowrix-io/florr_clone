@@ -257,7 +257,11 @@ class NotificationsManager {
         const offsetY = isInGame ? this.PANEL_Y : 0;
         // Save context state to restore after rendering
         ctx.save();
-        // Calculate content height
+        // Reset any transformations that might affect text measurement
+        // This ensures text measurement is accurate
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Calculate content height (accounting for text wrapping)
+        // First pass: calculate without scrollbar to get approximate height
         let currentY = offsetY + 40 + this.PADDING;
         ctx.font = '14px Ubuntu, sans-serif';
         ctx.textBaseline = 'top';
@@ -265,13 +269,38 @@ class NotificationsManager {
             this.contentHeight = 40;
         }
         else {
-            this.notifications.forEach(() => {
-                currentY += 80; // Approximate height per notification
+            // Calculate max text width without scrollbar first (we'll recalculate if needed)
+            const maxTextWidthNoScrollbar = this.PANEL_WIDTH - this.PADDING * 2 - 20; // 20px for left/right text padding
+            this.notifications.forEach(notification => {
+                // Calculate how many lines the message will take
+                const wrappedText = this.wrapTextWithNewlines(ctx, notification.message, maxTextWidthNoScrollbar);
+                const wrappedLines = wrappedText.split('\n');
+                const messageHeight = wrappedLines.length * 18; // 18px per line (14px font + 4px spacing)
+                const baseHeight = 50; // Base height for border, padding, and time
+                const totalHeight = Math.max(70, baseHeight + messageHeight); // Minimum 70px, or base + message height
+                currentY += totalHeight;
             });
             if (this.hasMore) {
                 currentY += 40; // Loading indicator
             }
             this.contentHeight = currentY - (offsetY + 40 + this.PADDING);
+            // If we need a scrollbar, recalculate with scrollbar width
+            if (this.contentHeight > this.PANEL_HEIGHT - 40) {
+                currentY = offsetY + 40 + this.PADDING;
+                const maxTextWidthWithScrollbar = this.PANEL_WIDTH - this.PADDING * 2 - (this.SCROLLBAR_WIDTH + 5) - 20;
+                this.notifications.forEach(notification => {
+                    const wrappedText = this.wrapTextWithNewlines(ctx, notification.message, maxTextWidthWithScrollbar);
+                    const wrappedLines = wrappedText.split('\n');
+                    const messageHeight = wrappedLines.length * 18;
+                    const baseHeight = 50;
+                    const totalHeight = Math.max(70, baseHeight + messageHeight);
+                    currentY += totalHeight;
+                });
+                if (this.hasMore) {
+                    currentY += 40;
+                }
+                this.contentHeight = currentY - (offsetY + 40 + this.PADDING);
+            }
         }
         const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
         this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY));
@@ -353,35 +382,63 @@ class NotificationsManager {
                     borderColor = '#bf00ff';
                 if (notification.type === 'star_code')
                     borderColor = '#ffd700';
-                // Draw entry background
+                // Calculate text width for wrapping (must match calculation used for contentHeight)
                 const entryX = offsetX + this.PADDING;
                 const entryY = contentY;
-                const entryWidth = this.PANEL_WIDTH - this.PADDING * 2 - (this.contentHeight > this.PANEL_HEIGHT - 40 ? this.SCROLLBAR_WIDTH + 5 : 0);
-                const entryHeight = 70;
+                const hasScrollbar = this.contentHeight > this.PANEL_HEIGHT - 40;
+                const scrollbarWidth = hasScrollbar ? this.SCROLLBAR_WIDTH + 5 : 0;
+                const entryWidth = this.PANEL_WIDTH - this.PADDING * 2 - scrollbarWidth;
+                // maxTextWidth: entry width minus left/right text padding (10px each = 20px total)
+                // This is the maximum pixel width the text can be before wrapping
+                const maxTextWidth = entryWidth - 20;
+                // Set font before wrapping (must match font used in contentHeight calculation)
+                ctx.font = '14px Ubuntu, sans-serif';
+                // Debug: log the calculation
+                if (notification.message.length > 50) {
+                    console.log('[NOTIFICATIONS] Wrapping calculation:', {
+                        messageLength: notification.message.length,
+                        entryWidth: entryWidth,
+                        maxTextWidth: maxTextWidth,
+                        scrollbarWidth: scrollbarWidth,
+                        hasScrollbar: hasScrollbar
+                    });
+                }
+                // Wrap the message text and insert newlines
+                const wrappedText = this.wrapTextWithNewlines(ctx, notification.message, maxTextWidth);
+                const wrappedLines = wrappedText.split('\n');
+                const messageHeight = wrappedLines.length * 18; // 18px per line
+                const baseHeight = 50; // Base height for border, padding, and time
+                const entryHeight = Math.max(70, baseHeight + messageHeight); // Minimum 70px
                 ctx.fillStyle = isRead ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.15)';
                 this.roundRect(ctx, entryX, entryY, entryWidth, entryHeight, 8);
                 ctx.fill();
                 // Draw left border
                 ctx.fillStyle = borderColor;
                 ctx.fillRect(entryX, entryY, 4, entryHeight);
-                // Draw message
+                // Draw message (split by newlines)
                 ctx.fillStyle = '#FFFFFF';
                 ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 0.5;
                 ctx.font = '14px Ubuntu, sans-serif';
-                ctx.strokeText(notification.message, entryX + 10, entryY + 10);
-                ctx.fillText(notification.message, entryX + 10, entryY + 10);
-                // Draw time
+                let lineY = entryY + 10;
+                wrappedLines.forEach((line, index) => {
+                    if (line && line.trim()) {
+                        ctx.strokeText(line, entryX + 10, lineY);
+                        ctx.fillText(line, entryX + 10, lineY);
+                    }
+                    lineY += 18; // Move to next line (14px font + 4px spacing)
+                });
+                // Draw time (positioned at bottom of entry)
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
                 ctx.font = '12px Ubuntu, sans-serif';
-                ctx.fillText(timeAgo, entryX + 10, entryY + 35);
+                ctx.fillText(timeAgo, entryX + 10, entryY + entryHeight - 20);
                 this.notificationBounds.set(notification.id, {
                     x: entryX,
                     y: entryY,
                     width: entryWidth,
                     height: entryHeight
                 });
-                contentY += 80;
+                contentY += entryHeight + 10; // Add spacing between notifications
             });
             // Draw loading indicator
             if (this.hasMore) {
@@ -450,6 +507,186 @@ class NotificationsManager {
         else {
             return 'Just now';
         }
+    }
+    wrapTextWithNewlines(ctx, text, maxWidth) {
+        if (!text || text.trim() === '') {
+            return '';
+        }
+        // Save context state and reset transformations for accurate text measurement
+        // This is critical because the context might be transformed (scaled/translated) in-game
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset to identity matrix
+        // Ensure font is set before measuring - this is critical!
+        ctx.font = '14px Ubuntu, sans-serif';
+        // Verify maxWidth is reasonable (should be around 540px for 600px panel)
+        if (maxWidth <= 0 || maxWidth > 1000) {
+            console.error('[NOTIFICATIONS] Invalid maxWidth:', maxWidth);
+            ctx.restore();
+            return text;
+        }
+        // Measure the full text first to see if it needs wrapping
+        const fullTextWidth = ctx.measureText(text).width;
+        // Always log measurement for debugging
+        console.log('[NOTIFICATIONS] wrapTextWithNewlines measurement:', {
+            textLength: text.length,
+            textPreview: text.substring(0, 60) + '...',
+            fullTextWidth: fullTextWidth,
+            maxWidth: maxWidth,
+            needsWrapping: fullTextWidth > maxWidth,
+            canvasWidth: ctx.canvas.width,
+            canvasHeight: ctx.canvas.height
+        });
+        if (fullTextWidth <= maxWidth) {
+            // Text fits on one line, no wrapping needed
+            console.log('[NOTIFICATIONS] Text fits on one line, no wrapping needed');
+            ctx.restore();
+            return text;
+        }
+        console.log('[NOTIFICATIONS] Text needs wrapping, starting word-by-word wrapping...');
+        const words = text.split(' ').filter(w => w.length > 0);
+        const lines = [];
+        console.log('[NOTIFICATIONS] Word count:', words.length, 'First few words:', words.slice(0, 5));
+        if (words.length === 0) {
+            console.warn('[NOTIFICATIONS] No words found after splitting');
+            ctx.restore();
+            return '';
+        }
+        // Check if even a single word is too long
+        const firstWordWidth = ctx.measureText(words[0]).width;
+        console.log('[NOTIFICATIONS] First word width:', firstWordWidth, 'maxWidth:', maxWidth);
+        if (firstWordWidth > maxWidth) {
+            // Single word is too long, return it anyway (will overflow)
+            console.warn('[NOTIFICATIONS] First word too long, cannot wrap:', words[0].substring(0, 30));
+            ctx.restore();
+            return words[0];
+        }
+        let currentLine = words[0];
+        let wrapCount = 0;
+        for (let i = 1; i < words.length; i++) {
+            const word = words[i];
+            const testLine = currentLine + ' ' + word;
+            const testWidth = ctx.measureText(testLine).width;
+            if (testWidth <= maxWidth) {
+                currentLine = testLine;
+            }
+            else {
+                // Current line is full, push it and start new line with this word
+                if (currentLine.trim()) {
+                    lines.push(currentLine);
+                    wrapCount++;
+                    console.log('[NOTIFICATIONS] Wrapped at word', i, '- line', wrapCount, ':', currentLine.substring(0, 40) + '...');
+                }
+                currentLine = word;
+            }
+        }
+        // Push the last line
+        if (currentLine.trim()) {
+            lines.push(currentLine);
+            console.log('[NOTIFICATIONS] Final line:', currentLine.substring(0, 40) + '...');
+        }
+        console.log('[NOTIFICATIONS] Total lines created:', lines.length, 'Total wraps:', wrapCount);
+        // Restore context state
+        ctx.restore();
+        // Join lines with newlines
+        const result = lines.length > 0 ? lines.join('\n') : text;
+        if (lines.length > 1) {
+            console.log('[NOTIFICATIONS] wrapTextWithNewlines SUCCESS - wrapped into', lines.length, 'lines');
+            console.log('[NOTIFICATIONS] First line:', lines[0]?.substring(0, 50));
+            console.log('[NOTIFICATIONS] Second line:', lines[1]?.substring(0, 50));
+        }
+        else {
+            console.warn('[NOTIFICATIONS] wrapTextWithNewlines - text should have wrapped but only got', lines.length, 'line(s)');
+        }
+        return result;
+    }
+    wrapText(ctx, text, maxWidth) {
+        if (!text || text.trim() === '') {
+            return [''];
+        }
+        // Save context state and reset transformations for accurate text measurement
+        // This is critical because the context might be transformed (scaled/translated) in-game
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset to identity matrix
+        // Ensure font is set before measuring - this is critical!
+        ctx.font = '14px Ubuntu, sans-serif';
+        // Verify maxWidth is reasonable (should be around 540px for 600px panel)
+        if (maxWidth <= 0 || maxWidth > 1000) {
+            console.error('[NOTIFICATIONS] Invalid maxWidth:', maxWidth);
+            ctx.restore();
+            return [text];
+        }
+        // Measure the full text first to see if it needs wrapping
+        const fullTextWidth = ctx.measureText(text).width;
+        // Debug: log measurement info for long texts
+        if (text.length > 50) {
+            console.log('[NOTIFICATIONS] Text measurement:', {
+                textLength: text.length,
+                fullTextWidth: fullTextWidth,
+                maxWidth: maxWidth,
+                needsWrapping: fullTextWidth > maxWidth,
+                preview: text.substring(0, 50) + '...'
+            });
+        }
+        if (fullTextWidth <= maxWidth) {
+            // Text fits on one line, no wrapping needed
+            ctx.restore();
+            return [text];
+        }
+        const words = text.split(' ').filter(w => w.length > 0);
+        const lines = [];
+        if (words.length === 0) {
+            ctx.restore();
+            return [''];
+        }
+        // Check if even a single word is too long
+        const firstWordWidth = ctx.measureText(words[0]).width;
+        if (firstWordWidth > maxWidth) {
+            // Single word is too long, return it anyway (will overflow)
+            console.warn('[NOTIFICATIONS] Word too long to wrap:', words[0].substring(0, 30), 'width:', firstWordWidth, 'max:', maxWidth);
+            ctx.restore();
+            return [words[0]];
+        }
+        let currentLine = words[0];
+        for (let i = 1; i < words.length; i++) {
+            const word = words[i];
+            const testLine = currentLine + ' ' + word;
+            const testWidth = ctx.measureText(testLine).width;
+            if (testWidth <= maxWidth) {
+                currentLine = testLine;
+            }
+            else {
+                // Current line is full, push it and start new line with this word
+                if (currentLine.trim()) {
+                    lines.push(currentLine);
+                }
+                currentLine = word;
+            }
+        }
+        // Push the last line
+        if (currentLine.trim()) {
+            lines.push(currentLine);
+        }
+        // Restore context state
+        ctx.restore();
+        // Debug output - always log if we wrapped
+        if (lines.length > 1) {
+            console.log('[NOTIFICATIONS] wrapText SUCCESS - wrapped into', lines.length, 'lines:', {
+                originalLength: text.length,
+                maxWidth: maxWidth,
+                firstLine: lines[0]?.substring(0, 40) + '...',
+                secondLine: lines[1]?.substring(0, 40) + '...'
+            });
+        }
+        else if (fullTextWidth > maxWidth) {
+            // This shouldn't happen - we should have wrapped but didn't
+            console.error('[NOTIFICATIONS] wrapText FAILED - text too wide but not wrapped:', {
+                textLength: text.length,
+                fullTextWidth: fullTextWidth,
+                maxWidth: maxWidth,
+                linesReturned: lines.length
+            });
+        }
+        return lines.length > 0 ? lines : [text];
     }
     markAsRead(id) {
         if (!this.readNotifications.has(id)) {

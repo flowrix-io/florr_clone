@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 148862145,
+      "totalXP": 148873718,
       "inventory": {
         "common": {
           "shield": 152,
@@ -23,7 +23,7 @@
           "petal_leaf": 9,
           "petal_cutter": 2,
           "petal_wing": 223,
-          "petal_rose": 64,
+          "petal_rose": 65,
           "health_potion": 35,
           "petal_basic": 33,
           "petal_square": 13,
@@ -224,7 +224,7 @@
           "petal_stinger": 55,
           "speed_boost": 105,
           "petal_basic": 88,
-          "petal_rose": 125,
+          "petal_rose": 126,
           "petal_sand": 16,
           "petal_yggdrasil": 4,
           "health_potion": 58,
@@ -251,7 +251,7 @@
           "petal_bee_egg": 18,
           "petal_rock_egg": 10,
           "petal_hornet_egg": 23,
-          "petal_dark_ladybug_egg": 19,
+          "petal_dark_ladybug_egg": 21,
           "petal_soldier_ant_egg": 31,
           "petal_ladybug_egg": 17,
           "petal_dandelion_egg": 19,
@@ -429,8 +429,8 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 56,
-          "legendary": 36,
+          "common": 57,
+          "legendary": 37,
           "uncommon": 12,
           "mythic": 28,
           "rare": 10,
@@ -439,9 +439,9 @@
         },
         "soldier_ant": {
           "epic": 53,
-          "legendary": 94,
-          "common": 87,
-          "rare": 33,
+          "legendary": 96,
+          "common": 88,
+          "rare": 34,
           "mythic": 153,
           "ultra": 7,
           "uncommon": 59,
@@ -450,7 +450,7 @@
         "rock": {
           "legendary": 32,
           "ultra": 2,
-          "common": 38,
+          "common": 39,
           "mythic": 43,
           "epic": 18,
           "rare": 8,
@@ -459,8 +459,8 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 64,
-          "legendary": 37,
+          "common": 67,
+          "legendary": 39,
           "mythic": 23,
           "uncommon": 27,
           "rare": 10,
@@ -468,12 +468,12 @@
           "ultra": 1
         },
         "hornet": {
-          "common": 83,
-          "legendary": 81,
+          "common": 86,
+          "legendary": 84,
           "mythic": 45,
-          "uncommon": 32,
-          "rare": 26,
-          "epic": 19,
+          "uncommon": 33,
+          "rare": 27,
+          "epic": 20,
           "ultra": 10
         },
         "dandelion": {
@@ -487,12 +487,12 @@
           "epic": 6
         },
         "bee": {
-          "common": 40,
+          "common": 42,
           "epic": 17,
           "mythic": 37,
           "uncommon": 14,
-          "legendary": 41,
-          "rare": 14,
+          "legendary": 43,
+          "rare": 15,
           "ultra": 2
         },
         "bubble": {
@@ -713,6 +713,30 @@
       "type": "super_craft",
       "message": "test",
       "timestamp": 1766540514331
+    },
+    {
+      "id": "1766606759348-0y1cd180c",
+      "type": "super_craft",
+      "message": "test test test test test test test test test test test test",
+      "timestamp": 1766606759348
+    },
+    {
+      "id": "1766606812522-arw8o4fnb",
+      "type": "star_code",
+      "message": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "timestamp": 1766606812522
+    },
+    {
+      "id": "1766606854938-xbyxg0o4e",
+      "type": "star_code",
+      "message": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "timestamp": 1766606854938
+    },
+    {
+      "id": "1766610680147-k09t40cur",
+      "type": "super_craft",
+      "message": "test test test test testtest test test test testtest test test test testtest test test test testtest test test test testtest test test test testtest test test test testtest test test test testtest test test test testtest test test test testtest test test test testtest test test test testtest test test test testtest test test test test",
+      "timestamp": 1766610680147
     }
   ]
 }
