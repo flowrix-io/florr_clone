@@ -346,6 +346,18 @@ function setupGameEventListeners() {
             currentGame = new Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled, showStats, dynamicSkybox);
             window.currentGame = currentGame;
             
+            // Set changelog and notifications managers on graphics
+            if (titleScreen && currentGame.graphics) {
+                const changelogManager = (titleScreen as any).changelogManager;
+                const notificationsManager = (titleScreen as any).notificationsManager;
+                if (changelogManager) {
+                    currentGame.graphics.setChangelogManager(changelogManager);
+                }
+                if (notificationsManager) {
+                    currentGame.graphics.setNotificationsManager(notificationsManager);
+                }
+            }
+            
             // Hide title screen and show game
             titleScreen?.hideTitleScreen();
             titleScreen?.showExitButton();

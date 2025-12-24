@@ -10,7 +10,8 @@ const STORAGE_KEY = 'game_notifications_read';
 const NOTIFICATIONS_PER_PAGE = 50;
 
 export class NotificationsManager {
-    private notificationsPanel: HTMLDivElement | null = null;
+    private canvas: HTMLCanvasElement | null = null;
+    private ctx: CanvasRenderingContext2D | null = null;
     private isOpen: boolean = false;
     private notifications: Notification[] = [];
     private unreadCount: number = 0;
@@ -19,12 +20,39 @@ export class NotificationsManager {
     private isLoading: boolean = false;
     private hasMore: boolean = true;
     private serverBaseUrl: string = '';
+    private scrollY: number = 0;
+    private closeButtonBounds: { x: number; y: number; width: number; height: number } | null = null;
+    private markAllReadButtonBounds: { x: number; y: number; width: number; height: number } | null = null;
+    private panelBounds: { x: number; y: number; width: number; height: number } | null = null;
+    private contentHeight: number = 0;
+    private notificationBounds: Map<string, { x: number; y: number; width: number; height: number }> = new Map();
+    private readonly PANEL_X = 20;
+    private readonly PANEL_Y = 72;
+    private readonly PANEL_WIDTH = 600;
+    private readonly PANEL_HEIGHT = 500;
+    private readonly PADDING = 20;
+    private readonly SCROLLBAR_WIDTH = 10;
+    private isDragging: boolean = false;
+    private dragStartY: number = 0;
+    private dragStartScroll: number = 0;
 
     constructor() {
         this.loadReadNotifications();
         this.detectServerUrl();
-        this.createNotificationsPanel();
         this.loadNotifications();
+        
+        // Close on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.isOpen) {
+                this.hide();
+            }
+        });
+    }
+
+    public setCanvas(canvas: HTMLCanvasElement): void {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.setupMouseListeners();
     }
 
     private detectServerUrl(): void {
@@ -90,7 +118,6 @@ export class NotificationsManager {
 
             this.hasMore = newNotifications.length === NOTIFICATIONS_PER_PAGE;
             this.updateUnreadCount();
-            this.populateNotifications();
         } catch (error) {
             console.error('[NOTIFICATIONS] Error loading notifications from server:', error);
         } finally {
@@ -143,188 +170,300 @@ export class NotificationsManager {
         this.updateNotificationBadge();
     }
 
-    private createNotificationsPanel(): void {
-        this.notificationsPanel = document.createElement('div');
-        this.notificationsPanel.className = 'notifications-panel';
-        this.notificationsPanel.style.cssText = `
-            position: absolute;
-            top: 72px;
-            left: 20px;
-            width: 600px;
-            max-height: 500px;
-            background: #4a90e2;
-            border: 2px solid #357abd;
-            border-radius: 10px;
-            padding: 20px;
-            z-index: 4000;
-            display: none;
-            overflow-y: auto;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        `;
+    private setupMouseListeners(): void {
+        if (!this.canvas) return;
 
-        const content = document.createElement('div');
-        content.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 class="outlined-text" style="margin: 0; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-smooth: always;">Notifications</h2>
-                <div style="display: flex; gap: 10px;">
-                    <button id="markAllReadButton" style="background: #357abd; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 14px;">Mark All Read</button>
-                    <button id="clearNotificationsButton" style="background: #ff4444; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 16px;">✕</button>
-                </div>
-            </div>
-            <div id="notificationsContent"></div>
-        `;
+        this.canvas.addEventListener('mousedown', (e) => {
+            if (!this.isOpen) return;
+            const rect = this.canvas!.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
 
-        this.notificationsPanel.appendChild(content);
-        document.body.appendChild(this.notificationsPanel);
+            // Check close button
+            if (this.closeButtonBounds && 
+                x >= this.closeButtonBounds.x && x <= this.closeButtonBounds.x + this.closeButtonBounds.width &&
+                y >= this.closeButtonBounds.y && y <= this.closeButtonBounds.y + this.closeButtonBounds.height) {
+                this.hide();
+                return;
+            }
 
-        this.populateNotifications();
+            // Check mark all read button
+            if (this.markAllReadButtonBounds && 
+                x >= this.markAllReadButtonBounds.x && x <= this.markAllReadButtonBounds.x + this.markAllReadButtonBounds.width &&
+                y >= this.markAllReadButtonBounds.y && y <= this.markAllReadButtonBounds.y + this.markAllReadButtonBounds.height) {
+                this.markAllAsRead();
+                return;
+            }
 
-        // Add scroll listener for infinite scroll
-        if (this.notificationsPanel) {
-            this.notificationsPanel.addEventListener('scroll', () => {
-                if (!this.notificationsPanel) return;
-                const scrollTop = this.notificationsPanel.scrollTop;
-                const scrollHeight = this.notificationsPanel.scrollHeight;
-                const clientHeight = this.notificationsPanel.clientHeight;
+            // Check notification entries
+            for (const [id, bounds] of this.notificationBounds.entries()) {
+                if (x >= bounds.x && x <= bounds.x + bounds.width &&
+                    y >= bounds.y && y <= bounds.y + bounds.height) {
+                    this.markAsRead(id);
+                    return;
+                }
+            }
+
+            // Check scrollbar
+            if (this.panelBounds && this.contentHeight > this.PANEL_HEIGHT - 40) {
+                const scrollbarX = this.PANEL_X + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
+                if (x >= scrollbarX && x <= scrollbarX + this.SCROLLBAR_WIDTH &&
+                    y >= this.PANEL_Y + 40 && y <= this.PANEL_Y + this.PANEL_HEIGHT - 5) {
+                    this.isDragging = true;
+                    this.dragStartY = y;
+                    this.dragStartScroll = this.scrollY;
+                }
+            }
+        });
+
+        this.canvas.addEventListener('mousemove', (e) => {
+            if (!this.isOpen) return;
+            if (this.isDragging) {
+                const rect = this.canvas!.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                const deltaY = y - this.dragStartY;
+                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+                const scrollRatio = deltaY / (this.PANEL_HEIGHT - 45);
+                this.scrollY = Math.max(0, Math.min(maxScroll, this.dragStartScroll + scrollRatio * maxScroll));
+            }
+        });
+
+        this.canvas.addEventListener('mouseup', () => {
+            this.isDragging = false;
+        });
+
+        this.canvas.addEventListener('wheel', (e) => {
+            if (!this.isOpen || !this.panelBounds) return;
+            const rect = this.canvas!.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // Check if mouse is over panel
+            if (x >= this.PANEL_X && x <= this.PANEL_X + this.PANEL_WIDTH &&
+                y >= this.PANEL_Y && y <= this.PANEL_Y + this.PANEL_HEIGHT) {
+                e.preventDefault();
+                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+                this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY - e.deltaY));
                 
-                // Load more when scrolled near bottom (within 100px)
-                if (scrollHeight - scrollTop - clientHeight < 100 && this.hasMore && !this.isLoading) {
+                // Load more when scrolled near bottom
+                if (this.scrollY >= maxScroll - 100 && this.hasMore && !this.isLoading) {
                     const oldestNotification = this.notifications[this.notifications.length - 1];
                     if (oldestNotification) {
                         this.loadNotifications(oldestNotification.timestamp);
                     }
                 }
-            });
-        }
-
-        // Add close button listener
-        const closeButton = this.notificationsPanel.querySelector('#clearNotificationsButton');
-        if (closeButton) {
-            closeButton.addEventListener('click', () => this.hide());
-        }
-
-        // Add mark all read button listener
-        const markAllReadButton = this.notificationsPanel.querySelector('#markAllReadButton');
-        if (markAllReadButton) {
-            markAllReadButton.addEventListener('click', () => this.markAllAsRead());
-        }
-
-        // Close on escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.isOpen) {
-                this.hide();
             }
         });
-
-        // Add custom scrollbar styles
-        const style = document.createElement('style');
-        style.textContent = `
-            .notifications-panel::-webkit-scrollbar {
-                width: 10px;
-            }
-            .notifications-panel::-webkit-scrollbar-track {
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 5px;
-            }
-            .notifications-panel::-webkit-scrollbar-thumb {
-                background: #357abd;
-                border-radius: 5px;
-            }
-            .notifications-panel::-webkit-scrollbar-thumb:hover {
-                background: #2a5f8f;
-            }
-            .notification-entry {
-                margin-bottom: 15px;
-                padding: 15px;
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 8px;
-                border-left: 4px solid #357abd;
-                position: relative;
-            }
-            .notification-entry.unread {
-                background: rgba(255, 255, 255, 0.15);
-                border-left-color: #ffd700;
-            }
-            .notification-entry.super-craft {
-                border-left-color: #2bffa4;
-            }
-            .notification-entry.unique-craft {
-                border-left-color: #bf00ff;
-            }
-            .notification-entry.star-code {
-                border-left-color: #ffd700;
-            }
-            .notification-time {
-                font-size: 12px;
-                color: rgba(255, 255, 255, 0.7);
-                font-family: Arial, sans-serif;
-                margin-top: 5px;
-            }
-            .notification-message {
-                color: #FFFFFF;
-                -webkit-text-stroke: 0.5px #000000;
-                text-stroke: 0.5px #000000;
-                font-family: Arial, sans-serif;
-                -webkit-font-smoothing: antialiased;
-                text-rendering: optimizeLegibility;
-                font-smooth: always;
-                line-height: 1.5;
-            }
-            .outlined-text {
-                color: #FFFFFF;
-                -webkit-text-stroke: 1px #000000;
-                text-stroke: 1px #000000;
-            }
-        `;
-        document.head.appendChild(style);
     }
 
-    private populateNotifications(): void {
-        const contentDiv = this.notificationsPanel?.querySelector('#notificationsContent');
-        if (!contentDiv) return;
+    public render(): void {
+        if (!this.ctx || !this.canvas || !this.isOpen) return;
+        const ctx = this.ctx;
+        
+        // Save context state to restore after rendering
+        ctx.save();
+
+        // Calculate content height
+        let currentY = this.PANEL_Y + 40 + this.PADDING;
+        ctx.font = '14px Ubuntu, sans-serif';
+        ctx.textBaseline = 'top';
+        
+        if (this.notifications.length === 0 && !this.isLoading) {
+            this.contentHeight = 40;
+        } else {
+            this.notifications.forEach(() => {
+                currentY += 80; // Approximate height per notification
+            });
+            if (this.hasMore) {
+                currentY += 40; // Loading indicator
+            }
+            this.contentHeight = currentY - (this.PANEL_Y + 40 + this.PADDING);
+        }
+        
+        const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+        this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY));
+
+        // Draw panel background
+        ctx.fillStyle = '#4a90e2';
+        ctx.strokeStyle = '#357abd';
+        ctx.lineWidth = 2;
+        this.roundRect(ctx, this.PANEL_X, this.PANEL_Y, this.PANEL_WIDTH, this.PANEL_HEIGHT, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // Clip to panel content area
+        ctx.save();
+        ctx.beginPath();
+        this.roundRect(ctx, this.PANEL_X + this.PADDING, this.PANEL_Y + 40, 
+                      this.PANEL_WIDTH - this.PADDING * 2, this.PANEL_HEIGHT - 40 - this.PADDING, 8);
+        ctx.clip();
+
+        // Draw header
+        ctx.font = 'bold 20px Ubuntu, sans-serif';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.strokeText('Notifications', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
+        ctx.fillText('Notifications', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
+
+        // Draw mark all read button
+        const markAllReadButtonX = this.PANEL_X + this.PANEL_WIDTH - 180;
+        const markAllReadButtonY = this.PANEL_Y + 10;
+        const markAllReadButtonWidth = 120;
+        const markAllReadButtonHeight = 30;
+        this.markAllReadButtonBounds = { 
+            x: markAllReadButtonX, 
+            y: markAllReadButtonY, 
+            width: markAllReadButtonWidth, 
+            height: markAllReadButtonHeight 
+        };
+        
+        ctx.fillStyle = '#357abd';
+        this.roundRect(ctx, markAllReadButtonX, markAllReadButtonY, markAllReadButtonWidth, markAllReadButtonHeight, 5);
+        ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '14px Ubuntu, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Mark All Read', markAllReadButtonX + markAllReadButtonWidth / 2, markAllReadButtonY + markAllReadButtonHeight / 2);
+        ctx.textAlign = 'left';
+
+        // Draw close button
+        const closeButtonX = this.PANEL_X + this.PANEL_WIDTH - 50;
+        const closeButtonY = this.PANEL_Y + 10;
+        const closeButtonWidth = 30;
+        const closeButtonHeight = 30;
+        this.closeButtonBounds = { x: closeButtonX, y: closeButtonY, width: closeButtonWidth, height: closeButtonHeight };
+        
+        ctx.fillStyle = '#ff4444';
+        this.roundRect(ctx, closeButtonX, closeButtonY, closeButtonWidth, closeButtonHeight, 5);
+        ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '16px Ubuntu, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2);
+        ctx.textAlign = 'left';
+
+        // Draw content
+        let contentY = this.PANEL_Y + 40 + this.PADDING - this.scrollY;
+        this.notificationBounds.clear();
 
         if (this.notifications.length === 0 && !this.isLoading) {
-            contentDiv.innerHTML = `
-                <div style="text-align: center; padding: 40px; color: rgba(255, 255, 255, 0.7); font-family: Arial, sans-serif;">
-                    No notifications yet
-                </div>
-            `;
-            return;
-        }
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.font = '14px Ubuntu, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('No notifications yet', 
+                this.PANEL_X + this.PANEL_WIDTH / 2, 
+                contentY + 20);
+            ctx.textAlign = 'left';
+        } else {
+            this.notifications.forEach(notification => {
+                const isRead = this.readNotifications.has(notification.id);
+                const timeAgo = this.getTimeAgo(notification.timestamp);
+                
+                // Determine border color based on type
+                let borderColor = '#357abd';
+                if (!isRead) borderColor = '#ffd700';
+                if (notification.type === 'super_craft') borderColor = '#2bffa4';
+                if (notification.type === 'unique_craft') borderColor = '#bf00ff';
+                if (notification.type === 'star_code') borderColor = '#ffd700';
 
-        // Show notifications (already sorted newest first from server)
-        contentDiv.innerHTML = this.notifications.map(notification => {
-            const timeAgo = this.getTimeAgo(notification.timestamp);
-            const typeClass = notification.type.replace('_', '-');
-            const isRead = this.readNotifications.has(notification.id);
-            const unreadClass = isRead ? '' : 'unread';
-            
-            return `
-                <div class="notification-entry ${typeClass} ${unreadClass}" data-id="${notification.id}">
-                    <div class="notification-message">${notification.message}</div>
-                    <div class="notification-time">${timeAgo}</div>
-                </div>
-            `;
-        }).join('');
+                // Draw entry background
+                const entryX = this.PANEL_X + this.PADDING;
+                const entryY = contentY;
+                const entryWidth = this.PANEL_WIDTH - this.PADDING * 2 - (this.contentHeight > this.PANEL_HEIGHT - 40 ? this.SCROLLBAR_WIDTH + 5 : 0);
+                const entryHeight = 70;
+                
+                ctx.fillStyle = isRead ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.15)';
+                this.roundRect(ctx, entryX, entryY, entryWidth, entryHeight, 8);
+                ctx.fill();
 
-        // Add loading indicator if more available
-        if (this.hasMore) {
-            contentDiv.innerHTML += `
-                <div id="loadingIndicator" style="text-align: center; padding: 20px; color: rgba(255, 255, 255, 0.7); font-family: Arial, sans-serif;">
-                    ${this.isLoading ? 'Loading...' : 'Scroll for more'}
-                </div>
-            `;
-        }
+                // Draw left border
+                ctx.fillStyle = borderColor;
+                ctx.fillRect(entryX, entryY, 4, entryHeight);
 
-        // Add click listeners to mark as read
-        contentDiv.querySelectorAll('.notification-entry').forEach(entry => {
-            entry.addEventListener('click', () => {
-                const id = entry.getAttribute('data-id');
-                if (id) {
-                    this.markAsRead(id);
-                }
+                // Draw message
+                ctx.fillStyle = '#FFFFFF';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 0.5;
+                ctx.font = '14px Ubuntu, sans-serif';
+                ctx.strokeText(notification.message, entryX + 10, entryY + 10);
+                ctx.fillText(notification.message, entryX + 10, entryY + 10);
+
+                // Draw time
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.font = '12px Ubuntu, sans-serif';
+                ctx.fillText(timeAgo, entryX + 10, entryY + 35);
+
+                this.notificationBounds.set(notification.id, {
+                    x: entryX,
+                    y: entryY,
+                    width: entryWidth,
+                    height: entryHeight
+                });
+
+                contentY += 80;
             });
-        });
+
+            // Draw loading indicator
+            if (this.hasMore) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.font = '14px Ubuntu, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(
+                    this.isLoading ? 'Loading...' : 'Scroll for more',
+                    this.PANEL_X + this.PANEL_WIDTH / 2,
+                    contentY + 10
+                );
+                ctx.textAlign = 'left';
+            }
+        }
+
+        ctx.restore();
+
+        // Draw scrollbar if needed
+        if (this.contentHeight > this.PANEL_HEIGHT - 40) {
+            const scrollbarX = this.PANEL_X + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
+            const scrollbarTrackY = this.PANEL_Y + 40;
+            const scrollbarTrackHeight = this.PANEL_HEIGHT - 40 - 5;
+            
+            // Track
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            this.roundRect(ctx, scrollbarX, scrollbarTrackY, this.SCROLLBAR_WIDTH, scrollbarTrackHeight, 5);
+            ctx.fill();
+
+            // Thumb
+            const thumbHeight = (this.PANEL_HEIGHT - 45) * (this.PANEL_HEIGHT - 40) / this.contentHeight;
+            const thumbY = scrollbarTrackY + (this.scrollY / maxScroll) * (scrollbarTrackHeight - thumbHeight);
+            ctx.fillStyle = '#357abd';
+            this.roundRect(ctx, scrollbarX, thumbY, this.SCROLLBAR_WIDTH, thumbHeight, 5);
+            ctx.fill();
+        }
+
+        this.panelBounds = {
+            x: this.PANEL_X,
+            y: this.PANEL_Y,
+            width: this.PANEL_WIDTH,
+            height: this.PANEL_HEIGHT
+        };
+        
+        // Restore context state to prevent affecting other UI elements
+        ctx.restore();
+    }
+
+    private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
     }
 
     private getTimeAgo(timestamp: number): string {
@@ -350,7 +489,6 @@ export class NotificationsManager {
         if (!this.readNotifications.has(id)) {
             this.readNotifications.add(id);
             this.saveReadNotifications();
-            this.populateNotifications();
         }
     }
 
@@ -359,7 +497,6 @@ export class NotificationsManager {
             this.readNotifications.add(n.id);
         });
         this.saveReadNotifications();
-        this.populateNotifications();
     }
 
     public toggle(): void {
@@ -371,19 +508,14 @@ export class NotificationsManager {
     }
 
     public show(): void {
-        if (this.notificationsPanel) {
-            this.notificationsPanel.style.display = 'block';
             this.isOpen = true;
+        this.scrollY = 0;
             // Reload notifications when opening
             this.loadNotifications();
-        }
     }
 
     public hide(): void {
-        if (this.notificationsPanel) {
-            this.notificationsPanel.style.display = 'none';
             this.isOpen = false;
-        }
     }
 
     public isNotificationsOpen(): boolean {

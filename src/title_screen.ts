@@ -184,6 +184,24 @@ export class TitleScreen {
         this.notificationsManager = new NotificationsManager();
         // Make notifications manager globally accessible
         (window as any).notificationsManager = this.notificationsManager;
+        
+        // Set canvas on managers after canvas is available
+        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
+        if (gameCanvas) {
+            this.changelogManager.setCanvas(gameCanvas);
+            this.notificationsManager.setCanvas(gameCanvas);
+        } else {
+            // Wait for canvas to be ready
+            const checkCanvas = setInterval(() => {
+                const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
+                if (canvas) {
+                    this.changelogManager.setCanvas(canvas);
+                    this.notificationsManager.setCanvas(canvas);
+                    clearInterval(checkCanvas);
+                }
+            }, 100);
+        }
+        
         this.setupEventListeners();
         this.titleScreenInventoryManager = new TitleScreenInventoryManager();
         
@@ -1961,6 +1979,14 @@ export class TitleScreen {
     private animateBackground(): void {
         this.backgroundTime += 16; // ~60fps
         this.drawScrollingBackground();
+        
+        // Render changelog and notifications menus on game canvas
+        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
+        if (gameCanvas) {
+            this.changelogManager.render();
+            this.notificationsManager.render();
+        }
+        
         this.backgroundAnimationId = requestAnimationFrame(() => this.animateBackground());
     }
 

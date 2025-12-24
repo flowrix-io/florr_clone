@@ -111,6 +111,8 @@ export class Graphics {
     private fallingStars: FallingStar[] = [];
     private readonly MAX_FALLING_STARS = 20;
     private mapData: MapElement[] = [];
+    private changelogManager: any = null;
+    private notificationsManager: any = null;
 
     private readonly MINIMAP_WIDTH = 200;
     private readonly MINIMAP_HEIGHT = 200;
@@ -3323,6 +3325,28 @@ export class Graphics {
         
         // Draw boss bars for ultra, super, and unique mobs in view
         this.drawBossBars(enemies);
+
+        // Draw changelog and notifications menus
+        if (this.changelogManager) {
+            this.changelogManager.render();
+        }
+        if (this.notificationsManager) {
+            this.notificationsManager.render();
+        }
+    }
+
+    public setChangelogManager(changelogManager: any): void {
+        this.changelogManager = changelogManager;
+        if (changelogManager && this.canvas) {
+            changelogManager.setCanvas(this.canvas);
+        }
+    }
+
+    public setNotificationsManager(notificationsManager: any): void {
+        this.notificationsManager = notificationsManager;
+        if (notificationsManager && this.canvas) {
+            notificationsManager.setCanvas(this.canvas);
+        }
     }
     public setupItemSprites(itemSprites: Record<string, HTMLImageElement>) {
         this.itemSprites = itemSprites;

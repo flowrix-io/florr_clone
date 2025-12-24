@@ -41,6 +41,8 @@ class Graphics {
         this.fallingStars = [];
         this.MAX_FALLING_STARS = 20;
         this.mapData = [];
+        this.changelogManager = null;
+        this.notificationsManager = null;
         this.MINIMAP_WIDTH = 200;
         this.MINIMAP_HEIGHT = 200;
         this.MINIMAP_PADDING = 10;
@@ -2634,6 +2636,25 @@ class Graphics {
         this.drawFallingStars();
         // Draw boss bars for ultra, super, and unique mobs in view
         this.drawBossBars(enemies);
+        // Draw changelog and notifications menus
+        if (this.changelogManager) {
+            this.changelogManager.render();
+        }
+        if (this.notificationsManager) {
+            this.notificationsManager.render();
+        }
+    }
+    setChangelogManager(changelogManager) {
+        this.changelogManager = changelogManager;
+        if (changelogManager && this.canvas) {
+            changelogManager.setCanvas(this.canvas);
+        }
+    }
+    setNotificationsManager(notificationsManager) {
+        this.notificationsManager = notificationsManager;
+        if (notificationsManager && this.canvas) {
+            notificationsManager.setCanvas(this.canvas);
+        }
     }
     setupItemSprites(itemSprites) {
         this.itemSprites = itemSprites;

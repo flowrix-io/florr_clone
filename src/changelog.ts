@@ -133,148 +133,254 @@ export const CHANGELOG: ChangelogEntry[] = [
 ];
 
 export class ChangelogManager {
-    private changelogPanel: HTMLDivElement | null = null;
+    private canvas: HTMLCanvasElement | null = null;
+    private ctx: CanvasRenderingContext2D | null = null;
     private isOpen: boolean = false;
+    private scrollY: number = 0;
+    private closeButtonBounds: { x: number; y: number; width: number; height: number } | null = null;
+    private panelBounds: { x: number; y: number; width: number; height: number } | null = null;
+    private contentHeight: number = 0;
+    private readonly PANEL_X = 20;
+    private readonly PANEL_Y = 72;
+    private readonly PANEL_WIDTH = 600;
+    private readonly PANEL_HEIGHT = 500;
+    private readonly PADDING = 20;
+    private readonly SCROLLBAR_WIDTH = 10;
+    private isDragging: boolean = false;
+    private dragStartY: number = 0;
+    private dragStartScroll: number = 0;
 
     constructor() {
-        this.createChangelogPanel();
-    }
-
-    private createChangelogPanel(): void {
-        this.changelogPanel = document.createElement('div');
-        this.changelogPanel.className = 'changelog-panel';
-        this.changelogPanel.style.cssText = `
-            position: absolute;
-            top: 72px;
-            left: 20px;
-            width: 600px;
-            max-height: 500px;
-            background: #49c46f;
-            border: 2px solid #4CAF50;
-            border-radius: 10px;
-            padding: 20px;
-            z-index: 4000;
-            display: none;
-            overflow-y: auto;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        `;
-
-        const content = document.createElement('div');
-        content.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 class="outlined-text" style="margin: 0; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-smooth: always;">Changelog</h2>
-                <button id="closeChangelogButton" style="background: #ff4444; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 16px;">✕</button>
-            </div>
-            <div id="changelogContent"></div>
-        `;
-
-        this.changelogPanel.appendChild(content);
-        document.body.appendChild(this.changelogPanel);
-
-        this.populateChangelog();
-
-        // Add close button listener
-        const closeButton = this.changelogPanel.querySelector('#closeChangelogButton');
-        if (closeButton) {
-            closeButton.addEventListener('click', () => this.hide());
-        }
-
         // Close on escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.isOpen) {
                 this.hide();
             }
         });
-
-        // Add custom scrollbar styles
-        const style = document.createElement('style');
-        style.textContent = `
-            .changelog-panel::-webkit-scrollbar {
-                width: 10px;
-            }
-            .changelog-panel::-webkit-scrollbar-track {
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 5px;
-            }
-            .changelog-panel::-webkit-scrollbar-thumb {
-                background: #4CAF50;
-                border-radius: 5px;
-            }
-            .changelog-panel::-webkit-scrollbar-thumb:hover {
-                background: #45a049;
-            }
-            .changelog-entry {
-                margin-bottom: 25px;
-                padding: 15px;
-                background: rgba(255, 255, 255, 0.05);
-                border-radius: 8px;
-            }
-            .changelog-date {
-                font-size: 20px;
-                font-weight: bold;
-                font-family: Arial, sans-serif;
-                color: #FFFFFF;
-                -webkit-text-stroke: 1px #000000;
-                text-stroke: 1px #000000;
-                -webkit-font-smoothing: antialiased;
-                text-rendering: optimizeLegibility;
-                font-smooth: always;
-                margin-bottom: 10px;
-            }
-            .changelog-change {
-                margin: 8px 0;
-                padding-left: 20px;
-                position: relative;
-                font-family: Arial, sans-serif;
-                line-height: 1.6;
-            }
-            .changelog-change-bullet {
-                position: absolute;
-                left: 5px;
-                font-size: 20px;
-                font-family: Arial, sans-serif;
-                color: #FFFFFF;
-                -webkit-text-stroke: 1px #000000;
-                text-stroke: 1px #000000;
-                z-index: 2;
-                -webkit-font-smoothing: antialiased;
-                text-rendering: optimizeLegibility;
-                font-smooth: always;
-            }
-            .changelog-change-text {
-                position: relative;
-                color: #FFFFFF;
-                -webkit-text-stroke: 0.5px #000000;
-                text-stroke: 0.5px #000000;
-                -webkit-font-smoothing: antialiased;
-                text-rendering: optimizeLegibility;
-                font-smooth: always;
-            }
-            .outlined-text {
-                color: #FFFFFF;
-                -webkit-text-stroke: 1px #000000;
-                text-stroke: 1px #000000;
-            }
-        `;
-        document.head.appendChild(style);
     }
 
-    private populateChangelog(): void {
-        const contentDiv = this.changelogPanel?.querySelector('#changelogContent');
-        if (!contentDiv) return;
+    public setCanvas(canvas: HTMLCanvasElement): void {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.setupMouseListeners();
+    }
 
-        // Reverse the array to show most recent entries first
-        contentDiv.innerHTML = [...CHANGELOG].reverse().map(entry => `
-            <div class="changelog-entry">
-                <div class="changelog-date">${entry.date}</div>
-                ${entry.changes.map(change => `
-                    <div class="changelog-change">
-                        <span class="changelog-change-bullet">•</span>
-                        <span class="changelog-change-text">${change}</span>
-                    </div>
-                `).join('')}
-            </div>
-        `).join('');
+    private setupMouseListeners(): void {
+        if (!this.canvas) return;
+
+        this.canvas.addEventListener('mousedown', (e) => {
+            if (!this.isOpen) return;
+            const rect = this.canvas!.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // Check close button
+            if (this.closeButtonBounds && 
+                x >= this.closeButtonBounds.x && x <= this.closeButtonBounds.x + this.closeButtonBounds.width &&
+                y >= this.closeButtonBounds.y && y <= this.closeButtonBounds.y + this.closeButtonBounds.height) {
+                this.hide();
+                return;
+            }
+
+            // Check scrollbar
+            if (this.panelBounds && this.contentHeight > this.PANEL_HEIGHT - 40) {
+                const scrollbarX = this.PANEL_X + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
+                if (x >= scrollbarX && x <= scrollbarX + this.SCROLLBAR_WIDTH &&
+                    y >= this.PANEL_Y + 40 && y <= this.PANEL_Y + this.PANEL_HEIGHT - 5) {
+                    this.isDragging = true;
+                    this.dragStartY = y;
+                    this.dragStartScroll = this.scrollY;
+                }
+            }
+        });
+
+        this.canvas.addEventListener('mousemove', (e) => {
+            if (!this.isOpen) return;
+            if (this.isDragging) {
+                const rect = this.canvas!.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                const deltaY = y - this.dragStartY;
+                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+                const scrollRatio = deltaY / (this.PANEL_HEIGHT - 45);
+                this.scrollY = Math.max(0, Math.min(maxScroll, this.dragStartScroll + scrollRatio * maxScroll));
+            }
+        });
+
+        this.canvas.addEventListener('mouseup', () => {
+            this.isDragging = false;
+        });
+
+        this.canvas.addEventListener('wheel', (e) => {
+            if (!this.isOpen || !this.panelBounds) return;
+            const rect = this.canvas!.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // Check if mouse is over panel
+            if (x >= this.PANEL_X && x <= this.PANEL_X + this.PANEL_WIDTH &&
+                y >= this.PANEL_Y && y <= this.PANEL_Y + this.PANEL_HEIGHT) {
+                e.preventDefault();
+                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+                this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY - e.deltaY));
+            }
+        });
+    }
+
+    public render(): void {
+        if (!this.ctx || !this.canvas || !this.isOpen) return;
+        const ctx = this.ctx;
+        
+        // Save context state to restore after rendering
+        ctx.save();
+
+        const entries = [...CHANGELOG].reverse();
+        
+        // Calculate content height
+        let currentY = this.PANEL_Y + 40 + this.PADDING;
+        ctx.font = 'bold 20px Ubuntu, sans-serif';
+        ctx.textBaseline = 'top';
+        
+        entries.forEach(entry => {
+            currentY += 25; // Date spacing
+            ctx.font = '14px Ubuntu, sans-serif';
+            entry.changes.forEach(() => {
+                currentY += 24; // Change spacing
+            });
+            currentY += 15; // Entry spacing
+        });
+        
+        this.contentHeight = currentY - (this.PANEL_Y + 40 + this.PADDING);
+        const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+        this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY));
+
+        // Draw panel background
+        ctx.fillStyle = '#49c46f';
+        ctx.strokeStyle = '#4CAF50';
+        ctx.lineWidth = 2;
+        this.roundRect(ctx, this.PANEL_X, this.PANEL_Y, this.PANEL_WIDTH, this.PANEL_HEIGHT, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // Clip to panel content area
+        ctx.save();
+        ctx.beginPath();
+        this.roundRect(ctx, this.PANEL_X + this.PADDING, this.PANEL_Y + 40, 
+                      this.PANEL_WIDTH - this.PADDING * 2, this.PANEL_HEIGHT - 40 - this.PADDING, 8);
+        ctx.clip();
+
+        // Draw header
+        ctx.font = 'bold 20px Ubuntu, sans-serif';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.strokeText('Changelog', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
+        ctx.fillText('Changelog', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
+
+        // Draw close button
+        const closeButtonX = this.PANEL_X + this.PANEL_WIDTH - 50;
+        const closeButtonY = this.PANEL_Y + 10;
+        const closeButtonWidth = 30;
+        const closeButtonHeight = 30;
+        this.closeButtonBounds = { x: closeButtonX, y: closeButtonY, width: closeButtonWidth, height: closeButtonHeight };
+        
+        ctx.fillStyle = '#ff4444';
+        this.roundRect(ctx, closeButtonX, closeButtonY, closeButtonWidth, closeButtonHeight, 5);
+        ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '16px Ubuntu, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2);
+        ctx.textAlign = 'left';
+
+        // Draw content
+        let contentY = this.PANEL_Y + 40 + this.PADDING - this.scrollY;
+        
+        entries.forEach(entry => {
+            // Draw entry background
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+            this.roundRect(ctx, this.PANEL_X + this.PADDING, contentY - 5, 
+                          this.PANEL_WIDTH - this.PADDING * 2 - (this.contentHeight > this.PANEL_HEIGHT - 40 ? this.SCROLLBAR_WIDTH + 5 : 0), 
+                          10, 8);
+            ctx.fill();
+
+            // Draw date
+            ctx.font = 'bold 20px Ubuntu, sans-serif';
+            ctx.fillStyle = '#FFFFFF';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.strokeText(entry.date, this.PANEL_X + this.PADDING, contentY);
+            ctx.fillText(entry.date, this.PANEL_X + this.PADDING, contentY);
+            contentY += 25;
+
+            // Draw changes
+            ctx.font = '14px Ubuntu, sans-serif';
+            ctx.lineWidth = 1;
+            entry.changes.forEach(change => {
+                // Draw bullet
+                ctx.fillStyle = '#FFFFFF';
+                ctx.strokeStyle = '#000000';
+                ctx.fillText('•', this.PANEL_X + this.PADDING, contentY);
+                ctx.strokeText('•', this.PANEL_X + this.PADDING, contentY);
+                
+                // Draw change text
+                ctx.fillStyle = '#FFFFFF';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 0.5;
+                const textX = this.PANEL_X + this.PADDING + 20;
+                ctx.strokeText(change, textX, contentY);
+                ctx.fillText(change, textX, contentY);
+                contentY += 24;
+            });
+            contentY += 15;
+        });
+
+        ctx.restore();
+
+        // Draw scrollbar if needed
+        if (this.contentHeight > this.PANEL_HEIGHT - 40) {
+            const scrollbarX = this.PANEL_X + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
+            const scrollbarTrackY = this.PANEL_Y + 40;
+            const scrollbarTrackHeight = this.PANEL_HEIGHT - 40 - 5;
+            
+            // Track
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            this.roundRect(ctx, scrollbarX, scrollbarTrackY, this.SCROLLBAR_WIDTH, scrollbarTrackHeight, 5);
+            ctx.fill();
+
+            // Thumb
+            const thumbHeight = (this.PANEL_HEIGHT - 45) * (this.PANEL_HEIGHT - 40) / this.contentHeight;
+            const thumbY = scrollbarTrackY + (this.scrollY / maxScroll) * (scrollbarTrackHeight - thumbHeight);
+            ctx.fillStyle = '#4CAF50';
+            this.roundRect(ctx, scrollbarX, thumbY, this.SCROLLBAR_WIDTH, thumbHeight, 5);
+            ctx.fill();
+        }
+
+        this.panelBounds = {
+            x: this.PANEL_X,
+            y: this.PANEL_Y,
+            width: this.PANEL_WIDTH,
+            height: this.PANEL_HEIGHT
+        };
+        
+        // Restore context state to prevent affecting other UI elements
+        ctx.restore();
+    }
+
+    private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+        if (!ctx) return;
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
     }
 
     public toggle(): void {
@@ -286,17 +392,12 @@ export class ChangelogManager {
     }
 
     public show(): void {
-        if (this.changelogPanel) {
-            this.changelogPanel.style.display = 'block';
             this.isOpen = true;
-        }
+        this.scrollY = 0;
     }
 
     public hide(): void {
-        if (this.changelogPanel) {
-            this.changelogPanel.style.display = 'none';
             this.isOpen = false;
-        }
     }
 
     public isChangelogOpen(): boolean {

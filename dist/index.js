@@ -280,6 +280,17 @@ function setupGameEventListeners() {
             const dynamicSkybox = titleScreen?.getDynamicSkybox() || false;
             currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled, showStats, dynamicSkybox);
             window.currentGame = currentGame;
+            // Set changelog and notifications managers on graphics
+            if (titleScreen && currentGame.graphics) {
+                const changelogManager = titleScreen.changelogManager;
+                const notificationsManager = titleScreen.notificationsManager;
+                if (changelogManager) {
+                    currentGame.graphics.setChangelogManager(changelogManager);
+                }
+                if (notificationsManager) {
+                    currentGame.graphics.setNotificationsManager(notificationsManager);
+                }
+            }
             // Hide title screen and show game
             titleScreen?.hideTitleScreen();
             titleScreen?.showExitButton();
