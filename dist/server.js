@@ -31,6 +31,11 @@ const migratedPlayers = database_1.database.migratePlayerData();
 if (migratedPlayers > 0) {
     console.log(`[SERVER] Migrated ${migratedPlayers} players to new XP format`);
 }
+// Cleanup old notifications on server startup
+const cleanedNotifications = database_1.database.cleanupOldNotifications();
+if (cleanedNotifications > 0) {
+    console.log(`[SERVER] Cleaned up ${cleanedNotifications} notifications older than 1 week`);
+}
 const petal_actions_1 = require("./petal_actions");
 const petals_1 = require("./petals");
 const constants_2 = require("./constants");
@@ -165,6 +170,28 @@ app.use('/assets', express_1.default.static(path_1.default.join(__dirname, '../a
 }));
 // Serve favicon from dist directory (it's copied there during build)
 app.use('/favicon.ico', express_1.default.static(path_1.default.join(__dirname, '../dist/favicon.ico')));
+// Notification endpoints
+app.use(express_1.default.json());
+app.get('/api/notifications', (req, res) => {
+    const limit = parseInt(req.query.limit) || 50;
+    const beforeTimestamp = req.query.before ? parseInt(req.query.before) : undefined;
+    const notifications = database_1.database.getNotifications(limit, beforeTimestamp);
+    res.json({ notifications });
+});
+app.post('/api/notifications', (req, res) => {
+    const { type, message } = req.body;
+    if (!type || !message) {
+        return res.status(400).json({ message: 'Type and message are required' });
+    }
+    const notification = {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type,
+        message,
+        timestamp: Date.now()
+    };
+    database_1.database.addNotification(notification);
+    res.json({ success: true, notification });
+});
 // Create server based on protocol configuration
 let server;
 if (constants_1.USE_HTTPS) {
@@ -1782,11 +1809,21 @@ io.on('connection', (socket) => {
                         const petalName = petalStats.name.slice(0, -5);
                         const username = socket.username || 'Unknown';
                         const playerNickname = player.name || username;
+                        const chatMessage = `<b style="color: ${rarityColor};">A ${petalName}has been crafted by <b style="color: #00ff00;">@${username}</b> [<b style="color: yellow;">${playerNickname}</b>]</b>`;
+                        const plainMessage = `A ${petalName} has been crafted by @${username} [${playerNickname}]`;
                         io.emit('chatMessage', {
                             sender: '',
-                            content: `<b style="color: ${rarityColor};">A ${petalName}has been crafted by <b style="color: #00ff00;">@${username}</b> [<b style="color: yellow;">${playerNickname}</b>]</b>`,
+                            content: chatMessage,
                             timestamp: Date.now()
                         });
+                        // Save to global notifications with player info
+                        const notification = {
+                            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                            type: newRarity === 'unique' ? 'unique_craft' : 'super_craft',
+                            message: plainMessage,
+                            timestamp: Date.now()
+                        };
+                        database_1.database.addNotification(notification);
                     }
                 }
             }
@@ -1909,9 +1946,20 @@ io.on('connection', (socket) => {
             }
             // Emit success
             socket.emit('codeRedeemSuccess', {
+                code: code,
                 stars: redeemedCode.stars,
                 totalStars: player.stars
             });
+            // Save to global notifications with player info
+            const username = socket.username || 'Unknown';
+            const playerNickname = player.name || username;
+            const notification = {
+                id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                type: 'star_code',
+                message: `Star code "${code}" redeemed by @${username} [${playerNickname}]! +${redeemedCode.stars} ⭐ Stars`,
+                timestamp: Date.now()
+            };
+            database_1.database.addNotification(notification);
             io.emit('playerUpdated', player);
         }
         catch (error) {

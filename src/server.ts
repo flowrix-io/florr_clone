@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import https from 'https';
 import http from 'http';
-import { database } from './database';
+import { database, Notification } from './database';
 import { USE_HTTPS, SERVER_PROTOCOL } from './constants';
 
 // Check for and migrate any plain text passwords on server startup
@@ -22,6 +22,12 @@ if (database.checkForPlainTextPasswords()) {
 const migratedPlayers = database.migratePlayerData();
 if (migratedPlayers > 0) {
     console.log(`[SERVER] Migrated ${migratedPlayers} players to new XP format`);
+}
+
+// Cleanup old notifications on server startup
+const cleanedNotifications = database.cleanupOldNotifications();
+if (cleanedNotifications > 0) {
+    console.log(`[SERVER] Cleaned up ${cleanedNotifications} notifications older than 1 week`);
 }
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet } from './petal_actions';
@@ -257,6 +263,30 @@ app.use('/assets', express.static(path.join(__dirname, '../assets'), {
 
 // Serve favicon from dist directory (it's copied there during build)
 app.use('/favicon.ico', express.static(path.join(__dirname, '../dist/favicon.ico')));
+
+// Notification endpoints
+app.use(express.json());
+app.get('/api/notifications', (req, res) => {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const beforeTimestamp = req.query.before ? parseInt(req.query.before as string) : undefined;
+    const notifications = database.getNotifications(limit, beforeTimestamp);
+    res.json({ notifications });
+});
+
+app.post('/api/notifications', (req, res) => {
+    const { type, message } = req.body;
+    if (!type || !message) {
+        return res.status(400).json({ message: 'Type and message are required' });
+    }
+    const notification: Notification = {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type,
+        message,
+        timestamp: Date.now()
+    };
+    database.addNotification(notification);
+    res.json({ success: true, notification });
+});
 
 // Create server based on protocol configuration
 let server: http.Server | https.Server;
@@ -2134,11 +2164,23 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                         const username = socket.username || 'Unknown';
                         const playerNickname = player.name || username;
                         
+                        const chatMessage = `<b style="color: ${rarityColor};">A ${petalName}has been crafted by <b style="color: #00ff00;">@${username}</b> [<b style="color: yellow;">${playerNickname}</b>]</b>`;
+                        const plainMessage = `A ${petalName} has been crafted by @${username} [${playerNickname}]`;
+                        
                         io.emit('chatMessage', {
                             sender: '',
-                            content: `<b style="color: ${rarityColor};">A ${petalName}has been crafted by <b style="color: #00ff00;">@${username}</b> [<b style="color: yellow;">${playerNickname}</b>]</b>`,
+                            content: chatMessage,
                             timestamp: Date.now()
                         });
+                        
+                        // Save to global notifications with player info
+                        const notification: Notification = {
+                            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                            type: newRarity === 'unique' ? 'unique_craft' : 'super_craft',
+                            message: plainMessage,
+                            timestamp: Date.now()
+                        };
+                        database.addNotification(notification);
                     }
                 }
             }
@@ -2282,9 +2324,21 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
             // Emit success
             socket.emit('codeRedeemSuccess', {
+                code: code,
                 stars: redeemedCode.stars,
                 totalStars: player.stars
             });
+            
+            // Save to global notifications with player info
+            const username = socket.username || 'Unknown';
+            const playerNickname = player.name || username;
+            const notification: Notification = {
+                id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                type: 'star_code',
+                message: `Star code "${code}" redeemed by @${username} [${playerNickname}]! +${redeemedCode.stars} ⭐ Stars`,
+                timestamp: Date.now()
+            };
+            database.addNotification(notification);
 
             io.emit('playerUpdated', player);
         } catch (error) {

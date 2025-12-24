@@ -8,6 +8,7 @@ exports.titleScreenStyles = exports.TitleScreen = void 0;
 exports.injectTitleScreenStyles = injectTitleScreenStyles;
 const petals_1 = require("./petals");
 const changelog_1 = require("./changelog");
+const notifications_1 = require("./notifications");
 const constants_1 = require("./constants");
 const chat_1 = require("./chat");
 const skills_1 = require("./skills");
@@ -126,8 +127,11 @@ class TitleScreen {
         this.titleScreenChat = null;
         this.titleScreenSkillsManager = null;
         this.initializeElements();
-        this.setupEventListeners();
         this.changelogManager = new changelog_1.ChangelogManager();
+        this.notificationsManager = new notifications_1.NotificationsManager();
+        // Make notifications manager globally accessible
+        window.notificationsManager = this.notificationsManager;
+        this.setupEventListeners();
         this.titleScreenInventoryManager = new TitleScreenInventoryManager();
         // Initialize chat and skills when socket is available
         this.initializeTitleScreenChat();
@@ -562,10 +566,12 @@ class TitleScreen {
         const { GAME_ICONS_NET_ICONS } = require('./game-icons-net-icons');
         const settingsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'settings')?.value || '';
         const changelogIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'changelog')?.value || '';
+        const notificationsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'notifications')?.value || '';
         const exitIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'exit_button')?.value || '';
         // Update the SVG to be 32x32
         const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedChangelogIcon = changelogIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        const formattedNotificationsIcon = notificationsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
             <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Settings">
@@ -573,6 +579,9 @@ class TitleScreen {
             </div>
             <div id="changelogButton" style="width: 42px; height: 42px; cursor: pointer; background: #00db3e; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Changelog">
                 ${formattedChangelogIcon}
+            </div>
+            <div id="notificationsButton" style="width: 42px; height: 42px; cursor: pointer; background: #4a90e2; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Notifications">
+                ${formattedNotificationsIcon}
             </div>
             <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center; box-sizing: border-box;" title="Exit to Menu">
                 ${formattedExitIcon}
@@ -726,6 +735,7 @@ class TitleScreen {
         // Settings button event listener (now in exitButtonContainer)
         const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
         const changelogButton = this.exitButtonContainer.querySelector('#changelogButton');
+        const notificationsButton = this.exitButtonContainer.querySelector('#notificationsButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
         if (settingsButton) {
@@ -738,6 +748,13 @@ class TitleScreen {
             changelogButton.addEventListener('click', () => {
                 this.changelogManager.toggle();
             });
+        }
+        if (notificationsButton) {
+            notificationsButton.addEventListener('click', () => {
+                this.notificationsManager.toggle();
+            });
+            // Set the button reference in notifications manager for badge updates
+            this.notificationsManager.setNotificationButton(notificationsButton);
         }
         if (exitButton) {
             exitButton.addEventListener('click', () => {

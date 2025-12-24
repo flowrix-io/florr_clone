@@ -832,6 +832,7 @@ function setupSocketListeners(game) {
                 game.shopManager.updateStarsDisplay();
             }
         }
+        // Notifications are now handled on the server side
     });
     game.socket.on('codeRedeemError', (message) => {
         console.log('[CLIENT] codeRedeemError received:', message);

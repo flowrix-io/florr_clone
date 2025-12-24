@@ -1037,7 +1037,7 @@ function setupSocketListeners(game: any) {
         }
     });
 
-    game.socket.on('codeRedeemSuccess', (data: { stars: number, totalStars: number }) => {
+    game.socket.on('codeRedeemSuccess', (data: { code?: string, stars: number, totalStars: number }) => {
         console.log('[CLIENT] codeRedeemSuccess received:', data);
         const player = game.players.get(game.socket.id);
         if (player) {
@@ -1047,6 +1047,7 @@ function setupSocketListeners(game: any) {
                 game.shopManager.updateStarsDisplay();
             }
         }
+        // Notifications are now handled on the server side
     });
 
     game.socket.on('codeRedeemError', (message: string) => {

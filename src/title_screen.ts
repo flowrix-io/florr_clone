@@ -5,6 +5,7 @@
 
 import { PETAL_CONFIG, RARITY_LEVELS, PetalStats, getPetalStats, getAllPetalTypes } from './petals';
 import { ChangelogManager } from './changelog';
+import { NotificationsManager } from './notifications';
 import { WORLD_MAP } from './constants';
 import { Item } from './item';
 import { Player, PlayerInventory } from './player';
@@ -172,14 +173,18 @@ export class TitleScreen {
     private backgroundAnimationId!: number;
     private backgroundTime: number = 0;
     private changelogManager!: ChangelogManager;
+    private notificationsManager!: NotificationsManager;
     private titleScreenInventoryManager!: TitleScreenInventoryManager;
     private titleScreenChat: Chat | null = null;
     private titleScreenSkillsManager: SkillsManager | null = null;
 
     constructor() {
         this.initializeElements();
-        this.setupEventListeners();
         this.changelogManager = new ChangelogManager();
+        this.notificationsManager = new NotificationsManager();
+        // Make notifications manager globally accessible
+        (window as any).notificationsManager = this.notificationsManager;
+        this.setupEventListeners();
         this.titleScreenInventoryManager = new TitleScreenInventoryManager();
         
         // Initialize chat and skills when socket is available
@@ -646,10 +651,12 @@ export class TitleScreen {
         const { GAME_ICONS_NET_ICONS } = require('./game-icons-net-icons');
         const settingsIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'settings')?.value || '';
         const changelogIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'changelog')?.value || '';
+        const notificationsIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'notifications')?.value || '';
         const exitIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'exit_button')?.value || '';
         // Update the SVG to be 32x32
         const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedChangelogIcon = changelogIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        const formattedNotificationsIcon = notificationsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
             <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Settings">
@@ -657,6 +664,9 @@ export class TitleScreen {
             </div>
             <div id="changelogButton" style="width: 42px; height: 42px; cursor: pointer; background: #00db3e; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Changelog">
                 ${formattedChangelogIcon}
+            </div>
+            <div id="notificationsButton" style="width: 42px; height: 42px; cursor: pointer; background: #4a90e2; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Notifications">
+                ${formattedNotificationsIcon}
             </div>
             <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center; box-sizing: border-box;" title="Exit to Menu">
                 ${formattedExitIcon}
@@ -826,6 +836,7 @@ export class TitleScreen {
         // Settings button event listener (now in exitButtonContainer)
         const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
         const changelogButton = this.exitButtonContainer.querySelector('#changelogButton');
+        const notificationsButton = this.exitButtonContainer.querySelector('#notificationsButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
 
@@ -840,6 +851,14 @@ export class TitleScreen {
             changelogButton.addEventListener('click', () => {
                 this.changelogManager.toggle();
             });
+        }
+
+        if (notificationsButton) {
+            notificationsButton.addEventListener('click', () => {
+                this.notificationsManager.toggle();
+            });
+            // Set the button reference in notifications manager for badge updates
+            this.notificationsManager.setNotificationButton(notificationsButton as HTMLElement);
         }
 
         if (exitButton) {

@@ -1,7 +1,7 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { ServerPlayer } from '../player';
 import { Enemy } from '../server_utils';
-import { database, RedeemedCode } from '../database';
+import { database, RedeemedCode, Notification } from '../database';
 import { getAllMobTypes } from '../mobs';
 import { players, enemies, ENEMIES_PER_VIEWPORT } from '../constants';
 import { ENEMY_COUNT } from './gameState';
@@ -290,6 +290,41 @@ export function executeServerCommand(
         } else {
             sendOutput('Usage: delete_code <code>', socketId, io);
         }
+    } else if (trimmedCommand.startsWith('notification ') || trimmedCommand.startsWith('notify ')) {
+        // notification <type> <message> or notify <type> <message>
+        const parts = trimmedCommand.split(' ');
+        if (parts.length >= 3) {
+            const type = parts[1].toLowerCase();
+            const message = parts.slice(2).join(' '); // Join remaining parts as message
+            
+            // Validate type
+            const validTypes: Notification['type'][] = ['super_craft', 'unique_craft', 'star_code'];
+            if (!validTypes.includes(type as Notification['type'])) {
+                sendOutput(`Invalid notification type. Valid types: ${validTypes.join(', ')}`, socketId, io);
+                return;
+            }
+            
+            // Create notification
+            const notification: Notification = {
+                id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                type: type as Notification['type'],
+                message: message,
+                timestamp: Date.now()
+            };
+            
+            database.addNotification(notification);
+            sendOutput(`Notification created: ${message}`, socketId, io);
+        } else {
+            sendOutput('Usage: notification <type> <message>', socketId, io);
+            sendOutput('  Or: notify <type> <message> (shorthand)', socketId, io);
+            sendOutput('  Valid types: super_craft, unique_craft, star_code', socketId, io);
+            sendOutput('  Examples:', socketId, io);
+            sendOutput('    notification star_code Special event starting now!', socketId, io);
+            sendOutput('    notify unique_craft New unique petal discovered!', socketId, io);
+        }
+    } else if (trimmedCommand === 'clear_notifications' || trimmedCommand === 'clear_notifs') {
+        const count = database.clearAllNotifications();
+        sendOutput(`Cleared ${count} notification(s)`, socketId, io);
     }
 }
 
@@ -354,6 +389,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, notification <type> <message>, clear_notifications';
 }
 

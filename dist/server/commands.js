@@ -284,6 +284,41 @@ function executeServerCommand(command, executor, deps, socketId) {
             sendOutput('Usage: delete_code <code>', socketId, io);
         }
     }
+    else if (trimmedCommand.startsWith('notification ') || trimmedCommand.startsWith('notify ')) {
+        // notification <type> <message> or notify <type> <message>
+        const parts = trimmedCommand.split(' ');
+        if (parts.length >= 3) {
+            const type = parts[1].toLowerCase();
+            const message = parts.slice(2).join(' '); // Join remaining parts as message
+            // Validate type
+            const validTypes = ['super_craft', 'unique_craft', 'star_code'];
+            if (!validTypes.includes(type)) {
+                sendOutput(`Invalid notification type. Valid types: ${validTypes.join(', ')}`, socketId, io);
+                return;
+            }
+            // Create notification
+            const notification = {
+                id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                type: type,
+                message: message,
+                timestamp: Date.now()
+            };
+            database_1.database.addNotification(notification);
+            sendOutput(`Notification created: ${message}`, socketId, io);
+        }
+        else {
+            sendOutput('Usage: notification <type> <message>', socketId, io);
+            sendOutput('  Or: notify <type> <message> (shorthand)', socketId, io);
+            sendOutput('  Valid types: super_craft, unique_craft, star_code', socketId, io);
+            sendOutput('  Examples:', socketId, io);
+            sendOutput('    notification star_code Special event starting now!', socketId, io);
+            sendOutput('    notify unique_craft New unique petal discovered!', socketId, io);
+        }
+    }
+    else if (trimmedCommand === 'clear_notifications' || trimmedCommand === 'clear_notifs') {
+        const count = database_1.database.clearAllNotifications();
+        sendOutput(`Cleared ${count} notification(s)`, socketId, io);
+    }
 }
 // Generate a random code
 function generateCode() {
@@ -338,5 +373,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, notification <type> <message>, clear_notifications';
 }

@@ -45,10 +45,18 @@ export interface RedeemedCode {
     createdAt?: number; // Timestamp when code was created
 }
 
+export interface Notification {
+    id: string;
+    type: 'super_craft' | 'unique_craft' | 'star_code';
+    message: string;
+    timestamp: number;
+}
+
 interface DatabaseData {
     players: { [userId: string]: PlayerProgress };
     users: { [username: string]: User };
     codes?: { [code: string]: RedeemedCode }; // Store codes persistently
+    notifications?: Notification[]; // Global notifications array
 }
 
 let db: DatabaseData = { players: {}, users: {} };
@@ -241,5 +249,61 @@ export const database = {
         db.codes[code] = codeData;
         writeDatabase();
         return true;
+    },
+
+    // Notification-related functions
+    addNotification: (notification: Notification) => {
+        if (!db.notifications) {
+            db.notifications = [];
+        }
+        db.notifications.push(notification);
+        // Keep only last 1000 notifications in memory
+        if (db.notifications.length > 1000) {
+            db.notifications = db.notifications.slice(-1000);
+        }
+        writeDatabase();
+        return true;
+    },
+
+    getNotifications: (limit: number = 50, beforeTimestamp?: number): Notification[] => {
+        if (!db.notifications) {
+            return [];
+        }
+        let filtered = [...db.notifications];
+        
+        // Filter by timestamp if provided (for pagination)
+        if (beforeTimestamp) {
+            filtered = filtered.filter(n => n.timestamp < beforeTimestamp);
+        }
+        
+        // Sort by timestamp descending (newest first)
+        filtered.sort((a, b) => b.timestamp - a.timestamp);
+        
+        // Return limited results
+        return filtered.slice(0, limit);
+    },
+
+    cleanupOldNotifications: () => {
+        if (!db.notifications) {
+            return 0;
+        }
+        const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        const initialLength = db.notifications.length;
+        db.notifications = db.notifications.filter(n => n.timestamp >= oneWeekAgo);
+        const removed = initialLength - db.notifications.length;
+        if (removed > 0) {
+            writeDatabase();
+        }
+        return removed;
+    },
+
+    clearAllNotifications: () => {
+        if (!db.notifications) {
+            return 0;
+        }
+        const count = db.notifications.length;
+        db.notifications = [];
+        writeDatabase();
+        return count;
     },
 }; 
