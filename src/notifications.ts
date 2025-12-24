@@ -291,14 +291,7 @@ export class NotificationsManager {
         ctx.fill();
         ctx.stroke();
 
-        // Clip to panel content area
-        ctx.save();
-        ctx.beginPath();
-        this.roundRect(ctx, this.PANEL_X + this.PADDING, this.PANEL_Y + 40, 
-                      this.PANEL_WIDTH - this.PADDING * 2, this.PANEL_HEIGHT - 40 - this.PADDING, 8);
-        ctx.clip();
-
-        // Draw header
+        // Draw header (before clipping)
         ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textBaseline = 'top';
         ctx.fillStyle = '#FFFFFF';
@@ -307,7 +300,7 @@ export class NotificationsManager {
         ctx.strokeText('Notifications', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
         ctx.fillText('Notifications', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
 
-        // Draw mark all read button
+        // Draw mark all read button (before clipping)
         const markAllReadButtonX = this.PANEL_X + this.PANEL_WIDTH - 180;
         const markAllReadButtonY = this.PANEL_Y + 10;
         const markAllReadButtonWidth = 120;
@@ -329,7 +322,7 @@ export class NotificationsManager {
         ctx.fillText('Mark All Read', markAllReadButtonX + markAllReadButtonWidth / 2, markAllReadButtonY + markAllReadButtonHeight / 2);
         ctx.textAlign = 'left';
 
-        // Draw close button
+        // Draw close button (before clipping)
         const closeButtonX = this.PANEL_X + this.PANEL_WIDTH - 50;
         const closeButtonY = this.PANEL_Y + 10;
         const closeButtonWidth = 30;
@@ -344,6 +337,13 @@ export class NotificationsManager {
         ctx.textAlign = 'center';
         ctx.fillText('✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2);
         ctx.textAlign = 'left';
+
+        // Clip to panel content area (after header and buttons)
+        ctx.save();
+        ctx.beginPath();
+        this.roundRect(ctx, this.PANEL_X + this.PADDING, this.PANEL_Y + 40, 
+                      this.PANEL_WIDTH - this.PADDING * 2, this.PANEL_HEIGHT - 40 - this.PADDING, 8);
+        ctx.clip();
 
         // Draw content
         let contentY = this.PANEL_Y + 40 + this.PADDING - this.scrollY;

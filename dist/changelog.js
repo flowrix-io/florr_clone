@@ -243,12 +243,7 @@ class ChangelogManager {
         this.roundRect(ctx, this.PANEL_X, this.PANEL_Y, this.PANEL_WIDTH, this.PANEL_HEIGHT, 10);
         ctx.fill();
         ctx.stroke();
-        // Clip to panel content area
-        ctx.save();
-        ctx.beginPath();
-        this.roundRect(ctx, this.PANEL_X + this.PADDING, this.PANEL_Y + 40, this.PANEL_WIDTH - this.PADDING * 2, this.PANEL_HEIGHT - 40 - this.PADDING, 8);
-        ctx.clip();
-        // Draw header
+        // Draw header (before clipping)
         ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textBaseline = 'top';
         ctx.fillStyle = '#FFFFFF';
@@ -256,7 +251,7 @@ class ChangelogManager {
         ctx.lineWidth = 2;
         ctx.strokeText('Changelog', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
         ctx.fillText('Changelog', this.PANEL_X + this.PADDING, this.PANEL_Y + this.PADDING);
-        // Draw close button
+        // Draw close button (before clipping)
         const closeButtonX = this.PANEL_X + this.PANEL_WIDTH - 50;
         const closeButtonY = this.PANEL_Y + 10;
         const closeButtonWidth = 30;
@@ -271,6 +266,11 @@ class ChangelogManager {
         ctx.textBaseline = 'middle';
         ctx.fillText('✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2);
         ctx.textAlign = 'left';
+        // Clip to panel content area (after header and buttons)
+        ctx.save();
+        ctx.beginPath();
+        this.roundRect(ctx, this.PANEL_X + this.PADDING, this.PANEL_Y + 40, this.PANEL_WIDTH - this.PADDING * 2, this.PANEL_HEIGHT - 40 - this.PADDING, 8);
+        ctx.clip();
         // Draw content
         let contentY = this.PANEL_Y + 40 + this.PADDING - this.scrollY;
         entries.forEach(entry => {

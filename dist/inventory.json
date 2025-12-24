@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 148858205,
+      "totalXP": 148858235,
       "inventory": {
         "common": {
           "shield": 152,
@@ -35,7 +35,7 @@
           "petal_hornet_egg": 17,
           "petal_dandelion_egg": 22,
           "petal_ladybug_egg": 12,
-          "petal_soldier_ant_egg": 35,
+          "petal_soldier_ant_egg": 36,
           "petal_dark_ladybug_egg": 10,
           "petal_bee_egg": 13,
           "petal_fly_egg": 19,
@@ -137,7 +137,7 @@
           "petal_sand": 7,
           "speed_boost": 61,
           "petal_stinger": 36,
-          "shield": 71,
+          "shield": 72,
           "petal_clover": 46,
           "petal_light": 33,
           "health_potion": 17,
@@ -441,7 +441,7 @@
           "epic": 53,
           "legendary": 94,
           "common": 84,
-          "rare": 32,
+          "rare": 33,
           "mythic": 153,
           "ultra": 7,
           "uncommon": 58,
