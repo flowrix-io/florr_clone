@@ -117,7 +117,17 @@ export const CHANGELOG: ChangelogEntry[] = [
         date: 'December 20, 2025',
         changes: [
             'Added shop, note that you cannot buy petals with real money, only stars',
-            'Stars are awarded for killing mobs or claiming codes'
+            'Stars are awarded for killing mobs or claiming codes',
+            'New admin command: generate_code',
+        ]
+    },
+    {
+        date: 'December 23, 2025',
+        changes: [
+            'Added notifications system, check it to see when there might be an event',
+            'Fixed a negative petal health bug',
+            'New admin command: clear_notifications',
+            'New admin command: notification',
         ]
     }
 ];
