@@ -60,6 +60,11 @@ export const globalPetalMemory: Map<string, number> = new Map();
 let lastExplosionTime: number = 0;
 const EXPLOSION_THROTTLE_MS: number = 20;
 
+// Lightning rate limiter for lightning_cutter (2 per second = 500ms minimum between strikes)
+const lightningCutterStrikeTimes: Map<string, number[]> = new Map(); // playerId -> array of strike times
+const LIGHTNING_CUTTER_RATE_LIMIT_MS: number = 500; // Minimum 500ms between strikes (2 per second)
+const LIGHTNING_CUTTER_MAX_STRIKES: number = 2; // Maximum 2 strikes per second
+
 // Execute petal actions
 export function executePetalActions(actionString: string, context: ActionContext, trigger: 'on_hit' | 'on_break' = 'on_break'): void {
     if (!actionString) return;
@@ -104,7 +109,7 @@ function executeAction(action: PetalAction, context: ActionContext, trigger: 'on
             break;
 
         case 'lightning':
-                strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, context.petalDamage);
+                strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, context.petalDamage, context);
             break;
 
         // Control flow and state-based actions are not supported in immediate execution
@@ -349,8 +354,55 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
     });
 }
 
+// Check if lightning strike is allowed for lightning_cutter (rate limit: 2 per second)
+function canStrikeLightning(player: ServerPlayer | undefined, context?: ActionContext): boolean {
+    if (!player) return true; // Allow if no player (shouldn't happen but be safe)
+    
+    // Check if this is from a lightning_cutter petal
+    let isLightningCutter = false;
+    if (context && context.loadoutIndex !== undefined) {
+        const petal = player.loadout[context.loadoutIndex];
+        if (petal && petal.type === 'petal' && petal.petalType === 'lightning_cutter') {
+            isLightningCutter = true;
+        }
+    }
+    
+    // Only apply rate limit to lightning_cutter
+    if (!isLightningCutter) return true;
+    
+    const currentTime = Date.now();
+    let playerStrikes = lightningCutterStrikeTimes.get(player.id) || [];
+    
+    // Remove strikes older than 1 second
+    playerStrikes = playerStrikes.filter(time => currentTime - time < 1000);
+    
+    // Check if we've already hit the max strikes per second
+    if (playerStrikes.length >= LIGHTNING_CUTTER_MAX_STRIKES) {
+        return false; // Rate limit exceeded (already 2 strikes in the last second)
+    }
+    
+    // Check minimum time between strikes (500ms)
+    if (playerStrikes.length > 0) {
+        const lastStrike = playerStrikes[playerStrikes.length - 1];
+        if (currentTime - lastStrike < LIGHTNING_CUTTER_RATE_LIMIT_MS) {
+            return false; // Too soon since last strike
+        }
+    }
+    
+    // Update strike times
+    playerStrikes.push(currentTime);
+    lightningCutterStrikeTimes.set(player.id, playerStrikes);
+    
+    return true;
+}
+
 // Strike lightning and deal damage to multiple targets in radius
-function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[], io: any, player?: ServerPlayer, petalDamage?: number): void {
+function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[], io: any, player?: ServerPlayer, petalDamage?: number, context?: ActionContext): void {
+    // Check rate limit for lightning_cutter
+    if (!canStrikeLightning(player, context)) {
+        return; // Rate limit exceeded, skip this lightning strike
+    }
+    
     const targets: { x: number; y: number; enemyId: string }[] = [];
     
     // Find all enemies within the lightning radius
@@ -1033,7 +1085,7 @@ function executeNextAction(petalId: string, deltaTime: number): void {
             break;
 
         case 'lightning':
-            strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, actionState.context.petalDamage);
+            strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, actionState.context.petalDamage, actionState.context);
             actionState.currentActionIndex++;
             break;
 

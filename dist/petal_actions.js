@@ -25,6 +25,10 @@ exports.globalPetalMemory = new Map();
 // Explosion throttle state
 let lastExplosionTime = 0;
 const EXPLOSION_THROTTLE_MS = 20;
+// Lightning rate limiter for lightning_cutter (2 per second = 500ms minimum between strikes)
+const lightningCutterStrikeTimes = new Map(); // playerId -> array of strike times
+const LIGHTNING_CUTTER_RATE_LIMIT_MS = 500; // Minimum 500ms between strikes (2 per second)
+const LIGHTNING_CUTTER_MAX_STRIKES = 2; // Maximum 2 strikes per second
 // Execute petal actions
 function executePetalActions(actionString, context, trigger = 'on_break') {
     if (!actionString)
@@ -60,7 +64,7 @@ function executeAction(action, context, trigger) {
             explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
             break;
         case 'lightning':
-            strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, context.petalDamage);
+            strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, context.petalDamage, context);
             break;
         // Control flow and state-based actions are not supported in immediate execution
         // These should use executePetalActionsOnSpawn instead
@@ -269,8 +273,47 @@ function explodePetal(x, y, petalSize, damage, enemies, io, player) {
         damage: damage
     });
 }
+// Check if lightning strike is allowed for lightning_cutter (rate limit: 2 per second)
+function canStrikeLightning(player, context) {
+    if (!player)
+        return true; // Allow if no player (shouldn't happen but be safe)
+    // Check if this is from a lightning_cutter petal
+    let isLightningCutter = false;
+    if (context && context.loadoutIndex !== undefined) {
+        const petal = player.loadout[context.loadoutIndex];
+        if (petal && petal.type === 'petal' && petal.petalType === 'lightning_cutter') {
+            isLightningCutter = true;
+        }
+    }
+    // Only apply rate limit to lightning_cutter
+    if (!isLightningCutter)
+        return true;
+    const currentTime = Date.now();
+    let playerStrikes = lightningCutterStrikeTimes.get(player.id) || [];
+    // Remove strikes older than 1 second
+    playerStrikes = playerStrikes.filter(time => currentTime - time < 1000);
+    // Check if we've already hit the max strikes per second
+    if (playerStrikes.length >= LIGHTNING_CUTTER_MAX_STRIKES) {
+        return false; // Rate limit exceeded (already 2 strikes in the last second)
+    }
+    // Check minimum time between strikes (500ms)
+    if (playerStrikes.length > 0) {
+        const lastStrike = playerStrikes[playerStrikes.length - 1];
+        if (currentTime - lastStrike < LIGHTNING_CUTTER_RATE_LIMIT_MS) {
+            return false; // Too soon since last strike
+        }
+    }
+    // Update strike times
+    playerStrikes.push(currentTime);
+    lightningCutterStrikeTimes.set(player.id, playerStrikes);
+    return true;
+}
 // Strike lightning and deal damage to multiple targets in radius
-function strikeLightning(x, y, radius, enemies, io, player, petalDamage) {
+function strikeLightning(x, y, radius, enemies, io, player, petalDamage, context) {
+    // Check rate limit for lightning_cutter
+    if (!canStrikeLightning(player, context)) {
+        return; // Rate limit exceeded, skip this lightning strike
+    }
     const targets = [];
     // Find all enemies within the lightning radius
     for (let i = enemies.length - 1; i >= 0; i--) {
@@ -872,7 +915,7 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'lightning':
-            strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, actionState.context.petalDamage);
+            strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, actionState.context.petalDamage, actionState.context);
             actionState.currentActionIndex++;
             break;
         case 'break':
