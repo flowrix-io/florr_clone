@@ -24,11 +24,6 @@ if (migratedPlayers > 0) {
     console.log(`[SERVER] Migrated ${migratedPlayers} players to new XP format`);
 }
 
-// Cleanup old notifications on server startup
-const cleanedNotifications = database.cleanupOldNotifications();
-if (cleanedNotifications > 0) {
-    console.log(`[SERVER] Cleaned up ${cleanedNotifications} notifications older than 1 week`);
-}
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';

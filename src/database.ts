@@ -283,20 +283,6 @@ export const database = {
         return filtered.slice(0, limit);
     },
 
-    cleanupOldNotifications: () => {
-        if (!db.notifications) {
-            return 0;
-        }
-        const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-        const initialLength = db.notifications.length;
-        db.notifications = db.notifications.filter(n => n.timestamp >= oneWeekAgo);
-        const removed = initialLength - db.notifications.length;
-        if (removed > 0) {
-            writeDatabase();
-        }
-        return removed;
-    },
-
     clearAllNotifications: () => {
         if (!db.notifications) {
             return 0;

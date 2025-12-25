@@ -31,11 +31,6 @@ const migratedPlayers = database_1.database.migratePlayerData();
 if (migratedPlayers > 0) {
     console.log(`[SERVER] Migrated ${migratedPlayers} players to new XP format`);
 }
-// Cleanup old notifications on server startup
-const cleanedNotifications = database_1.database.cleanupOldNotifications();
-if (cleanedNotifications > 0) {
-    console.log(`[SERVER] Cleaned up ${cleanedNotifications} notifications older than 1 week`);
-}
 const petal_actions_1 = require("./petal_actions");
 const petals_1 = require("./petals");
 const constants_2 = require("./constants");
