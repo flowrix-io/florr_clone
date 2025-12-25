@@ -318,8 +318,15 @@ export function updatePlayerState(
         }
     }
 
-    player.velocityX = targetVelocityX;
-    player.velocityY = targetVelocityY;
+    // Apply movement smoothing using linear interpolation
+    // Smoothing factor represents how fast to reach target velocity (higher = faster response)
+    // Using exponential smoothing that works with deltaTime in seconds
+    const SMOOTHING_RATE = 20.0; // Velocity change per second (higher = faster response, lower = smoother)
+    const smoothingFactor = 1 - Math.exp(-SMOOTHING_RATE * deltaTime);
+    
+    // Smoothly interpolate from current velocity to target velocity
+    player.velocityX = player.velocityX + (targetVelocityX - player.velocityX) * smoothingFactor;
+    player.velocityY = player.velocityY + (targetVelocityY - player.velocityY) * smoothingFactor;
 
     let newX = player.x + player.velocityX * deltaTime;
     let newY = player.y + player.velocityY * deltaTime;
