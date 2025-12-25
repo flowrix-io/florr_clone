@@ -502,12 +502,88 @@ export function updatePlayerState(
         for (let idx = 0; idx < petalInstances.length; idx++) {
             const {petal, instanceIndex, loadoutIndex} = petalInstances[idx];
             
-            if (!petal || !petal.health || petal.health <= 0) {
+            if (!petal) {
                 continue;
             }
             
             // Skip petals that are on cooldown
             if (petal.onCooldown) {
+                continue;
+            }
+            
+            // If petal has 0 health but isn't on cooldown, break it immediately
+            if (!petal.health || petal.health <= 0) {
+                const petalStats = getPetalStats(petal.petalType, petal.rarity);
+                if (petalStats) {
+                    // Execute petal actions before breaking
+                    if (petalStats.actions) {
+                        const baseRadius = 60 + (player.level * 2);
+                        const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
+                        const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002;
+                        const baseAngle = idx * angleStep;
+                        const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
+                        const totalAngle = baseAngle + rotationAngle;
+                        const petalRange = petalStats.range ?? 1.0;
+                        const petalRadius = baseRadius * petalRange;
+                        const petalX = player.x + Math.cos(totalAngle) * petalRadius;
+                        const petalY = player.y + Math.sin(totalAngle) * petalRadius;
+                        const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
+                        const petalSize = 40 * effectiveSize;
+                        
+                        const actionContext = {
+                            player: player,
+                            petalX: petalX,
+                            petalY: petalY,
+                            petalSize: petalSize,
+                            petalDamage: petalStats.damage,
+                            enemies: enemies,
+                            io: io
+                        };
+                        executePetalActions(petalStats.actions, actionContext, 'on_break');
+                    }
+
+                    // Petal breaks - set on cooldown instead of removing
+                    petal.onCooldown = true;
+                    
+                    // Store original petal data for restoration
+                    const originalPetal = {
+                        type: petal.type,
+                        petalType: petal.petalType,
+                        rarity: petal.rarity,
+                        maxHealth: petal.maxHealth
+                    };
+                    
+                    // Add cooldown (similar to other items)
+                    const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
+                    setTimeout(() => {
+                        if (players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex]!.onCooldown) {
+                            // Restore petal after cooldown
+                            const restoredPetal = {
+                                ...originalPetal,
+                                health: originalPetal.maxHealth, // Restore full health
+                                onCooldown: false
+                            };
+                            // Apply petal health bonus
+                            applyPetalHealthBonus(restoredPetal, player);
+                            player.loadout[loadoutIndex] = restoredPetal;
+                            
+                            io.emit('petalRestored', {
+                                playerId: player.id,
+                                slotIndex: loadoutIndex,
+                                petal: player.loadout[loadoutIndex]
+                            });
+                            
+                            // console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
+                        }
+                    }, cooldownTime);
+
+                    io.emit('petalBroken', {
+                        playerId: player.id,
+                        slotIndex: loadoutIndex,
+                        petalType: petal.petalType,
+                        rarity: petal.rarity
+                    });
+                }
                 continue;
             }
 

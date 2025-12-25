@@ -2651,8 +2651,57 @@ function updateMobProjectiles(deltaTimeMs) {
                         hitPlayerPetal = true; // Mark as hit so we skip player collision check
                         break; // Exit petal loop
                     }
-                    // If petal breaks, we continue to check other petals
-                    // The petal breaking logic will be handled in updatePlayerState
+                    // If petal breaks, break it immediately
+                    if (petal.health <= 0) {
+                        // Execute petal actions before breaking
+                        if (petalStats.actions) {
+                            const actionContext = {
+                                player: player,
+                                petalX: petalX,
+                                petalY: petalY,
+                                petalSize: petalSize,
+                                petalDamage: petalStats.damage,
+                                enemies: constants_2.enemies,
+                                io: io
+                            };
+                            (0, petal_actions_1.executePetalActions)(petalStats.actions, actionContext, 'on_break');
+                        }
+                        // Petal breaks - set on cooldown instead of removing
+                        petal.onCooldown = true;
+                        // Store original petal data for restoration
+                        const originalPetal = {
+                            type: petal.type,
+                            petalType: petal.petalType,
+                            rarity: petal.rarity,
+                            maxHealth: petal.maxHealth
+                        };
+                        // Add cooldown (similar to other items)
+                        const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
+                        setTimeout(() => {
+                            if (constants_2.players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex].onCooldown) {
+                                // Restore petal after cooldown
+                                const restoredPetal = {
+                                    ...originalPetal,
+                                    health: originalPetal.maxHealth, // Restore full health
+                                    onCooldown: false
+                                };
+                                // Apply petal health bonus
+                                (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
+                                player.loadout[loadoutIndex] = restoredPetal;
+                                io.emit('petalRestored', {
+                                    playerId: player.id,
+                                    slotIndex: loadoutIndex,
+                                    petal: player.loadout[loadoutIndex]
+                                });
+                            }
+                        }, cooldownTime);
+                        io.emit('petalBroken', {
+                            playerId: player.id,
+                            slotIndex: loadoutIndex,
+                            petalType: petal.petalType,
+                            rarity: petal.rarity
+                        });
+                    }
                     break; // Exit petal loop
                 }
             }
