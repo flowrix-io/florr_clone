@@ -177,6 +177,14 @@ export class TitleScreen {
     private titleScreenInventoryManager!: TitleScreenInventoryManager;
     private titleScreenChat: Chat | null = null;
     private titleScreenSkillsManager: SkillsManager | null = null;
+    // Canvas-based UI
+    private uiCanvas!: HTMLCanvasElement;
+    private uiCtx!: CanvasRenderingContext2D;
+    private playerName: string = '';
+    private isNameInputFocused: boolean = false;
+    private hoveredBiomeIndex: number = -1;
+    private hoveredStartButton: boolean = false;
+    private animationFrameId: number | null = null;
 
     constructor() {
         this.initializeElements();
@@ -817,6 +825,28 @@ export class TitleScreen {
         this.backgroundCtx = this.backgroundCanvas.getContext('2d')!;
         this.backgroundTexture = new Image();
 
+        // Create UI canvas for title screen elements
+        this.uiCanvas = document.createElement('canvas');
+        this.uiCanvas.id = 'title-ui-canvas';
+        this.uiCanvas.width = window.innerWidth;
+        this.uiCanvas.height = window.innerHeight;
+        this.uiCanvas.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: auto;
+            z-index: 1000;
+        `;
+        this.uiCtx = this.uiCanvas.getContext('2d')!;
+        
+        // Load saved player name
+        const savedName = localStorage.getItem('playerName') || '';
+        this.playerName = savedName;
+        // Sync to dummy input after a short delay to ensure DOM is ready
+        setTimeout(() => this.syncPlayerNameToInput(), 100);
+
         // Name input persistence will be handled in setupEventListeners
         
     }
@@ -1205,6 +1235,7 @@ export class TitleScreen {
 
     public async appendToBody(): Promise<void> {
         document.body.appendChild(this.backgroundCanvas);
+        document.body.appendChild(this.uiCanvas);
         document.body.appendChild(this.authContainer);
         this.authContainer.appendChild(this.loginForm);
         this.authContainer.appendChild(this.registerForm);
@@ -1225,6 +1256,40 @@ export class TitleScreen {
         // Load and start background animation
         await this.loadBackgroundTexture();
         this.startBackgroundAnimation();
+
+        // Hide HTML centerText and use canvas instead
+        this.centerText.style.display = 'none';
+        
+        // Move loadout bar out of centerText and make it visible
+        // Use setTimeout to ensure DOM is ready
+        setTimeout(() => {
+            const loadoutBar = document.getElementById('titleScreenLoadoutBar');
+            if (loadoutBar) {
+                // Remove from centerText if it's a child and append to body
+                if (loadoutBar.parentNode === this.centerText || loadoutBar.parentNode === null) {
+                    document.body.appendChild(loadoutBar);
+                }
+                // Position and show it (above instructions)
+                loadoutBar.style.display = 'flex';
+                loadoutBar.style.position = 'absolute';
+                loadoutBar.style.top = '50%';
+                loadoutBar.style.left = '50%';
+                loadoutBar.style.transform = 'translate(-50%, 0)';
+                loadoutBar.style.marginTop = '50px'; // Position above instructions (controls text is at +150px)
+                loadoutBar.style.zIndex = '1001'; // Above canvas
+                loadoutBar.style.pointerEvents = 'auto';
+                loadoutBar.style.gap = '8px'; // Larger gap between slots
+                loadoutBar.style.justifyContent = 'center';
+                loadoutBar.style.flexWrap = 'wrap';
+                loadoutBar.style.maxWidth = '800px'; // Wider to accommodate larger slots
+            }
+        }, 100);
+
+        // Setup canvas UI event listeners
+        this.setupCanvasUIListeners();
+
+        // Start canvas rendering loop
+        this.startCanvasRendering();
 
         // Add CSS for advanced settings
         this.addAdvancedSettingsStyles();
@@ -1509,6 +1574,462 @@ export class TitleScreen {
         }, 100); // 100ms delay to ensure DOM is ready
     }
 
+    /**
+     * Sets up canvas UI event listeners for mouse and keyboard input
+     */
+    private setupCanvasUIListeners(): void {
+        // Mouse click handling
+        this.uiCanvas.addEventListener('click', (e) => {
+            const rect = this.uiCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            this.handleCanvasClick(x, y);
+        });
+
+        // Mouse move for hover effects
+        this.uiCanvas.addEventListener('mousemove', (e) => {
+            const rect = this.uiCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            this.handleCanvasHover(x, y);
+        });
+
+        // Mouse leave to clear hover
+        this.uiCanvas.addEventListener('mouseleave', () => {
+            this.hoveredBiomeIndex = -1;
+            this.hoveredStartButton = false;
+        });
+
+        // Keyboard input for name field
+        document.addEventListener('keydown', (e) => {
+            // Only handle if name input is focused and not in game
+            if (this.isNameInputFocused && !window.currentGame) {
+            if (e.key === 'Backspace') {
+                this.playerName = this.playerName.slice(0, -1);
+                localStorage.setItem('playerName', this.playerName);
+                this.syncPlayerNameToInput();
+                e.preventDefault();
+                } else if (e.key === 'Enter') {
+                    // Trigger start button
+                    this.handleStartButtonClick();
+                    e.preventDefault();
+                } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                    // Only allow printable characters, max 20 chars
+                    if (this.playerName.length < 20) {
+                        this.playerName += e.key;
+                        localStorage.setItem('playerName', this.playerName);
+                        this.syncPlayerNameToInput();
+                    }
+                    e.preventDefault();
+                }
+            } else if (!window.currentGame && !this.isNameInputFocused && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                // Auto-focus name input when typing
+                this.isNameInputFocused = true;
+                if (e.key === 'Backspace') {
+                    this.playerName = this.playerName.slice(0, -1);
+                } else if (e.key.length === 1) {
+                    if (this.playerName.length < 20) {
+                        this.playerName += e.key;
+                    }
+                }
+                localStorage.setItem('playerName', this.playerName);
+                this.syncPlayerNameToInput();
+                e.preventDefault();
+            }
+        });
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            this.uiCanvas.width = window.innerWidth;
+            this.uiCanvas.height = window.innerHeight;
+        });
+    }
+
+    /**
+     * Handles canvas click events
+     */
+    private handleCanvasClick(x: number, y: number): void {
+        const centerX = this.uiCanvas.width / 2;
+        const centerY = this.uiCanvas.height / 2;
+        
+        // Check if clicking on name input field
+        const nameInputY = centerY - 100;
+        const nameInputX = centerX - 200;
+        const nameInputWidth = 280; // Match the rendering width
+        if (x >= nameInputX && x <= nameInputX + nameInputWidth && y >= nameInputY && y <= nameInputY + 42) {
+            this.isNameInputFocused = true;
+            return;
+        }
+
+        // Check if clicking on start button
+        const startButtonY = centerY - 100;
+        const startButtonX = centerX + 120;
+        if (x >= startButtonX && x <= startButtonX + 120 && y >= startButtonY && y <= startButtonY + 42) {
+            this.handleStartButtonClick();
+            return;
+        }
+
+        // Check if clicking on biome buttons
+        const biomeStartY = centerY - 20;
+        const biomeButtonWidth = 90;
+        const biomeButtonHeight = 35;
+        const biomeSpacing = 10;
+        const totalBiomeWidth = this.availableBiomes.length * (biomeButtonWidth + biomeSpacing) - biomeSpacing;
+        const biomeStartX = centerX - totalBiomeWidth / 2;
+
+        this.availableBiomes.forEach((biome, index) => {
+            const biomeX = biomeStartX + index * (biomeButtonWidth + biomeSpacing);
+            if (x >= biomeX && x <= biomeX + biomeButtonWidth && 
+                y >= biomeStartY && y <= biomeStartY + biomeButtonHeight) {
+                this.selectBiome(biome);
+                return;
+            }
+        });
+
+        // Clicking elsewhere unfocuses name input
+        this.isNameInputFocused = false;
+    }
+
+    /**
+     * Handles canvas hover events
+     */
+    private handleCanvasHover(x: number, y: number): void {
+        const centerX = this.uiCanvas.width / 2;
+        const centerY = this.uiCanvas.height / 2;
+        
+        // Check start button hover
+        const startButtonY = centerY - 100;
+        const startButtonX = centerX + 120;
+        this.hoveredStartButton = (x >= startButtonX && x <= startButtonX + 120 && 
+                                   y >= startButtonY && y <= startButtonY + 42);
+
+        // Check biome button hover
+        const biomeStartY = centerY - 20;
+        const biomeButtonWidth = 90;
+        const biomeButtonHeight = 35;
+        const biomeSpacing = 10;
+        const totalBiomeWidth = this.availableBiomes.length * (biomeButtonWidth + biomeSpacing) - biomeSpacing;
+        const biomeStartX = centerX - totalBiomeWidth / 2;
+
+        this.hoveredBiomeIndex = -1;
+        this.availableBiomes.forEach((biome, index) => {
+            const biomeX = biomeStartX + index * (biomeButtonWidth + biomeSpacing);
+            if (x >= biomeX && x <= biomeX + biomeButtonWidth && 
+                y >= biomeStartY && y <= biomeStartY + biomeButtonHeight) {
+                this.hoveredBiomeIndex = index;
+            }
+        });
+    }
+
+    /**
+     * Handles start button click
+     */
+    private handleStartButtonClick(): void {
+        const multiPlayerButton = this.getMultiPlayerButton();
+        if (multiPlayerButton) {
+            multiPlayerButton.click();
+        }
+    }
+
+    /**
+     * Selects a biome
+     */
+    private selectBiome(biomeName: string): void {
+        const selectedBiome = biomeName || 'default';
+        localStorage.setItem('spawnBiome', selectedBiome);
+        console.log('Selected spawn biome:', selectedBiome);
+        this.loadBackgroundTexture(selectedBiome);
+    }
+
+    /**
+     * Syncs the playerName to the dummy input element for compatibility
+     */
+    private syncPlayerNameToInput(): void {
+        const input = document.getElementById('nameInput') as HTMLInputElement;
+        if (input) {
+            input.value = this.playerName;
+        }
+    }
+
+    /**
+     * Draws a rounded rectangle
+     */
+    private drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+    }
+
+    /**
+     * Darkens a color by a given factor (0-1, where 0.3 means 30% darker)
+     */
+    private darkenColor(color: string, factor: number = 0.3): string {
+        // Handle rgba colors
+        if (color.startsWith('rgba')) {
+            const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+            if (match) {
+                const r = Math.max(0, Math.floor(parseInt(match[1]) * (1 - factor)));
+                const g = Math.max(0, Math.floor(parseInt(match[2]) * (1 - factor)));
+                const b = Math.max(0, Math.floor(parseInt(match[3]) * (1 - factor)));
+                const a = match[4] ? parseFloat(match[4]) : 1;
+                return `rgba(${r}, ${g}, ${b}, ${a})`;
+            }
+        }
+        // Handle hex colors
+        if (color.startsWith('#')) {
+            const hex = color.slice(1);
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            const newR = Math.max(0, Math.floor(r * (1 - factor)));
+            const newG = Math.max(0, Math.floor(g * (1 - factor)));
+            const newB = Math.max(0, Math.floor(b * (1 - factor)));
+            return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+        }
+        // Handle rgb colors
+        if (color.startsWith('rgb')) {
+            const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+            if (match) {
+                const r = Math.max(0, Math.floor(parseInt(match[1]) * (1 - factor)));
+                const g = Math.max(0, Math.floor(parseInt(match[2]) * (1 - factor)));
+                const b = Math.max(0, Math.floor(parseInt(match[3]) * (1 - factor)));
+                return `rgb(${r}, ${g}, ${b})`;
+            }
+        }
+        return color; // Return original if we can't parse it
+    }
+
+    /**
+     * Starts the canvas rendering loop
+     */
+    private startCanvasRendering(): void {
+        if (!this.uiCanvas || !this.uiCtx) {
+            return;
+        }
+        // Stop any existing rendering loop
+        this.stopCanvasRendering();
+        const render = () => {
+            if (this.uiCanvas && this.uiCtx) {
+                this.renderCanvasUI();
+                this.animationFrameId = requestAnimationFrame(render);
+            }
+        };
+        render();
+    }
+
+    /**
+     * Stops the canvas rendering loop
+     */
+    private stopCanvasRendering(): void {
+        if (this.animationFrameId !== null) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+        }
+    }
+
+    /**
+     * Renders the canvas UI
+     */
+    private renderCanvasUI(): void {
+        const ctx = this.uiCtx;
+        const width = this.uiCanvas.width;
+        const height = this.uiCanvas.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw title
+        ctx.save();
+        ctx.font = 'bold 48px Ubuntu, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 6;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const titleText = 'florr.io clone';
+        ctx.strokeText(titleText, centerX, centerY - 200);
+        ctx.fillText(titleText, centerX, centerY - 200);
+        ctx.restore();
+
+        // Draw name input field (shorter to avoid overlap with ready button)
+        const nameInputY = centerY - 100;
+        const nameInputWidth = 280; // Reduced from 400 to prevent overlap
+        const nameInputX = centerX - 200; // Keep left edge at same position
+        const nameInputHeight = 42;
+        const nameInputRadius = 5; // Rounded corner radius
+
+        // Input background with rounded corners
+        const nameInputBgColor = this.isNameInputFocused ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.9)';
+        ctx.fillStyle = nameInputBgColor;
+        ctx.strokeStyle = this.darkenColor(nameInputBgColor, 0.4); // Darker border
+        ctx.lineWidth = this.isNameInputFocused ? 3 : 2;
+        this.drawRoundedRect(ctx, nameInputX, nameInputY, nameInputWidth, nameInputHeight, nameInputRadius);
+        ctx.fill();
+        ctx.stroke();
+
+        // Input text
+        ctx.font = 'bold 18px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const displayText = this.playerName || (this.isNameInputFocused ? '' : 'This flower is called...');
+        
+        // Measure text to handle overflow
+        const maxTextWidth = nameInputWidth - 20;
+        let displayName = displayText;
+        const metrics = ctx.measureText(displayName);
+        if (metrics.width > maxTextWidth) {
+            // Truncate text with ellipsis
+            while (ctx.measureText(displayName + '...').width > maxTextWidth && displayName.length > 0) {
+                displayName = displayName.slice(0, -1);
+            }
+            displayName += '...';
+        }
+        
+        const textX = nameInputX + 10;
+        const textY = nameInputY + nameInputHeight / 2;
+        // Draw black outline
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.strokeText(displayName, textX, textY);
+        // Draw text fill (white)
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(displayName, textX, textY);
+
+        // Draw cursor if focused
+        if (this.isNameInputFocused) {
+            const cursorX = nameInputX + 10 + ctx.measureText(displayName).width;
+            const time = Date.now();
+            if (Math.floor(time / 500) % 2 === 0) {
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(cursorX, nameInputY + 10, 2, nameInputHeight - 20);
+            }
+        }
+
+        // Draw start button
+        const startButtonY = centerY - 100;
+        const startButtonX = centerX + 120;
+        const startButtonWidth = 120;
+        const startButtonHeight = 42;
+        const startButtonRadius = 5; // Rounded corner radius
+
+        // Button background with rounded corners (always green)
+        const startButtonColor = '#1dd129'; // Always green
+        ctx.fillStyle = startButtonColor;
+        ctx.strokeStyle = this.darkenColor(startButtonColor, 0.3); // Darker green border
+        ctx.lineWidth = 2;
+        this.drawRoundedRect(ctx, startButtonX, startButtonY, startButtonWidth, startButtonHeight, startButtonRadius);
+        ctx.fill();
+        ctx.stroke();
+
+        // Button text (always white since button is always green)
+        ctx.font = 'bold 18px Ubuntu, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const readyTextX = startButtonX + startButtonWidth / 2;
+        const readyTextY = startButtonY + startButtonHeight / 2;
+        // Draw black outline
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.strokeText('Ready▶', readyTextX, readyTextY);
+        // Draw text fill
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Ready▶', readyTextX, readyTextY);
+
+        // Draw biome selector label
+        ctx.font = 'bold 18px Ubuntu, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 4;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeText('Spawn Biome:', centerX, centerY - 50);
+        ctx.fillText('Spawn Biome:', centerX, centerY - 50);
+
+        // Draw biome buttons
+        const biomeStartY = centerY - 20;
+        const biomeButtonWidth = 90;
+        const biomeButtonHeight = 35;
+        const biomeSpacing = 10;
+        const totalBiomeWidth = this.availableBiomes.length * (biomeButtonWidth + biomeSpacing) - biomeSpacing;
+        const biomeStartX = centerX - totalBiomeWidth / 2;
+        const selectedBiome = localStorage.getItem('spawnBiome') || 'default';
+
+        this.availableBiomes.forEach((biome, index) => {
+            const biomeX = biomeStartX + index * (biomeButtonWidth + biomeSpacing);
+            const biomeConfig = this.getBiomeConfig(biome);
+            const isSelected = biome === selectedBiome;
+            const isHovered = this.hoveredBiomeIndex === index;
+
+            // Button background with rounded corners
+            const biomeButtonRadius = 8; // Rounded corner radius
+            ctx.fillStyle = biomeConfig.color;
+            // Use darker version of the biome color for border, or white if selected
+            const borderColor = isSelected ? '#ffffff' : this.darkenColor(biomeConfig.color, 0.3);
+            ctx.strokeStyle = borderColor;
+            ctx.lineWidth = isSelected ? 3 : 2;
+            this.drawRoundedRect(ctx, biomeX, biomeStartY, biomeButtonWidth, biomeButtonHeight, biomeButtonRadius);
+            ctx.fill();
+            ctx.stroke();
+
+            // Button text
+            ctx.font = 'bold 14px Ubuntu, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            let buttonText = biomeConfig.displayName;
+            if (isSelected) {
+                buttonText += ' ✓';
+            }
+            const biomeTextX = biomeX + biomeButtonWidth / 2;
+            const biomeTextY = biomeStartY + biomeButtonHeight / 2;
+            // Draw black outline
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.strokeText(buttonText, biomeTextX, biomeTextY);
+            // Draw text fill (white)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(buttonText, biomeTextX, biomeTextY);
+        });
+
+        // Draw controls text (smaller, at bottom)
+        const controlsY = centerY + 150;
+        ctx.font = 'bold 14px Ubuntu, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        
+        const controlsText = [
+            'Controls:',
+            'Arrow keys to move',
+            'Hold space to extend petals',
+            'Press I to open the inventory.',
+            'Press number keys 1-9 to use items.',
+            'Press C to switch between mouse and keyboard controls',
+            'Press R to craft items'
+        ];
+
+        controlsText.forEach((text, index) => {
+            const y = controlsY + index * 20;
+            // Draw black outline (already has stroke from above)
+            ctx.strokeText(text, centerX, y);
+            // Draw text fill
+            ctx.fillText(text, centerX, y);
+        });
+    }
+
     private setupNameInputPersistence(): void {
         // Use setTimeout to ensure DOM is ready
         setTimeout(() => {
@@ -1564,13 +2085,39 @@ export class TitleScreen {
 
     public hideCenterText(): void {
         this.centerText.style.display = 'none';
+        // Hide canvas UI
+        if (this.uiCanvas) {
+            this.uiCanvas.style.display = 'none';
+        }
+        // Hide loadout bar
+        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
+        if (loadoutBar) {
+            loadoutBar.style.display = 'none';
+        }
+        this.stopCanvasRendering();
     }
 
     public showCenterText(): void {
-        this.centerText.style.display = 'block';
+        this.centerText.style.display = 'none'; // Keep HTML hidden, use canvas
+        // Show canvas UI
+        if (this.uiCanvas) {
+            this.uiCanvas.style.display = 'block';
+        }
+        // Show loadout bar
+        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
+        if (loadoutBar) {
+            loadoutBar.style.display = 'flex';
+        }
+        this.startCanvasRendering();
     }
 
     public hideTitleScreen(): void {
+        // Stop canvas rendering
+        this.stopCanvasRendering();
+        // Hide canvas
+        if (this.uiCanvas) {
+            this.uiCanvas.style.display = 'none';
+        }
         this.hideAuthContainer();
         this.hideGameMenu();
         this.hideCenterText();
@@ -1667,6 +2214,12 @@ export class TitleScreen {
     }
 
     public showTitleScreen(): void {
+        // Show canvas
+        if (this.uiCanvas) {
+            this.uiCanvas.style.display = 'block';
+        }
+        // Restart canvas rendering
+        this.startCanvasRendering();
         this.showAuthContainer();
         this.showGameMenu();
         this.showCenterText();
@@ -1783,7 +2336,16 @@ export class TitleScreen {
     }
 
     public getMultiPlayerButton(): HTMLButtonElement | null {
-        return this.centerText.querySelector('#multiPlayerButton') as HTMLButtonElement;
+        // Return a dummy button that can be clicked programmatically
+        // The actual button is now rendered on canvas
+        let button = document.getElementById('multiPlayerButton') as HTMLButtonElement;
+        if (!button) {
+            button = document.createElement('button');
+            button.style.display = 'none';
+            button.id = 'multiPlayerButton';
+            document.body.appendChild(button);
+        }
+        return button;
     }
 
     public getSettingsButton(): HTMLElement | null {
@@ -1816,7 +2378,17 @@ export class TitleScreen {
     }
 
     public getNameInput(): HTMLInputElement | null {
-        return this.centerText.querySelector('#nameInput') as HTMLInputElement;
+        // Return a dummy input that can be accessed programmatically
+        // The actual input is now rendered on canvas
+        let input = document.getElementById('nameInput') as HTMLInputElement;
+        if (!input) {
+            input = document.createElement('input');
+            input.style.display = 'none';
+            input.id = 'nameInput';
+            document.body.appendChild(input);
+        }
+        input.value = this.playerName;
+        return input;
     }
 
     public getHueSlider(): HTMLInputElement | null {
@@ -2381,8 +2953,8 @@ class TitleScreenInventoryManager {
             const slot = document.createElement('div');
             slot.className = 'loadout-slot';
             slot.dataset.slot = i.toString();
-            slot.style.width = '50px';
-            slot.style.height = '50px';
+            slot.style.width = '70px';
+            slot.style.height = '70px';
             slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
             slot.style.border = '3px solid #00ba3e';
             slot.style.borderRadius = '5px';
@@ -2401,7 +2973,8 @@ class TitleScreenInventoryManager {
                 top: 5px;
                 left: 5px;
                 color: white;
-                font-size: 12px;
+                font-size: 16px;
+                font-weight: bold;
                 pointer-events: none;
             `;
             slot.appendChild(keyText);
@@ -2517,7 +3090,9 @@ class TitleScreenInventoryManager {
 
         const username = localStorage.getItem('username');
         const password = localStorage.getItem('password');
-        const playerName = (document.getElementById('nameInput') as HTMLInputElement)?.value || 'Unnamed';
+        // Get player name from localStorage or the name input element
+        const nameInput = document.getElementById('nameInput') as HTMLInputElement;
+        const playerName = (nameInput?.value || localStorage.getItem('playerName') || 'Unnamed');
         const spawnBiome = localStorage.getItem('spawnBiome') || 'default';
 
         if (!username || !password) return;
