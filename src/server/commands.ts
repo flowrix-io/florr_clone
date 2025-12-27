@@ -6,6 +6,8 @@ import { getAllMobTypes } from '../mobs';
 import { players, enemies, ENEMIES_PER_VIEWPORT } from '../constants';
 import { ENEMY_COUNT } from './gameState';
 import { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase } from '../server';
+import { getAllPetalTypes, getPetalStats, RARITY_LEVELS } from '../petals';
+import { addItem } from './playerManager';
 
 // AuthenticatedSocket interface (matches definition in server.ts)
 interface AuthenticatedSocket extends Socket {
@@ -325,6 +327,97 @@ export function executeServerCommand(
     } else if (trimmedCommand === 'clear_notifications' || trimmedCommand === 'clear_notifs') {
         const count = database.clearAllNotifications();
         sendOutput(`Cleared ${count} notification(s)`, socketId, io);
+    } else if (trimmedCommand.startsWith('give ')) {
+        const parts = trimmedCommand.split(' ');
+        if (parts.length === 4) {
+            // give <playerId/name> <itemType> <rarity>
+            const playerIdentifier = parts[1];
+            const itemType = parts[2].toLowerCase();
+            const rarity = parts[3].toLowerCase();
+            
+            // Validate rarity
+            if (!RARITY_LEVELS.includes(rarity as any)) {
+                sendOutput(`Invalid rarity. Valid rarities: ${RARITY_LEVELS.join(', ')}`, socketId, io);
+                return;
+            }
+            
+            // Try to find player by ID first, then by name
+            let targetPlayer: ServerPlayer | undefined;
+            let targetPlayerId: string | undefined;
+            let targetSocket: AuthenticatedSocket | undefined;
+            
+            // Check if it's a socket ID
+            if (players[playerIdentifier]) {
+                targetPlayer = players[playerIdentifier];
+                targetPlayerId = playerIdentifier;
+                targetSocket = io.sockets.sockets.get(playerIdentifier) as AuthenticatedSocket;
+            } else {
+                // Search by name
+                for (const [socketId, player] of Object.entries(players)) {
+                    if (player.name.toLowerCase() === playerIdentifier.toLowerCase()) {
+                        targetPlayer = player;
+                        targetPlayerId = socketId;
+                        targetSocket = io.sockets.sockets.get(socketId) as AuthenticatedSocket;
+                        break;
+                    }
+                }
+            }
+            
+            if (targetPlayer && targetPlayerId) {
+                // Check if it's a consumable item
+                const consumableTypes = ['health_potion', 'speed_boost', 'shield'];
+                let itemKey: string;
+                let itemDisplayName: string;
+                
+                if (consumableTypes.includes(itemType)) {
+                    // It's a consumable
+                    itemKey = itemType;
+                    itemDisplayName = itemType;
+                } else {
+                    // It's a petal - validate it exists and has the specified rarity
+                    const petalStats = getPetalStats(itemType, rarity);
+                    if (!petalStats) {
+                        sendOutput(`Petal type "${itemType}" does not exist or does not have rarity "${rarity}"`, socketId, io);
+                        return;
+                    }
+                    
+                    if (petalStats.isAdminPetal) {
+                        sendOutput(`Cannot give admin petal "${itemType}"`, socketId, io);
+                        return;
+                    }
+                    
+                    itemKey = `petal_${itemType}`;
+                    itemDisplayName = `${itemType} petal`;
+                }
+                
+                // Add item to player's inventory
+                addItem(targetPlayer.inventory, rarity, itemKey, 1);
+                
+                // Emit inventory update to the player
+                if (targetSocket) {
+                    io.to(targetPlayerId).emit('inventoryUpdated', targetPlayer.inventory);
+                }
+                
+                // Save player progress if user is authenticated
+                if (targetSocket?.userId) {
+                    savePlayerProgress(targetPlayer, targetSocket.userId);
+                }
+                
+                sendOutput(`Gave ${rarity} ${itemDisplayName} to ${targetPlayer.name} (${targetPlayerId})`, socketId, io);
+            } else {
+                sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
+            }
+        } else {
+            sendOutput('Usage: give <playerId/name> <itemType> <rarity>', socketId, io);
+            sendOutput('  Examples:', socketId, io);
+            sendOutput('    give abc123 basic rare', socketId, io);
+            sendOutput('    give PlayerName rose legendary', socketId, io);
+            sendOutput('    give abc123 health_potion epic', socketId, io);
+            sendOutput('  Item types:', socketId, io);
+            sendOutput('    Petals: any petal type (e.g., basic, rose, stinger)', socketId, io);
+            sendOutput('    Consumables: health_potion, speed_boost, shield', socketId, io);
+            sendOutput(`  Valid rarities: ${RARITY_LEVELS.join(', ')}`, socketId, io);
+        }
     }
 }
 
@@ -389,6 +482,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, notification <type> <message>, clear_notifications';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, give <playerId/name> <rarity>, notification <type> <message>, clear_notifications';
 }
 

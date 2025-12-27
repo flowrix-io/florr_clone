@@ -129,6 +129,13 @@ export const CHANGELOG: ChangelogEntry[] = [
             'New admin command: clear_notifications',
             'New admin command: notification',
         ]
+    },
+    {
+        date: 'December 26, 2025',
+        changes: [
+            'Changed title screen UI',
+            'New admin command: give'
+        ]
     }
 ];
 
