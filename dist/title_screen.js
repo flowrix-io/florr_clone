@@ -1717,10 +1717,11 @@ class TitleScreen {
         const startButtonWidth = 120;
         const startButtonHeight = 42;
         const startButtonRadius = 5; // Rounded corner radius
-        // Button background with rounded corners (always green)
+        // Button background with rounded corners (always green, darker when hovered)
         const startButtonColor = '#1dd129'; // Always green
-        ctx.fillStyle = startButtonColor;
-        ctx.strokeStyle = this.darkenColor(startButtonColor, 0.3); // Darker green border
+        const buttonFillColor = this.hoveredStartButton ? this.darkenColor(startButtonColor, 0.2) : startButtonColor;
+        ctx.fillStyle = buttonFillColor;
+        ctx.strokeStyle = this.darkenColor(buttonFillColor, 0.3); // Darker border
         ctx.lineWidth = 2;
         this.drawRoundedRect(ctx, startButtonX, startButtonY, startButtonWidth, startButtonHeight, startButtonRadius);
         ctx.fill();
@@ -1760,11 +1761,13 @@ class TitleScreen {
             const biomeConfig = this.getBiomeConfig(biome);
             const isSelected = biome === selectedBiome;
             const isHovered = this.hoveredBiomeIndex === index;
-            // Button background with rounded corners
+            // Button background with rounded corners (darker when hovered)
             const biomeButtonRadius = 8; // Rounded corner radius
-            ctx.fillStyle = biomeConfig.color;
+            // Darken the button when hovered (but not when selected)
+            const biomeFillColor = (isHovered && !isSelected) ? this.darkenColor(biomeConfig.color, 0.2) : biomeConfig.color;
+            ctx.fillStyle = biomeFillColor;
             // Use darker version of the biome color for border, or white if selected
-            const borderColor = isSelected ? '#ffffff' : this.darkenColor(biomeConfig.color, 0.3);
+            const borderColor = isSelected ? '#ffffff' : this.darkenColor(biomeFillColor, 0.3);
             ctx.strokeStyle = borderColor;
             ctx.lineWidth = isSelected ? 3 : 2;
             this.drawRoundedRect(ctx, biomeX, biomeStartY, biomeButtonWidth, biomeButtonHeight, biomeButtonRadius);
