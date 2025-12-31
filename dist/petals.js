@@ -693,38 +693,23 @@ const BASE_PETAL_CONFIGS = {
 </svg>`,
         isAdminPetal: false
     },
-    //     soldier_ant_egg: {
-    //         name: "Ant Egg Petal",
-    //         damage: 10,
-    //         health: 10,
-    //         size: 1.0,
-    //         cooldown: 5000,
-    //         description: "A petal that spawns an ant pet",
-    //         color: "#000000",
-    //         count: 1,
-    //         petMobType: "soldier_ant_pet",
-    //         petMobRarity: "common",
-    //         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-    // <circle r="13" cx="16" cy="16" fill="#4f4f4f" stroke="#666666" stroke-width="4"/>
-    // </svg>`,
-    //         isAdminPetal: false
-    //     },
-    //     soldier_fire_ant_egg: {
-    //         name: "Fire Ant Egg Petal",
-    //         damage: 10,
-    //         health: 10,
-    //         size: 1.0,
-    //         cooldown: 10000,
-    //         description: "A petal that spawns a fire ant pet",
-    //         color: "#000000",
-    //         count: 1,
-    //         petMobType: "soldier_fire_ant_pet",
-    //         petMobRarity: "common",
-    //         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-    // <circle r="13" cx="16" cy="16" fill="#78563c" stroke="#c78f63" stroke-width="4"/>
-    // </svg>`,
-    //         isAdminPetal: false
-    //     },
+    bulb: {
+        name: "Bulb Petal",
+        damage: 8,
+        health: 10,
+        size: 1.5,
+        cooldown: 627,
+        description: "It's a bulb",
+        color: "#000000",
+        count: 3,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <rect x="12" y="12" width="8" height="16" fill="#aaaaaa" stroke-width="2" stroke="#999999"/>
+  <rect x="12" y="19" width="8" height="2" fill="#999999" stroke-width="0" stroke="#999999"/>
+  <rect x="12" y="23" width="8" height="2" fill="#999999" stroke-width="0" stroke="#999999"/>
+  <circle r="8" cx="16" cy="10" fill="#ffff00" stroke-width="2" stroke="#aaaa00"/>
+</svg>`,
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
