@@ -34,6 +34,13 @@ export interface PetalStats {
     playerModifiers?: PlayerModifiers; // Player stat modifiers when petal is equipped (optional)
     petMobType?: string; // Optional mob type to spawn as a pet when this petal is equipped (e.g., 'bee', 'ladybug')
     petMobRarity?: string; // Optional rarity for the pet mob (defaults to petal's rarity if not specified)
+    // Physics properties (optional, defaults to base values if not specified)
+    attractionForce?: number; // Attraction force towards mobs (pixels per second^2, default: 500)
+    springForce?: number; // Spring force back to orbit position (pixels per second^2, default: 200)
+    damping?: number; // Velocity damping per frame (0-1, default: 0.92)
+    maxAttractionDistance?: number; // Maximum distance to attract to mobs (pixels, default: 2000)
+    minAttractionDistance?: number; // Minimum distance to avoid division by zero (pixels, default: 1)
+    spawnSmoothTime?: number; // Time in ms to smoothly ramp up forces after spawn (default: 300)
 }
 
 export interface PetalConfig {
@@ -103,6 +110,13 @@ interface BasePetalConfig {
     playerModifiers?: PlayerModifiers; // Player stat modifiers when petal is equipped (optional)
     petMobType?: string; // Optional mob type to spawn as a pet when this petal is equipped (e.g., 'bee', 'ladybug')
     petMobRarity?: string; // Optional rarity for the pet mob (defaults to petal's rarity if not specified)
+    // Physics properties (optional, defaults to base values if not specified)
+    attractionForce?: number; // Attraction force towards mobs (pixels per second^2, default: 500)
+    springForce?: number; // Spring force back to orbit position (pixels per second^2, default: 200)
+    damping?: number; // Velocity damping per frame (0-1, default: 0.92)
+    maxAttractionDistance?: number; // Maximum distance to attract to mobs (pixels, default: 2000)
+    minAttractionDistance?: number; // Minimum distance to avoid division by zero (pixels, default: 1)
+    spawnSmoothTime?: number; // Time in ms to smoothly ramp up forces after spawn (default: 300)
 }
 
 // Special rarity overrides for specific petals
@@ -121,6 +135,13 @@ interface RarityOverride {
     playerModifiers?: PlayerModifiers; // Player stat modifiers when petal is equipped (optional)
     petMobType?: string; // Optional mob type to spawn as a pet when this petal is equipped (e.g., 'bee', 'ladybug')
     petMobRarity?: string; // Optional rarity for the pet mob (defaults to petal's rarity if not specified)
+    // Physics properties (optional, defaults to base values if not specified)
+    attractionForce?: number; // Attraction force towards mobs (pixels per second^2, default: 500)
+    springForce?: number; // Spring force back to orbit position (pixels per second^2, default: 200)
+    damping?: number; // Velocity damping per frame (0-1, default: 0.92)
+    maxAttractionDistance?: number; // Maximum distance to attract to mobs (pixels, default: 2000)
+    minAttractionDistance?: number; // Minimum distance to avoid division by zero (pixels, default: 1)
+    spawnSmoothTime?: number; // Time in ms to smoothly ramp up forces after spawn (default: 300)
 }
 
 // Rarity-specific overrides for special cases

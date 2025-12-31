@@ -1573,96 +1573,102 @@ class Graphics {
             // Use world coordinates to match server-side implementation
             const targetX = player.x + Math.cos(totalAngle) * petalRadius;
             const targetY = player.y + Math.sin(totalAngle) * petalRadius;
-            // Get or initialize petal physics state
-            const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
-            let physicsState = this.petalPhysicsStates.get(petalId);
-            if (!physicsState) {
-                // Initialize physics state at target position with no velocity (in world coordinates)
-                physicsState = {
-                    x: targetX,
-                    y: targetY,
-                    vx: 0,
-                    vy: 0,
-                    lastUpdateTime: currentTime,
-                    spawnTime: currentTime
-                };
-                this.petalPhysicsStates.set(petalId, physicsState);
+            // Skip physics for petals with range 0 (they should stay at player position)
+            let petalX;
+            let petalY;
+            if (petalRange === 0) {
+                // No physics for range 0 petals - use target position directly, convert to relative for rendering
+                petalX = targetX - player.x;
+                petalY = targetY - player.y;
             }
-            // Calculate smooth initialization factor (ramp up forces over SPAWN_SMOOTH_TIME)
-            const timeSinceSpawn = physicsState.spawnTime ? currentTime - physicsState.spawnTime : this.SPAWN_SMOOTH_TIME;
-            const smoothFactor = Math.min(1.0, timeSinceSpawn / this.SPAWN_SMOOTH_TIME);
-            // Calculate attraction force towards nearby mobs
-            let attractionFx = 0;
-            let attractionFy = 0;
-            // physicsState.x and physicsState.y are already in world coordinates (matching server)
-            const worldPetalX = physicsState.x;
-            const worldPetalY = physicsState.y;
-            for (const enemy of enemies.values()) {
-                // Skip pets
-                if (enemy.ownerId) {
-                    continue;
+            else {
+                // Get per-petal physics values (use defaults if not specified)
+                const petalAttractionForce = stats.attractionForce ?? this.ATTRACTION_FORCE;
+                const petalSpringForce = stats.springForce ?? this.SPRING_FORCE;
+                const petalDamping = stats.damping ?? this.DAMPING;
+                const petalMaxAttractionDistance = stats.maxAttractionDistance ?? this.MAX_ATTRACTION_DISTANCE;
+                const petalMinAttractionDistance = stats.minAttractionDistance ?? this.MIN_ATTRACTION_DISTANCE;
+                const petalSpawnSmoothTime = stats.spawnSmoothTime ?? this.SPAWN_SMOOTH_TIME;
+                // Get or initialize petal physics state
+                const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
+                let physicsState = this.petalPhysicsStates.get(petalId);
+                if (!physicsState) {
+                    // Initialize physics state at target position with no velocity (in world coordinates)
+                    physicsState = {
+                        x: targetX,
+                        y: targetY,
+                        vx: 0,
+                        vy: 0,
+                        lastUpdateTime: currentTime,
+                        spawnTime: currentTime
+                    };
+                    this.petalPhysicsStates.set(petalId, physicsState);
                 }
-                // Get mob stats to determine hitbox size
-                const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-                const enemySize = mobStats ? mobStats.size * 40 : 40; // Use mob size or fallback to base size
-                const enemyRadius = enemySize / 2;
-                const dx = enemy.x - worldPetalX;
-                const dy = enemy.y - worldPetalY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                // Calculate max attraction distance including mob's hitbox radius
-                // This allows attraction to work when petal is near the mob's edge, not just its center
-                const maxAttractionDistanceWithHitbox = this.MAX_ATTRACTION_DISTANCE + enemyRadius;
-                // Only attract if within range (distance from center to center, accounting for hitbox)
-                if (distance > 0 && distance < maxAttractionDistanceWithHitbox && distance > this.MIN_ATTRACTION_DISTANCE) {
-                    // Inverse square law for attraction (stronger when closer)
-                    const forceStrength = this.ATTRACTION_FORCE / (distance * distance);
-                    const normalizedDx = dx / distance;
-                    const normalizedDy = dy / distance;
-                    // Apply smooth factor to attraction (gradually increase after spawn)
-                    const forceX = normalizedDx * forceStrength * deltaTime * smoothFactor;
-                    const forceY = normalizedDy * forceStrength * deltaTime * smoothFactor;
-                    attractionFx += forceX;
-                    attractionFy += forceY;
-                    // Debug: Log client-side attraction (only occasionally to avoid spam)
-                    if (Math.random() < 0.01) { // 1% chance per frame
-                        console.log('[Client Petal Attraction]', {
-                            distance: distance.toFixed(2),
-                            forceStrength: forceStrength.toFixed(4),
-                            forceX: forceX.toFixed(4),
-                            forceY: forceY.toFixed(4),
-                            smoothFactor: smoothFactor.toFixed(3)
-                        });
+                // Calculate smooth initialization factor (ramp up forces over spawn smooth time)
+                const timeSinceSpawn = physicsState.spawnTime ? currentTime - physicsState.spawnTime : petalSpawnSmoothTime;
+                const smoothFactor = Math.min(1.0, timeSinceSpawn / petalSpawnSmoothTime);
+                // Calculate attraction force towards nearby mobs
+                let attractionFx = 0;
+                let attractionFy = 0;
+                // physicsState.x and physicsState.y are already in world coordinates (matching server)
+                const worldPetalX = physicsState.x;
+                const worldPetalY = physicsState.y;
+                for (const enemy of enemies.values()) {
+                    // Skip pets
+                    if (enemy.ownerId) {
+                        continue;
+                    }
+                    // Get mob stats to determine hitbox size
+                    const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                    const enemySize = mobStats ? mobStats.size * 40 : 40; // Use mob size or fallback to base size
+                    const enemyRadius = enemySize / 2;
+                    const dx = enemy.x - worldPetalX;
+                    const dy = enemy.y - worldPetalY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    // Calculate max attraction distance including mob's hitbox radius
+                    // This allows attraction to work when petal is near the mob's edge, not just its center
+                    const maxAttractionDistanceWithHitbox = petalMaxAttractionDistance + enemyRadius;
+                    // Only attract if within range (distance from center to center, accounting for hitbox)
+                    if (distance > 0 && distance < maxAttractionDistanceWithHitbox && distance > petalMinAttractionDistance) {
+                        // Inverse square law for attraction (stronger when closer)
+                        const forceStrength = petalAttractionForce / (distance * distance);
+                        const normalizedDx = dx / distance;
+                        const normalizedDy = dy / distance;
+                        // Apply smooth factor to attraction (gradually increase after spawn)
+                        attractionFx += normalizedDx * forceStrength * deltaTime * smoothFactor;
+                        attractionFy += normalizedDy * forceStrength * deltaTime * smoothFactor;
                     }
                 }
+                // Calculate spring force back to orbit position
+                // Both targetX/Y and physicsState.x/y are in world coordinates
+                const springDx = targetX - physicsState.x;
+                const springDy = targetY - physicsState.y;
+                const springDistance = Math.sqrt(springDx * springDx + springDy * springDy);
+                let springFx = 0;
+                let springFy = 0;
+                if (springDistance > 0) {
+                    const normalizedSpringDx = springDx / springDistance;
+                    const normalizedSpringDy = springDy / springDistance;
+                    // Spring force is proportional to distance from target
+                    // Apply smooth factor to spring force (gradually increase after spawn)
+                    springFx = normalizedSpringDx * petalSpringForce * springDistance * deltaTime * smoothFactor;
+                    springFy = normalizedSpringDy * petalSpringForce * springDistance * deltaTime * smoothFactor;
+                }
+                // Apply forces to velocity
+                physicsState.vx += attractionFx + springFx;
+                physicsState.vy += attractionFy + springFy;
+                // Apply damping to velocity
+                physicsState.vx *= petalDamping;
+                physicsState.vy *= petalDamping;
+                // Update position based on velocity
+                physicsState.x += physicsState.vx * deltaTime;
+                physicsState.y += physicsState.vy * deltaTime;
+                physicsState.lastUpdateTime = currentTime;
+                // Convert physics position from world coordinates to relative coordinates for rendering
+                // (since we're already in the player's transform context)
+                petalX = physicsState.x - player.x;
+                petalY = physicsState.y - player.y;
             }
-            // Calculate spring force back to orbit position
-            const springDx = targetX - physicsState.x;
-            const springDy = targetY - physicsState.y;
-            const springDistance = Math.sqrt(springDx * springDx + springDy * springDy);
-            let springFx = 0;
-            let springFy = 0;
-            if (springDistance > 0) {
-                const normalizedSpringDx = springDx / springDistance;
-                const normalizedSpringDy = springDy / springDistance;
-                // Spring force is proportional to distance from target
-                // Apply smooth factor to spring force (gradually increase after spawn)
-                springFx = normalizedSpringDx * this.SPRING_FORCE * springDistance * deltaTime * smoothFactor;
-                springFy = normalizedSpringDy * this.SPRING_FORCE * springDistance * deltaTime * smoothFactor;
-            }
-            // Apply forces to velocity
-            physicsState.vx += attractionFx + springFx;
-            physicsState.vy += attractionFy + springFy;
-            // Apply damping to velocity
-            physicsState.vx *= this.DAMPING;
-            physicsState.vy *= this.DAMPING;
-            // Update position based on velocity
-            physicsState.x += physicsState.vx * deltaTime;
-            physicsState.y += physicsState.vy * deltaTime;
-            physicsState.lastUpdateTime = currentTime;
-            // Convert physics position from world coordinates to relative coordinates for rendering
-            // (since we're already in the player's transform context)
-            const petalX = physicsState.x - player.x;
-            const petalY = physicsState.y - player.y;
             // Draw petal - set up transforms first (same pattern as mobs)
             // Check for custom size first, then use base stats
             const effectiveSize = petal.customSize !== undefined ? petal.customSize : stats.size;
