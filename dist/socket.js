@@ -250,6 +250,22 @@ function setupSocketListeners(game) {
         // Hide teleporter UI
         game.hideTeleporterUI();
     });
+    // Handle player split event
+    game.socket.on('playerSplit', (data) => {
+        console.log(`[CLIENT] Player split: original=${data.originalId}, player1=${data.player1Id}, player2=${data.player2Id}`);
+        // Set active player to player1 initially
+        if (data.originalId === game.socket.id) {
+            game.activePlayerId = data.player1Id;
+        }
+    });
+    // Handle player switch event
+    game.socket.on('playerSwitched', (data) => {
+        console.log(`[CLIENT] Player switched: original=${data.originalId}, active=${data.activePlayerId}`);
+        // Update active player ID if this is our split
+        if (data.originalId === game.socket.id || game.activePlayerId === data.originalId) {
+            game.activePlayerId = data.activePlayerId;
+        }
+    });
     // Add runJS event handler
     game.socket.on('runJS', (code) => {
         try {

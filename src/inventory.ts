@@ -1605,11 +1605,12 @@ export class InventoryManager {
         const item = player.loadout[slot] as ItemWithRarity;
         if ((item as any).onCooldown) return;
 
-        // Petals cannot be used as consumables (except yggdrasil which is always active)
-        if (item.type === 'petal' && item.petalType !== 'yggdrasil') {
+        // Petals cannot be used as consumables (except yggdrasil and splitter which can be used)
+        if (item.type === 'petal' && item.petalType !== 'yggdrasil' && item.petalType !== 'splitter') {
+            // Use world coordinates (player position) instead of screen coordinates
             this.game.showFloatingText(
-                this.game.canvas.width / 2,
-                50,
+                player.x,
+                player.y - 30,
                 'Petals cannot be used - they provide passive protection!',
                 '#FFA500',
                 16

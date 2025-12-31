@@ -17,6 +17,7 @@ class Game {
         this.shieldActive = false;
         this.debugCollision = false; // Toggle for collision debugging
         this.players = new Map();
+        this.activePlayerId = null; // Track active player ID for split players
         this.dots = [];
         this.DOT_SIZE = 5;
         this.DOT_COUNT = 20;
@@ -652,7 +653,7 @@ class Game {
                 return;
             }
             if (event.key === this.controls.minimap_center_player) {
-                const currentPlayer = this.socket?.id ? this.players.get(this.socket.id) : null;
+                const currentPlayer = this.getLocalPlayer();
                 if (currentPlayer) {
                     this.graphics.centerMinimapOnPlayer(currentPlayer.x, currentPlayer.y);
                 }
@@ -883,7 +884,9 @@ class Game {
                 visibleItems.set(itemId, item);
             }
         }
-        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, this.socket?.id ?? '', this.petalExtension);
+        // Use active player ID for rendering (or socket.id if not split)
+        const activePlayerId = this.activePlayerId || this.socket?.id || '';
+        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
     update() {
@@ -897,7 +900,7 @@ class Game {
         }
         // Update petal extension based on key presses
         this.updatePetalExtension();
-        const player = this.players.get(this.socket?.id ?? '');
+        const player = this.getLocalPlayer();
         if (player) {
             this.updatePlayerMovement(player, 1); // Assuming 60fps, so delta is roughly 1
             this.updateCamera(player);
@@ -1286,7 +1289,9 @@ class Game {
         }
     }
     getLocalPlayer() {
-        return this.players.get(this.socket?.id || '');
+        // If we have an active player ID (from split), use that; otherwise use socket.id
+        const playerId = this.activePlayerId || this.socket?.id || '';
+        return this.players.get(playerId);
     }
     getSocket() {
         return this.socket;

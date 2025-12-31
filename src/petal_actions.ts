@@ -56,6 +56,18 @@ const petalActionStates: Map<string, PetalActionState> = new Map();
 // Global memory for petal actions (shared across all petals)
 export const globalPetalMemory: Map<string, number> = new Map();
 
+// Track split players: originalPlayerId -> { player1: ServerPlayer, player2: ServerPlayer, activeIndex: 0|1 }
+interface SplitPlayerState {
+    player1: ServerPlayer;
+    player2: ServerPlayer;
+    activeIndex: 0 | 1; // 0 = player1, 1 = player2
+    originalId: string; // Original player ID
+}
+export const splitPlayers: Map<string, SplitPlayerState> = new Map();
+
+// Track which petals have already executed split_player to prevent re-execution
+const splitExecutedPetalIds: Set<string> = new Set();
+
 // Explosion throttle state
 let lastExplosionTime: number = 0;
 const EXPLOSION_THROTTLE_MS: number = 20;
@@ -946,12 +958,21 @@ export function executePetalActionsOnSpawn(actionString: string, context: Action
     // Check if action state already exists - if so, just update the context
     const existingState = petalActionStates.get(petalId);
     if (existingState) {
+        // If action state exists but is inactive (completed), don't re-execute
+        if (!existingState.isActive) {
+            return petalId;
+        }
         // Update context with new position and other dynamic values
         existingState.context.petalX = context.petalX;
         existingState.context.petalY = context.petalY;
         existingState.context.petalSize = context.petalSize;
         existingState.context.petalDamage = context.petalDamage;
         existingState.context.enemies = context.enemies;
+        return petalId;
+    }
+    
+    // Check if this petal has already executed split_player - if so, don't create new action state
+    if (splitExecutedPetalIds.has(petalId)) {
         return petalId;
     }
 
@@ -1043,8 +1064,12 @@ function executeNextAction(petalId: string, deltaTime: number): void {
     }
     
     if (currentActionIndex >= actions.length) {
-        // Actions completed, clean up
-        petalActionStates.delete(petalId);
+        // Actions completed - mark as inactive but don't delete state
+        // This prevents re-execution on next frame
+        const actionState = petalActionStates.get(petalId);
+        if (actionState) {
+            actionState.isActive = false;
+        }
         return;
     }
 
@@ -1507,6 +1532,23 @@ function executeNextAction(petalId: string, deltaTime: number): void {
             actionState.currentActionIndex++;
             break;
 
+        case 'split_player':
+            // Check if this petal has already executed split_player
+            if (splitExecutedPetalIds.has(petalId)) {
+                console.log(`[PetalActions] Petal ${petalId} already executed split_player, skipping`);
+                actionState.currentActionIndex++;
+                break;
+            }
+            splitPlayer(player, io);
+            splitExecutedPetalIds.add(petalId);
+            actionState.currentActionIndex++;
+            break;
+
+        case 'switch_player':
+            switchPlayer(player, io);
+            actionState.currentActionIndex++;
+            break;
+
         default:
             console.warn(`Unknown action type: ${action.type}`, action);
             actionState.currentActionIndex++;
@@ -1538,6 +1580,105 @@ export function handlePetalCollision(petalId: string, context: ActionContext): v
 // Clean up petal action state
 export function cleanupPetalActions(petalId: string): void {
     petalActionStates.delete(petalId);
+}
+
+// Split player into 2 players
+export function splitPlayer(player: ServerPlayer, io: any): void {
+    // Check if player is already split (check original ID and split IDs)
+    const originalId = player.id.replace('_split2', '').replace('_split1', '');
+    
+    // If player is already split, don't split again
+    if (splitPlayers.has(originalId)) {
+        console.log(`[PetalActions] Player ${player.name} (${player.id}) is already split, skipping`);
+        return;
+    }
+    
+    // Also check if this is already a split player
+    if (player.id.includes('_split')) {
+        console.log(`[PetalActions] Player ${player.id} is already a split player, skipping`);
+        return;
+    }
+    
+    // Check if split player already exists in players map
+    const splitPlayer2Id = `${originalId}_split2`;
+    if (players[splitPlayer2Id]) {
+        console.log(`[PetalActions] Split player ${splitPlayer2Id} already exists, skipping`);
+        return;
+    }
+
+    // Create a duplicate player
+    const splitPlayer2: ServerPlayer = {
+        ...player,
+        id: `${player.id}_split2`,
+        x: player.x + 50, // Offset slightly to the right
+        y: player.y
+    };
+
+    // Store split state using original ID
+    splitPlayers.set(originalId, {
+        player1: player,
+        player2: splitPlayer2,
+        activeIndex: 0,
+        originalId: originalId
+    });
+
+    // Add the split player to the players map
+    players[splitPlayer2.id] = splitPlayer2;
+
+    // Notify clients about the split
+    io.emit('playerSplit', {
+        originalId: originalId,
+        player1Id: player.id,
+        player2Id: splitPlayer2.id
+    });
+
+    console.log(`[PetalActions] Player ${player.name} (${player.id}) split into 2 players`);
+}
+
+// Switch between split players
+export function switchPlayer(player: ServerPlayer, io: any, socketId?: string): void {
+    // Find the split state by checking if player is one of the split players
+    let splitState: SplitPlayerState | undefined = undefined;
+    let originalId: string = '';
+    
+    // First try to get by player.id (in case it's the original ID)
+    splitState = splitPlayers.get(player.id);
+    if (splitState) {
+        originalId = player.id;
+    } else {
+        // Search through all split states to find which one contains this player
+        for (const [origId, state] of splitPlayers.entries()) {
+            if (state.player1.id === player.id || state.player2.id === player.id) {
+                splitState = state;
+                originalId = origId;
+                break;
+            }
+        }
+    }
+    
+    if (!splitState) {
+        console.log(`[PetalActions] Player ${player.id} is not split, cannot switch`);
+        return;
+    }
+
+    // Switch active player
+    splitState.activeIndex = splitState.activeIndex === 0 ? 1 : 0;
+    const activePlayerId = splitState.activeIndex === 0 ? splitState.player1.id : splitState.player2.id;
+    
+    // Notify the specific client (or all clients if socketId not provided)
+    if (socketId) {
+        io.to(socketId).emit('playerSwitched', {
+            originalId: originalId,
+            activePlayerId: activePlayerId
+        });
+    } else {
+        io.emit('playerSwitched', {
+            originalId: originalId,
+            activePlayerId: activePlayerId
+        });
+    }
+
+    console.log(`[PetalActions] Switched to player ${splitState.activeIndex === 0 ? '1' : '2'} (activePlayerId=${activePlayerId})`);
 }
 
 // Update petal position in action context

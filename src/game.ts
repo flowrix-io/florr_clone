@@ -61,6 +61,7 @@ export class Game {
     public graphics: Graphics;
     private socket!: Socket;  // Using the definite assignment assertion
     private players: Map<string, Player> = new Map();
+    private activePlayerId: string | null = null; // Track active player ID for split players
     private dots: { x: number, y: number }[] = [];
     private readonly DOT_SIZE = 5;
     private readonly DOT_COUNT = 20;
@@ -848,7 +849,7 @@ export class Game {
                 return;
             }
             if (event.key === this.controls.minimap_center_player) {
-                const currentPlayer = this.socket?.id ? this.players.get(this.socket.id) : null;
+                const currentPlayer = this.getLocalPlayer();
                 if (currentPlayer) {
                     this.graphics.centerMinimapOnPlayer(currentPlayer.x, currentPlayer.y);
                 }
@@ -1140,7 +1141,9 @@ export class Game {
             }
         }
         
-        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, this.socket?.id ?? '', this.petalExtension);
+        // Use active player ID for rendering (or socket.id if not split)
+        const activePlayerId = this.activePlayerId || this.socket?.id || '';
+        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension);
         requestAnimationFrame(() => this.gameLoop());
     }
 
@@ -1157,7 +1160,7 @@ export class Game {
         // Update petal extension based on key presses
         this.updatePetalExtension();
 
-        const player = this.players.get(this.socket?.id ?? '');
+        const player = this.getLocalPlayer();
         if (player) {
             this.updatePlayerMovement(player, 1); // Assuming 60fps, so delta is roughly 1
             this.updateCamera(player);
@@ -1620,7 +1623,9 @@ export class Game {
 
 
     public getLocalPlayer() {
-        return this.players.get(this.socket?.id || '');
+        // If we have an active player ID (from split), use that; otherwise use socket.id
+        const playerId = this.activePlayerId || this.socket?.id || '';
+        return this.players.get(playerId);
     }
 
     public getSocket() {

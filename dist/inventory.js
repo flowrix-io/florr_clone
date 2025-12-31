@@ -1443,9 +1443,10 @@ class InventoryManager {
         const item = player.loadout[slot];
         if (item.onCooldown)
             return;
-        // Petals cannot be used as consumables (except yggdrasil which is always active)
-        if (item.type === 'petal' && item.petalType !== 'yggdrasil') {
-            this.game.showFloatingText(this.game.canvas.width / 2, 50, 'Petals cannot be used - they provide passive protection!', '#FFA500', 16);
+        // Petals cannot be used as consumables (except yggdrasil and splitter which can be used)
+        if (item.type === 'petal' && item.petalType !== 'yggdrasil' && item.petalType !== 'splitter') {
+            // Use world coordinates (player position) instead of screen coordinates
+            this.game.showFloatingText(player.x, player.y - 30, 'Petals cannot be used - they provide passive protection!', '#FFA500', 16);
             return;
         }
         // Yggdrasil petals are always active - no need to emit useItem

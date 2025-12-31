@@ -71,7 +71,8 @@ export interface PetalAction {
           'set_memory' | 'get_memory' | 'add_memory' | 'multiply_memory' |
           'set_petal_damage' | 'set_petal_health' | 'set_petal_size' | 'add_petal_damage' | 'add_petal_health' | 'add_petal_size' |
           'set_player_damage' | 'set_player_max_health' | 'set_player_speed' | 'add_player_damage' | 'add_player_max_health' | 'add_player_speed' |
-          'compare' | 'compare_gt' | 'compare_lt' | 'compare_gte' | 'compare_lte' | 'compare_eq' | 'compare_neq';
+          'compare' | 'compare_gt' | 'compare_lt' | 'compare_gte' | 'compare_lte' | 'compare_eq' | 'compare_neq' |
+          'split_player' | 'switch_player';
     value?: number; // Optional numeric parameter for the action
     duration?: number; // Optional duration for temporary effects (in milliseconds)
     stringValue?: string; // Optional string parameter (for labels, memory keys, etc.)
@@ -936,6 +937,33 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 </svg>`,
         isAdminPetal: true
     },
+    splitter: {
+        name: "Splitter Petal",
+        damage: 5,
+        health: 15,
+        size: 1.0,
+        cooldown: 10000,
+        description: "Splits the player into 2 and switches between them when used",
+        color: "#9B59B6",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<!-- Left player (split) -->
+<circle cx="10" cy="16" r="6" fill="#FFE763" stroke="#CFBB50" stroke-width="1.5"/>
+<circle cx="10" cy="14" r="5" fill="#FFE763"/>
+<ellipse cx="8" cy="13" rx="1.2" ry="2.5" fill="#000"/>
+<ellipse cx="12" cy="13" rx="1.2" ry="2.5" fill="#000"/>
+<path d="M8 18 Q10 20 12 18" stroke="#000" stroke-width="1" fill="none"/>
+<!-- Right player (split) -->
+<circle cx="22" cy="16" r="6" fill="#FFE763" stroke="#CFBB50" stroke-width="1.5"/>
+<circle cx="22" cy="14" r="5" fill="#FFE763"/>
+<ellipse cx="20" cy="13" rx="1.2" ry="2.5" fill="#000"/>
+<ellipse cx="24" cy="13" rx="1.2" ry="2.5" fill="#000"/>
+<path d="M20 18 Q22 20 24 18" stroke="#000" stroke-width="1" fill="none"/>
+<!-- Split line -->
+<line x1="16" y1="8" x2="16" y2="24" stroke="#9B59B6" stroke-width="2" stroke-dasharray="2,2"/>
+</svg>`,
+        isAdminPetal: true
+    },
     hornet_missile: {
         name: "Hornet Missile",
         damage: 10,
@@ -1439,6 +1467,12 @@ export function parsePetalActions(actionString: string): PetalAction[] {
                 const compareLeft = params[0] || '';
                 const compareRight = params.length > 1 ? parseFloat(params[1]) : 0;
                 actions.push({ type: actionType as any, stringValue: compareLeft, value: compareRight, comparisonType: compareType });
+                break;
+            case 'split_player':
+                actions.push({ type: 'split_player' });
+                break;
+            case 'switch_player':
+                actions.push({ type: 'switch_player' });
                 break;
             default:
                 console.warn(`Unknown petal action type: ${actionType}`);

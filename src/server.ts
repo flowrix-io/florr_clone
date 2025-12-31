@@ -964,7 +964,21 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     socket.on('playerInput', (inputData: any) => {
         const player = players[socket.id];
         if (player) {
-            player.inputs = inputData;
+            // Check if player is split and route inputs to active player
+            const { splitPlayers } = require('./petal_actions');
+            const originalId = socket.id.replace('_split2', '').replace('_split1', '');
+            const splitState = splitPlayers.get(originalId);
+            
+            if (splitState) {
+                // Player is split - route inputs to active player
+                const activePlayer = splitState.activeIndex === 0 ? splitState.player1 : splitState.player2;
+                if (activePlayer && players[activePlayer.id]) {
+                    players[activePlayer.id].inputs = inputData;
+                }
+            } else {
+                // Normal player - apply inputs directly
+                player.inputs = inputData;
+            }
         }
     });
 
@@ -1373,6 +1387,24 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 }, 3000 * multiplier);
                 break;
             case 'petal':
+                // Handle splitter petal
+                if (item.petalType === 'splitter') {
+                    const { splitPlayer, switchPlayer, splitPlayers } = require('./petal_actions');
+                    const originalId = socket.id; // Use socket.id as the original ID (before any splits)
+                    
+                    if (splitPlayers.has(originalId)) {
+                        // Already split - switch between players
+                        // Get the current active player to switch from
+                        const splitState = splitPlayers.get(originalId);
+                        if (splitState) {
+                            // Switch from the currently active player, pass socket.id so it only notifies this client
+                            switchPlayer(splitState.activeIndex === 0 ? splitState.player1 : splitState.player2, io, socket.id);
+                        }
+                    } else {
+                        // Not split - split the player
+                        splitPlayer(player, io);
+                    }
+                }
                 break;
         }
 
