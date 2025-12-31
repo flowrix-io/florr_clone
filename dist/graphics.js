@@ -1636,13 +1636,26 @@ class Graphics {
     }
     // Removed mobImageCache and loadSVGAsImage - mobs now use canvas rendering via svgRenderer
     // No data URLs are created for mob rendering
-    drawMobProjectile(projectile) {
+    drawMobProjectile(projectile, currentTime, petalStats) {
         if (!projectile || typeof projectile.x !== 'number' || typeof projectile.y !== 'number') {
             return;
         }
-        // Get petal stats for rendering
-        const petalStats = (0, petals_1.getPetalStats)(projectile.petalType, projectile.petalRarity);
+        // Get petal stats for rendering (use cached if provided)
         if (!petalStats) {
+            petalStats = (0, petals_1.getPetalStats)(projectile.petalType, projectile.petalRarity);
+            if (!petalStats) {
+                return;
+            }
+        }
+        // Fast path for gas projectiles - they're just simple green circles, no rotation needed
+        if (projectile.petalType === 'gas' && projectile.petalRarity === 'common') {
+            const petalSize = petalStats.size * 20;
+            const radius = petalSize / 2;
+            // Draw directly without transforms - much faster
+            this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
+            this.ctx.beginPath();
+            this.ctx.arc(projectile.x, projectile.y, radius, 0, Math.PI * 2);
+            this.ctx.fill();
             return;
         }
         const petalSize = petalStats.size * 20; // Convert to pixels
@@ -1651,7 +1664,13 @@ class Graphics {
         this.ctx.rotate(projectile.angle);
         // Draw petal using the same method as player petals
         const petalKey = `${projectile.petalType}_${projectile.petalRarity}`;
-        const petalCanvas = this.getPetalCanvas(petalKey, Date.now());
+        // Only pass time for animated petals - for static petals like gas, we can skip it
+        // Check if petal is animated by checking if the cached image is an array
+        const petalImage = this.petalImageCache[petalKey];
+        const isAnimated = Array.isArray(petalImage);
+        const petalCanvas = isAnimated && currentTime !== undefined
+            ? this.getPetalCanvas(petalKey, currentTime)
+            : this.getPetalCanvas(petalKey);
         if (petalCanvas && petalCanvas.width > 0 && petalCanvas.height > 0) {
             try {
                 // Draw the petal canvas image centered at origin
@@ -2598,13 +2617,80 @@ class Graphics {
             // Add similar viewport culling for items
             this.drawItem(item);
         }
-        // Draw mob projectiles
+        // Cache current time once per frame for animated projectiles
+        const currentTime = Date.now();
+        // Batch ALL gas projectiles (mob + player) for optimal performance
+        const allGasProjectiles = [];
+        const otherProjectiles = [];
+        const MAX_GAS_PROJECTILES = 500; // Limit to prevent performance issues
+        // Process mob projectiles
         for (const projectile of mobProjectiles.values()) {
-            this.drawMobProjectile(projectile);
+            const petalStats = (0, petals_1.getPetalStats)(projectile.petalType, projectile.petalRarity);
+            if (!petalStats) {
+                continue;
+            }
+            const projectileSize = petalStats.size * 20;
+            const cullingBuffer = Math.max(projectileSize, 50);
+            // Viewport culling
+            if (projectile.x + projectileSize / 2 + cullingBuffer < viewport.left ||
+                projectile.x - projectileSize / 2 - cullingBuffer > viewport.right ||
+                projectile.y + projectileSize / 2 + cullingBuffer < viewport.top ||
+                projectile.y - projectileSize / 2 - cullingBuffer > viewport.bottom) {
+                continue;
+            }
+            if (projectile.petalType === 'gas' && projectile.petalRarity === 'common') {
+                if (allGasProjectiles.length < MAX_GAS_PROJECTILES) {
+                    allGasProjectiles.push({
+                        x: projectile.x,
+                        y: projectile.y,
+                        radius: projectileSize / 2
+                    });
+                }
+            }
+            else {
+                otherProjectiles.push({ projectile, petalStats });
+            }
         }
-        // Draw player projectiles
+        // Process player projectiles
         for (const projectile of playerProjectiles.values()) {
-            this.drawMobProjectile(projectile); // Reuse same drawing method
+            const petalStats = (0, petals_1.getPetalStats)(projectile.petalType, projectile.petalRarity);
+            if (!petalStats) {
+                continue;
+            }
+            const projectileSize = petalStats.size * 20;
+            const cullingBuffer = Math.max(projectileSize, 50);
+            // Viewport culling
+            if (projectile.x + projectileSize / 2 + cullingBuffer < viewport.left ||
+                projectile.x - projectileSize / 2 - cullingBuffer > viewport.right ||
+                projectile.y + projectileSize / 2 + cullingBuffer < viewport.top ||
+                projectile.y - projectileSize / 2 - cullingBuffer > viewport.bottom) {
+                continue;
+            }
+            if (projectile.petalType === 'gas' && projectile.petalRarity === 'common') {
+                if (allGasProjectiles.length < MAX_GAS_PROJECTILES) {
+                    allGasProjectiles.push({
+                        x: projectile.x,
+                        y: projectile.y,
+                        radius: projectileSize / 2
+                    });
+                }
+            }
+            else {
+                otherProjectiles.push({ projectile, petalStats });
+            }
+        }
+        // Batch draw ALL gas projectiles in a single operation (much faster)
+        if (allGasProjectiles.length > 0) {
+            this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
+            this.ctx.beginPath();
+            for (const gas of allGasProjectiles) {
+                this.ctx.arc(gas.x, gas.y, gas.radius, 0, Math.PI * 2);
+            }
+            this.ctx.fill();
+        }
+        // Draw other projectiles normally
+        for (const { projectile, petalStats } of otherProjectiles) {
+            this.drawMobProjectile(projectile, currentTime, petalStats);
         }
     }
     render(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0) {
