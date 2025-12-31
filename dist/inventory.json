@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 152928159,
+      "totalXP": 152929069,
       "inventory": {
         "common": {
           "shield": 155,
@@ -22,7 +22,7 @@
           "petal_jelly": 20,
           "petal_leaf": 9,
           "petal_cutter": 2,
-          "petal_wing": 237,
+          "petal_wing": 240,
           "petal_rose": 66,
           "health_potion": 36,
           "petal_basic": 33,
@@ -38,7 +38,7 @@
           "petal_soldier_ant_egg": 40,
           "petal_dark_ladybug_egg": 11,
           "petal_bee_egg": 15,
-          "petal_fly_egg": 31,
+          "petal_fly_egg": 36,
           "petal_bubble_egg": 3,
           "petal_rock_egg": 8,
           "petal_bush_egg": 3,
@@ -53,7 +53,7 @@
           "petal_mantis_egg": 1
         },
         "unique": {
-          "petal_stinger": 995,
+          "petal_stinger": 996,
           "petal_basic": 1013,
           "petal_rose": 1006,
           "petal_light": 1000,
@@ -158,7 +158,7 @@
           "petal_lightning_cutter": 1,
           "petal_yucca": 8,
           "petal_square": 4,
-          "petal_wing": 59,
+          "petal_wing": 60,
           "petal_golden_leaf": 5,
           "petal_blood_leaf": 1,
           "petal_ant_egg": 4,
@@ -384,7 +384,7 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "stinger"
+          "petalType": "gas"
         },
         {
           "type": "petal",
@@ -535,8 +535,8 @@
           "ultra": 1
         },
         "fly": {
-          "uncommon": 62,
-          "common": 42,
+          "uncommon": 89,
+          "common": 43,
           "rare": 2,
           "legendary": 29,
           "mythic": 18,
@@ -556,7 +556,7 @@
           "epic": 3
         },
         "moth": {
-          "rare": 5,
+          "rare": 6,
           "legendary": 33,
           "mythic": 27,
           "ultra": 1

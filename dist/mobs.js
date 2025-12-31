@@ -2443,6 +2443,14 @@ exports.MOB_DROP_TABLES = {
                 probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'gas',
+                rarity: 'uncommon',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },

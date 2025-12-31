@@ -699,7 +699,7 @@ const BASE_PETAL_CONFIGS = {
         health: 10,
         size: 1.5,
         cooldown: 627,
-        description: "It's a bulb",
+        description: "A lightbulb, but it's not very strong",
         color: "#000000",
         count: 3,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -709,6 +709,26 @@ const BASE_PETAL_CONFIGS = {
   <circle r="8" cx="16" cy="10" fill="#ffff00" stroke-width="2" stroke="#aaaa00"/>
 </svg>`,
         isAdminPetal: false
+    },
+    gas: {
+        name: "Gas Petal",
+        damage: 1,
+        health: 10,
+        size: 1.0,
+        cooldown: 200,
+        description: "Toxic gas that deals damage to enemies",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <circle cx="16" cy="16" r="16" fill="rgba(0, 255, 0, 0.5)"/>
+</svg>`,
+        isAdminPetal: false,
+        projectile: {
+            count: 10,
+            distance: 500,
+            speed: 50,
+            spreadAngle: 1.0
+        }
     },
     sparkle: {
         name: "Sparkle Petal",
