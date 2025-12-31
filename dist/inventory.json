@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 152924109,
+      "totalXP": 152928159,
       "inventory": {
         "common": {
           "shield": 155,
@@ -70,7 +70,7 @@
           "petal_lightning": 1002,
           "petal_iris": 1000,
           "petal_jelly": 1002,
-          "petal_cutter": 1002,
+          "petal_cutter": 1001,
           "petal_lightning_cutter": 999,
           "petal_yucca": 4,
           "petal_missile": 2,
@@ -244,7 +244,7 @@
           "petal_poison_cactus": 3,
           "petal_iris": 7,
           "petal_lightning": 6,
-          "petal_missile": 103,
+          "petal_missile": 104,
           "petal_leaf": 7,
           "petal_lightning_cutter": 2,
           "petal_cutter": 3,
@@ -376,7 +376,11 @@
         }
       },
       "loadout": [
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "cutter"
+        },
         {
           "type": "petal",
           "rarity": "unique",
@@ -478,7 +482,7 @@
         },
         "hornet": {
           "common": 91,
-          "legendary": 94,
+          "legendary": 96,
           "mythic": 54,
           "uncommon": 38,
           "rare": 31,
@@ -488,7 +492,7 @@
         "dandelion": {
           "legendary": 41,
           "common": 32,
-          "mythic": 43,
+          "mythic": 44,
           "uncommon": 23,
           "unique": 1,
           "ultra": 2,
@@ -587,7 +591,7 @@
           "legendary": 1
         }
       },
-      "stars": 1117147
+      "stars": 1117148
     },
     "1g99g1gfk": {
       "totalXP": 62,
