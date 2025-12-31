@@ -20,7 +20,7 @@ const utils_1 = require("./utils");
 // Map to store petal physics state (keyed by petalId)
 const petalPhysicsStates = new Map();
 // Physics constants
-const ATTRACTION_FORCE = 500; // Attraction force towards mobs (pixels per second^2) - increased from 150
+const ATTRACTION_FORCE = 50; // Attraction force towards mobs (pixels per second^2) - increased from 150
 const SPRING_FORCE = 200; // Spring force back to orbit position (pixels per second^2) - reduced from 300
 const DAMPING = 0.92; // Velocity damping per frame (0-1, lower = more damping)
 const MAX_ATTRACTION_DISTANCE = 2000; // Maximum distance to attract to mobs (pixels) - increased significantly to match combat ranges
@@ -528,10 +528,10 @@ function updatePlayerState(player, deltaTime, deps) {
                 // Get or initialize petal physics state
                 let physicsState = petalPhysicsStates.get(petalId);
                 if (!physicsState) {
-                    // Initialize physics state at target position with no velocity
+                    // Initialize physics state at player center (spawn inside player, will move out via spring force)
                     physicsState = {
-                        x: targetX,
-                        y: targetY,
+                        x: player.x,
+                        y: player.y,
                         vx: 0,
                         vy: 0,
                         spawnTime: currentTime
@@ -563,16 +563,16 @@ function updatePlayerState(player, deltaTime, deps) {
                     // This allows attraction to work when petal is near the mob's edge, not just its center
                     const maxAttractionDistanceWithHitbox = petalMaxAttractionDistance + enemyRadius;
                     // Only attract if within range (distance from center to center, accounting for hitbox)
-                    // if (distance > 0 && distance < maxAttractionDistanceWithHitbox && distance > petalMinAttractionDistance) {
-                    // Inverse square law for attraction (stronger when closer)
-                    const forceStrength = petalAttractionForce / (distance * distance);
-                    const normalizedDx = dx / distance;
-                    const normalizedDy = dy / distance;
-                    // Apply smooth factor to attraction (gradually increase after spawn)
-                    // Note: Force is in world coordinates, but we need to apply it to relative velocity
-                    attractionFx += normalizedDx * forceStrength * deltaTime * smoothFactor;
-                    attractionFy += normalizedDy * forceStrength * deltaTime * smoothFactor;
-                    // }
+                    if (distance > 0 && distance < maxAttractionDistanceWithHitbox && distance > petalMinAttractionDistance) {
+                        // Inverse square law for attraction (stronger when closer)
+                        const forceStrength = petalAttractionForce / (distance * distance);
+                        const normalizedDx = dx / distance;
+                        const normalizedDy = dy / distance;
+                        // Apply smooth factor to attraction (gradually increase after spawn)
+                        // Note: Force is in world coordinates, but we need to apply it to relative velocity
+                        attractionFx += normalizedDx * forceStrength * deltaTime * smoothFactor;
+                        attractionFy += normalizedDy * forceStrength * deltaTime * smoothFactor;
+                    }
                 }
                 // Calculate spring force back to orbit position
                 const springDx = targetX - physicsState.x;

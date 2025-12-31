@@ -1593,10 +1593,10 @@ class Graphics {
                 const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
                 let physicsState = this.petalPhysicsStates.get(petalId);
                 if (!physicsState) {
-                    // Initialize physics state at target position with no velocity (in world coordinates)
+                    // Initialize physics state at player center (spawn inside player, will move out via spring force)
                     physicsState = {
-                        x: targetX,
-                        y: targetY,
+                        x: player.x,
+                        y: player.y,
                         vx: 0,
                         vy: 0,
                         lastUpdateTime: currentTime,
