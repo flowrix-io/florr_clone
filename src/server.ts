@@ -60,7 +60,8 @@ import {
     validatePlayerPositions,
     isPositionInAnyViewport,
     getEnemiesInViewportCount,
-    PlayerStateDependencies
+    PlayerStateDependencies,
+    cleanupPetalPhysicsStates
 } from './server/playerState';
 import {
     executeServerCommand,
@@ -1270,6 +1271,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             }
         });
         keysToDelete.forEach(key => petalLastProjectileTime.delete(key));
+        
+        // Clean up petal physics states for this player
+        cleanupPetalPhysicsStates(socket.id);
         
         delete players[socket.id];
         delete playerUserIds[socket.id]; // Clean up the mapping

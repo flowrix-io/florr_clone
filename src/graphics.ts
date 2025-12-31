@@ -124,6 +124,15 @@ export class Graphics {
     private readonly MINIMAP_MAX_ZOOM = 3.0; // Show 6667x6667 area
     private readonly MINIMAP_ZOOM_STEP = 0.2;
     private playerEye: { x: number, y: number } = { x: 0, y: 0 };
+    
+    // Petal physics state
+    private petalPhysicsStates = new Map<string, { vx: number; vy: number; x: number; y: number; lastUpdateTime: number; spawnTime?: number }>();
+    private readonly ATTRACTION_FORCE = 500; // Attraction force towards mobs (pixels per second^2) - increased from 150
+    private readonly SPRING_FORCE = 200; // Spring force back to orbit position (pixels per second^2) - reduced from 300
+    private readonly DAMPING = 0.92; // Velocity damping per frame (0-1, lower = more damping)
+    private readonly MAX_ATTRACTION_DISTANCE = 2000; // Maximum distance to attract to mobs (pixels) - increased significantly to match combat ranges
+    private readonly MIN_ATTRACTION_DISTANCE = 1; // Minimum distance to avoid division by zero (pixels) - reduced from 30
+    private readonly SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after spawn - reduced from 500
     private wallTexture: HTMLImageElement = new Image();
     private octopusSprite: HTMLImageElement = new Image();
     private fishSprite: HTMLImageElement = new Image();
@@ -1812,7 +1821,7 @@ export class Graphics {
         this.ctx.stroke();
     }
 
-    public drawPlayer(player: Player, socket: string, petalExtension: number = 1.0) {
+    public drawPlayer(player: Player, socket: string, petalExtension: number = 1.0, enemies: Map<string, Enemy> = new Map()) {
         this.ctx.save();
         this.ctx.translate(player.x, player.y);
 
@@ -1915,12 +1924,12 @@ export class Graphics {
 
         // Draw petals around player (while still in player's transform context)
         // This ensures petals are positioned relative to the player
-        this.drawPlayerPetals(player, petalExtension);
+        this.drawPlayerPetals(player, petalExtension, enemies);
         
         this.ctx.restore();
     }
 
-    private drawPlayerPetals(player: Player, petalExtension: number = 1.0) {
+    private drawPlayerPetals(player: Player, petalExtension: number = 1.0, enemies: Map<string, Enemy> = new Map()) {
         // Safety check: ensure player loadout exists before filtering
         if (!player.loadout || !Array.isArray(player.loadout)) {
             return; // Skip drawing petals if loadout is not properly initialized
@@ -1933,9 +1942,9 @@ export class Graphics {
         
         
         // Get all petals from player loadout and expand based on count property
-        const petalInstances: Array<{petal: any, instanceIndex: number}> = [];
+        const petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number}> = [];
         try {
-            player.loadout.forEach(item => {
+            player.loadout.forEach((item, loadoutIndex) => {
                 if (item && item.type === 'petal' && item.petalType && item.rarity) {
                     const stats = getPetalStats(item.petalType, item.rarity);
                     if (!stats) return;
@@ -1950,7 +1959,7 @@ export class Graphics {
                     
                     // Create multiple instances based on count
                     for (let i = 0; i < count; i++) {
-                        petalInstances.push({ petal: item, instanceIndex: i });
+                        petalInstances.push({ petal: item, instanceIndex: i, loadoutIndex });
                     }
                 }
             });
@@ -1959,14 +1968,42 @@ export class Graphics {
             return;
         }
         
-        if (petalInstances.length === 0) return;
-
+        if (petalInstances.length === 0) {
+            // Clean up physics states for this player if no petals
+            const keysToDelete: string[] = [];
+            this.petalPhysicsStates.forEach((value, key) => {
+                if (key.startsWith(player.id)) {
+                    keysToDelete.push(key);
+                }
+            });
+            keysToDelete.forEach(key => this.petalPhysicsStates.delete(key));
+            return;
+        }
 
         const currentTime = Date.now();
+        
+        // Clean up physics states for petals that no longer exist in loadout
+        const activePetalIds = new Set<string>();
+        petalInstances.forEach(({loadoutIndex, instanceIndex}) => {
+            activePetalIds.add(`${player.id}_${loadoutIndex}_${instanceIndex}`);
+        });
+        const keysToDelete: string[] = [];
+        this.petalPhysicsStates.forEach((value, key) => {
+            if (key.startsWith(player.id) && !activePetalIds.has(key)) {
+                keysToDelete.push(key);
+            }
+        });
+        keysToDelete.forEach(key => this.petalPhysicsStates.delete(key));
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = (Math.PI * 2) / petalInstances.length; // Evenly space petals
+        
+        // Calculate deltaTime (approximate, using frame timing)
+        // Use a default of 1/60 seconds (60 FPS) if we can't calculate it
+        const lastFrameTime = (this as any).lastFrameTime || currentTime;
+        const deltaTime = Math.min((currentTime - lastFrameTime) / 1000, 1/30); // Cap at 30 FPS minimum
+        (this as any).lastFrameTime = currentTime;
 
-        petalInstances.forEach(({petal, instanceIndex}, index) => {
+        petalInstances.forEach(({petal, instanceIndex, loadoutIndex}, index) => {
             if (!petal || !petal.petalType || !petal.rarity) {
                 return;
             }
@@ -1990,12 +2027,120 @@ export class Graphics {
             // Apply petal range multiplier to base radius
             const petalRange = stats.range ?? 1.0;
             const petalRadius = baseRadius * petalRange;
-
-            // Calculate position around player
-            // Since we're already in the player's transform context (translate(player.x, player.y)),
-            // we need to use RELATIVE coordinates from the player center (0, 0)
-            const petalX = Math.cos(totalAngle) * petalRadius;
-            const petalY = Math.sin(totalAngle) * petalRadius;
+            
+            // Calculate target orbit position (where petal should be without physics)
+            // Use world coordinates to match server-side implementation
+            const targetX = player.x + Math.cos(totalAngle) * petalRadius;
+            const targetY = player.y + Math.sin(totalAngle) * petalRadius;
+            
+            // Get or initialize petal physics state
+            const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
+            let physicsState = this.petalPhysicsStates.get(petalId);
+            if (!physicsState) {
+                // Initialize physics state at target position with no velocity (in world coordinates)
+                physicsState = {
+                    x: targetX,
+                    y: targetY,
+                    vx: 0,
+                    vy: 0,
+                    lastUpdateTime: currentTime,
+                    spawnTime: currentTime
+                };
+                this.petalPhysicsStates.set(petalId, physicsState);
+            }
+            
+            // Calculate smooth initialization factor (ramp up forces over SPAWN_SMOOTH_TIME)
+            const timeSinceSpawn = physicsState.spawnTime ? currentTime - physicsState.spawnTime : this.SPAWN_SMOOTH_TIME;
+            const smoothFactor = Math.min(1.0, timeSinceSpawn / this.SPAWN_SMOOTH_TIME);
+            
+            // Calculate attraction force towards nearby mobs
+            let attractionFx = 0;
+            let attractionFy = 0;
+            
+            // physicsState.x and physicsState.y are already in world coordinates (matching server)
+            const worldPetalX = physicsState.x;
+            const worldPetalY = physicsState.y;
+            
+            for (const enemy of enemies.values()) {
+                // Skip pets
+                if ((enemy as any).ownerId) {
+                    continue;
+                }
+                
+                // Get mob stats to determine hitbox size
+                const mobStats = getMobStats(enemy.type, enemy.tier);
+                const enemySize = mobStats ? mobStats.size * 40 : 40; // Use mob size or fallback to base size
+                const enemyRadius = enemySize / 2;
+                
+                const dx = enemy.x - worldPetalX;
+                const dy = enemy.y - worldPetalY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Calculate max attraction distance including mob's hitbox radius
+                // This allows attraction to work when petal is near the mob's edge, not just its center
+                const maxAttractionDistanceWithHitbox = this.MAX_ATTRACTION_DISTANCE + enemyRadius;
+                
+                // Only attract if within range (distance from center to center, accounting for hitbox)
+                if (distance > 0 && distance < maxAttractionDistanceWithHitbox && distance > this.MIN_ATTRACTION_DISTANCE) {
+                    // Inverse square law for attraction (stronger when closer)
+                    const forceStrength = this.ATTRACTION_FORCE / (distance * distance);
+                    const normalizedDx = dx / distance;
+                    const normalizedDy = dy / distance;
+                    
+                    // Apply smooth factor to attraction (gradually increase after spawn)
+                    const forceX = normalizedDx * forceStrength * deltaTime * smoothFactor;
+                    const forceY = normalizedDy * forceStrength * deltaTime * smoothFactor;
+                    attractionFx += forceX;
+                    attractionFy += forceY;
+                    
+                    // Debug: Log client-side attraction (only occasionally to avoid spam)
+                    if (Math.random() < 0.01) { // 1% chance per frame
+                        console.log('[Client Petal Attraction]', {
+                            distance: distance.toFixed(2),
+                            forceStrength: forceStrength.toFixed(4),
+                            forceX: forceX.toFixed(4),
+                            forceY: forceY.toFixed(4),
+                            smoothFactor: smoothFactor.toFixed(3)
+                        });
+                    }
+                }
+            }
+            
+            // Calculate spring force back to orbit position
+            const springDx = targetX - physicsState.x;
+            const springDy = targetY - physicsState.y;
+            const springDistance = Math.sqrt(springDx * springDx + springDy * springDy);
+            
+            let springFx = 0;
+            let springFy = 0;
+            
+            if (springDistance > 0) {
+                const normalizedSpringDx = springDx / springDistance;
+                const normalizedSpringDy = springDy / springDistance;
+                
+                // Spring force is proportional to distance from target
+                // Apply smooth factor to spring force (gradually increase after spawn)
+                springFx = normalizedSpringDx * this.SPRING_FORCE * springDistance * deltaTime * smoothFactor;
+                springFy = normalizedSpringDy * this.SPRING_FORCE * springDistance * deltaTime * smoothFactor;
+            }
+            
+            // Apply forces to velocity
+            physicsState.vx += attractionFx + springFx;
+            physicsState.vy += attractionFy + springFy;
+            
+            // Apply damping to velocity
+            physicsState.vx *= this.DAMPING;
+            physicsState.vy *= this.DAMPING;
+            
+            // Update position based on velocity
+            physicsState.x += physicsState.vx * deltaTime;
+            physicsState.y += physicsState.vy * deltaTime;
+            physicsState.lastUpdateTime = currentTime;
+            
+            // Convert physics position from world coordinates to relative coordinates for rendering
+            // (since we're already in the player's transform context)
+            const petalX = physicsState.x - player.x;
+            const petalY = physicsState.y - player.y;
 
             // Draw petal - set up transforms first (same pattern as mobs)
             // Check for custom size first, then use base stats
@@ -3282,8 +3427,8 @@ export class Graphics {
                     const playerPetalExtension = player.id === currentPlayerId 
                         ? petalExtension 
                         : (player.petalExtension || 1.0);
-                    // Draw normal player
-                    this.drawPlayer(player, currentPlayerId, playerPetalExtension);
+                    // Draw normal player (pass enemies for petal physics)
+                    this.drawPlayer(player, currentPlayerId, playerPetalExtension, enemies);
                 }
             }
         }

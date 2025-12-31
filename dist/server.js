@@ -1030,6 +1030,8 @@ io.on('connection', (socket) => {
             }
         });
         keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
+        // Clean up petal physics states for this player
+        (0, playerState_1.cleanupPetalPhysicsStates)(socket.id);
         delete constants_2.players[socket.id];
         delete gameState_1.playerUserIds[socket.id]; // Clean up the mapping
         // Remove all event listeners to prevent memory leaks
