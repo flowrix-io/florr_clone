@@ -2,11 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.trackDamage = trackDamage;
 exports.calculateDPS = calculateDPS;
+exports.getOriginalSocketId = getOriginalSocketId;
 exports.getEligiblePlayers = getEligiblePlayers;
 exports.sendBossMobDefeatedMessage = sendBossMobDefeatedMessage;
 exports.trackMobKill = trackMobKill;
 exports.cleanupEnemy = cleanupEnemy;
 const constants_1 = require("../constants");
+const petal_actions_1 = require("../petal_actions");
 // Helper function to track damage dealt to an enemy
 function trackDamage(enemy, playerId, damage) {
     if (!enemy.damageContributors) {
@@ -45,6 +47,23 @@ function calculateDPS(enemy) {
     // Calculate DPS (damage per second)
     const dps = recentDamage / (timeWindow / 1000);
     return dps;
+}
+// Helper function to get the original socket ID from a split player ID
+// Split players have IDs like "socketId_split2", but sockets are keyed by the original socket ID
+function getOriginalSocketId(playerId) {
+    // Check if this is a split player ID
+    if (playerId.includes('_split')) {
+        // Find the split state that contains this player
+        for (const [originalId, state] of petal_actions_1.splitPlayers.entries()) {
+            if (state.player1.id === playerId || state.player2.id === playerId) {
+                return originalId;
+            }
+        }
+        // Fallback: remove _split suffix
+        return playerId.replace('_split2', '').replace('_split1', '');
+    }
+    // Not a split player, return as-is
+    return playerId;
 }
 // Helper function to get eligible players for a drop based on damage ranking
 function getEligiblePlayers(enemy) {
@@ -86,8 +105,10 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
     }
     // Capitalize the first letter of the rarity
     const rarity = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
+    // Get the original socket ID (in case this is a split player)
+    const originalSocketId = getOriginalSocketId(topDamagerId);
     // Get the username from the socket
-    const socket = io.sockets.sockets.get(topDamagerId);
+    const socket = io.sockets.sockets.get(originalSocketId);
     const username = socket?.username || 'Unknown';
     // Send chat message
     io.emit('chatMessage', {
@@ -132,7 +153,9 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
             player.stars += starsAwarded;
             // Notify player of stars earned
             if (io && starsAwarded > 0) {
-                io.to(playerId).emit('starsEarned', {
+                // Map split player ID to original socket ID for socket room targeting
+                const originalSocketId = getOriginalSocketId(playerId);
+                io.to(originalSocketId).emit('starsEarned', {
                     amount: starsAwarded,
                     total: player.stars,
                     mobName: enemy.type,
@@ -141,7 +164,9 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
             }
         }
         // Use debounced save if provided, otherwise fall back to direct save (for backwards compatibility)
-        const userId = playerUserIds[playerId];
+        // Use original socket ID to look up user ID (playerUserIds is keyed by socket ID)
+        const originalSocketId = getOriginalSocketId(playerId);
+        const userId = playerUserIds[originalSocketId];
         if (userId) {
             if (savePlayerProgress) {
                 // Use debounced save to prevent lag

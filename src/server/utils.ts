@@ -1,6 +1,7 @@
 import { Enemy } from '../server_utils';
 import { ServerPlayer } from '../player';
 import { ENEMY_TIERS } from '../constants';
+import { splitPlayers } from '../petal_actions';
 
 // Helper function to track damage dealt to an enemy
 export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
@@ -47,6 +48,24 @@ export function calculateDPS(enemy: Enemy): number {
     const dps = recentDamage / (timeWindow / 1000);
     
     return dps;
+}
+
+// Helper function to get the original socket ID from a split player ID
+// Split players have IDs like "socketId_split2", but sockets are keyed by the original socket ID
+export function getOriginalSocketId(playerId: string): string {
+    // Check if this is a split player ID
+    if (playerId.includes('_split')) {
+        // Find the split state that contains this player
+        for (const [originalId, state] of splitPlayers.entries()) {
+            if (state.player1.id === playerId || state.player2.id === playerId) {
+                return originalId;
+            }
+        }
+        // Fallback: remove _split suffix
+        return playerId.replace('_split2', '').replace('_split1', '');
+    }
+    // Not a split player, return as-is
+    return playerId;
 }
 
 // Helper function to get eligible players for a drop based on damage ranking
@@ -104,8 +123,11 @@ export function sendBossMobDefeatedMessage(
     // Capitalize the first letter of the rarity
     const rarity = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
 
+    // Get the original socket ID (in case this is a split player)
+    const originalSocketId = getOriginalSocketId(topDamagerId);
+    
     // Get the username from the socket
-    const socket = io.sockets.sockets.get(topDamagerId) as any;
+    const socket = io.sockets.sockets.get(originalSocketId) as any;
     const username = socket?.username || 'Unknown';
     
     // Send chat message
@@ -166,7 +188,9 @@ export function trackMobKill(
             
             // Notify player of stars earned
             if (io && starsAwarded > 0) {
-                io.to(playerId).emit('starsEarned', {
+                // Map split player ID to original socket ID for socket room targeting
+                const originalSocketId = getOriginalSocketId(playerId);
+                io.to(originalSocketId).emit('starsEarned', {
                     amount: starsAwarded,
                     total: player.stars,
                     mobName: enemy.type,
@@ -177,7 +201,9 @@ export function trackMobKill(
 
         
         // Use debounced save if provided, otherwise fall back to direct save (for backwards compatibility)
-        const userId = playerUserIds[playerId];
+        // Use original socket ID to look up user ID (playerUserIds is keyed by socket ID)
+        const originalSocketId = getOriginalSocketId(playerId);
+        const userId = playerUserIds[originalSocketId];
         if (userId) {
             if (savePlayerProgress) {
                 // Use debounced save to prevent lag

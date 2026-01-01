@@ -1360,7 +1360,7 @@ export class Game {
     }
 
     private updatePlayerEye() {
-        const player = this.players.get(this.socket?.id ?? '');
+        const player = this.getLocalPlayer();
         if (player) {
             const dx = this.mouseX - player.x;
             const dy = this.mouseY - player.y;

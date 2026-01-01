@@ -1445,14 +1445,14 @@ class Graphics {
         // Draw player sprite
         if (player.id === socket) {
             // Calculate target eye position
-            this.playerEye = {
+            const targetEye = {
                 x: Math.cos(player.angle) * this.s(2),
                 y: Math.sin(player.angle) * this.s(4.4)
             };
             // Smooth interpolation of eye position (lerp factor controls smoothness)
             const lerpFactor = 0.15; // Lower = smoother, higher = more responsive
-            this.playerEye.x += (this.playerEye.x - this.playerEye.x) * lerpFactor;
-            this.playerEye.y += (this.playerEye.y - this.playerEye.y) * lerpFactor;
+            this.playerEye.x += (targetEye.x - this.playerEye.x) * lerpFactor;
+            this.playerEye.y += (targetEye.y - this.playerEye.y) * lerpFactor;
             // Apply hue rotation for current player
             const offscreen = document.createElement('canvas');
             offscreen.width = this.playerSprite.width;
@@ -1603,10 +1603,10 @@ class Graphics {
                 const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
                 let physicsState = this.petalPhysicsStates.get(petalId);
                 if (!physicsState) {
-                    // Initialize physics state at player center (spawn inside player, will move out via spring force)
+                    // Initialize physics state at target orbit position (prevents petals from appearing inside player on reload)
                     physicsState = {
-                        x: player.x,
-                        y: player.y,
+                        x: targetX,
+                        y: targetY,
                         vx: 0,
                         vy: 0,
                         lastUpdateTime: currentTime,

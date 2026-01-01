@@ -3,7 +3,7 @@ import { Enemy } from '../server_utils';
 import { WorldItem, Item } from '../item';
 import { calculateMobDrops, DropItem } from '../mobs';
 import { items, ITEM_EXPIRATION_TIMES, itemExpirationTimeouts } from './gameState';
-import { getEligiblePlayers } from './utils';
+import { getEligiblePlayers, getOriginalSocketId } from './utils';
 import { checkItemWallCollisions } from './physics';
 import { getAllPetalTypes, getPetalStats } from '../petals';
 
@@ -75,7 +75,19 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
     const drops = calculateMobDrops(mobType, enemy.tier);
     
     // Get list of eligible players based on damage ranking
-    const eligiblePlayers = getEligiblePlayers(enemy);
+    let eligiblePlayers = getEligiblePlayers(enemy);
+    
+    // For split players, also include the original socket ID in eligible players
+    // This ensures both split players can pick up items if either one dealt damage
+    const expandedEligiblePlayers = new Set<string>(eligiblePlayers);
+    for (const playerId of eligiblePlayers) {
+        const originalSocketId = getOriginalSocketId(playerId);
+        if (playerId !== originalSocketId) {
+            // This is a split player, add the original socket ID too
+            expandedEligiblePlayers.add(originalSocketId);
+        }
+    }
+    eligiblePlayers = Array.from(expandedEligiblePlayers);
     
     // Debug log to verify eligible players
     // if (eligiblePlayers.length > 0) {
@@ -155,8 +167,10 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
             items.push(newItem);
             
             // Only send itemSpawned event to eligible players
+            // Map split player IDs to their original socket IDs for socket room targeting
             for (const playerId of eligiblePlayers) {
-                io.to(playerId).emit('itemSpawned', newItem);
+                const originalSocketId = getOriginalSocketId(playerId);
+                io.to(originalSocketId).emit('itemSpawned', newItem);
             }
             
             // Schedule automatic removal after expiration time
@@ -169,9 +183,11 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
                     items.splice(itemIndex, 1);
                     
                     // Notify eligible players that item expired
+                    // Map split player IDs to their original socket IDs for socket room targeting
                     if (expiredItem.eligiblePlayers) {
                         for (const playerId of expiredItem.eligiblePlayers) {
-                            io.to(playerId).emit('itemRemoved', itemId);
+                            const originalSocketId = getOriginalSocketId(playerId);
+                            io.to(originalSocketId).emit('itemRemoved', itemId);
                         }
                     }
                 }

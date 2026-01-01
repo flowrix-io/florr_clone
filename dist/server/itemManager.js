@@ -60,7 +60,18 @@ function handleMobDrops(enemy, io) {
     const mobType = enemy.type || 'bee'; // Default to bee if type is not set
     const drops = (0, mobs_1.calculateMobDrops)(mobType, enemy.tier);
     // Get list of eligible players based on damage ranking
-    const eligiblePlayers = (0, utils_1.getEligiblePlayers)(enemy);
+    let eligiblePlayers = (0, utils_1.getEligiblePlayers)(enemy);
+    // For split players, also include the original socket ID in eligible players
+    // This ensures both split players can pick up items if either one dealt damage
+    const expandedEligiblePlayers = new Set(eligiblePlayers);
+    for (const playerId of eligiblePlayers) {
+        const originalSocketId = (0, utils_1.getOriginalSocketId)(playerId);
+        if (playerId !== originalSocketId) {
+            // This is a split player, add the original socket ID too
+            expandedEligiblePlayers.add(originalSocketId);
+        }
+    }
+    eligiblePlayers = Array.from(expandedEligiblePlayers);
     // Debug log to verify eligible players
     // if (eligiblePlayers.length > 0) {
     //     console.log(`[DROPS] Enemy ${enemy.id} (${enemy.type}, ${enemy.tier}) killed. Eligible players:`, eligiblePlayers);
@@ -130,8 +141,10 @@ function handleMobDrops(enemy, io) {
             (0, physics_1.checkItemWallCollisions)(newItem);
             gameState_1.items.push(newItem);
             // Only send itemSpawned event to eligible players
+            // Map split player IDs to their original socket IDs for socket room targeting
             for (const playerId of eligiblePlayers) {
-                io.to(playerId).emit('itemSpawned', newItem);
+                const originalSocketId = (0, utils_1.getOriginalSocketId)(playerId);
+                io.to(originalSocketId).emit('itemSpawned', newItem);
             }
             // Schedule automatic removal after expiration time
             const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[finalRarity] || 10000;
@@ -142,9 +155,11 @@ function handleMobDrops(enemy, io) {
                     const expiredItem = gameState_1.items[itemIndex];
                     gameState_1.items.splice(itemIndex, 1);
                     // Notify eligible players that item expired
+                    // Map split player IDs to their original socket IDs for socket room targeting
                     if (expiredItem.eligiblePlayers) {
                         for (const playerId of expiredItem.eligiblePlayers) {
-                            io.to(playerId).emit('itemRemoved', itemId);
+                            const originalSocketId = (0, utils_1.getOriginalSocketId)(playerId);
+                            io.to(originalSocketId).emit('itemRemoved', itemId);
                         }
                     }
                 }

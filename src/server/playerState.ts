@@ -669,10 +669,10 @@ export function updatePlayerState(
                 // Get or initialize petal physics state
                 let physicsState = petalPhysicsStates.get(petalId);
                 if (!physicsState) {
-                    // Initialize physics state at player center (spawn inside player, will move out via spring force)
+                    // Initialize physics state at target orbit position (prevents petals from appearing inside player on reload)
                     physicsState = {
-                        x: player.x,
-                        y: player.y,
+                        x: targetX,
+                        y: targetY,
                         vx: 0,
                         vy: 0,
                         spawnTime: currentTime
@@ -1212,7 +1212,13 @@ export function updatePlayerState(
             
             // Check if player is eligible to pick up this item
             if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                if (!item.eligiblePlayers.includes(player.id)) {
+                // Check if this player ID is eligible, or if the original socket ID is eligible (for split players)
+                const { getOriginalSocketId } = require('./utils');
+                const originalSocketId = getOriginalSocketId(player.id);
+                const isEligible = item.eligiblePlayers.includes(player.id) || 
+                                   (player.id !== originalSocketId && item.eligiblePlayers.includes(originalSocketId));
+                
+                if (!isEligible) {
                     // Player is not eligible - skip this item
                     // Debug log to help diagnose pickup issues
                     // console.log(`[PICKUP] Player ${player.id} (${player.name}) tried to pick up item ${item.id} but is not eligible. Eligible players:`, item.eligiblePlayers);
