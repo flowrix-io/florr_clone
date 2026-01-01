@@ -2078,15 +2078,17 @@ export class Graphics {
                 } else {
                     // Update physics state position if player has moved significantly (to prevent physics state from being too far off)
                     // Only update if the distance is large to avoid interfering with physics
-                    const playerMoveDistance = Math.sqrt(
-                        Math.pow(player.x - physicsState.x, 2) + 
-                        Math.pow(player.y - physicsState.y, 2)
+                    // Use targetX/targetY (orbit position) instead of player position to avoid resetting due to interpolation differences
+                    const physicsToTargetDistance = Math.sqrt(
+                        Math.pow(targetX - physicsState.x, 2) + 
+                        Math.pow(targetY - physicsState.y, 2)
                     );
-                    // If player moved more than 200 pixels, reset physics state to player position
+                    // If physics state is very far from target orbit position, reset it
                     // This handles cases where the player teleported or moved very far
-                    if (playerMoveDistance > 200) {
-                        physicsState.x = player.x;
-                        physicsState.y = player.y;
+                    // Use a larger threshold (500) to avoid resetting due to normal physics movement
+                    if (physicsToTargetDistance > 500) {
+                        physicsState.x = targetX;
+                        physicsState.y = targetY;
                         physicsState.vx = 0;
                         physicsState.vy = 0;
                         physicsState.spawnTime = currentTime; // Reset spawn time to re-enable spring force
