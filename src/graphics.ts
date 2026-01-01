@@ -127,9 +127,9 @@ export class Graphics {
     
     // Petal physics state
     private petalPhysicsStates = new Map<string, { vx: number; vy: number; x: number; y: number; lastUpdateTime: number; spawnTime?: number }>();
-    private readonly ATTRACTION_FORCE = 500; // Attraction force towards mobs (pixels per second^2) - increased from 150
-    private readonly SPRING_FORCE = 200; // Spring force back to orbit position (pixels per second^2) - reduced from 300
-    private readonly DAMPING = 0.92; // Velocity damping per frame (0-1, lower = more damping)
+    private readonly ATTRACTION_FORCE = 50; // Attraction force towards mobs (pixels per second^2) - increased from 150
+    private readonly SPRING_FORCE = 700; // Spring force back to orbit position (pixels per second^2) - reduced from 300
+    private readonly DAMPING = 0.72; // Velocity damping per frame (0-1, lower = more damping)
     private readonly MAX_ATTRACTION_DISTANCE = 2000; // Maximum distance to attract to mobs (pixels) - increased significantly to match combat ranges
     private readonly MIN_ATTRACTION_DISTANCE = 1; // Minimum distance to avoid division by zero (pixels) - reduced from 30
     private readonly SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after spawn - reduced from 500

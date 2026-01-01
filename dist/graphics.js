@@ -55,9 +55,9 @@ class Graphics {
         this.playerEye = { x: 0, y: 0 };
         // Petal physics state
         this.petalPhysicsStates = new Map();
-        this.ATTRACTION_FORCE = 500; // Attraction force towards mobs (pixels per second^2) - increased from 150
-        this.SPRING_FORCE = 200; // Spring force back to orbit position (pixels per second^2) - reduced from 300
-        this.DAMPING = 0.92; // Velocity damping per frame (0-1, lower = more damping)
+        this.ATTRACTION_FORCE = 50; // Attraction force towards mobs (pixels per second^2) - increased from 150
+        this.SPRING_FORCE = 700; // Spring force back to orbit position (pixels per second^2) - reduced from 300
+        this.DAMPING = 0.72; // Velocity damping per frame (0-1, lower = more damping)
         this.MAX_ATTRACTION_DISTANCE = 2000; // Maximum distance to attract to mobs (pixels) - increased significantly to match combat ranges
         this.MIN_ATTRACTION_DISTANCE = 1; // Minimum distance to avoid division by zero (pixels) - reduced from 30
         this.SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after spawn - reduced from 500
