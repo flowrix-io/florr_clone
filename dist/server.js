@@ -1032,39 +1032,86 @@ io.on('connection', (socket) => {
     });
     socket.on('disconnect', () => {
         console.log('A user disconnected');
-        if (constants_2.players[socket.id] && socket.userId) {
-            // console.log('Saving player progress for userId:', socket.userId);
-            savePlayerProgressImmediate(constants_2.players[socket.id], socket.userId);
-        }
-        // Clean up petal cooldown timeouts for this player
-        for (let i = 0; i < 10; i++) {
-            const timeoutKey = `${socket.id}-${i}`;
-            const timeout = gameState_1.petalCooldownTimeouts.get(timeoutKey);
-            if (timeout) {
-                clearTimeout(timeout);
-                gameState_1.petalCooldownTimeouts.delete(timeoutKey);
+        // Check if player is split and clean up both split players
+        const { splitPlayers } = require('./petal_actions');
+        const originalId = socket.id.replace('_split2', '').replace('_split1', '');
+        const splitState = splitPlayers.get(originalId);
+        if (splitState) {
+            // Player is split - clean up both split players
+            console.log(`[DISCONNECT] Cleaning up split players for ${originalId}`);
+            // Save progress for the original player if authenticated
+            if (constants_2.players[originalId] && socket.userId) {
+                savePlayerProgressImmediate(constants_2.players[originalId], socket.userId);
             }
-        }
-        // Clean up petalLastProjectileTime entries for this player
-        const keysToDelete = [];
-        gameState_1.petalLastProjectileTime.forEach((value, key) => {
-            if (key.startsWith(socket.id)) {
-                keysToDelete.push(key);
+            // Clean up petal cooldown timeouts for both split players
+            const splitPlayerIds = [splitState.player1.id, splitState.player2.id, originalId];
+            for (const playerId of splitPlayerIds) {
+                for (let i = 0; i < 10; i++) {
+                    const timeoutKey = `${playerId}-${i}`;
+                    const timeout = gameState_1.petalCooldownTimeouts.get(timeoutKey);
+                    if (timeout) {
+                        clearTimeout(timeout);
+                        gameState_1.petalCooldownTimeouts.delete(timeoutKey);
+                    }
+                }
+                // Clean up petalLastProjectileTime entries
+                const keysToDelete = [];
+                gameState_1.petalLastProjectileTime.forEach((value, key) => {
+                    if (key.startsWith(playerId)) {
+                        keysToDelete.push(key);
+                    }
+                });
+                keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
+                // Clean up petal physics states
+                (0, playerState_1.cleanupPetalPhysicsStates)(playerId);
+                // Remove player from players map
+                delete constants_2.players[playerId];
+                delete gameState_1.playerUserIds[playerId];
+                // Emit playerDisconnected event for this split player
+                io.emit('playerDisconnected', playerId);
             }
-        });
-        keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
-        // Clean up petal physics states for this player
-        (0, playerState_1.cleanupPetalPhysicsStates)(socket.id);
-        delete constants_2.players[socket.id];
-        delete gameState_1.playerUserIds[socket.id]; // Clean up the mapping
+            // Remove split state
+            splitPlayers.delete(originalId);
+        }
+        else {
+            // Normal player - standard cleanup
+            if (constants_2.players[socket.id] && socket.userId) {
+                // console.log('Saving player progress for userId:', socket.userId);
+                savePlayerProgressImmediate(constants_2.players[socket.id], socket.userId);
+            }
+            // Clean up petal cooldown timeouts for this player
+            for (let i = 0; i < 10; i++) {
+                const timeoutKey = `${socket.id}-${i}`;
+                const timeout = gameState_1.petalCooldownTimeouts.get(timeoutKey);
+                if (timeout) {
+                    clearTimeout(timeout);
+                    gameState_1.petalCooldownTimeouts.delete(timeoutKey);
+                }
+            }
+            // Clean up petalLastProjectileTime entries for this player
+            const keysToDelete = [];
+            gameState_1.petalLastProjectileTime.forEach((value, key) => {
+                if (key.startsWith(socket.id)) {
+                    keysToDelete.push(key);
+                }
+            });
+            keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
+            // Clean up petal physics states for this player
+            (0, playerState_1.cleanupPetalPhysicsStates)(socket.id);
+            delete constants_2.players[socket.id];
+            delete gameState_1.playerUserIds[socket.id]; // Clean up the mapping
+        }
         // Remove all event listeners to prevent memory leaks
         // Socket.IO will handle cleanup, but we can be explicit for unauthenticated connections
         socket.removeAllListeners();
         // Only emit to authenticated players (not to unauthenticated title screen connections)
-        const authenticatedSockets = Array.from(io.sockets.sockets.values())
-            .filter((s) => s.userId);
-        if (authenticatedSockets.length > 0) {
-            io.emit('playerDisconnected', socket.id);
+        // Note: playerDisconnected events for split players are already emitted above
+        if (!splitState) {
+            const authenticatedSockets = Array.from(io.sockets.sockets.values())
+                .filter((s) => s.userId);
+            if (authenticatedSockets.length > 0) {
+                io.emit('playerDisconnected', socket.id);
+            }
         }
         // Trigger viewport update when player disconnects (only if there are authenticated players)
         if (Object.keys(constants_2.players).length > 0) {
