@@ -30,6 +30,7 @@ const SHOP_PRICES = {
     golden_leaf: 18,
     blood_leaf: 24,
     target_dummy_egg: 100000000,
+    splitter: 1000000,
 };
 // Default price for petals not in the config
 const DEFAULT_SHOP_PRICE = 10;

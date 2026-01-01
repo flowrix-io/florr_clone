@@ -819,26 +819,35 @@ const BASE_PETAL_CONFIGS = {
         health: 15,
         size: 1.0,
         cooldown: 10000,
-        description: "Splits the player into 2 and switches between them when used",
+        description: "Allows you to have two players at once",
         color: "#9B59B6",
         count: 1,
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<!-- Left player (split) -->
-<circle cx="10" cy="16" r="6" fill="#FFE763" stroke="#CFBB50" stroke-width="1.5"/>
-<circle cx="10" cy="14" r="5" fill="#FFE763"/>
-<ellipse cx="8" cy="13" rx="1.2" ry="2.5" fill="#000"/>
-<ellipse cx="12" cy="13" rx="1.2" ry="2.5" fill="#000"/>
-<path d="M8 18 Q10 20 12 18" stroke="#000" stroke-width="1" fill="none"/>
-<!-- Right player (split) -->
-<circle cx="22" cy="16" r="6" fill="#FFE763" stroke="#CFBB50" stroke-width="1.5"/>
-<circle cx="22" cy="14" r="5" fill="#FFE763"/>
-<ellipse cx="20" cy="13" rx="1.2" ry="2.5" fill="#000"/>
-<ellipse cx="24" cy="13" rx="1.2" ry="2.5" fill="#000"/>
-<path d="M20 18 Q22 20 24 18" stroke="#000" stroke-width="1" fill="none"/>
-<!-- Split line -->
-<line x1="16" y1="8" x2="16" y2="24" stroke="#9B59B6" stroke-width="2" stroke-dasharray="2,2"/>
+        image: `<svg width="32" height="32" viewBox="-30 -30 60 60" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="eye-clip">
+      <ellipse cx="-7" cy="-4.8" rx="3.2" ry="6.5" />
+      <ellipse cx="7" cy="-4.8" rx="3.2" ry="6.5" />
+    </clipPath>
+  </defs>
+
+  <circle cx="0" cy="0" r="26.5" fill="#CFBB50" />
+
+  <circle cx="0" cy="0" r="23.5" fill="#FFE763" />
+
+  <path d="M -6 10 Q 0 14.5 6 10" fill="none" stroke="#000" stroke-width="1.7" stroke-linecap="round" />
+
+  <ellipse cx="-7" cy="-4.8" rx="3.2" ry="6.5" fill="#000" />
+  <ellipse cx="7" cy="-4.8" rx="3.2" ry="6.5" fill="#000" />
+
+  <g clip-path="url(#eye-clip)">
+    <circle cx="-5.2" cy="-4.8" r="3" fill="#fff" />
+    <circle cx="8.8" cy="-4.8" r="3" fill="#fff" />
+  </g>
+
+  <ellipse cx="-7" cy="-4.8" rx="3.2" ry="6.5" fill="none" stroke="#000" stroke-width="1" />
+  <ellipse cx="7" cy="-4.8" rx="3.2" ry="6.5" fill="none" stroke="#000" stroke-width="1" />
 </svg>`,
-        isAdminPetal: true
+        isAdminPetal: false
     },
     hornet_missile: {
         name: "Hornet Missile",
