@@ -381,11 +381,6 @@ export function executeServerCommand(
                         return;
                     }
                     
-                    if (petalStats.isAdminPetal) {
-                        sendOutput(`Cannot give admin petal "${itemType}"`, socketId, io);
-                        return;
-                    }
-                    
                     itemKey = `petal_${itemType}`;
                     itemDisplayName = `${itemType} petal`;
                 }

@@ -371,10 +371,6 @@ function executeServerCommand(command, executor, deps, socketId) {
                         sendOutput(`Petal type "${itemType}" does not exist or does not have rarity "${rarity}"`, socketId, io);
                         return;
                     }
-                    if (petalStats.isAdminPetal) {
-                        sendOutput(`Cannot give admin petal "${itemType}"`, socketId, io);
-                        return;
-                    }
                     itemKey = `petal_${itemType}`;
                     itemDisplayName = `${itemType} petal`;
                 }
