@@ -995,16 +995,25 @@ io.on('connection', (socket) => {
             socket.emit('enemiesUpdate', constants_2.enemies);
             socket.emit('obstaclesUpdate', constants_2.obstacles);
             // Filter items to only send ones this player is eligible for and hasn't picked up yet
+            // Check if player is split and get all split player IDs
+            const { splitPlayers } = require('./petal_actions');
+            const originalId = socket.id.replace('_split2', '').replace('_split1', '');
+            const splitState = splitPlayers.get(originalId);
+            const playerIds = splitState ? [splitState.player1.id, splitState.player2.id, originalId] : [socket.id];
             const eligibleItems = gameState_1.items.filter(item => {
-                // If item has eligibility list, check if this player is eligible
+                // If item has eligibility list, check if this player (or any split player) is eligible
                 if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                    if (!item.eligiblePlayers.includes(socket.id)) {
+                    const isEligible = playerIds.some(playerId => item.eligiblePlayers.includes(playerId));
+                    if (!isEligible) {
                         return false; // Not eligible
                     }
                 }
-                // Check if this player has already picked up this item
-                if (item.pickedUpBy && item.pickedUpBy.has(socket.id)) {
-                    return false; // Already picked up
+                // Check if this player (or any split player) has already picked up this item
+                if (item.pickedUpBy) {
+                    const alreadyPickedUp = playerIds.some(playerId => item.pickedUpBy.has(playerId));
+                    if (alreadyPickedUp) {
+                        return false; // Already picked up
+                    }
                 }
                 return true;
             });
@@ -1075,7 +1084,17 @@ io.on('connection', (socket) => {
         }
     });
     socket.on('useItem', (itemData) => {
-        const player = constants_2.players[socket.id];
+        // Check if player is split and route to the active player
+        const { splitPlayers } = require('./petal_actions');
+        const originalId = socket.id.replace('_split2', '').replace('_split1', '');
+        const splitState = splitPlayers.get(originalId);
+        // Determine which player should receive the item effect
+        let targetPlayerId = socket.id;
+        if (splitState) {
+            // Player is split - route to the active player
+            targetPlayerId = splitState.activeIndex === 0 ? splitState.player1.id : splitState.player2.id;
+        }
+        const player = constants_2.players[targetPlayerId];
         if (!player)
             return;
         // For now, we don't check if the item is in the loadout on the server,
@@ -1118,8 +1137,8 @@ io.on('connection', (socket) => {
                 io.emit('speedBoostActive', player.id);
                 // console.log('Applied speed boost effect');
                 setTimeout(() => {
-                    if (constants_2.players[socket.id]) {
-                        constants_2.players[socket.id].speed_boost = 1;
+                    if (constants_2.players[targetPlayerId]) {
+                        constants_2.players[targetPlayerId].speed_boost = 1;
                         // console.log('Speed boost wore off');
                     }
                 }, 5000 * multiplier);
@@ -1128,8 +1147,8 @@ io.on('connection', (socket) => {
                 player.isInvulnerable = true;
                 // console.log('Applied shield effect');
                 setTimeout(() => {
-                    if (constants_2.players[socket.id]) {
-                        constants_2.players[socket.id].isInvulnerable = false;
+                    if (constants_2.players[targetPlayerId]) {
+                        constants_2.players[targetPlayerId].isInvulnerable = false;
                         // console.log('Shield wore off');
                     }
                 }, 3000 * multiplier);

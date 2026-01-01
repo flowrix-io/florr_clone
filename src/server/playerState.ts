@@ -962,6 +962,16 @@ export function updatePlayerState(
                             const itemId = Math.random().toString(36).substr(2, 9);
                             const spawnTime = Date.now();
                             
+                            // Determine eligible players - include split player IDs if player is split
+                            let eligiblePlayersForItem = [player.id];
+                            const { splitPlayers } = require('../petal_actions');
+                            const originalId = player.id.replace('_split2', '').replace('_split1', '');
+                            const splitState = splitPlayers.get(originalId);
+                            if (splitState) {
+                                // Player is split - include both split player IDs
+                                eligiblePlayersForItem = [splitState.player1.id, splitState.player2.id, originalId];
+                            }
+                            
                             const newItem: WorldItem = {
                                 id: itemId,
                                 type: 'petal',
@@ -969,7 +979,7 @@ export function updatePlayerState(
                                 y: enemy.y + offsetY,
                                 rarity: randomRarity,
                                 petalType: randomPetalType,
-                                eligiblePlayers: [player.id], // Only the player who hit it can pick it up
+                                eligiblePlayers: eligiblePlayersForItem, // Include all split player IDs
                                 pickedUpBy: new Set(),
                                 spawnTime: spawnTime
                             };
@@ -979,8 +989,12 @@ export function updatePlayerState(
                             
                             items.push(newItem);
                             
-                            // Send itemSpawned event to the player
-                            io.to(player.id).emit('itemSpawned', newItem);
+                            // Send itemSpawned event to eligible players (map split player IDs to original socket IDs)
+                            const { getOriginalSocketId } = require('./utils');
+                            for (const eligiblePlayerId of eligiblePlayersForItem) {
+                                const originalSocketId = getOriginalSocketId(eligiblePlayerId);
+                                io.to(originalSocketId).emit('itemSpawned', newItem);
+                            }
                             
                             // Schedule automatic removal after expiration time
                             const expirationTime = ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
@@ -991,8 +1005,14 @@ export function updatePlayerState(
                                     const expiredItem = items[itemIndex];
                                     items.splice(itemIndex, 1);
                                     
-                                    // Notify the player that item expired
-                                    io.to(player.id).emit('itemRemoved', itemId);
+                                    // Notify eligible players that item expired
+                                    const { getOriginalSocketId } = require('./utils');
+                                    if (expiredItem.eligiblePlayers) {
+                                        for (const playerId of expiredItem.eligiblePlayers) {
+                                            const originalSocketId = getOriginalSocketId(playerId);
+                                            io.to(originalSocketId).emit('itemRemoved', itemId);
+                                        }
+                                    }
                                     
                                     console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
                                 }
@@ -1212,16 +1232,36 @@ export function updatePlayerState(
             
             // Check if player is eligible to pick up this item
             if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                // Check if this player ID is eligible, or if the original socket ID is eligible (for split players)
-                const { getOriginalSocketId } = require('./utils');
-                const originalSocketId = getOriginalSocketId(player.id);
-                const isEligible = item.eligiblePlayers.includes(player.id) || 
-                                   (player.id !== originalSocketId && item.eligiblePlayers.includes(originalSocketId));
+                let isEligible = false;
+                
+                // First, check if player ID is directly eligible
+                if (item.eligiblePlayers.includes(player.id)) {
+                    isEligible = true;
+                } else {
+                    // Check if this player is part of a split pair
+                    const { splitPlayers } = require('../petal_actions');
+                    const originalId = player.id.replace('_split2', '').replace('_split1', '');
+                    const splitState = splitPlayers.get(originalId);
+                    
+                    if (splitState) {
+                        // Player is split - check if any of the split player IDs or original ID is eligible
+                        isEligible = item.eligiblePlayers.includes(splitState.player1.id) || 
+                                     item.eligiblePlayers.includes(splitState.player2.id) ||
+                                     item.eligiblePlayers.includes(originalId);
+                    } else {
+                        // Not split - check if original socket ID is eligible (for items created with original ID)
+                        const { getOriginalSocketId } = require('./utils');
+                        const originalSocketId = getOriginalSocketId(player.id);
+                        if (player.id !== originalSocketId) {
+                            isEligible = item.eligiblePlayers.includes(originalSocketId);
+                        }
+                    }
+                }
                 
                 if (!isEligible) {
                     // Player is not eligible - skip this item
                     // Debug log to help diagnose pickup issues
-                    // console.log(`[PICKUP] Player ${player.id} (${player.name}) tried to pick up item ${item.id} but is not eligible. Eligible players:`, item.eligiblePlayers);
+                    console.log(`[PICKUP] Player ${player.id} (${player.name}) tried to pick up item ${item.id} but is not eligible. Eligible players:`, item.eligiblePlayers);
                     continue;
                 }
             }
@@ -1253,15 +1293,11 @@ export function updatePlayerState(
             }
             
             // Emit events to update client
-            // Only send itemPickedUp to the player who picked it up, not to everyone
-            io.to(player.id).emit('itemPickedUp', item.id);
-            io.to(player.id).emit('inventoryUpdated', player.inventory);
-            
-            // If player is split, also send inventory update to the other split player
-            if (splitState) {
-                const otherPlayerId = splitState.player1.id === player.id ? splitState.player2.id : splitState.player1.id;
-                io.to(otherPlayerId).emit('inventoryUpdated', player.inventory);
-            }
+            // Map split player IDs to original socket IDs for socket room targeting
+            const { getOriginalSocketId } = require('./utils');
+            const originalSocketId = getOriginalSocketId(player.id);
+            io.to(originalSocketId).emit('itemPickedUp', item.id);
+            io.to(originalSocketId).emit('inventoryUpdated', player.inventory);
             
             // Save player progress to persist inventory changes
             const userId = playerUserIds[player.id];

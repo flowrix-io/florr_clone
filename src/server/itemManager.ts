@@ -77,14 +77,24 @@ export function handleMobDrops(enemy: Enemy, io: SocketIOServer) {
     // Get list of eligible players based on damage ranking
     let eligiblePlayers = getEligiblePlayers(enemy);
     
-    // For split players, also include the original socket ID in eligible players
+    // For split players, also include both split player IDs and the original socket ID in eligible players
     // This ensures both split players can pick up items if either one dealt damage
     const expandedEligiblePlayers = new Set<string>(eligiblePlayers);
+    const { splitPlayers } = require('../petal_actions');
+    
     for (const playerId of eligiblePlayers) {
         const originalSocketId = getOriginalSocketId(playerId);
+        
+        // If this is a split player, add the original socket ID
         if (playerId !== originalSocketId) {
-            // This is a split player, add the original socket ID too
             expandedEligiblePlayers.add(originalSocketId);
+        }
+        
+        // If this is the original socket ID, check if there's a split and add both split player IDs
+        const splitState = splitPlayers.get(originalSocketId);
+        if (splitState) {
+            expandedEligiblePlayers.add(splitState.player1.id);
+            expandedEligiblePlayers.add(splitState.player2.id);
         }
     }
     eligiblePlayers = Array.from(expandedEligiblePlayers);

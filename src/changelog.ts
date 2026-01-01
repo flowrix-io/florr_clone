@@ -136,6 +136,15 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Changed title screen UI',
             'New admin command: give'
         ]
+    },
+    {
+        date: 'December 31, 2025',
+        changes: [
+            'New petal: Splitter',
+            'New petal: Gas',
+            'New petal: Bulb',
+            'Petals now have physics and are attracted to mobs'
+        ]
     }
 ];
 
