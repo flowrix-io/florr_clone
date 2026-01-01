@@ -1220,7 +1220,7 @@ export function updatePlayerState(
                 }
             }
             
-            // Add item to player's inventory
+            // Add item to player's inventory (which may be shared with split player)
             const rarity = item.rarity || 'common';
             const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
             addItem(player.inventory, rarity, itemKey, 1);
@@ -1233,10 +1233,29 @@ export function updatePlayerState(
             
             // console.log(`[PICKUP] Player ${player.id} (${player.name}) picked up item ${item.id} (${itemKey}, ${rarity})`);
             
+            // Check if this player is split and update the other split player's inventory reference
+            const { splitPlayers } = require('../petal_actions');
+            const originalId = player.id.replace('_split2', '').replace('_split1', '');
+            const splitState = splitPlayers.get(originalId);
+            if (splitState) {
+                // Both players share the same inventory, so update the other player's reference
+                if (splitState.player1.id === player.id) {
+                    splitState.player2.inventory = player.inventory;
+                } else if (splitState.player2.id === player.id) {
+                    splitState.player1.inventory = player.inventory;
+                }
+            }
+            
             // Emit events to update client
             // Only send itemPickedUp to the player who picked it up, not to everyone
             io.to(player.id).emit('itemPickedUp', item.id);
             io.to(player.id).emit('inventoryUpdated', player.inventory);
+            
+            // If player is split, also send inventory update to the other split player
+            if (splitState) {
+                const otherPlayerId = splitState.player1.id === player.id ? splitState.player2.id : splitState.player1.id;
+                io.to(otherPlayerId).emit('inventoryUpdated', player.inventory);
+            }
             
             // Save player progress to persist inventory changes
             const userId = playerUserIds[player.id];

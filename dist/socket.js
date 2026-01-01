@@ -264,6 +264,12 @@ function setupSocketListeners(game) {
         // Update active player ID if this is our split
         if (data.originalId === game.socket.id || game.activePlayerId === data.originalId) {
             game.activePlayerId = data.activePlayerId;
+            // Clear petal physics states for both split players to force reinitialization
+            // This ensures petals properly move out when switching
+            if (game.graphics && game.graphics.clearPetalPhysicsForPlayer) {
+                game.graphics.clearPetalPhysicsForPlayer(data.originalId);
+                game.graphics.clearPetalPhysicsForPlayer(`${data.originalId}_split2`);
+            }
         }
     });
     // Add runJS event handler
@@ -702,8 +708,21 @@ function setupSocketListeners(game) {
     // Debounce mob gallery updates to prevent lag when multiple mobs die
     let mobGalleryUpdateTimeout = null;
     game.socket.on('playerUpdated', (updatedPlayer) => {
-        const player = game.players.get(updatedPlayer.id);
-        if (player) {
+        let player = game.players.get(updatedPlayer.id);
+        // If player doesn't exist yet, create it (e.g., for split players)
+        if (!player) {
+            player = {
+                ...updatedPlayer,
+                imageLoaded: true,
+                score: 0,
+                velocityX: 0,
+                velocityY: 0,
+                targetX: updatedPlayer.x,
+                targetY: updatedPlayer.y
+            };
+            game.players.set(updatedPlayer.id, player);
+        }
+        else {
             // Optimize: Only check changes if we need to update UI
             // Use reference comparison first (faster), then deep comparison only if needed
             let loadoutChanged = false;

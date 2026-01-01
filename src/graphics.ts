@@ -616,6 +616,17 @@ export class Graphics {
     }
     
     // Clean up accumulated damage when enemy dies
+    // Public method to clear petal physics states for a specific player (used when switching split players)
+    public clearPetalPhysicsForPlayer(playerId: string): void {
+        const keysToDelete: string[] = [];
+        this.petalPhysicsStates.forEach((value, key) => {
+            if (key.startsWith(playerId)) {
+                keysToDelete.push(key);
+            }
+        });
+        keysToDelete.forEach(key => this.petalPhysicsStates.delete(key));
+    }
+    
     public clearEnemyDamage(enemyId: string) {
         this.lastDamageTextTime.delete(enemyId);
         this.accumulatedDamage.delete(enemyId);
@@ -2064,11 +2075,29 @@ export class Graphics {
                         spawnTime: currentTime
                     };
                     this.petalPhysicsStates.set(petalId, physicsState);
+                } else {
+                    // Update physics state position if player has moved significantly (to prevent physics state from being too far off)
+                    // Only update if the distance is large to avoid interfering with physics
+                    const playerMoveDistance = Math.sqrt(
+                        Math.pow(player.x - physicsState.x, 2) + 
+                        Math.pow(player.y - physicsState.y, 2)
+                    );
+                    // If player moved more than 200 pixels, reset physics state to player position
+                    // This handles cases where the player teleported or moved very far
+                    if (playerMoveDistance > 200) {
+                        physicsState.x = player.x;
+                        physicsState.y = player.y;
+                        physicsState.vx = 0;
+                        physicsState.vy = 0;
+                        physicsState.spawnTime = currentTime; // Reset spawn time to re-enable spring force
+                    }
                 }
                 
                 // Calculate smooth initialization factor (ramp up forces over spawn smooth time)
                 const timeSinceSpawn = physicsState.spawnTime ? currentTime - physicsState.spawnTime : petalSpawnSmoothTime;
-                const smoothFactor = Math.min(1.0, timeSinceSpawn / petalSpawnSmoothTime);
+                // Use a minimum smoothFactor of 0.1 to ensure spring force always applies (even at spawn)
+                // This prevents petals from getting stuck at player center
+                const smoothFactor = Math.max(0.1, Math.min(1.0, timeSinceSpawn / petalSpawnSmoothTime));
                 
                 // Calculate attraction force towards nearby mobs
                 let attractionFx = 0;

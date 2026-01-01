@@ -1397,12 +1397,51 @@ function splitPlayer(player, io) {
         console.log(`[PetalActions] Split player ${splitPlayer2Id} already exists, skipping`);
         return;
     }
-    // Create a duplicate player
+    // Share inventory (both players reference the same inventory object)
+    // This allows items picked up by one player to be available to both
+    // Deep clone loadout (including petal health, cooldowns, etc.)
+    // Each player has their own loadout so they can equip different items
+    const clonedLoadout = player.loadout.map(item => {
+        if (!item)
+            return null;
+        if (item.type === 'petal') {
+            return {
+                ...item,
+                health: item.health,
+                maxHealth: item.maxHealth,
+                onCooldown: item.onCooldown
+            };
+        }
+        return { ...item };
+    });
+    // Deep clone mobKills (separate kill tracking per player)
+    const clonedMobKills = {};
+    if (player.mobKills) {
+        for (const mobType in player.mobKills) {
+            clonedMobKills[mobType] = { ...player.mobKills[mobType] };
+        }
+    }
+    // Deep clone skills (separate skill trees per player)
+    const clonedSkills = player.skills ? { ...player.skills } : undefined;
+    // Deep clone effects (separate active effects per player)
+    const clonedEffects = player.effects ? player.effects.map(effect => ({ ...effect })) : undefined;
+    // Create a duplicate player with separate state but shared inventory
     const splitPlayer2 = {
         ...player,
         id: `${player.id}_split2`,
         x: player.x + 50, // Offset slightly to the right
-        y: player.y
+        y: player.y,
+        velocityX: 0, // Reset velocity
+        velocityY: 0, // Reset velocity
+        knockbackX: 0, // Reset knockback
+        knockbackY: 0, // Reset knockback
+        angle: player.angle, // Keep same angle
+        inventory: player.inventory, // SHARED inventory (same reference)
+        loadout: clonedLoadout, // Separate loadout
+        mobKills: clonedMobKills, // Separate mob kills
+        skills: clonedSkills, // Separate skills
+        effects: clonedEffects, // Separate effects
+        inputs: { keys: [] } // Separate input state
     };
     // Store split state using original ID
     exports.splitPlayers.set(originalId, {
@@ -1413,13 +1452,18 @@ function splitPlayer(player, io) {
     });
     // Add the split player to the players map
     constants_1.players[splitPlayer2.id] = splitPlayer2;
+    // Recalculate stats for the split player (to apply petal modifiers from cloned loadout)
+    const { recalculatePlayerStats } = require('./server/playerManager');
+    recalculatePlayerStats(splitPlayer2, io);
     // Notify clients about the split
     io.emit('playerSplit', {
         originalId: originalId,
         player1Id: player.id,
         player2Id: splitPlayer2.id
     });
-    console.log(`[PetalActions] Player ${player.name} (${player.id}) split into 2 players`);
+    // Send full player data including loadout to clients so they can render the split player's petals
+    io.emit('playerUpdated', splitPlayer2);
+    console.log(`[PetalActions] Player ${player.name} (${player.id}) split into 2 players with separate inventories and states`);
 }
 // Switch between split players
 function switchPlayer(player, io, socketId) {
@@ -1448,18 +1492,28 @@ function switchPlayer(player, io, socketId) {
     // Switch active player
     splitState.activeIndex = splitState.activeIndex === 0 ? 1 : 0;
     const activePlayerId = splitState.activeIndex === 0 ? splitState.player1.id : splitState.player2.id;
+    // Get the actual player object from the players map to ensure we have the latest state
+    const activePlayer = constants_1.players[activePlayerId];
+    if (!activePlayer) {
+        console.warn(`[PetalActions] Active player ${activePlayerId} not found in players map`);
+        return;
+    }
     // Notify the specific client (or all clients if socketId not provided)
     if (socketId) {
         io.to(socketId).emit('playerSwitched', {
             originalId: originalId,
             activePlayerId: activePlayerId
         });
+        // Send full player data including loadout to the client so they can display the correct loadout
+        io.to(socketId).emit('playerUpdated', activePlayer);
     }
     else {
         io.emit('playerSwitched', {
             originalId: originalId,
             activePlayerId: activePlayerId
         });
+        // Send full player data including loadout to all clients
+        io.emit('playerUpdated', activePlayer);
     }
     console.log(`[PetalActions] Switched to player ${splitState.activeIndex === 0 ? '1' : '2'} (activePlayerId=${activePlayerId})`);
 }

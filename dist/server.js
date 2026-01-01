@@ -1259,9 +1259,19 @@ io.on('connection', (socket) => {
     }
     socket.on('updateLoadout', (data) => {
         // console.log('[PET DEBUG] updateLoadout called for socket:', socket.id);
-        const player = constants_2.players[socket.id];
+        // Check if player is split and route to the active player
+        const { splitPlayers } = require('./petal_actions');
+        const originalId = socket.id.replace('_split2', '').replace('_split1', '');
+        const splitState = splitPlayers.get(originalId);
+        // Determine which player should receive the loadout update
+        let targetPlayerId = socket.id;
+        if (splitState) {
+            // Player is split - route to the active player
+            targetPlayerId = splitState.activeIndex === 0 ? splitState.player1.id : splitState.player2.id;
+        }
+        const player = constants_2.players[targetPlayerId];
         if (!player) {
-            console.warn('[SERVER] updateLoadout: Player not found for socket:', socket.id);
+            console.warn('[SERVER] updateLoadout: Player not found for socket:', socket.id, 'targetPlayerId:', targetPlayerId);
             return;
         }
         if (!socket.username) {
@@ -1275,7 +1285,9 @@ io.on('connection', (socket) => {
             const oldInventory = player.inventory || {};
             // IMPORTANT: Use server's inventory as source of truth, NOT client's
             // This prevents console-added items from being accepted
-            const serverInventory = { ...oldInventory };
+            // For split players, we need to use the shared inventory directly (not a copy)
+            // If split, use the shared inventory directly; otherwise create a copy for validation
+            const serverInventory = splitState ? oldInventory : { ...oldInventory };
             // Validate inventory and loadout - unequip items that don't exist in inventory
             const validatedLoadout = validateInventoryAndLoadout(serverInventory, data.loadout, oldLoadout, serverInventory);
             // Calculate inventory changes based on loadout changes
@@ -1360,9 +1372,11 @@ io.on('connection', (socket) => {
                         // console.log(`[PET DEBUG] Petal stats for ${petal.petalType}:`, petalStats ? { petMobType: petalStats.petMobType, petMobRarity: petalStats.petMobRarity } : 'null');
                         if (petalStats) {
                             const cooldownTime = petalStats.cooldown || 10000;
+                            // Capture targetPlayerId in closure for setTimeout
+                            const targetId = targetPlayerId;
                             setTimeout(() => {
-                                if (constants_2.players[socket.id] && constants_2.players[socket.id].loadout[index] &&
-                                    constants_2.players[socket.id].loadout[index].onCooldown) {
+                                if (constants_2.players[targetId] && constants_2.players[targetId].loadout[index] &&
+                                    constants_2.players[targetId].loadout[index].onCooldown) {
                                     // Restore petal after cooldown
                                     const restoredPetal = {
                                         type: petal.type,
@@ -1373,12 +1387,12 @@ io.on('connection', (socket) => {
                                         onCooldown: false
                                     };
                                     // Apply petal health bonus
-                                    (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, constants_2.players[socket.id]);
-                                    constants_2.players[socket.id].loadout[index] = restoredPetal;
+                                    (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, constants_2.players[targetId]);
+                                    constants_2.players[targetId].loadout[index] = restoredPetal;
                                     io.emit('petalRestored', {
-                                        playerId: constants_2.players[socket.id].id,
+                                        playerId: constants_2.players[targetId].id,
                                         slotIndex: index,
-                                        petal: constants_2.players[socket.id].loadout[index]
+                                        petal: constants_2.players[targetId].loadout[index]
                                     });
                                     // Check if this petal should spawn a pet when restored
                                     // Get fresh petal stats to ensure we have the latest petMobType
@@ -1388,7 +1402,7 @@ io.on('connection', (socket) => {
                                         if (restoredPetalStats?.petMobType && restoredPetal.rarity) {
                                             const petMobType = restoredPetalStats.petMobType;
                                             // Pet inherits the petal's rarity
-                                            const player = constants_2.players[socket.id];
+                                            const player = constants_2.players[targetPlayerId];
                                             if (player && !player.isDead) {
                                                 // console.log(`[PET] Spawning pet ${petMobType} (${restoredPetal.rarity}) for player ${player.id} when petal restored`);
                                                 (0, petal_actions_1.spawnPet)(petMobType, restoredPetal.rarity, player.x, player.y, player.id, io);
@@ -1416,7 +1430,7 @@ io.on('connection', (socket) => {
                             const petMobType = petalStatsForSpawn.petMobType;
                             // Pet inherits the petal's rarity
                             // Spawn pet immediately when petal is first equipped
-                            const player = constants_2.players[socket.id];
+                            const player = constants_2.players[targetPlayerId];
                             // console.log(`[PET DEBUG] Player check: player=`, !!player, `isDead=`, player?.isDead);
                             if (player && !player.isDead) {
                                 // console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${player.id} when petal equipped`);
@@ -1435,6 +1449,17 @@ io.on('connection', (socket) => {
             // Use validated loadout and server's authoritative inventory
             player.loadout = validatedLoadout;
             player.inventory = serverInventory; // Use server's inventory, not client's
+            // Check if this player is split and update the other split player's inventory reference
+            // (splitState was already declared above, so we can reuse it)
+            if (splitState) {
+                // Both players share the same inventory, so update the other player's reference
+                if (splitState.player1.id === socket.id) {
+                    splitState.player2.inventory = serverInventory;
+                }
+                else if (splitState.player2.id === socket.id) {
+                    splitState.player1.inventory = serverInventory;
+                }
+            }
             // Recalculate player stats based on equipped petal modifiers
             (0, playerManager_1.recalculatePlayerStats)(player, io);
             io.emit('playerUpdated', player);
