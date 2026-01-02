@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 155866990,
+      "totalXP": 155868390,
       "inventory": {
         "common": {
           "shield": 165,
@@ -459,7 +459,7 @@
         },
         "soldier_ant": {
           "epic": 64,
-          "legendary": 149,
+          "legendary": 150,
           "common": 131,
           "rare": 51,
           "mythic": 180,
@@ -717,6 +717,60 @@
         null,
         null
       ]
+    },
+    "eo37v9184": {
+      "totalXP": 22,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "bee": {
+          "common": 2
+        },
+        "dandelion": {
+          "common": 1
+        },
+        "hornet": {
+          "common": 1
+        }
+      },
+      "stars": 0
     }
   },
   "users": {
@@ -735,6 +789,11 @@
       "id": "ebrlykqz6",
       "username": "User06617766",
       "password": "$2b$12$y6mBNBi873G7GRqGk7AJI.vKGect1m0qdMHizhcK12LgbsHKjXNoy"
+    },
+    "User68753183": {
+      "id": "eo37v9184",
+      "username": "User68753183",
+      "password": "$2b$12$heLfqK17snGEEPz7DsDR9.tRJ97du.VJFCGPcebqblC3fV2RE.N9a"
     }
   },
   "codes": {},

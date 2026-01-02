@@ -132,7 +132,8 @@ class TitleScreen {
         this.hoveredStartButton = false;
         this.animationFrameId = null;
         // Auth form state (canvas-based)
-        this.showAuthForm = true; // Show by default
+        this.isConnecting = true; // Show connecting initially
+        this.showAuthForm = false; // Don't show until loadout loads
         this.isLoginForm = true; // true = login, false = register
         this.authFocusedField = null; // 'username', 'password', 'confirmPassword', 'serverIP'
         this.authUsername = '';
@@ -1159,6 +1160,18 @@ class TitleScreen {
         this.setupCanvasUIListeners();
         // Start canvas rendering loop
         this.startCanvasRendering();
+        // If user is not logged in, show login form after a short delay
+        // (in case preconnectToServer is not called)
+        setTimeout(() => {
+            if (this.isConnecting) {
+                const username = localStorage.getItem('username');
+                const password = localStorage.getItem('password');
+                if (!username || !password) {
+                    // User is not logged in and no connection attempt, show login form
+                    this.onLoadoutLoaded();
+                }
+            }
+        }, 2000); // Wait 2 seconds for connection attempt
         // Add CSS for advanced settings
         this.addAdvancedSettingsStyles();
         // Debug: Check if forms are in DOM
@@ -1958,6 +1971,11 @@ class TitleScreen {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const titleText = 'florr.io clone';
+        // Render connecting state, auth form, or game menu
+        if (this.isConnecting) {
+            this.renderConnecting(ctx, centerX, centerY);
+            return;
+        }
         if (!this.showAuthForm) {
             ctx.strokeText(titleText, centerX, centerY - 200);
             ctx.fillText(titleText, centerX, centerY - 200);
@@ -2125,6 +2143,33 @@ class TitleScreen {
             // Draw text fill
             ctx.fillText(text, centerX, y);
         });
+    }
+    /**
+     * Renders the connecting state on canvas
+     */
+    renderConnecting(ctx, centerX, centerY) {
+        // Draw title
+        ctx.save();
+        ctx.font = 'bold 48px Ubuntu, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 6;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const titleText = 'florr.io clone';
+        ctx.strokeText(titleText, centerX, centerY - 200);
+        ctx.fillText(titleText, centerX, centerY - 200);
+        ctx.restore();
+        // Draw connecting text
+        ctx.font = 'bold 24px Ubuntu, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 4;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const connectingText = 'Connecting...';
+        ctx.strokeText(connectingText, centerX, centerY);
+        ctx.fillText(connectingText, centerX, centerY);
     }
     /**
      * Renders the auth form on canvas
@@ -2337,14 +2382,52 @@ class TitleScreen {
     }
     showAuthContainer() {
         this.showAuthForm = true;
-        // Also show DOM-based auth container (for compatibility)
+        // Keep DOM-based auth container hidden since we're using canvas-based form
         if (this.authContainer) {
-            this.authContainer.style.display = 'block';
+            this.authContainer.style.display = 'none';
         }
         // Hide loadout bar when auth form is shown
         const loadoutBar = document.getElementById('titleScreenLoadoutBar');
         if (loadoutBar) {
             loadoutBar.style.display = 'none';
+        }
+    }
+    /**
+     * Called when loadout items have finished loading, or when connection attempt completes
+     */
+    onLoadoutLoaded() {
+        if (!this.isConnecting)
+            return; // Already handled
+        this.isConnecting = false;
+        // Check if user is logged in - if not, show auth form
+        const username = localStorage.getItem('username');
+        const password = localStorage.getItem('password');
+        const currentUser = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
+        if (!username || !password || !currentUser) {
+            // User is not logged in, show auth form
+            this.showAuthContainer();
+        }
+        else {
+            // User is logged in, hide auth form
+            this.hideAuthContainer();
+        }
+    }
+    /**
+     * Called when connection attempt completes (even if no loadout to load)
+     */
+    onConnectionComplete() {
+        // If still connecting and no loadout will load (user not logged in), show login form
+        if (this.isConnecting) {
+            const username = localStorage.getItem('username');
+            const password = localStorage.getItem('password');
+            if (!username || !password) {
+                // User is not logged in, wait a bit for socket to connect, then show login
+                setTimeout(() => {
+                    if (this.isConnecting) {
+                        this.onLoadoutLoaded(); // This will show the login form
+                    }
+                }, 1000); // Wait 1 second for connection attempt
+            }
         }
     }
     /**
@@ -3453,6 +3536,10 @@ class TitleScreenInventoryManager {
                         this.socket.username = username;
                     }
                 }
+                // Loadout has loaded, notify title screen to stop showing connecting
+                if (window.titleScreen) {
+                    window.titleScreen.onLoadoutLoaded();
+                }
             }
         };
         // Check if already authenticated (socket might have authenticated before we set up listener)
@@ -4242,6 +4329,10 @@ class TitleScreenInventoryManager {
         }
         if (this.isCraftingOpen) {
             this.updateCraftingInventoryPreview();
+        }
+        // Loadout has loaded, notify title screen to stop showing connecting
+        if (window.titleScreen) {
+            window.titleScreen.onLoadoutLoaded();
         }
     }
     updateSkillsData(tp, skills) {

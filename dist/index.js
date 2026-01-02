@@ -168,6 +168,10 @@ function preconnectToServer() {
     });
     preconnectedSocket.on('connect', () => {
         console.log(`[Index] Preconnected to server (socket ID: ${preconnectedSocket?.id})`);
+        // Notify title screen that connection is complete
+        if (titleScreen) {
+            titleScreen.onConnectionComplete();
+        }
     });
     preconnectedSocket.on('connect_error', (error) => {
         console.error('[Index] Preconnect connection error:', error);

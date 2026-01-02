@@ -294,14 +294,18 @@ class AuthUI {
         }
     }
     hideAuthForm() {
+        // Keep DOM-based auth container hidden since we're using canvas-based form
         this.authContainer.classList.add('hidden');
+        this.authContainer.style.display = 'none';
         // Also hide canvas-based auth form
         if (window.titleScreen) {
             window.titleScreen.hideAuthContainer();
         }
     }
     showAuthForm() {
-        this.authContainer.classList.remove('hidden');
+        // Keep DOM-based auth container hidden since we're using canvas-based form
+        this.authContainer.classList.add('hidden');
+        this.authContainer.style.display = 'none';
         // Also show canvas-based auth form
         if (window.titleScreen) {
             window.titleScreen.showAuthContainer();
