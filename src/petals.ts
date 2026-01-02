@@ -952,7 +952,12 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
       <ellipse cx="-7" cy="-4.8" rx="3.2" ry="6.5" />
       <ellipse cx="7" cy="-4.8" rx="3.2" ry="6.5" />
     </clipPath>
+    <clipPath id="split-clip">
+      <path d="M 0 -30 L -10 -10 L 4 10 L 0 30 L -30 30L -30 -30"/>
+    </clipPath>
   </defs>
+
+  <g clip-path="url(#split-clip)">
 
   <circle cx="0" cy="0" r="26.5" fill="#CFBB50" />
 
@@ -970,6 +975,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 
   <ellipse cx="-7" cy="-4.8" rx="3.2" ry="6.5" fill="none" stroke="#000" stroke-width="1" />
   <ellipse cx="7" cy="-4.8" rx="3.2" ry="6.5" fill="none" stroke="#000" stroke-width="1" />
+  </g>
 </svg>`,
         isAdminPetal: false
     },
