@@ -157,6 +157,44 @@ export function isPositionInAnyViewport(x: number, y: number): boolean {
 }
 
 /**
+ * Check if a position is in any player's viewport with 200% buffer (for websocket optimization)
+ */
+export function isPositionInAnyViewport200Percent(x: number, y: number): boolean {
+    const viewports = getPlayerViewports();
+    
+    // If no players are connected, allow spawning anywhere (for initial server startup)
+    if (viewports.length === 0) {
+        return true;
+    }
+    
+    // Use 200% of VIEWPORT_BUFFER (2x)
+    const buffer200Percent = VIEWPORT_BUFFER * 2;
+    
+    for (const viewport of viewports) {
+        const extendedViewport = {
+            x: viewport.x - buffer200Percent,
+            y: viewport.y - buffer200Percent,
+            width: viewport.width + (buffer200Percent * 2),
+            height: viewport.height + (buffer200Percent * 2)
+        };
+        
+        if (x >= extendedViewport.x && x <= extendedViewport.x + extendedViewport.width &&
+            y >= extendedViewport.y && y <= extendedViewport.y + extendedViewport.height) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Filter enemies to only include those in any player's viewport with 200% buffer
+ */
+export function getEnemiesInViewport200Percent(): Enemy[] {
+    return enemies.filter(enemy => isPositionInAnyViewport200Percent(enemy.x, enemy.y));
+}
+
+/**
  * Check if a position is within any player's petal range
  */
 export function isPositionInPlayerPetalRange(x: number, y: number, mobSize: number): boolean {

@@ -60,6 +60,7 @@ import {
     validatePlayerPositions,
     isPositionInAnyViewport,
     getEnemiesInViewportCount,
+    getEnemiesInViewport200Percent,
     PlayerStateDependencies,
     cleanupPetalPhysicsStates
 } from './server/playerState';
@@ -923,8 +924,7 @@ function adjustEnemyCount() {
         }
     }
 
-    // Update all clients with the new enemy state
-    io.emit('enemiesUpdate', enemies);
+    // Don't send enemiesUpdate here - enemies are sent via enemySpawned/enemyDestroyed events
     console.log(`[SERVER] Adjusted enemy count to ${enemies.length}/${targetEnemyCount} (${playerCount} players)`);
 }
 
@@ -1226,7 +1226,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
             // Send current game state
             socket.emit('currentPlayers', players);
-            socket.emit('enemiesUpdate', enemies);
+            // Only send enemies in viewport with 200% buffer on connection
+            const enemiesInViewport = getEnemiesInViewport200Percent();
+            socket.emit('enemiesUpdate', enemiesInViewport);
             socket.emit('obstaclesUpdate', obstacles);
             
             // Filter items to only send ones this player is eligible for and hasn't picked up yet
@@ -3140,7 +3142,7 @@ function moveEnemies() {
         }
     }
     
-    io.emit('enemiesUpdate', enemies);
+    // Don't send enemiesUpdate here - enemies are sent via enemySpawned/enemyDestroyed events
 }
 
 // Update and move mob projectiles
@@ -3737,11 +3739,14 @@ function start_loop() {
 
         // Only emit gameStateUpdate to authenticated players, not all sockets
         // This prevents memory leaks from sending updates to unauthenticated title screen connections
+        // Filter enemies to only send those in viewport with 200% buffer for optimization
+        const enemiesInViewport = getEnemiesInViewport200Percent();
+        
         for (const playerId of authenticatedPlayerIds) {
             io.to(playerId).emit('gameStateUpdate',
                 {
                 players: playersForBroadcast,
-                enemies: enemies,
+                enemies: enemiesInViewport,
                     // Items are sent via itemSpawned/itemRemoved events to eligible players only
                     // Don't send items here to avoid showing items to ineligible players
                     items: [],

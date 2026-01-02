@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.cleanupPetalPhysicsStates = cleanupPetalPhysicsStates;
 exports.getPlayerViewports = getPlayerViewports;
 exports.isPositionInAnyViewport = isPositionInAnyViewport;
+exports.isPositionInAnyViewport200Percent = isPositionInAnyViewport200Percent;
+exports.getEnemiesInViewport200Percent = getEnemiesInViewport200Percent;
 exports.isPositionInPlayerPetalRange = isPositionInPlayerPetalRange;
 exports.getEnemiesInViewportCount = getEnemiesInViewportCount;
 exports.validatePlayerPositions = validatePlayerPositions;
@@ -81,6 +83,37 @@ function isPositionInAnyViewport(x, y) {
         }
     }
     return false;
+}
+/**
+ * Check if a position is in any player's viewport with 200% buffer (for websocket optimization)
+ */
+function isPositionInAnyViewport200Percent(x, y) {
+    const viewports = getPlayerViewports();
+    // If no players are connected, allow spawning anywhere (for initial server startup)
+    if (viewports.length === 0) {
+        return true;
+    }
+    // Use 200% of VIEWPORT_BUFFER (2x)
+    const buffer200Percent = constants_1.VIEWPORT_BUFFER * 2;
+    for (const viewport of viewports) {
+        const extendedViewport = {
+            x: viewport.x - buffer200Percent,
+            y: viewport.y - buffer200Percent,
+            width: viewport.width + (buffer200Percent * 2),
+            height: viewport.height + (buffer200Percent * 2)
+        };
+        if (x >= extendedViewport.x && x <= extendedViewport.x + extendedViewport.width &&
+            y >= extendedViewport.y && y <= extendedViewport.y + extendedViewport.height) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * Filter enemies to only include those in any player's viewport with 200% buffer
+ */
+function getEnemiesInViewport200Percent() {
+    return constants_1.enemies.filter(enemy => isPositionInAnyViewport200Percent(enemy.x, enemy.y));
 }
 /**
  * Check if a position is within any player's petal range

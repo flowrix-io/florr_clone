@@ -475,7 +475,7 @@ function setupSocketListeners(game: any) {
     });
 
     game.socket.on('enemiesUpdate', (enemies: Enemy[]) => {
-        // Optimize: Only update changed enemies instead of clearing entire map
+        // Only used on initial connection - update all enemies
         const serverEnemyIds = new Set(enemies.map(e => e.id));
         
         // Remove enemies that no longer exist
@@ -489,6 +489,11 @@ function setupSocketListeners(game: any) {
         enemies.forEach(enemy => {
             game.enemies.set(enemy.id, enemy);
         });
+    });
+
+    game.socket.on('enemySpawned', (enemy: Enemy) => {
+        // Add newly spawned enemy
+        game.enemies.set(enemy.id, enemy);
     });
 
     game.socket.on('mobProjectilesUpdate', (projectiles: any[]) => {

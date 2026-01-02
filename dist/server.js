@@ -719,8 +719,7 @@ function adjustEnemyCount() {
             break;
         }
     }
-    // Update all clients with the new enemy state
-    io.emit('enemiesUpdate', constants_2.enemies);
+    // Don't send enemiesUpdate here - enemies are sent via enemySpawned/enemyDestroyed events
     console.log(`[SERVER] Adjusted enemy count to ${constants_2.enemies.length}/${targetEnemyCount} (${playerCount} players)`);
 }
 // Command handler dependencies (defined after all functions it depends on)
@@ -992,7 +991,9 @@ io.on('connection', (socket) => {
             });
             // Send current game state
             socket.emit('currentPlayers', constants_2.players);
-            socket.emit('enemiesUpdate', constants_2.enemies);
+            // Only send enemies in viewport with 200% buffer on connection
+            const enemiesInViewport = (0, playerState_1.getEnemiesInViewport200Percent)();
+            socket.emit('enemiesUpdate', enemiesInViewport);
             socket.emit('obstaclesUpdate', constants_2.obstacles);
             // Filter items to only send ones this player is eligible for and hasn't picked up yet
             // Check if player is split and get all split player IDs
@@ -2668,7 +2669,7 @@ function moveEnemies() {
             updateSpecialMobCounts();
         }
     }
-    io.emit('enemiesUpdate', constants_2.enemies);
+    // Don't send enemiesUpdate here - enemies are sent via enemySpawned/enemyDestroyed events
 }
 // Update and move mob projectiles
 function updateMobProjectiles(deltaTimeMs) {
@@ -3169,10 +3170,12 @@ function start_loop() {
         }));
         // Only emit gameStateUpdate to authenticated players, not all sockets
         // This prevents memory leaks from sending updates to unauthenticated title screen connections
+        // Filter enemies to only send those in viewport with 200% buffer for optimization
+        const enemiesInViewport = (0, playerState_1.getEnemiesInViewport200Percent)();
         for (const playerId of authenticatedPlayerIds) {
             io.to(playerId).emit('gameStateUpdate', {
                 players: playersForBroadcast,
-                enemies: constants_2.enemies,
+                enemies: enemiesInViewport,
                 // Items are sent via itemSpawned/itemRemoved events to eligible players only
                 // Don't send items here to avoid showing items to ineligible players
                 items: [],
