@@ -2296,7 +2296,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 probability: 0.6, // 60% chance for rock
                 minQuantity: 1,
                 maxQuantity: 1
-            }
+            },
         ]
     },
     cactus: {

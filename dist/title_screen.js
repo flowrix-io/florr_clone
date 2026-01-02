@@ -131,6 +131,16 @@ class TitleScreen {
         this.hoveredBiomeIndex = -1;
         this.hoveredStartButton = false;
         this.animationFrameId = null;
+        // Auth form state (canvas-based)
+        this.showAuthForm = true; // Show by default
+        this.isLoginForm = true; // true = login, false = register
+        this.authFocusedField = null; // 'username', 'password', 'confirmPassword', 'serverIP'
+        this.authUsername = '';
+        this.authPassword = '';
+        this.authConfirmPassword = '';
+        this.authServerIP = window.location.origin;
+        this.authAdvancedSettingsVisible = false;
+        this.hoveredAuthButton = null; // 'login', 'register', 'guest', 'offline', 'toggleAdvanced', 'showRegister', 'showLogin'
         this.initializeElements();
         this.changelogManager = new changelog_1.ChangelogManager();
         this.notificationsManager = new notifications_1.NotificationsManager();
@@ -746,6 +756,11 @@ class TitleScreen {
         this.playerName = savedName;
         // Sync to dummy input after a short delay to ensure DOM is ready
         setTimeout(() => this.syncPlayerNameToInput(), 100);
+        // Initialize auth server IP from localStorage
+        const savedServerUrl = localStorage.getItem('serverUrl');
+        if (savedServerUrl) {
+            this.authServerIP = savedServerUrl;
+        }
         // Name input persistence will be handled in setupEventListeners
     }
     createElement(tagName, className) {
@@ -1093,6 +1108,8 @@ class TitleScreen {
     async appendToBody() {
         document.body.appendChild(this.backgroundCanvas);
         document.body.appendChild(this.uiCanvas);
+        // Hide DOM-based auth container since we're using canvas
+        this.authContainer.style.display = 'none';
         document.body.appendChild(this.authContainer);
         this.authContainer.appendChild(this.loginForm);
         this.authContainer.appendChild(this.registerForm);
@@ -1113,7 +1130,7 @@ class TitleScreen {
         this.startBackgroundAnimation();
         // Hide HTML centerText and use canvas instead
         this.centerText.style.display = 'none';
-        // Move loadout bar out of centerText and make it visible
+        // Move loadout bar out of centerText and make it visible (only if auth form is not shown)
         // Use setTimeout to ensure DOM is ready
         setTimeout(() => {
             const loadoutBar = document.getElementById('titleScreenLoadoutBar');
@@ -1122,8 +1139,7 @@ class TitleScreen {
                 if (loadoutBar.parentNode === this.centerText || loadoutBar.parentNode === null) {
                     document.body.appendChild(loadoutBar);
                 }
-                // Position and show it (above instructions)
-                loadoutBar.style.display = 'flex';
+                // Position it (above instructions)
                 loadoutBar.style.position = 'absolute';
                 loadoutBar.style.top = '50%';
                 loadoutBar.style.left = '50%';
@@ -1135,6 +1151,8 @@ class TitleScreen {
                 loadoutBar.style.justifyContent = 'center';
                 loadoutBar.style.flexWrap = 'wrap';
                 loadoutBar.style.maxWidth = '800px'; // Wider to accommodate larger slots
+                // Hide if auth form is shown
+                loadoutBar.style.display = this.showAuthForm ? 'none' : 'flex';
             }
         }, 100);
         // Setup canvas UI event listeners
@@ -1419,9 +1437,91 @@ class TitleScreen {
         this.uiCanvas.addEventListener('mouseleave', () => {
             this.hoveredBiomeIndex = -1;
             this.hoveredStartButton = false;
+            this.hoveredAuthButton = null;
         });
-        // Keyboard input for name field
+        // Keyboard input for name field and auth form
         document.addEventListener('keydown', (e) => {
+            // Don't interfere if game is running
+            if (window.currentGame)
+                return;
+            // Handle auth form input
+            if (this.showAuthForm && this.authFocusedField) {
+                if (e.key === 'Backspace') {
+                    if (this.authFocusedField === 'username') {
+                        this.authUsername = this.authUsername.slice(0, -1);
+                    }
+                    else if (this.authFocusedField === 'password') {
+                        this.authPassword = this.authPassword.slice(0, -1);
+                    }
+                    else if (this.authFocusedField === 'confirmPassword') {
+                        this.authConfirmPassword = this.authConfirmPassword.slice(0, -1);
+                    }
+                    else if (this.authFocusedField === 'serverIP') {
+                        this.authServerIP = this.authServerIP.slice(0, -1);
+                    }
+                    e.preventDefault();
+                }
+                else if (e.key === 'Enter') {
+                    if (this.isLoginForm) {
+                        this.handleAuthLogin();
+                    }
+                    else {
+                        this.handleAuthRegister();
+                    }
+                    e.preventDefault();
+                }
+                else if (e.key === 'Tab') {
+                    // Cycle through fields
+                    e.preventDefault();
+                    if (this.isLoginForm) {
+                        if (this.authFocusedField === 'username') {
+                            this.authFocusedField = 'password';
+                        }
+                        else if (this.authFocusedField === 'password') {
+                            this.authFocusedField = this.authAdvancedSettingsVisible ? 'serverIP' : 'username';
+                        }
+                        else {
+                            this.authFocusedField = 'username';
+                        }
+                    }
+                    else {
+                        if (this.authFocusedField === 'username') {
+                            this.authFocusedField = 'password';
+                        }
+                        else if (this.authFocusedField === 'password') {
+                            this.authFocusedField = 'confirmPassword';
+                        }
+                        else if (this.authFocusedField === 'confirmPassword') {
+                            this.authFocusedField = this.authAdvancedSettingsVisible ? 'serverIP' : 'username';
+                        }
+                        else {
+                            this.authFocusedField = 'username';
+                        }
+                    }
+                }
+                else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                    if (this.authFocusedField === 'username') {
+                        if (this.authUsername.length < 50) {
+                            this.authUsername += e.key;
+                        }
+                    }
+                    else if (this.authFocusedField === 'password') {
+                        if (this.authPassword.length < 100) {
+                            this.authPassword += e.key;
+                        }
+                    }
+                    else if (this.authFocusedField === 'confirmPassword') {
+                        if (this.authConfirmPassword.length < 100) {
+                            this.authConfirmPassword += e.key;
+                        }
+                    }
+                    else if (this.authFocusedField === 'serverIP') {
+                        this.authServerIP += e.key;
+                    }
+                    e.preventDefault();
+                }
+                return;
+            }
             // Only handle if name input is focused and not in game
             if (this.isNameInputFocused && !window.currentGame) {
                 if (e.key === 'Backspace') {
@@ -1473,6 +1573,11 @@ class TitleScreen {
     handleCanvasClick(x, y) {
         const centerX = this.uiCanvas.width / 2;
         const centerY = this.uiCanvas.height / 2;
+        // Handle auth form clicks
+        if (this.showAuthForm) {
+            this.handleAuthFormClick(x, y, centerX, centerY);
+            return;
+        }
         // Check if clicking on name input field
         const nameInputY = centerY - 100;
         const nameInputX = centerX - 200;
@@ -1507,11 +1612,121 @@ class TitleScreen {
         this.isNameInputFocused = false;
     }
     /**
+     * Handles auth form click events
+     */
+    handleAuthFormClick(x, y, centerX, centerY) {
+        const formWidth = 400;
+        const formHeight = this.isLoginForm ? 500 : 600;
+        const formX = centerX - formWidth / 2;
+        const formY = centerY - formHeight / 2;
+        const inputWidth = formWidth - 40;
+        const inputHeight = 40;
+        const inputX = formX + 20;
+        let currentY = formY + 30;
+        // Skip title
+        currentY += 50;
+        if (location.protocol === 'http:') {
+            currentY += 30;
+        }
+        currentY += 10;
+        // Username input
+        if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + inputHeight) {
+            this.authFocusedField = 'username';
+            return;
+        }
+        currentY += inputHeight + 15;
+        // Password input
+        if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + inputHeight) {
+            this.authFocusedField = 'password';
+            return;
+        }
+        currentY += inputHeight + 15;
+        // Confirm password (register only)
+        if (!this.isLoginForm) {
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + inputHeight) {
+                this.authFocusedField = 'confirmPassword';
+                return;
+            }
+            currentY += inputHeight + 15;
+        }
+        // Advanced settings toggle
+        const advancedButtonY = currentY;
+        const advancedButtonHeight = 35;
+        if (x >= inputX && x <= inputX + inputWidth && y >= advancedButtonY && y <= advancedButtonY + advancedButtonHeight) {
+            this.authAdvancedSettingsVisible = !this.authAdvancedSettingsVisible;
+            return;
+        }
+        currentY += advancedButtonHeight + 10;
+        // Server IP input (if advanced settings visible)
+        if (this.authAdvancedSettingsVisible) {
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + inputHeight) {
+                this.authFocusedField = 'serverIP';
+                return;
+            }
+            currentY += inputHeight + 15;
+        }
+        // Buttons
+        currentY += 10;
+        const buttonHeight = 40;
+        const buttonSpacing = 10;
+        if (this.isLoginForm) {
+            // Login button
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + buttonHeight) {
+                this.handleAuthLogin();
+                return;
+            }
+            currentY += buttonHeight + buttonSpacing;
+            // Register button (now a full button instead of just a link)
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + buttonHeight) {
+                this.isLoginForm = false;
+                this.authFocusedField = null;
+                return;
+            }
+            currentY += buttonHeight + buttonSpacing;
+            // Guest button (smaller, centered)
+            const guestButtonWidth = inputWidth * 0.5;
+            const guestButtonX = inputX + (inputWidth - guestButtonWidth) / 2;
+            const guestButtonHeight = buttonHeight * 0.8;
+            if (x >= guestButtonX && x <= guestButtonX + guestButtonWidth &&
+                y >= currentY && y <= currentY + guestButtonHeight) {
+                this.handleAuthGuest();
+                return;
+            }
+        }
+        else {
+            // Register button
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + buttonHeight) {
+                this.handleAuthRegister();
+                return;
+            }
+            currentY += buttonHeight + buttonSpacing;
+            // Offline register button
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + buttonHeight) {
+                this.handleAuthOfflineRegister();
+                return;
+            }
+            currentY += buttonHeight + buttonSpacing;
+            // Show login link
+            if (y >= currentY && y <= currentY + 20) {
+                this.isLoginForm = true;
+                this.authFocusedField = null;
+                return;
+            }
+        }
+        // Clicking elsewhere unfocuses all fields
+        this.authFocusedField = null;
+    }
+    /**
      * Handles canvas hover events
      */
     handleCanvasHover(x, y) {
         const centerX = this.uiCanvas.width / 2;
         const centerY = this.uiCanvas.height / 2;
+        // Handle auth form hover
+        if (this.showAuthForm) {
+            this.handleAuthFormHover(x, y, centerX, centerY);
+            return;
+        }
         // Check start button hover
         const startButtonY = centerY - 100;
         const startButtonX = centerX + 120;
@@ -1532,6 +1747,89 @@ class TitleScreen {
                 this.hoveredBiomeIndex = index;
             }
         });
+    }
+    /**
+     * Handles auth form hover events
+     */
+    handleAuthFormHover(x, y, centerX, centerY) {
+        const formWidth = 400;
+        const formHeight = this.isLoginForm ? 500 : 600;
+        const formX = centerX - formWidth / 2;
+        const formY = centerY - formHeight / 2;
+        const inputWidth = formWidth - 40;
+        const inputHeight = 40;
+        const inputX = formX + 20;
+        let currentY = formY + 30;
+        // Skip title
+        currentY += 50;
+        if (location.protocol === 'http:') {
+            currentY += 30;
+        }
+        currentY += 10;
+        // Skip inputs
+        currentY += inputHeight + 15;
+        currentY += inputHeight + 15;
+        if (!this.isLoginForm) {
+            currentY += inputHeight + 15;
+        }
+        // Advanced settings toggle
+        const advancedButtonY = currentY;
+        const advancedButtonHeight = 35;
+        if (x >= inputX && x <= inputX + inputWidth && y >= advancedButtonY && y <= advancedButtonY + advancedButtonHeight) {
+            this.hoveredAuthButton = 'toggleAdvanced';
+            return;
+        }
+        currentY += advancedButtonHeight + 10;
+        if (this.authAdvancedSettingsVisible) {
+            currentY += inputHeight + 15;
+        }
+        // Buttons
+        currentY += 10;
+        const buttonHeight = 40;
+        const buttonSpacing = 10;
+        if (this.isLoginForm) {
+            // Login button
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + buttonHeight) {
+                this.hoveredAuthButton = 'login';
+                return;
+            }
+            currentY += buttonHeight + buttonSpacing;
+            // Register button (now a full button)
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + buttonHeight) {
+                this.hoveredAuthButton = 'showRegister';
+                return;
+            }
+            currentY += buttonHeight + buttonSpacing;
+            // Guest button (smaller, centered)
+            const guestButtonWidth = inputWidth * 0.5;
+            const guestButtonX = inputX + (inputWidth - guestButtonWidth) / 2;
+            const guestButtonHeight = buttonHeight * 0.8;
+            if (x >= guestButtonX && x <= guestButtonX + guestButtonWidth &&
+                y >= currentY && y <= currentY + guestButtonHeight) {
+                this.hoveredAuthButton = 'guest';
+                return;
+            }
+        }
+        else {
+            // Register button
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + buttonHeight) {
+                this.hoveredAuthButton = 'register';
+                return;
+            }
+            currentY += buttonHeight + buttonSpacing;
+            // Offline register button
+            if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + buttonHeight) {
+                this.hoveredAuthButton = 'offline';
+                return;
+            }
+            currentY += buttonHeight + buttonSpacing;
+            // Show login link
+            if (y >= currentY && y <= currentY + 20) {
+                this.hoveredAuthButton = 'showLogin';
+                return;
+            }
+        }
+        this.hoveredAuthButton = null;
     }
     /**
      * Handles start button click
@@ -1660,9 +1958,21 @@ class TitleScreen {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const titleText = 'florr.io clone';
-        ctx.strokeText(titleText, centerX, centerY - 200);
-        ctx.fillText(titleText, centerX, centerY - 200);
-        ctx.restore();
+        if (!this.showAuthForm) {
+            ctx.strokeText(titleText, centerX, centerY - 200);
+            ctx.fillText(titleText, centerX, centerY - 200);
+            ctx.restore();
+        }
+        else {
+            ctx.strokeText(titleText, centerX, centerY - 400);
+            ctx.fillText(titleText, centerX, centerY - 400);
+            ctx.restore();
+        }
+        // Render auth form if visible, otherwise render game menu
+        if (this.showAuthForm) {
+            this.renderAuthForm(ctx, centerX, centerY);
+            return;
+        }
         // Draw name input field (shorter to avoid overlap with ready button)
         const nameInputY = centerY - 100;
         const nameInputWidth = 280; // Reduced from 400 to prevent overlap
@@ -1816,6 +2126,172 @@ class TitleScreen {
             ctx.fillText(text, centerX, y);
         });
     }
+    /**
+     * Renders the auth form on canvas
+     */
+    renderAuthForm(ctx, centerX, centerY) {
+        const formWidth = 400;
+        const formHeight = this.isLoginForm ? 500 : 600;
+        const formX = centerX - formWidth / 2;
+        const formY = centerY - formHeight / 2;
+        const formRadius = 10;
+        const inputWidth = formWidth - 40;
+        const inputHeight = 40;
+        const inputX = formX + 20;
+        const inputRadius = 5;
+        const buttonHeight = 40;
+        const buttonSpacing = 10;
+        let currentY = formY + 30;
+        // Draw form background (purple theme)
+        // ctx.fillStyle = 'rgba(138, 43, 226, 1)'; // Purple background
+        // ctx.strokeStyle = 'rgba(186, 85, 211, 1)'; // Light purple border
+        // ctx.lineWidth = 2;
+        // this.drawRoundedRect(ctx, formX, formY, formWidth, formHeight, formRadius);
+        // ctx.fill();
+        // ctx.stroke();
+        // Draw form title
+        ctx.font = 'bold 28px Ubuntu, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const formTitle = this.isLoginForm ? 'Login' : 'Register';
+        ctx.strokeText(formTitle, centerX, currentY);
+        ctx.fillText(formTitle, centerX, currentY);
+        currentY += 50;
+        // HTTP warning (if applicable)
+        if (location.protocol === 'http:') {
+            ctx.font = 'bold 14px Ubuntu, sans-serif';
+            ctx.fillStyle = '#ff6b6b';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            const warningText = 'WARNING: Using HTTP (not secure)';
+            ctx.strokeText(warningText, centerX, currentY);
+            ctx.fillText(warningText, centerX, currentY);
+            currentY += 30;
+        }
+        // Username input
+        currentY += 10;
+        this.drawAuthInput(ctx, inputX, currentY, inputWidth, inputHeight, inputRadius, 'username', this.authUsername, 'Username');
+        currentY += inputHeight + 15;
+        // Password input
+        this.drawAuthInput(ctx, inputX, currentY, inputWidth, inputHeight, inputRadius, 'password', this.authPassword, 'Password', true);
+        currentY += inputHeight + 15;
+        // Confirm password (register only)
+        if (!this.isLoginForm) {
+            this.drawAuthInput(ctx, inputX, currentY, inputWidth, inputHeight, inputRadius, 'confirmPassword', this.authConfirmPassword, 'Confirm Password', true);
+            currentY += inputHeight + 15;
+        }
+        // Advanced settings toggle button
+        const advancedButtonY = currentY;
+        const advancedButtonWidth = inputWidth;
+        const advancedButtonHeight = 35;
+        const isAdvancedHovered = this.hoveredAuthButton === 'toggleAdvanced';
+        ctx.fillStyle = isAdvancedHovered ? 'rgba(186, 85, 211, 0.4)' : 'rgba(186, 85, 211, 0.2)'; // Purple
+        ctx.strokeStyle = 'rgba(186, 85, 211, 0.6)'; // Purple border
+        ctx.lineWidth = 1;
+        this.drawRoundedRect(ctx, inputX, advancedButtonY, advancedButtonWidth, advancedButtonHeight, inputRadius);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = 'bold 14px Ubuntu, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const advancedText = `Advanced Settings ${this.authAdvancedSettingsVisible ? '▲' : '▼'}`;
+        ctx.fillText(advancedText, centerX, advancedButtonY + advancedButtonHeight / 2);
+        currentY += advancedButtonHeight + 10;
+        // Advanced settings (server IP)
+        if (this.authAdvancedSettingsVisible) {
+            this.drawAuthInput(ctx, inputX, currentY, inputWidth, inputHeight, inputRadius, 'serverIP', this.authServerIP, 'Server IP');
+            currentY += inputHeight + 15;
+        }
+        // Buttons
+        currentY += 10;
+        if (this.isLoginForm) {
+            // Login button (purple) - full width
+            this.drawAuthButton(ctx, inputX, currentY, inputWidth, buttonHeight, inputRadius, 'login', 'Login', '#8A2BE2'); // Purple
+            currentY += buttonHeight + buttonSpacing;
+            // Register button (make it prominent and easy to access)
+            this.drawAuthButton(ctx, inputX, currentY, inputWidth, buttonHeight, inputRadius, 'showRegister', 'Register', '#8A2BE2'); // Purple - same as login
+            currentY += buttonHeight + buttonSpacing;
+            // Guest button (smaller, less prominent)
+            const guestButtonWidth = inputWidth * 0.5; // Half width
+            const guestButtonX = inputX + (inputWidth - guestButtonWidth) / 2; // Centered
+            this.drawAuthButton(ctx, guestButtonX, currentY, guestButtonWidth, buttonHeight * 0.8, inputRadius, 'guest', 'Guest', '#6A1B9A'); // Darker purple, smaller
+            currentY += buttonHeight + buttonSpacing;
+        }
+        else {
+            // Register button (purple)
+            this.drawAuthButton(ctx, inputX, currentY, inputWidth, buttonHeight, inputRadius, 'register', 'Register', '#8A2BE2'); // Purple
+            currentY += buttonHeight + buttonSpacing;
+            // Offline register button (darker purple)
+            this.drawAuthButton(ctx, inputX, currentY, inputWidth, buttonHeight, inputRadius, 'offline', 'Register Offline', '#6A1B9A'); // Darker purple
+            currentY += buttonHeight + buttonSpacing;
+            // Show login link
+            ctx.font = '14px Ubuntu, sans-serif';
+            ctx.fillStyle = this.hoveredAuthButton === 'showLogin' ? '#ffffff' : '#E0B0FF'; // Light purple
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Already have an account? Login', centerX, currentY + 10);
+        }
+    }
+    /**
+     * Draws an auth input field
+     */
+    drawAuthInput(ctx, x, y, width, height, radius, fieldName, value, placeholder, isPassword = false) {
+        const isFocused = this.authFocusedField === fieldName;
+        const bgColor = 'rgb(24, 206, 24)';
+        ctx.fillStyle = bgColor;
+        ctx.strokeStyle = 'rgb(17, 151, 17)';
+        ctx.lineWidth = isFocused ? 3 : 2;
+        this.drawRoundedRect(ctx, x, y, width, height, radius);
+        ctx.fill();
+        ctx.stroke();
+        // Draw text
+        ctx.font = '18px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const displayValue = isPassword ? '*'.repeat(value.length) : value;
+        const displayText = displayValue || (isFocused ? '' : placeholder);
+        ctx.strokeStyle = 'rgb(0, 0, 0)';
+        ctx.lineWidth = 2;
+        ctx.strokeText(displayText, x + 10, y + height / 2);
+        ctx.lineWidth = 0;
+        ctx.fillStyle = 'rgb(255, 255, 255)';
+        ctx.fillText(displayText, x + 10, y + height / 2);
+        // Draw cursor if focused
+        if (isFocused) {
+            const textWidth = ctx.measureText(displayText).width;
+            const cursorX = x + 10 + textWidth;
+            const time = Date.now();
+            if (Math.floor(time / 500) % 2 === 0) {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(cursorX, y + 10, 2, height - 20);
+            }
+        }
+    }
+    /**
+     * Draws an auth button
+     */
+    drawAuthButton(ctx, x, y, width, height, radius, buttonId, text, color) {
+        const isHovered = this.hoveredAuthButton === buttonId;
+        const buttonColor = isHovered ? this.darkenColor(color, 0.2) : color;
+        ctx.fillStyle = buttonColor;
+        ctx.strokeStyle = this.darkenColor(buttonColor, 0.3);
+        ctx.lineWidth = 2;
+        this.drawRoundedRect(ctx, x, y, width, height, radius);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = 'bold 18px Ubuntu, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeText(text, x + width / 2, y + height / 2);
+        ctx.fillText(text, x + width / 2, y + height / 2);
+    }
     setupNameInputPersistence() {
         // Use setTimeout to ensure DOM is ready
         setTimeout(() => {
@@ -1848,10 +2324,191 @@ class TitleScreen {
         // handled in auth_ui.ts
     }
     hideAuthContainer() {
-        this.authContainer.style.display = 'none';
+        this.showAuthForm = false;
+        // Also hide DOM-based auth container
+        if (this.authContainer) {
+            this.authContainer.style.display = 'none';
+        }
+        // Show loadout bar when auth form is hidden
+        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
+        if (loadoutBar) {
+            loadoutBar.style.display = 'flex';
+        }
     }
     showAuthContainer() {
-        this.authContainer.style.display = 'block';
+        this.showAuthForm = true;
+        // Also show DOM-based auth container (for compatibility)
+        if (this.authContainer) {
+            this.authContainer.style.display = 'block';
+        }
+        // Hide loadout bar when auth form is shown
+        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
+        if (loadoutBar) {
+            loadoutBar.style.display = 'none';
+        }
+    }
+    /**
+     * Auth form action handlers
+     */
+    async handleAuthLogin() {
+        const username = this.authUsername;
+        const password = this.authPassword;
+        const serverUrl = this.authServerIP || window.location.origin;
+        try {
+            const response = await fetch(`${serverUrl}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+                credentials: 'include'
+            });
+            if (response.ok) {
+                localStorage.setItem('username', username);
+                localStorage.setItem('password', password);
+                localStorage.setItem('currentUser', username);
+                localStorage.setItem('serverUrl', serverUrl);
+                sessionStorage.removeItem('isOffline');
+                this.hideAuthContainer();
+            }
+            else {
+                const offlineCredentials = JSON.parse(sessionStorage.getItem('offlineCredentials') || '{}');
+                if (offlineCredentials.username === username &&
+                    offlineCredentials.password === password &&
+                    offlineCredentials.isOffline) {
+                    sessionStorage.setItem('currentUser', username);
+                    sessionStorage.setItem('isOffline', 'true');
+                    this.hideAuthContainer();
+                }
+                else {
+                    alert('Invalid username or password');
+                }
+            }
+        }
+        catch (error) {
+            console.error('Login error:', error);
+            const offlineCredentials = JSON.parse(sessionStorage.getItem('offlineCredentials') || '{}');
+            if (offlineCredentials.username === username &&
+                offlineCredentials.password === password &&
+                offlineCredentials.isOffline) {
+                sessionStorage.setItem('currentUser', username);
+                sessionStorage.setItem('isOffline', 'true');
+                this.hideAuthContainer();
+            }
+            else {
+                alert('Invalid username or password');
+            }
+        }
+    }
+    async handleAuthGuest() {
+        const guestUsername = `User${Math.floor(Math.random() * 100000000)}`;
+        const guestPassword = `password${Math.floor(Math.random() * 10000000000)}`;
+        const serverUrl = this.authServerIP || window.location.origin;
+        try {
+            const response = await fetch(`${serverUrl}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: guestUsername, password: guestPassword }),
+                credentials: 'include'
+            });
+            if (response.ok) {
+                localStorage.setItem('username', guestUsername);
+                localStorage.setItem('password', guestPassword);
+                localStorage.setItem('currentUser', guestUsername);
+                localStorage.setItem('serverUrl', serverUrl);
+                sessionStorage.removeItem('isOffline');
+                this.hideAuthContainer();
+                alert(`Guest account created!\nUsername: ${guestUsername}\nPassword: ${guestPassword}\n\nSave these credentials if you want to log in again!`);
+            }
+            else {
+                const errorData = await response.json();
+                if (errorData.message && errorData.message.includes('already exists')) {
+                    this.handleAuthGuest(); // Retry
+                }
+                else {
+                    alert('Failed to create guest account: ' + (errorData.message || 'Unknown error'));
+                }
+            }
+        }
+        catch (error) {
+            console.error('Guest registration error:', error);
+            const offlineCredentials = {
+                username: guestUsername,
+                password: guestPassword,
+                isOffline: true
+            };
+            sessionStorage.setItem('offlineCredentials', JSON.stringify(offlineCredentials));
+            sessionStorage.setItem('currentUser', guestUsername);
+            sessionStorage.setItem('isOffline', 'true');
+            this.hideAuthContainer();
+            alert(`Guest account created (Offline Mode)!\nUsername: ${guestUsername}\nPassword: ${guestPassword}\n\nNote: This account is temporary and will be lost when you close the browser.`);
+        }
+    }
+    async handleAuthRegister() {
+        const username = this.authUsername;
+        const password = this.authPassword;
+        const confirmPassword = this.authConfirmPassword;
+        const serverUrl = this.authServerIP || window.location.origin;
+        if (!serverUrl) {
+            alert('Please enter a server IP address');
+            return;
+        }
+        if (password !== confirmPassword) {
+            alert('Passwords do not match');
+            return;
+        }
+        try {
+            const response = await fetch(`${serverUrl}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+                credentials: 'include'
+            });
+            if (response.ok) {
+                const storedCredentials = JSON.parse(localStorage.getItem('credentials') || '[]');
+                storedCredentials.push({ username, password });
+                localStorage.setItem('credentials', JSON.stringify(storedCredentials));
+                localStorage.setItem('serverUrl', serverUrl);
+                this.isLoginForm = true;
+                this.authFocusedField = null;
+                alert('Registration successful! Please login.');
+            }
+            else {
+                const errorData = await response.json();
+                alert(errorData.message || 'Registration failed');
+            }
+        }
+        catch (error) {
+            console.error('Registration error:', error);
+            alert('Could not connect to server. Please check the server IP and try again.');
+        }
+    }
+    handleAuthOfflineRegister() {
+        const username = this.authUsername;
+        const password = this.authPassword;
+        const confirmPassword = this.authConfirmPassword;
+        if (!username || !password) {
+            alert('Username and password are required');
+            return;
+        }
+        if (password !== confirmPassword) {
+            alert('Passwords do not match');
+            return;
+        }
+        const storedCredentials = JSON.parse(localStorage.getItem('credentials') || '[]');
+        if (storedCredentials.some((cred) => cred.username === username)) {
+            alert('Username already exists locally');
+            return;
+        }
+        const offlineCredentials = {
+            username,
+            password,
+            isOffline: true
+        };
+        sessionStorage.setItem('offlineCredentials', JSON.stringify(offlineCredentials));
+        sessionStorage.setItem('currentUser', username);
+        sessionStorage.setItem('isOffline', 'true');
+        this.isLoginForm = true;
+        this.authFocusedField = null;
+        alert('Offline registration successful! Note: This account is temporary and will be lost when you close the browser.');
     }
     hideGameMenu() {
         this.gameMenu.style.display = 'none';

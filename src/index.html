@@ -44,11 +44,11 @@
     <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
 </head>
 <body>
-    <h1 id="loadingScreen">Loading...</h1>
+    <span id="loadingScreen">Loading...</span>
     <canvas id="gameCanvas"></canvas>
     <script>
         console.log('Hello');
     </script>
-    <script content-type="application/javascript" src="bundle.js"></script>
+    <!-- Bundle script will be injected by webpack with content hash -->
 </body>
 </html>

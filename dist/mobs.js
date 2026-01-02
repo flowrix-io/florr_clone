@@ -2178,7 +2178,7 @@ exports.MOB_DROP_TABLES = {
                 probability: 0.6, // 60% chance for rock
                 minQuantity: 1,
                 maxQuantity: 1
-            }
+            },
         ]
     },
     cactus: {

@@ -295,9 +295,17 @@ class AuthUI {
     }
     hideAuthForm() {
         this.authContainer.classList.add('hidden');
+        // Also hide canvas-based auth form
+        if (window.titleScreen) {
+            window.titleScreen.hideAuthContainer();
+        }
     }
     showAuthForm() {
         this.authContainer.classList.remove('hidden');
+        // Also show canvas-based auth form
+        if (window.titleScreen) {
+            window.titleScreen.showAuthContainer();
+        }
     }
     logout() {
         // Clear both localStorage and sessionStorage

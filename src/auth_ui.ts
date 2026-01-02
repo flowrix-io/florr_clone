@@ -348,10 +348,18 @@ export class AuthUI {
 
     private hideAuthForm() {
         this.authContainer.classList.add('hidden');
+        // Also hide canvas-based auth form
+        if ((window as any).titleScreen) {
+            (window as any).titleScreen.hideAuthContainer();
+        }
     }
 
     public showAuthForm() {
         this.authContainer.classList.remove('hidden');
+        // Also show canvas-based auth form
+        if ((window as any).titleScreen) {
+            (window as any).titleScreen.showAuthContainer();
+        }
     }
 
     public logout() {
