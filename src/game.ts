@@ -1155,6 +1155,17 @@ export class Game {
                 player.x += (player.targetX - player.x) * lerpFactor;
                 player.y += (player.targetY - player.y) * lerpFactor;
             }
+            
+            // Interpolate petal positions
+            if (player.petalPositions) {
+                const lerpFactor = 0.1; // Same interpolation factor as player position
+                player.petalPositions.forEach((petalPos: any) => {
+                    if (petalPos.targetX !== undefined && petalPos.targetY !== undefined) {
+                        petalPos.x += (petalPos.targetX - petalPos.x) * lerpFactor;
+                        petalPos.y += (petalPos.targetY - petalPos.y) * lerpFactor;
+                    }
+                });
+            }
         }
 
         // Update petal extension based on key presses

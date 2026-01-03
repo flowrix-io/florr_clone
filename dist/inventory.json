@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 156836946,
+      "totalXP": 156837855,
       "inventory": {
         "common": {
           "shield": 171,
@@ -170,7 +170,7 @@
           "petal_dandelion_egg": 23,
           "petal_dark_ladybug_egg": 22,
           "petal_ladybug_egg": 15,
-          "petal_bee_egg": 14,
+          "petal_bee_egg": 15,
           "petal_hornet_egg": 27,
           "petal_soldier_ant_egg": 26,
           "petal_fly_egg": 12,
@@ -605,12 +605,12 @@
       "stars": 117736
     },
     "1g99g1gfk": {
-      "totalXP": 83,
+      "totalXP": 93,
       "inventory": {
         "common": {
           "petal_basic": 6,
           "speed_boost": 1,
-          "petal_missile": 2,
+          "petal_missile": 3,
           "petal_hornet_egg": 1
         },
         "epic": {
@@ -623,6 +623,9 @@
         },
         "ultra": {
           "petal_square": 1
+        },
+        "uncommon": {
+          "petal_hornet_egg": 1
         }
       },
       "loadout": [

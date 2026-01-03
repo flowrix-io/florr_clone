@@ -3243,7 +3243,8 @@ function start_loop() {
             maxHealth: p.maxHealth,
             level: p.level,
             score: p.score,
-            petalExtension: p.inputs?.petalExtension || 1.0
+            petalExtension: p.inputs?.petalExtension || 1.0,
+            petalPositions: p.petalPositions || []
         }));
         // Only emit gameStateUpdate to authenticated players, not all sockets
         // This prevents memory leaks from sending updates to unauthenticated title screen connections

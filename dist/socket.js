@@ -938,6 +938,38 @@ function setupSocketListeners(game) {
                 if ('petalExtension' in serverPlayer) {
                     existingPlayer.petalExtension = serverPlayer.petalExtension || 1.0;
                 }
+                // Sync petal positions from server for interpolation
+                if ('petalPositions' in serverPlayer && Array.isArray(serverPlayer.petalPositions)) {
+                    const serverPetalPositions = serverPlayer.petalPositions;
+                    if (!existingPlayer.petalPositions) {
+                        // Initialize with current positions
+                        existingPlayer.petalPositions = serverPetalPositions.map((pos) => ({
+                            ...pos,
+                            targetX: pos.x,
+                            targetY: pos.y
+                        }));
+                    }
+                    else {
+                        // Update target positions for interpolation
+                        serverPetalPositions.forEach((serverPos) => {
+                            const existingPos = existingPlayer.petalPositions.find((p) => p.loadoutIndex === serverPos.loadoutIndex && p.instanceIndex === serverPos.instanceIndex);
+                            if (existingPos) {
+                                existingPos.targetX = serverPos.x;
+                                existingPos.targetY = serverPos.y;
+                            }
+                            else {
+                                // New petal position
+                                existingPlayer.petalPositions.push({
+                                    ...serverPos,
+                                    targetX: serverPos.x,
+                                    targetY: serverPos.y
+                                });
+                            }
+                        });
+                        // Remove positions that no longer exist
+                        existingPlayer.petalPositions = existingPlayer.petalPositions.filter((pos) => serverPetalPositions.some((sp) => sp.loadoutIndex === pos.loadoutIndex && sp.instanceIndex === pos.instanceIndex));
+                    }
+                }
                 // Preserve XP values - don't overwrite them from gameStateUpdate
                 // as they are managed separately by xpGained events
             }
@@ -957,6 +989,14 @@ function setupSocketListeners(game) {
                 // Sync petal extension if available
                 if ('petalExtension' in serverPlayer) {
                     newPlayer.petalExtension = serverPlayer.petalExtension || 1.0;
+                }
+                // Initialize petal positions if available
+                if ('petalPositions' in serverPlayer && Array.isArray(serverPlayer.petalPositions)) {
+                    newPlayer.petalPositions = serverPlayer.petalPositions.map((pos) => ({
+                        ...pos,
+                        targetX: pos.x,
+                        targetY: pos.y
+                    }));
                 }
                 game.players.set(serverPlayer.id, newPlayer);
             }

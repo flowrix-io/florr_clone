@@ -457,6 +457,8 @@ function updatePlayerState(player, deltaTime, deps) {
         const petalExtension = player.inputs.petalExtension || 1.0;
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
+        // Initialize petal positions array
+        player.petalPositions = [];
         for (let idx = 0; idx < petalInstances.length; idx++) {
             const { petal, instanceIndex, loadoutIndex } = petalInstances[idx];
             if (!petal) {
@@ -645,6 +647,13 @@ function updatePlayerState(player, deltaTime, deps) {
             }
             // Update petal position in action context
             (0, petal_actions_1.updatePetalPosition)(petalId, petalX, petalY);
+            // Store petal position for client synchronization
+            player.petalPositions.push({
+                loadoutIndex,
+                instanceIndex,
+                x: petalX,
+                y: petalY
+            });
             // Check if petal can shoot projectiles (only when extended)
             if (petalExtension > 1.0 && petalStats.projectile) {
                 const projectileConfig = petalStats.projectile;

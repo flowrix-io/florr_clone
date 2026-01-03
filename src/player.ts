@@ -37,6 +37,7 @@ export interface Player {
   targetEye?: {x: number, y: number};
   isDead?: boolean;
   petalExtension?: number; // Petal extension value from server (per-player)
+  petalPositions?: Array<{ loadoutIndex: number; instanceIndex: number; x: number; y: number; targetX?: number; targetY?: number }>; // Petal positions from server (with interpolation targets)
   tp?: number; // Talent Points
   skills?: {
     damage?: string; // Rarity tier: common, uncommon, rare, etc.
@@ -113,4 +114,5 @@ export interface ServerPlayer {
   };
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
+  petalPositions?: Array<{ loadoutIndex: number; instanceIndex: number; x: number; y: number }>; // Petal positions calculated on server
 }
