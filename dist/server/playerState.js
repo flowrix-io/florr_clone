@@ -22,9 +22,9 @@ const utils_1 = require("./utils");
 // Map to store petal physics state (keyed by petalId)
 const petalPhysicsStates = new Map();
 // Physics constants
-const ATTRACTION_FORCE = 50; // Attraction force towards mobs (pixels per second^2) - increased from 150
-const SPRING_FORCE = 700; // Spring force back to orbit position (pixels per second^2) - reduced from 300
-const DAMPING = 0.72; // Velocity damping per frame (0-1, lower = more damping)
+const ATTRACTION_FORCE = 200; // Attraction force towards mobs (pixels per second^2) - increased from 150
+const SPRING_FORCE = 400; // Spring force back to orbit position (pixels per second^2) - reduced from 300
+const DAMPING = 0.52; // Velocity damping per frame (0-1, lower = more damping)
 const MAX_ATTRACTION_DISTANCE = 2000; // Maximum distance to attract to mobs (pixels) - increased significantly to match combat ranges
 const MIN_ATTRACTION_DISTANCE = 1; // Minimum distance to avoid division by zero (pixels) - reduced from 30
 const SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after spawn - reduced from 500

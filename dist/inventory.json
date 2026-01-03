@@ -1,10 +1,10 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 156837855,
+      "totalXP": 156845005,
       "inventory": {
         "common": {
-          "shield": 171,
+          "shield": 172,
           "petal_light": 51,
           "petal_dandelion": 25,
           "petal_stinger": 35,
@@ -13,7 +13,7 @@
           "petal_sand": 43,
           "petal_rock": 150,
           "petal_clover": 49,
-          "petal_bone": 86,
+          "petal_bone": 87,
           "petal_cactus": 11,
           "petal_iris": 9,
           "petal_poison_cactus": 12,
@@ -26,7 +26,7 @@
           "petal_rose": 79,
           "health_potion": 46,
           "petal_basic": 36,
-          "petal_square": 18,
+          "petal_square": 19,
           "petal_shield": 1,
           "petal_golden_leaf": 7,
           "petal_ant_egg": 6,
@@ -36,7 +36,7 @@
           "petal_dandelion_egg": 46,
           "petal_ladybug_egg": 33,
           "petal_soldier_ant_egg": 63,
-          "petal_dark_ladybug_egg": 23,
+          "petal_dark_ladybug_egg": 24,
           "petal_bee_egg": 31,
           "petal_fly_egg": 51,
           "petal_bubble_egg": 3,
@@ -66,7 +66,7 @@
           "petal_explosive": 1000,
           "petal_test_explosive": 999,
           "petal_shield": 999,
-          "petal_sparkle": 1005,
+          "petal_sparkle": 1006,
           "petal_poison_cactus": 1001,
           "petal_lightning": 1000,
           "petal_iris": 1000,
@@ -205,7 +205,7 @@
           "petal_yucca": 6,
           "petal_wing": 14,
           "petal_golden_leaf": 33,
-          "petal_square": 15,
+          "petal_square": 16,
           "petal_basic": 38,
           "petal_blood_leaf": 17,
           "petal_ant_egg": 5,
@@ -226,7 +226,7 @@
           "petal_fly_egg": 13,
           "petal_hel_beetle_egg": 11,
           "petal_jellyfish_egg": 8,
-          "petal_target_dummy_egg": 8,
+          "petal_target_dummy_egg": 9,
           "petal_dandelion": 12,
           "petal_stinger": 6,
           "petal_clover": 9,
@@ -263,7 +263,7 @@
           "petal_ant_egg": 5,
           "petal_bee_egg": 29,
           "petal_rock_egg": 25,
-          "petal_hornet_egg": 45,
+          "petal_hornet_egg": 46,
           "petal_dark_ladybug_egg": 26,
           "petal_soldier_ant_egg": 44,
           "petal_ladybug_egg": 27,
@@ -285,7 +285,7 @@
           "petal_sandstorm_egg": 1,
           "petal_item_spawner_egg": 1,
           "petal_shiny_ladybug_egg": 1,
-          "petal_target_dummy_egg": 1
+          "petal_target_dummy_egg": 2
         },
         "rare": {
           "petal_rock": 16,
@@ -301,7 +301,7 @@
           "petal_bone": 37,
           "petal_clover": 17,
           "petal_lightning": 4,
-          "petal_missile": 57,
+          "petal_missile": 58,
           "petal_leaf": 4,
           "petal_iris": 4,
           "petal_yucca": 7,
@@ -415,11 +415,7 @@
           "rarity": "unique",
           "petalType": "basic"
         },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "sparkle"
-        },
+        null,
         null,
         {
           "type": "speed_boost",
