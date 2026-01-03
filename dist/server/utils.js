@@ -119,7 +119,19 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
 }
 // Helper function to track mob kills for eligible players
 function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress) {
+    console.log('[Server] trackMobKill called', {
+        enemyType: enemy.type,
+        enemyTier: enemy.tier,
+        hasIo: !!io,
+        hasDamageContributors: !!enemy.damageContributors,
+        damageContributorsSize: enemy.damageContributors?.size || 0
+    });
     const eligiblePlayers = getEligiblePlayers(enemy);
+    console.log('[Server] Eligible players for mob kill:', eligiblePlayers);
+    if (eligiblePlayers.length === 0) {
+        console.log('[Server] No eligible players for mob kill');
+        return;
+    }
     for (const playerId of eligiblePlayers) {
         const player = players[playerId];
         if (!player)
@@ -179,12 +191,18 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
                 });
             }
         }
-        // Defer playerUpdated emission to avoid blocking when many enemies die
-        // Batch these updates to prevent stuttering
+        // Emit playerUpdated immediately to ensure mob gallery updates
         if (io) {
-            setImmediate(() => {
-                io.emit('playerUpdated', player);
-            });
+            // Ensure mobKills is included in the update
+            const playerUpdate = {
+                ...player,
+                mobKills: player.mobKills // Explicitly include mobKills
+            };
+            console.log('[Server] Emitting playerUpdated with mobKills:', player.id, player.mobKills);
+            io.emit('playerUpdated', playerUpdate);
+        }
+        else {
+            console.warn('[Server] trackMobKill: io is not defined, cannot emit playerUpdated');
         }
     }
 }

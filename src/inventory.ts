@@ -32,6 +32,10 @@ export class InventoryManager {
     private isInventoryOpen: boolean = false;
     private isCraftingOpen: boolean = false;
     private isMobGalleryOpen: boolean = false;
+    
+    public getIsMobGalleryOpen(): boolean {
+        return this.isMobGalleryOpen;
+    }
     private successDisplayShownAt: number = 0; // Timestamp when success display was shown
     private readonly LOADOUT_SLOTS = 10;
     private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
@@ -537,6 +541,24 @@ export class InventoryManager {
         galleryTitle.style.cssText = 'margin: 0 0 20px 0; text-align: center; color: white; font-size: 24px;';
         galleryContent.appendChild(galleryTitle);
 
+        // Add notification banner for when mobs are killed while gallery is open
+        const notificationBanner = document.createElement('div');
+        notificationBanner.id = 'mobGalleryNotification';
+        notificationBanner.style.cssText = `
+            display: none;
+            background: rgba(255, 200, 0, 0.9);
+            color: #000;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+            border: 2px solid #ffd700;
+        `;
+        notificationBanner.textContent = 'New mobs killed! Close and reopen the gallery to see updates.';
+        galleryContent.appendChild(notificationBanner);
+
         const galleryGrid = document.createElement('div');
         galleryGrid.className = 'mob-gallery-grid';
         galleryContent.appendChild(galleryGrid);
@@ -846,6 +868,8 @@ export class InventoryManager {
                 this.mobGalleryPanel?.classList.add('open');
             }, 10);
             this.updateMobGalleryDisplay();
+            // Hide notification when opening
+            this.hideMobGalleryNotification();
         } else {
             this.mobGalleryPanel.classList.remove('open');
             this.showChat();
@@ -859,8 +883,37 @@ export class InventoryManager {
     }
 
     public updateMobGalleryIfOpen() {
+        console.log('[MobGallery] updateMobGalleryIfOpen called', { 
+            isMobGalleryOpen: this.isMobGalleryOpen, 
+            hasPanel: !!this.mobGalleryPanel 
+        });
         if (this.isMobGalleryOpen && this.mobGalleryPanel) {
-            this.updateMobGalleryDisplay();
+            // Instead of auto-updating, show notification to reopen
+            this.showMobGalleryNotification();
+        } else {
+            console.log('[MobGallery] Gallery not open or panel missing');
+        }
+    }
+
+    private showMobGalleryNotification() {
+        if (!this.mobGalleryPanel) {
+            console.warn('[MobGallery] Panel not found when trying to show notification');
+            return;
+        }
+        const notification = this.mobGalleryPanel.querySelector('#mobGalleryNotification') as HTMLElement;
+        if (notification) {
+            notification.style.display = 'block';
+            console.log('[MobGallery] Notification shown');
+        } else {
+            console.warn('[MobGallery] Notification element not found');
+        }
+    }
+
+    private hideMobGalleryNotification() {
+        if (!this.mobGalleryPanel) return;
+        const notification = this.mobGalleryPanel.querySelector('#mobGalleryNotification') as HTMLElement;
+        if (notification) {
+            notification.style.display = 'none';
         }
     }
 

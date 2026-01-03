@@ -4,6 +4,9 @@ exports.InventoryManager = void 0;
 const petals_1 = require("./petals");
 const mobs_1 = require("./mobs");
 class InventoryManager {
+    getIsMobGalleryOpen() {
+        return this.isMobGalleryOpen;
+    }
     /**
      * Darken a hex color by a specified percentage
      * @param hex - Hex color string (e.g., '#7eef6d')
@@ -453,6 +456,23 @@ class InventoryManager {
         galleryTitle.textContent = 'Mob Gallery';
         galleryTitle.style.cssText = 'margin: 0 0 20px 0; text-align: center; color: white; font-size: 24px;';
         galleryContent.appendChild(galleryTitle);
+        // Add notification banner for when mobs are killed while gallery is open
+        const notificationBanner = document.createElement('div');
+        notificationBanner.id = 'mobGalleryNotification';
+        notificationBanner.style.cssText = `
+            display: none;
+            background: rgba(255, 200, 0, 0.9);
+            color: #000;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+            border: 2px solid #ffd700;
+        `;
+        notificationBanner.textContent = 'New mobs killed! Close and reopen the gallery to see updates.';
+        galleryContent.appendChild(notificationBanner);
         const galleryGrid = document.createElement('div');
         galleryGrid.className = 'mob-gallery-grid';
         galleryContent.appendChild(galleryGrid);
@@ -754,6 +774,8 @@ class InventoryManager {
                 this.mobGalleryPanel?.classList.add('open');
             }, 10);
             this.updateMobGalleryDisplay();
+            // Hide notification when opening
+            this.hideMobGalleryNotification();
         }
         else {
             this.mobGalleryPanel.classList.remove('open');
@@ -767,8 +789,38 @@ class InventoryManager {
         this.isMobGalleryOpen = !isOpen;
     }
     updateMobGalleryIfOpen() {
+        console.log('[MobGallery] updateMobGalleryIfOpen called', {
+            isMobGalleryOpen: this.isMobGalleryOpen,
+            hasPanel: !!this.mobGalleryPanel
+        });
         if (this.isMobGalleryOpen && this.mobGalleryPanel) {
-            this.updateMobGalleryDisplay();
+            // Instead of auto-updating, show notification to reopen
+            this.showMobGalleryNotification();
+        }
+        else {
+            console.log('[MobGallery] Gallery not open or panel missing');
+        }
+    }
+    showMobGalleryNotification() {
+        if (!this.mobGalleryPanel) {
+            console.warn('[MobGallery] Panel not found when trying to show notification');
+            return;
+        }
+        const notification = this.mobGalleryPanel.querySelector('#mobGalleryNotification');
+        if (notification) {
+            notification.style.display = 'block';
+            console.log('[MobGallery] Notification shown');
+        }
+        else {
+            console.warn('[MobGallery] Notification element not found');
+        }
+    }
+    hideMobGalleryNotification() {
+        if (!this.mobGalleryPanel)
+            return;
+        const notification = this.mobGalleryPanel.querySelector('#mobGalleryNotification');
+        if (notification) {
+            notification.style.display = 'none';
         }
     }
     updateMobGalleryDisplay() {

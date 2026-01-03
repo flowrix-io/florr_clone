@@ -740,6 +740,11 @@ function setupSocketListeners(game) {
     // Debounce mob gallery updates to prevent lag when multiple mobs die
     let mobGalleryUpdateTimeout = null;
     game.socket.on('playerUpdated', (updatedPlayer) => {
+        console.log('[MobGallery] Received playerUpdated event', {
+            playerId: updatedPlayer.id,
+            hasMobKills: !!updatedPlayer.mobKills,
+            mobKills: updatedPlayer.mobKills
+        });
         let player = game.players.get(updatedPlayer.id);
         // If player doesn't exist yet, create it (e.g., for split players)
         if (!player) {
@@ -772,8 +777,10 @@ function setupSocketListeners(game) {
                 // Check mobKills (handle undefined cases)
                 const oldMobKills = player.mobKills || {};
                 const newMobKills = updatedPlayer.mobKills || {};
-                if (oldMobKills !== newMobKills) {
-                    mobKillsChanged = JSON.stringify(oldMobKills) !== JSON.stringify(newMobKills);
+                // Always do deep comparison since mobKills is an object
+                mobKillsChanged = JSON.stringify(oldMobKills) !== JSON.stringify(newMobKills);
+                if (mobKillsChanged) {
+                    console.log('[MobGallery] mobKills changed detected', { oldMobKills, newMobKills });
                 }
             }
             Object.assign(player, updatedPlayer);
@@ -786,8 +793,9 @@ function setupSocketListeners(game) {
                 if (game.inventoryManager && loadoutChanged) {
                     game.inventoryManager.updateLoadoutDisplay();
                 }
-                // Debounce mob gallery update to prevent lag when multiple mobs die quickly
+                // Show notification when mobs are killed while gallery is open
                 if (game.inventoryManager && mobKillsChanged) {
+                    console.log('[MobGallery] Calling updateMobGalleryIfOpen, isOpen:', game.inventoryManager.getIsMobGalleryOpen());
                     if (mobGalleryUpdateTimeout) {
                         clearTimeout(mobGalleryUpdateTimeout);
                     }
@@ -1051,7 +1059,7 @@ function setupSocketListeners(game) {
                 if (serverPlayer.mobKills !== undefined) {
                     const mobKillsChanged = JSON.stringify(player.mobKills) !== JSON.stringify(serverPlayer.mobKills);
                     player.mobKills = serverPlayer.mobKills;
-                    // Update mob gallery if it's open and mobKills changed
+                    // Show notification when mobs are killed while gallery is open (don't auto-update)
                     if (mobKillsChanged && serverPlayer.id === game.socket?.id && game.inventoryManager) {
                         game.inventoryManager.updateMobGalleryIfOpen();
                     }

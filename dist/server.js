@@ -2901,14 +2901,16 @@ function updateMobProjectiles(deltaTimeMs) {
                         // Emit enemy destroyed event
                         io.emit('enemyDestroyed', targetEnemy.id);
                         // Defer trackMobKill since it's expensive (emits playerUpdated to all players)
+                        // Copy enemy data before cleanup to ensure trackMobKill has all needed info
                         const damageContributorsCopy = targetEnemy.damageContributors ? new Map(targetEnemy.damageContributors) : undefined;
                         if (damageContributorsCopy && owner) {
+                            const enemyDataForTracking = {
+                                type: targetEnemy.type,
+                                tier: targetEnemy.tier,
+                                damageContributors: damageContributorsCopy
+                            };
                             setImmediate(() => {
-                                const deadEnemy = {
-                                    ...targetEnemy,
-                                    damageContributors: damageContributorsCopy
-                                };
-                                (0, utils_1.trackMobKill)(deadEnemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
+                                (0, utils_1.trackMobKill)(enemyDataForTracking, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
                             });
                         }
                     }
@@ -3091,16 +3093,34 @@ function updatePlayerProjectiles(deltaTimeMs) {
                     constants_2.enemies.splice(j, 1);
                     // Emit enemy destroyed event
                     io.emit('enemyDestroyed', enemy.id);
-                    // Defer trackMobKill since it's expensive (emits playerUpdated to all players)
+                    // Call trackMobKill synchronously to ensure it runs
+                    // Copy enemy data before cleanup to ensure trackMobKill has all needed info
                     const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+                    console.log('[Server] Enemy killed by player projectile - BEFORE cleanup', {
+                        enemyType: enemy.type,
+                        enemyTier: enemy.tier,
+                        hasDamageContributors: !!enemy.damageContributors,
+                        damageContributorsSize: enemy.damageContributors?.size || 0,
+                        hasDamageContributorsCopy: !!damageContributorsCopy,
+                        hasIo: !!io,
+                        hasPlayer: !!player
+                    });
                     if (damageContributorsCopy && player) {
-                        setImmediate(() => {
-                            const deadEnemy = {
-                                ...enemy,
-                                damageContributors: damageContributorsCopy
-                            };
-                            (0, utils_1.trackMobKill)(deadEnemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
+                        const enemyDataForTracking = {
+                            type: enemy.type,
+                            tier: enemy.tier,
+                            damageContributors: damageContributorsCopy
+                        };
+                        console.log('[Server] Calling trackMobKill synchronously (projectile)', {
+                            enemyType: enemyDataForTracking.type,
+                            enemyTier: enemyDataForTracking.tier,
+                            hasIo: !!io,
+                            damageContributorsSize: enemyDataForTracking.damageContributors.size
                         });
+                        (0, utils_1.trackMobKill)(enemyDataForTracking, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
+                    }
+                    else {
+                        console.warn('[Server] No damageContributorsCopy or player (projectile), skipping trackMobKill');
                     }
                 }
                 // Remove projectile after hitting enemy

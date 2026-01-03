@@ -481,12 +481,24 @@ export function updatePlayerState(
                 
                 // Track damage dealt by this player (always track, even if enemy is dead)
                 trackDamage(enemy, player.id, player.damage);
+                if (enemy.health - player.damage <= 0) {
+                    console.log('[Server] About to kill enemy with petal', {
+                        enemyId: enemy.id,
+                        enemyType: enemy.type,
+                        currentHealth: enemy.health,
+                        damage: player.damage,
+                        playerId: player.id,
+                        hasDamageContributors: !!enemy.damageContributors,
+                        damageContributorsSize: enemy.damageContributors?.size || 0
+                    });
+                }
                 
                 // Skip further processing if enemy is already dead (being processed)
                 if ((enemy as any).isDead) {
                     continue;
                 }
                 
+                const oldHealth = enemy.health;
                 enemy.health = Math.max(0, enemy.health - player.damage);
                 // Mark enemy for batched damage update at end of frame
                 if (!(enemy as any).pendingDamageUpdate) {
@@ -495,11 +507,35 @@ export function updatePlayerState(
                 (enemy as any).lastDamageHealth = enemy.health;
 
                 if (enemy.health <= 0 && !(enemy as any).isDead) {
+                    console.log('[Server] Enemy health reached 0 from petal damage', {
+                        enemyId: enemy.id,
+                        enemyType: enemy.type,
+                        enemyTier: enemy.tier,
+                        oldHealth,
+                        newHealth: enemy.health,
+                        playerId: player.id,
+                        hasDamageContributors: !!enemy.damageContributors,
+                        damageContributorsSize: enemy.damageContributors?.size || 0
+                    });
                     // Mark enemy as dead to prevent multiple death handlers
                     (enemy as any).isDead = true;
                     
                     const index = enemies.findIndex(e => e.id === enemy.id);
+                    console.log('[Server] Enemy death handler - found index:', index, 'enemyId:', enemy.id);
                     if (index !== -1) {
+                        // Copy enemy data BEFORE cleanup to ensure trackMobKill has all needed info
+                        const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+                        console.log('[Server] Enemy killed by petal collision - BEFORE cleanup', {
+                            enemyType: enemy.type,
+                            enemyTier: enemy.tier,
+                            hasDamageContributors: !!enemy.damageContributors,
+                            damageContributorsSize: enemy.damageContributors?.size || 0,
+                            damageContributorsEntries: enemy.damageContributors ? Array.from(enemy.damageContributors.entries()) : [],
+                            hasDamageContributorsCopy: !!damageContributorsCopy,
+                            copySize: damageContributorsCopy?.size || 0,
+                            hasIo: !!io
+                        });
+                        
                         // Follow same path as lightning damage - synchronous execution
                         const xpGained = getXPFromEnemy(enemy);
                         addXPToPlayer(player, xpGained, player.id);
@@ -513,17 +549,28 @@ export function updatePlayerState(
                         // Emit enemy destroyed event
                         io.emit('enemyDestroyed', enemy.id);
                         
-                        // Defer trackMobKill since it's expensive (emits playerUpdated to all players)
-                        const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
-                        if (damageContributorsCopy) {
-                            setImmediate(() => {
-                                const deadEnemy = { 
-                                    ...enemy,
-                                    damageContributors: damageContributorsCopy
-                                };
-                                trackMobKill(deadEnemy, players, playerUserIds, database, io, savePlayerProgress);
+                        // Call trackMobKill synchronously to ensure it runs (was deferred but causing issues)
+                        if (damageContributorsCopy && damageContributorsCopy.size > 0) {
+                            const enemyDataForTracking = {
+                                type: enemy.type,
+                                tier: enemy.tier,
+                                damageContributors: damageContributorsCopy
+                            };
+                            console.log('[Server] Calling trackMobKill synchronously', {
+                                enemyType: enemyDataForTracking.type,
+                                enemyTier: enemyDataForTracking.tier,
+                                hasIo: !!io,
+                                damageContributorsSize: enemyDataForTracking.damageContributors.size
+                            });
+                            trackMobKill(enemyDataForTracking as Enemy, players, playerUserIds, database, io, savePlayerProgress);
+                        } else {
+                            console.warn('[Server] No damageContributorsCopy or empty, skipping trackMobKill', {
+                                hasCopy: !!damageContributorsCopy,
+                                copySize: damageContributorsCopy?.size || 0
                             });
                         }
+                    } else {
+                        console.warn('[Server] Enemy not found in enemies array when trying to process death');
                     }
                 }
 
@@ -901,6 +948,15 @@ export function updatePlayerState(
                     const damageMultiplier = getDamageMultiplier(player);
                     const finalDamage = petalStats.damage * damageMultiplier;
                     
+                    console.log('[Server] Petal collision detected', {
+                        enemyId: enemy.id,
+                        enemyType: enemy.type,
+                        enemyHealth: enemy.health,
+                        finalDamage,
+                        playerId: player.id,
+                        petalType: petal.petalType
+                    });
+                    
                     // Track damage dealt by this player (always track, even if enemy is dead)
                     trackDamage(enemy, player.id, finalDamage);
                     
@@ -1203,11 +1259,35 @@ export function updatePlayerState(
 
                     // Check if enemy dies (only process once per enemy)
                     if (enemy.health <= 0 && !(enemy as any).isDead) {
+                        console.log('[Server] Enemy died from petal collision', {
+                            enemyId: enemy.id,
+                            enemyType: enemy.type,
+                            enemyTier: enemy.tier,
+                            enemyHealth: enemy.health,
+                            playerId: player.id,
+                            hasDamageContributors: !!enemy.damageContributors,
+                            damageContributorsSize: enemy.damageContributors?.size || 0
+                        });
+                        
                         // Mark enemy as dead to prevent multiple death handlers
                         (enemy as any).isDead = true;
                         
                         const index = enemies.findIndex(e => e.id === enemy.id);
                         if (index !== -1) {
+                            console.log('[Server] Enemy death handler - found index', { enemyId: enemy.id });
+                            
+                            // CRITICAL: Copy damageContributors BEFORE cleanupEnemy clears it
+                            const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+                            console.log('[Server] Enemy killed by petal collision (second handler) - BEFORE cleanup', {
+                                enemyType: enemy.type,
+                                enemyTier: enemy.tier,
+                                hasDamageContributors: !!enemy.damageContributors,
+                                damageContributorsSize: enemy.damageContributors?.size || 0,
+                                hasDamageContributorsCopy: !!damageContributorsCopy,
+                                copySize: damageContributorsCopy?.size || 0,
+                                hasIo: !!io
+                            });
+                            
                             // Follow same path as lightning damage - synchronous execution
                             const xpGained = getXPFromEnemy(enemy);
                             addXPToPlayer(player, xpGained, player.id);
@@ -1221,16 +1301,23 @@ export function updatePlayerState(
                             // Emit enemy destroyed event
                             io.emit('enemyDestroyed', enemy.id);
                             
-                            // Defer trackMobKill since it's expensive (emits playerUpdated to all players)
-                            const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+                            // Call trackMobKill synchronously to ensure it runs
+                            // Use the copy we made BEFORE cleanupEnemy
                             if (damageContributorsCopy) {
-                                setImmediate(() => {
-                                    const deadEnemy = { 
-                                        ...enemy,
-                                        damageContributors: damageContributorsCopy
-                                    };
-                                    trackMobKill(deadEnemy, players, playerUserIds, database, io, savePlayerProgress);
+                                const enemyDataForTracking = {
+                                    type: enemy.type,
+                                    tier: enemy.tier,
+                                    damageContributors: damageContributorsCopy
+                                };
+                                console.log('[Server] Calling trackMobKill synchronously (second handler)', {
+                                    enemyType: enemyDataForTracking.type,
+                                    enemyTier: enemyDataForTracking.tier,
+                                    hasIo: !!io,
+                                    damageContributorsSize: enemyDataForTracking.damageContributors.size
                                 });
+                                trackMobKill(enemyDataForTracking as Enemy, players, playerUserIds, database, io, savePlayerProgress);
+                            } else {
+                                console.warn('[Server] No damageContributorsCopy (second handler), skipping trackMobKill');
                             }
                         }
                     }
