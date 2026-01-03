@@ -645,6 +645,11 @@ export class TitleScreen {
                             Dynamic Skybox (Tile wall/biome textures for out of bounds areas)
                         </label>
                         <br/><br/>
+                        <label>
+                            <input type="checkbox" id="mobDeathAnimationCheckbox">
+                            Mob Death Animation
+                        </label>
+                        <br/><br/>
                         <h3>Tutorial</h3>
                         <button id="resetTutorialButton" class="tab-button">Reset Tutorial</button>
                     </div>
@@ -1210,6 +1215,17 @@ export class TitleScreen {
             });
         }
 
+        const mobDeathAnimationCheckbox = this.settingsMenu.querySelector('#mobDeathAnimationCheckbox') as HTMLInputElement;
+        if (mobDeathAnimationCheckbox) {
+            mobDeathAnimationCheckbox.addEventListener('change', () => {
+                localStorage.setItem('mobDeathAnimation', mobDeathAnimationCheckbox.checked.toString());
+                // Update game if running
+                if (window.currentGame) {
+                    window.currentGame.mobDeathAnimation = mobDeathAnimationCheckbox.checked;
+                }
+            });
+        }
+
         // Reset tutorial button
         const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
         if (resetTutorialButton) {
@@ -1464,6 +1480,13 @@ export class TitleScreen {
         const dynamicSkyboxCheckbox = this.settingsMenu.querySelector('#dynamicSkyboxCheckbox') as HTMLInputElement;
         if (dynamicSkyboxCheckbox) {
             dynamicSkyboxCheckbox.checked = dynamicSkybox;
+        }
+
+        // Load mob death animation setting (default to true if not set)
+        const mobDeathAnimation = localStorage.getItem('mobDeathAnimation') !== 'false'; // Default true
+        const mobDeathAnimationCheckbox = this.settingsMenu.querySelector('#mobDeathAnimationCheckbox') as HTMLInputElement;
+        if (mobDeathAnimationCheckbox) {
+            mobDeathAnimationCheckbox.checked = mobDeathAnimation;
         }
     }
 

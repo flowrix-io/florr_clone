@@ -119,17 +119,17 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
 }
 // Helper function to track mob kills for eligible players
 function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress) {
-    console.log('[Server] trackMobKill called', {
-        enemyType: enemy.type,
-        enemyTier: enemy.tier,
-        hasIo: !!io,
-        hasDamageContributors: !!enemy.damageContributors,
-        damageContributorsSize: enemy.damageContributors?.size || 0
-    });
+    // console.log('[Server] trackMobKill called', { 
+    //     enemyType: enemy.type, 
+    //     enemyTier: enemy.tier,
+    //     hasIo: !!io,
+    //     hasDamageContributors: !!enemy.damageContributors,
+    //     damageContributorsSize: enemy.damageContributors?.size || 0
+    // });
     const eligiblePlayers = getEligiblePlayers(enemy);
-    console.log('[Server] Eligible players for mob kill:', eligiblePlayers);
+    // console.log('[Server] Eligible players for mob kill:', eligiblePlayers);
     if (eligiblePlayers.length === 0) {
-        console.log('[Server] No eligible players for mob kill');
+        // console.log('[Server] No eligible players for mob kill');
         return;
     }
     for (const playerId of eligiblePlayers) {
@@ -198,11 +198,11 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
                 ...player,
                 mobKills: player.mobKills // Explicitly include mobKills
             };
-            console.log('[Server] Emitting playerUpdated with mobKills:', player.id, player.mobKills);
+            // console.log('[Server] Emitting playerUpdated with mobKills:', player.id, player.mobKills);
             io.emit('playerUpdated', playerUpdate);
         }
         else {
-            console.warn('[Server] trackMobKill: io is not defined, cannot emit playerUpdated');
+            // console.warn('[Server] trackMobKill: io is not defined, cannot emit playerUpdated');
         }
     }
 }

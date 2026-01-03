@@ -122,6 +122,7 @@ class Graphics {
         };
         this.showHitboxes = false;
         this.dynamicSkybox = false;
+        this.mobDeathAnimation = true; // Mob death animation setting (default true)
         this.itemSprites = {};
         this.petalImageCache = {}; // Canvas for static, array for animated
         this.mobSVGCache = {}; // Store original SVG strings for WASM rendering
@@ -1772,12 +1773,35 @@ class Graphics {
             console.error('[Graphics] Invalid enemy data:', enemy);
             return;
         }
+        // Check if enemy is in death animation (only if setting is enabled)
+        const DEATH_ANIMATION_DURATION = 200; // 200ms animation
+        let isDying = false;
+        let deathProgress = 0;
+        if (this.mobDeathAnimation && enemy.deathAnimationStartTime) {
+            const elapsed = Date.now() - enemy.deathAnimationStartTime;
+            if (elapsed < DEATH_ANIMATION_DURATION) {
+                isDying = true;
+                deathProgress = Math.min(1.0, elapsed / DEATH_ANIMATION_DURATION); // 0 to 1, clamped
+            }
+        }
         // Get enemy size from mob stats
         const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
         // Use visual_scale for rendering (affects visual only, not hitbox)
         const baseSize = mobStats ? mobStats.size * 40 : 40;
         const visualScale = mobStats?.visual_scale ?? 1.0;
-        const enemySize = baseSize * visualScale;
+        let enemySize = baseSize * visualScale;
+        // Apply death animation effects: scale up, fade out, red tint
+        let deathScale = 1.0;
+        let deathAlpha = 1.0;
+        if (isDying) {
+            // Scale up from 1.0 to 3.0 over the animation (much larger)
+            deathScale = 1.0 + (deathProgress * 2.0);
+            // Fade out more intensely using cubic ease-out curve
+            const easeOutProgress = deathProgress * deathProgress * deathProgress; // Cubic ease-out (more intense)
+            deathAlpha = 1.0 - easeOutProgress;
+            // Apply scale to size
+            enemySize *= deathScale;
+        }
         // Always set up the transform for the enemy position
         // The context already has camera transforms applied, so we translate to world position
         this.ctx.save();
@@ -1787,12 +1811,47 @@ class Graphics {
         if (enemy.reversed || mobStats?.reversed) {
             this.ctx.scale(-1, 1);
         }
+        // Apply death animation: transparency (before drawing, preserves transparency)
+        if (isDying) {
+            this.ctx.globalAlpha = deathAlpha;
+        }
         // Special rendering for garbage mob - render as a pile of random petals
         if (enemy.type === 'garbage') {
             this.drawGarbagePile(enemy, enemySize);
+            // Apply red tint overlay for death animation (after garbage pile is drawn, preserves alpha exactly)
+            if (isDying) {
+                // Save current state before applying red tint
+                this.ctx.save();
+                // Get the current pixel data to preserve alpha channel exactly
+                const imageData = this.ctx.getImageData(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
+                const data = imageData.data;
+                const tintIntensity = 0.15 + (deathProgress * 0.15); // 0.15 to 0.3
+                // Only modify RGB channels of non-transparent pixels (alpha > 0)
+                for (let i = 0; i < data.length; i += 4) {
+                    const alpha = data[i + 3];
+                    if (alpha > 0) {
+                        // Only tint pixels that have alpha > 0
+                        // Add red tint by increasing red channel and slightly decreasing green/blue
+                        const red = data[i];
+                        const green = data[i + 1];
+                        const blue = data[i + 2];
+                        // Apply subtle red tint: increase red slightly, decrease green/blue slightly
+                        data[i] = Math.min(255, red + (tintIntensity * 20)); // Increase red
+                        data[i + 1] = Math.max(0, green - (tintIntensity * 10)); // Decrease green
+                        data[i + 2] = Math.max(0, blue - (tintIntensity * 10)); // Decrease blue
+                        // Alpha channel (data[i + 3]) is left unchanged
+                    }
+                }
+                // Put the modified image data back (alpha channel preserved)
+                this.ctx.putImageData(imageData, -enemySize / 2, -enemySize / 2);
+                this.ctx.restore(); // This restores both composite operation and alpha
+            }
             this.ctx.restore();
-            // Draw health bar and tier (after restore, so we need to set up transforms again)
-            this.drawEnemyHealthBar(enemy, enemySize);
+            // Don't draw health bar during death animation
+            if (!isDying) {
+                // Draw health bar and tier (after restore, so we need to set up transforms again)
+                this.drawEnemyHealthBar(enemy, enemySize);
+            }
             return;
         }
         // Disable anti-aliasing for mobs (pixelated look)
@@ -1903,9 +1962,40 @@ class Graphics {
             this.ctx.arc(0, 0, baseSize / 2, 0, Math.PI * 2);
             this.ctx.stroke();
         }
+        // Apply red tint overlay for death animation (after enemy is drawn, preserves alpha exactly)
+        if (isDying) {
+            // Save current state before applying red tint
+            this.ctx.save();
+            // Get the current pixel data to preserve alpha channel exactly
+            const imageData = this.ctx.getImageData(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
+            const data = imageData.data;
+            const tintIntensity = 0.15 + (deathProgress * 0.15); // 0.15 to 0.3
+            // Only modify RGB channels of non-transparent pixels (alpha > 0)
+            for (let i = 0; i < data.length; i += 4) {
+                const alpha = data[i + 3];
+                if (alpha > 0) {
+                    // Only tint pixels that have alpha > 0
+                    // Add red tint by increasing red channel and slightly decreasing green/blue
+                    const red = data[i];
+                    const green = data[i + 1];
+                    const blue = data[i + 2];
+                    // Apply subtle red tint: increase red slightly, decrease green/blue slightly
+                    data[i] = Math.min(255, red + (tintIntensity * 20)); // Increase red
+                    data[i + 1] = Math.max(0, green - (tintIntensity * 10)); // Decrease green
+                    data[i + 2] = Math.max(0, blue - (tintIntensity * 10)); // Decrease blue
+                    // Alpha channel (data[i + 3]) is left unchanged
+                }
+            }
+            // Put the modified image data back (alpha channel preserved)
+            this.ctx.putImageData(imageData, -enemySize / 2, -enemySize / 2);
+            this.ctx.restore(); // This restores both composite operation and alpha
+        }
         this.ctx.restore();
-        // Draw health bar and tier
-        this.drawEnemyHealthBar(enemy, enemySize);
+        // Don't draw health bar during death animation
+        if (!isDying) {
+            // Draw health bar and tier
+            this.drawEnemyHealthBar(enemy, enemySize);
+        }
     }
     /**
      * Draw a garbage mob as a pile of random petals

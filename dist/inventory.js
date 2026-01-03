@@ -789,30 +789,30 @@ class InventoryManager {
         this.isMobGalleryOpen = !isOpen;
     }
     updateMobGalleryIfOpen() {
-        console.log('[MobGallery] updateMobGalleryIfOpen called', {
-            isMobGalleryOpen: this.isMobGalleryOpen,
-            hasPanel: !!this.mobGalleryPanel
-        });
+        // console.log('[MobGallery] updateMobGalleryIfOpen called', { 
+        //     isMobGalleryOpen: this.isMobGalleryOpen, 
+        //     hasPanel: !!this.mobGalleryPanel 
+        // });
         if (this.isMobGalleryOpen && this.mobGalleryPanel) {
             // Instead of auto-updating, show notification to reopen
             this.showMobGalleryNotification();
         }
         else {
-            console.log('[MobGallery] Gallery not open or panel missing');
+            // console.log('[MobGallery] Gallery not open or panel missing');
         }
     }
     showMobGalleryNotification() {
         if (!this.mobGalleryPanel) {
-            console.warn('[MobGallery] Panel not found when trying to show notification');
+            // console.warn('[MobGallery] Panel not found when trying to show notification');
             return;
         }
         const notification = this.mobGalleryPanel.querySelector('#mobGalleryNotification');
         if (notification) {
             notification.style.display = 'block';
-            console.log('[MobGallery] Notification shown');
+            // console.log('[MobGallery] Notification shown');
         }
         else {
-            console.warn('[MobGallery] Notification element not found');
+            // console.warn('[MobGallery] Notification element not found');
         }
     }
     hideMobGalleryNotification() {
@@ -1570,7 +1570,7 @@ class InventoryManager {
             return;
         }
         const slots = loadoutBar.querySelectorAll('.loadout-slot');
-        console.log('[INVENTORY] Found ' + slots.length + ' loadout slots');
+        // console.log('[INVENTORY] Found ' + slots.length + ' loadout slots');
         slots.forEach((slot, index) => {
             slot.innerHTML = '';
             slot.classList.remove('on-cooldown', 'petal-slot');

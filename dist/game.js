@@ -89,6 +89,7 @@ class Game {
         this.hasValidMouseTarget = false;
         this.showHitboxes = false; // Changed from true to false
         this.showStats = false; // Combined setting for FPS, counters, and memory
+        this.mobDeathAnimation = true; // Mob death animation setting (default true)
         this.fpsCounter = 0;
         this.fpsUpdateTime = 0;
         this.frameCount = 0;
@@ -155,6 +156,7 @@ class Game {
         this.graphics = new graphics_1.Graphics(this.canvas, this.assetLoader.playerSprite, this.assetLoader.wallTexture, this.assetLoader.octopusSprite, this.assetLoader.fishSprite, this.assetLoader.healthPotionSprite, this.assetLoader.speedBoostSprite, this.assetLoader.shieldSprite, this.assetLoader.backgroundTexture);
         this.graphics.showHitboxes = this.showHitboxes;
         this.graphics.dynamicSkybox = dynamicSkybox;
+        this.graphics.mobDeathAnimation = this.mobDeathAnimation;
         // Initialize shaders if enabled
         if (shadersEnabled && window.shaderManager) {
             window.shaderManager.setShadersEnabled(true);
@@ -744,6 +746,14 @@ class Game {
                     }
                 });
             }
+            const mobDeathAnimationCheckbox = settingsMenu.querySelector('#mobDeathAnimationCheckbox');
+            if (mobDeathAnimationCheckbox) {
+                mobDeathAnimationCheckbox.addEventListener('change', () => {
+                    this.mobDeathAnimation = mobDeathAnimationCheckbox.checked;
+                    this.graphics.mobDeathAnimation = mobDeathAnimationCheckbox.checked;
+                    localStorage.setItem('mobDeathAnimation', mobDeathAnimationCheckbox.checked.toString());
+                });
+            }
         }
     }
     /**
@@ -890,6 +900,21 @@ class Game {
         requestAnimationFrame(() => this.gameLoop());
     }
     update() {
+        // Clean up enemies that have completed their death animation
+        const DEATH_ANIMATION_DURATION = 200; // Must match the duration in graphics.ts
+        const enemiesToRemove = [];
+        for (const [enemyId, enemy] of this.enemies.entries()) {
+            if (enemy.deathAnimationStartTime) {
+                const elapsed = Date.now() - enemy.deathAnimationStartTime;
+                if (elapsed >= DEATH_ANIMATION_DURATION) {
+                    enemiesToRemove.push(enemyId);
+                }
+            }
+        }
+        // Remove enemies after death animation completes
+        for (const enemyId of enemiesToRemove) {
+            this.enemies.delete(enemyId);
+        }
         // Interpolate all players' positions
         for (const player of this.players.values()) {
             if (player.targetX !== undefined && player.targetY !== undefined) {

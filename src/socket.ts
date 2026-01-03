@@ -579,6 +579,16 @@ function setupSocketListeners(game: any) {
 
     // Unified handler for enemy updates - all enemy updates go through the same path
     function handleEnemyUpdate(enemy: Enemy) {
+        // If enemy is already in death animation, don't update it (let animation complete)
+        const existingEnemy = game.enemies.get(enemy.id);
+        if (existingEnemy && existingEnemy.deathAnimationStartTime) {
+            const DEATH_ANIMATION_DURATION = 200; // Must match duration in graphics.ts
+            const elapsed = Date.now() - existingEnemy.deathAnimationStartTime;
+            if (elapsed < DEATH_ANIMATION_DURATION) {
+                // Enemy is still animating, don't update it
+                return;
+            }
+        }
         game.enemies.set(enemy.id, enemy);
     }
 
@@ -587,22 +597,28 @@ function setupSocketListeners(game: any) {
         // Show any accumulated damage before cleaning up
         const enemy = game.enemies.get(enemyId);
         if (enemy) {
-            const accumulated = game.graphics.getAccumulatedDamage(enemyId);
-            if (accumulated > 0) {
-                // Show final accumulated damage
-                game.graphics.showFloatingText(
-                    enemy.x,
-                    enemy.y - 20,
-                    `-${Math.round(accumulated)}`,
-                    '#ff0000',
-                    16
-                );
+            // Only start death animation if it hasn't already started
+            if (!enemy.deathAnimationStartTime) {
+                const accumulated = game.graphics.getAccumulatedDamage(enemyId);
+                if (accumulated > 0) {
+                    // Show final accumulated damage
+                    game.graphics.showFloatingText(
+                        enemy.x,
+                        enemy.y - 20,
+                        `-${Math.round(accumulated)}`,
+                        '#ff0000',
+                        16
+                    );
+                }
+                
+                // Start death animation instead of immediately removing
+                enemy.deathAnimationStartTime = Date.now();
             }
         }
         
         // Clean up accumulated damage for this enemy
         game.graphics.clearEnemyDamage(enemyId);
-        game.enemies.delete(enemyId);
+        // Don't delete immediately - let the animation complete first
     }
 
     game.socket.on('enemyDamaged', (data: { enemyId: string, health: number }) => {
@@ -726,7 +742,7 @@ function setupSocketListeners(game: any) {
     });
 
     game.socket.on('itemPickedUp', (itemId: string) => {
-        console.log('Item picked up by me:', itemId);
+        // console.log('Item picked up by me:', itemId);
         // Hide the item from this player's view (but keep it in the world for other eligible players)
         if (game.pickedUpItems) {
             game.pickedUpItems.add(itemId);
@@ -734,7 +750,7 @@ function setupSocketListeners(game: any) {
     });
     
     game.socket.on('itemRemoved', (itemId: string) => {
-        console.log('Item removed from world:', itemId);
+        // console.log('Item removed from world:', itemId);
         // Remove the item from the game when all eligible players have picked it up
         game.items.delete(itemId);
         // Also remove it from pickedUpItems set
@@ -924,11 +940,11 @@ function setupSocketListeners(game: any) {
     let mobGalleryUpdateTimeout: NodeJS.Timeout | null = null;
     
     game.socket.on('playerUpdated', (updatedPlayer: Player) => {
-        console.log('[MobGallery] Received playerUpdated event', { 
-            playerId: updatedPlayer.id, 
-            hasMobKills: !!updatedPlayer.mobKills,
-            mobKills: updatedPlayer.mobKills 
-        });
+        // console.log('[MobGallery] Received playerUpdated event', { 
+        //     playerId: updatedPlayer.id, 
+        //     hasMobKills: !!updatedPlayer.mobKills,
+        //     mobKills: updatedPlayer.mobKills 
+        // });
         let player = game.players.get(updatedPlayer.id);
         
         // If player doesn't exist yet, create it (e.g., for split players)
@@ -965,9 +981,9 @@ function setupSocketListeners(game: any) {
                 const newMobKills = updatedPlayer.mobKills || {};
                 // Always do deep comparison since mobKills is an object
                 mobKillsChanged = JSON.stringify(oldMobKills) !== JSON.stringify(newMobKills);
-                if (mobKillsChanged) {
-                    console.log('[MobGallery] mobKills changed detected', { oldMobKills, newMobKills });
-                }
+                // if (mobKillsChanged) {
+                //     console.log('[MobGallery] mobKills changed detected', { oldMobKills, newMobKills });
+                // }
             }
             
             Object.assign(player, updatedPlayer);
@@ -983,7 +999,7 @@ function setupSocketListeners(game: any) {
                 }
                 // Show notification when mobs are killed while gallery is open
                 if (game.inventoryManager && mobKillsChanged) {
-                    console.log('[MobGallery] Calling updateMobGalleryIfOpen, isOpen:', game.inventoryManager.getIsMobGalleryOpen());
+                    // console.log('[MobGallery] Calling updateMobGalleryIfOpen, isOpen:', game.inventoryManager.getIsMobGalleryOpen());
                     if (mobGalleryUpdateTimeout) {
                         clearTimeout(mobGalleryUpdateTimeout);
                     }
