@@ -342,7 +342,11 @@ function checkEnemyEnemyCollisions(enemies, io) {
                             trackDamage(otherEnemy, enemy.ownerId, enemy.damage);
                             otherEnemy.health = Math.max(0, otherEnemy.health - enemy.damage);
                             if (io) {
-                                io.emit('enemyDamaged', { enemyId: otherEnemy.id, health: otherEnemy.health });
+                                // Mark enemy for batched damage update at end of frame
+                                if (!otherEnemy.pendingDamageUpdate) {
+                                    otherEnemy.pendingDamageUpdate = true;
+                                }
+                                otherEnemy.lastDamageHealth = otherEnemy.health;
                             }
                             if (otherEnemy.health <= 0) {
                                 otherEnemy.isDead = true;
@@ -357,7 +361,11 @@ function checkEnemyEnemyCollisions(enemies, io) {
                         if (!otherEnemy.isDead && otherEnemy.health > 0) {
                             otherEnemy.health = Math.max(0, otherEnemy.health - enemy.damage);
                             if (io) {
-                                io.emit('enemyDamaged', { enemyId: otherEnemy.id, health: otherEnemy.health });
+                                // Mark enemy for batched damage update at end of frame
+                                if (!otherEnemy.pendingDamageUpdate) {
+                                    otherEnemy.pendingDamageUpdate = true;
+                                }
+                                otherEnemy.lastDamageHealth = otherEnemy.health;
                             }
                             if (otherEnemy.health <= 0) {
                                 otherEnemy.isDead = true;
@@ -376,7 +384,11 @@ function checkEnemyEnemyCollisions(enemies, io) {
                             trackDamage(enemy, otherEnemy.ownerId, otherEnemy.damage);
                             enemy.health = Math.max(0, enemy.health - otherEnemy.damage);
                             if (io) {
-                                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                                // Mark enemy for batched damage update at end of frame
+                                if (!enemy.pendingDamageUpdate) {
+                                    enemy.pendingDamageUpdate = true;
+                                }
+                                enemy.lastDamageHealth = enemy.health;
                             }
                             if (enemy.health <= 0) {
                                 enemy.isDead = true;
@@ -391,7 +403,11 @@ function checkEnemyEnemyCollisions(enemies, io) {
                         if (!enemy.isDead && enemy.health > 0) {
                             enemy.health = Math.max(0, enemy.health - otherEnemy.damage);
                             if (io) {
-                                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                                // Mark enemy for batched damage update at end of frame
+                                if (!enemy.pendingDamageUpdate) {
+                                    enemy.pendingDamageUpdate = true;
+                                }
+                                enemy.lastDamageHealth = enemy.health;
                             }
                             if (enemy.health <= 0) {
                                 enemy.isDead = true;

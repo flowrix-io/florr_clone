@@ -179,9 +179,12 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
                 });
             }
         }
-        // Emit playerUpdated event to notify client of mobKills change
+        // Defer playerUpdated emission to avoid blocking when many enemies die
+        // Batch these updates to prevent stuttering
         if (io) {
-            io.emit('playerUpdated', player);
+            setImmediate(() => {
+                io.emit('playerUpdated', player);
+            });
         }
     }
 }

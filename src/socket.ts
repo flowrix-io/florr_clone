@@ -478,22 +478,22 @@ function setupSocketListeners(game: any) {
         // Only used on initial connection - update all enemies
         const serverEnemyIds = new Set(enemies.map(e => e.id));
         
-        // Remove enemies that no longer exist
+        // Remove enemies that no longer exist - uses same path as all enemy removals
         for (const [enemyId] of game.enemies) {
             if (!serverEnemyIds.has(enemyId)) {
-                game.enemies.delete(enemyId);
+                handleEnemyRemoval(enemyId);
             }
         }
         
-        // Update or add enemies
+        // Update or add enemies - uses same path as all enemy updates
         enemies.forEach(enemy => {
-            game.enemies.set(enemy.id, enemy);
+            handleEnemyUpdate(enemy);
         });
     });
 
     game.socket.on('enemySpawned', (enemy: Enemy) => {
-        // Add newly spawned enemy
-        game.enemies.set(enemy.id, enemy);
+        // Add newly spawned enemy - uses same path as all enemy updates
+        handleEnemyUpdate(enemy);
     });
 
     game.socket.on('mobProjectilesUpdate', (projectiles: any[]) => {
@@ -507,7 +507,8 @@ function setupSocketListeners(game: any) {
     });
 
     game.socket.on('enemyMoved', (enemy: Enemy) => {
-        game.enemies.set(enemy.id, enemy);
+        // Enemy movement update - uses same path as all enemy updates
+        handleEnemyUpdate(enemy);
     });
 
     game.socket.on('playerDamaged', (data: {
@@ -560,7 +561,8 @@ function setupSocketListeners(game: any) {
         }
     });
 
-    game.socket.on('enemyDamaged', (data: { enemyId: string, health: number }) => {
+    // Unified handler for enemy damage - all damage goes through the same path
+    function handleEnemyDamage(data: { enemyId: string, health: number }) {
         const enemy = game.enemies.get(data.enemyId);
         if (enemy) {
             const oldHealth = enemy.health;
@@ -573,16 +575,15 @@ function setupSocketListeners(game: any) {
                 game.graphics.showDamageText(data.enemyId, enemy.x, enemy.y, damage);
             }
         }
-    });
+    }
 
-    game.socket.on('targetDummyDPS', (data: { enemyId: string, dps: number }) => {
-        const enemy = game.enemies.get(data.enemyId);
-        if (enemy && enemy.type === 'target_dummy') {
-            enemy.currentDPS = data.dps;
-        }
-    });
+    // Unified handler for enemy updates - all enemy updates go through the same path
+    function handleEnemyUpdate(enemy: Enemy) {
+        game.enemies.set(enemy.id, enemy);
+    }
 
-    game.socket.on('enemyDestroyed', (enemyId: string) => {
+    // Unified handler for enemy removal - all enemy removals go through the same path
+    function handleEnemyRemoval(enemyId: string) {
         // Show any accumulated damage before cleaning up
         const enemy = game.enemies.get(enemyId);
         if (enemy) {
@@ -602,6 +603,30 @@ function setupSocketListeners(game: any) {
         // Clean up accumulated damage for this enemy
         game.graphics.clearEnemyDamage(enemyId);
         game.enemies.delete(enemyId);
+    }
+
+    game.socket.on('enemyDamaged', (data: { enemyId: string, health: number }) => {
+        // Legacy handler for single enemy damage - uses same path as batched
+        handleEnemyDamage(data);
+    });
+
+    game.socket.on('enemiesDamaged', (damagedEnemies: Array<{ enemyId: string, health: number }>) => {
+        // Batch handler for multiple enemy damage updates - uses same path
+        for (const data of damagedEnemies) {
+            handleEnemyDamage(data);
+        }
+    });
+
+    game.socket.on('targetDummyDPS', (data: { enemyId: string, dps: number }) => {
+        const enemy = game.enemies.get(data.enemyId);
+        if (enemy && enemy.type === 'target_dummy') {
+            enemy.currentDPS = data.dps;
+        }
+    });
+
+    game.socket.on('enemyDestroyed', (enemyId: string) => {
+        // Enemy removal - uses same path as all enemy removals
+        handleEnemyRemoval(enemyId);
     });
 
     game.socket.on('playerInvulnerabilityEnded', (data: { playerId: string }) => {
@@ -638,7 +663,15 @@ function setupSocketListeners(game: any) {
     });
 
     game.socket.on('itemSpawned', (item: WorldItem) => {
+        // Legacy handler for single item spawn (kept for backwards compatibility)
         game.items.set(item.id, item);
+    });
+
+    game.socket.on('itemsSpawned', (items: WorldItem[]) => {
+        // Batch handler for multiple item spawns
+        for (const item of items) {
+            game.items.set(item.id, item);
+        }
     });
 
     // Petal action event handlers
@@ -1166,16 +1199,16 @@ function setupSocketListeners(game: any) {
             // Optimize: Only update changed enemies instead of clearing entire map
             const serverEnemyIds = new Set(serverEnemies.map(e => e.id));
             
-            // Remove enemies that no longer exist
+            // Remove enemies that no longer exist - uses same path as all enemy removals
             for (const [enemyId] of game.enemies) {
                 if (!serverEnemyIds.has(enemyId)) {
-                    game.enemies.delete(enemyId);
+                    handleEnemyRemoval(enemyId);
                 }
             }
             
-            // Update or add enemies
+            // Update or add enemies - uses same path as all enemy updates
             serverEnemies.forEach(enemy => {
-                game.enemies.set(enemy.id, enemy);
+                handleEnemyUpdate(enemy);
             });
         }
     });
@@ -1254,9 +1287,14 @@ function setupSocketListeners(game: any) {
     });
 
     game.socket.on('updateEnemies', (serverEnemies: Enemy[]) => {
-        game.enemies.clear();
+        // Clear all enemies first - uses same path as all enemy removals
+        for (const [enemyId] of game.enemies) {
+            handleEnemyRemoval(enemyId);
+        }
+        
+        // Add all enemies - uses same path as all enemy updates
         serverEnemies.forEach(enemy => {
-            game.enemies.set(enemy.id, enemy);
+            handleEnemyUpdate(enemy);
         });
     });
 

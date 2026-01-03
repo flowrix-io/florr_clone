@@ -52,8 +52,15 @@ const enemySpawner_1 = require("./server/enemySpawner");
 const app = (0, express_1.default)();
 // Wrapper function for handleMobDrops that passes io (will be set up later)
 let ioInstance;
-function handleMobDrops(enemy) {
-    (0, itemManager_1.handleMobDrops)(enemy, ioInstance);
+function handleMobDrops(enemy, io) {
+    const enemyData = {
+        type: enemy.type,
+        tier: enemy.tier,
+        x: enemy.x,
+        y: enemy.y,
+        damageContributors: enemy.damageContributors ? new Map(enemy.damageContributors) : undefined
+    };
+    (0, itemManager_1.handleMobDrops)(enemyData, io || ioInstance);
 }
 // Wrapper function for updateTargetDummyDPS
 function updateTargetDummyDPS() {
@@ -2119,7 +2126,11 @@ function updatePoisonEffects(deltaTime) {
             activePoisons.forEach(poison => {
                 (0, utils_1.trackDamage)(enemy, poison.playerId, poison.damage * deltaTime * 1000);
             });
-            io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+            // Mark enemy for batched damage update at end of frame
+            if (!enemy.pendingDamageUpdate) {
+                enemy.pendingDamageUpdate = true;
+            }
+            enemy.lastDamageHealth = enemy.health;
             // Check if enemy dies from poison (only process once per enemy)
             if (enemy.health <= 0 && !enemy.isDead) {
                 // Mark enemy as dead to prevent multiple death handlers
@@ -2877,17 +2888,29 @@ function updateMobProjectiles(deltaTimeMs) {
                         targetEnemy.isDead = true;
                         const owner = constants_2.players[petOwnerId];
                         if (owner) {
+                            // Follow same path as lightning damage - synchronous execution
                             const xpGained = (0, server_utils_1.getXPFromEnemy)(targetEnemy);
                             addXPToPlayer(owner, xpGained, petOwnerId);
-                            (0, utils_1.trackMobKill)(targetEnemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
                             handleMobDrops(targetEnemy);
                             (0, utils_1.sendBossMobDefeatedMessage)(targetEnemy, io, constants_2.players);
+                            updateSpecialMobCounts();
                         }
-                        // Clean up enemy data structures before removal to prevent memory leaks
+                        // Remove enemy from array
                         (0, utils_1.cleanupEnemy)(targetEnemy);
-                        updateSpecialMobCounts();
                         constants_2.enemies.splice(j, 1);
+                        // Emit enemy destroyed event
                         io.emit('enemyDestroyed', targetEnemy.id);
+                        // Defer trackMobKill since it's expensive (emits playerUpdated to all players)
+                        const damageContributorsCopy = targetEnemy.damageContributors ? new Map(targetEnemy.damageContributors) : undefined;
+                        if (damageContributorsCopy && owner) {
+                            setImmediate(() => {
+                                const deadEnemy = {
+                                    ...targetEnemy,
+                                    damageContributors: damageContributorsCopy
+                                };
+                                (0, utils_1.trackMobKill)(deadEnemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
+                            });
+                        }
                     }
                     // Remove projectile after hitting enemy
                     gameState_1.mobProjectiles.splice(i, 1);
@@ -3034,7 +3057,11 @@ function updatePlayerProjectiles(deltaTimeMs) {
                     continue;
                 }
                 enemy.health = Math.max(0, enemy.health - finalDamage);
-                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                // Mark enemy for batched damage update at end of frame
+                if (!enemy.pendingDamageUpdate) {
+                    enemy.pendingDamageUpdate = true;
+                }
+                enemy.lastDamageHealth = enemy.health;
                 // Apply knockback, accounting for mass (heavier mobs are harder to knock back)
                 if (distance > 0) {
                     const knockbackForce = 20;
@@ -3050,16 +3077,31 @@ function updatePlayerProjectiles(deltaTimeMs) {
                 if (enemy.health <= 0 && !enemy.isDead) {
                     // Mark enemy as dead to prevent multiple death handlers
                     enemy.isDead = true;
-                    const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
-                    addXPToPlayer(player, xpGained, projectile.playerId);
-                    (0, utils_1.trackMobKill)(enemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
-                    handleMobDrops(enemy);
-                    (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
-                    // Clean up enemy data structures before removal to prevent memory leaks
+                    const player = constants_2.players[projectile.playerId];
+                    if (player) {
+                        // Follow same path as lightning damage - synchronous execution
+                        const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
+                        addXPToPlayer(player, xpGained, projectile.playerId);
+                        handleMobDrops(enemy);
+                        (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
+                        updateSpecialMobCounts();
+                    }
+                    // Remove enemy from array
                     (0, utils_1.cleanupEnemy)(enemy);
-                    updateSpecialMobCounts();
                     constants_2.enemies.splice(j, 1);
+                    // Emit enemy destroyed event
                     io.emit('enemyDestroyed', enemy.id);
+                    // Defer trackMobKill since it's expensive (emits playerUpdated to all players)
+                    const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+                    if (damageContributorsCopy && player) {
+                        setImmediate(() => {
+                            const deadEnemy = {
+                                ...enemy,
+                                damageContributors: damageContributorsCopy
+                            };
+                            (0, utils_1.trackMobKill)(deadEnemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
+                        });
+                    }
                 }
                 // Remove projectile after hitting enemy
                 gameState_1.playerProjectiles.splice(i, 1);
@@ -3099,6 +3141,41 @@ function start_loop() {
         updatePlayerProjectiles(TICK_INTERVAL); // Pass milliseconds
         // Update viewport status for all enemies
         updateEnemyViewportStatus();
+        // Batch all enemy damage updates into a single event
+        const damagedEnemies = [];
+        for (const enemy of constants_2.enemies) {
+            if (enemy.pendingDamageUpdate) {
+                const health = enemy.lastDamageHealth !== undefined ? enemy.lastDamageHealth : enemy.health;
+                damagedEnemies.push({ enemyId: enemy.id, health: health });
+                delete enemy.pendingDamageUpdate;
+                delete enemy.lastDamageHealth;
+            }
+        }
+        // Emit batched enemy damage updates in a single event
+        if (damagedEnemies.length > 0) {
+            io.emit('enemiesDamaged', damagedEnemies);
+        }
+        // Batch all item spawn emissions into a single event per player
+        const itemsByPlayer = new Map();
+        for (const item of gameState_1.items) {
+            if (item.pendingSpawnEmission && item.eligibleSocketIds) {
+                const socketIds = item.eligibleSocketIds;
+                for (const socketId of socketIds) {
+                    if (!itemsByPlayer.has(socketId)) {
+                        itemsByPlayer.set(socketId, []);
+                    }
+                    itemsByPlayer.get(socketId).push(item);
+                }
+                delete item.pendingSpawnEmission;
+                delete item.eligibleSocketIds;
+            }
+        }
+        // Emit batched item spawns to each player
+        for (const [socketId, itemsToSend] of itemsByPlayer) {
+            if (itemsToSend.length > 0) {
+                io.to(socketId).emit('itemsSpawned', itemsToSend);
+            }
+        }
         // Despawn enemies that have been outside viewport for too long
         despawnDistantEnemies();
         // Check and fix item-wall collisions for all items

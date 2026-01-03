@@ -432,7 +432,11 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             otherEnemy.health = Math.max(0, otherEnemy.health - enemy.damage);
                             
                             if (io) {
-                                io.emit('enemyDamaged', { enemyId: otherEnemy.id, health: otherEnemy.health });
+                                // Mark enemy for batched damage update at end of frame
+                                if (!(otherEnemy as any).pendingDamageUpdate) {
+                                    (otherEnemy as any).pendingDamageUpdate = true;
+                                }
+                                (otherEnemy as any).lastDamageHealth = otherEnemy.health;
                             }
                             
                             if (otherEnemy.health <= 0) {
@@ -448,7 +452,11 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             otherEnemy.health = Math.max(0, otherEnemy.health - enemy.damage);
                             
                             if (io) {
-                                io.emit('enemyDamaged', { enemyId: otherEnemy.id, health: otherEnemy.health });
+                                // Mark enemy for batched damage update at end of frame
+                                if (!(otherEnemy as any).pendingDamageUpdate) {
+                                    (otherEnemy as any).pendingDamageUpdate = true;
+                                }
+                                (otherEnemy as any).lastDamageHealth = otherEnemy.health;
                             }
                             
                             if (otherEnemy.health <= 0) {
@@ -471,7 +479,11 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             enemy.health = Math.max(0, enemy.health - otherEnemy.damage);
                             
                             if (io) {
-                                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                                // Mark enemy for batched damage update at end of frame
+                                if (!(enemy as any).pendingDamageUpdate) {
+                                    (enemy as any).pendingDamageUpdate = true;
+                                }
+                                (enemy as any).lastDamageHealth = enemy.health;
                             }
                             
                             if (enemy.health <= 0) {
@@ -487,7 +499,11 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             enemy.health = Math.max(0, enemy.health - otherEnemy.damage);
                             
                             if (io) {
-                                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                                // Mark enemy for batched damage update at end of frame
+                                if (!(enemy as any).pendingDamageUpdate) {
+                                    (enemy as any).pendingDamageUpdate = true;
+                                }
+                                (enemy as any).lastDamageHealth = enemy.health;
                             }
                             
                             if (enemy.health <= 0) {

@@ -488,7 +488,11 @@ export function updatePlayerState(
                 }
                 
                 enemy.health = Math.max(0, enemy.health - player.damage);
-                io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                // Mark enemy for batched damage update at end of frame
+                if (!(enemy as any).pendingDamageUpdate) {
+                    (enemy as any).pendingDamageUpdate = true;
+                }
+                (enemy as any).lastDamageHealth = enemy.health;
 
                 if (enemy.health <= 0 && !(enemy as any).isDead) {
                     // Mark enemy as dead to prevent multiple death handlers
@@ -496,23 +500,30 @@ export function updatePlayerState(
                     
                     const index = enemies.findIndex(e => e.id === enemy.id);
                     if (index !== -1) {
+                        // Follow same path as lightning damage - synchronous execution
                         const xpGained = getXPFromEnemy(enemy);
                         addXPToPlayer(player, xpGained, player.id);
-                        // Track mob kill for eligible players (use debounced save to prevent lag)
-                        trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
-                        // Handle mob drops using the new drop table system (includes all eligible players)
                         handleMobDrops(enemy);
                         sendBossMobDefeatedMessage(enemy, io, players);
-                        enemies.splice(index, 1);
                         updateSpecialMobCounts();
+                        
+                        // Remove enemy from array
+                        cleanupEnemy(enemy);
+                        enemies.splice(index, 1);
+                        // Emit enemy destroyed event
                         io.emit('enemyDestroyed', enemy.id);
-                        // Defer enemy spawn to next tick to avoid blocking frame
-                        setImmediate(() => {
-                            const newEnemy = createEnemy();
-                            if (newEnemy) {
-                                enemies.push(newEnemy);
-                            }
-                        });
+                        
+                        // Defer trackMobKill since it's expensive (emits playerUpdated to all players)
+                        const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+                        if (damageContributorsCopy) {
+                            setImmediate(() => {
+                                const deadEnemy = { 
+                                    ...enemy,
+                                    damageContributors: damageContributorsCopy
+                                };
+                                trackMobKill(deadEnemy, players, playerUserIds, database, io, savePlayerProgress);
+                            });
+                        }
                     }
                 }
 
@@ -938,7 +949,11 @@ export function updatePlayerState(
                         enemy.knockbackY = normalizedDy * effectiveKnockback;
                     }
 
-                    io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+                    // Mark enemy for batched damage update at end of frame
+                    if (!(enemy as any).pendingDamageUpdate) {
+                        (enemy as any).pendingDamageUpdate = true;
+                    }
+                    (enemy as any).lastDamageHealth = enemy.health;
 
                     // Check if item spawner was hit and has 1% chance to spawn a random petal
                     if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
@@ -1182,26 +1197,30 @@ export function updatePlayerState(
                         
                         const index = enemies.findIndex(e => e.id === enemy.id);
                         if (index !== -1) {
+                            // Follow same path as lightning damage - synchronous execution
                             const xpGained = getXPFromEnemy(enemy);
                             addXPToPlayer(player, xpGained, player.id);
-                            // Track mob kill for eligible players (use debounced save to prevent lag)
-                            trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
-                            // Handle mob drops using the new drop table system (includes all eligible players)
                             handleMobDrops(enemy);
                             sendBossMobDefeatedMessage(enemy, io, players);
-                            // Clean up enemy data structures before removal to prevent memory leaks
+                            updateSpecialMobCounts();
+                            
+                            // Remove enemy from array
                             cleanupEnemy(enemy);
                             enemies.splice(index, 1);
-                            updateSpecialMobCounts();
+                            // Emit enemy destroyed event
                             io.emit('enemyDestroyed', enemy.id);
-                            // Defer enemy spawn to next tick to avoid blocking frame
-                            // This prevents frame skipping when multiple enemies die
-                            setImmediate(() => {
-                                const newEnemy = createEnemy();
-                                if (newEnemy) {
-                                    enemies.push(newEnemy);
-                                }
-                            });
+                            
+                            // Defer trackMobKill since it's expensive (emits playerUpdated to all players)
+                            const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+                            if (damageContributorsCopy) {
+                                setImmediate(() => {
+                                    const deadEnemy = { 
+                                        ...enemy,
+                                        damageContributors: damageContributorsCopy
+                                    };
+                                    trackMobKill(deadEnemy, players, playerUserIds, database, io, savePlayerProgress);
+                                });
+                            }
                         }
                     }
                 }

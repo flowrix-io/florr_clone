@@ -4,6 +4,18 @@ exports.handleMobDrops = handleMobDrops;
 const mobs_1 = require("../mobs");
 const gameState_1 = require("./gameState");
 const utils_1 = require("./utils");
+// Cache eligible petal types to avoid expensive filtering on every drop
+let cachedEligiblePetalTypes = null;
+function getEligiblePetalTypes() {
+    if (cachedEligiblePetalTypes === null) {
+        const allPetalTypes = (0, petals_1.getAllPetalTypes)();
+        cachedEligiblePetalTypes = allPetalTypes.filter(type => {
+            const stats = (0, petals_1.getPetalStats)(type, 'common');
+            return stats && !stats.isAdminPetal && type !== 'cutter' && type !== 'lightning_cutter';
+        });
+    }
+    return cachedEligiblePetalTypes;
+}
 const physics_1 = require("./physics");
 const petals_1 = require("../petals");
 // Rarity order from lowest to highest
@@ -56,14 +68,16 @@ function downgradeRarity(rarity) {
     return rarity; // Already at lowest tier
 }
 // Function to handle mob drops when a mob dies
-function handleMobDrops(enemy, io) {
-    const mobType = enemy.type || 'bee'; // Default to bee if type is not set
-    const drops = (0, mobs_1.calculateMobDrops)(mobType, enemy.tier);
+// Accepts enemy data object instead of live enemy to avoid issues with cleaned up enemies
+function handleMobDrops(enemyData, io) {
+    const mobType = enemyData.type || 'bee'; // Default to bee if type is not set
+    const drops = (0, mobs_1.calculateMobDrops)(mobType, enemyData.tier);
     // Get list of eligible players based on damage ranking
-    let eligiblePlayers = (0, utils_1.getEligiblePlayers)(enemy);
+    let eligiblePlayers = (0, utils_1.getEligiblePlayers)(enemyData);
     // For split players, also include both split player IDs and the original socket ID in eligible players
     // This ensures both split players can pick up items if either one dealt damage
     const expandedEligiblePlayers = new Set(eligiblePlayers);
+    // Use static import instead of dynamic require to avoid blocking
     const { splitPlayers } = require('../petal_actions');
     for (const playerId of eligiblePlayers) {
         const originalSocketId = (0, utils_1.getOriginalSocketId)(playerId);
@@ -119,12 +133,7 @@ function handleMobDrops(enemy, io) {
             // Handle random petal selection for garbage mob
             let petalType = drop.type === 'petal' ? drop.itemType : undefined;
             if (petalType === 'random') {
-                const allPetalTypes = (0, petals_1.getAllPetalTypes)();
-                // Filter out admin petals and cutter types
-                const eligiblePetalTypes = allPetalTypes.filter(type => {
-                    const stats = (0, petals_1.getPetalStats)(type, 'common');
-                    return stats && !stats.isAdminPetal && type !== 'cutter' && type !== 'lightning_cutter';
-                });
+                const eligiblePetalTypes = getEligiblePetalTypes();
                 if (eligiblePetalTypes.length > 0) {
                     petalType = eligiblePetalTypes[Math.floor(Math.random() * eligiblePetalTypes.length)];
                 }
@@ -136,8 +145,8 @@ function handleMobDrops(enemy, io) {
             const newItem = {
                 id: itemId,
                 type: drop.type === 'consumable' ? drop.itemType : 'petal',
-                x: enemy.x + offsetX,
-                y: enemy.y + offsetY,
+                x: enemyData.x + offsetX,
+                y: enemyData.y + offsetY,
                 rarity: finalRarity,
                 petalType: petalType,
                 eligiblePlayers: eligiblePlayers,
@@ -145,14 +154,15 @@ function handleMobDrops(enemy, io) {
                 spawnTime: spawnTime
             };
             // Check and fix wall collisions before adding item
-            (0, physics_1.checkItemWallCollisions)(newItem);
+            // Defer collision check to avoid blocking when many items spawn
+            setImmediate(() => {
+                (0, physics_1.checkItemWallCollisions)(newItem);
+            });
             gameState_1.items.push(newItem);
-            // Only send itemSpawned event to eligible players
-            // Map split player IDs to their original socket IDs for socket room targeting
-            for (const playerId of eligiblePlayers) {
-                const originalSocketId = (0, utils_1.getOriginalSocketId)(playerId);
-                io.to(originalSocketId).emit('itemSpawned', newItem);
-            }
+            // Mark item for batched emission at end of frame to prevent stuttering
+            // Store eligible players for this item
+            newItem.pendingSpawnEmission = true;
+            newItem.eligibleSocketIds = eligiblePlayers.map(playerId => (0, utils_1.getOriginalSocketId)(playerId));
             // Schedule automatic removal after expiration time
             const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[finalRarity] || 10000;
             const timeout = setTimeout(() => {

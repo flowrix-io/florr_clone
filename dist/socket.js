@@ -416,20 +416,20 @@ function setupSocketListeners(game) {
     game.socket.on('enemiesUpdate', (enemies) => {
         // Only used on initial connection - update all enemies
         const serverEnemyIds = new Set(enemies.map(e => e.id));
-        // Remove enemies that no longer exist
+        // Remove enemies that no longer exist - uses same path as all enemy removals
         for (const [enemyId] of game.enemies) {
             if (!serverEnemyIds.has(enemyId)) {
-                game.enemies.delete(enemyId);
+                handleEnemyRemoval(enemyId);
             }
         }
-        // Update or add enemies
+        // Update or add enemies - uses same path as all enemy updates
         enemies.forEach(enemy => {
-            game.enemies.set(enemy.id, enemy);
+            handleEnemyUpdate(enemy);
         });
     });
     game.socket.on('enemySpawned', (enemy) => {
-        // Add newly spawned enemy
-        game.enemies.set(enemy.id, enemy);
+        // Add newly spawned enemy - uses same path as all enemy updates
+        handleEnemyUpdate(enemy);
     });
     game.socket.on('mobProjectilesUpdate', (projectiles) => {
         game.mobProjectiles.clear();
@@ -440,7 +440,8 @@ function setupSocketListeners(game) {
         projectiles.forEach(projectile => game.playerProjectiles.set(projectile.id, projectile));
     });
     game.socket.on('enemyMoved', (enemy) => {
-        game.enemies.set(enemy.id, enemy);
+        // Enemy movement update - uses same path as all enemy updates
+        handleEnemyUpdate(enemy);
     });
     game.socket.on('playerDamaged', (data) => {
         console.log('Player damaged event received:', data);
@@ -474,7 +475,8 @@ function setupSocketListeners(game) {
             }
         }
     });
-    game.socket.on('enemyDamaged', (data) => {
+    // Unified handler for enemy damage - all damage goes through the same path
+    function handleEnemyDamage(data) {
         const enemy = game.enemies.get(data.enemyId);
         if (enemy) {
             const oldHealth = enemy.health;
@@ -486,14 +488,13 @@ function setupSocketListeners(game) {
                 game.graphics.showDamageText(data.enemyId, enemy.x, enemy.y, damage);
             }
         }
-    });
-    game.socket.on('targetDummyDPS', (data) => {
-        const enemy = game.enemies.get(data.enemyId);
-        if (enemy && enemy.type === 'target_dummy') {
-            enemy.currentDPS = data.dps;
-        }
-    });
-    game.socket.on('enemyDestroyed', (enemyId) => {
+    }
+    // Unified handler for enemy updates - all enemy updates go through the same path
+    function handleEnemyUpdate(enemy) {
+        game.enemies.set(enemy.id, enemy);
+    }
+    // Unified handler for enemy removal - all enemy removals go through the same path
+    function handleEnemyRemoval(enemyId) {
         // Show any accumulated damage before cleaning up
         const enemy = game.enemies.get(enemyId);
         if (enemy) {
@@ -506,6 +507,26 @@ function setupSocketListeners(game) {
         // Clean up accumulated damage for this enemy
         game.graphics.clearEnemyDamage(enemyId);
         game.enemies.delete(enemyId);
+    }
+    game.socket.on('enemyDamaged', (data) => {
+        // Legacy handler for single enemy damage - uses same path as batched
+        handleEnemyDamage(data);
+    });
+    game.socket.on('enemiesDamaged', (damagedEnemies) => {
+        // Batch handler for multiple enemy damage updates - uses same path
+        for (const data of damagedEnemies) {
+            handleEnemyDamage(data);
+        }
+    });
+    game.socket.on('targetDummyDPS', (data) => {
+        const enemy = game.enemies.get(data.enemyId);
+        if (enemy && enemy.type === 'target_dummy') {
+            enemy.currentDPS = data.dps;
+        }
+    });
+    game.socket.on('enemyDestroyed', (enemyId) => {
+        // Enemy removal - uses same path as all enemy removals
+        handleEnemyRemoval(enemyId);
     });
     game.socket.on('playerInvulnerabilityEnded', (data) => {
         const player = game.players.get(data.playerId);
@@ -536,7 +557,14 @@ function setupSocketListeners(game) {
         });
     });
     game.socket.on('itemSpawned', (item) => {
+        // Legacy handler for single item spawn (kept for backwards compatibility)
         game.items.set(item.id, item);
+    });
+    game.socket.on('itemsSpawned', (items) => {
+        // Batch handler for multiple item spawns
+        for (const item of items) {
+            game.items.set(item.id, item);
+        }
     });
     // Petal action event handlers
     game.socket.on('playerHealed', (data) => {
@@ -936,15 +964,15 @@ function setupSocketListeners(game) {
         if (serverEnemies) {
             // Optimize: Only update changed enemies instead of clearing entire map
             const serverEnemyIds = new Set(serverEnemies.map(e => e.id));
-            // Remove enemies that no longer exist
+            // Remove enemies that no longer exist - uses same path as all enemy removals
             for (const [enemyId] of game.enemies) {
                 if (!serverEnemyIds.has(enemyId)) {
-                    game.enemies.delete(enemyId);
+                    handleEnemyRemoval(enemyId);
                 }
             }
-            // Update or add enemies
+            // Update or add enemies - uses same path as all enemy updates
             serverEnemies.forEach(enemy => {
-                game.enemies.set(enemy.id, enemy);
+                handleEnemyUpdate(enemy);
             });
         }
     });
@@ -1021,9 +1049,13 @@ function setupSocketListeners(game) {
         });
     });
     game.socket.on('updateEnemies', (serverEnemies) => {
-        game.enemies.clear();
+        // Clear all enemies first - uses same path as all enemy removals
+        for (const [enemyId] of game.enemies) {
+            handleEnemyRemoval(enemyId);
+        }
+        // Add all enemies - uses same path as all enemy updates
         serverEnemies.forEach(enemy => {
-            game.enemies.set(enemy.id, enemy);
+            handleEnemyUpdate(enemy);
         });
     });
     game.socket.on('updateItems', (serverItems) => {
