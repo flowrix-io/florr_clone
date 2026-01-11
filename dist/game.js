@@ -92,6 +92,14 @@ class Game {
         this.mobDeathAnimation = true; // Mob death animation setting (default true)
         this.fpsCounter = 0;
         this.fpsUpdateTime = 0;
+        // Connection quality tracking for slow connection optimization
+        this.lastPingTime = 0;
+        this.averagePing = 0;
+        this.pingSamples = [];
+        this.MAX_PING_SAMPLES = 10;
+        this.lastInputSendTime = 0;
+        this.MIN_INPUT_INTERVAL = 33; // ~30 TPS (match server tick rate)
+        this.connectionQuality = 'good';
         this.frameCount = 0;
         this.fpsDisplayElement = null;
         this.mobCounterElement = null;
@@ -1016,7 +1024,12 @@ class Game {
                 }
                 else {
                     inputData.useMouse = false;
-                    this.socket.emit('playerInput', inputData);
+                    // Throttle input sending
+                    const now = performance.now();
+                    if (now - this.lastInputSendTime >= this.getInputInterval()) {
+                        this.socket.emit('playerInput', inputData);
+                        this.lastInputSendTime = now;
+                    }
                     return;
                 }
             }
@@ -1055,7 +1068,41 @@ class Game {
                 this.hasValidMouseTarget = false;
             }
         }
-        this.socket.emit('playerInput', inputData);
+        // Throttle input sending based on connection quality
+        const now = performance.now();
+        if (now - this.lastInputSendTime >= this.getInputInterval()) {
+            this.socket.emit('playerInput', inputData);
+            this.lastInputSendTime = now;
+        }
+    }
+    getInputInterval() {
+        // Adjust input rate based on connection quality
+        if (this.connectionQuality === 'slow') {
+            return 66; // ~15 TPS for slow connections
+        }
+        else if (this.connectionQuality === 'medium') {
+            return 50; // ~20 TPS for medium connections
+        }
+        return this.MIN_INPUT_INTERVAL; // ~30 TPS for good connections
+    }
+    updateConnectionQuality(ping) {
+        // Add ping to samples
+        this.pingSamples.push(ping);
+        if (this.pingSamples.length > this.MAX_PING_SAMPLES) {
+            this.pingSamples.shift();
+        }
+        // Calculate average ping
+        this.averagePing = this.pingSamples.reduce((a, b) => a + b, 0) / this.pingSamples.length;
+        // Determine connection quality
+        if (this.averagePing > 200) {
+            this.connectionQuality = 'slow';
+        }
+        else if (this.averagePing > 100) {
+            this.connectionQuality = 'medium';
+        }
+        else {
+            this.connectionQuality = 'good';
+        }
     }
     isAnyMenuOpen() {
         // Check inventory (check both Game property and DOM)

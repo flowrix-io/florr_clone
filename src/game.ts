@@ -153,6 +153,14 @@ export class Game {
     public mobDeathAnimation: boolean = true;  // Mob death animation setting (default true)
     private fpsCounter: number = 0;
     private fpsUpdateTime: number = 0;
+    // Connection quality tracking for slow connection optimization
+    private lastPingTime: number = 0;
+    private averagePing: number = 0;
+    private pingSamples: number[] = [];
+    private readonly MAX_PING_SAMPLES = 10;
+    private lastInputSendTime: number = 0;
+    private readonly MIN_INPUT_INTERVAL = 33; // ~30 TPS (match server tick rate)
+    private connectionQuality: 'good' | 'medium' | 'slow' = 'good';
     private frameCount: number = 0;
     private fpsDisplayElement: HTMLElement | null = null;
     private mobCounterElement: HTMLElement | null = null;
@@ -1283,7 +1291,12 @@ export class Game {
                     targetY = this.mouseY;
                 } else {
                     inputData.useMouse = false;
-                    this.socket.emit('playerInput', inputData);
+                    // Throttle input sending
+                    const now = performance.now();
+                    if (now - this.lastInputSendTime >= this.getInputInterval()) {
+                        this.socket.emit('playerInput', inputData);
+                        this.lastInputSendTime = now;
+                    }
                     return;
                 }
             }
@@ -1325,7 +1338,42 @@ export class Game {
             }
         }
 
-        this.socket.emit('playerInput', inputData);
+        // Throttle input sending based on connection quality
+        const now = performance.now();
+        if (now - this.lastInputSendTime >= this.getInputInterval()) {
+            this.socket.emit('playerInput', inputData);
+            this.lastInputSendTime = now;
+        }
+    }
+
+    private getInputInterval(): number {
+        // Adjust input rate based on connection quality
+        if (this.connectionQuality === 'slow') {
+            return 66; // ~15 TPS for slow connections
+        } else if (this.connectionQuality === 'medium') {
+            return 50; // ~20 TPS for medium connections
+        }
+        return this.MIN_INPUT_INTERVAL; // ~30 TPS for good connections
+    }
+
+    public updateConnectionQuality(ping: number): void {
+        // Add ping to samples
+        this.pingSamples.push(ping);
+        if (this.pingSamples.length > this.MAX_PING_SAMPLES) {
+            this.pingSamples.shift();
+        }
+        
+        // Calculate average ping
+        this.averagePing = this.pingSamples.reduce((a, b) => a + b, 0) / this.pingSamples.length;
+        
+        // Determine connection quality
+        if (this.averagePing > 200) {
+            this.connectionQuality = 'slow';
+        } else if (this.averagePing > 100) {
+            this.connectionQuality = 'medium';
+        } else {
+            this.connectionQuality = 'good';
+        }
     }
 
     private isAnyMenuOpen(): boolean {

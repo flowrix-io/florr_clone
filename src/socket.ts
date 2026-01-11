@@ -446,6 +446,11 @@ function setupSocketListeners(game: any) {
         } else {
             console.log(`[CLIENT] High ping detected: ${roundTripTime.toFixed(1)}ms`);
         }
+        
+        // Update connection quality for slow connection optimization
+        if (game.updateConnectionQuality) {
+            game.updateConnectionQuality(roundTripTime);
+        }
     });
 
     game.socket.on('connect_error', (error: Error) => {

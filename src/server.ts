@@ -774,6 +774,11 @@ for (let i = 0; i < SAND_COUNT; i++) {
 interface AuthenticatedSocket extends Socket {
     userId?: string;
     username?: string;
+    connectionQuality?: 'good' | 'medium' | 'slow';
+    averagePing?: number;
+    pingSamples?: number[];
+    lastUpdateTime?: number;
+    lastGameState?: any; // For delta compression
 }
 
 // Skill multipliers based on rarity tier
@@ -2014,9 +2019,38 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         socket.emit('chatHistory', chatHistory);
     });
 
-    // Handle ping/pong for heartbeat monitoring
+    // Handle ping/pong for heartbeat monitoring and connection quality tracking
     socket.on('ping', (clientTime: number) => {
         socket.emit('pong', clientTime);
+        
+        // Track connection quality based on ping
+        const serverTime = Date.now();
+        const ping = serverTime - clientTime;
+        
+        // Initialize connection quality tracking if not exists
+        if (!socket.pingSamples) {
+            socket.pingSamples = [];
+            socket.connectionQuality = 'good';
+            socket.averagePing = 0;
+        }
+        
+        // Add ping sample
+        socket.pingSamples.push(ping);
+        if (socket.pingSamples.length > 10) {
+            socket.pingSamples.shift();
+        }
+        
+        // Calculate average ping
+        socket.averagePing = socket.pingSamples.reduce((a, b) => a + b, 0) / socket.pingSamples.length;
+        
+        // Determine connection quality
+        if (socket.averagePing > 200) {
+            socket.connectionQuality = 'slow';
+        } else if (socket.averagePing > 100) {
+            socket.connectionQuality = 'medium';
+        } else {
+            socket.connectionQuality = 'good';
+        }
     });
 
     // Handle respawn request
@@ -3828,37 +3862,127 @@ function start_loop() {
             entries.forEach(([key, value]) => petalLastProjectileTime.set(key, value));
         }
 
-        const playersForBroadcast = Object.values(players).map(p => ({
-            id: p.id,
-            name: p.name,
-            x: p.x,
-            y: p.y,
-            angle: p.angle,
-            health: p.health,
-            maxHealth: p.maxHealth,
-            level: p.level,
-            score: p.score,
-            petalExtension: p.inputs?.petalExtension || 1.0,
-            petalPositions: p.petalPositions || []
-        }));
+        // Helper function to quantize positions (reduce precision to save bandwidth)
+        const quantize = (value: number, precision: number = 1): number => {
+            return Math.round(value / precision) * precision;
+        };
 
-        // Only emit gameStateUpdate to authenticated players, not all sockets
-        // This prevents memory leaks from sending updates to unauthenticated title screen connections
+        // Helper function to create optimized player data
+        const createPlayerData = (p: ServerPlayer, quality: 'good' | 'medium' | 'slow') => {
+            const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
+            return {
+                id: p.id,
+                name: p.name,
+                x: quantize(p.x, precision),
+                y: quantize(p.y, precision),
+                angle: quantize(p.angle, quality === 'slow' ? 0.1 : 0.05),
+                health: Math.round(p.health),
+                maxHealth: Math.round(p.maxHealth),
+                level: p.level,
+                score: p.score,
+                petalExtension: quantize(p.inputs?.petalExtension || 1.0, 0.1),
+                petalPositions: (p.petalPositions || []).map((pos: any) => ({
+                    ...pos,
+                    x: quantize(pos.x, precision),
+                    y: quantize(pos.y, precision)
+                }))
+            };
+        };
+
+        // Helper function to create optimized enemy data
+        const createEnemyData = (e: Enemy, quality: 'good' | 'medium' | 'slow') => {
+            const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
+            return {
+                id: e.id,
+                type: e.type,
+                tier: e.tier,
+                x: quantize(e.x, precision),
+                y: quantize(e.y, precision),
+                angle: quantize(e.angle, quality === 'slow' ? 0.1 : 0.05),
+                health: Math.round(e.health),
+                maxHealth: Math.round(e.maxHealth)
+            };
+        };
+
+        // Helper function for delta compression - only send changed data
+        const getDeltaUpdate = (current: any, previous: any, quality: 'good' | 'medium' | 'slow'): any => {
+            if (!previous) return current; // First update, send full state
+            
+            const delta: any = {};
+            
+            // For slow connections, send full state less frequently
+            if (quality === 'slow') {
+                // Only send delta every 2-3 ticks for slow connections
+                return current;
+            }
+            
+            // For medium/good connections, send delta
+            if (JSON.stringify(current) !== JSON.stringify(previous)) {
+                return current;
+            }
+            
+            return null; // No changes
+        };
+
         // Filter enemies to only send those in viewport with 200% buffer for optimization
         const enemiesInViewport = getEnemiesInViewport200Percent();
         
+        // Send optimized updates to each player based on their connection quality
         for (const playerId of authenticatedPlayerIds) {
-            io.to(playerId).emit('gameStateUpdate',
-                {
-                players: playersForBroadcast,
-                enemies: enemiesInViewport,
-                    // Items are sent via itemSpawned/itemRemoved events to eligible players only
-                    // Don't send items here to avoid showing items to ineligible players
-                    items: [],
-                    dots: dots,
-                    timestamp: Date.now()
+            const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
+            if (!socket || !socket.userId) continue;
+            
+            const quality = socket.connectionQuality || 'good';
+            const now = Date.now();
+            
+            // Adaptive update rate based on connection quality
+            let shouldUpdate = true;
+            if (socket.lastUpdateTime) {
+                const timeSinceLastUpdate = now - socket.lastUpdateTime;
+                if (quality === 'slow' && timeSinceLastUpdate < 100) { // ~10 TPS for slow
+                    shouldUpdate = false;
+                } else if (quality === 'medium' && timeSinceLastUpdate < 50) { // ~20 TPS for medium
+                    shouldUpdate = false;
+                } else if (quality === 'good' && timeSinceLastUpdate < 33) { // ~30 TPS for good
+                    shouldUpdate = false;
                 }
-            );
+            }
+            
+            if (!shouldUpdate) continue;
+            
+            // Create optimized player data
+            const playersForBroadcast = Object.values(players).map(p => createPlayerData(p, quality));
+            
+            // Create optimized enemy data
+            const enemiesForBroadcast = enemiesInViewport.map(e => createEnemyData(e, quality));
+            
+            // Create game state update
+            const gameState = {
+                players: playersForBroadcast,
+                enemies: enemiesForBroadcast,
+                items: [], // Items are sent via itemSpawned/itemRemoved events
+                dots: dots.map(d => ({
+                    x: quantize(d.x, quality === 'slow' ? 2 : 1),
+                    y: quantize(d.y, quality === 'slow' ? 2 : 1)
+                })),
+                timestamp: now
+            };
+            
+            // Apply delta compression for medium/good connections
+            if (quality !== 'slow') {
+                const delta = getDeltaUpdate(gameState, socket.lastGameState, quality);
+                if (delta === null) {
+                    // No changes, skip update
+                    continue;
+                }
+                socket.lastGameState = JSON.parse(JSON.stringify(gameState)); // Deep clone
+            } else {
+                // For slow connections, always send full state but less frequently
+                socket.lastGameState = JSON.parse(JSON.stringify(gameState));
+            }
+            
+            socket.lastUpdateTime = now;
+            io.to(playerId).emit('gameStateUpdate', gameState);
         }
     }, TICK_INTERVAL);
 }
