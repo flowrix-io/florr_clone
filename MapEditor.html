@@ -146,6 +146,15 @@
                     <button id="selectTool">Select</button>
                     <button id="deleteTool">Delete</button>
                 </div>
+                <div style="margin-top: 10px;">
+                    <strong>Visibility:</strong>
+                    <label style="display: block; margin-top: 5px;">
+                        <input type="checkbox" id="showElements" checked> Show Elements
+                    </label>
+                    <label style="display: block;">
+                        <input type="checkbox" id="showWallGrid" checked> Show Wall Grid
+                    </label>
+                </div>
             </div>
 
             <div class="tool-section">
@@ -277,6 +286,8 @@
         let cameraOffset = { x: 0, y: 0 };
         let scale = 0.1;
         let brushSize = 3; // Default brush size 3x3
+        let showElements = true;
+        let showWallGrid = true;
 
         // Initialize wall grid
         function initializeWallGrid() {
@@ -352,6 +363,16 @@
         // Brush size selection
         document.getElementById('brushSize').addEventListener('change', function() {
             brushSize = parseInt(this.value) || 3;
+        });
+
+        // Visibility toggles
+        document.getElementById('showElements').addEventListener('change', function() {
+            showElements = this.checked;
+            render();
+        });
+        document.getElementById('showWallGrid').addEventListener('change', function() {
+            showWallGrid = this.checked;
+            render();
         });
 
         // Mouse events
@@ -602,29 +623,31 @@
                 }
             }
 
-            // Draw wall grid tiles
-            const visibleMinTileX = Math.max(0, Math.floor(-cameraOffset.x / (WALL_TILE_SIZE * scale)));
-            const visibleMaxTileX = Math.min(WALL_GRID_WIDTH - 1, Math.ceil((canvas.width - cameraOffset.x) / (WALL_TILE_SIZE * scale)));
-            const visibleMinTileY = Math.max(0, Math.floor(-cameraOffset.y / (WALL_TILE_SIZE * scale)));
-            const visibleMaxTileY = Math.min(WALL_GRID_HEIGHT - 1, Math.ceil((canvas.height - cameraOffset.y) / (WALL_TILE_SIZE * scale)));
+            // Draw wall grid tiles (if visible)
+            if (showWallGrid) {
+                const visibleMinTileX = Math.max(0, Math.floor(-cameraOffset.x / (WALL_TILE_SIZE * scale)));
+                const visibleMaxTileX = Math.min(WALL_GRID_WIDTH - 1, Math.ceil((canvas.width - cameraOffset.x) / (WALL_TILE_SIZE * scale)));
+                const visibleMinTileY = Math.max(0, Math.floor(-cameraOffset.y / (WALL_TILE_SIZE * scale)));
+                const visibleMaxTileY = Math.min(WALL_GRID_HEIGHT - 1, Math.ceil((canvas.height - cameraOffset.y) / (WALL_TILE_SIZE * scale)));
 
-            for (let tileY = visibleMinTileY; tileY <= visibleMaxTileY; tileY++) {
-                for (let tileX = visibleMinTileX; tileX <= visibleMaxTileX; tileX++) {
-                    const state = wallGrid[tileY]?.[tileX] || 0;
-                    if (state === 0) continue; // Skip air tiles
+                for (let tileY = visibleMinTileY; tileY <= visibleMaxTileY; tileY++) {
+                    for (let tileX = visibleMinTileX; tileX <= visibleMaxTileX; tileX++) {
+                        const state = wallGrid[tileY]?.[tileX] || 0;
+                        if (state === 0) continue; // Skip air tiles
 
-                    const worldX = tileToWorldX(tileX);
-                    const worldY = tileToWorldY(tileY);
-                    const screenX = worldX * scale - cameraOffset.x;
-                    const screenY = worldY * scale - cameraOffset.y;
-                    const tileSize = WALL_TILE_SIZE * scale;
+                        const worldX = tileToWorldX(tileX);
+                        const worldY = tileToWorldY(tileY);
+                        const screenX = worldX * scale - cameraOffset.x;
+                        const screenY = worldY * scale - cameraOffset.y;
+                        const tileSize = WALL_TILE_SIZE * scale;
 
-                    if (state === 1) {
-                        ctx.fillStyle = COLORS.wall;
-                    } else if (state === 2) {
-                        ctx.fillStyle = COLORS.water;
+                        if (state === 1) {
+                            ctx.fillStyle = COLORS.wall;
+                        } else if (state === 2) {
+                            ctx.fillStyle = COLORS.water;
+                        }
+                        ctx.fillRect(screenX, screenY, tileSize, tileSize);
                     }
-                    ctx.fillRect(screenX, screenY, tileSize, tileSize);
                 }
             }
 
@@ -645,62 +668,64 @@
                 ctx.stroke();
             }
 
-            // Draw elements
-            elements.forEach(element => {
-                ctx.fillStyle = COLORS[element.type];
-                ctx.fillRect(
-                    element.x * scale - cameraOffset.x,
-                    element.y * scale - cameraOffset.y,
-                    element.width * scale,
-                    element.height * scale
-                );
-
-                // Add special visual indicator for cross-server teleporters
-                if (element.type === 'teleporter' && element.properties.teleportTo?.serverPort) {
-                    // Draw cross-server indicator (small diamond in corner)
-                    const x = element.x * scale - cameraOffset.x;
-                    const y = element.y * scale - cameraOffset.y;
-                    const size = Math.min(element.width * scale, element.height * scale) * 0.3;
-                    
-                    ctx.fillStyle = '#FFD700'; // Gold color
-                    ctx.save();
-                    ctx.translate(x + size / 2, y + size / 2);
-                    ctx.rotate(Math.PI / 4); // 45 degrees
-                    ctx.fillRect(-size / 4, -size / 4, size / 2, size / 2);
-                    ctx.restore();
-                    
-                    // Add port number text
-                    ctx.fillStyle = '#fff';
-                    ctx.font = `${Math.max(10, element.width * scale * 0.1)}px Ubuntu, sans-serif`;
-                    ctx.textAlign = 'center';
-                    ctx.fillText(
-                        element.properties.teleportTo.serverPort.toString(),
-                        x + element.width * scale / 2,
-                        y + element.height * scale / 2 + 15
+            // Draw elements (if visible)
+            if (showElements) {
+                elements.forEach(element => {
+                    ctx.fillStyle = COLORS[element.type];
+                    ctx.fillRect(
+                        element.x * scale - cameraOffset.x,
+                        element.y * scale - cameraOffset.y,
+                        element.width * scale,
+                        element.height * scale
                     );
-                }
 
-                // Draw on minimap (showing 20000x20000 area instead of full map)
-                const MINIMAP_AREA_SIZE = 20000;
-                minimapCtx.fillStyle = COLORS[element.type];
-                minimapCtx.fillRect(
-                    (element.x / MINIMAP_AREA_SIZE) * minimap.width,
-                    (element.y / MINIMAP_AREA_SIZE) * minimap.height,
-                    (element.width / MINIMAP_AREA_SIZE) * minimap.width,
-                    (element.height / MINIMAP_AREA_SIZE) * minimap.height
-                );
-                
-                // Add indicator on minimap for cross-server teleporters
-                if (element.type === 'teleporter' && element.properties.teleportTo?.serverPort) {
-                    minimapCtx.fillStyle = '#FFD700';
+                    // Add special visual indicator for cross-server teleporters
+                    if (element.type === 'teleporter' && element.properties.teleportTo?.serverPort) {
+                        // Draw cross-server indicator (small diamond in corner)
+                        const x = element.x * scale - cameraOffset.x;
+                        const y = element.y * scale - cameraOffset.y;
+                        const size = Math.min(element.width * scale, element.height * scale) * 0.3;
+
+                        ctx.fillStyle = '#FFD700'; // Gold color
+                        ctx.save();
+                        ctx.translate(x + size / 2, y + size / 2);
+                        ctx.rotate(Math.PI / 4); // 45 degrees
+                        ctx.fillRect(-size / 4, -size / 4, size / 2, size / 2);
+                        ctx.restore();
+
+                        // Add port number text
+                        ctx.fillStyle = '#fff';
+                        ctx.font = `${Math.max(10, element.width * scale * 0.1)}px Ubuntu, sans-serif`;
+                        ctx.textAlign = 'center';
+                        ctx.fillText(
+                            element.properties.teleportTo.serverPort.toString(),
+                            x + element.width * scale / 2,
+                            y + element.height * scale / 2 + 15
+                        );
+                    }
+
+                    // Draw on minimap (showing 20000x20000 area instead of full map)
+                    const MINIMAP_AREA_SIZE = 20000;
+                    minimapCtx.fillStyle = COLORS[element.type];
                     minimapCtx.fillRect(
                         (element.x / MINIMAP_AREA_SIZE) * minimap.width,
                         (element.y / MINIMAP_AREA_SIZE) * minimap.height,
-                        Math.max(2, (element.width / MINIMAP_AREA_SIZE) * minimap.width),
-                        Math.max(2, (element.height / MINIMAP_AREA_SIZE) * minimap.height)
+                        (element.width / MINIMAP_AREA_SIZE) * minimap.width,
+                        (element.height / MINIMAP_AREA_SIZE) * minimap.height
                     );
-                }
-            });
+
+                    // Add indicator on minimap for cross-server teleporters
+                    if (element.type === 'teleporter' && element.properties.teleportTo?.serverPort) {
+                        minimapCtx.fillStyle = '#FFD700';
+                        minimapCtx.fillRect(
+                            (element.x / MINIMAP_AREA_SIZE) * minimap.width,
+                            (element.y / MINIMAP_AREA_SIZE) * minimap.height,
+                            Math.max(2, (element.width / MINIMAP_AREA_SIZE) * minimap.width),
+                            Math.max(2, (element.height / MINIMAP_AREA_SIZE) * minimap.height)
+                        );
+                    }
+                });
+            }
 
             // Draw selection
             if (selectedElement) {
