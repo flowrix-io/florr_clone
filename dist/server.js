@@ -756,8 +756,12 @@ const playerStateDeps = {
 };
 io.on('connection', (socket) => {
     console.log('A user connected');
-    // Send map data to the client
-    socket.emit('mapData', constants_2.WORLD_MAP);
+    // Send map data to the client (includes elements and wallGrid)
+    const mapData = {
+        elements: constants_2.WORLD_MAP,
+        wallGrid: constants_2.WALL_GRID
+    };
+    socket.emit('mapData', mapData);
     socket.on('playerInput', (inputData) => {
         const player = constants_2.players[socket.id];
         if (player) {
@@ -3395,6 +3399,15 @@ function start_loop() {
 // Start the server
 server.listen(PORT, () => {
     console.log(`Server is running on ${constants_1.SERVER_PROTOCOL}://localhost:${PORT}`);
+    // Debug: verify WALL_GRID is loaded
+    let nonZeroTiles = 0;
+    for (let y = 0; y < constants_2.WALL_GRID.length; y++) {
+        for (let x = 0; x < constants_2.WALL_GRID[y].length; x++) {
+            if (constants_2.WALL_GRID[y][x] !== 0)
+                nonZeroTiles++;
+        }
+    }
+    console.log(`[SERVER] WALL_GRID loaded: ${constants_2.WALL_GRID.length}x${constants_2.WALL_GRID[0]?.length || 0}, non-zero tiles: ${nonZeroTiles}`);
 });
 start_loop();
 // Add density maintenance interval (every 0.5 seconds) to spawn enemies as viewport moves

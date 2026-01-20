@@ -451,26 +451,48 @@ class Game {
         if (window.preconnectedMapData) {
             console.log('[Game] Using preconnected map data');
             const mapData = window.preconnectedMapData;
-            this.world_map_data = mapData;
-            this.graphics.setMap(mapData);
-            this.renderMap(mapData);
+            // Handle MapData format (with elements property) or legacy array format
+            const elements = mapData.elements || mapData;
+            this.world_map_data = elements;
+            this.graphics.setMap(elements);
+            this.renderMap(elements);
             // Load biome textures
-            this.assetLoader.loadBiomeTextures(mapData, this.graphics);
+            this.assetLoader.loadBiomeTextures(elements, this.graphics);
             // Update title screen with available biomes
-            this.updateTitleScreenBiomes(mapData);
+            this.updateTitleScreenBiomes(elements);
+            // Update wall grid if provided
+            if (mapData.wallGrid) {
+                for (let y = 0; y < mapData.wallGrid.length && y < constants_1.WALL_GRID.length; y++) {
+                    for (let x = 0; x < mapData.wallGrid[y].length && x < constants_1.WALL_GRID[y].length; x++) {
+                        constants_1.WALL_GRID[y][x] = mapData.wallGrid[y][x];
+                    }
+                }
+                console.log('[Game] Applied wall grid from preconnected data');
+            }
             // Clear preconnected map data
             window.preconnectedMapData = null;
         }
-        // Listen for map data from the server
+        // Listen for map data from the server (includes elements and wallGrid)
         this.socket.on('mapData', (mapData) => {
             //console.log('Received map data:', mapData);
-            this.world_map_data = mapData;
-            this.graphics.setMap(mapData);
-            this.renderMap(mapData);
+            const elements = mapData.elements;
+            this.world_map_data = elements;
+            this.graphics.setMap(elements);
+            this.renderMap(elements);
             // Load biome textures
-            this.assetLoader.loadBiomeTextures(mapData, this.graphics);
+            this.assetLoader.loadBiomeTextures(elements, this.graphics);
             // Update title screen with available biomes
-            this.updateTitleScreenBiomes(mapData);
+            this.updateTitleScreenBiomes(elements);
+            // Update wall grid if provided
+            if (mapData.wallGrid) {
+                // Copy wall grid data to the shared WALL_GRID constant
+                for (let y = 0; y < mapData.wallGrid.length && y < constants_1.WALL_GRID.length; y++) {
+                    for (let x = 0; x < mapData.wallGrid[y].length && x < constants_1.WALL_GRID[y].length; x++) {
+                        constants_1.WALL_GRID[y][x] = mapData.wallGrid[y][x];
+                    }
+                }
+                console.log('[Game] Received wall grid data');
+            }
         });
         this.socket.on('zoneUpdate', (zones) => {
             // ... existing code ...

@@ -27,7 +27,7 @@ if (migratedPlayers > 0) {
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
-import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig } from './constants';
+import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, WALL_GRID } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect } from './server_utils';
 import { MobProjectile, PlayerProjectile } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
@@ -970,8 +970,12 @@ const playerStateDeps: PlayerStateDependencies = {
 io.on('connection', (socket: AuthenticatedSocket) => {
     console.log('A user connected');
 
-    // Send map data to the client
-    socket.emit('mapData', WORLD_MAP);
+    // Send map data to the client (includes elements and wallGrid)
+    const mapData: MapData = {
+        elements: WORLD_MAP,
+        wallGrid: WALL_GRID
+    };
+    socket.emit('mapData', mapData);
 
     socket.on('playerInput', (inputData: any) => {
         const player = players[socket.id];
@@ -3990,6 +3994,15 @@ function start_loop() {
 // Start the server
 server.listen(PORT, () => {
     console.log(`Server is running on ${SERVER_PROTOCOL}://localhost:${PORT}`);
+
+    // Debug: verify WALL_GRID is loaded
+    let nonZeroTiles = 0;
+    for (let y = 0; y < WALL_GRID.length; y++) {
+        for (let x = 0; x < WALL_GRID[y].length; x++) {
+            if (WALL_GRID[y][x] !== 0) nonZeroTiles++;
+        }
+    }
+    console.log(`[SERVER] WALL_GRID loaded: ${WALL_GRID.length}x${WALL_GRID[0]?.length || 0}, non-zero tiles: ${nonZeroTiles}`);
 });
 
 start_loop();

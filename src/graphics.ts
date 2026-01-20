@@ -1,7 +1,7 @@
 import { Player } from './player';
 import { Enemy } from './enemy';
 import { Item, WorldItem } from './item';
-import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE, getMobAnimationFrameTime, getHighQualityMobs } from './constants';
+import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE, getMobAnimationFrameTime, getHighQualityMobs, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState, WallTileState } from './constants';
 import { getPetalStats, getAllPetalTypes } from './petals';
 import { getMobStats, getAllMobTypes, MOB_CONFIG } from './mobs';
 import { getSVGRenderer } from './svg_renderer';
@@ -1435,7 +1435,10 @@ export class Graphics {
             bottom: this.cameraY + scaledHeight
         };
 
-        // Draw all map elements
+        // Draw wall grid tiles
+        this.drawWallGrid(viewport);
+
+        // Draw all map elements (spawn areas, biomes, teleporters, safe zones)
         world_map_data.forEach(element => {
             const x = element.x;
             const y = element.y;
@@ -1449,35 +1452,15 @@ export class Graphics {
                 y + height >= viewport.top &&
                 y <= viewport.bottom
             ) {
-                if (element.type === 'wall') {
-                    const shadowSize = 7; // Size of shadow around the spikes
-                    
-                    // Draw wall texture tiled
-                    const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
-                    if (pattern) {
-                        // Draw shadows around spikes first (they will sample their own positions)
-                        this.drawWallSpikeShadows(x, y, width, height, element, world_map_data, shadowSize);
-                        
-                        this.ctx.save();
-                        this.ctx.fillStyle = pattern;
-                        this.ctx.fillRect(x, y, width, height);
-                        
-                        // Draw spiky edges on exposed edges
-                        this.drawWallSpikes(x, y, width, height, element, world_map_data, pattern);
-                        
-                        this.ctx.restore();
-                    }
-                } else {
-                    // Draw other elements normally
-                    this.ctx.fillStyle = this.MAP_COLORS[element.type];
-                    this.ctx.fillRect(x, y, width, height);
+                // Draw other elements normally (no more wall type)
+                this.ctx.fillStyle = this.MAP_COLORS[element.type] || 'rgba(128, 128, 128, 0.0)';
+                this.ctx.fillRect(x, y, width, height);
 
-                    // Add visual indicators for special elements
-                    if (element.type === 'teleporter') {
-                        this.drawTeleporter(x, y, width, height);
-                    } else if (element.type === 'spawn') {
-                        this.drawSpawnPoint(x, y, width, height, element.properties?.spawnType);
-                    }
+                // Add visual indicators for special elements
+                if (element.type === 'teleporter') {
+                    this.drawTeleporter(x, y, width, height);
+                } else if (element.type === 'spawn') {
+                    this.drawSpawnPoint(x, y, width, height, element.properties?.spawnType);
                 }
 
                 // Draw debug info if hitboxes are enabled
@@ -1490,6 +1473,76 @@ export class Graphics {
                 }
             }
         });
+    }
+
+    private wallGridLogOnce = false;
+    /**
+     * Draw the wall grid (walls and water tiles)
+     */
+    private drawWallGrid(viewport: { left: number; right: number; top: number; bottom: number }): void {
+        if (!WALL_GRID || !WALL_GRID.length) {
+            if (!this.wallGridLogOnce) {
+                console.warn('[Graphics] WALL_GRID is empty or undefined');
+                this.wallGridLogOnce = true;
+            }
+            return;
+        }
+
+        // Log once
+        if (!this.wallGridLogOnce) {
+            let nonZero = 0;
+            for (let y = 0; y < WALL_GRID.length; y++) {
+                for (let x = 0; x < WALL_GRID[y].length; x++) {
+                    if (WALL_GRID[y][x] !== 0) nonZero++;
+                }
+            }
+            console.log(`[Graphics] WALL_GRID: ${WALL_GRID.length}x${WALL_GRID[0]?.length || 0}, non-zero tiles: ${nonZero}`);
+            this.wallGridLogOnce = true;
+        }
+
+        // Calculate which tiles are visible in the viewport
+        const minTileX = Math.max(0, worldToTileX(viewport.left));
+        const maxTileX = Math.min(WALL_GRID[0]?.length - 1 || 0, worldToTileX(viewport.right));
+        const minTileY = Math.max(0, worldToTileY(viewport.top));
+        const maxTileY = Math.min(WALL_GRID.length - 1, worldToTileY(viewport.bottom));
+
+        // Draw each visible tile
+        // Note: The canvas context is already translated by the camera position,
+        // so we use world coordinates directly, not screen coordinates
+        for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+            for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+                const state = WALL_GRID[tileY]?.[tileX] || 0;
+
+                if (state === 0) continue; // Skip air tiles
+
+                // Use world coordinates directly (context is already translated)
+                const worldX = tileToWorldX(tileX);
+                const worldY = tileToWorldY(tileY);
+
+                if (state === 1) {
+                    // Draw wall tile
+                    const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
+                    if (pattern) {
+                        this.ctx.save();
+                        this.ctx.fillStyle = pattern;
+                        this.ctx.fillRect(worldX, worldY, WALL_TILE_SIZE, WALL_TILE_SIZE);
+                        this.ctx.restore();
+                    } else {
+                        // Fallback: gray color
+                        this.ctx.fillStyle = '#666666';
+                        this.ctx.fillRect(worldX, worldY, WALL_TILE_SIZE, WALL_TILE_SIZE);
+                    }
+                } else if (state === 2) {
+                    // Draw water tile (blue)
+                    this.ctx.fillStyle = '#4169E1'; // Royal blue
+                    this.ctx.fillRect(worldX, worldY, WALL_TILE_SIZE, WALL_TILE_SIZE);
+
+                    // Add a subtle water effect (optional: add animation later)
+                    this.ctx.fillStyle = 'rgba(65, 105, 225, 0.3)';
+                    this.ctx.fillRect(worldX, worldY, WALL_TILE_SIZE, WALL_TILE_SIZE);
+                }
+            }
+        }
     }
 
     private drawTeleporter(x: number, y: number, width: number, height: number) {
@@ -3074,33 +3127,30 @@ export class Graphics {
         });
     }
 
-    // Minimap scrolling methods
+    // Minimap scrolling methods (disabled - minimap now auto-follows player's section)
     public scrollMinimap(deltaX: number, deltaY: number) {
-        const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
-        const MAX_SCROLL_X = ACTUAL_WORLD_WIDTH - MINIMAP_AREA_SIZE;
-        const MAX_SCROLL_Y = ACTUAL_WORLD_HEIGHT - MINIMAP_AREA_SIZE;
-        
-        this.minimapScrollX = Math.max(0, Math.min(MAX_SCROLL_X, this.minimapScrollX + deltaX));
-        this.minimapScrollY = Math.max(0, Math.min(MAX_SCROLL_Y, this.minimapScrollY + deltaY));
+        // Minimap scrolling is disabled - it automatically shows the current 9th section
+        // This method is kept for backward compatibility but does nothing
     }
 
     public setMinimapScroll(x: number, y: number) {
-        const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
-        const MAX_SCROLL_X = ACTUAL_WORLD_WIDTH - MINIMAP_AREA_SIZE;
-        const MAX_SCROLL_Y = ACTUAL_WORLD_HEIGHT - MINIMAP_AREA_SIZE;
+        // Clamp to section boundaries (each section is 20000x20000)
+        const SECTION_SIZE = 20000;
+        const sectionX = Math.floor(x / SECTION_SIZE);
+        const sectionY = Math.floor(y / SECTION_SIZE);
         
-        this.minimapScrollX = Math.max(0, Math.min(MAX_SCROLL_X, x));
-        this.minimapScrollY = Math.max(0, Math.min(MAX_SCROLL_Y, y));
+        // Clamp to valid sections (0-2 for both X and Y)
+        const clampedSectionX = Math.max(0, Math.min(2, sectionX));
+        const clampedSectionY = Math.max(0, Math.min(2, sectionY));
+        
+        // Set scroll to the start of the clamped section
+        this.minimapScrollX = clampedSectionX * SECTION_SIZE;
+        this.minimapScrollY = clampedSectionY * SECTION_SIZE;
     }
 
     public centerMinimapOnPlayer(playerX: number, playerY: number) {
-        const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
-        const HALF_AREA = MINIMAP_AREA_SIZE / 2;
-        
-        this.setMinimapScroll(
-            playerX - HALF_AREA,
-            playerY - HALF_AREA
-        );
+        // Use the followPlayerOnMinimap method which handles 9-section division
+        this.followPlayerOnMinimap(playerX, playerY);
     }
 
     public zoomInMinimap() {
@@ -3120,8 +3170,23 @@ export class Graphics {
     }
 
     public followPlayerOnMinimap(playerX: number, playerY: number) {
-        // Automatically center minimap on player
-        this.centerMinimapOnPlayer(playerX, playerY);
+        // Automatically show the 9th section the player is in (3x3 grid, each section is 20000x20000)
+        const SECTION_SIZE = 20000;
+        const sectionX = Math.floor(playerX / SECTION_SIZE);
+        const sectionY = Math.floor(playerY / SECTION_SIZE);
+        
+        // Clamp to valid sections (0-2 for both X and Y)
+        const clampedSectionX = Math.max(0, Math.min(2, sectionX));
+        const clampedSectionY = Math.max(0, Math.min(2, sectionY));
+        
+        // Set minimap to show this section (centered)
+        const sectionCenterX = clampedSectionX * SECTION_SIZE + SECTION_SIZE / 2;
+        const sectionCenterY = clampedSectionY * SECTION_SIZE + SECTION_SIZE / 2;
+        
+        this.setMinimapScroll(
+            sectionCenterX - SECTION_SIZE / 2,
+            sectionCenterY - SECTION_SIZE / 2
+        );
     }
 
     // Add minimap drawing
@@ -3129,8 +3194,8 @@ export class Graphics {
         const minimapX = this.canvas.width - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
         const minimapY = this.MINIMAP_PADDING;
         
-        // Define the area to show on minimap (scaled by zoom level)
-        const MINIMAP_AREA_SIZE = 20000 / this.minimapZoom;
+        // Always show exactly one section (20000x20000) - no zoom
+        const MINIMAP_AREA_SIZE = 20000;
         const minimapScale = {
             x: this.MINIMAP_WIDTH / MINIMAP_AREA_SIZE,
             y: this.MINIMAP_HEIGHT / MINIMAP_AREA_SIZE
@@ -3146,21 +3211,53 @@ export class Graphics {
         this.ctx.rect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
         this.ctx.clip();
 
-        // Draw only walls on minimap (with scroll offset)
-        this.mapData.forEach(element => {
-            // Only draw walls
-            if (element.type === 'wall') {
-                const scaledX = minimapX + ((element.x - this.minimapScrollX) * minimapScale.x);
-                const scaledY = minimapY + ((element.y - this.minimapScrollY) * minimapScale.y);
-                const scaledWidth = element.width * minimapScale.x;
-                const scaledHeight = element.height * minimapScale.y;
+        // Draw wall grid tiles on minimap
+        const SECTION_SIZE = 20000;
+        const sectionX = Math.floor(this.minimapScrollX / SECTION_SIZE);
+        const sectionY = Math.floor(this.minimapScrollY / SECTION_SIZE);
+        const minTileX = Math.max(0, worldToTileX(sectionX * SECTION_SIZE));
+        const maxTileX = Math.min(WALL_GRID_WIDTH - 1, worldToTileX((sectionX + 1) * SECTION_SIZE));
+        const minTileY = Math.max(0, worldToTileY(sectionY * SECTION_SIZE));
+        const maxTileY = Math.min(WALL_GRID_HEIGHT - 1, worldToTileY((sectionY + 1) * SECTION_SIZE));
 
-                // Only draw if the element is within the visible minimap area
-                if (scaledX + scaledWidth > minimapX && scaledX < minimapX + this.MINIMAP_WIDTH &&
-                    scaledY + scaledHeight > minimapY && scaledY < minimapY + this.MINIMAP_HEIGHT) {
+        for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+            for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+                const state = getTileState(WALL_GRID, tileToWorldX(tileX), tileToWorldY(tileY));
+                if (state === 0) continue; // Skip air tiles
+
+                const worldX = tileToWorldX(tileX);
+                const worldY = tileToWorldY(tileY);
+                const scaledX = minimapX + ((worldX - this.minimapScrollX) * minimapScale.x);
+                const scaledY = minimapY + ((worldY - this.minimapScrollY) * minimapScale.y);
+                const tileSize = WALL_TILE_SIZE * minimapScale.x;
+
+                if (state === 1) {
                     this.ctx.fillStyle = '#000000'; // Black for walls
-                    this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+                } else if (state === 2) {
+                    this.ctx.fillStyle = '#4169E1'; // Blue for water
                 }
+                this.ctx.fillRect(scaledX, scaledY, tileSize, tileSize);
+            }
+        }
+
+        // Draw map elements (spawn, biome, teleporter, safe_zone) on minimap
+        this.mapData.forEach(element => {
+            const scaledX = minimapX + ((element.x - this.minimapScrollX) * minimapScale.x);
+            const scaledY = minimapY + ((element.y - this.minimapScrollY) * minimapScale.y);
+            const scaledWidth = element.width * minimapScale.x;
+            const scaledHeight = element.height * minimapScale.y;
+
+            // Only draw if the element is within the visible minimap area
+            if (scaledX + scaledWidth > minimapX && scaledX < minimapX + this.MINIMAP_WIDTH &&
+                scaledY + scaledHeight > minimapY && scaledY < minimapY + this.MINIMAP_HEIGHT) {
+                if (element.type === 'teleporter') {
+                    this.ctx.fillStyle = element.properties?.teleportTo?.serverPort ? '#FFD700' : '#2196F3'; // Gold for cross-server, blue for same-server
+                } else if (element.type === 'safe_zone') {
+                    this.ctx.fillStyle = '#FFC107'; // Yellow for safe zone
+                } else {
+                    return; // Skip unknown types
+                }
+                this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
             }
         });
 
@@ -3198,10 +3295,17 @@ export class Graphics {
         // Restore context to remove clipping region
         this.ctx.restore();
 
-        // Draw border
-        this.ctx.strokeStyle = '#000000';
+        // Draw section boundary (the minimap shows exactly one section)
+        this.ctx.strokeStyle = '#FFD700';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
+
+        // Draw section number label (reuses SECTION_SIZE, sectionX, sectionY from above)
+        const sectionNumber = sectionY * 3 + sectionX + 1;
+        this.ctx.fillStyle = '#FFD700';
+        this.ctx.font = 'bold 14px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(`Section ${sectionNumber}`, minimapX + this.MINIMAP_WIDTH / 2, minimapY + 20);
     }
 
     private drawScrollingBackground() {

@@ -183,7 +183,9 @@ function preconnectToServer() {
         window.preconnectedMapData = mapData;
         // Update title screen biomes if available
         if (titleScreen) {
-            titleScreen.updateBiomesFromMapData(mapData);
+            // Handle MapData format (with elements property) or legacy array format
+            const elements = mapData.elements || mapData;
+            titleScreen.updateBiomesFromMapData(elements);
         }
     });
     // Listen for authenticated event to update title screen inventory and skills

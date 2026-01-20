@@ -123,128 +123,128 @@ function resolvePlayerWallCollision(playerX, playerY, playerSize, wallX, wallY, 
     return { x: playerX, y: playerY };
 }
 /**
- * Check and resolve player-wall collisions
+ * Check if a position collides with a wall or water tile
+ */
+function checkTileCollision(worldX, worldY, halfSize) {
+    // Check all tiles that the entity overlaps with
+    const minTileX = (0, constants_1.worldToTileX)(worldX - halfSize);
+    const maxTileX = (0, constants_1.worldToTileX)(worldX + halfSize);
+    const minTileY = (0, constants_1.worldToTileY)(worldY - halfSize);
+    const maxTileY = (0, constants_1.worldToTileY)(worldY + halfSize);
+    for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+        for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+            const state = (0, constants_1.getTileState)(constants_1.WALL_GRID, (0, constants_1.tileToWorldX)(tileX), (0, constants_1.tileToWorldY)(tileY));
+            // State 1 (wall) or 2 (water) both have collision
+            if (state === 1 || state === 2) {
+                // Check if the entity actually overlaps with this tile
+                const tileWorldX = (0, constants_1.tileToWorldX)(tileX);
+                const tileWorldY = (0, constants_1.tileToWorldY)(tileY);
+                const tileRight = tileWorldX + constants_1.WALL_TILE_SIZE;
+                const tileBottom = tileWorldY + constants_1.WALL_TILE_SIZE;
+                if (worldX + halfSize > tileWorldX &&
+                    worldX - halfSize < tileRight &&
+                    worldY + halfSize > tileWorldY &&
+                    worldY - halfSize < tileBottom) {
+                    return { collided: true, tileX, tileY, state };
+                }
+            }
+        }
+    }
+    return null;
+}
+/**
+ * Resolve collision with a tile by pushing entity away
+ */
+function resolveTileCollision(entityX, entityY, entityHalfSize, tileX, tileY) {
+    const tileWorldX = (0, constants_1.tileToWorldX)(tileX);
+    const tileWorldY = (0, constants_1.tileToWorldY)(tileY);
+    const tileRight = tileWorldX + constants_1.WALL_TILE_SIZE;
+    const tileBottom = tileWorldY + constants_1.WALL_TILE_SIZE;
+    const entityLeft = entityX - entityHalfSize;
+    const entityRight = entityX + entityHalfSize;
+    const entityTop = entityY - entityHalfSize;
+    const entityBottom = entityY + entityHalfSize;
+    // Calculate overlap amounts
+    const overlapLeft = entityRight - tileWorldX;
+    const overlapRight = tileRight - entityLeft;
+    const overlapTop = entityBottom - tileWorldY;
+    const overlapBottom = tileBottom - entityTop;
+    // Find the minimum overlap to determine push direction
+    const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+    let newX = entityX;
+    let newY = entityY;
+    // Push entity away from tile in the direction of minimum overlap
+    if (minOverlap === overlapLeft) {
+        newX = tileWorldX - entityHalfSize - COLLISION_BUFFER;
+    }
+    else if (minOverlap === overlapRight) {
+        newX = tileRight + entityHalfSize + COLLISION_BUFFER;
+    }
+    else if (minOverlap === overlapTop) {
+        newY = tileWorldY - entityHalfSize - COLLISION_BUFFER;
+    }
+    else if (minOverlap === overlapBottom) {
+        newY = tileBottom + entityHalfSize + COLLISION_BUFFER;
+    }
+    return { x: newX, y: newY };
+}
+/**
+ * Check and resolve player-wall collisions using tile grid
  */
 function checkPlayerWallCollisions(playerX, playerY, playerSize = constants_1.PLAYER_SIZE) {
     let newX = playerX;
     let newY = playerY;
     let collided = false;
-    for (const element of constants_1.WORLD_MAP) {
-        if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-            const wallX = element.x * constants_1.SCALE_FACTOR;
-            const wallY = element.y * constants_1.SCALE_FACTOR;
-            const wallWidth = element.width * constants_1.SCALE_FACTOR;
-            const wallHeight = element.height * constants_1.SCALE_FACTOR;
-            // Extend wall to boundaries if it's close to them
-            const extendedWall = getExtendedWallForCollision({
-                x: wallX,
-                y: wallY,
-                width: wallWidth,
-                height: wallHeight
-            });
-            if (newX < extendedWall.x + extendedWall.width &&
-                newX + playerSize > extendedWall.x &&
-                newY < extendedWall.y + extendedWall.height &&
-                newY + playerSize > extendedWall.y) {
-                const resolved = resolvePlayerWallCollision(newX, newY, playerSize, extendedWall.x, extendedWall.y, extendedWall.width, extendedWall.height);
-                newX = resolved.x;
-                newY = resolved.y;
-                collided = true;
-            }
-        }
+    const halfSize = playerSize / 2;
+    // Check for tile collisions
+    const collision = checkTileCollision(newX, newY, halfSize);
+    if (collision && collision.collided) {
+        const resolved = resolveTileCollision(newX, newY, halfSize, collision.tileX, collision.tileY);
+        newX = resolved.x;
+        newY = resolved.y;
+        collided = true;
     }
     return { x: newX, y: newY, collided };
 }
 /**
- * Check and resolve enemy-wall collisions
+ * Check and resolve enemy-wall collisions using tile grid
  */
 function checkEnemyWallCollisions(enemy) {
     const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
     const enemySize = mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE;
     const halfSize = enemySize / 2;
-    constants_1.WORLD_MAP.filter(constants_1.isWall).forEach(wall => {
-        const scaledWall = {
-            x: wall.x * constants_1.SCALE_FACTOR,
-            y: wall.y * constants_1.SCALE_FACTOR,
-            width: wall.width * constants_1.SCALE_FACTOR,
-            height: wall.height * constants_1.SCALE_FACTOR
-        };
-        // Extend wall to boundaries if it's close to them
-        const extendedWall = getExtendedWallForCollision(scaledWall);
-        // Check if enemy (with size) overlaps with wall
-        const enemyLeft = enemy.x - halfSize;
-        const enemyRight = enemy.x + halfSize;
-        const enemyTop = enemy.y - halfSize;
-        const enemyBottom = enemy.y + halfSize;
-        const wallLeft = extendedWall.x;
-        const wallRight = extendedWall.x + extendedWall.width;
-        const wallTop = extendedWall.y;
-        const wallBottom = extendedWall.y + extendedWall.height;
-        // Check for overlap
-        if (rectanglesOverlap(enemyLeft, enemyRight, enemyTop, enemyBottom, wallLeft, wallRight, wallTop, wallBottom)) {
-            const resolved = resolveRectangleCollision(enemy.x, enemy.y, halfSize, wallLeft, wallRight, wallTop, wallBottom);
-            enemy.x = resolved.x;
-            enemy.y = resolved.y;
-        }
-    });
+    // Check for tile collisions
+    const collision = checkTileCollision(enemy.x, enemy.y, halfSize);
+    if (collision && collision.collided) {
+        const resolved = resolveTileCollision(enemy.x, enemy.y, halfSize, collision.tileX, collision.tileY);
+        enemy.x = resolved.x;
+        enemy.y = resolved.y;
+    }
 }
 /**
- * Check and resolve item-wall collisions
+ * Check and resolve item-wall collisions using tile grid
  */
 function checkItemWallCollisions(item) {
     const ITEM_SIZE = 15; // Item radius (30x30 hitbox)
     const halfSize = ITEM_SIZE;
-    constants_1.WORLD_MAP.filter(constants_1.isWall).forEach(wall => {
-        const scaledWall = {
-            x: wall.x * constants_1.SCALE_FACTOR,
-            y: wall.y * constants_1.SCALE_FACTOR,
-            width: wall.width * constants_1.SCALE_FACTOR,
-            height: wall.height * constants_1.SCALE_FACTOR
-        };
-        // Extend wall to boundaries if it's close to them
-        const extendedWall = getExtendedWallForCollision(scaledWall);
-        // Check if item (with size) overlaps with wall
-        const itemLeft = item.x - halfSize;
-        const itemRight = item.x + halfSize;
-        const itemTop = item.y - halfSize;
-        const itemBottom = item.y + halfSize;
-        const wallLeft = extendedWall.x;
-        const wallRight = extendedWall.x + extendedWall.width;
-        const wallTop = extendedWall.y;
-        const wallBottom = extendedWall.y + extendedWall.height;
-        // Check for overlap
-        if (rectanglesOverlap(itemLeft, itemRight, itemTop, itemBottom, wallLeft, wallRight, wallTop, wallBottom)) {
-            const resolved = resolveRectangleCollision(item.x, item.y, halfSize, wallLeft, wallRight, wallTop, wallBottom);
-            item.x = resolved.x;
-            item.y = resolved.y;
-        }
-    });
+    // Check for tile collisions
+    const collision = checkTileCollision(item.x, item.y, halfSize);
+    if (collision && collision.collided) {
+        const resolved = resolveTileCollision(item.x, item.y, halfSize, collision.tileX, collision.tileY);
+        item.x = resolved.x;
+        item.y = resolved.y;
+    }
 }
 /**
- * Check if a projectile hits a wall
+ * Check if a projectile hits a wall or water tile
  */
 function checkProjectileWallCollision(projectileX, projectileY, projectileHalfSize) {
-    const projLeft = projectileX - projectileHalfSize;
-    const projRight = projectileX + projectileHalfSize;
-    const projTop = projectileY - projectileHalfSize;
-    const projBottom = projectileY + projectileHalfSize;
-    for (const wall of constants_1.WORLD_MAP.filter(constants_1.isWall)) {
-        const scaledWall = {
-            x: wall.x * constants_1.SCALE_FACTOR,
-            y: wall.y * constants_1.SCALE_FACTOR,
-            width: wall.width * constants_1.SCALE_FACTOR,
-            height: wall.height * constants_1.SCALE_FACTOR
-        };
-        // Extend wall to boundaries if it's close to them
-        const extendedWall = getExtendedWallForCollision(scaledWall);
-        if (rectanglesOverlap(projLeft, projRight, projTop, projBottom, extendedWall.x, extendedWall.x + extendedWall.width, extendedWall.y, extendedWall.y + extendedWall.height)) {
-            return true;
-        }
-    }
-    return false;
+    // Check the tile the projectile is in
+    const collision = checkTileCollision(projectileX, projectileY, projectileHalfSize);
+    return collision !== null && collision.collided;
 }
 /**
- * Check if there's a clear line of sight between two points (no walls blocking)
+ * Check if there's a clear line of sight between two points (no walls or water blocking)
  * Uses raycasting with sample points along the line
  */
 function hasLineOfSight(x1, y1, x2, y2, sampleCount = 20) {
@@ -260,28 +260,10 @@ function hasLineOfSight(x1, y1, x2, y2, sampleCount = 20) {
         const t = i / sampleCount;
         const sampleX = x1 + dx * t;
         const sampleY = y1 + dy * t;
-        // Check if this sample point is inside any wall
-        for (const element of constants_1.WORLD_MAP) {
-            if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-                const wallX = element.x * constants_1.SCALE_FACTOR;
-                const wallY = element.y * constants_1.SCALE_FACTOR;
-                const wallWidth = element.width * constants_1.SCALE_FACTOR;
-                const wallHeight = element.height * constants_1.SCALE_FACTOR;
-                // Extend wall to boundaries if it's close to them
-                const extendedWall = getExtendedWallForCollision({
-                    x: wallX,
-                    y: wallY,
-                    width: wallWidth,
-                    height: wallHeight
-                });
-                // Check if sample point is inside the wall
-                if (sampleX >= extendedWall.x &&
-                    sampleX <= extendedWall.x + extendedWall.width &&
-                    sampleY >= extendedWall.y &&
-                    sampleY <= extendedWall.y + extendedWall.height) {
-                    return false; // Wall blocking line of sight
-                }
-            }
+        // Check if this sample point is in a wall or water tile
+        const state = (0, constants_1.getTileState)(constants_1.WALL_GRID, sampleX, sampleY);
+        if (state === 1 || state === 2) { // Wall or water blocks line of sight
+            return false;
         }
     }
     return true; // Clear line of sight

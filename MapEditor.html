@@ -118,13 +118,34 @@
         <div class="tools">
             <div class="tool-section">
                 <h2>Tools</h2>
-                <button id="wallTool">Wall</button>
-                <button id="spawnTool">Spawn</button>
-                <button id="teleporterTool">Teleporter</button>
-                <button id="safeZoneTool">Safe Zone</button>
-                <button id="biomeTool">Biome</button>
-                <button id="selectTool">Select</button>
-                <button id="deleteTool">Delete</button>
+                <div style="margin-bottom: 10px;">
+                    <strong>Wall Grid:</strong>
+                    <button id="wallTileTool">Wall Tile</button>
+                    <button id="waterTileTool">Water Tile</button>
+                    <button id="airTileTool">Air/Erase</button>
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <strong>Brush Size:</strong>
+                    <select id="brushSize">
+                        <option value="1">1x1</option>
+                        <option value="2">2x2</option>
+                        <option value="3" selected>3x3</option>
+                        <option value="5">5x5</option>
+                        <option value="7">7x7</option>
+                        <option value="10">10x10</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <strong>Elements:</strong>
+                    <button id="spawnTool">Spawn</button>
+                    <button id="teleporterTool">Teleporter</button>
+                    <button id="safeZoneTool">Safe Zone</button>
+                    <button id="biomeTool">Biome</button>
+                </div>
+                <div>
+                    <button id="selectTool">Select</button>
+                    <button id="deleteTool">Delete</button>
+                </div>
             </div>
 
             <div class="tool-section">
@@ -232,8 +253,13 @@
         // Constants from your game
         const WORLD_WIDTH = 60000;
         const WORLD_HEIGHT = 60000;
+        const WALL_TILE_SIZE = 300;
+        const WALL_GRID_WIDTH = Math.ceil(WORLD_WIDTH / WALL_TILE_SIZE);
+        const WALL_GRID_HEIGHT = Math.ceil(WORLD_HEIGHT / WALL_TILE_SIZE);
+        const SECTION_SIZE = 20000; // Each 9th section is 20000x20000
         const COLORS = {
             wall: '#666',
+            water: '#4169E1',
             spawn: '#4CAF50',
             teleporter: '#2196F3',
             safe_zone: '#FFC107',
@@ -241,14 +267,42 @@
         };
 
         // Editor state
-        let currentTool = 'wall';
+        let currentTool = 'wallTile';
         let elements = [];
+        let wallGrid = []; // 2D array: wallGrid[y][x] = 0 (air), 1 (wall), 2 (water)
         let selectedElement = null;
         let isDragging = false;
         let dragStart = { x: 0, y: 0 };
         let dragOffset = { x: 0, y: 0 };
         let cameraOffset = { x: 0, y: 0 };
         let scale = 0.1;
+        let brushSize = 3; // Default brush size 3x3
+
+        // Initialize wall grid
+        function initializeWallGrid() {
+            wallGrid = [];
+            for (let y = 0; y < WALL_GRID_HEIGHT; y++) {
+                wallGrid[y] = new Array(WALL_GRID_WIDTH).fill(0);
+            }
+        }
+        initializeWallGrid();
+
+        // Helper functions for wall grid
+        function worldToTileX(worldX) {
+            return Math.floor(worldX / WALL_TILE_SIZE);
+        }
+
+        function worldToTileY(worldY) {
+            return Math.floor(worldY / WALL_TILE_SIZE);
+        }
+
+        function tileToWorldX(tileX) {
+            return tileX * WALL_TILE_SIZE;
+        }
+
+        function tileToWorldY(tileY) {
+            return tileY * WALL_TILE_SIZE;
+        }
 
         // Setup canvases
         const canvas = document.getElementById('mapCanvas');
@@ -285,9 +339,19 @@
             button.addEventListener('click', () => {
                 document.querySelectorAll('.tools button').forEach(b => b.classList.remove('selected'));
                 button.classList.add('selected');
-                currentTool = button.id.replace('Tool', '');
+                const toolId = button.id.replace('Tool', '');
+                if (toolId === 'wallTile' || toolId === 'waterTile' || toolId === 'airTile') {
+                    currentTool = toolId;
+                } else {
+                    currentTool = toolId;
+                }
                 updatePropertiesPanel();
             });
+        });
+
+        // Brush size selection
+        document.getElementById('brushSize').addEventListener('change', function() {
+            brushSize = parseInt(this.value) || 3;
         });
 
         // Mouse events
@@ -312,6 +376,9 @@
                 handleSelection(x, y);
             } else if (currentTool === 'delete') {
                 handleDeletion(x, y);
+            } else if (currentTool === 'wallTile' || currentTool === 'waterTile' || currentTool === 'airTile') {
+                // Handle wall grid tile placement
+                handleTilePlacement(x, y);
             } else {
                 createNewElement(x, y);
             }
@@ -321,12 +388,48 @@
             render();
         }
 
+        function handleTilePlacement(worldX, worldY) {
+            const centerTileX = worldToTileX(worldX);
+            const centerTileY = worldToTileY(worldY);
+
+            let state = 0; // air
+            if (currentTool === 'wallTile') {
+                state = 1; // wall
+            } else if (currentTool === 'waterTile') {
+                state = 2; // water
+            }
+
+            // Calculate brush offset (center the brush on the cursor)
+            const halfBrush = Math.floor(brushSize / 2);
+
+            // Paint tiles in the brush area
+            for (let dy = -halfBrush; dy < brushSize - halfBrush; dy++) {
+                for (let dx = -halfBrush; dx < brushSize - halfBrush; dx++) {
+                    const tileX = centerTileX + dx;
+                    const tileY = centerTileY + dy;
+
+                    // Check bounds
+                    if (tileY >= 0 && tileY < wallGrid.length &&
+                        tileX >= 0 && tileX < wallGrid[tileY].length) {
+                        wallGrid[tileY][tileX] = state;
+                    }
+                }
+            }
+        }
+
         function draw(e) {
             if (!isDragging) return;
             
             const rect = canvas.getBoundingClientRect();
             const x = (e.clientX - rect.left + cameraOffset.x) / scale;
             const y = (e.clientY - rect.top + cameraOffset.y) / scale;
+
+            if (currentTool === 'wallTile' || currentTool === 'waterTile' || currentTool === 'airTile') {
+                // Continue placing tiles while dragging
+                handleTilePlacement(x, y);
+                render();
+                return;
+            }
 
             if (selectedElement) {
                 if (currentTool === 'select') {
@@ -469,7 +572,63 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             minimapCtx.clearRect(0, 0, minimap.width, minimap.height);
 
-            // Draw grid
+            // Draw 9-section division lines (3x3 grid)
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 3;
+            for (let i = 1; i < 3; i++) {
+                const x = (i * SECTION_SIZE) * scale;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 1; i < 3; i++) {
+                const y = (i * SECTION_SIZE) * scale;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+
+            // Draw section labels
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 20px Arial';
+            ctx.textAlign = 'center';
+            for (let row = 0; row < 3; row++) {
+                for (let col = 0; col < 3; col++) {
+                    const sectionX = (col * SECTION_SIZE + SECTION_SIZE / 2) * scale;
+                    const sectionY = (row * SECTION_SIZE + 30) * scale;
+                    ctx.fillText(`Section ${row * 3 + col + 1}`, sectionX, sectionY);
+                }
+            }
+
+            // Draw wall grid tiles
+            const visibleMinTileX = Math.max(0, Math.floor(-cameraOffset.x / (WALL_TILE_SIZE * scale)));
+            const visibleMaxTileX = Math.min(WALL_GRID_WIDTH - 1, Math.ceil((canvas.width - cameraOffset.x) / (WALL_TILE_SIZE * scale)));
+            const visibleMinTileY = Math.max(0, Math.floor(-cameraOffset.y / (WALL_TILE_SIZE * scale)));
+            const visibleMaxTileY = Math.min(WALL_GRID_HEIGHT - 1, Math.ceil((canvas.height - cameraOffset.y) / (WALL_TILE_SIZE * scale)));
+
+            for (let tileY = visibleMinTileY; tileY <= visibleMaxTileY; tileY++) {
+                for (let tileX = visibleMinTileX; tileX <= visibleMaxTileX; tileX++) {
+                    const state = wallGrid[tileY]?.[tileX] || 0;
+                    if (state === 0) continue; // Skip air tiles
+
+                    const worldX = tileToWorldX(tileX);
+                    const worldY = tileToWorldY(tileY);
+                    const screenX = worldX * scale - cameraOffset.x;
+                    const screenY = worldY * scale - cameraOffset.y;
+                    const tileSize = WALL_TILE_SIZE * scale;
+
+                    if (state === 1) {
+                        ctx.fillStyle = COLORS.wall;
+                    } else if (state === 2) {
+                        ctx.fillStyle = COLORS.water;
+                    }
+                    ctx.fillRect(screenX, screenY, tileSize, tileSize);
+                }
+            }
+
+            // Draw grid (tile boundaries)
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 1;
             const gridSize = 1000 * scale;
@@ -745,8 +904,12 @@
 
         // Export/Import functionality
         document.getElementById('exportMap').onclick = () => {
-            const mapData = JSON.stringify(elements, null, 2);
-            const blob = new Blob([mapData], { type: 'application/json' });
+            const mapData = {
+                elements: elements,
+                wallGrid: wallGrid
+            };
+            const jsonData = JSON.stringify(mapData, null, 2);
+            const blob = new Blob([jsonData], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -762,7 +925,19 @@
                 const file = e.target.files[0];
                 const reader = new FileReader();
                 reader.onload = event => {
-                    elements = JSON.parse(event.target.result);
+                    const data = JSON.parse(event.target.result);
+                    // Support both old format (array) and new format (object with elements and wallGrid)
+                    if (Array.isArray(data)) {
+                        elements = data;
+                        initializeWallGrid(); // Reset wall grid for old format
+                    } else {
+                        elements = data.elements || [];
+                        if (data.wallGrid) {
+                            wallGrid = data.wallGrid;
+                        } else {
+                            initializeWallGrid();
+                        }
+                    }
                     updateElementList();
                     render();
                 };
