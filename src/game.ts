@@ -603,6 +603,8 @@ export class Game {
             this.renderMap(elements);
             // Load biome textures
             this.assetLoader.loadBiomeTextures(elements, this.graphics);
+            // Load section textures
+            this.assetLoader.loadSectionTextures(this.graphics);
 
             // Update title screen with available biomes
             this.updateTitleScreenBiomes(elements);
@@ -629,6 +631,8 @@ export class Game {
             this.renderMap(elements);
             // Load biome textures
             this.assetLoader.loadBiomeTextures(elements, this.graphics);
+            // Load section textures
+            this.assetLoader.loadSectionTextures(this.graphics);
 
             // Update title screen with available biomes
             this.updateTitleScreenBiomes(elements);

@@ -130,6 +130,27 @@ export const ZONE_BOUNDARIES = {
     mythic: { start: 54000, end: WORLD_WIDTH }
 };
 
+// Section configuration for the 3x3 map grid (9 sections total)
+// Each section is 20000x20000 pixels
+// Section numbering: 1-9 (row-major order, top-left to bottom-right)
+export interface SectionConfig {
+    name: string;
+    background?: string;  // Optional background color (hex like '#00d885') or SVG path (like 'land.svg')
+}
+
+// Default section configurations (indexed 0-8, displayed as sections 1-9)
+export const SECTION_CONFIGS: SectionConfig[] = [
+    { name: 'Garden', background: 'land.svg' },           // Section 1 (top-left)
+    { name: 'Desert', background: 'desert.svg' },           // Section 2 (top-center)
+    { name: 'Hel', background: 'hel.svg' },           // Section 3 (top-right)
+    { name: 'Ocean', background: 'ocean.svg' },           // Section 4 (middle-left)
+    { name: 'Ant Hell', background: 'ant_hell.svg' },       // Section 5 (center)
+    { name: 'Jungle', background: 'jungle.svg' },           // Section 6 (middle-right)
+    { name: 'Sewers', background: 'sewers.svg' },           // Section 7 (bottom-left)
+    { name: 'Unknown', background: '#000000' },        // Section 8 (bottom-center)
+    { name: 'Unknown', background: '#000000' },            // Section 9 (bottom-right)
+];
+
 // Add enemy size multipliers like in singleplayer
 export const ENEMY_SIZE_MULTIPLIERS = {
     common: 1.0,

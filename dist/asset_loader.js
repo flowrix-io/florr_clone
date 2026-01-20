@@ -5,6 +5,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AssetLoader = void 0;
 const imageAssets_1 = require("./imageAssets");
+const constants_1 = require("./constants");
 class AssetLoader {
     constructor() {
         this.backgroundLoadAttempted = false;
@@ -23,6 +24,7 @@ class AssetLoader {
             },
             itemSprites: {},
             biomeTextures: new Map(),
+            sectionTextures: new Map(),
             walls: [],
         };
     }
@@ -273,6 +275,69 @@ class AssetLoader {
             }
             catch (error) {
                 console.error(`Error loading biome texture '${biomeName}' from ${textureFile}:`, error);
+            }
+        }
+    }
+    /**
+     * Load section-specific background textures from SECTION_CONFIGS
+     * Sections with SVG paths (not hex colors) will have their textures loaded
+     */
+    async loadSectionTextures(graphics) {
+        for (let i = 0; i < constants_1.SECTION_CONFIGS.length; i++) {
+            const config = constants_1.SECTION_CONFIGS[i];
+            const background = config.background;
+            // Skip if no background or if it's a hex color (starts with #)
+            if (!background || background.startsWith('#')) {
+                continue;
+            }
+            // It's a texture path (e.g., 'land.svg', 'desert.svg')
+            const textureFile = background;
+            try {
+                const response = await fetch(`./${textureFile}`);
+                if (!response.ok) {
+                    console.error(`Failed to fetch section texture ${textureFile}: ${response.status}`);
+                    continue;
+                }
+                // Check if it's an SVG file
+                if (textureFile.endsWith('.svg')) {
+                    const svgText = await response.text();
+                    // Convert SVG to data URL (base64)
+                    const base64 = btoa(unescape(encodeURIComponent(svgText)));
+                    const dataUrl = `data:image/svg+xml;base64,${base64}`;
+                    // Create an image element for the section texture
+                    const sectionTexture = new Image();
+                    sectionTexture.onload = () => {
+                        console.log(`Section ${i + 1} texture loaded successfully from ${textureFile}`);
+                        this.assets.sectionTextures.set(i, sectionTexture);
+                        // Also set it in graphics if provided
+                        if (graphics && graphics.setSectionTexture) {
+                            graphics.setSectionTexture(i, sectionTexture);
+                        }
+                    };
+                    sectionTexture.onerror = (error) => {
+                        console.error(`Failed to load section ${i + 1} texture from ${textureFile}:`, error);
+                    };
+                    sectionTexture.src = dataUrl;
+                }
+                else {
+                    // For non-SVG images, load directly
+                    const sectionTexture = new Image();
+                    sectionTexture.onload = () => {
+                        console.log(`Section ${i + 1} texture loaded successfully from ${textureFile}`);
+                        this.assets.sectionTextures.set(i, sectionTexture);
+                        // Also set it in graphics if provided
+                        if (graphics && graphics.setSectionTexture) {
+                            graphics.setSectionTexture(i, sectionTexture);
+                        }
+                    };
+                    sectionTexture.onerror = (error) => {
+                        console.error(`Failed to load section ${i + 1} texture from ${textureFile}:`, error);
+                    };
+                    sectionTexture.src = `./${textureFile}`;
+                }
+            }
+            catch (error) {
+                console.error(`Error loading section ${i + 1} texture from ${textureFile}:`, error);
             }
         }
     }

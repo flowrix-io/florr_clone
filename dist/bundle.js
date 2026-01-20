@@ -17,6 +17,7 @@
 /* harmony export */   gj: () => (/* binding */ getTileState),
 /* harmony export */   iJ: () => (/* binding */ ACTUAL_WORLD_HEIGHT),
 /* harmony export */   iV: () => (/* binding */ WALL_TILE_SIZE),
+/* harmony export */   kL: () => (/* binding */ SECTION_CONFIGS),
 /* harmony export */   lY: () => (/* binding */ WALL_GRID_WIDTH),
 /* harmony export */   mr: () => (/* binding */ worldToTileX),
 /* harmony export */   ru: () => (/* binding */ ACTUAL_WORLD_WIDTH),
@@ -125,6 +126,18 @@ const ZONE_BOUNDARIES = {
     legendary: { start: 48000, end: 54000 },
     mythic: { start: 54000, end: WORLD_WIDTH }
 };
+// Default section configurations (indexed 0-8, displayed as sections 1-9)
+const SECTION_CONFIGS = [
+    { name: 'Garden', background: 'land.svg' }, // Section 1 (top-left)
+    { name: 'Desert', background: 'desert.svg' }, // Section 2 (top-center)
+    { name: 'Hel', background: 'hel.svg' }, // Section 3 (top-right)
+    { name: 'Ocean', background: 'ocean.svg' }, // Section 4 (middle-left)
+    { name: 'Ant Hell', background: 'ant_hell.svg' }, // Section 5 (center)
+    { name: 'Jungle', background: 'jungle.svg' }, // Section 6 (middle-right)
+    { name: 'Sewers', background: 'sewers.svg' }, // Section 7 (bottom-left)
+    { name: 'Unknown', background: '#000000' }, // Section 8 (bottom-center)
+    { name: 'Unknown', background: '#000000' }, // Section 9 (bottom-right)
+];
 // Add enemy size multipliers like in singleplayer
 const ENEMY_SIZE_MULTIPLIERS = {
     common: 1.0,
@@ -46654,6 +46667,7 @@ class Graphics {
         this.shieldSprite = new Image();
         this.backgroundTexture = new Image();
         this.biomeTextures = new Map(); // Store biome-specific background textures
+        this.sectionTextures = new Map(); // Store section-specific background textures (indexed 0-8)
         this.MAP_COLORS = {
             wall: 'rgba(102, 102, 102, 0.0)', // handled elsewhere
             spawn: 'rgba(76, 175, 80, 0.0)',
@@ -46918,6 +46932,10 @@ class Graphics {
     setBiomeTexture(biomeName, texture) {
         this.biomeTextures.set(biomeName, texture);
     }
+    // Method to set a section texture (for SVG backgrounds)
+    setSectionTexture(sectionIndex, texture) {
+        this.sectionTextures.set(sectionIndex, texture);
+    }
     // Method to get biome at a position
     getBiomeAtPosition(x, y) {
         for (const element of this.mapData) {
@@ -46929,6 +46947,13 @@ class Graphics {
             }
         }
         return null;
+    }
+    // Get section index (0-8) from world position
+    getSectionAtPosition(x, y) {
+        const SECTION_SIZE = 20000;
+        const sectionX = Math.max(0, Math.min(2, Math.floor(x / SECTION_SIZE)));
+        const sectionY = Math.max(0, Math.min(2, Math.floor(y / SECTION_SIZE)));
+        return sectionY * 3 + sectionX;
     }
     // Method to find the closest wall or biome edge to an out-of-bounds position
     // Returns the texture to use for tiling (wall texture or biome texture)
@@ -49217,27 +49242,75 @@ class Graphics {
         this.ctx.strokeStyle = '#FFD700';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
-        // Draw section number label (reuses SECTION_SIZE, sectionX, sectionY from above)
-        const sectionNumber = sectionY * 3 + sectionX + 1;
-        this.ctx.fillStyle = '#FFD700';
-        this.ctx.font = 'bold 14px Arial';
+        // Get section config for custom name
+        const sectionIndex = sectionY * 3 + sectionX;
+        const sectionConfig = constants/* SECTION_CONFIGS */.kL[sectionIndex];
+        const sectionName = sectionConfig?.name || `Section ${sectionIndex + 1}`;
+        // Draw section title below the minimap using level bar font (Ubuntu)
+        this.ctx.font = '14px Ubuntu, sans-serif';
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(`Section ${sectionNumber}`, minimapX + this.MINIMAP_WIDTH / 2, minimapY + 20);
+        // Draw text with black outline like the level bar
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeText(sectionName, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillText(sectionName, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
     }
     drawScrollingBackground() {
-        // If background texture is not loaded or is broken, just fill with a color
+        // If background texture is not loaded or is broken, just fill with section colors/textures
         if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
-            this.ctx.fillStyle = '#00d885'; // Default green color from the SVG
+            const SECTION_SIZE = 20000;
             // Calculate visible area and clamp to world boundaries
             const visibleWidth = this.canvas.width / this.zoomLevel;
             const visibleHeight = this.canvas.height / this.zoomLevel;
-            const fillX = Math.max(0, this.cameraX);
-            const fillY = Math.max(0, this.cameraY);
-            const fillWidth = Math.min(visibleWidth, constants/* ACTUAL_WORLD_WIDTH */.ru - fillX);
-            const fillHeight = Math.min(visibleHeight, constants/* ACTUAL_WORLD_HEIGHT */.iJ - fillY);
-            // Only fill if there's a valid area within world bounds
-            if (fillWidth > 0 && fillHeight > 0 && fillX < constants/* ACTUAL_WORLD_WIDTH */.ru && fillY < constants/* ACTUAL_WORLD_HEIGHT */.iJ) {
-                this.ctx.fillRect(fillX, fillY, fillWidth, fillHeight);
+            // Draw each visible section with its background color or texture
+            const startSectionX = Math.max(0, Math.floor(this.cameraX / SECTION_SIZE));
+            const startSectionY = Math.max(0, Math.floor(this.cameraY / SECTION_SIZE));
+            const endSectionX = Math.min(2, Math.floor((this.cameraX + visibleWidth) / SECTION_SIZE));
+            const endSectionY = Math.min(2, Math.floor((this.cameraY + visibleHeight) / SECTION_SIZE));
+            for (let sy = startSectionY; sy <= endSectionY; sy++) {
+                for (let sx = startSectionX; sx <= endSectionX; sx++) {
+                    const sectionIndex = sy * 3 + sx;
+                    const sectionConfig = constants/* SECTION_CONFIGS */.kL[sectionIndex];
+                    const sectionTexture = this.sectionTextures.get(sectionIndex);
+                    const sectionStartX = sx * SECTION_SIZE;
+                    const sectionStartY = sy * SECTION_SIZE;
+                    const sectionEndX = (sx + 1) * SECTION_SIZE;
+                    const sectionEndY = (sy + 1) * SECTION_SIZE;
+                    // Clamp to visible area
+                    const fillX = Math.max(sectionStartX, this.cameraX);
+                    const fillY = Math.max(sectionStartY, this.cameraY);
+                    const fillEndX = Math.min(sectionEndX, this.cameraX + visibleWidth, constants/* ACTUAL_WORLD_WIDTH */.ru);
+                    const fillEndY = Math.min(sectionEndY, this.cameraY + visibleHeight, constants/* ACTUAL_WORLD_HEIGHT */.iJ);
+                    const fillWidth = fillEndX - fillX;
+                    const fillHeight = fillEndY - fillY;
+                    if (fillWidth > 0 && fillHeight > 0) {
+                        // Check if section has a loaded texture
+                        if (sectionTexture && sectionTexture.complete && sectionTexture.naturalWidth > 0) {
+                            // Tile the section texture
+                            const texWidth = sectionTexture.width;
+                            const texHeight = sectionTexture.height;
+                            const startTileX = Math.floor(fillX / texWidth) * texWidth;
+                            const startTileY = Math.floor(fillY / texHeight) * texHeight;
+                            for (let ty = startTileY; ty < fillEndY; ty += texHeight) {
+                                for (let tx = startTileX; tx < fillEndX; tx += texWidth) {
+                                    this.ctx.drawImage(sectionTexture, tx, ty, texWidth, texHeight);
+                                }
+                            }
+                        }
+                        else {
+                            // Use solid color (or default if background is a path that hasn't loaded)
+                            const background = sectionConfig?.background;
+                            if (background && background.startsWith('#')) {
+                                this.ctx.fillStyle = background;
+                            }
+                            else {
+                                this.ctx.fillStyle = '#00d885'; // Default color
+                            }
+                            this.ctx.fillRect(fillX, fillY, fillWidth, fillHeight);
+                        }
+                    }
+                }
             }
             return;
         }
@@ -49341,8 +49414,6 @@ class Graphics {
                         if (biomeTexture && biomeTexture.complete && biomeTexture.naturalWidth > 0) {
                             const biomeWidth = biomeTexture.width;
                             const biomeHeight = biomeTexture.height;
-                            const biomeScaledWidth = biomeWidth + TILE_OVERLAP;
-                            const biomeScaledHeight = biomeHeight + TILE_OVERLAP;
                             this.ctx.drawImage(biomeTexture, sourceX, sourceY, Math.min(drawWidth, biomeWidth), Math.min(drawHeight, biomeHeight), drawX, drawY, drawWidth, drawHeight);
                         }
                         else {
@@ -49350,7 +49421,25 @@ class Graphics {
                         }
                     }
                     else {
-                        this.ctx.drawImage(this.backgroundTexture, sourceX, sourceY, Math.min(drawWidth, defaultBgWidth), Math.min(drawHeight, defaultBgHeight), drawX, drawY, drawWidth, drawHeight);
+                        // Check if section has a custom background (color or texture)
+                        const sectionIndex = this.getSectionAtPosition(tileX + defaultBgWidth / 2, tileY + defaultBgHeight / 2);
+                        const sectionConfig = constants/* SECTION_CONFIGS */.kL[sectionIndex];
+                        const sectionTexture = this.sectionTextures.get(sectionIndex);
+                        const defaultColor = '#00d885';
+                        // Check for section texture first
+                        if (sectionTexture && sectionTexture.complete && sectionTexture.naturalWidth > 0) {
+                            const secTexWidth = sectionTexture.width;
+                            const secTexHeight = sectionTexture.height;
+                            this.ctx.drawImage(sectionTexture, sourceX, sourceY, Math.min(drawWidth, secTexWidth), Math.min(drawHeight, secTexHeight), drawX, drawY, drawWidth, drawHeight);
+                        }
+                        else if (sectionConfig?.background && sectionConfig.background.startsWith('#') && sectionConfig.background !== defaultColor) {
+                            // Draw section background color
+                            this.ctx.fillStyle = sectionConfig.background;
+                            this.ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
+                        }
+                        else {
+                            this.ctx.drawImage(this.backgroundTexture, sourceX, sourceY, Math.min(drawWidth, defaultBgWidth), Math.min(drawHeight, defaultBgHeight), drawX, drawY, drawWidth, drawHeight);
+                        }
                     }
                 }
                 else {
@@ -49372,8 +49461,25 @@ class Graphics {
                         }
                     }
                     else {
-                        // Draw default texture scaled up by 2 pixels - this ensures no gaps
-                        this.ctx.drawImage(this.backgroundTexture, drawX, drawY, scaledWidth, scaledHeight);
+                        // Check if section has a custom background (color or texture)
+                        const sectionIndex = this.getSectionAtPosition(tileX + defaultBgWidth / 2, tileY + defaultBgHeight / 2);
+                        const sectionConfig = constants/* SECTION_CONFIGS */.kL[sectionIndex];
+                        const sectionTexture = this.sectionTextures.get(sectionIndex);
+                        const defaultColor = '#00d885';
+                        // Check for section texture first
+                        if (sectionTexture && sectionTexture.complete && sectionTexture.naturalWidth > 0) {
+                            // Draw section texture scaled up by 2 pixels
+                            this.ctx.drawImage(sectionTexture, drawX, drawY, sectionTexture.width + TILE_OVERLAP, sectionTexture.height + TILE_OVERLAP);
+                        }
+                        else if (sectionConfig?.background && sectionConfig.background.startsWith('#') && sectionConfig.background !== defaultColor) {
+                            // Draw section background color
+                            this.ctx.fillStyle = sectionConfig.background;
+                            this.ctx.fillRect(drawX, drawY, scaledWidth, scaledHeight);
+                        }
+                        else {
+                            // Draw default texture scaled up by 2 pixels - this ensures no gaps
+                            this.ctx.drawImage(this.backgroundTexture, drawX, drawY, scaledWidth, scaledHeight);
+                        }
                     }
                 }
             }
@@ -59494,6 +59600,7 @@ const IMAGE_ASSETS = {
  * AssetLoader - Handles loading and management of game assets
  */
 
+
 class AssetLoader {
     constructor() {
         this.backgroundLoadAttempted = false;
@@ -59512,6 +59619,7 @@ class AssetLoader {
             },
             itemSprites: {},
             biomeTextures: new Map(),
+            sectionTextures: new Map(),
             walls: [],
         };
     }
@@ -59762,6 +59870,69 @@ class AssetLoader {
             }
             catch (error) {
                 console.error(`Error loading biome texture '${biomeName}' from ${textureFile}:`, error);
+            }
+        }
+    }
+    /**
+     * Load section-specific background textures from SECTION_CONFIGS
+     * Sections with SVG paths (not hex colors) will have their textures loaded
+     */
+    async loadSectionTextures(graphics) {
+        for (let i = 0; i < constants/* SECTION_CONFIGS */.kL.length; i++) {
+            const config = constants/* SECTION_CONFIGS */.kL[i];
+            const background = config.background;
+            // Skip if no background or if it's a hex color (starts with #)
+            if (!background || background.startsWith('#')) {
+                continue;
+            }
+            // It's a texture path (e.g., 'land.svg', 'desert.svg')
+            const textureFile = background;
+            try {
+                const response = await fetch(`./${textureFile}`);
+                if (!response.ok) {
+                    console.error(`Failed to fetch section texture ${textureFile}: ${response.status}`);
+                    continue;
+                }
+                // Check if it's an SVG file
+                if (textureFile.endsWith('.svg')) {
+                    const svgText = await response.text();
+                    // Convert SVG to data URL (base64)
+                    const base64 = btoa(unescape(encodeURIComponent(svgText)));
+                    const dataUrl = `data:image/svg+xml;base64,${base64}`;
+                    // Create an image element for the section texture
+                    const sectionTexture = new Image();
+                    sectionTexture.onload = () => {
+                        console.log(`Section ${i + 1} texture loaded successfully from ${textureFile}`);
+                        this.assets.sectionTextures.set(i, sectionTexture);
+                        // Also set it in graphics if provided
+                        if (graphics && graphics.setSectionTexture) {
+                            graphics.setSectionTexture(i, sectionTexture);
+                        }
+                    };
+                    sectionTexture.onerror = (error) => {
+                        console.error(`Failed to load section ${i + 1} texture from ${textureFile}:`, error);
+                    };
+                    sectionTexture.src = dataUrl;
+                }
+                else {
+                    // For non-SVG images, load directly
+                    const sectionTexture = new Image();
+                    sectionTexture.onload = () => {
+                        console.log(`Section ${i + 1} texture loaded successfully from ${textureFile}`);
+                        this.assets.sectionTextures.set(i, sectionTexture);
+                        // Also set it in graphics if provided
+                        if (graphics && graphics.setSectionTexture) {
+                            graphics.setSectionTexture(i, sectionTexture);
+                        }
+                    };
+                    sectionTexture.onerror = (error) => {
+                        console.error(`Failed to load section ${i + 1} texture from ${textureFile}:`, error);
+                    };
+                    sectionTexture.src = `./${textureFile}`;
+                }
+            }
+            catch (error) {
+                console.error(`Error loading section ${i + 1} texture from ${textureFile}:`, error);
             }
         }
     }
@@ -60410,6 +60581,8 @@ class Game {
             this.renderMap(elements);
             // Load biome textures
             this.assetLoader.loadBiomeTextures(elements, this.graphics);
+            // Load section textures
+            this.assetLoader.loadSectionTextures(this.graphics);
             // Update title screen with available biomes
             this.updateTitleScreenBiomes(elements);
             // Update wall grid if provided
@@ -60433,6 +60606,8 @@ class Game {
             this.renderMap(elements);
             // Load biome textures
             this.assetLoader.loadBiomeTextures(elements, this.graphics);
+            // Load section textures
+            this.assetLoader.loadSectionTextures(this.graphics);
             // Update title screen with available biomes
             this.updateTitleScreenBiomes(elements);
             // Update wall grid if provided
