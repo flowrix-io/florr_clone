@@ -19,6 +19,13 @@ function isInOutOfBoundsZone(x, y) {
         y < BOUNDARY_THRESHOLD ||
         y > constants_2.ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
 }
+// Helper function to get section number (0-8) from world position
+const SECTION_SIZE = 20000;
+function getSectionAtPosition(x, y) {
+    const sectionX = Math.max(0, Math.min(2, Math.floor(x / SECTION_SIZE)));
+    const sectionY = Math.max(0, Math.min(2, Math.floor(y / SECTION_SIZE)));
+    return sectionY * 3 + sectionX;
+}
 // Helper function to upgrade a tier by one level (if possible)
 function upgradeTier(tier) {
     const currentIndex = TIER_ORDER.indexOf(tier);
@@ -319,14 +326,15 @@ function createEnemy(helpers) {
             console.error("No mob types found in MOB_CONFIG.");
             return null;
         }
-        // Filter to only allow non-biome-only mobs in regular spawn zones
+        // Filter to only allow mobs that belong to this section
         // Also exclude target_dummy (they should only spawn from explicit map biome entries)
+        const currentSection = getSectionAtPosition(x, y);
         const eligibleMobTypes = allMobTypes.filter(type => {
             if (type === 'target_dummy') {
                 return false; // Never spawn target dummies as normal mobs
             }
             const stats = (0, mobs_1.getMobStats)(type, tier);
-            return stats && !stats.biomeOnly;
+            return stats && stats.section === currentSection;
         });
         if (eligibleMobTypes.length === 0) {
             // No eligible mobs for this tier outside biomes

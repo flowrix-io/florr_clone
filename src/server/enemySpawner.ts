@@ -36,10 +36,18 @@ const BOUNDARY_THRESHOLD = 100;
 
 // Helper function to check if a position is in the out-of-bounds zone
 function isInOutOfBoundsZone(x: number, y: number): boolean {
-    return x < BOUNDARY_THRESHOLD || 
+    return x < BOUNDARY_THRESHOLD ||
            x > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD ||
-           y < BOUNDARY_THRESHOLD || 
+           y < BOUNDARY_THRESHOLD ||
            y > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
+}
+
+// Helper function to get section number (0-8) from world position
+const SECTION_SIZE = 20000;
+function getSectionAtPosition(x: number, y: number): number {
+    const sectionX = Math.max(0, Math.min(2, Math.floor(x / SECTION_SIZE)));
+    const sectionY = Math.max(0, Math.min(2, Math.floor(y / SECTION_SIZE)));
+    return sectionY * 3 + sectionX;
 }
 
 // Helper function to upgrade a tier by one level (if possible)
@@ -391,14 +399,15 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             return null as any;
         }
         
-        // Filter to only allow non-biome-only mobs in regular spawn zones
+        // Filter to only allow mobs that belong to this section
         // Also exclude target_dummy (they should only spawn from explicit map biome entries)
+        const currentSection = getSectionAtPosition(x, y);
         const eligibleMobTypes = allMobTypes.filter(type => {
             if (type === 'target_dummy') {
                 return false; // Never spawn target dummies as normal mobs
             }
             const stats = getMobStats(type, tier);
-            return stats && !stats.biomeOnly;
+            return stats && stats.section === currentSection;
         });
         
         if (eligibleMobTypes.length === 0) {

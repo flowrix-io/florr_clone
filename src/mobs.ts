@@ -12,7 +12,7 @@ export interface MobStats {
     is_hostile: boolean; // Whether the mob attacks players
     range: number; // Detection/attack range
     xp: number; // Experience points awarded when defeated
-    biomeOnly: boolean; // Whether this mob can only spawn in biomes
+    section: number; // Section number (0-8) where this mob spawns. See SECTION_CONFIGS in constants.ts
     visual_scale?: number; // Visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Whether the mob image should be flipped horizontally
     petImage?: string; // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
@@ -75,7 +75,7 @@ interface BaseMobConfig {
     image: string;
     is_hostile: boolean;
     range: number;
-    biomeOnly?: boolean; // Optional: whether this mob can only spawn in biomes
+    section?: number; // Optional: section number (0-8) where this mob spawns. Default is 0 (Garden)
     visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Optional: whether the mob image should be flipped horizontally
     petImage?: string; // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
@@ -102,7 +102,7 @@ interface RarityOverride {
     cooldown?: number;
     is_hostile?: boolean;
     range?: number;
-    biomeOnly?: boolean;
+    section?: number; // Optional: section number (0-8) where this mob spawns
     visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Optional: whether the mob image should be flipped horizontally
     petImage?: string; // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
@@ -660,7 +660,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 300,
-        biomeOnly: true
+        section: 1
     },
     shiny_ladybug: {
         name: "Shiny Ladybug",
@@ -696,7 +696,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 200,
-        biomeOnly: true
+        section: 1
     },
     dark_ladybug: {
         name: "Dark Ladybug",
@@ -803,7 +803,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true
+        section: 1
     },
     cactus: {
         name: "Cactus",
@@ -822,7 +822,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true
+        section: 1
     },
     beetle: {
         name: "Beetle",
@@ -877,7 +877,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 100,
-        biomeOnly: true
+        section: 1
     },
     hel_beetle: {
         name: "Hel Beetle",
@@ -932,7 +932,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 100,
-        biomeOnly: true
+        section: 2
     },
     jellyfish: {
         name: "Jellyfish",
@@ -997,7 +997,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 200,
-        biomeOnly: true
+        section: 3
     },
     bubble: {
         name: "Bubble",
@@ -1012,7 +1012,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="110" height="110" viewbox="27.5 27.5 55 55"><clipPath id="a"><path d="M13.333 9.167h83.334q4.166 0 4.166 4.166v83.334q0 4.166-4.166 4.166H13.333q-4.166 0-4.166-4.166V13.333q0-4.166 4.166-4.166"/></clipPath><g clip-path="url(#a)"><path fill="none" stroke="#fff" stroke-linejoin="round" stroke-opacity=".698" stroke-width="2.083" d="M37.322 37.322q.434-.434.89-.846.454-.412.928-.801t.968-.755 1.003-.707q.51-.34 1.036-.656.527-.316 1.068-.605.541-.29 1.096-.552t1.122-.497 1.145-.442 1.165-.385 1.183-.327q.595-.149 1.197-.269t1.209-.21 1.218-.15 1.223-.09T55 30t1.227.03 1.223.09 1.218.15 1.21.21q.601.12 1.196.27.596.148 1.183.326t1.165.385 1.145.442 1.122.497 1.096.552 1.068.605 1.036.656 1.003.707.968.755.929.801.889.846.846.89.801.928.755.968.707 1.003q.34.51.656 1.036.316.527.605 1.068.29.541.552 1.096t.497 1.122.442 1.145.385 1.165.327 1.183q.149.595.269 1.197t.21 1.209.15 1.218.09 1.223T80 55t-.03 1.227-.09 1.223-.15 1.218-.21 1.21q-.12.601-.27 1.196-.148.596-.326 1.183t-.385 1.165-.442 1.145-.497 1.123-.552 1.096-.605 1.068q-.315.526-.656 1.036t-.707 1.003-.755.968-.801.929-.846.889-.89.846-.928.801-.968.755-1.003.707q-.51.34-1.036.656-.527.316-1.068.605-.541.29-1.096.552t-1.122.497-1.145.442-1.165.385-1.183.327q-.595.149-1.197.269t-1.209.21-1.218.15-1.223.09T55 80q-.614 0-1.227-.03t-1.223-.09-1.218-.15-1.21-.21q-.601-.12-1.196-.27-.596-.148-1.183-.326t-1.165-.385-1.145-.442-1.123-.497-1.096-.552-1.068-.605q-.526-.315-1.036-.656t-1.003-.707-.968-.755-.929-.801-.889-.846-.846-.89-.801-.928-.755-.968-.707-1.003q-.34-.51-.656-1.036-.316-.527-.605-1.068-.29-.541-.552-1.096t-.497-1.122-.442-1.145-.385-1.165-.327-1.183q-.149-.595-.269-1.197t-.21-1.209-.15-1.218-.09-1.223T30 55t.03-1.227.09-1.223.15-1.218.21-1.21q.12-.601.27-1.196.148-.596.326-1.183t.385-1.165.442-1.145.497-1.122.552-1.096.605-1.068.656-1.036.707-1.003.755-.968.801-.929.846-.889"/><path fill="#fff" fill-opacity=".349" d="M38.059 38.059q.416-.416.852-.81.435-.396.89-.769t.927-.723.962-.678q.488-.326.993-.629.504-.302 1.023-.58t1.05-.528 1.076-.477q.543-.225 1.097-.423t1.116-.369 1.134-.313 1.147-.258 1.159-.201q.581-.086 1.167-.144.585-.058 1.172-.086.588-.03 1.176-.03t1.176.03 1.172.086q.586.058 1.167.144t1.159.201 1.147.258 1.134.313 1.116.37 1.097.422 1.076.477 1.05.529 1.023.58.993.628.962.678.927.723.89.768.852.81.81.853q.396.435.769.89t.723.927.678.962q.326.488.629.993.302.504.58 1.023t.528 1.05.477 1.076q.225.543.423 1.097t.369 1.116.313 1.134.258 1.147.201 1.159q.086.581.144 1.167.058.585.086 1.172.03.588.03 1.176t-.03 1.176-.086 1.172q-.058.586-.144 1.167t-.201 1.159-.258 1.147-.313 1.134-.37 1.116-.422 1.097-.477 1.076-.529 1.05-.58 1.023-.628.993-.678.962-.723.927-.768.89-.81.852-.853.81q-.435.396-.89.769t-.927.723-.962.678q-.488.326-.993.629-.504.302-1.023.58t-1.05.528-1.076.477q-.543.225-1.097.423t-1.116.369-1.134.313-1.147.258-1.159.201q-.581.086-1.167.144-.585.058-1.172.086-.588.03-1.176.03t-1.176-.03-1.172-.086q-.586-.058-1.167-.144t-1.159-.201-1.147-.258-1.134-.313-1.116-.37-1.097-.422-1.076-.477-1.05-.529-1.023-.58-.993-.628-.962-.678-.927-.723-.89-.768-.852-.81-.81-.853q-.396-.435-.769-.89t-.723-.927-.678-.962q-.326-.488-.629-.993-.302-.504-.58-1.023t-.528-1.05-.477-1.076q-.225-.543-.423-1.097t-.369-1.116-.313-1.134-.258-1.147-.201-1.159q-.086-.581-.144-1.167-.058-.585-.086-1.172-.03-.588-.03-1.176t.03-1.176.086-1.172q.058-.586.144-1.167t.201-1.159.258-1.147.313-1.134.37-1.116.422-1.097.477-1.076.529-1.05.58-1.023.628-.993.678-.962.723-.927.768-.89.81-.852"/><path fill="#fff" fill-opacity=".349" d="M38.795 50.58q.218-.217.455-.411.237-.195.493-.366.255-.17.526-.315.27-.145.554-.262t.578-.207.595-.149q.3-.06.606-.09t.613-.03.612.03.607.09.595.15q.294.088.578.206.283.117.554.262.27.145.526.315.255.17.493.366.237.194.454.412t.412.454.366.493q.17.255.315.526.145.27.262.554t.207.578.149.595q.06.3.09.606t.03.613-.03.613q-.03.305-.09.606t-.15.595q-.088.294-.206.578-.117.283-.262.554t-.315.526q-.171.256-.366.493t-.412.454-.454.412-.493.366-.526.315q-.27.145-.554.262t-.578.207-.595.149q-.3.06-.607.09-.305.03-.612.03t-.613-.03-.606-.09-.595-.15q-.294-.088-.578-.206t-.554-.262q-.271-.145-.526-.315-.256-.17-.493-.366-.237-.194-.455-.412-.217-.217-.411-.454-.195-.237-.366-.493-.17-.255-.315-.526-.145-.27-.262-.554t-.207-.578-.149-.595q-.06-.3-.09-.606t-.03-.613.03-.613q.03-.305.09-.606t.149-.595.207-.578q.117-.283.262-.554t.315-.526.366-.493q.194-.237.411-.454"/></g></svg>`,
         is_hostile: false,
         range: 200,
-        biomeOnly: true
+        section: 3
     },
     hornet: {
         name: "Hornet",
@@ -1061,7 +1061,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 100,
-        biomeOnly: false,
+        section: 0,
         projectile: {
             count: 1,
             distance: 500,
@@ -1181,7 +1181,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 500,
-        biomeOnly: true,
+        section: 5,
         projectile: {
             count: 1,
             distance: 500,
@@ -1339,7 +1339,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 5,
     },
     bush: {
         name: "Bush",
@@ -1382,7 +1382,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 5,
     },
     target_dummy: {
         name: "Target Dummy",
@@ -1411,7 +1411,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 8,
     },
     fly: {
         name: "Fly",
@@ -1446,7 +1446,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 6,
         reversed: true,
     },
     roach: {
@@ -1467,7 +1467,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 6,
         reversed: true,
     },
     garbage: {
@@ -1483,7 +1483,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         image: `<svg></svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 6,
         reversed: true,
     },
     moth: {
@@ -1521,7 +1521,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 6,
         reversed: true,
     },
     item_spawner: {
@@ -1545,7 +1545,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 8,
     },
     spider: {
         name: "Spider",
@@ -1610,7 +1610,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 100,
-        biomeOnly: true,
+        section: 6,
     },
     soldier_ant_pet: {
         name: "Soldier Ant Pet",
@@ -1662,7 +1662,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 8,
     },
     soldier_fire_ant_pet: {
         name: "Soldier Fire Ant Pet",
@@ -1714,7 +1714,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        biomeOnly: true,
+        section: 8,
     }
 }
 
@@ -1990,7 +1990,7 @@ function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: st
         is_hostile: overrides.is_hostile ?? baseConfig.is_hostile,
         range: overrides.range ?? baseConfig.range,
         xp,
-        biomeOnly: overrides.biomeOnly ?? baseConfig.biomeOnly ?? false,
+        section: overrides.section ?? baseConfig.section ?? 0,
         visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0,
         reversed: overrides.reversed ?? baseConfig.reversed ?? false,
         projectile: overrides.projectile ?? baseConfig.projectile
