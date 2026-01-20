@@ -21,7 +21,10 @@ import {
     ORIGINAL_ENEMY_COUNT,
     TOTAL_WORLD_AREA,
     MapElement,
-    BiomeSpawnEntry
+    BiomeSpawnEntry,
+    WALL_GRID,
+    getTileState,
+    WALL_TILE_SIZE
 } from '../constants';
 import { getMobStats, getAllMobTypes } from '../mobs';
 
@@ -262,14 +265,9 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             y <= (element.y + element.height) * SCALE_FACTOR
         );
 
-        // Check if position collides with walls
-        const collidesWithWall = WORLD_MAP.some(element =>
-            element.type === 'wall' &&
-            x >= element.x * SCALE_FACTOR &&
-            x <= (element.x + element.width) * SCALE_FACTOR &&
-            y >= element.y * SCALE_FACTOR &&
-            y <= (element.y + element.height) * SCALE_FACTOR
-        );
+        // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+        const tileState = getTileState(WALL_GRID, x, y);
+        const collidesWithWall = tileState === 1 || tileState === 2;
 
         if (!inSafeZone && !collidesWithWall) {
             validPosition = true;
@@ -461,14 +459,9 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
                 y <= (element.y + element.height) * SCALE_FACTOR
             );
 
-            // Check if position collides with walls
-            const collidesWithWall = WORLD_MAP.some(element =>
-                element.type === 'wall' &&
-                x >= element.x * SCALE_FACTOR &&
-                x <= (element.x + element.width) * SCALE_FACTOR &&
-                y >= element.y * SCALE_FACTOR &&
-                y <= (element.y + element.height) * SCALE_FACTOR
-            );
+            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+            const tileState = getTileState(WALL_GRID, x, y);
+            const collidesWithWall = tileState === 1 || tileState === 2;
 
             // Check if position is safe from petal range
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, mobSize);
@@ -541,14 +534,9 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
                 y <= (element.y + element.height) * SCALE_FACTOR
             );
 
-            // Check if position collides with walls
-            const collidesWithWall = WORLD_MAP.some(element =>
-                element.type === 'wall' &&
-                x >= element.x * SCALE_FACTOR &&
-                x <= (element.x + element.width) * SCALE_FACTOR &&
-                y >= element.y * SCALE_FACTOR &&
-                y <= (element.y + element.height) * SCALE_FACTOR
-            );
+            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+            const tileState = getTileState(WALL_GRID, x, y);
+            const collidesWithWall = tileState === 1 || tileState === 2;
 
             // Check if position is safe from petal range
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, mobSize);
@@ -558,12 +546,12 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
                 const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
                 const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
                 const otherHalfSize = otherMobSize / 2;
-                
+
                 const dx = otherEnemy.x - x;
                 const dy = otherEnemy.y - y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 const minDistance = halfMobSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
-                
+
                 return distance < minDistance;
             });
 

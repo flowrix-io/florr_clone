@@ -24,7 +24,6 @@ exports.addXPToPlayer = addXPToPlayer;
 exports.savePlayerProgress = savePlayerProgress;
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
-const physics_1 = require("./physics");
 const RARITY_TP_COSTS = {
     common: 0,
     uncommon: 1,
@@ -87,27 +86,22 @@ function hasItem(inventory, rarity, type, count) {
     return inventory[rarity]?.[type] >= count;
 }
 /**
- * Check if a position is inside a wall
+ * Check if a position is inside a wall or water tile
  */
 function isPositionInsideWall(x, y, playerSize = constants_1.PLAYER_SIZE) {
-    for (const element of constants_1.WORLD_MAP) {
-        if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-            const wallX = element.x * constants_1.SCALE_FACTOR;
-            const wallY = element.y * constants_1.SCALE_FACTOR;
-            const wallWidth = element.width * constants_1.SCALE_FACTOR;
-            const wallHeight = element.height * constants_1.SCALE_FACTOR;
-            // Extend wall to boundaries if it's close to them
-            const extendedWall = (0, physics_1.getExtendedWallForCollision)({
-                x: wallX,
-                y: wallY,
-                width: wallWidth,
-                height: wallHeight
-            });
-            // Check if player position overlaps with wall
-            if (x < extendedWall.x + extendedWall.width &&
-                x + playerSize > extendedWall.x &&
-                y < extendedWall.y + extendedWall.height &&
-                y + playerSize > extendedWall.y) {
+    const halfSize = playerSize / 2;
+    // Check all tiles that the entity would overlap with
+    const minTileX = (0, constants_1.worldToTileX)(x - halfSize);
+    const maxTileX = (0, constants_1.worldToTileX)(x + halfSize);
+    const minTileY = (0, constants_1.worldToTileY)(y - halfSize);
+    const maxTileY = (0, constants_1.worldToTileY)(y + halfSize);
+    for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+        for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+            const tileWorldX = tileX * constants_1.WALL_TILE_SIZE;
+            const tileWorldY = tileY * constants_1.WALL_TILE_SIZE;
+            const state = (0, constants_1.getTileState)(constants_1.WALL_GRID, tileWorldX, tileWorldY);
+            // State 1 = wall, State 2 = water - both block spawning
+            if (state === 1 || state === 2) {
                 return true;
             }
         }

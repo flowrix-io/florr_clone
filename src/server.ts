@@ -27,7 +27,7 @@ if (migratedPlayers > 0) {
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
-import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, WALL_GRID } from './constants';
+import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, WALL_GRID, getTileState } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect } from './server_utils';
 import { MobProjectile, PlayerProjectile } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
@@ -49,7 +49,6 @@ import {
     checkItemWallCollisions,
     checkProjectileWallCollision,
     hasLineOfSight,
-    getExtendedWallForCollision,
     checkEnemyEnemyCollisions,
     checkPlayerEnemyCollision
 } from './server/physics';
@@ -578,14 +577,9 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
             spawnY! <= (element.y + element.height) * SCALE_FACTOR
         );
 
-        // Check if position collides with walls
-        const collidesWithWall = WORLD_MAP.some(element =>
-            element.type === 'wall' &&
-            spawnX! >= element.x * SCALE_FACTOR &&
-            spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
-            spawnY! >= element.y * SCALE_FACTOR &&
-            spawnY! <= (element.y + element.height) * SCALE_FACTOR
-        );
+        // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+        const tileState = getTileState(WALL_GRID, spawnX!, spawnY!);
+        const collidesWithWall = tileState === 1 || tileState === 2;
 
         if (!inSafeZone && !collidesWithWall) {
             validPosition = true;
@@ -640,14 +634,9 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
                 spawnY! <= (element.y + element.height) * SCALE_FACTOR
             );
 
-            // Check if position collides with walls
-            const collidesWithWall = WORLD_MAP.some(element =>
-                element.type === 'wall' &&
-                spawnX! >= element.x * SCALE_FACTOR &&
-                spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
-                spawnY! >= element.y * SCALE_FACTOR &&
-                spawnY! <= (element.y + element.height) * SCALE_FACTOR
-            );
+            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+            const tileState2 = getTileState(WALL_GRID, spawnX!, spawnY!);
+            const collidesWithWall = tileState2 === 1 || tileState2 === 2;
 
             if (!inSafeZone && !collidesWithWall) {
                 validPosition = true;
@@ -680,14 +669,9 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
                     spawnY! <= (element.y + element.height) * SCALE_FACTOR
                 );
 
-                // Check if position collides with walls
-                const collidesWithWall = WORLD_MAP.some(element =>
-                    element.type === 'wall' &&
-                    spawnX! >= element.x * SCALE_FACTOR &&
-                    spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
-                    spawnY! >= element.y * SCALE_FACTOR &&
-                    spawnY! <= (element.y + element.height) * SCALE_FACTOR
-                );
+                // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+                const tileState3 = getTileState(WALL_GRID, spawnX!, spawnY!);
+                const collidesWithWall = tileState3 === 1 || tileState3 === 2;
 
                 if (!inSafeZone && !collidesWithWall) {
                     validPosition = true;
@@ -2674,39 +2658,10 @@ function moveEnemies() {
                         const teleportX = owner.x + Math.cos(angle) * teleportDistance;
                         const teleportY = owner.y + Math.sin(angle) * teleportDistance;
                         
-                        // Check if this position is safe (not in wall) and has line of sight to owner
-                        const mobStats = getMobStats(enemy.type, enemy.tier);
-                        const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
-                        const halfSize = enemySize / 2;
-                        
-                        // Check if position is inside a wall
-                        let isInWall = false;
-                        for (const element of WORLD_MAP) {
-                            if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-                                const wallX = element.x * SCALE_FACTOR;
-                                const wallY = element.y * SCALE_FACTOR;
-                                const wallWidth = element.width * SCALE_FACTOR;
-                                const wallHeight = element.height * SCALE_FACTOR;
-                                
-                                const extendedWall = getExtendedWallForCollision({
-                                    x: wallX,
-                                    y: wallY,
-                                    width: wallWidth,
-                                    height: wallHeight
-                                });
-                                
-                                if (
-                                    teleportX - halfSize < extendedWall.x + extendedWall.width &&
-                                    teleportX + halfSize > extendedWall.x &&
-                                    teleportY - halfSize < extendedWall.y + extendedWall.height &&
-                                    teleportY + halfSize > extendedWall.y
-                                ) {
-                                    isInWall = true;
-                                    break;
-                                }
-                            }
-                        }
-                        
+                        // Check if teleport position is in a wall tile
+                        const teleportTileState = getTileState(WALL_GRID, teleportX, teleportY);
+                        const isInWall = teleportTileState === 1 || teleportTileState === 2;
+
                         // If position is safe and has line of sight, teleport there
                         if (!isInWall && hasLineOfSight(teleportX, teleportY, owner.x, owner.y)) {
                             enemy.x = teleportX;
@@ -2723,38 +2678,10 @@ function moveEnemies() {
                     
                     // If no good teleport position found, try owner's position directly
                     if (!teleported) {
-                        const mobStats = getMobStats(enemy.type, enemy.tier);
-                        const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
-                        const halfSize = enemySize / 2;
-                        
-                        // Check if owner's position is safe for pet
-                        let isOwnerPosInWall = false;
-                        for (const element of WORLD_MAP) {
-                            if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-                                const wallX = element.x * SCALE_FACTOR;
-                                const wallY = element.y * SCALE_FACTOR;
-                                const wallWidth = element.width * SCALE_FACTOR;
-                                const wallHeight = element.height * SCALE_FACTOR;
-                                
-                                const extendedWall = getExtendedWallForCollision({
-                                    x: wallX,
-                                    y: wallY,
-                                    width: wallWidth,
-                                    height: wallHeight
-                                });
-                                
-                                if (
-                                    owner.x - halfSize < extendedWall.x + extendedWall.width &&
-                                    owner.x + halfSize > extendedWall.x &&
-                                    owner.y - halfSize < extendedWall.y + extendedWall.height &&
-                                    owner.y + halfSize > extendedWall.y
-                                ) {
-                                    isOwnerPosInWall = true;
-                                    break;
-                                }
-                            }
-                        }
-                        
+                        // Check if owner's position is safe for pet (not in wall tile)
+                        const ownerTileState = getTileState(WALL_GRID, owner.x, owner.y);
+                        const isOwnerPosInWall = ownerTileState === 1 || ownerTileState === 2;
+
                         if (!isOwnerPosInWall) {
                             enemy.x = owner.x;
                             enemy.y = owner.y;

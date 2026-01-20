@@ -200,12 +200,9 @@ function createEnemy(helpers) {
             x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
             y >= element.y * constants_2.SCALE_FACTOR &&
             y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-        // Check if position collides with walls
-        const collidesWithWall = constants_2.WORLD_MAP.some(element => element.type === 'wall' &&
-            x >= element.x * constants_2.SCALE_FACTOR &&
-            x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-            y >= element.y * constants_2.SCALE_FACTOR &&
-            y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+        // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+        const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
+        const collidesWithWall = tileState === 1 || tileState === 2;
         if (!inSafeZone && !collidesWithWall) {
             validPosition = true;
         }
@@ -376,12 +373,9 @@ function createEnemy(helpers) {
                 x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
                 y >= element.y * constants_2.SCALE_FACTOR &&
                 y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-            // Check if position collides with walls
-            const collidesWithWall = constants_2.WORLD_MAP.some(element => element.type === 'wall' &&
-                x >= element.x * constants_2.SCALE_FACTOR &&
-                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-                y >= element.y * constants_2.SCALE_FACTOR &&
-                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
+            const collidesWithWall = tileState === 1 || tileState === 2;
             // Check if position is safe from petal range
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, mobSize);
             if (!inSafeZone && !collidesWithWall && !inPetalRange) {
@@ -437,12 +431,9 @@ function createEnemy(helpers) {
                 x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
                 y >= element.y * constants_2.SCALE_FACTOR &&
                 y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-            // Check if position collides with walls
-            const collidesWithWall = constants_2.WORLD_MAP.some(element => element.type === 'wall' &&
-                x >= element.x * constants_2.SCALE_FACTOR &&
-                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-                y >= element.y * constants_2.SCALE_FACTOR &&
-                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
+            const collidesWithWall = tileState === 1 || tileState === 2;
             // Check if position is safe from petal range
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, mobSize);
             // Check if position is far enough from other mobs

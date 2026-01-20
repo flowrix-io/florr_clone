@@ -2,10 +2,10 @@ import { Server as SocketIOServer } from 'socket.io';
 import { ServerPlayer, PlayerInventory } from '../player';
 import { Item } from '../item';
 import { getPetalStats, PlayerModifiers } from '../petals';
-import { 
-    WORLD_MAP, 
-    SCALE_FACTOR, 
-    ACTUAL_WORLD_WIDTH, 
+import {
+    WORLD_MAP,
+    SCALE_FACTOR,
+    ACTUAL_WORLD_WIDTH,
     ACTUAL_WORLD_HEIGHT,
     RESPAWN_INVULNERABILITY_TIME,
     PLAYER_MAX_HEALTH,
@@ -16,12 +16,16 @@ import {
     XP_MULTIPLIER,
     players,
     enemies,
-    PLAYER_SIZE
+    PLAYER_SIZE,
+    WALL_GRID,
+    getTileState,
+    WALL_TILE_SIZE,
+    worldToTileX,
+    worldToTileY
 } from '../constants';
 import { MapElement } from '../constants';
 import { RARITY_LEVELS, Rarity } from '../petals';
 import { getDamageMultiplier } from '../petal_actions';
-import { getExtendedWallForCollision } from './physics';
 
 const RARITY_TP_COSTS: Record<string, number> = {
     common: 0,
@@ -91,31 +95,25 @@ export function hasItem(inventory: PlayerInventory, rarity: string, type: string
 }
 
 /**
- * Check if a position is inside a wall
+ * Check if a position is inside a wall or water tile
  */
 function isPositionInsideWall(x: number, y: number, playerSize: number = PLAYER_SIZE): boolean {
-    for (const element of WORLD_MAP) {
-        if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-            const wallX = element.x * SCALE_FACTOR;
-            const wallY = element.y * SCALE_FACTOR;
-            const wallWidth = element.width * SCALE_FACTOR;
-            const wallHeight = element.height * SCALE_FACTOR;
+    const halfSize = playerSize / 2;
 
-            // Extend wall to boundaries if it's close to them
-            const extendedWall = getExtendedWallForCollision({
-                x: wallX,
-                y: wallY,
-                width: wallWidth,
-                height: wallHeight
-            });
+    // Check all tiles that the entity would overlap with
+    const minTileX = worldToTileX(x - halfSize);
+    const maxTileX = worldToTileX(x + halfSize);
+    const minTileY = worldToTileY(y - halfSize);
+    const maxTileY = worldToTileY(y + halfSize);
 
-            // Check if player position overlaps with wall
-            if (
-                x < extendedWall.x + extendedWall.width &&
-                x + playerSize > extendedWall.x &&
-                y < extendedWall.y + extendedWall.height &&
-                y + playerSize > extendedWall.y
-            ) {
+    for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+        for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+            const tileWorldX = tileX * WALL_TILE_SIZE;
+            const tileWorldY = tileY * WALL_TILE_SIZE;
+            const state = getTileState(WALL_GRID, tileWorldX, tileWorldY);
+
+            // State 1 = wall, State 2 = water - both block spawning
+            if (state === 1 || state === 2) {
                 return true;
             }
         }

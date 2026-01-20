@@ -235,8 +235,8 @@ function resolveTileCollision(
  * Check and resolve player-wall collisions using tile grid
  */
 export function checkPlayerWallCollisions(
-    playerX: number, 
-    playerY: number, 
+    playerX: number,
+    playerY: number,
     playerSize: number = PLAYER_SIZE
 ): { x: number; y: number; collided: boolean } {
     let newX = playerX;
@@ -244,16 +244,20 @@ export function checkPlayerWallCollisions(
     let collided = false;
     const halfSize = playerSize / 2;
 
-    // Check for tile collisions
-    const collision = checkTileCollision(newX, newY, halfSize);
-    if (collision && collision.collided) {
-        const resolved = resolveTileCollision(
-            newX, newY, halfSize,
-            collision.tileX, collision.tileY
-        );
-        newX = resolved.x;
-        newY = resolved.y;
-        collided = true;
+    // Iteratively resolve collisions (max 4 iterations to handle corners)
+    for (let i = 0; i < 4; i++) {
+        const collision = checkTileCollision(newX, newY, halfSize);
+        if (collision && collision.collided) {
+            const resolved = resolveTileCollision(
+                newX, newY, halfSize,
+                collision.tileX, collision.tileY
+            );
+            newX = resolved.x;
+            newY = resolved.y;
+            collided = true;
+        } else {
+            break; // No more collisions
+        }
     }
 
     return { x: newX, y: newY, collided };
@@ -267,15 +271,19 @@ export function checkEnemyWallCollisions(enemy: Enemy): void {
     const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
     const halfSize = enemySize / 2;
 
-    // Check for tile collisions
-    const collision = checkTileCollision(enemy.x, enemy.y, halfSize);
-    if (collision && collision.collided) {
-        const resolved = resolveTileCollision(
-            enemy.x, enemy.y, halfSize,
-            collision.tileX, collision.tileY
-        );
-        enemy.x = resolved.x;
-        enemy.y = resolved.y;
+    // Iteratively resolve collisions (max 4 iterations to handle corners)
+    for (let i = 0; i < 4; i++) {
+        const collision = checkTileCollision(enemy.x, enemy.y, halfSize);
+        if (collision && collision.collided) {
+            const resolved = resolveTileCollision(
+                enemy.x, enemy.y, halfSize,
+                collision.tileX, collision.tileY
+            );
+            enemy.x = resolved.x;
+            enemy.y = resolved.y;
+        } else {
+            break; // No more collisions
+        }
     }
 }
 
@@ -285,16 +293,20 @@ export function checkEnemyWallCollisions(enemy: Enemy): void {
 export function checkItemWallCollisions(item: WorldItem): void {
     const ITEM_SIZE = 15; // Item radius (30x30 hitbox)
     const halfSize = ITEM_SIZE;
-    
-    // Check for tile collisions
-    const collision = checkTileCollision(item.x, item.y, halfSize);
-    if (collision && collision.collided) {
-        const resolved = resolveTileCollision(
-            item.x, item.y, halfSize,
-            collision.tileX, collision.tileY
-        );
-        item.x = resolved.x;
-        item.y = resolved.y;
+
+    // Iteratively resolve collisions (max 4 iterations to handle corners)
+    for (let i = 0; i < 4; i++) {
+        const collision = checkTileCollision(item.x, item.y, halfSize);
+        if (collision && collision.collided) {
+            const resolved = resolveTileCollision(
+                item.x, item.y, halfSize,
+                collision.tileX, collision.tileY
+            );
+            item.x = resolved.x;
+            item.y = resolved.y;
+        } else {
+            break; // No more collisions
+        }
     }
 }
 

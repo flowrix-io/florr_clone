@@ -432,12 +432,9 @@ function spawnMob(mobType, rarity, x, y) {
             spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
             spawnY >= element.y * constants_2.SCALE_FACTOR &&
             spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-        // Check if position collides with walls
-        const collidesWithWall = constants_2.WORLD_MAP.some(element => element.type === 'wall' &&
-            spawnX >= element.x * constants_2.SCALE_FACTOR &&
-            spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-            spawnY >= element.y * constants_2.SCALE_FACTOR &&
-            spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+        // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+        const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, spawnX, spawnY);
+        const collidesWithWall = tileState === 1 || tileState === 2;
         if (!inSafeZone && !collidesWithWall) {
             validPosition = true;
         }
@@ -482,12 +479,9 @@ function spawnMob(mobType, rarity, x, y) {
                     spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
                     spawnY >= element.y * constants_2.SCALE_FACTOR &&
                     spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-                // Check if position collides with walls
-                const collidesWithWall = constants_2.WORLD_MAP.some(element => element.type === 'wall' &&
-                    spawnX >= element.x * constants_2.SCALE_FACTOR &&
-                    spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-                    spawnY >= element.y * constants_2.SCALE_FACTOR &&
-                    spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+                // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+                const tileState2 = (0, constants_2.getTileState)(constants_2.WALL_GRID, spawnX, spawnY);
+                const collidesWithWall = tileState2 === 1 || tileState2 === 2;
                 if (!inSafeZone && !collidesWithWall) {
                     validPosition = true;
                 }
@@ -514,12 +508,9 @@ function spawnMob(mobType, rarity, x, y) {
                     spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
                     spawnY >= element.y * constants_2.SCALE_FACTOR &&
                     spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-                // Check if position collides with walls
-                const collidesWithWall = constants_2.WORLD_MAP.some(element => element.type === 'wall' &&
-                    spawnX >= element.x * constants_2.SCALE_FACTOR &&
-                    spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-                    spawnY >= element.y * constants_2.SCALE_FACTOR &&
-                    spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+                // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+                const tileState3 = (0, constants_2.getTileState)(constants_2.WALL_GRID, spawnX, spawnY);
+                const collidesWithWall = tileState3 === 1 || tileState3 === 2;
                 if (!inSafeZone && !collidesWithWall) {
                     validPosition = true;
                 }
@@ -2249,33 +2240,9 @@ function moveEnemies() {
                     for (const angle of angles) {
                         const teleportX = owner.x + Math.cos(angle) * teleportDistance;
                         const teleportY = owner.y + Math.sin(angle) * teleportDistance;
-                        // Check if this position is safe (not in wall) and has line of sight to owner
-                        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-                        const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
-                        const halfSize = enemySize / 2;
-                        // Check if position is inside a wall
-                        let isInWall = false;
-                        for (const element of constants_2.WORLD_MAP) {
-                            if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-                                const wallX = element.x * constants_2.SCALE_FACTOR;
-                                const wallY = element.y * constants_2.SCALE_FACTOR;
-                                const wallWidth = element.width * constants_2.SCALE_FACTOR;
-                                const wallHeight = element.height * constants_2.SCALE_FACTOR;
-                                const extendedWall = (0, physics_1.getExtendedWallForCollision)({
-                                    x: wallX,
-                                    y: wallY,
-                                    width: wallWidth,
-                                    height: wallHeight
-                                });
-                                if (teleportX - halfSize < extendedWall.x + extendedWall.width &&
-                                    teleportX + halfSize > extendedWall.x &&
-                                    teleportY - halfSize < extendedWall.y + extendedWall.height &&
-                                    teleportY + halfSize > extendedWall.y) {
-                                    isInWall = true;
-                                    break;
-                                }
-                            }
-                        }
+                        // Check if teleport position is in a wall tile
+                        const teleportTileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, teleportX, teleportY);
+                        const isInWall = teleportTileState === 1 || teleportTileState === 2;
                         // If position is safe and has line of sight, teleport there
                         if (!isInWall && (0, physics_1.hasLineOfSight)(teleportX, teleportY, owner.x, owner.y)) {
                             enemy.x = teleportX;
@@ -2291,32 +2258,9 @@ function moveEnemies() {
                     }
                     // If no good teleport position found, try owner's position directly
                     if (!teleported) {
-                        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-                        const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
-                        const halfSize = enemySize / 2;
-                        // Check if owner's position is safe for pet
-                        let isOwnerPosInWall = false;
-                        for (const element of constants_2.WORLD_MAP) {
-                            if (element.type === 'wall' && element.width > 0 && element.height > 0) {
-                                const wallX = element.x * constants_2.SCALE_FACTOR;
-                                const wallY = element.y * constants_2.SCALE_FACTOR;
-                                const wallWidth = element.width * constants_2.SCALE_FACTOR;
-                                const wallHeight = element.height * constants_2.SCALE_FACTOR;
-                                const extendedWall = (0, physics_1.getExtendedWallForCollision)({
-                                    x: wallX,
-                                    y: wallY,
-                                    width: wallWidth,
-                                    height: wallHeight
-                                });
-                                if (owner.x - halfSize < extendedWall.x + extendedWall.width &&
-                                    owner.x + halfSize > extendedWall.x &&
-                                    owner.y - halfSize < extendedWall.y + extendedWall.height &&
-                                    owner.y + halfSize > extendedWall.y) {
-                                    isOwnerPosInWall = true;
-                                    break;
-                                }
-                            }
-                        }
+                        // Check if owner's position is safe for pet (not in wall tile)
+                        const ownerTileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, owner.x, owner.y);
+                        const isOwnerPosInWall = ownerTileState === 1 || ownerTileState === 2;
                         if (!isOwnerPosInWall) {
                             enemy.x = owner.x;
                             enemy.y = owner.y;
