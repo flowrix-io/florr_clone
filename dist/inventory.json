@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 162956371,
+      "totalXP": 162957292,
       "inventory": {
         "common": {
           "shield": 192,
@@ -468,7 +468,7 @@
       "skills": {},
       "mobKills": {
         "ladybug": {
-          "common": 153,
+          "common": 154,
           "legendary": 115,
           "uncommon": 50,
           "mythic": 74,
@@ -621,9 +621,10 @@
         "hel_beetle": {
           "mythic": 23,
           "ultra": 2,
-          "legendary": 5,
+          "legendary": 6,
           "rare": 1,
-          "uncommon": 1
+          "uncommon": 4,
+          "common": 2
         },
         "soldier_fire_ant": {
           "uncommon": 39,
