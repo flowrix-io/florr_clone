@@ -141,6 +141,13 @@ exports.CHANGELOG = [
             'New petal: Bulb',
             'Petals now have physics and are attracted to mobs'
         ]
+    },
+    {
+        date: 'January 19, 2026',
+        changes: [
+            'Changed the map of most biomes',
+            'Some biomes are temporarily disabled for now',
+        ]
     }
 ];
 class ChangelogManager {
