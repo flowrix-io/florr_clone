@@ -1,15 +1,15 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 163913443,
+      "totalXP": 163937045,
       "inventory": {
         "common": {
           "shield": 192,
           "petal_light": 59,
           "petal_dandelion": 27,
-          "petal_stinger": 38,
+          "petal_stinger": 39,
           "petal_yggdrasil": 10,
-          "speed_boost": 82,
+          "speed_boost": 86,
           "petal_sand": 43,
           "petal_rock": 164,
           "petal_clover": 50,
@@ -17,9 +17,9 @@
           "petal_cactus": 16,
           "petal_iris": 10,
           "petal_poison_cactus": 13,
-          "petal_lightning": 47,
+          "petal_lightning": 49,
           "petal_missile": 120,
-          "petal_jelly": 20,
+          "petal_jelly": 22,
           "petal_leaf": 10,
           "petal_cutter": 2,
           "petal_wing": 285,
@@ -55,7 +55,8 @@
           "petal_beetle_egg": 2,
           "petal_leafbug_egg": 1,
           "petal_shiny_ladybug_egg": 4,
-          "petal_sandstorm_egg": 2
+          "petal_sandstorm_egg": 2,
+          "petal_jellyfish_egg": 1
         },
         "unique": {
           "petal_stinger": 1003,
@@ -149,7 +150,7 @@
         "uncommon": {
           "petal_rose": 90,
           "petal_dandelion": 73,
-          "petal_basic": 103,
+          "petal_basic": 104,
           "petal_sand": 10,
           "speed_boost": 70,
           "petal_stinger": 40,
@@ -162,9 +163,9 @@
           "petal_bone": 74,
           "petal_poison_cactus": 140,
           "petal_iris": 12,
-          "petal_lightning": 39,
+          "petal_lightning": 40,
           "petal_missile": 83,
-          "petal_jelly": 12,
+          "petal_jelly": 16,
           "petal_leaf": 13,
           "petal_cactus": 5,
           "petal_cutter": 4,
@@ -178,7 +179,7 @@
           "petal_dandelion_egg": 36,
           "petal_dark_ladybug_egg": 27,
           "petal_ladybug_egg": 21,
-          "petal_bee_egg": 23,
+          "petal_bee_egg": 24,
           "petal_hornet_egg": 38,
           "petal_soldier_ant_egg": 36,
           "petal_fly_egg": 17,
@@ -190,15 +191,16 @@
           "petal_soldier_fire_ant_egg": 10,
           "petal_spider_egg": 1,
           "petal_bulb": 2,
-          "petal_jellyfish_egg": 1,
+          "petal_jellyfish_egg": 3,
           "petal_target_dummy_egg": 6,
           "petal_cactus_egg": 1,
           "petal_beetle_egg": 3,
           "petal_item_spawner_egg": 1,
-          "petal_sandstorm_egg": 3
+          "petal_sandstorm_egg": 3,
+          "petal_bubble_egg": 2
         },
         "legendary": {
-          "speed_boost": 46,
+          "speed_boost": 47,
           "petal_sand": 17,
           "petal_rose": 28,
           "health_potion": 64,
@@ -249,7 +251,7 @@
         },
         "epic": {
           "petal_stinger": 62,
-          "speed_boost": 128,
+          "speed_boost": 133,
           "petal_basic": 102,
           "petal_rose": 150,
           "petal_sand": 21,
@@ -264,7 +266,7 @@
           "petal_cactus": 5,
           "petal_poison_cactus": 3,
           "petal_iris": 8,
-          "petal_lightning": 6,
+          "petal_lightning": 8,
           "petal_missile": 139,
           "petal_leaf": 7,
           "petal_lightning_cutter": 2,
@@ -292,9 +294,9 @@
           "petal_hel_beetle_egg": 9,
           "petal_blood_leaf": 2,
           "petal_jelly": 3,
-          "petal_jellyfish_egg": 3,
+          "petal_jellyfish_egg": 6,
           "petal_soldier_fire_ant_egg": 32,
-          "petal_bubble_egg": 3,
+          "petal_bubble_egg": 11,
           "petal_bulb": 10,
           "petal_sandstorm_egg": 5,
           "petal_item_spawner_egg": 1,
@@ -316,7 +318,7 @@
           "petal_yggdrasil": 8,
           "petal_bone": 37,
           "petal_clover": 17,
-          "petal_lightning": 4,
+          "petal_lightning": 5,
           "petal_missile": 61,
           "petal_leaf": 4,
           "petal_iris": 4,
@@ -485,7 +487,7 @@
         "soldier_ant": {
           "epic": 73,
           "legendary": 212,
-          "common": 193,
+          "common": 194,
           "rare": 61,
           "mythic": 231,
           "ultra": 10,
@@ -533,7 +535,7 @@
           "epic": 32
         },
         "bee": {
-          "common": 135,
+          "common": 136,
           "epic": 41,
           "mythic": 81,
           "uncommon": 47,
@@ -543,16 +545,20 @@
         },
         "bubble": {
           "ultra": 7,
-          "mythic": 5,
-          "legendary": 1
+          "mythic": 6,
+          "legendary": 14,
+          "uncommon": 3,
+          "rare": 3
         },
         "jellyfish": {
-          "uncommon": 1,
+          "uncommon": 5,
           "ultra": 4,
-          "legendary": 3,
+          "legendary": 14,
           "mythic": 17,
           "unique": 1,
-          "epic": 1
+          "epic": 3,
+          "common": 1,
+          "rare": 7
         },
         "target_dummy": {
           "legendary": 3,
@@ -578,7 +584,7 @@
         "soldier_fire_ant_pet": {
           "ultra": 2,
           "legendary": 1,
-          "common": 1
+          "common": 2
         },
         "fly": {
           "uncommon": 196,
@@ -629,7 +635,8 @@
           "mythic": 20,
           "unique": 1,
           "uncommon": 3,
-          "rare": 2
+          "rare": 2,
+          "common": 2
         },
         "hel_beetle": {
           "mythic": 23,
@@ -662,7 +669,7 @@
           "super": 1,
           "unique": 1,
           "legendary": 1,
-          "common": 2,
+          "common": 3,
           "rare": 1
         },
         "item_spawner": {
@@ -671,7 +678,7 @@
           "epic": 1
         },
         "cactus": {
-          "common": 10,
+          "common": 11,
           "uncommon": 2,
           "epic": 3,
           "rare": 2,
@@ -685,7 +692,7 @@
           "rare": 1
         },
         "sandstorm": {
-          "common": 8,
+          "common": 10,
           "rare": 5,
           "epic": 8,
           "legendary": 18,
@@ -695,7 +702,7 @@
           "legendary": 1
         }
       },
-      "stars": 118640
+      "stars": 118641
     },
     "1g99g1gfk": {
       "totalXP": 93,
