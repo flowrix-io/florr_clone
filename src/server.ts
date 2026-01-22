@@ -1895,14 +1895,14 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                         });
                         
                         // Emit viewport animation event with delay for each mob
-                        setTimeout(() => {
-                            socket.emit('animateViewportToMob', {
-                                x: mob.x,
-                                y: mob.y,
-                                mobType: mob.type,
-                                rarity: 'ultra'
-                            });
-                        }, index * 2500); // 2.5 second delay between each mob animation
+                        // setTimeout(() => { // too many ultra mobs, gets stuck
+                        //     socket.emit('animateViewportToMob', {
+                        //         x: mob.x,
+                        //         y: mob.y,
+                        //         mobType: mob.type,
+                        //         rarity: 'ultra'
+                        //     });
+                        // }, index * 2500); // 2.5 second delay between each mob animation
                     });
                 }
                 return;
