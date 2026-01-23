@@ -148,6 +148,16 @@ exports.CHANGELOG = [
             'Changed the map of most biomes',
             'Some biomes are temporarily disabled for now',
         ]
+    },
+    {
+        date: 'January 22, 2026',
+        changes: [
+            'Ocean is back!',
+            'New petal: Starfish',
+            'New petal: Sponge',
+            'New mob: Starfish',
+            'New mob: Sponge',
+        ]
     }
 ];
 class ChangelogManager {

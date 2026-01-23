@@ -1441,7 +1441,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         cooldown: 2000,
         description: "Lots of holes and lots of health",
         color: "#000000",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-40 -40 80 80">
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-40 -40 80 80" id="sponge_1">
   
   <path fill="#8d6ca5" d="
     M 30 0 
@@ -3195,6 +3195,45 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
             {
                 type: 'consumable',
                 itemType: 'speed_boost',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    starfish: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'starfish',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    sponge_1: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'sponge',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    sponge_2: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'sponge',
                 rarity: 'common',
                 probability: 1.0,
                 minQuantity: 1,
