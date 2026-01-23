@@ -309,6 +309,17 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
         super: 1000000,
         unique: 4500000
     },
+    starfish: {
+        common: 2,
+        uncommon: 2,
+        rare: 8,
+        epic: 30,
+        legendary: 421,
+        mythic: 1200,
+        ultra: 25000,
+        super: 1500000,
+        unique: 7500000
+    },
     hornet: {
         common: 2,
         uncommon: 8,
@@ -939,6 +950,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         health: 40,
         damage: 40,
         size: 1.0,
+        visual_scale: 1.4,
         speed: 0.5,
         cooldown: 2000,
         description: "Shocking",
@@ -1003,7 +1015,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         name: "Bubble",
         health: 10,
         damage: 0,
-        visual_scale: 3.0,
+        visual_scale: 2.5,
         size: 2.0,
         speed: 0.0,
         cooldown: 2000,
@@ -1013,6 +1025,74 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 200,
         section: 3
+    },
+    starfish: {
+        name: "Starfish",
+        health: 8,
+        damage: 10,
+        size: 1.2,
+        visual_scale: 1.5,
+        speed: 1.5,
+        cooldown: 2000,
+        description: "It spins around",
+        color: "#ffd700",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-230 -230 460 460">
+  <g>
+    <animateTransform 
+      attributeName="transform" 
+      attributeType="XML" 
+      type="rotate" 
+      from="0 0 0" 
+      to="360 0 0" 
+      dur="2s" 
+      repeatCount="indefinite" />
+
+    <path d="M 175 0 Q 12.14 8.82 54.08 166.42 Q -4.64 14.27 -141.58 102.86 Q -15 0 -141.58 -102.86 Q -4.64 -14.27 54.08 -166.42 Q 12.14 -8.82 175 0 Z" 
+          stroke="#9e3b39" 
+          stroke-width="52" 
+          fill="none" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" />
+
+    <path d="M 175 0 Q 12.14 8.82 54.08 166.42 Q -4.64 14.27 -141.58 102.86 Q -15 0 -141.58 -102.86 Q -4.64 -14.27 54.08 -166.42 Q 12.14 -8.82 175 0 Z" 
+          stroke="#d0504e" 
+          stroke-width="26" 
+          fill="#d0504e" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" />
+
+    <g fill="#d3756b">
+      <g transform="rotate(0)">
+        <circle cx="52" cy="0" r="24" />
+        <circle cx="105" cy="0" r="17.6" />
+        <circle cx="145" cy="0" r="11.2" />
+      </g>
+      <g transform="rotate(72)">
+        <circle cx="52" cy="0" r="24" />
+        <circle cx="105" cy="0" r="17.6" />
+        <circle cx="145" cy="0" r="11.2" />
+      </g>
+      <g transform="rotate(144)">
+        <circle cx="52" cy="0" r="24" />
+        <circle cx="105" cy="0" r="17.6" />
+        <circle cx="145" cy="0" r="11.2" />
+      </g>
+      <g transform="rotate(216)">
+        <circle cx="52" cy="0" r="24" />
+        <circle cx="105" cy="0" r="17.6" />
+        <circle cx="145" cy="0" r="11.2" />
+      </g>
+      <g transform="rotate(288)">
+        <circle cx="52" cy="0" r="24" />
+        <circle cx="105" cy="0" r="17.6" />
+        <circle cx="145" cy="0" r="11.2" />
+      </g>
+    </g>
+  </g>
+</svg>`,
+        is_hostile: true,
+        range: 100,
+        section: 3,
     },
     hornet: {
         name: "Hornet",
@@ -1848,6 +1928,32 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
         }
     },
     jellyfish: {
+        uncommon: {
+            range: 500
+        },
+        rare: {
+            range: 700
+        },
+        epic: {
+            range: 900
+        },
+        legendary: {
+            range: 1100
+        },
+        mythic: {
+            range: 1300
+        },
+        ultra: {
+            range: 1500
+        },
+        super: {
+            range: 1700
+        },
+        unique: {
+            range: 1900
+        }
+    },
+    starfish: {
         uncommon: {
             range: 500
         },
