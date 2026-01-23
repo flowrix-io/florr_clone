@@ -104,6 +104,7 @@ export interface ServerPlayer {
   teleportCooldown?: number; // Cooldown to prevent rapid teleportations
   isDead?: boolean;
   killedBy?: { type: string; tier: string }; // Track which enemy killed the player
+  spawnBiome?: string; // The biome selected on the title screen (for respawning)
   effects?: PlayerEffect[]; // Active petal effects
   tp?: number; // Talent Points
   skills?: {

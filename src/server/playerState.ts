@@ -1601,14 +1601,15 @@ export function updatePlayerState(
         player.isDead = true;
         // Set random rotation for the corpse
         player.angle = Math.random() * Math.PI * 2;
-        io.emit('playerDied', { 
-            playerId: player.id, 
-            x: player.x, 
-            y: player.y, 
+
+        io.emit('playerDied', {
+            playerId: player.id,
+            x: player.x,
+            y: player.y,
             angle: player.angle,
             killedBy: player.killedBy
         });
-        
+
         // No automatic respawn - player must manually respawn via continue button
     }
 }

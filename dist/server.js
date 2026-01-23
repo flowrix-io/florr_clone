@@ -908,7 +908,8 @@ io.on('connection', (socket) => {
                 tp: currentTP,
                 skills: savedSkills,
                 mobKills: savedProgress?.mobKills || {},
-                stars: savedProgress?.stars || 0
+                stars: savedProgress?.stars || 0,
+                spawnBiome: credentials.spawnBiome || 'default'
             };
             // Recalculate player stats with modifiers after loadout is set
             (0, playerManager_1.recalculatePlayerStats)(constants_2.players[socket.id], io);

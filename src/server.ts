@@ -1129,7 +1129,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 tp: currentTP,
                 skills: savedSkills,
                 mobKills: (savedProgress as any)?.mobKills || {},
-                stars: (savedProgress as any)?.stars || 0
+                stars: (savedProgress as any)?.stars || 0,
+                spawnBiome: credentials.spawnBiome || 'default'
             };
             
             // Recalculate player stats with modifiers after loadout is set

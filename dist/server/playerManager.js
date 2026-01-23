@@ -163,50 +163,58 @@ function findSafeSpawnPosition(spawnArea, maxAttempts = 50) {
     return null;
 }
 function respawnPlayer(player, io) {
-    // Find valid spawn points for player's level
-    const validSpawnPoints = constants_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
-        element.properties?.spawnType === getSpawnTypeForLevel(player.level));
     let spawnPosition = null;
-    if (validSpawnPoints.length > 0) {
-        // Try to find a safe spawn position in valid spawn points
-        // Shuffle spawn points to try different ones
-        const shuffledSpawnPoints = [...validSpawnPoints].sort(() => Math.random() - 0.5);
-        for (const spawn of shuffledSpawnPoints) {
-            const safePosition = findSafeSpawnPosition(spawn);
-            if (safePosition) {
-                spawnPosition = safePosition;
-                break;
-            }
-        }
+    // First, try to spawn in the biome the player selected on the title screen
+    if (player.spawnBiome && player.spawnBiome !== 'default') {
+        spawnPosition = getSpawnPositionInBiome(player.spawnBiome);
     }
-    // If no safe position found in spawn points, try fallback
+    // If no spawn found in the player's selected biome, fall back to level-based spawn points
     if (!spawnPosition) {
-        console.warn('No safe spawn position found in spawn points for level', player.level, '- trying fallback');
-        // Try random positions in the world as fallback
-        for (let attempt = 0; attempt < 50; attempt++) {
-            const x = Math.random() * constants_1.ACTUAL_WORLD_WIDTH;
-            const y = Math.random() * constants_1.ACTUAL_WORLD_HEIGHT;
-            if (isSafeSpawnPosition(x, y)) {
-                spawnPosition = { x, y };
-                break;
-            }
-        }
-    }
-    // Final fallback: use first spawn point or center of world (even if not safe)
-    if (!spawnPosition) {
-        console.warn('No safe spawn position found after all attempts - using unsafe fallback');
+        const validSpawnPoints = constants_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
+            element.properties?.spawnType === getSpawnTypeForLevel(player.level));
         if (validSpawnPoints.length > 0) {
-            const spawn = validSpawnPoints[0];
-            spawnPosition = {
-                x: (spawn.x + spawn.width / 2) * constants_1.SCALE_FACTOR,
-                y: (spawn.y + spawn.height / 2) * constants_1.SCALE_FACTOR
-            };
+            // Try to find a safe spawn position in valid spawn points
+            // Shuffle spawn points to try different ones
+            const shuffledSpawnPoints = [...validSpawnPoints].sort(() => Math.random() - 0.5);
+            for (const spawn of shuffledSpawnPoints) {
+                const safePosition = findSafeSpawnPosition(spawn);
+                if (safePosition) {
+                    spawnPosition = safePosition;
+                    break;
+                }
+            }
         }
-        else {
-            spawnPosition = {
-                x: constants_1.ACTUAL_WORLD_WIDTH / 2,
-                y: constants_1.ACTUAL_WORLD_HEIGHT / 2
-            };
+        // If no safe position found in spawn points, try fallback
+        if (!spawnPosition) {
+            console.warn('No safe spawn position found in spawn points for level', player.level, '- trying fallback');
+            // Try random positions in the world as fallback
+            for (let attempt = 0; attempt < 50; attempt++) {
+                const x = Math.random() * constants_1.ACTUAL_WORLD_WIDTH;
+                const y = Math.random() * constants_1.ACTUAL_WORLD_HEIGHT;
+                if (isSafeSpawnPosition(x, y)) {
+                    spawnPosition = { x, y };
+                    break;
+                }
+            }
+        }
+        // Final fallback: use first spawn point or center of world (even if not safe)
+        if (!spawnPosition) {
+            console.warn('No safe spawn position found after all attempts - using unsafe fallback');
+            const validSpawnPointsFallback = constants_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
+                element.properties?.spawnType === getSpawnTypeForLevel(player.level));
+            if (validSpawnPointsFallback.length > 0) {
+                const spawn = validSpawnPointsFallback[0];
+                spawnPosition = {
+                    x: (spawn.x + spawn.width / 2) * constants_1.SCALE_FACTOR,
+                    y: (spawn.y + spawn.height / 2) * constants_1.SCALE_FACTOR
+                };
+            }
+            else {
+                spawnPosition = {
+                    x: constants_1.ACTUAL_WORLD_WIDTH / 2,
+                    y: constants_1.ACTUAL_WORLD_HEIGHT / 2
+                };
+            }
         }
     }
     player.x = spawnPosition.x;
