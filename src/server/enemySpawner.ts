@@ -314,30 +314,45 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
                     }
                 }
             } else {
+                // No specific mob type - spawn any mob of this tier that belongs to the current section
                 const allMobTypes = getAllMobTypes();
                 if (allMobTypes.length === 0) {
                     console.error("No mob types found in MOB_CONFIG.");
                     return null as any;
                 }
-                // Filter out target_dummy from random selection (they should only spawn from explicit spawn table entries)
-                const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+                // Filter to mobs that belong to this section and exclude target_dummy
+                const currentSection = getSectionAtPosition(x, y);
+                const eligibleMobTypes = allMobTypes.filter(type => {
+                    if (type === 'target_dummy') {
+                        return false; // Never spawn target dummies as normal mobs
+                    }
+                    const stats = getMobStats(type, tier);
+                    return stats && stats.section === currentSection;
+                });
                 if (eligibleMobTypes.length === 0) {
-                    console.error("No eligible mob types found (excluding target dummies).");
+                    // No eligible mobs for this tier and section
                     return null as any;
                 }
                 mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];
             }
         } else {
-            // Fallback if spawn table selection fails
+            // Fallback if spawn table selection fails - use section filtering
             const allMobTypes = getAllMobTypes();
             if (allMobTypes.length === 0) {
                 console.error("No mob types found in MOB_CONFIG.");
                 return null as any;
             }
-            // Filter out target_dummy from random selection
-            const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+            // Filter to mobs that belong to this section and exclude target_dummy
+            const currentSection = getSectionAtPosition(x, y);
+            const eligibleMobTypes = allMobTypes.filter(type => {
+                if (type === 'target_dummy') {
+                    return false; // Never spawn target dummies as normal mobs
+                }
+                const stats = getMobStats(type, 'common');
+                return stats && stats.section === currentSection;
+            });
             if (eligibleMobTypes.length === 0) {
-                console.error("No eligible mob types found (excluding target dummies).");
+                // No eligible mobs for this section
                 return null as any;
             }
             mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)] as Enemy['type'];

@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 164258302,
+      "totalXP": 164258642,
       "inventory": {
         "common": {
           "shield": 193,
@@ -60,8 +60,8 @@
           "petal_item_spawner_egg": 1,
           "petal_starfish_egg": 14,
           "petal_sponge_1_egg": 6,
-          "petal_sponge_2_egg": 6,
-          "petal_starfish": 3,
+          "petal_sponge_2_egg": 7,
+          "petal_starfish": 5,
           "petal_sponge": 3
         },
         "unique": {
@@ -517,7 +517,7 @@
           "super": 1
         },
         "soldier_ant": {
-          "epic": 74,
+          "epic": 75,
           "legendary": 212,
           "common": 198,
           "rare": 61,
@@ -591,7 +591,7 @@
           "mythic": 40,
           "unique": 1,
           "epic": 7,
-          "common": 1,
+          "common": 4,
           "rare": 24
         },
         "target_dummy": {
@@ -742,7 +742,7 @@
           "uncommon": 52,
           "rare": 40,
           "legendary": 19,
-          "common": 1,
+          "common": 3,
           "epic": 3,
           "mythic": 18
         },
@@ -750,7 +750,7 @@
           "uncommon": 23,
           "rare": 11,
           "legendary": 17,
-          "common": 1,
+          "common": 2,
           "epic": 3,
           "mythic": 13,
           "ultra": 2
@@ -759,7 +759,7 @@
           "uncommon": 13,
           "rare": 13,
           "legendary": 13,
-          "common": 1,
+          "common": 2,
           "epic": 5,
           "mythic": 14,
           "ultra": 2
