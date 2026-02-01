@@ -2761,6 +2761,29 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
         unique: {
             range: 1700
         }
+    },
+    osaka: {
+        uncommon: {
+            range: 700
+        },
+        rare: {
+            range: 1000
+        },
+        epic: {
+            range: 1400
+        },
+        legendary: {
+            range: 1800
+        },
+        mythic: {
+            range: 2200
+        },
+        super: {
+            range: 2600
+        },
+        unique: {
+            range: 3000
+        }
     }
 };
 

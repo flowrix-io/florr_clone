@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 164826375,
+      "totalXP": 164859305,
       "inventory": {
         "common": {
           "shield": 197,
@@ -64,11 +64,12 @@
           "petal_starfish": 5,
           "petal_sponge": 5,
           "petal_blood_leaf": 1,
-          "petal_javascript": 5,
-          "petal_glitch": 5,
-          "petal_osaka_egg": 3,
-          "petal_javascript_egg": 3,
-          "petal_glitch_egg": 1
+          "petal_javascript": 13,
+          "petal_glitch": 10,
+          "petal_osaka_egg": 7,
+          "petal_javascript_egg": 6,
+          "petal_glitch_egg": 2,
+          "petal_dust_egg": 6
         },
         "unique": {
           "petal_stinger": 1001,
@@ -107,6 +108,8 @@
           "petal_item_spawner_egg": 1,
           "petal_gas": 1,
           "petal_splitter": 999,
+          "petal_rock_egg": 1,
+          "petal_glitch_egg": 1,
           "petal_osaka_egg": 1
         },
         "mythic": {
@@ -220,10 +223,12 @@
           "petal_starfish": 6,
           "petal_sponge": 5,
           "petal_hel_beetle_egg": 2,
-          "petal_javascript": 1,
-          "petal_javascript_egg": 1,
-          "petal_glitch_egg": 1,
-          "petal_glitch": 3
+          "petal_javascript": 6,
+          "petal_javascript_egg": 5,
+          "petal_glitch_egg": 2,
+          "petal_glitch": 5,
+          "petal_dust_egg": 4,
+          "petal_osaka_egg": 2
         },
         "legendary": {
           "speed_boost": 56,
@@ -278,7 +283,11 @@
           "petal_starfish": 5,
           "petal_starfish_egg": 4,
           "petal_sponge": 6,
-          "petal_sponge_1_egg": 3
+          "petal_sponge_1_egg": 3,
+          "petal_glitch_egg": 2,
+          "petal_glitch": 2,
+          "petal_javascript": 1,
+          "petal_osaka_egg": 1
         },
         "epic": {
           "petal_stinger": 62,
@@ -340,7 +349,10 @@
           "petal_sponge_1_egg": 7,
           "petal_sponge": 8,
           "petal_starfish": 2,
-          "petal_glitch": 2
+          "petal_glitch": 3,
+          "petal_osaka_egg": 1,
+          "petal_javascript": 2,
+          "petal_javascript_egg": 1
         },
         "rare": {
           "petal_rock": 20,
@@ -400,8 +412,10 @@
           "petal_sponge_2_egg": 4,
           "petal_sponge": 2,
           "petal_hel_beetle_egg": 1,
-          "petal_javascript": 1,
-          "petal_javascript_egg": 1
+          "petal_javascript": 2,
+          "petal_javascript_egg": 1,
+          "petal_glitch": 3,
+          "petal_glitch_egg": 2
         },
         "ultra": {
           "speed_boost": 3,
@@ -510,16 +524,8 @@
           "type": "speed_boost",
           "rarity": "unique"
         },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "glitch_egg"
-        },
-        {
-          "type": "petal",
-          "rarity": "unique",
-          "petalType": "rock_egg"
-        },
+        null,
+        null,
         null,
         null,
         null,
@@ -796,34 +802,39 @@
         },
         "osaka": {
           "unique": 1,
-          "common": 13,
-          "epic": 3,
-          "uncommon": 4,
-          "rare": 1,
-          "legendary": 1
+          "common": 24,
+          "epic": 4,
+          "uncommon": 12,
+          "rare": 8,
+          "legendary": 2,
+          "mythic": 4
         },
         "javascript": {
           "unique": 2,
-          "common": 13,
-          "epic": 2,
-          "rare": 2,
-          "uncommon": 6,
-          "legendary": 1
+          "common": 29,
+          "epic": 7,
+          "rare": 8,
+          "uncommon": 12,
+          "legendary": 3,
+          "mythic": 1
         },
         "dust": {
-          "common": 13,
-          "uncommon": 9,
-          "rare": 1,
-          "epic": 2
+          "common": 24,
+          "uncommon": 15,
+          "rare": 6,
+          "epic": 7,
+          "legendary": 4
         },
         "glitch": {
-          "common": 10,
-          "rare": 5,
-          "uncommon": 7,
-          "epic": 2
+          "common": 22,
+          "rare": 8,
+          "uncommon": 15,
+          "epic": 5,
+          "mythic": 3,
+          "legendary": 1
         }
       },
-      "stars": 119079
+      "stars": 119087
     },
     "1g99g1gfk": {
       "totalXP": 93,

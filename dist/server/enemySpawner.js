@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.EQUAL_RARITY_SECTIONS = void 0;
 exports.createEnemy = createEnemy;
 exports.createSpecialMob = createSpecialMob;
 exports.updateSpecialMobCounts = updateSpecialMobCounts;
@@ -10,6 +11,16 @@ const constants_2 = require("../constants");
 const mobs_1 = require("../mobs");
 // Tier order from lowest to highest
 const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+// Sections (0-8) where all rarities have equal spawn chance
+// Section layout:
+//   0 | 1 | 2
+//   ---------
+//   3 | 4 | 5
+//   ---------
+//   6 | 7 | 8
+exports.EQUAL_RARITY_SECTIONS = [7];
+// Tiers that can spawn with equal probability in equal rarity sections
+const EQUAL_RARITY_TIERS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
 // Boundary threshold for out-of-bounds zone (same as wall extension threshold)
 const BOUNDARY_THRESHOLD = 100;
 // Helper function to check if a position is in the out-of-bounds zone
@@ -309,14 +320,22 @@ function createEnemy(helpers) {
             tier = spawnZoneType;
         }
         else {
-            // Outside spawn zones and biomes - use normal probability distribution
-            const tierRoll = Math.random();
-            let cumulativeProbability = 0;
-            for (const [t, data] of Object.entries(constants_2.ENEMY_TIERS)) {
-                cumulativeProbability += data.probability;
-                if (tierRoll < cumulativeProbability) {
-                    tier = t;
-                    break;
+            // Outside spawn zones and biomes - check if section has equal rarity spawning
+            const currentSection = getSectionAtPosition(x, y);
+            if (exports.EQUAL_RARITY_SECTIONS.includes(currentSection)) {
+                // Equal chance for all spawnable tiers
+                tier = EQUAL_RARITY_TIERS[Math.floor(Math.random() * EQUAL_RARITY_TIERS.length)];
+            }
+            else {
+                // Use normal probability distribution
+                const tierRoll = Math.random();
+                let cumulativeProbability = 0;
+                for (const [t, data] of Object.entries(constants_2.ENEMY_TIERS)) {
+                    cumulativeProbability += data.probability;
+                    if (tierRoll < cumulativeProbability) {
+                        tier = t;
+                        break;
+                    }
                 }
             }
         }
