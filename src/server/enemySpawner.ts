@@ -40,8 +40,31 @@ const TIER_ORDER: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'lege
 //   6 | 7 | 8
 export const EQUAL_RARITY_SECTIONS: number[] = [7];
 
-// Tiers that can spawn with equal probability in equal rarity sections
-const EQUAL_RARITY_TIERS: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+// Tier spawn weights for equal rarity sections
+// Ultra: 5%, Super: 0.1%, remaining 94.9% split equally among common-mythic
+const EQUAL_RARITY_TIER_WEIGHTS: { tier: Enemy['tier'], weight: number }[] = [
+    { tier: 'common', weight: 0.94 / 6 },
+    { tier: 'uncommon', weight: 0.94 / 6 },
+    { tier: 'rare', weight: 0.94 / 6 },
+    { tier: 'epic', weight: 0.94 / 6 },
+    { tier: 'legendary', weight: 0.94 / 6 },
+    { tier: 'mythic', weight: 0.94 / 6 },
+    { tier: 'ultra', weight: 0.05 },
+    { tier: 'super', weight: 0.001 }
+];
+
+// Helper function to select tier from equal rarity weights
+function selectEqualRarityTier(): Enemy['tier'] {
+    const roll = Math.random();
+    let cumulative = 0;
+    for (const entry of EQUAL_RARITY_TIER_WEIGHTS) {
+        cumulative += entry.weight;
+        if (roll < cumulative) {
+            return entry.tier;
+        }
+    }
+    return 'common'; // Fallback
+}
 
 // Boundary threshold for out-of-bounds zone (same as wall extension threshold)
 const BOUNDARY_THRESHOLD = 100;
@@ -395,8 +418,8 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             const currentSection = getSectionAtPosition(x, y);
 
             if (EQUAL_RARITY_SECTIONS.includes(currentSection)) {
-                // Equal chance for all spawnable tiers
-                tier = EQUAL_RARITY_TIERS[Math.floor(Math.random() * EQUAL_RARITY_TIERS.length)];
+                // Weighted spawn chance for all tiers
+                tier = selectEqualRarityTier();
             } else {
                 // Use normal probability distribution
                 const tierRoll = Math.random();

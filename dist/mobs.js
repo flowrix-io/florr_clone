@@ -735,7 +735,8 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        section: 1
+        section: 1,
+        hideRotation: true,
     },
     cactus: {
         name: "Cactus",
@@ -930,7 +931,8 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         is_hostile: true,
         range: 200,
-        section: 3
+        section: 3,
+        hideRotation: true,
     },
     bubble: {
         name: "Bubble",
@@ -1014,6 +1016,7 @@ exports.BASE_MOB_CONFIGS = {
         is_hostile: true,
         range: 100,
         section: 3,
+        hideRotation: true,
     },
     sponge_2: {
         name: "Sponge",
@@ -2043,6 +2046,7 @@ exports.BASE_MOB_CONFIGS = {
         is_hostile: false,
         range: 100,
         section: 7,
+        hideRotation: true,
     },
     fly: {
         name: "Fly",
@@ -2116,6 +2120,7 @@ exports.BASE_MOB_CONFIGS = {
         range: 100,
         section: 6,
         reversed: true,
+        hideRotation: true,
     },
     moth: {
         name: "Moth",
@@ -2361,6 +2366,7 @@ exports.BASE_MOB_CONFIGS = {
         is_hostile: false,
         range: 100,
         section: 7,
+        hideRotation: true,
     },
     dust: {
         name: "Dust",
@@ -2428,6 +2434,8 @@ exports.BASE_MOB_CONFIGS = {
             speed: 200,
             spreadAngle: 0.2,
         },
+        hideRotation: true,
+        noEggDrop: true,
     }
 };
 // Rarity-specific overrides for special cases
@@ -2744,6 +2752,8 @@ function generateMobStats(baseConfig, rarity, mobType) {
         section: overrides.section ?? baseConfig.section ?? 0,
         visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0,
         reversed: overrides.reversed ?? baseConfig.reversed ?? false,
+        hideRotation: overrides.hideRotation ?? baseConfig.hideRotation ?? false,
+        noEggDrop: overrides.noEggDrop ?? baseConfig.noEggDrop ?? false,
         projectile: overrides.projectile ?? baseConfig.projectile
     };
 }
@@ -3379,6 +3389,14 @@ exports.MOB_DROP_TABLES = {
                 probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'random',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
@@ -3390,6 +3408,14 @@ exports.MOB_DROP_TABLES = {
                 itemType: 'glitch',
                 rarity: 'common',
                 probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'random',
+                rarity: 'common',
+                probability: 0.5,
                 minQuantity: 1,
                 maxQuantity: 1
             }
@@ -3413,6 +3439,14 @@ exports.MOB_DROP_TABLES = {
                 probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'osaka',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
@@ -3421,6 +3455,10 @@ exports.MOB_DROP_TABLES = {
 for (const mobType in exports.BASE_MOB_CONFIGS) {
     // Skip pet mobs (they end with _pet)
     if (mobType.endsWith('_pet')) {
+        continue;
+    }
+    // Skip mobs with noEggDrop set to true
+    if (exports.BASE_MOB_CONFIGS[mobType].noEggDrop) {
         continue;
     }
     const eggName = `${mobType}_egg`;

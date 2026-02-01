@@ -15,6 +15,8 @@ export interface MobStats {
     section: number; // Section number (0-8) where this mob spawns. See SECTION_CONFIGS in constants.ts
     visual_scale?: number; // Visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Whether the mob image should be flipped horizontally
+    hideRotation?: boolean; // Whether to hide the mob's rotation visually (mob always faces default direction)
+    noEggDrop?: boolean; // Whether this mob should not drop eggs
     petImage?: string; // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
     projectile?: {
         count: number; // Number of projectiles to shoot
@@ -78,6 +80,8 @@ interface BaseMobConfig {
     section?: number; // Optional: section number (0-8) where this mob spawns. Default is 0 (Garden)
     visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Optional: whether the mob image should be flipped horizontally
+    hideRotation?: boolean; // Optional: whether to hide the mob's rotation visually
+    noEggDrop?: boolean; // Optional: whether this mob should not drop eggs
     petImage?: string; // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
     projectile?: {
         count: number;
@@ -105,6 +109,8 @@ interface RarityOverride {
     section?: number; // Optional: section number (0-8) where this mob spawns
     visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Optional: whether the mob image should be flipped horizontally
+    hideRotation?: boolean; // Optional: whether to hide the mob's rotation visually
+    noEggDrop?: boolean; // Optional: whether this mob should not drop eggs
     petImage?: string; // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
     projectile?: {
         count: number;
@@ -836,7 +842,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: false,
         range: 100,
-        section: 1
+        section: 1,
+        hideRotation: true,
     },
     cactus: {
         name: "Cactus",
@@ -1031,7 +1038,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         is_hostile: true,
         range: 200,
-        section: 3
+        section: 3,
+        hideRotation: true,
     },
     bubble: {
         name: "Bubble",
@@ -1115,6 +1123,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: true,
         range: 100,
         section: 3,
+        hideRotation: true,
     },
     sponge_2: {
         name: "Sponge",
@@ -2144,6 +2153,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         section: 7,
+        hideRotation: true,
     },
     fly: {
         name: "Fly",
@@ -2217,6 +2227,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         range: 100,
         section: 6,
         reversed: true,
+        hideRotation: true,
     },
     moth: {
         name: "Moth",
@@ -2462,6 +2473,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         section: 7,
+        hideRotation: true,
     },
     dust: {
         name: "Dust",
@@ -2529,6 +2541,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
             speed: 200,
             spreadAngle: 0.2,
         },
+        hideRotation: true,
+        noEggDrop: true,
     }
 }
 
@@ -2856,6 +2870,8 @@ function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: st
         section: overrides.section ?? baseConfig.section ?? 0,
         visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0,
         reversed: overrides.reversed ?? baseConfig.reversed ?? false,
+        hideRotation: overrides.hideRotation ?? baseConfig.hideRotation ?? false,
+        noEggDrop: overrides.noEggDrop ?? baseConfig.noEggDrop ?? false,
         projectile: overrides.projectile ?? baseConfig.projectile
     };
 }
@@ -3497,6 +3513,14 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'random',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
@@ -3508,6 +3532,14 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 itemType: 'glitch',
                 rarity: 'common',
                 probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'random',
+                rarity: 'common',
+                probability: 0.5,
                 minQuantity: 1,
                 maxQuantity: 1
             }
@@ -3531,6 +3563,14 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'osaka',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },
@@ -3542,7 +3582,12 @@ for (const mobType in BASE_MOB_CONFIGS) {
     if (mobType.endsWith('_pet')) {
         continue;
     }
-    
+
+    // Skip mobs with noEggDrop set to true
+    if (BASE_MOB_CONFIGS[mobType].noEggDrop) {
+        continue;
+    }
+
     const eggName = `${mobType}_egg`;
     
     // Get or create drop table for this mob

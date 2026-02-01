@@ -2378,8 +2378,12 @@ export class Graphics {
         // The context already has camera transforms applied, so we translate to world position
         this.ctx.save();
         this.ctx.translate(enemy.x, enemy.y);
-        this.ctx.rotate(enemy.angle || 0);
-        
+
+        // Only apply rotation if hideRotation is not set
+        if (!mobStats?.hideRotation) {
+            this.ctx.rotate(enemy.angle || 0);
+        }
+
         // Flip horizontally if reversed is true
         if (enemy.reversed || mobStats?.reversed) {
             this.ctx.scale(-1, 1);
