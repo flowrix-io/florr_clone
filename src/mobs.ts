@@ -2496,6 +2496,14 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         range: 100,
         section: 7,
         color: "#ffffff",
+        projectile: {
+            count: 1,
+            distance: 100,
+            petalType: "javascript",
+            petalRarity: "common",
+            speed: 200,
+            spreadAngle: 0.2,
+        },
     },
     osaka: {
         name: "Osaka",
@@ -2516,7 +2524,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         projectile: {
             count: 1,
             distance: 100,
-            petalType: "basic",
+            petalType: "glitch",
             petalRarity: "common",
             speed: 200,
             spreadAngle: 0.2,
@@ -3449,6 +3457,53 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
             {
                 type: 'petal',
                 itemType: 'golden_leaf',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    javascript: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'javascript',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    glitch: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'glitch',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    osaka: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'glitch',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'javascript',
                 rarity: 'common',
                 probability: 1.0,
                 minQuantity: 1,

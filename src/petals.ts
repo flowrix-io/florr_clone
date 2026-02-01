@@ -1185,6 +1185,32 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 </svg>`,
         isAdminPetal: false
     },
+    javascript: {
+        name: "JavaScript Petal",
+        damage: 10,
+        health: 128,
+        size: 1.0,
+        cooldown: 2000,
+        description: "Obfuscated",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32px" height="32px" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMin meet"><path d="M0 0h256v256H0V0z" fill="#F7DF1E"/><path d="M67.312 213.932l19.59-11.856c3.78 6.701 7.218 12.371 15.465 12.371 7.905 0 12.89-3.092 12.89-15.12v-81.798h24.057v82.138c0 24.917-14.606 36.259-35.916 36.259-19.245 0-30.416-9.967-36.087-21.996M152.381 211.354l19.588-11.341c5.157 8.421 11.859 14.607 23.715 14.607 9.969 0 16.325-4.984 16.325-11.858 0-8.248-6.53-11.17-17.528-15.98l-6.013-2.58c-17.357-7.387-28.87-16.667-28.87-36.257 0-18.044 13.747-31.792 35.228-31.792 15.294 0 26.292 5.328 34.196 19.247L210.29 147.43c-4.125-7.389-8.591-10.31-15.465-10.31-7.046 0-11.514 4.468-11.514 10.31 0 7.217 4.468 10.14 14.778 14.608l6.014 2.577c20.45 8.765 31.963 17.7 31.963 37.804 0 21.654-17.012 33.51-39.867 33.51-22.339 0-36.774-10.654-43.819-24.574"/></svg>`,
+        isAdminPetal: true
+    },
+    glitch: {
+        name: "Glitch Petal",
+        damage: -1,
+        health: 128,
+        size: 1.0,
+        cooldown: 2000,
+        description: "Glitch",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 10 32 10" fill="none">
+<image href="data:image/png;base64,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" height="32" width="32"/>
+</svg>`,
+        isAdminPetal: true
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
