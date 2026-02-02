@@ -158,6 +158,15 @@ exports.CHANGELOG = [
             'New mob: Starfish',
             'New mob: Sponge',
         ]
+    },
+    {
+        date: 'January 31, 2026',
+        changes: [
+            'New biome: MATRIX',
+            '˜´∑ µø∫Ú øßå',
+            '˜ªº˜˚¬ˆçß••',
+            'New petal: ∆å√åßç®ˆπ†'
+        ]
     }
 ];
 class ChangelogManager {

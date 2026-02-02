@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MOB_DROP_TABLES = exports.MOB_CONFIG = exports.BASE_MOB_CONFIGS = exports.RARITY_LEVELS = void 0;
+exports.MOB_DROP_TABLES = exports.MOB_CONFIG = exports.BASE_MOB_CONFIGS = exports.SIZE_SCALING = exports.RARITY_LEVELS = void 0;
 exports.getMobStats = getMobStats;
 exports.getAllMobTypes = getAllMobTypes;
 exports.getMobRarities = getMobRarities;
@@ -42,7 +42,7 @@ const DAMAGE_SCALING = {
     super: 2187,
     unique: 6561
 };
-const SIZE_SCALING = {
+exports.SIZE_SCALING = {
     common: 1,
     uncommon: 1.2,
     rare: 1.6,
@@ -2724,7 +2724,7 @@ function generateMobStats(baseConfig, rarity, mobType) {
     const health = baseConfig.health * HEALTH_SCALING[rarity];
     // Calculate size scaling using the size scaling table
     // Size already includes rarity scaling, so mass will automatically account for rarity
-    const size = baseConfig.size * SIZE_SCALING[rarity];
+    const size = baseConfig.size * exports.SIZE_SCALING[rarity];
     // Calculate mass based on size (mass scales with area, size^2)
     // Larger mobs and higher rarity mobs (which have larger size) will have more mass
     const mass = size * size; // Mass proportional to area (size^2)

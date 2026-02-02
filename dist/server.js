@@ -805,12 +805,28 @@ io.on('connection', (socket) => {
             }
             else {
                 // Use default spawn logic for common spawn zones
+                // Helper to get section from map coordinates
+                const SECTION_SIZE = 20000;
+                const getSectionFromMapCoords = (x, y) => {
+                    const worldX = x * constants_2.SCALE_FACTOR;
+                    const worldY = y * constants_2.SCALE_FACTOR;
+                    const sectionX = Math.max(0, Math.min(2, Math.floor(worldX / SECTION_SIZE)));
+                    const sectionY = Math.max(0, Math.min(2, Math.floor(worldY / SECTION_SIZE)));
+                    return sectionY * 3 + sectionX;
+                };
                 const validSpawnPoints = constants_2.WORLD_MAP.filter(element => element.type === 'spawn' &&
                     element.properties?.spawnType === 'common');
                 if (validSpawnPoints.length > 0) {
-                    // Try to find a safe spawn position in valid spawn points
+                    // Prioritize spawn points in section 0 (first section) for default spawning
+                    const section0SpawnPoints = validSpawnPoints.filter(spawn => {
+                        const centerX = spawn.x + spawn.width / 2;
+                        const centerY = spawn.y + spawn.height / 2;
+                        return getSectionFromMapCoords(centerX, centerY) === 0;
+                    });
+                    // Use section 0 spawn points if available, otherwise fall back to all common spawns
+                    const preferredSpawnPoints = section0SpawnPoints.length > 0 ? section0SpawnPoints : validSpawnPoints;
                     // Shuffle spawn points to try different ones
-                    const shuffledSpawnPoints = [...validSpawnPoints].sort(() => Math.random() - 0.5);
+                    const shuffledSpawnPoints = [...preferredSpawnPoints].sort(() => Math.random() - 0.5);
                     let safeSpawnPosition = null;
                     for (const spawn of shuffledSpawnPoints) {
                         safeSpawnPosition = (0, playerManager_1.findSafeSpawnPosition)(spawn);
@@ -825,7 +841,7 @@ io.on('connection', (socket) => {
                     else {
                         // Fallback: use random position in first spawn point (even if not completely safe)
                         console.warn('No safe spawn position found in common spawn zones, using fallback');
-                        const spawn = validSpawnPoints[0];
+                        const spawn = preferredSpawnPoints[0];
                         spawnX = (spawn.x + spawn.width / 2) * constants_2.SCALE_FACTOR;
                         spawnY = (spawn.y + spawn.height / 2) * constants_2.SCALE_FACTOR;
                     }
@@ -2369,6 +2385,10 @@ function moveEnemies() {
                                     const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
                                     projectileAngle = angleToTarget + spreadOffset;
                                 }
+                                // Scale projectile distance and size by 1/9 of mob's rarity size scaling
+                                const sizeScale = (mobs_1.SIZE_SCALING[enemy.tier] || 1) / 9;
+                                const scaledDistance = projectileConfig.distance * sizeScale;
+                                const scaledSize = petalStats.size * sizeScale;
                                 const projectile = {
                                     id: `${enemy.id}_projectile_${currentTime}_${i}`,
                                     enemyId: enemy.id,
@@ -2379,11 +2399,11 @@ function moveEnemies() {
                                     angle: projectileAngle,
                                     speed: projectileSpeed / 1000,
                                     distance: 0,
-                                    maxDistance: projectileConfig.distance,
+                                    maxDistance: scaledDistance,
                                     petalType: projectileConfig.petalType,
                                     petalRarity: projectileRarity,
                                     damage: petalStats.damage,
-                                    size: petalStats.size,
+                                    size: scaledSize, // Mob projectiles scale size with rarity
                                     health: petalStats.health,
                                     maxHealth: petalStats.health
                                 };
@@ -2529,6 +2549,10 @@ function moveEnemies() {
                                     const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
                                     projectileAngle = angleToTarget + spreadOffset;
                                 }
+                                // Scale projectile distance and size by 1/9 of mob's rarity size scaling
+                                const sizeScale = (mobs_1.SIZE_SCALING[enemy.tier] || 1) / 9;
+                                const scaledDistance = projectileConfig.distance * sizeScale;
+                                const scaledSize = petalStats.size * sizeScale;
                                 const projectile = {
                                     id: `${enemy.id}_projectile_${currentTime}_${i}`,
                                     enemyId: enemy.id,
@@ -2539,11 +2563,11 @@ function moveEnemies() {
                                     angle: projectileAngle,
                                     speed: projectileSpeed / 1000, // Convert to pixels per millisecond
                                     distance: 0,
-                                    maxDistance: projectileConfig.distance,
+                                    maxDistance: scaledDistance,
                                     petalType: projectileConfig.petalType,
                                     petalRarity: projectileRarity,
                                     damage: petalStats.damage,
-                                    size: petalStats.size,
+                                    size: scaledSize, // Mob projectiles scale size with rarity
                                     health: petalStats.health,
                                     maxHealth: petalStats.health
                                 };

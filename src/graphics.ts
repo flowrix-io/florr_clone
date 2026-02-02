@@ -2265,9 +2265,9 @@ export class Graphics {
 
         // Fast path for gas projectiles - they're just simple green circles, no rotation needed
         if (projectile.petalType === 'gas' && projectile.petalRarity === 'common') {
-            const petalSize = petalStats.size * 20;
+            const petalSize = projectile.size * 20; // Use projectile's scaled size
             const radius = petalSize / 2;
-            
+
             // Draw directly without transforms - much faster
             this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
             this.ctx.beginPath();
@@ -2276,7 +2276,7 @@ export class Graphics {
             return;
         }
 
-        const petalSize = petalStats.size * 20; // Convert to pixels
+        const petalSize = projectile.size * 20; // Use projectile's scaled size
 
         this.ctx.save();
         this.ctx.translate(projectile.x, projectile.y);
@@ -3692,24 +3692,24 @@ export class Graphics {
             if (!petalStats) {
                 continue;
             }
-            
-            const projectileSize = petalStats.size * 20;
+
+            const projectileSize = projectile.size * 20; // Use projectile's scaled size
             const cullingBuffer = Math.max(projectileSize, 50);
-            
+
             // Viewport culling
-            if (projectile.x + projectileSize / 2 + cullingBuffer < viewport.left || 
+            if (projectile.x + projectileSize / 2 + cullingBuffer < viewport.left ||
                 projectile.x - projectileSize / 2 - cullingBuffer > viewport.right ||
                 projectile.y + projectileSize / 2 + cullingBuffer < viewport.top ||
                 projectile.y - projectileSize / 2 - cullingBuffer > viewport.bottom) {
                 continue;
             }
-            
+
             if (projectile.petalType === 'gas' && projectile.petalRarity === 'common') {
                 if (allGasProjectiles.length < MAX_GAS_PROJECTILES) {
                     allGasProjectiles.push({
                         x: projectile.x,
                         y: projectile.y,
-                        radius: projectileSize / 2
+                        radius: projectileSize / 2 // Already uses scaled size
                     });
                 }
             } else {

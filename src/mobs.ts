@@ -147,7 +147,7 @@ const DAMAGE_SCALING = {
     unique: 6561
 };
 
-const SIZE_SCALING = {
+export const SIZE_SCALING: { [key: string]: number } = {
     common: 1,
     uncommon: 1.2,
     rare: 1.6,
