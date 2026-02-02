@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 165553045,
+      "totalXP": 165555805,
       "inventory": {
         "common": {
           "shield": 198,
@@ -532,8 +532,10 @@
         null,
         null
       ],
-      "tp": 154,
-      "skills": {},
+      "tp": 54,
+      "skills": {
+        "playerHealth": "unique"
+      },
       "mobKills": {
         "ladybug": {
           "common": 168,
@@ -800,10 +802,10 @@
           "unique": 1,
           "common": 44,
           "epic": 18,
-          "uncommon": 25,
+          "uncommon": 26,
           "rare": 22,
           "legendary": 24,
-          "mythic": 45,
+          "mythic": 46,
           "ultra": 2
         },
         "javascript": {
@@ -821,7 +823,7 @@
           "common": 42,
           "uncommon": 26,
           "rare": 11,
-          "epic": 15,
+          "epic": 16,
           "legendary": 18,
           "mythic": 27,
           "ultra": 5
@@ -829,14 +831,14 @@
         "glitch": {
           "common": 41,
           "rare": 10,
-          "uncommon": 20,
+          "uncommon": 21,
           "epic": 12,
           "mythic": 23,
           "legendary": 10,
           "ultra": 3
         }
       },
-      "stars": 119395
+      "stars": 119396
     },
     "1g99g1gfk": {
       "totalXP": 93,
