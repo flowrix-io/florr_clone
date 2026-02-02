@@ -16,14 +16,14 @@ class Tutorial {
         this.steps = [
             {
                 id: 'welcome',
-                title: '🌸 Welcome to florr.io clone!',
+                title: 'Welcome to florr.io clone!',
                 description: 'Let\'s learn the basics! You\'ll learn how to move, use petals, equip items, and craft upgrades.',
                 position: 'center',
                 skipButton: true
             },
             {
                 id: 'movement',
-                title: '🎮 Movement',
+                title: 'Movement',
                 description: 'Use <strong>W/A/S/D</strong> or <strong>Arrow Keys</strong> to move your flower around the world. Try moving now!',
                 position: 'center',
                 condition: () => {
@@ -33,7 +33,7 @@ class Tutorial {
             },
             {
                 id: 'extend_petals',
-                title: '🌺 Extending Petals',
+                title: 'Extending Petals',
                 description: 'Hold <strong>SPACE</strong> to extend your petals outward for maximum reach and damage. Try it now!<br><br>Your petals protect you and damage enemies that touch them.',
                 position: 'center',
                 condition: () => {
@@ -42,7 +42,7 @@ class Tutorial {
             },
             {
                 id: 'loadout_intro',
-                title: '📦 Loadout Bar',
+                title: 'Loadout Bar',
                 description: 'This is your <strong>Loadout Bar</strong> at the bottom of the screen. Here you can equip petals and items to use in battle.<br><br>Each slot can be accessed using keys <strong>1-9 and 0</strong>.',
                 highlightElement: '#loadoutBar',
                 position: 'top',
@@ -50,8 +50,8 @@ class Tutorial {
             },
             {
                 id: 'inventory',
-                title: '🎒 Inventory',
-                description: 'Press <strong>I</strong> to open your inventory. This is where all your collected petals and items are stored.<br><br>You can <strong>drag and drop</strong> items from your inventory to your loadout bar to equip them.',
+                title: 'Inventory',
+                description: 'Press <strong>Z</strong> to open your inventory. This is where all your collected petals and items are stored.<br><br>You can <strong>drag and drop</strong> items from your inventory to your loadout bar to equip them.',
                 position: 'center',
                 condition: () => {
                     return this.completedSteps.has('inventory_opened');
@@ -59,7 +59,7 @@ class Tutorial {
             },
             {
                 id: 'equip_petal',
-                title: '🌼 Equipping Petals',
+                title: 'Equipping Petals',
                 description: 'Try dragging a petal from your inventory to any slot in the loadout bar!<br><br><em>Tip: Different petals have different abilities. Experiment to find your favorite combination!</em>',
                 highlightElement: '#loadoutBar',
                 position: 'top',
@@ -69,8 +69,8 @@ class Tutorial {
             },
             {
                 id: 'crafting_intro',
-                title: '⚒️ Crafting',
-                description: 'Press <strong>R</strong> to open the crafting menu. Crafting allows you to combine 5 items of the same type and rarity to create 1 item of higher rarity!',
+                title: 'Crafting',
+                description: 'Press <strong>C</strong> to open the crafting menu. Crafting allows you to combine 5 items of the same type and rarity to create 1 item of higher rarity!',
                 position: 'center',
                 condition: () => {
                     return this.completedSteps.has('crafting_opened');
@@ -78,30 +78,30 @@ class Tutorial {
             },
             {
                 id: 'crafting_process',
-                title: '🔨 How to Craft',
-                description: 'To craft:<br>1. Click on an item in your inventory (that you have at least 5 of) to add 5 to the crafting circle<br>2. Click the <strong>Craft</strong> button<br>3. If successful, you\'ll get a higher rarity item!<br><br><em>Note: Success chance decreases with higher rarities. You can close this menu with R.</em>',
+                title: 'How to Craft',
+                description: 'To craft:<br>1. Click on an item in your inventory (that you have at least 5 of) to add 5 to the crafting circle<br>2. Click the <strong>Craft</strong> button<br>3. If successful, you\'ll get a higher rarity item!<br><br><em>Note: Success chance decreases with higher rarities. You can close this menu with C.</em>',
                 highlightElement: '#craftingPanel',
                 position: 'center',
                 skipButton: false
             },
             {
                 id: 'combat',
-                title: '⚔️ Combat Tips',
+                title: 'Combat Tips',
                 description: 'Your petals automatically damage enemies that touch them. More petals = more protection!<br><br>• <strong>Health</strong>: Each petal has health and will break when damaged<br>• <strong>Damage</strong>: Higher rarity petals deal more damage<br>• <strong>Strategy</strong>: Mix defensive and offensive petals for best results',
                 position: 'center',
                 skipButton: false
             },
             {
                 id: 'controls',
-                title: '🎛️ Additional Controls',
-                description: '<strong>C</strong> - Toggle mouse/keyboard controls<br><strong>H</strong> - Toggle hitboxes<br><strong>+/-</strong> - Zoom in/out<br><strong>Enter</strong> - Open chat<br><strong>ESC</strong> - Exit to menu<br><br>You can customize controls in the Settings menu!',
+                title: 'Additional Controls',
+                description: '<strong>K</strong> - Toggle mouse/keyboard controls<br><strong>H</strong> - Toggle hitboxes<br><strong>+/-</strong> - Zoom in/out<br><strong>Enter</strong> - Open chat<br><strong>ESC</strong> - Exit to menu<br><br>You can customize controls in the Settings menu!',
                 position: 'center',
                 skipButton: false
             },
             {
                 id: 'complete',
-                title: '🎉 Tutorial Complete!',
-                description: 'You\'re ready to explore! Defeat enemies, collect petals, craft upgrades, and become the strongest flower in the garden!<br><br>Good luck! 🌻',
+                title: 'Tutorial Complete!',
+                description: 'You\'re ready to explore! Defeat enemies, collect petals, craft upgrades, and become the strongest flower in the garden!<br><br>Good luck!',
                 position: 'center',
                 skipButton: false
             }
@@ -122,35 +122,39 @@ class Tutorial {
     }
     createTutorialUI() {
         // Create light overlay (less intrusive)
-        this.tutorialOverlay = document.createElement('div');
-        this.tutorialOverlay.id = 'tutorialOverlay';
-        this.tutorialOverlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.3);
-            z-index: 9998;
-            transition: opacity 0.3s ease;
-            pointer-events: none;
-        `;
-        document.body.appendChild(this.tutorialOverlay);
+        // this.tutorialOverlay = document.createElement('div');
+        // this.tutorialOverlay.id = 'tutorialOverlay';
+        // this.tutorialOverlay.style.cssText = `
+        //     position: fixed;
+        //     top: 0;
+        //     left: 0;
+        //     width: 100%;
+        //     height: 100%;
+        //     background: rgba(0, 0, 0, 0.3);
+        //     z-index: 9998;
+        //     transition: opacity 0.3s ease;
+        //     pointer-events: none;
+        // `;
+        // document.body.appendChild(this.tutorialOverlay);
         // Create tutorial box
         this.tutorialBox = document.createElement('div');
         this.tutorialBox.id = 'tutorialBox';
         this.tutorialBox.style.cssText = `
             position: fixed;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(40, 40, 40, 0.85);
             color: white;
-            padding: 25px;
-            border-radius: 15px;
+            padding: 20px 25px;
+            border-radius: 12px;
             max-width: 500px;
             z-index: 9999;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
             font-family: Ubuntu, sans-serif;
             animation: slideIn 0.3s ease-out;
             pointer-events: auto;
+            backdrop-filter: blur(5px);
         `;
         document.body.appendChild(this.tutorialBox);
         // Add animation keyframes
@@ -177,8 +181,8 @@ class Tutorial {
                 z-index: 9997 !important;
             }
             .tutorial-button {
-                background: white;
-                color: #667eea;
+                background: rgba(255, 255, 255, 0.9);
+                color: #333;
                 border: none;
                 padding: 10px 20px;
                 border-radius: 8px;
@@ -190,11 +194,15 @@ class Tutorial {
             }
             .tutorial-button:hover {
                 transform: scale(1.05);
+                background: white;
                 box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
             }
             .tutorial-button.skip {
+                background: rgba(255, 255, 255, 0.2);
+                color: rgba(255, 255, 255, 0.9);
+            }
+            .tutorial-button.skip:hover {
                 background: rgba(255, 255, 255, 0.3);
-                color: white;
             }
             .tutorial-progress {
                 display: flex;
@@ -302,17 +310,17 @@ class Tutorial {
                         this.tutorialBox.style.transform = 'translateY(-50%)';
                         break;
                     default:
-                        this.tutorialBox.style.top = '50%';
+                        this.tutorialBox.style.top = '60px';
                         this.tutorialBox.style.left = '50%';
-                        this.tutorialBox.style.transform = 'translate(-50%, -50%)';
+                        this.tutorialBox.style.transform = 'translateX(-50%)';
                 }
                 return;
             }
         }
-        // Default center position
-        this.tutorialBox.style.top = '50%';
+        // Default top position (below bossbar)
+        this.tutorialBox.style.top = '60px';
         this.tutorialBox.style.left = '50%';
-        this.tutorialBox.style.transform = 'translate(-50%, -50%)';
+        this.tutorialBox.style.transform = 'translateX(-50%)';
     }
     highlightElement(selector) {
         // Use setTimeout to ensure element is in DOM and rendered
@@ -361,12 +369,12 @@ class Tutorial {
             if (e.key === ' ') {
                 this.completedSteps.add('petals_extended');
             }
-            if (key === 'i') {
-                // Simply mark as complete when I is pressed
+            if (key === 'z') {
+                // Simply mark as complete when Z is pressed
                 this.completedSteps.add('inventory_opened');
             }
-            if (key === 'r') {
-                // Simply mark as complete when R is pressed
+            if (key === 'c') {
+                // Simply mark as complete when C is pressed
                 this.completedSteps.add('crafting_opened');
             }
         };

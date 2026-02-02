@@ -991,8 +991,8 @@ export class TitleScreen {
                     if (window.currentGame) {
                         // Get the controls from localStorage or use default
                         const savedControls = localStorage.getItem('controls');
-                        const controls = savedControls ? JSON.parse(savedControls) : { crafting: 'r' };
-                        const event = new KeyboardEvent('keydown', { key: controls.crafting || 'r', bubbles: true, cancelable: true });
+                        const controls = savedControls ? JSON.parse(savedControls) : { crafting: 'c' };
+                        const event = new KeyboardEvent('keydown', { key: controls.crafting || 'c', bubbles: true, cancelable: true });
                         document.dispatchEvent(event);
                     } else {
                         // Toggle crafting panel directly on title screen
@@ -1043,8 +1043,8 @@ export class TitleScreen {
                     if (window.currentGame) {
                         // Get the controls from localStorage or use default
                         const savedControls = localStorage.getItem('controls');
-                        const controls = savedControls ? JSON.parse(savedControls) : { inventory: 'i' };
-                        const event = new KeyboardEvent('keydown', { key: controls.inventory || 'i', bubbles: true, cancelable: true });
+                        const controls = savedControls ? JSON.parse(savedControls) : { inventory: 'z' };
+                        const event = new KeyboardEvent('keydown', { key: controls.inventory || 'z', bubbles: true, cancelable: true });
                         document.dispatchEvent(event);
                     } else {
                         // Toggle inventory panel directly on title screen
@@ -1395,9 +1395,9 @@ export class TitleScreen {
             move_down: 's',
             move_left: 'a',
             move_right: 'd',
-            inventory: 'i',
-            crafting: 'r',
-            toggle_mouse_controls: 'c',
+            inventory: 'z',
+            crafting: 'c',
+            toggle_mouse_controls: 'k',
             toggle_hitboxes: 'h',
             zoom_in: '=',
             zoom_out: '-',
