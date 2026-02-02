@@ -1899,7 +1899,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 // Exclude target dummies from list commands
                 const ultraMobs = enemies.filter(e => e.tier === 'ultra' && e.type !== 'target_dummy');
                 if (ultraMobs.length === 0) {
-                    io.emit('chatMessage', {
+                    io.to(socket.id).emit('chatMessage', {
                         sender: 'System',
                         content: 'No ultra mobs currently spawned.',
                         timestamp: Date.now()
@@ -1908,7 +1908,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                     ultraMobs.forEach((mob, index) => {
                         const x = Math.round(mob.x / SCALE_FACTOR);
                         const y = Math.round(mob.y / SCALE_FACTOR);
-                        io.emit('chatMessage', {
+                        io.to(socket.id).emit('chatMessage', {
                             sender: 'System',
                             content: `Ultra ${mob.type} at position (${x}, ${y})`,
                             timestamp: Date.now()
@@ -1932,7 +1932,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 // Exclude target dummies from list commands
                 const superMobs = enemies.filter(e => e.tier === 'super' && e.type !== 'target_dummy');
                 if (superMobs.length === 0) {
-                    io.emit('chatMessage', {
+                    io.to(socket.id).emit('chatMessage', {
                         sender: 'System',
                         content: 'No super mobs currently spawned.',
                         timestamp: Date.now()
@@ -1941,7 +1941,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                     superMobs.forEach((mob, index) => {
                         const x = Math.round(mob.x / SCALE_FACTOR);
                         const y = Math.round(mob.y / SCALE_FACTOR);
-                        io.emit('chatMessage', {
+                        io.to(socket.id).emit('chatMessage', {
                             sender: 'System',
                             content: `Super ${mob.type} at position (${x}, ${y})`,
                             timestamp: Date.now()
@@ -1965,7 +1965,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 // Exclude target dummies from list commands
                 const uniqueMobs = enemies.filter(e => e.tier === 'unique' && e.type !== 'target_dummy');
                 if (uniqueMobs.length === 0) {
-                    io.emit('chatMessage', {
+                    io.to(socket.id).emit('chatMessage', {
                         sender: 'System',
                         content: 'No unique mobs currently spawned.',
                         timestamp: Date.now()
@@ -1974,7 +1974,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                     uniqueMobs.forEach((mob, index) => {
                         const x = Math.round(mob.x / SCALE_FACTOR);
                         const y = Math.round(mob.y / SCALE_FACTOR);
-                        io.emit('chatMessage', {
+                        io.to(socket.id).emit('chatMessage', {
                             sender: 'System',
                             content: `Unique ${mob.type} at position (${x}, ${y})`,
                             timestamp: Date.now()
@@ -1995,7 +1995,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             }
             
             // Unknown command
-            io.emit('chatMessage', {
+            io.to(socket.id).emit('chatMessage', {
                 sender: 'System',
                 content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique',
                 timestamp: Date.now()

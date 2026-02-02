@@ -22,6 +22,15 @@ let _superMobCount = 0;
 let _uniqueMobCount = 0;
 let _ENEMY_COUNT = 1000;
 
+// Track super bosses per section (9 sections, 0-8)
+// Section layout:
+//   0 | 1 | 2
+//   ---------
+//   3 | 4 | 5
+//   ---------
+//   6 | 7 | 8
+let _superMobPerSection: (string | null)[] = [null, null, null, null, null, null, null, null, null];
+
 export function getUltraMobCount() { return _ultraMobCount; }
 export function setUltraMobCount(value: number) { _ultraMobCount = value; }
 export function getSuperMobCount() { return _superMobCount; }
@@ -29,10 +38,30 @@ export function setSuperMobCount(value: number) { _superMobCount = value; }
 export function getUniqueMobCount() { return _uniqueMobCount; }
 export function setUniqueMobCount(value: number) { _uniqueMobCount = value; }
 
+// Super boss per section tracking
+export function getSuperMobPerSection(): (string | null)[] { return _superMobPerSection; }
+export function setSuperMobInSection(section: number, mobId: string | null) {
+    if (section >= 0 && section < 9) {
+        _superMobPerSection[section] = mobId;
+    }
+}
+export function getSuperMobInSection(section: number): string | null {
+    return (section >= 0 && section < 9) ? _superMobPerSection[section] : null;
+}
+export function clearSuperMobFromSection(section: number) {
+    if (section >= 0 && section < 9) {
+        _superMobPerSection[section] = null;
+    }
+}
+
 // For backwards compatibility, export as mutable objects
 export const ultraMobCount = { get value() { return _ultraMobCount; }, set value(v: number) { _ultraMobCount = v; } };
 export const superMobCount = { get value() { return _superMobCount; }, set value(v: number) { _superMobCount = v; } };
 export const uniqueMobCount = { get value() { return _uniqueMobCount; }, set value(v: number) { _uniqueMobCount = v; } };
+export const superMobPerSection = {
+    get value() { return _superMobPerSection; },
+    set value(v: (string | null)[]) { _superMobPerSection = v; }
+};
 
 export const decorations: Decoration[] = [];
 export const sands: Sand[] = [];

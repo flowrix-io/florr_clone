@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EQUAL_RARITY_SECTIONS = void 0;
+exports.getSectionAtPosition = getSectionAtPosition;
 exports.createEnemy = createEnemy;
 exports.createSpecialMob = createSpecialMob;
 exports.updateSpecialMobCounts = updateSpecialMobCounts;
@@ -150,6 +151,61 @@ function selectSpawnFromBiomeTable(spawnTable) {
         tier: spawnTable[0].tier,
         reversed: spawnTable[0].reversed
     };
+}
+// Helper function to get random position in a zone type within a specific section (0-8)
+// Returns null if no such zone exists in the section
+function getRandomPositionInZoneTypeInSection(zoneType, section) {
+    if (section < 0 || section > 8)
+        return null;
+    const sectionX = section % 3;
+    const sectionY = Math.floor(section / 3);
+    const sectionMinX = sectionX * SECTION_SIZE;
+    const sectionMaxX = (sectionX + 1) * SECTION_SIZE;
+    const sectionMinY = sectionY * SECTION_SIZE;
+    const sectionMaxY = (sectionY + 1) * SECTION_SIZE;
+    // Find zones of the specified type that overlap with this section
+    const zonesInSection = constants_2.WORLD_MAP.filter(element => {
+        if (element.type !== 'spawn' || element.properties?.spawnType !== zoneType) {
+            return false;
+        }
+        // Check if zone overlaps with section (convert zone coords to world coords)
+        const zoneMinX = element.x * constants_2.SCALE_FACTOR;
+        const zoneMaxX = (element.x + element.width) * constants_2.SCALE_FACTOR;
+        const zoneMinY = element.y * constants_2.SCALE_FACTOR;
+        const zoneMaxY = (element.y + element.height) * constants_2.SCALE_FACTOR;
+        // Check for overlap
+        return zoneMinX < sectionMaxX && zoneMaxX > sectionMinX &&
+            zoneMinY < sectionMaxY && zoneMaxY > sectionMinY;
+    });
+    if (zonesInSection.length === 0)
+        return null;
+    // Try to find a valid position within the zone AND within the section
+    for (let attempt = 0; attempt < 50; attempt++) {
+        const zone = zonesInSection[Math.floor(Math.random() * zonesInSection.length)];
+        // Calculate the intersection of zone and section
+        const zoneMinX = zone.x * constants_2.SCALE_FACTOR;
+        const zoneMaxX = (zone.x + zone.width) * constants_2.SCALE_FACTOR;
+        const zoneMinY = zone.y * constants_2.SCALE_FACTOR;
+        const zoneMaxY = (zone.y + zone.height) * constants_2.SCALE_FACTOR;
+        const intersectMinX = Math.max(zoneMinX, sectionMinX);
+        const intersectMaxX = Math.min(zoneMaxX, sectionMaxX);
+        const intersectMinY = Math.max(zoneMinY, sectionMinY);
+        const intersectMaxY = Math.min(zoneMaxY, sectionMaxY);
+        if (intersectMinX >= intersectMaxX || intersectMinY >= intersectMaxY) {
+            continue; // No valid intersection
+        }
+        const x = intersectMinX + Math.random() * (intersectMaxX - intersectMinX);
+        const y = intersectMinY + Math.random() * (intersectMaxY - intersectMinY);
+        // Ensure position is within world boundaries
+        const clampedX = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
+        const clampedY = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
+        // Skip if position is in out-of-bounds zone
+        if (isInOutOfBoundsZone(clampedX, clampedY)) {
+            continue;
+        }
+        return { x: clampedX, y: clampedY };
+    }
+    return null;
 }
 // Helper function to get random position in a specific zone type
 function getRandomPositionInZoneType(zoneType) {
@@ -550,8 +606,11 @@ function createEnemy(helpers) {
 }
 /**
  * Function to create special mobs (ultra, super, unique)
+ * @param tier - The tier of the mob to create
+ * @param helpers - Helper functions for spawning
+ * @param targetSection - Optional: specific section (0-8) to spawn in (for super bosses)
  */
-function createSpecialMob(tier, helpers) {
+function createSpecialMob(tier, helpers, targetSection) {
     let zoneType;
     if (tier === 'ultra') {
         zoneType = 'legendary';
@@ -562,23 +621,51 @@ function createSpecialMob(tier, helpers) {
     else { // unique
         zoneType = 'mythic';
     }
-    let position = getRandomPositionInZoneType(zoneType);
+    let position = null;
+    // For super bosses, spawn in the mythic zone within the target section
+    if (tier === 'super' && targetSection !== undefined) {
+        position = getRandomPositionInZoneTypeInSection('mythic', targetSection);
+        // If no mythic zone in this section, don't spawn here
+        if (!position) {
+            return null;
+        }
+    }
+    else {
+        // For ultra and unique, use zone-based spawning
+        position = getRandomPositionInZoneType(zoneType);
+    }
     if (!position) {
-        console.error(`No ${zoneType} zones found for ${tier} mob spawning`);
+        console.error(`No valid position found for ${tier} mob spawning`);
         return null;
     }
+    // Determine the section for mob type selection
+    const spawnSection = getSectionAtPosition(position.x, position.y);
     const allMobTypes = (0, mobs_1.getAllMobTypes)();
     if (allMobTypes.length === 0) {
         console.error("No mob types found in MOB_CONFIG.");
         return null;
     }
-    // Filter out target_dummy from boss mob spawning
-    const eligibleMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+    // Filter to mobs that belong to this section and exclude target_dummy
+    const eligibleMobTypes = allMobTypes.filter(type => {
+        if (type === 'target_dummy') {
+            return false; // Never spawn target dummies as boss mobs
+        }
+        const stats = (0, mobs_1.getMobStats)(type, tier);
+        return stats && stats.section === spawnSection;
+    });
+    // If no mobs for this section, fall back to any eligible mob
+    let mobType;
     if (eligibleMobTypes.length === 0) {
-        console.error("No eligible mob types found for boss spawning (excluding target dummies).");
-        return null;
+        const fallbackMobTypes = allMobTypes.filter(type => type !== 'target_dummy');
+        if (fallbackMobTypes.length === 0) {
+            console.error("No eligible mob types found for boss spawning (excluding target dummies).");
+            return null;
+        }
+        mobType = fallbackMobTypes[Math.floor(Math.random() * fallbackMobTypes.length)];
     }
-    const mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
+    else {
+        mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
+    }
     const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
     if (!mobStats) {
         console.error(`No mob stats found for ${mobType} ${tier}`);
@@ -652,15 +739,28 @@ function updateSpecialMobCounts() {
     let ultra = 0;
     let super_ = 0;
     let unique = 0;
+    // Reset per-section tracking for super mobs
+    const activeSuperSections = new Set();
     for (const enemy of constants_1.enemies) {
         if (enemy.type === 'target_dummy')
             continue;
         if (enemy.tier === 'ultra')
             ultra++;
-        else if (enemy.tier === 'super')
+        else if (enemy.tier === 'super') {
             super_++;
+            // Track which sections have super bosses
+            const section = getSectionAtPosition(enemy.x, enemy.y);
+            activeSuperSections.add(section);
+            (0, gameState_1.setSuperMobInSection)(section, enemy.id);
+        }
         else if (enemy.tier === 'unique')
             unique++;
+    }
+    // Clear sections that no longer have super bosses
+    for (let section = 0; section < 9; section++) {
+        if (!activeSuperSections.has(section)) {
+            (0, gameState_1.clearSuperMobFromSection)(section);
+        }
     }
     gameState_1.ultraMobCount.value = ultra;
     gameState_1.superMobCount.value = super_;
@@ -689,24 +789,35 @@ function spawnSpecialMobs(helpers, io) {
             console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
         }
     }
-    // Spawn super mob if none exists
-    if (gameState_1.superMobCount.value === 0) {
-        const superMob = createSpecialMob('super', helpers);
-        if (superMob) {
-            constants_1.enemies.push(superMob);
-            gameState_1.superMobCount.value = 1;
-            // Don't send spawn notification for target dummies
-            if (superMob.type !== 'target_dummy') {
-                io.emit('chatMessage', {
-                    sender: '',
-                    content: `<b style="color: ${constants_2.ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
-                    timestamp: Date.now()
-                });
+    // Spawn super mob in each section that doesn't have one
+    for (let section = 0; section < 9; section++) {
+        const existingSuperMobId = (0, gameState_1.getSuperMobInSection)(section);
+        if (!existingSuperMobId) {
+            const superMob = createSpecialMob('super', helpers, section);
+            if (superMob) {
+                constants_1.enemies.push(superMob);
+                gameState_1.superMobCount.value++;
+                (0, gameState_1.setSuperMobInSection)(section, superMob.id);
+                // Don't send spawn notification for target dummies
+                if (superMob.type !== 'target_dummy') {
+                    const mobSection = getSectionAtPosition(superMob.x, superMob.y);
+                    // Send personalized message to each player based on their section
+                    Object.entries(constants_1.players).forEach(([playerId, player]) => {
+                        const playerSection = getSectionAtPosition(player.x, player.y);
+                        const isSameSection = playerSection === mobSection;
+                        const somewhere = isSameSection ? '' : ' somewhere';
+                        io.to(playerId).emit('chatMessage', {
+                            sender: '',
+                            content: `<b style="color: ${constants_2.ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned${somewhere}!</b>`,
+                            timestamp: Date.now()
+                        });
+                    });
+                }
+                console.log(`[SERVER] Spawned super mob in section ${section}: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
             }
-            console.log(`[SERVER] Spawned super mob: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
         }
     }
-    // Spawn unique mob with 1/4 chance if super mob exists
+    // Spawn unique mob with 1/4 chance if any super mob exists
     if (gameState_1.superMobCount.value > 0 && gameState_1.uniqueMobCount.value === 0 && Math.random() < 0.25) {
         const uniqueMob = createSpecialMob('unique', helpers);
         if (uniqueMob) {
@@ -714,10 +825,17 @@ function spawnSpecialMobs(helpers, io) {
             gameState_1.uniqueMobCount.value = 1;
             // Don't send spawn notification for target dummies
             if (uniqueMob.type !== 'target_dummy') {
-                io.emit('chatMessage', {
-                    sender: '',
-                    content: `<b style="color: ${constants_2.ENEMY_TIERS.unique.color};">A unique ${uniqueMob.type.replace('_', ' ')} has spawned in a mythic zone!</b>`,
-                    timestamp: Date.now()
+                const mobSection = getSectionAtPosition(uniqueMob.x, uniqueMob.y);
+                // Send personalized message to each player based on their section
+                Object.entries(constants_1.players).forEach(([playerId, player]) => {
+                    const playerSection = getSectionAtPosition(player.x, player.y);
+                    const isSameSection = playerSection === mobSection;
+                    const somewhere = isSameSection ? '' : ' somewhere';
+                    io.to(playerId).emit('chatMessage', {
+                        sender: '',
+                        content: `<b style="color: ${constants_2.ENEMY_TIERS.unique.color};">A unique ${uniqueMob.type.replace('_', ' ')} has spawned${somewhere}!</b>`,
+                        timestamp: Date.now()
+                    });
                 });
             }
             console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);
