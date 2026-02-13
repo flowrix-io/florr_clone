@@ -379,6 +379,37 @@ class SVGRendererWrapper {
         this.canvasCache.clear();
         this.animatedCache = {};
     }
+    /**
+     * Clear canvas cache entries that match a specific base cache key prefix
+     * Used for section-based texture unloading
+     */
+    clearCacheEntriesWithPrefix(prefix) {
+        let cleared = 0;
+        const keysToDelete = [];
+        for (const key of this.canvasCache.keys()) {
+            if (key.startsWith(prefix)) {
+                keysToDelete.push(key);
+            }
+        }
+        for (const key of keysToDelete) {
+            this.canvasCache.delete(key);
+            cleared++;
+        }
+        return cleared;
+    }
+    /**
+     * Get the number of entries in the canvas cache
+     * Used for monitoring memory usage
+     */
+    getCanvasCacheSize() {
+        return this.canvasCache.size;
+    }
+    /**
+     * Delete a specific canvas cache entry
+     */
+    deleteCacheEntry(key) {
+        return this.canvasCache.delete(key);
+    }
     isInitialized() {
         return this.initialized;
     }

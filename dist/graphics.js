@@ -129,6 +129,11 @@ class Graphics {
         this.mobSVGCache = {}; // Store original SVG strings for WASM rendering
         this.svgRenderer = (0, svg_renderer_1.getSVGRenderer)();
         this.lastEnemyDebugLog = 0;
+        // Section-based texture loading state
+        this.currentSection = -1; // Current player section (0-8)
+        this.loadedSections = new Set(); // Sections with loaded textures
+        this.loadingMobs = new Set(); // Mobs currently being loaded (prevents duplicate loads)
+        this.mobBaseCacheKeys = new Map(); // Map mob cache key to base cache key for unloading
         this.wallGridLogOnce = false;
         this.canvas = canvas;
         this.ctx = this.canvas.getContext('2d');
@@ -146,26 +151,36 @@ class Graphics {
     async preloadMobImages() {
         // Initialize SVG renderer
         await this.svgRenderer.waitForInit();
-        const mobTypes = (0, mobs_1.getAllMobTypes)();
+        const allMobTypes = (0, mobs_1.getAllMobTypes)();
         const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         const highQualityMobs = (0, constants_1.getHighQualityMobs)();
         // Pre-render mob canvases for immediate use (no fallback circles)
         const preloadPromises = [];
-        // First pass: Store all SVG strings in cache (needed for rendering)
-        for (const mobType of mobTypes) {
+        // ALWAYS load ALL SVG strings upfront (low memory cost, ensures rendering works)
+        // This is required for mobs to render even before their frames are cached
+        for (const mobType of allMobTypes) {
             for (const rarity of rarities) {
                 const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);
                 if (mobStats && mobStats.image) {
                     const cacheKey = `${mobType}_${rarity}`;
-                    // Store SVG string for WASM rendering
                     this.mobSVGCache[cacheKey] = mobStats.image;
                 }
             }
         }
+        console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings');
+        // Pre-render ALL mob frames at startup to avoid rendering issues
+        // (Mobs from unloaded sections would appear as circles otherwise)
+        const mobTypesToPrerender = new Set(allMobTypes);
+        // Mark all sections as loaded since we're preloading everything
+        for (let section = 0; section < 9; section++) {
+            this.loadedSections.add(section);
+        }
+        this.currentSection = 0;
+        console.log(`[Graphics] Pre-rendering frames for ALL ${mobTypesToPrerender.size} mob types`);
         if (highQualityMobs) {
             // High quality mode: Pre-render frames for each rarity separately (old approach)
             // This uses more memory but ensures each rarity has its own frames
-            for (const mobType of mobTypes) {
+            for (const mobType of mobTypesToPrerender) {
                 for (const rarity of rarities) {
                     const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);
                     if (mobStats && mobStats.image) {
@@ -180,7 +195,7 @@ class Graphics {
             // Track which SVG baseCacheKeys we've already pre-rendered frames for
             // This allows different rarities of the same mob type to share animation frames
             const preloadedBaseCacheKeys = new Set();
-            for (const mobType of mobTypes) {
+            for (const mobType of mobTypesToPrerender) {
                 for (const rarity of rarities) {
                     const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);
                     if (mobStats && mobStats.image) {
@@ -198,6 +213,8 @@ class Graphics {
                             normalizedSVG.length.toString()
                         ];
                         const baseCacheKey = keyParts.join('|');
+                        // Store base cache key for later unloading
+                        this.mobBaseCacheKeys.set(cacheKey, baseCacheKey);
                         // Skip if we've already pre-rendered frames for this SVG (shared across rarities)
                         if (preloadedBaseCacheKeys.has(baseCacheKey)) {
                             continue;
@@ -230,7 +247,7 @@ class Graphics {
                 console.log('[Graphics] Preloading complete flag set (after error):', this.svgRenderer.isPreloadingComplete());
             });
         }
-        console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings for WASM rendering');
+        console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings for WASM rendering (section-based loading)');
     }
     // Method to get mob animation frame time in milliseconds
     getMobAnimationFrameTime() {
@@ -356,6 +373,152 @@ class Graphics {
         const sectionX = Math.max(0, Math.min(2, Math.floor(x / SECTION_SIZE)));
         const sectionY = Math.max(0, Math.min(2, Math.floor(y / SECTION_SIZE)));
         return sectionY * 3 + sectionX;
+    }
+    /**
+     * Get adjacent sections for a given section (including diagonals)
+     * Section grid:
+     * [0][1][2]
+     * [3][4][5]
+     * [6][7][8]
+     */
+    getAdjacentSections(section) {
+        const sectionX = section % 3;
+        const sectionY = Math.floor(section / 3);
+        const adjacent = [];
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0)
+                    continue; // Skip self
+                const newX = sectionX + dx;
+                const newY = sectionY + dy;
+                if (newX >= 0 && newX < 3 && newY >= 0 && newY < 3) {
+                    adjacent.push(newY * 3 + newX);
+                }
+            }
+        }
+        return adjacent;
+    }
+    /**
+     * Update current section tracking
+     * Called during render to track player's current section
+     * Note: All frames are pre-loaded at startup, so no dynamic loading needed
+     */
+    updateSectionTextures(playerX, playerY) {
+        const newSection = this.getSectionAtPosition(playerX, playerY);
+        if (newSection !== this.currentSection) {
+            this.currentSection = newSection;
+        }
+    }
+    /**
+     * Load mob textures for a specific section
+     */
+    loadSectionMobs(section) {
+        const mobTypes = (0, mobs_1.getMobTypesBySection)(section);
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+        console.log(`[Graphics] Loading animation frames for ${mobTypes.length} mob types in section ${section}`);
+        this.loadedSections.add(section);
+        // SVG strings are already all cached at startup
+        // Only need to pre-render animation frames for this section
+        for (const mobType of mobTypes) {
+            for (const rarity of rarities) {
+                const cacheKey = `${mobType}_${rarity}`;
+                const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);
+                if (mobStats && mobStats.image) {
+                    this.loadMobFrames(mobStats, cacheKey);
+                }
+            }
+        }
+    }
+    /**
+     * Unload mob animation frame canvases for a specific section
+     * Note: SVG strings are kept in memory (low cost) to ensure mobs can always render
+     */
+    unloadSectionMobs(section) {
+        const mobTypes = (0, mobs_1.getMobTypesBySection)(section);
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+        console.log(`[Graphics] Unloading animation frames for ${mobTypes.length} mob types from section ${section}`);
+        this.loadedSections.delete(section);
+        let clearedCount = 0;
+        for (const mobType of mobTypes) {
+            // Never unload target_dummy (used across all sections)
+            if (mobType === 'target_dummy') {
+                continue;
+            }
+            for (const rarity of rarities) {
+                const cacheKey = `${mobType}_${rarity}`;
+                // Get and remove base cache key (clears canvas frames, not SVG strings)
+                const baseCacheKey = this.mobBaseCacheKeys.get(cacheKey);
+                if (baseCacheKey) {
+                    // Clear all canvas cache entries with this base key
+                    clearedCount += this.svgRenderer.clearCacheEntriesWithPrefix(baseCacheKey);
+                    this.mobBaseCacheKeys.delete(cacheKey);
+                }
+            }
+        }
+        console.log(`[Graphics] Cleared ${clearedCount} cached canvas entries for section ${section}`);
+    }
+    /**
+     * Load mob animation frames for a specific mob
+     * Similar to preloadMobFrames but without adding to promise array
+     */
+    loadMobFrames(mobStats, cacheKey) {
+        // Skip if already loading
+        if (this.loadingMobs.has(cacheKey)) {
+            return;
+        }
+        this.loadingMobs.add(cacheKey);
+        // Generate base cache key from SVG
+        let normalizedSVG = mobStats.image.replace(/\s+/g, ' ').trim();
+        normalizedSVG = normalizedSVG.replace(/\s+xmlns="[^"]*"/g, '');
+        const viewBoxMatch = normalizedSVG.match(/viewBox="([^"]*)"/);
+        const widthMatch = normalizedSVG.match(/width="([^"]*)"/);
+        const keyParts = [
+            viewBoxMatch ? viewBoxMatch[1] : '',
+            widthMatch ? widthMatch[1] : '',
+            normalizedSVG.length.toString()
+        ];
+        const baseCacheKey = keyParts.join('|');
+        // Store the base cache key for later unloading
+        this.mobBaseCacheKeys.set(cacheKey, baseCacheKey);
+        // Pre-render frames asynchronously
+        (async () => {
+            try {
+                const highQualityMobs = (0, constants_1.getHighQualityMobs)();
+                const mobSize = highQualityMobs ? mobStats.size * 40 : 256;
+                const framesToPreload = 30;
+                const frameTime = (0, constants_1.getMobAnimationFrameTime)();
+                for (let frame = 0; frame < framesToPreload; frame++) {
+                    const time = frame * frameTime;
+                    const framesPerCycle = 30;
+                    const animationCycleDuration = framesPerCycle * frameTime;
+                    const relativeTime = time % animationCycleDuration;
+                    const timeBucket = Math.floor(relativeTime / frameTime);
+                    const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
+                    // Skip if already cached
+                    if (this.svgRenderer.isCanvasCached(animatedCacheKey)) {
+                        continue;
+                    }
+                    // Pre-render this animation frame
+                    const animatedSVG = this.svgRenderer.getAnimatedSVGString(mobStats.image, time);
+                    const canvas = await this.svgRenderer.renderSVGToOffscreenCanvas(animatedSVG, mobSize, mobSize);
+                    if (canvas) {
+                        this.svgRenderer.cacheCanvas(animatedCacheKey, canvas);
+                    }
+                }
+            }
+            catch (error) {
+                console.error(`[Graphics] Failed to load frames for ${cacheKey}:`, error);
+            }
+            finally {
+                this.loadingMobs.delete(cacheKey);
+            }
+        })();
+    }
+    /**
+     * Load animation frames on-demand (no-op since all frames are pre-loaded at startup)
+     */
+    loadMobOnDemand(mobType, rarity) {
+        // All frames are pre-loaded at startup, no on-demand loading needed
     }
     // Method to find the closest wall or biome edge to an out-of-bounds position
     // Returns the texture to use for tiling (wall texture or biome texture)
@@ -1639,7 +1802,8 @@ class Graphics {
             const rotationSpeed = (stats.speed ?? 1.0) * 0.002; // Convert to radians per ms
             const baseAngle = index * angleStep;
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
-            const totalAngle = baseAngle + rotationAngle;
+            // Fixed-direction petals don't orbit - they stay at a fixed relative position
+            const totalAngle = stats.fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
             // Apply petal range multiplier to base radius
             const petalRange = stats.range ?? 1.0;
             const petalRadius = baseRadius * petalRange;
@@ -1648,7 +1812,12 @@ class Graphics {
             let petalY;
             // Check if we have server-provided petal positions
             const serverPetalPos = player.petalPositions?.find((p) => p.loadoutIndex === loadoutIndex && p.instanceIndex === instanceIndex);
-            if (serverPetalPos) {
+            if (stats.fixedDirection !== undefined) {
+                // Fixed-direction petals stay directly on the player
+                petalX = 0;
+                petalY = 0;
+            }
+            else if (serverPetalPos) {
                 // Use server-provided position (already interpolated on client)
                 // Convert from world coordinates to relative coordinates for rendering
                 petalX = serverPetalPos.x - player.x;
@@ -1682,10 +1851,22 @@ class Graphics {
             // Step 1: Translate to petal's orbital position (relative to player)
             this.ctx.translate(petalX, petalY);
             // Step 2: Rotate around the petal's position (which is now at origin after translate)
-            // IMPORTANT: Use only rotationAngle (not totalAngle) so the petal spins around its own center
-            // totalAngle includes the orbital position, which would make it rotate around the player
-            // rotationAngle is just the spinning motion, independent of orbital position
-            this.ctx.rotate(rotationAngle + Math.PI / 2);
+            // If fixedDirection is set, the petal always faces that angle instead of spinning
+            if (stats.fixedDirection !== undefined) {
+                this.ctx.rotate(stats.fixedDirection);
+            }
+            else {
+                // IMPORTANT: Use only rotationAngle (not totalAngle) so the petal spins around its own center
+                // totalAngle includes the orbital position, which would make it rotate around the player
+                // rotationAngle is just the spinning motion, independent of orbital position
+                this.ctx.rotate(rotationAngle + Math.PI / 2);
+            }
+            // Step 3: Apply visual offset shift if specified
+            const vOffX = stats.visualOffsetX ?? 0;
+            const vOffY = stats.visualOffsetY ?? 0;
+            if (vOffX !== 0 || vOffY !== 0) {
+                this.ctx.translate(vOffX, vOffY);
+            }
             // Reset any global state that might interfere
             this.ctx.globalAlpha = 1.0;
             this.ctx.globalCompositeOperation = 'source-over';
@@ -1737,24 +1918,6 @@ class Graphics {
                     const worldY = player.y + petalY;
                     this.showPetalParticleEffect(worldX, worldY, petal.rarity);
                 }
-            }
-            // Draw health bar for petals (after restore, so we need to set up transforms again)
-            if (petal.health !== undefined && petal.maxHealth !== undefined && petal.maxHealth > 0) {
-                // Health bar should be drawn at the petal's position
-                // Since we already restored, we need to save/restore again and set up transforms
-                this.ctx.save();
-                this.ctx.translate(petalX, petalY);
-                const healthBarWidth = size;
-                const healthBarHeight = 3;
-                const healthBarY = -size * 0.7 / 2 - 8;
-                // Health bar background
-                this.ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-                this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth, healthBarHeight);
-                // Health bar fill
-                const healthPercentage = petal.health / petal.maxHealth;
-                this.ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
-                this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth * healthPercentage, healthBarHeight);
-                this.ctx.restore();
             }
         });
     }
@@ -1926,17 +2089,11 @@ class Graphics {
         // This ensures we can see enemies even if images/sprites fail
         const cacheKey = `${enemy.type}_${enemy.tier}`;
         const mobSVG = this.mobSVGCache[cacheKey];
-        // Ensure we're using the exact same SVG string that was pre-rendered
-        // The SVG string should match exactly what's in mobSVGCache
-        if (!mobSVG) {
-            // No SVG cached for this mob type/rarity
-            if (Math.random() < 0.01) {
-                console.warn(`[Graphics] No SVG cached for ${cacheKey}`);
-            }
-        }
         // Use relative time for animation (wraps within animation cycle)
-        // This ensures cache keys match with pre-rendered frames
-        const animationCycleDuration = 2100; // 50 frames * 42ms = 2.1 seconds
+        // This MUST match the preloading calculation in preloadMobFrames and loadMobFrames
+        const frameTime = (0, constants_1.getMobAnimationFrameTime)();
+        const framesPerCycle = 30; // Must match preloading
+        const animationCycleDuration = framesPerCycle * frameTime;
         let currentTime = Date.now() % animationCycleDuration;
         // If enemy is chasing, play animation 2x faster
         if (enemy.isChasing && enemy.isHostile) {
@@ -3039,6 +3196,11 @@ class Graphics {
         }
     }
     render(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0) {
+        // Update section-based texture loading based on player position
+        const currentPlayer = players.get(currentPlayerId);
+        if (currentPlayer) {
+            this.updateSectionTextures(currentPlayer.x, currentPlayer.y);
+        }
         this.ctx.save();
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);

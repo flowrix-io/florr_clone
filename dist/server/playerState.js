@@ -592,7 +592,8 @@ function updatePlayerState(player, deltaTime, deps) {
             const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002; // Convert to radians per ms
             const baseAngle = idx * angleStep;
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
-            const totalAngle = baseAngle + rotationAngle;
+            // Fixed-direction petals don't orbit - they stay at a fixed relative position
+            const totalAngle = petalStats.fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
             // Apply petal range multiplier to base radius
             const petalRange = petalStats.range ?? 1.0;
             const petalRadius = baseRadius * petalRange;
@@ -604,7 +605,12 @@ function updatePlayerState(player, deltaTime, deps) {
             // Skip physics for petals with range 0 (they should stay at player position)
             let petalX;
             let petalY;
-            if (petalRange === 0) {
+            if (petalStats.fixedDirection !== undefined) {
+                // Fixed-direction petals stay directly on the player
+                petalX = player.x;
+                petalY = player.y;
+            }
+            else if (petalRange === 0) {
                 // No physics for range 0 petals - use target position directly
                 petalX = targetX;
                 petalY = targetY;

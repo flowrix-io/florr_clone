@@ -2899,6 +2899,22 @@ export function getMobRarities(mobType: string): string[] {
     return Object.keys(MOB_CONFIG[mobType] || {});
 }
 
+/**
+ * Get all mob types that belong to a specific section (0-8)
+ * Used for section-based texture loading optimization
+ */
+export function getMobTypesBySection(section: number): string[] {
+    const result: string[] = [];
+    for (const mobType of Object.keys(MOB_CONFIG)) {
+        // Check the common rarity to get the section (all rarities share the same section)
+        const stats = MOB_CONFIG[mobType]?.common;
+        if (stats && stats.section === section) {
+            result.push(mobType);
+        }
+    }
+    return result;
+}
+
 // Drop table configuration for each mob type
 export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
     bee: {
@@ -3498,6 +3514,27 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 itemType: 'golden_leaf',
                 rarity: 'common',
                 probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    spider: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'third_eye',
+                rarity: 'common',
+                probability: 0.05,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'consumable',
+                itemType: 'speed_boost',
+                rarity: 'common',
+                probability: 0.99,
                 minQuantity: 1,
                 maxQuantity: 1
             }

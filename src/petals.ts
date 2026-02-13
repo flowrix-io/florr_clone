@@ -41,6 +41,10 @@ export interface PetalStats {
     maxAttractionDistance?: number; // Maximum distance to attract to mobs (pixels, default: 2000)
     minAttractionDistance?: number; // Minimum distance to avoid division by zero (pixels, default: 1)
     spawnSmoothTime?: number; // Time in ms to smoothly ramp up forces after spawn (default: 300)
+    // Visual properties
+    fixedDirection?: number; // Fixed angle (radians) the petal visual faces in orbit, instead of spinning around its own center
+    visualOffsetX?: number; // X shift for the petal visual relative to its center (pixels, default: 0)
+    visualOffsetY?: number; // Y shift for the petal visual relative to its center (pixels, default: 0)
 }
 
 export interface PetalConfig {
@@ -118,6 +122,10 @@ interface BasePetalConfig {
     maxAttractionDistance?: number; // Maximum distance to attract to mobs (pixels, default: 2000)
     minAttractionDistance?: number; // Minimum distance to avoid division by zero (pixels, default: 1)
     spawnSmoothTime?: number; // Time in ms to smoothly ramp up forces after spawn (default: 300)
+    // Visual properties
+    fixedDirection?: number; // Fixed angle (radians) the petal visual faces in orbit, instead of spinning around its own center
+    visualOffsetX?: number; // X shift for the petal visual relative to its center (pixels, default: 0)
+    visualOffsetY?: number; // Y shift for the petal visual relative to its center (pixels, default: 0)
 }
 
 // Special rarity overrides for specific petals
@@ -143,6 +151,10 @@ interface RarityOverride {
     maxAttractionDistance?: number; // Maximum distance to attract to mobs (pixels, default: 2000)
     minAttractionDistance?: number; // Minimum distance to avoid division by zero (pixels, default: 1)
     spawnSmoothTime?: number; // Time in ms to smoothly ramp up forces after spawn (default: 300)
+    // Visual properties
+    fixedDirection?: number;
+    visualOffsetX?: number;
+    visualOffsetY?: number;
 }
 
 // Rarity-specific overrides for special cases
@@ -1216,12 +1228,68 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         damage: 1,
         health: 1280,
         size: 1.0,
-        cooldown: 2000,
+        cooldown: 20000,
         description: "ƒ¬ø®®®ˆø",
         color: "#000000",
         count: 1,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 10 32 10" fill="none">
 <image href="data:image/png;base64,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" height="32" width="32"/>
+</svg>`,
+        isAdminPetal: false
+    },
+    corn: {
+        name: "Corn Petal",
+        damage: 5,
+        health: 100,
+        size: 1.0,
+        cooldown: 3500,
+        description: "Corn",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 8 29 
+           Q -8 3 16 3 
+           Q 40 3 24 29 
+           Q 16 19 8 29 Z" 
+        fill="#ffe419" 
+        stroke="#cfb914" 
+        stroke-width="2" 
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+</svg>`,
+        isAdminPetal: false
+    },
+    third_eye: {
+        name: "Third Eye Petal",
+        damage: 0,
+        health: 100,
+        size: 1.0,
+        speed: 0.0,
+        range: 0.0,
+        cooldown: 5000,
+        fixedDirection: 0,
+        visualOffsetY: -15,
+        description: "Increases your petal range",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <path id="eyeShape" 
+          d="M 16 1 
+             Q 28 16 16 31 
+             Q 4 16 16 1 Z" />
+  </defs>
+
+  <use href="#eyeShape" fill="#111111" />
+
+  <circle cx="16" cy="16" r="7.5" fill="#eeeeee" />
+
+  <use href="#eyeShape" 
+       fill="none" 
+       stroke="#111111" 
+       stroke-width="2.25" 
+       stroke-linecap="round" 
+       stroke-linejoin="round" />
 </svg>`,
         isAdminPetal: false
     },
@@ -1652,7 +1720,10 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         projectile: baseConfig.projectile, // Include projectile config if present
         playerModifiers: playerModifiers, // Include player modifiers if present
         petMobType: baseConfig.petMobType, // Include pet mob type if present
-        petMobRarity: baseConfig.petMobRarity // Include pet mob rarity if present
+        petMobRarity: baseConfig.petMobRarity, // Include pet mob rarity if present
+        fixedDirection: overrides.fixedDirection ?? baseConfig.fixedDirection,
+        visualOffsetX: overrides.visualOffsetX ?? baseConfig.visualOffsetX,
+        visualOffsetY: overrides.visualOffsetY ?? baseConfig.visualOffsetY,
     };
 }
 

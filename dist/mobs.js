@@ -4,6 +4,7 @@ exports.MOB_DROP_TABLES = exports.MOB_CONFIG = exports.BASE_MOB_CONFIGS = export
 exports.getMobStats = getMobStats;
 exports.getAllMobTypes = getAllMobTypes;
 exports.getMobRarities = getMobRarities;
+exports.getMobTypesBySection = getMobTypesBySection;
 exports.calculateMobDrops = calculateMobDrops;
 exports.getMobDropTable = getMobDropTable;
 exports.testDropSystem = testDropSystem;
@@ -2775,6 +2776,21 @@ function getAllMobTypes() {
 function getMobRarities(mobType) {
     return Object.keys(exports.MOB_CONFIG[mobType] || {});
 }
+/**
+ * Get all mob types that belong to a specific section (0-8)
+ * Used for section-based texture loading optimization
+ */
+function getMobTypesBySection(section) {
+    const result = [];
+    for (const mobType of Object.keys(exports.MOB_CONFIG)) {
+        // Check the common rarity to get the section (all rarities share the same section)
+        const stats = exports.MOB_CONFIG[mobType]?.common;
+        if (stats && stats.section === section) {
+            result.push(mobType);
+        }
+    }
+    return result;
+}
 // Drop table configuration for each mob type
 exports.MOB_DROP_TABLES = {
     bee: {
@@ -3374,6 +3390,27 @@ exports.MOB_DROP_TABLES = {
                 itemType: 'golden_leaf',
                 rarity: 'common',
                 probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    spider: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'third_eye',
+                rarity: 'common',
+                probability: 0.05,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'consumable',
+                itemType: 'speed_boost',
+                rarity: 'common',
+                probability: 0.99,
                 minQuantity: 1,
                 maxQuantity: 1
             }
