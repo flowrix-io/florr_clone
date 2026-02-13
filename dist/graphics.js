@@ -1418,6 +1418,38 @@ class Graphics {
         //     this.ctx.fillText(type.toUpperCase(), x + width / 2, y + height / 2);
         // }
     }
+    drawSpawnZones(mapData) {
+        const scaledWidth = this.canvas.width / this.zoomLevel;
+        const scaledHeight = this.canvas.height / this.zoomLevel;
+        const viewport = {
+            left: this.cameraX,
+            top: this.cameraY,
+            right: this.cameraX + scaledWidth,
+            bottom: this.cameraY + scaledHeight
+        };
+        const spawnColors = {
+            common: 'rgba(126, 239, 109, 0.25)',
+            uncommon: 'rgba(255, 230, 93, 0.25)',
+            rare: 'rgba(77, 82, 227, 0.25)',
+            epic: 'rgba(134, 31, 222, 0.25)',
+            legendary: 'rgba(222, 31, 31, 0.25)',
+            mythic: 'rgba(31, 219, 222, 0.25)',
+            ultra: 'rgba(222, 31, 101, 0.25)',
+            super: 'rgba(43, 255, 164, 0.25)',
+            unique: 'rgba(191, 0, 255, 0.25)'
+        };
+        mapData.forEach(element => {
+            if (element.type !== 'spawn')
+                return;
+            const { x, y, width, height } = element;
+            if (x + width < viewport.left || x > viewport.right ||
+                y + height < viewport.top || y > viewport.bottom)
+                return;
+            const spawnType = element.properties?.spawnType || 'common';
+            this.ctx.fillStyle = spawnColors[spawnType] || spawnColors.common;
+            this.ctx.fillRect(x, y, width, height);
+        });
+    }
     drawUI(players, socket) {
         // Draw player stats
         const player = players.get(socket);
@@ -1882,11 +1914,14 @@ class Graphics {
                     this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                     // Add rarity glow effect (only when ALT key is held)
                     if (this.showRarityGlow && petal.rarity !== 'common') {
+                        const glowColor = this.ITEM_RARITY_COLORS[petal.rarity] || stats.color;
                         this.ctx.save();
-                        this.ctx.shadowColor = stats.color;
-                        this.ctx.shadowBlur = 20;
-                        this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
-                        this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                        this.ctx.shadowColor = glowColor;
+                        this.ctx.shadowBlur = 30;
+                        // Draw multiple times for a very strong glow
+                        for (let g = 0; g < 4; g++) {
+                            this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                        }
                         this.ctx.restore();
                     }
                 }
@@ -2734,6 +2769,34 @@ class Graphics {
         this.ctx.beginPath();
         this.ctx.rect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
         this.ctx.clip();
+        // Draw spawn zones on minimap when ALT is held (below walls/water)
+        if (this.showRarityGlow) {
+            const minimapSpawnColors = {
+                common: 'rgba(126, 239, 109, 0.4)',
+                uncommon: 'rgba(255, 230, 93, 0.4)',
+                rare: 'rgba(77, 82, 227, 0.4)',
+                epic: 'rgba(134, 31, 222, 0.4)',
+                legendary: 'rgba(222, 31, 31, 0.4)',
+                mythic: 'rgba(31, 219, 222, 0.4)',
+                ultra: 'rgba(222, 31, 101, 0.4)',
+                super: 'rgba(43, 255, 164, 0.4)',
+                unique: 'rgba(191, 0, 255, 0.4)'
+            };
+            this.mapData.forEach(element => {
+                if (element.type !== 'spawn')
+                    return;
+                const scaledX = minimapX + ((element.x - this.minimapScrollX) * minimapScale.x);
+                const scaledY = minimapY + ((element.y - this.minimapScrollY) * minimapScale.y);
+                const scaledWidth = element.width * minimapScale.x;
+                const scaledHeight = element.height * minimapScale.y;
+                if (scaledX + scaledWidth > minimapX && scaledX < minimapX + this.MINIMAP_WIDTH &&
+                    scaledY + scaledHeight > minimapY && scaledY < minimapY + this.MINIMAP_HEIGHT) {
+                    const spawnType = element.properties?.spawnType || 'common';
+                    this.ctx.fillStyle = minimapSpawnColors[spawnType] || minimapSpawnColors.common;
+                    this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+                }
+            });
+        }
         // Draw wall grid tiles on minimap
         const SECTION_SIZE = 20000;
         const sectionX = Math.floor(this.minimapScrollX / SECTION_SIZE);
@@ -3215,6 +3278,10 @@ class Graphics {
         this.ctx.translate(-validCameraX, -validCameraY);
         // Draw scrolling background
         this.drawScrollingBackground();
+        // Draw spawn zones below walls/water when ALT is held
+        if (this.showRarityGlow) {
+            this.drawSpawnZones(this.mapData);
+        }
         // Draw the map
         this.drawMap(this.mapData);
         // Draw game objects

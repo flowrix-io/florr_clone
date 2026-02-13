@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 168008998,
+      "totalXP": 168128228,
       "inventory": {
         "common": {
           "shield": 205,
@@ -580,10 +580,10 @@
         },
         "soldier_ant": {
           "epic": 82,
-          "legendary": 220,
+          "legendary": 221,
           "common": 240,
           "rare": 68,
-          "mythic": 251,
+          "mythic": 252,
           "ultra": 10,
           "uncommon": 135,
           "super": 1
@@ -592,7 +592,7 @@
           "legendary": 122,
           "ultra": 3,
           "common": 170,
-          "mythic": 94,
+          "mythic": 97,
           "epic": 39,
           "rare": 22,
           "uncommon": 49,
@@ -601,17 +601,17 @@
         },
         "dark_ladybug": {
           "common": 199,
-          "legendary": 108,
-          "mythic": 77,
+          "legendary": 109,
+          "mythic": 78,
           "uncommon": 62,
           "rare": 33,
           "epic": 40,
-          "ultra": 5
+          "ultra": 6
         },
         "hornet": {
           "common": 237,
-          "legendary": 238,
-          "mythic": 154,
+          "legendary": 239,
+          "mythic": 157,
           "uncommon": 104,
           "rare": 55,
           "epic": 67,
@@ -619,9 +619,9 @@
           "super": 2
         },
         "dandelion": {
-          "legendary": 145,
+          "legendary": 146,
           "common": 166,
-          "mythic": 100,
+          "mythic": 101,
           "uncommon": 55,
           "unique": 1,
           "ultra": 6,
@@ -631,9 +631,9 @@
         "bee": {
           "common": 166,
           "epic": 44,
-          "mythic": 89,
+          "mythic": 90,
           "uncommon": 55,
-          "legendary": 118,
+          "legendary": 120,
           "rare": 35,
           "ultra": 5
         },
@@ -662,7 +662,7 @@
           "common": 5,
           "mythic": 13,
           "ultra": 24,
-          "super": 24,
+          "super": 25,
           "uncommon": 8,
           "rare": 6,
           "unique": 4,
@@ -873,7 +873,7 @@
           "ultra": 4
         }
       },
-      "stars": 120149
+      "stars": 120189
     },
     "1g99g1gfk": {
       "totalXP": 93,
