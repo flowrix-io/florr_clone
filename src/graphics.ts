@@ -194,6 +194,7 @@ export class Graphics {
         unique: '#bf00ff'
     };
     public showHitboxes: boolean = false;
+    public showRarityGlow: boolean = false; // Show petal rarity glow (toggled by ALT key)
     public dynamicSkybox: boolean = false;
     public mobDeathAnimation: boolean = true;  // Mob death animation setting (default true)
     private itemSprites: Record<string, HTMLImageElement> = {};
@@ -2386,11 +2387,12 @@ export class Graphics {
                         petalSize
                     );
                     
-                    // Add rarity glow effect
-                    if (petal.rarity !== 'common') {
+                    // Add rarity glow effect (only when ALT key is held)
+                    if (this.showRarityGlow && petal.rarity !== 'common') {
                         this.ctx.save();
                         this.ctx.shadowColor = stats.color;
-                        this.ctx.shadowBlur = 5;
+                        this.ctx.shadowBlur = 20;
+                        this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                         this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                         this.ctx.restore();
                     }

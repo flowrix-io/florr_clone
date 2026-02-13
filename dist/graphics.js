@@ -122,6 +122,7 @@ class Graphics {
             unique: '#bf00ff'
         };
         this.showHitboxes = false;
+        this.showRarityGlow = false; // Show petal rarity glow (toggled by ALT key)
         this.dynamicSkybox = false;
         this.mobDeathAnimation = true; // Mob death animation setting (default true)
         this.itemSprites = {};
@@ -1879,11 +1880,12 @@ class Graphics {
                     // Use cached canvas image
                     // Draw centered at origin (which is now the petal position after translate)
                     this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
-                    // Add rarity glow effect
-                    if (petal.rarity !== 'common') {
+                    // Add rarity glow effect (only when ALT key is held)
+                    if (this.showRarityGlow && petal.rarity !== 'common') {
                         this.ctx.save();
                         this.ctx.shadowColor = stats.color;
-                        this.ctx.shadowBlur = 5;
+                        this.ctx.shadowBlur = 20;
+                        this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                         this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                         this.ctx.restore();
                     }

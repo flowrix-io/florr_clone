@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 167998468,
+      "totalXP": 168008998,
       "inventory": {
         "common": {
           "shield": 205,
@@ -39,7 +39,7 @@
           "petal_dark_ladybug_egg": 59,
           "petal_bee_egg": 64,
           "petal_fly_egg": 73,
-          "petal_bubble_egg": 12,
+          "petal_bubble_egg": 13,
           "petal_rock_egg": 60,
           "petal_bush_egg": 5,
           "petal_roach_egg": 6,
@@ -242,7 +242,7 @@
           "petal_gas": 5
         },
         "legendary": {
-          "speed_boost": 58,
+          "speed_boost": 59,
           "petal_sand": 17,
           "petal_rose": 29,
           "health_potion": 64,
@@ -351,7 +351,7 @@
           "petal_jelly": 7,
           "petal_jellyfish_egg": 13,
           "petal_soldier_fire_ant_egg": 38,
-          "petal_bubble_egg": 20,
+          "petal_bubble_egg": 21,
           "petal_bulb": 11,
           "petal_sandstorm_egg": 6,
           "petal_item_spawner_egg": 1,
@@ -359,11 +359,11 @@
           "petal_target_dummy_egg": 3,
           "petal_mantis_egg": 1,
           "petal_beetle_egg": 2,
-          "petal_starfish_egg": 10,
+          "petal_starfish_egg": 11,
           "petal_sponge_2_egg": 4,
           "petal_sponge_1_egg": 7,
           "petal_sponge": 8,
-          "petal_starfish": 3,
+          "petal_starfish": 4,
           "petal_glitch": 15,
           "petal_osaka_egg": 4,
           "petal_javascript": 8,
@@ -382,7 +382,7 @@
           "shield": 70,
           "petal_sand": 6,
           "petal_basic": 41,
-          "speed_boost": 58,
+          "speed_boost": 59,
           "petal_stinger": 26,
           "petal_yggdrasil": 8,
           "petal_bone": 40,
@@ -639,8 +639,8 @@
         },
         "bubble": {
           "ultra": 7,
-          "mythic": 36,
-          "legendary": 55,
+          "mythic": 37,
+          "legendary": 56,
           "uncommon": 28,
           "rare": 17,
           "common": 9,
@@ -651,7 +651,7 @@
           "uncommon": 31,
           "ultra": 4,
           "legendary": 48,
-          "mythic": 45,
+          "mythic": 46,
           "unique": 1,
           "epic": 11,
           "common": 8,
@@ -808,7 +808,7 @@
         "starfish": {
           "uncommon": 58,
           "rare": 45,
-          "legendary": 38,
+          "legendary": 40,
           "common": 10,
           "epic": 9,
           "mythic": 27
@@ -816,7 +816,7 @@
         "sponge_1": {
           "uncommon": 27,
           "rare": 11,
-          "legendary": 35,
+          "legendary": 36,
           "common": 4,
           "epic": 10,
           "mythic": 23,
@@ -873,7 +873,7 @@
           "ultra": 4
         }
       },
-      "stars": 120147
+      "stars": 120149
     },
     "1g99g1gfk": {
       "totalXP": 93,

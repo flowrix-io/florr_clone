@@ -717,10 +717,18 @@ class Game {
                 return;
             }
             this.keysPressed.add(event.key);
+            // ALT key toggles rarity glow on petals
+            if (event.key === 'Alt') {
+                event.preventDefault();
+                this.graphics.showRarityGlow = true;
+            }
         });
         document.addEventListener('keyup', (event) => {
             this.keysPressed.delete(event.key);
-            // Remove immediate velocity update - handled in game loop
+            // ALT key toggles rarity glow on petals
+            if (event.key === 'Alt') {
+                this.graphics.showRarityGlow = false;
+            }
         });
         // Add name input change listener
         this.nameInput?.addEventListener('change', () => {
