@@ -49,7 +49,7 @@ import {
     executePetalActions
 } from '../petal_actions';
 import { getMobStats } from '../mobs';
-import { addItem, applyPetalHealthBonus } from './playerManager';
+import { addItem, applyPetalHealthBonus, calculatePlayerModifiers } from './playerManager';
 import { trackDamage, sendBossMobDefeatedMessage, cleanupEnemy, trackMobKill } from './utils';
 import { transferPlayerToServer as transferPlayerToServerModule } from './crossServer';
 
@@ -208,6 +208,7 @@ export function isPositionInPlayerPetalRange(x: number, y: number, mobSize: numb
         const baseRadius = 60 * petalExtension;
         
         // Find the largest petal size and range in the player's loadout
+        const playerRangeMod = calculatePlayerModifiers(player).range ?? 1.0;
         let maxPetalSize = 0;
         let maxPetalRange = 1.0;
         for (const item of player.loadout) {
@@ -217,7 +218,7 @@ export function isPositionInPlayerPetalRange(x: number, y: number, mobSize: numb
                     const effectiveSize = (item as any).customSize !== undefined ? (item as any).customSize : petalStats.size;
                     const petalSize = 40 * effectiveSize;
                     maxPetalSize = Math.max(maxPetalSize, petalSize);
-                    const petalRange = petalStats.range ?? 1.0;
+                    const petalRange = (petalStats.range ?? 1.0) * playerRangeMod;
                     maxPetalRange = Math.max(maxPetalRange, petalRange);
                 }
             }
@@ -634,6 +635,7 @@ export function updatePlayerState(
         const petalExtension = player.inputs.petalExtension || 1.0;
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
+        const playerRangeModifier = calculatePlayerModifiers(player).range ?? 1.0;
 
         // Initialize petal positions array
         player.petalPositions = [];
@@ -662,7 +664,7 @@ export function updatePlayerState(
                         const baseAngle = idx * angleStep;
                         const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
                         const totalAngle = baseAngle + rotationAngle;
-                        const petalRange = petalStats.range ?? 1.0;
+                        const petalRange = (petalStats.range ?? 1.0) * playerRangeModifier;
                         const petalRadius = baseRadius * petalRange;
                         const petalX = player.x + Math.cos(totalAngle) * petalRadius;
                         const petalY = player.y + Math.sin(totalAngle) * petalRadius;
@@ -738,8 +740,8 @@ export function updatePlayerState(
             // Fixed-direction petals don't orbit - they stay at a fixed relative position
             const totalAngle = petalStats.fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
 
-            // Apply petal range multiplier to base radius
-            const petalRange = petalStats.range ?? 1.0;
+            // Apply petal range multiplier and player range modifier to base radius
+            const petalRange = (petalStats.range ?? 1.0) * playerRangeModifier;
             const petalRadius = baseRadius * petalRange;
 
             // Calculate target orbit position (where petal should be without physics)

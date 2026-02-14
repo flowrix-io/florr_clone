@@ -5,6 +5,7 @@ export interface PlayerModifiers {
     damage?: number; // Multiplier for player damage (e.g., 1.2 = +20% damage)
     maxHealth?: number; // Multiplier for player max health (e.g., 1.15 = +15% health)
     speed?: number; // Multiplier for player movement speed (e.g., 1.1 = +10% speed)
+    range?: number; // Multiplier for petal orbit range (e.g., 1.2 = +20% range)
 }
 
 export interface PetalStats {
@@ -1274,9 +1275,9 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         count: 1,
         image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <path id="eyeShape" 
-          d="M 16 1 
-             Q 28 16 16 31 
+    <path id="eyeShape"
+          d="M 16 1
+             Q 28 16 16 31
              Q 4 16 16 1 Z" />
   </defs>
 
@@ -1284,14 +1285,15 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 
   <circle cx="16" cy="16" r="7.5" fill="#eeeeee" />
 
-  <use href="#eyeShape" 
-       fill="none" 
-       stroke="#111111" 
-       stroke-width="2.25" 
-       stroke-linecap="round" 
+  <use href="#eyeShape"
+       fill="none"
+       stroke="#111111"
+       stroke-width="2.25"
+       stroke-linecap="round"
        stroke-linejoin="round" />
 </svg>`,
-        isAdminPetal: false
+        isAdminPetal: false,
+        playerModifiers: { range: 1.15 }
     },
     sparkle: {
         name: "Sparkle Petal",
@@ -1674,26 +1676,30 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         // For modifiers, we can either:
         // 1. Use override if provided (for rarity-specific scaling) - overrides are NOT scaled
         // 2. Scale base modifiers by rarity multiplier
-        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined) {
+        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined) {
             // Use override modifiers directly (not scaled, as they're already rarity-specific)
             playerModifiers = {
                 damage: overrideModifiers.damage ?? baseModifiers.damage,
                 maxHealth: overrideModifiers.maxHealth ?? baseModifiers.maxHealth,
-                speed: overrideModifiers.speed ?? baseModifiers.speed
+                speed: overrideModifiers.speed ?? baseModifiers.speed,
+                range: overrideModifiers.range ?? baseModifiers.range
             };
-        } else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined) {
+        } else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined) {
             // Scale base modifiers by rarity multiplier
             // Formula: baseValue * (1 + (rarityIndex / 8) * 3)
             // This scales from 1x at common to 4x at unique
             playerModifiers = {
-                damage: baseModifiers.damage !== undefined 
-                    ? 1 + (baseModifiers.damage - 1) * modifierRarityMultiplier 
+                damage: baseModifiers.damage !== undefined
+                    ? 1 + (baseModifiers.damage - 1) * modifierRarityMultiplier
                     : undefined,
-                maxHealth: baseModifiers.maxHealth !== undefined 
-                    ? 1 + (baseModifiers.maxHealth - 1) * modifierRarityMultiplier 
+                maxHealth: baseModifiers.maxHealth !== undefined
+                    ? 1 + (baseModifiers.maxHealth - 1) * modifierRarityMultiplier
                     : undefined,
-                speed: baseModifiers.speed !== undefined 
-                    ? 1 + (baseModifiers.speed - 1) * modifierRarityMultiplier 
+                speed: baseModifiers.speed !== undefined
+                    ? 1 + (baseModifiers.speed - 1) * modifierRarityMultiplier
+                    : undefined,
+                range: baseModifiers.range !== undefined
+                    ? 1 + (baseModifiers.range - 1) * modifierRarityMultiplier
                     : undefined
             };
         }

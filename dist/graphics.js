@@ -1814,6 +1814,16 @@ class Graphics {
         keysToDelete.forEach(key => this.petalPhysicsStates.delete(key));
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = (Math.PI * 2) / petalInstances.length; // Evenly space petals
+        // Calculate player range modifier from equipped petals
+        let playerRangeModifier = 1.0;
+        for (const item of player.loadout) {
+            if (item && item.type === 'petal' && item.petalType && item.rarity) {
+                const pStats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+                if (pStats?.playerModifiers?.range !== undefined) {
+                    playerRangeModifier *= pStats.playerModifiers.range;
+                }
+            }
+        }
         // Calculate deltaTime (approximate, using frame timing)
         // Use a default of 1/60 seconds (60 FPS) if we can't calculate it
         const lastFrameTime = this.lastFrameTime || currentTime;
@@ -1837,8 +1847,8 @@ class Graphics {
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             // Fixed-direction petals don't orbit - they stay at a fixed relative position
             const totalAngle = stats.fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
-            // Apply petal range multiplier to base radius
-            const petalRange = stats.range ?? 1.0;
+            // Apply petal range multiplier and player range modifier to base radius
+            const petalRange = (stats.range ?? 1.0) * playerRangeModifier;
             const petalRadius = baseRadius * petalRange;
             // Use server-provided petal positions if available (for all players)
             let petalX;

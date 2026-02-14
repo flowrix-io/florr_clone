@@ -433,7 +433,8 @@ export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers 
     const modifiers: PlayerModifiers = {
         damage: 1.0,
         maxHealth: 1.0,
-        speed: 1.0
+        speed: 1.0,
+        range: 1.0
     };
     
     if (!player.loadout) return modifiers;
@@ -456,6 +457,9 @@ export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers 
         }
         if (petalModifiers.speed !== undefined && modifiers.speed !== undefined) {
             modifiers.speed *= petalModifiers.speed;
+        }
+        if (petalModifiers.range !== undefined && modifiers.range !== undefined) {
+            modifiers.range *= petalModifiers.range;
         }
     }
     

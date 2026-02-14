@@ -375,7 +375,8 @@ function calculatePlayerModifiers(player) {
     const modifiers = {
         damage: 1.0,
         maxHealth: 1.0,
-        speed: 1.0
+        speed: 1.0,
+        range: 1.0
     };
     if (!player.loadout)
         return modifiers;
@@ -396,6 +397,9 @@ function calculatePlayerModifiers(player) {
         }
         if (petalModifiers.speed !== undefined && modifiers.speed !== undefined) {
             modifiers.speed *= petalModifiers.speed;
+        }
+        if (petalModifiers.range !== undefined && modifiers.range !== undefined) {
+            modifiers.range *= petalModifiers.range;
         }
     }
     return modifiers;

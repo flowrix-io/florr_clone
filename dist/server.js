@@ -2743,6 +2743,7 @@ function updateMobProjectiles(deltaTimeMs) {
             const petalExtension = player.inputs?.petalExtension || 1.0;
             const baseRadius = 60 * petalExtension;
             const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
+            const playerRangeModifier = (0, playerManager_1.calculatePlayerModifiers)(player).range ?? 1.0;
             for (let idx = 0; idx < petalInstances.length; idx++) {
                 const { petal, instanceIndex, loadoutIndex } = petalInstances[idx];
                 if (!petal || !petal.health || petal.health <= 0 || petal.onCooldown) {
@@ -2757,7 +2758,7 @@ function updateMobProjectiles(deltaTimeMs) {
                 const baseAngle = idx * angleStep;
                 const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
                 const totalAngle = baseAngle + rotationAngle;
-                const petalRange = petalStats.range ?? 1.0;
+                const petalRange = (petalStats.range ?? 1.0) * playerRangeModifier;
                 const petalRadius = baseRadius * petalRange;
                 const petalX = player.x + Math.cos(totalAngle) * petalRadius;
                 const petalY = player.y + Math.sin(totalAngle) * petalRadius;

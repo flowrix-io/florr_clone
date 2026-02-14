@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 168284268,
+      "totalXP": 168284338,
       "inventory": {
         "common": {
           "shield": 205,
@@ -71,7 +71,8 @@
           "petal_glitch_egg": 15,
           "petal_dust_egg": 13,
           "petal_osaka": 5,
-          "petal_bulb": 1
+          "petal_bulb": 1,
+          "petal_third_eye": 1
         },
         "unique": {
           "petal_stinger": 1001,
@@ -654,13 +655,13 @@
           "super": 1
         },
         "jellyfish": {
-          "uncommon": 32,
+          "uncommon": 34,
           "ultra": 4,
           "legendary": 54,
           "mythic": 52,
           "unique": 1,
           "epic": 13,
-          "common": 8,
+          "common": 9,
           "rare": 28
         },
         "target_dummy": {

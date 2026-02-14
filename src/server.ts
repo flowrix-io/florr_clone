@@ -112,7 +112,8 @@ import {
     applyPetalHealthBonus,
     addXPToPlayer as addXPToPlayerModule,
     savePlayerProgress as savePlayerProgressModule,
-    recalculatePlayerStats
+    recalculatePlayerStats,
+    calculatePlayerModifiers
 } from './server/playerManager';
 import { setupTransferEndpoints, transferPlayerToServer as transferPlayerToServerModule } from './server/crossServer';
 import { 
@@ -3221,26 +3222,27 @@ function updateMobProjectiles(deltaTimeMs: number) {
             const petalExtension = player.inputs?.petalExtension || 1.0;
             const baseRadius = 60 * petalExtension;
             const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
-            
+            const playerRangeModifier = calculatePlayerModifiers(player).range ?? 1.0;
+
             for (let idx = 0; idx < petalInstances.length; idx++) {
                 const {petal, instanceIndex, loadoutIndex} = petalInstances[idx];
-                
+
                 if (!petal || !petal.health || petal.health <= 0 || petal.onCooldown) {
                     continue;
                 }
-                
+
                 const petalStats = getPetalStats(petal.petalType, petal.rarity);
                 if (!petalStats) continue;
-                
+
                 // Get effective size (custom size if set, otherwise base stats)
                 const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
-                
+
                 const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002;
                 const baseAngle = idx * angleStep;
                 const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
                 const totalAngle = baseAngle + rotationAngle;
-                
-                const petalRange = petalStats.range ?? 1.0;
+
+                const petalRange = (petalStats.range ?? 1.0) * playerRangeModifier;
                 const petalRadius = baseRadius * petalRange;
                 const petalX = player.x + Math.cos(totalAngle) * petalRadius;
                 const petalY = player.y + Math.sin(totalAngle) * petalRadius;
