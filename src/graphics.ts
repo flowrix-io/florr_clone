@@ -1910,17 +1910,10 @@ export class Graphics {
             const healthTextY = healthY + 15;
             this.ctx.strokeStyle = '#000000';
             this.ctx.lineWidth = 3;
-            this.ctx.strokeText(
-                `${Math.round(clampedHealth)}/${player.maxHealth}`,
-                healthTextX,
-                healthTextY
-            );
+            const healthText = `${this.formatNumber(Math.round(clampedHealth))}/${this.formatNumber(player.maxHealth)}`;
+            this.ctx.strokeText(healthText, healthTextX, healthTextY);
             this.ctx.fillStyle = 'white';
-            this.ctx.fillText(
-                `${Math.round(clampedHealth)}/${player.maxHealth}`,
-                healthTextX,
-                healthTextY
-            );
+            this.ctx.fillText(healthText, healthTextX, healthTextY);
 
             // Draw XP bar with rounded ends
             const xpBarY = healthY + healthBarHeight + 5;
@@ -1943,17 +1936,10 @@ export class Graphics {
             const xpTextY = xpBarY + 15;
             this.ctx.strokeStyle = '#000000';
             this.ctx.lineWidth = 3;
-            this.ctx.strokeText(
-                `LVL ${player.level} - ${player.xp}/${player.xpToNextLevel}`,
-                xpTextX,
-                xpTextY
-            );
+            const xpText = `LVL ${player.level} - ${this.formatNumber(player.xp)}/${this.formatNumber(player.xpToNextLevel)}`;
+            this.ctx.strokeText(xpText, xpTextX, xpTextY);
             this.ctx.fillStyle = 'white';
-            this.ctx.fillText(
-                `LVL ${player.level} - ${player.xp}/${player.xpToNextLevel}`,
-                xpTextX,
-                xpTextY
-            );
+            this.ctx.fillText(xpText, xpTextX, xpTextY);
 
             this.ctx.save();
             // Draw black outline around flower
@@ -2056,7 +2042,7 @@ export class Graphics {
                 // Draw health text (centered on the bar)
                 this.ctx.font = '16px Ubuntu, sans-serif';
                 const textY = bossBarY + 18;
-                const healthText = `${Math.round(clampedHealth)}/${enemy.maxHealth}`;
+                const healthText = `${this.formatNumber(Math.round(clampedHealth))}/${this.formatNumber(enemy.maxHealth)}`;
                 const healthTextWidth = this.ctx.measureText(healthText).width;
                 const healthTextX = centerX - healthTextWidth / 2;
                 this.ctx.strokeStyle = '#000000';
@@ -2069,6 +2055,9 @@ export class Graphics {
     }
 
     private formatNumber(num: number): string {
+        if (this.showRarityGlow) {
+            return String(Math.round(num));
+        }
         if (num >= 1e12) {
             return (num / 1e12).toFixed(1) + 'T';
         } else if (num >= 1e9) {
@@ -2078,7 +2067,7 @@ export class Graphics {
         } else if (num >= 1e3) {
             return (num / 1e3).toFixed(1) + 'K';
         } else {
-            return num.toFixed(1);
+            return String(Math.round(num));
         }
     }
 
