@@ -420,10 +420,10 @@ function setupSocketListeners(game) {
     game.socket.on('enemiesUpdate', (enemies) => {
         // Only used on initial connection - update all enemies
         const serverEnemyIds = new Set(enemies.map(e => e.id));
-        // Remove enemies that no longer exist - uses same path as all enemy removals
+        // Remove enemies that left the viewport - no death animation
         for (const [enemyId] of game.enemies) {
             if (!serverEnemyIds.has(enemyId)) {
-                handleEnemyRemoval(enemyId);
+                handleEnemyOutOfView(enemyId);
             }
         }
         // Update or add enemies - uses same path as all enemy updates
@@ -507,7 +507,7 @@ function setupSocketListeners(game) {
         }
         game.enemies.set(enemy.id, enemy);
     }
-    // Unified handler for enemy removal - all enemy removals go through the same path
+    // Handler for enemy killed - plays death animation
     function handleEnemyRemoval(enemyId) {
         // Show any accumulated damage before cleaning up
         const enemy = game.enemies.get(enemyId);
@@ -526,6 +526,15 @@ function setupSocketListeners(game) {
         // Clean up accumulated damage for this enemy
         game.graphics.clearEnemyDamage(enemyId);
         // Don't delete immediately - let the animation complete first
+    }
+    // Handler for enemy leaving viewport - no death animation
+    function handleEnemyOutOfView(enemyId) {
+        const enemy = game.enemies.get(enemyId);
+        // Don't remove enemies mid-death-animation - let the animation finish
+        if (enemy?.deathAnimationStartTime)
+            return;
+        game.graphics.clearEnemyDamage(enemyId);
+        game.enemies.delete(enemyId);
     }
     game.socket.on('enemyDamaged', (data) => {
         // Legacy handler for single enemy damage - uses same path as batched
@@ -1031,10 +1040,10 @@ function setupSocketListeners(game) {
         if (serverEnemies) {
             // Optimize: Only update changed enemies instead of clearing entire map
             const serverEnemyIds = new Set(serverEnemies.map(e => e.id));
-            // Remove enemies that no longer exist - uses same path as all enemy removals
+            // Remove enemies that left the viewport - no death animation
             for (const [enemyId] of game.enemies) {
                 if (!serverEnemyIds.has(enemyId)) {
-                    handleEnemyRemoval(enemyId);
+                    handleEnemyOutOfView(enemyId);
                 }
             }
             // Update or add enemies - uses same path as all enemy updates
@@ -1116,9 +1125,9 @@ function setupSocketListeners(game) {
         });
     });
     game.socket.on('updateEnemies', (serverEnemies) => {
-        // Clear all enemies first - uses same path as all enemy removals
+        // Clear all enemies first - full refresh, no death animation
         for (const [enemyId] of game.enemies) {
-            handleEnemyRemoval(enemyId);
+            handleEnemyOutOfView(enemyId);
         }
         // Add all enemies - uses same path as all enemy updates
         serverEnemies.forEach(enemy => {
