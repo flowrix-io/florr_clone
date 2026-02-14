@@ -130,6 +130,18 @@ function handleMobDrops(enemyData, io) {
                     finalRarity = downgradeRarity(drop.rarity);
                 }
             }
+            // Prevent rare+ mobs from dropping below a minimum rarity
+            // Rare mobs: min tier - 1, Epic+ mobs: min tier - 2
+            const mobRarityIndex = RARITY_ORDER.indexOf(enemyData.tier);
+            if (mobRarityIndex >= 2) {
+                const minRarityIndex = mobRarityIndex >= 3
+                    ? mobRarityIndex - 2
+                    : mobRarityIndex - 1;
+                const finalRarityIndex = RARITY_ORDER.indexOf(finalRarity);
+                if (finalRarityIndex < minRarityIndex) {
+                    finalRarity = RARITY_ORDER[minRarityIndex];
+                }
+            }
             // Handle random petal selection for garbage mob
             let petalType = drop.type === 'petal' ? drop.itemType : undefined;
             if (petalType === 'random') {

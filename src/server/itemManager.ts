@@ -145,7 +145,7 @@ export function handleMobDrops(enemyData: { type?: string, tier: string, x: numb
             let finalRarity = drop.rarity;
             const upgradeChance = getDropUpgradeChance(drop.rarity);
             const upgradeRoll = upgradeChance > 0 ? Math.random() * 100 : 1;
-            
+
             if (upgradeRoll < upgradeChance) {
                 // Upgrade succeeded
                 finalRarity = upgradeRarity(drop.rarity);
@@ -154,6 +154,19 @@ export function handleMobDrops(enemyData: { type?: string, tier: string, x: numb
                 const downgradeChance = getDropDowngradeChance(drop.rarity);
                 if (downgradeChance > 0 && Math.random() < downgradeChance) {
                     finalRarity = downgradeRarity(drop.rarity);
+                }
+            }
+
+            // Prevent rare+ mobs from dropping below a minimum rarity
+            // Rare mobs: min tier - 1, Epic+ mobs: min tier - 2
+            const mobRarityIndex = RARITY_ORDER.indexOf(enemyData.tier as Rarity);
+            if (mobRarityIndex >= 2) {
+                const minRarityIndex = mobRarityIndex >= 3
+                    ? mobRarityIndex - 2
+                    : mobRarityIndex - 1;
+                const finalRarityIndex = RARITY_ORDER.indexOf(finalRarity);
+                if (finalRarityIndex < minRarityIndex) {
+                    finalRarity = RARITY_ORDER[minRarityIndex];
                 }
             }
             
