@@ -2422,13 +2422,12 @@ export class Graphics {
                     );
                     
                     // Add rarity glow effect (only when ALT key is held)
-                    if (this.showRarityGlow && petal.rarity !== 'common') {
+                    if (this.showRarityGlow) {
                         const glowColor = this.ITEM_RARITY_COLORS[petal.rarity as keyof typeof this.ITEM_RARITY_COLORS] || stats.color;
                         this.ctx.save();
                         this.ctx.shadowColor = glowColor;
-                        this.ctx.shadowBlur = 30;
-                        // Draw multiple times for a very strong glow
-                        for (let g = 0; g < 4; g++) {
+                        this.ctx.shadowBlur = 8;
+                        for (let g = 0; g < 6; g++) {
                             this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                         }
                         this.ctx.restore();
