@@ -325,21 +325,9 @@ function setupSocketListeners(game) {
         game.lastHeartbeat = now; // Update heartbeat on any server message
         const existingPlayer = game.players.get(player.id);
         const isCurrentPlayer = player.id === game.socket?.id;
-        // Debug: Log server position updates with timing
-        if (existingPlayer && isCurrentPlayer) {
-            const positionDiff = Math.sqrt(Math.pow(existingPlayer.x - player.x, 2) +
-                Math.pow(existingPlayer.y - player.y, 2));
-            console.log(`[CLIENT] playerMoved received at ${now.toFixed(0)}: server(${player.x.toFixed(1)}, ${player.y.toFixed(1)}) client_current(${existingPlayer.x.toFixed(1)}, ${existingPlayer.y.toFixed(1)}) diff:${positionDiff.toFixed(1)}px`);
-        }
-        console.log(`[CLIENT] Received playerMoved for ${player.id}:`, {
-            x: player.x.toFixed(1),
-            y: player.y.toFixed(1),
-            isMe: player.id === game.socket?.id
-        });
         if (existingPlayer) {
             if (isCurrentPlayer) {
                 // For current player, use smooth interpolation to server position
-                console.log(`[CLIENT] Updating position from server: (${existingPlayer.x.toFixed(1)}, ${existingPlayer.y.toFixed(1)}) -> (${player.x.toFixed(1)}, ${player.y.toFixed(1)})`);
                 existingPlayer.targetX = player.x;
                 existingPlayer.targetY = player.y;
             }
@@ -448,7 +436,6 @@ function setupSocketListeners(game) {
         handleEnemyUpdate(enemy);
     });
     game.socket.on('playerDamaged', (data) => {
-        console.log('Player damaged event received:', data);
         const player = game.players.get(data.playerId);
         if (player) {
             const oldHealth = player.health;
@@ -611,78 +598,51 @@ function setupSocketListeners(game) {
     game.socket.on('petalExplosion', (data) => {
         // Show explosion effect
         game.showExplosionEffect(data.x, data.y, data.radius);
-        console.log(`[CLIENT] Petal explosion at (${data.x}, ${data.y}) with radius ${data.radius}`);
     });
+    // Debounce loadout UI updates to prevent multiple DOM re-renders when many petals break/restore at once
+    let loadoutUpdateTimeout = null;
+    function scheduleLoadoutUIUpdate() {
+        if (loadoutUpdateTimeout)
+            return;
+        loadoutUpdateTimeout = setTimeout(() => {
+            loadoutUpdateTimeout = null;
+            if (game.isInventoryOpen) {
+                game.updateInventoryDisplay();
+            }
+            if (game.inventoryManager) {
+                game.inventoryManager.updateLoadoutDisplay();
+            }
+        }, 50);
+    }
     game.socket.on('petalBroken', (data) => {
         const player = game.players.get(data.playerId);
-        if (player && player.loadout[data.slotIndex]) {
-            const petal = player.loadout[data.slotIndex];
-            if (petal) {
-                petal.health = 0;
-                petal.onCooldown = true;
-                // Show petal break effect
-                game.showPetalBreakEffect(player.x, player.y, data.petalType);
-                console.log(`[CLIENT] Petal ${data.petalType} (${data.rarity}) broke for player ${data.playerId}`);
+        if (player && player.loadout && player.loadout[data.slotIndex]) {
+            player.loadout[data.slotIndex].health = 0;
+            player.loadout[data.slotIndex].onCooldown = true;
+            game.showPetalBreakEffect(player.x, player.y, data.petalType);
+            if (data.playerId === game.socket.id) {
+                scheduleLoadoutUIUpdate();
             }
         }
     });
     game.socket.on('petalRestored', (data) => {
         const player = game.players.get(data.playerId);
-        if (player && player.loadout[data.slotIndex]) {
+        if (player && player.loadout) {
             player.loadout[data.slotIndex] = data.petal;
-            console.log(`[CLIENT] Petal restored for player ${data.playerId} in slot ${data.slotIndex}`);
+            if (data.playerId === game.socket.id) {
+                scheduleLoadoutUIUpdate();
+            }
         }
     });
     game.socket.on('itemPickedUp', (itemId) => {
-        // console.log('Item picked up by me:', itemId);
-        // Hide the item from this player's view (but keep it in the world for other eligible players)
         if (game.pickedUpItems) {
             game.pickedUpItems.add(itemId);
         }
     });
     game.socket.on('itemRemoved', (itemId) => {
-        // console.log('Item removed from world:', itemId);
-        // Remove the item from the game when all eligible players have picked it up
         game.items.delete(itemId);
-        // Also remove it from pickedUpItems set
         if (game.pickedUpItems) {
             game.pickedUpItems.delete(itemId);
-        }
-    });
-    game.socket.on('petalBroken', (data) => {
-        console.log('Petal broken:', data);
-        const player = game.players.get(data.playerId);
-        if (player && player.loadout) {
-            // Set petal on cooldown instead of removing it
-            if (player.loadout[data.slotIndex]) {
-                player.loadout[data.slotIndex].onCooldown = true;
-            }
-            // Update inventory display if it's the current player
-            if (data.playerId === game.socket.id) {
-                if (game.isInventoryOpen) {
-                    game.updateInventoryDisplay();
-                }
-                if (game.inventoryManager) {
-                    game.inventoryManager.updateLoadoutDisplay();
-                }
-            }
-        }
-    });
-    game.socket.on('petalRestored', (data) => {
-        console.log('Petal restored:', data);
-        const player = game.players.get(data.playerId);
-        if (player && player.loadout) {
-            // Restore the petal to the loadout
-            player.loadout[data.slotIndex] = data.petal;
-            // Update inventory display if it's the current player
-            if (data.playerId === game.socket.id) {
-                if (game.isInventoryOpen) {
-                    game.updateInventoryDisplay();
-                }
-                if (game.inventoryManager) {
-                    game.inventoryManager.updateLoadoutDisplay();
-                }
-            }
         }
     });
     game.socket.on('itemCollected', (data) => {
@@ -788,28 +748,14 @@ function setupSocketListeners(game) {
             game.players.set(updatedPlayer.id, player);
         }
         else {
-            // Optimize: Only check changes if we need to update UI
-            // Use reference comparison first (faster), then deep comparison only if needed
             let loadoutChanged = false;
             let inventoryChanged = false;
             let mobKillsChanged = false;
-            // Only do expensive JSON.stringify if we need to update UI
             if (updatedPlayer.id === game.socket?.id) {
-                // Quick reference check first
-                if (player.loadout !== updatedPlayer.loadout) {
-                    loadoutChanged = JSON.stringify(player.loadout) !== JSON.stringify(updatedPlayer.loadout);
-                }
-                if (player.inventory !== updatedPlayer.inventory) {
-                    inventoryChanged = JSON.stringify(player.inventory) !== JSON.stringify(updatedPlayer.inventory);
-                }
-                // Check mobKills (handle undefined cases)
-                const oldMobKills = player.mobKills || {};
-                const newMobKills = updatedPlayer.mobKills || {};
-                // Always do deep comparison since mobKills is an object
-                mobKillsChanged = JSON.stringify(oldMobKills) !== JSON.stringify(newMobKills);
-                // if (mobKillsChanged) {
-                //     console.log('[MobGallery] mobKills changed detected', { oldMobKills, newMobKills });
-                // }
+                // Use reference check - server always sends new objects when data changes
+                loadoutChanged = updatedPlayer.loadout !== undefined && player.loadout !== updatedPlayer.loadout;
+                inventoryChanged = updatedPlayer.inventory !== undefined && player.inventory !== updatedPlayer.inventory;
+                mobKillsChanged = updatedPlayer.mobKills !== undefined && player.mobKills !== updatedPlayer.mobKills;
             }
             Object.assign(player, updatedPlayer);
             // Update displays if this is the current player
@@ -851,10 +797,8 @@ function setupSocketListeners(game) {
         }
     });
     game.socket.on('speedBoostActive', (playerId) => {
-        console.log('Speed boost active:', playerId);
         if (playerId === game.socket.id) {
             game.speedBoostActive = true;
-            console.log('Speed boost active for client');
         }
     });
     game.socket.on('savePlayerProgress', () => {
@@ -1083,11 +1027,10 @@ function setupSocketListeners(game) {
                 player.speed_boost = serverPlayer.speed_boost;
                 // Sync petal extension from server
                 player.petalExtension = serverPlayer.inputs?.petalExtension || 1.0;
-                // Update mobKills if it changed
+                // Update mobKills if it changed (use reference check - server sends new objects)
                 if (serverPlayer.mobKills !== undefined) {
-                    const mobKillsChanged = JSON.stringify(player.mobKills) !== JSON.stringify(serverPlayer.mobKills);
+                    const mobKillsChanged = player.mobKills !== serverPlayer.mobKills;
                     player.mobKills = serverPlayer.mobKills;
-                    // Show notification when mobs are killed while gallery is open (don't auto-update)
                     if (mobKillsChanged && serverPlayer.id === game.socket?.id && game.inventoryManager) {
                         game.inventoryManager.updateMobGalleryIfOpen();
                     }

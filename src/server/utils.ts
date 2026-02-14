@@ -230,17 +230,14 @@ export function trackMobKill(
             }
         }
         
-        // Emit playerUpdated immediately to ensure mob gallery updates
+        // Emit playerUpdated only to the eligible player (not all clients)
         if (io) {
-            // Ensure mobKills is included in the update
+            const originalSocketId = getOriginalSocketId(playerId);
             const playerUpdate = {
                 ...player,
-                mobKills: player.mobKills // Explicitly include mobKills
+                mobKills: player.mobKills
             };
-            // console.log('[Server] Emitting playerUpdated with mobKills:', player.id, player.mobKills);
-            io.emit('playerUpdated', playerUpdate);
-        } else {
-            // console.warn('[Server] trackMobKill: io is not defined, cannot emit playerUpdated');
+            io.to(originalSocketId).emit('playerUpdated', playerUpdate);
         }
     }
 }

@@ -36,6 +36,7 @@ class SVGRendererWrapper {
     private canvasCache: Map<string, HTMLCanvasElement> = new Map(); // Cache for offscreen canvases (primary storage)
     private animatedCache: AnimatedSVGCache = {};
     private preloadingComplete: boolean = false; // Track if preloading phase is complete
+    private baseCacheKeyMap: Map<string, string> = new Map(); // Cache normalized base keys per SVG string
 
     constructor() {
         this.initPromise = this.initialize();
@@ -272,22 +273,22 @@ class SVGRendererWrapper {
         const animationCycleDuration = framesPerCycle * frameTime; // Total cycle duration
         const relativeTime = time % animationCycleDuration;
         const timeBucket = Math.floor(relativeTime / frameTime); // Update based on configured framerate
-        
-        // Normalize SVG string for consistent cache key generation
-        // Remove whitespace differences, normalize attributes, and use a stable key
-        // This ensures cache keys match between preloading and rendering
-        let normalizedSVG = svgString.replace(/\s+/g, ' ').trim();
-        // Remove xmlns attribute variations (they don't affect rendering)
-        normalizedSVG = normalizedSVG.replace(/\s+xmlns="[^"]*"/g, '');
-        // Use a more stable key based on viewBox and key attributes (more reliable than first N chars)
-        const viewBoxMatch = normalizedSVG.match(/viewBox="([^"]*)"/);
-        const widthMatch = normalizedSVG.match(/width="([^"]*)"/);
-        const keyParts = [
-            viewBoxMatch ? viewBoxMatch[1] : '',
-            widthMatch ? widthMatch[1] : '',
-            normalizedSVG.length.toString()
-        ];
-        const baseCacheKey = keyParts.join('|');
+
+        // Use cached base key to avoid expensive regex normalization per enemy per frame
+        let baseCacheKey = this.baseCacheKeyMap.get(svgString);
+        if (!baseCacheKey) {
+            // Normalize SVG string for consistent cache key generation (only once per unique SVG)
+            let normalizedSVG = svgString.replace(/\s+/g, ' ').trim();
+            normalizedSVG = normalizedSVG.replace(/\s+xmlns="[^"]*"/g, '');
+            const viewBoxMatch = normalizedSVG.match(/viewBox="([^"]*)"/);
+            const widthMatch = normalizedSVG.match(/width="([^"]*)"/);
+            baseCacheKey = [
+                viewBoxMatch ? viewBoxMatch[1] : '',
+                widthMatch ? widthMatch[1] : '',
+                normalizedSVG.length.toString()
+            ].join('|');
+            this.baseCacheKeyMap.set(svgString, baseCacheKey);
+        }
         const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
         
         // Check if we already have this frame as a canvas (preferred - no data URLs)
@@ -391,14 +392,6 @@ class SVGRendererWrapper {
         // Return false and let the caller use a fallback
         // The canvas should have been pre-rendered during initialization
         // If we're here, it means we need a frame that wasn't pre-rendered yet
-        
-        // Log cache miss occasionally to debug
-        if (Math.random() < 0.01) {
-            console.warn(`[SVGRenderer] Canvas not cached for key: ${animatedCacheKey.substring(0, 60)}... (should have been pre-rendered), cacheSize=${this.canvasCache.size}`);
-            // Show a few sample keys from cache
-            const sampleKeys = Array.from(this.canvasCache.keys()).slice(0, 3);
-            console.log(`[SVGRenderer] Sample cache keys:`, sampleKeys.map(k => k.substring(0, 60)));
-        }
         
         return false;
     }

@@ -74,12 +74,18 @@ const readDatabase = () => {
     }
 };
 
+let writePending = false;
 const writeDatabase = () => {
-    try {
-        fs.writeFileSync(inventoryPath, JSON.stringify(db, null, 2));
-    } catch (error) {
-        console.error('Error writing to database file:', error);
-    }
+    if (writePending) return;
+    writePending = true;
+    setImmediate(() => {
+        writePending = false;
+        try {
+            fs.writeFileSync(inventoryPath, JSON.stringify(db, null, 2));
+        } catch (error) {
+            console.error('Error writing to database file:', error);
+        }
+    });
 };
 
 readDatabase();

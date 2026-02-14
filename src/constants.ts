@@ -8,22 +8,40 @@ import { Item } from "./item";
 export const FISH_DETECTION_RADIUS = 500;  // How far fish can detect players
 export const FISH_RETURN_SPEED = 0.5;  // Speed at which fish return to their normal behavior
 
-// Mob animation framerate utility
+// Mob animation framerate utility - cached to avoid localStorage reads per frame
+let _cachedMobAnimFPS: number | null = null;
+let _cachedMobAnimFrameTime: number | null = null;
+let _cachedHighQualityMobs: boolean | null = null;
+
 export function getMobAnimationFramerate(): number {
-    const saved = localStorage.getItem('mobAnimationFramerate');
-    return saved ? parseInt(saved, 10) : 15; // Default to 15 FPS
+    if (_cachedMobAnimFPS === null) {
+        const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('mobAnimationFramerate') : null;
+        _cachedMobAnimFPS = saved ? parseInt(saved, 10) : 15;
+    }
+    return _cachedMobAnimFPS;
 }
 
 export function getMobAnimationFrameTime(): number {
-    // Convert FPS to milliseconds per frame
-    const fps = getMobAnimationFramerate();
-    return 1000 / fps;
+    if (_cachedMobAnimFrameTime === null) {
+        _cachedMobAnimFrameTime = 1000 / getMobAnimationFramerate();
+    }
+    return _cachedMobAnimFrameTime;
 }
 
-// High quality mobs setting utility
+// High quality mobs setting utility - cached
 export function getHighQualityMobs(): boolean {
-    const saved = localStorage.getItem('highQualityMobs');
-    return saved === 'true'; // Default to false (optimized approach)
+    if (_cachedHighQualityMobs === null) {
+        const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('highQualityMobs') : null;
+        _cachedHighQualityMobs = saved === 'true';
+    }
+    return _cachedHighQualityMobs;
+}
+
+// Call this when settings change to invalidate caches
+export function invalidateSettingsCache(): void {
+    _cachedMobAnimFPS = null;
+    _cachedMobAnimFrameTime = null;
+    _cachedHighQualityMobs = null;
 }
 
 // Server protocol configuration

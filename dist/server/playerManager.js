@@ -438,9 +438,9 @@ function recalculatePlayerStats(player, io) {
     if (player.health < 0) {
         player.health = 0;
     }
-    // Emit update if io is provided
+    // Emit update only to the affected player
     if (io) {
-        io.emit('playerUpdated', player);
+        io.to(player.id).emit('playerUpdated', player);
     }
 }
 function addXPToPlayer(player, xp, socketId, io) {
@@ -471,17 +471,17 @@ function addXPToPlayer(player, xp, socketId, io) {
         recalculatePlayerStats(player, io);
         // Heal to full when leveling up
         player.health = player.maxHealth;
-        // Emit level up event for each level gained
+        // Emit level up event only to the affected player
         for (let level = oldLevel + 1; level <= newLevel; level++) {
-            io.emit('levelUp', {
+            io.to(player.id).emit('levelUp', {
                 playerId: player.id,
                 level: level,
                 maxHealth: calculateMaxHealthFromLevel(level),
                 damage: calculateDamageFromLevel(level)
             });
         }
-        // Emit skills update
-        io.emit('skillsUpdated', {
+        // Emit skills update only to the affected player
+        io.to(player.id).emit('skillsUpdated', {
             playerId: player.id,
             tp: player.tp,
             skills: player.skills

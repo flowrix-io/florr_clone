@@ -5,6 +5,7 @@ exports.WALL_GRID = exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = exports.DEFAULT_S
 exports.getMobAnimationFramerate = getMobAnimationFramerate;
 exports.getMobAnimationFrameTime = getMobAnimationFrameTime;
 exports.getHighQualityMobs = getHighQualityMobs;
+exports.invalidateSettingsCache = invalidateSettingsCache;
 exports.validateWorldMap = validateWorldMap;
 exports.isWall = isWall;
 exports.isSpawn = isSpawn;
@@ -24,20 +25,36 @@ exports.isInWater = isInWater;
 // Add these constants at the top with the others
 exports.FISH_DETECTION_RADIUS = 500; // How far fish can detect players
 exports.FISH_RETURN_SPEED = 0.5; // Speed at which fish return to their normal behavior
-// Mob animation framerate utility
+// Mob animation framerate utility - cached to avoid localStorage reads per frame
+let _cachedMobAnimFPS = null;
+let _cachedMobAnimFrameTime = null;
+let _cachedHighQualityMobs = null;
 function getMobAnimationFramerate() {
-    const saved = localStorage.getItem('mobAnimationFramerate');
-    return saved ? parseInt(saved, 10) : 15; // Default to 15 FPS
+    if (_cachedMobAnimFPS === null) {
+        const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('mobAnimationFramerate') : null;
+        _cachedMobAnimFPS = saved ? parseInt(saved, 10) : 15;
+    }
+    return _cachedMobAnimFPS;
 }
 function getMobAnimationFrameTime() {
-    // Convert FPS to milliseconds per frame
-    const fps = getMobAnimationFramerate();
-    return 1000 / fps;
+    if (_cachedMobAnimFrameTime === null) {
+        _cachedMobAnimFrameTime = 1000 / getMobAnimationFramerate();
+    }
+    return _cachedMobAnimFrameTime;
 }
-// High quality mobs setting utility
+// High quality mobs setting utility - cached
 function getHighQualityMobs() {
-    const saved = localStorage.getItem('highQualityMobs');
-    return saved === 'true'; // Default to false (optimized approach)
+    if (_cachedHighQualityMobs === null) {
+        const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('highQualityMobs') : null;
+        _cachedHighQualityMobs = saved === 'true';
+    }
+    return _cachedHighQualityMobs;
+}
+// Call this when settings change to invalidate caches
+function invalidateSettingsCache() {
+    _cachedMobAnimFPS = null;
+    _cachedMobAnimFrameTime = null;
+    _cachedHighQualityMobs = null;
 }
 // Server protocol configuration
 exports.USE_HTTPS = typeof process !== 'undefined' && process.env ? process.env.USE_HTTPS !== 'false' : true; // Default to HTTPS, set USE_HTTPS=false to use HTTP

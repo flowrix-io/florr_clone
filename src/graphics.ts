@@ -99,6 +99,7 @@ export class Graphics {
     private cameraY: number = 0;
     private zoomLevel: number = 1.0;
     private playerSprite: HTMLImageElement;
+    private frameTimestamp: number = 0; // Cached Date.now() for current frame
     private floatingTexts: FloatingText[] = [];
     private lastDamageTextTime: Map<string, number> = new Map(); // Track last damage text time per enemy
     private accumulatedDamage: Map<string, number> = new Map(); // Accumulate throttled damage per enemy
@@ -870,7 +871,6 @@ export class Graphics {
             particles
         });
         
-        console.log(`[GRAPHICS] Created explosion effect at (${x}, ${y}) with ${particles.length} particles`);
     }
 
     public showPetalBreakEffect(x: number, y: number, petalType: string) {
@@ -919,8 +919,6 @@ export class Graphics {
             startTime: Date.now(),
             alpha: 1.0
         });
-        
-        console.log(`[GRAPHICS] Created lightning effect at (${x}, ${y}) with ${targets.length} targets`);
     }
 
     public showPetalParticleEffect(x: number, y: number, rarity: string) {
@@ -2143,7 +2141,7 @@ export class Graphics {
         // Apply invulnerability visual effect
         if (player.isInvulnerable) {
             const flashRate = 200; // Flash every 200ms
-            const currentTime = Date.now();
+            const currentTime = this.frameTimestamp;
             const shouldFlash = Math.floor(currentTime / flashRate) % 2 === 0;
 
             if (shouldFlash) {
@@ -2407,7 +2405,7 @@ export class Graphics {
             // Draw petal - the transforms are already applied (translate to petal position, then rotate)
             // Try to use cached SVG image
             const petalKey = `${petal.petalType}_${petal.rarity}`;
-            const petalCanvas = this.getPetalCanvas(petalKey, Date.now());
+            const petalCanvas = this.getPetalCanvas(petalKey, this.frameTimestamp);
             
             if (petalCanvas && petalCanvas.width > 0 && petalCanvas.height > 0) {
                 try {
@@ -2568,7 +2566,7 @@ export class Graphics {
         let isDying = false;
         let deathProgress = 0;
         if (this.mobDeathAnimation && enemy.deathAnimationStartTime) {
-            const elapsed = Date.now() - enemy.deathAnimationStartTime;
+            const elapsed = this.frameTimestamp - enemy.deathAnimationStartTime;
             if (elapsed < DEATH_ANIMATION_DURATION) {
                 isDying = true;
                 deathProgress = Math.min(1.0, elapsed / DEATH_ANIMATION_DURATION); // 0 to 1, clamped
@@ -2619,38 +2617,13 @@ export class Graphics {
         if (enemy.type === 'garbage') {
             this.drawGarbagePile(enemy, enemySize);
             
-            // Apply red tint overlay for death animation (after garbage pile is drawn, preserves alpha exactly)
+            // Apply red tint overlay for death animation using composite operations
             if (isDying) {
-                // Save current state before applying red tint
-                this.ctx.save();
-                
-                // Get the current pixel data to preserve alpha channel exactly
-                const imageData = this.ctx.getImageData(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
-                const data = imageData.data;
-                const tintIntensity = 0.15 + (deathProgress * 0.15); // 0.15 to 0.3
-                
-                // Only modify RGB channels of non-transparent pixels (alpha > 0)
-                for (let i = 0; i < data.length; i += 4) {
-                    const alpha = data[i + 3];
-                    if (alpha > 0) {
-                        // Only tint pixels that have alpha > 0
-                        // Add red tint by increasing red channel and slightly decreasing green/blue
-                        const red = data[i];
-                        const green = data[i + 1];
-                        const blue = data[i + 2];
-                        
-                        // Apply subtle red tint: increase red slightly, decrease green/blue slightly
-                        data[i] = Math.min(255, red + (tintIntensity * 20)); // Increase red
-                        data[i + 1] = Math.max(0, green - (tintIntensity * 10)); // Decrease green
-                        data[i + 2] = Math.max(0, blue - (tintIntensity * 10)); // Decrease blue
-                        // Alpha channel (data[i + 3]) is left unchanged
-                    }
-                }
-                
-                // Put the modified image data back (alpha channel preserved)
-                this.ctx.putImageData(imageData, -enemySize / 2, -enemySize / 2);
-                
-                this.ctx.restore(); // This restores both composite operation and alpha
+                const tintIntensity = 0.15 + (deathProgress * 0.15);
+                this.ctx.globalCompositeOperation = 'source-atop';
+                this.ctx.fillStyle = `rgba(255, 0, 0, ${tintIntensity})`;
+                this.ctx.fillRect(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
+                this.ctx.globalCompositeOperation = 'source-over';
             }
             
             this.ctx.restore();
@@ -2677,7 +2650,7 @@ export class Graphics {
         const frameTime = getMobAnimationFrameTime();
         const framesPerCycle = 30; // Must match preloading
         const animationCycleDuration = framesPerCycle * frameTime;
-        let currentTime = Date.now() % animationCycleDuration;
+        let currentTime = this.frameTimestamp % animationCycleDuration;
 
         // If enemy is chasing, play animation 2x faster
         if (enemy.isChasing && enemy.isHostile) {
@@ -2711,15 +2684,6 @@ export class Graphics {
                 // Debug: Log when WASM rendering is attempted
             } catch (error) {
                 console.error(`[Graphics] Error rendering enemy SVG with WASM for ${cacheKey}:`, error);
-            }
-        } else {
-            // Debug: Log why WASM renderer wasn't used
-            if (mobSVG && Math.random() < 0.01) {
-                if (!this.svgRenderer.isInitialized()) {
-                    console.log(`[Graphics] WASM renderer not initialized for ${cacheKey}`);
-                } else if (!mobSVG) {
-                    console.log(`[Graphics] No SVG found in cache for ${cacheKey}`);
-                }
             }
         }
         
@@ -2765,10 +2729,6 @@ export class Graphics {
                 this.ctx.fill();
                 this.ctx.stroke();
                 
-                // Debug: Log when fallback circle is drawn
-                if (Math.random() < 0.1) { // 10% chance
-                    console.log(`[Graphics] Drew fallback circle for enemy at (${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)})`);
-                }
             }
             
             // No async loading - mobs use canvas rendering via svgRenderer (no data URLs)
@@ -2786,38 +2746,13 @@ export class Graphics {
             this.ctx.stroke();
         }
         
-        // Apply red tint overlay for death animation (after enemy is drawn, preserves alpha exactly)
+        // Apply red tint overlay for death animation using composite operations
         if (isDying) {
-            // Save current state before applying red tint
-            this.ctx.save();
-            
-            // Get the current pixel data to preserve alpha channel exactly
-            const imageData = this.ctx.getImageData(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
-            const data = imageData.data;
-            const tintIntensity = 0.15 + (deathProgress * 0.15); // 0.15 to 0.3
-            
-            // Only modify RGB channels of non-transparent pixels (alpha > 0)
-            for (let i = 0; i < data.length; i += 4) {
-                const alpha = data[i + 3];
-                if (alpha > 0) {
-                    // Only tint pixels that have alpha > 0
-                    // Add red tint by increasing red channel and slightly decreasing green/blue
-                    const red = data[i];
-                    const green = data[i + 1];
-                    const blue = data[i + 2];
-                    
-                    // Apply subtle red tint: increase red slightly, decrease green/blue slightly
-                    data[i] = Math.min(255, red + (tintIntensity * 20)); // Increase red
-                    data[i + 1] = Math.max(0, green - (tintIntensity * 10)); // Decrease green
-                    data[i + 2] = Math.max(0, blue - (tintIntensity * 10)); // Decrease blue
-                    // Alpha channel (data[i + 3]) is left unchanged
-                }
-            }
-            
-            // Put the modified image data back (alpha channel preserved)
-            this.ctx.putImageData(imageData, -enemySize / 2, -enemySize / 2);
-            
-            this.ctx.restore(); // This restores both composite operation and alpha
+            const tintIntensity = 0.15 + (deathProgress * 0.15);
+            this.ctx.globalCompositeOperation = 'source-atop';
+            this.ctx.fillStyle = `rgba(255, 0, 0, ${tintIntensity})`;
+            this.ctx.fillRect(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
+            this.ctx.globalCompositeOperation = 'source-over';
         }
 
         this.ctx.restore();
@@ -2832,19 +2767,27 @@ export class Graphics {
     /**
      * Draw a garbage mob as a pile of random petals
      */
+    private cachedEligiblePetalTypes: string[] | null = null;
+
+    private getEligiblePetalTypes(): string[] {
+        if (!this.cachedEligiblePetalTypes) {
+            const allPetalTypes = getAllPetalTypes();
+            this.cachedEligiblePetalTypes = allPetalTypes.filter(petalType => {
+                const stats = getPetalStats(petalType, 'common');
+                return stats && !stats.isAdminPetal && petalType !== 'cutter' && petalType !== 'lightning_cutter';
+            });
+        }
+        return this.cachedEligiblePetalTypes;
+    }
+
     private drawGarbagePile(enemy: Enemy, enemySize: number) {
         // Get base size for hitbox calculation
         const mobStats = getMobStats(enemy.type, enemy.tier);
         const baseSize = mobStats ? mobStats.size * 40 : 40;
-        
+
         // Use enemy position as seed for deterministic random petal selection
         const seed = Math.floor(enemy.x * 1000 + enemy.y * 1000);
-        const allPetalTypes = getAllPetalTypes();
-        // Filter out admin petals and cutter types
-        const eligiblePetalTypes = allPetalTypes.filter(petalType => {
-            const stats = getPetalStats(petalType, 'common');
-            return stats && !stats.isAdminPetal && petalType !== 'cutter' && petalType !== 'lightning_cutter';
-        });
+        const eligiblePetalTypes = this.getEligiblePetalTypes();
         const numPetals = 5 + Math.floor((seed % 5)); // 5-9 petals
         
         // Disable anti-aliasing for pixelated look
@@ -2883,7 +2826,7 @@ export class Graphics {
             const petalBaseSize = baseSize * (0.6 + (petalSeed % 200) / 1000); // 60-80% of hitbox
             const size = petalBaseSize * stats.size;
             const petalKey = `${petalType}_${rarity}`;
-            const petalCanvas = this.getPetalCanvas(petalKey, Date.now());
+            const petalCanvas = this.getPetalCanvas(petalKey, this.frameTimestamp);
             
             if (petalCanvas) {
                 this.ctx.drawImage(petalCanvas, -size / 2, -size / 2, size, size);
@@ -3071,7 +3014,7 @@ export class Graphics {
         // Draw petal using cached image
         const size = 12 * stats.size;
         const petalKey = `${item.petalType}_${item.rarity}`;
-        const petalCanvas = this.getPetalCanvas(petalKey, Date.now());
+        const petalCanvas = this.getPetalCanvas(petalKey, this.frameTimestamp);
         
         if (petalCanvas) {
             // Use consistent scaling to maintain aspect ratio
@@ -4008,6 +3951,9 @@ export class Graphics {
     }
 
     public render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0) {
+        // Cache timestamp for this frame to avoid Date.now() per enemy
+        this.frameTimestamp = Date.now();
+
         // Update section-based texture loading based on player position
         const currentPlayer = players.get(currentPlayerId);
         if (currentPlayer) {

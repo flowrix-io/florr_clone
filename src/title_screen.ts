@@ -6,7 +6,7 @@
 import { PETAL_CONFIG, RARITY_LEVELS, PetalStats, getPetalStats, getAllPetalTypes } from './petals';
 import { ChangelogManager } from './changelog';
 import { NotificationsManager } from './notifications';
-import { WORLD_MAP } from './constants';
+import { WORLD_MAP, invalidateSettingsCache } from './constants';
 import { Item } from './item';
 import { Player, PlayerInventory } from './player';
 import { Chat } from './chat';
@@ -1194,6 +1194,7 @@ export class TitleScreen {
                 const framerate = parseInt(mobFramerateSlider.value, 10);
                 mobFramerateValue.textContent = framerate.toString();
                 localStorage.setItem('mobAnimationFramerate', framerate.toString());
+                invalidateSettingsCache();
             });
         }
 
@@ -1201,6 +1202,7 @@ export class TitleScreen {
         if (highQualityMobsCheckbox) {
             highQualityMobsCheckbox.addEventListener('change', () => {
                 localStorage.setItem('highQualityMobs', highQualityMobsCheckbox.checked.toString());
+                invalidateSettingsCache();
             });
         }
 

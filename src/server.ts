@@ -764,6 +764,7 @@ interface AuthenticatedSocket extends Socket {
     pingSamples?: number[];
     lastUpdateTime?: number;
     lastGameState?: any; // For delta compression
+    lastStateHash?: number; // Lightweight hash for skip-if-unchanged
 }
 
 // Skill multipliers based on rarity tier
@@ -797,9 +798,9 @@ const RARITY_TP_COSTS: Record<string, number> = {
 export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: string): void {
     addXPToPlayerModule(player, xp, socketId, ioInstance);
     
-    // Emit xpGained event
-    ioInstance.emit('xpGained', {
-                playerId: player.id,
+    // Emit xpGained event only to the affected player
+    ioInstance.to(player.id).emit('xpGained', {
+        playerId: player.id,
         xp: xp,
         totalXp: player.xp,
         level: player.level,
@@ -810,7 +811,7 @@ export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: strin
 
     // Save progress after XP gain if we have the socket ID
     if (socketId) {
-        const socket = Array.from(ioInstance.sockets.sockets.values()).find((s: any) => s.id === socketId) as AuthenticatedSocket;
+        const socket = ioInstance.sockets.sockets.get(socketId) as AuthenticatedSocket;
         if (socket?.userId) {
             savePlayerProgressModule(player, socket.userId, database);
         }
@@ -3868,23 +3869,18 @@ function start_loop() {
         };
 
         // Helper function for delta compression - only send changed data
-        const getDeltaUpdate = (current: any, previous: any, quality: 'good' | 'medium' | 'slow'): any => {
-            if (!previous) return current; // First update, send full state
-            
-            const delta: any = {};
-            
-            // For slow connections, send full state less frequently
-            if (quality === 'slow') {
-                // Only send delta every 2-3 ticks for slow connections
-                return current;
+        // Delta check: skip sending if state hasn't changed
+        // Use a lightweight hash instead of full JSON.stringify comparison
+        const getStateHash = (state: any): number => {
+            // Quick hash based on player/enemy count and positions
+            let hash = state.players.length * 31 + state.enemies.length * 17;
+            for (const p of state.players) {
+                hash = (hash * 31 + (p.x | 0) + (p.y | 0) * 7 + (p.health | 0)) | 0;
             }
-            
-            // For medium/good connections, send delta
-            if (JSON.stringify(current) !== JSON.stringify(previous)) {
-                return current;
+            for (const e of state.enemies) {
+                hash = (hash * 31 + (e.x | 0) + (e.y | 0) * 7 + (e.health | 0)) | 0;
             }
-            
-            return null; // No changes
+            return hash;
         };
 
         // Filter enemies to only send those in viewport with 200% buffer for optimization
@@ -3931,18 +3927,12 @@ function start_loop() {
                 timestamp: now
             };
             
-            // Apply delta compression for medium/good connections
-            if (quality !== 'slow') {
-                const delta = getDeltaUpdate(gameState, socket.lastGameState, quality);
-                if (delta === null) {
-                    // No changes, skip update
-                    continue;
-                }
-                socket.lastGameState = JSON.parse(JSON.stringify(gameState)); // Deep clone
-            } else {
-                // For slow connections, always send full state but less frequently
-                socket.lastGameState = JSON.parse(JSON.stringify(gameState));
+            // Skip sending if state hasn't changed (lightweight hash comparison)
+            const currentHash = getStateHash(gameState);
+            if (socket.lastStateHash === currentHash) {
+                continue; // No meaningful changes, skip update
             }
+            socket.lastStateHash = currentHash;
             
             socket.lastUpdateTime = now;
             io.to(playerId).emit('gameStateUpdate', gameState);

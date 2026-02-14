@@ -1059,12 +1059,14 @@ class TitleScreen {
                 const framerate = parseInt(mobFramerateSlider.value, 10);
                 mobFramerateValue.textContent = framerate.toString();
                 localStorage.setItem('mobAnimationFramerate', framerate.toString());
+                (0, constants_1.invalidateSettingsCache)();
             });
         }
         const highQualityMobsCheckbox = this.settingsMenu.querySelector('#highQualityMobs');
         if (highQualityMobsCheckbox) {
             highQualityMobsCheckbox.addEventListener('change', () => {
                 localStorage.setItem('highQualityMobs', highQualityMobsCheckbox.checked.toString());
+                (0, constants_1.invalidateSettingsCache)();
             });
         }
         const dynamicSkyboxCheckbox = this.settingsMenu.querySelector('#dynamicSkyboxCheckbox');
