@@ -3585,6 +3585,7 @@ export class Graphics {
         this.ctx.strokeText(sectionName, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
         this.ctx.fillStyle = 'white';
         this.ctx.fillText(sectionName, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
+        this.ctx.textAlign = 'left';
     }
 
     private drawScrollingBackground() {
