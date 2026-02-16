@@ -65,6 +65,9 @@ interface PetalPhysicsState {
 // Map to store petal physics state (keyed by petalId)
 const petalPhysicsStates = new Map<string, PetalPhysicsState>();
 
+// Map to track last damage time for petals with damageCooldown (keyed by petalId)
+const petalLastDamageTime = new Map<string, number>();
+
 // Physics constants
 const ATTRACTION_FORCE = 200; // Attraction force towards mobs (pixels per second^2) - increased from 150
 const SPRING_FORCE = 400; // Spring force back to orbit position (pixels per second^2) - reduced from 300
@@ -78,12 +81,15 @@ const SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after sp
  */
 export function cleanupPetalPhysicsStates(playerId: string): void {
     const keysToDelete: string[] = [];
-    petalPhysicsStates.forEach((value, key) => {
+    petalPhysicsStates.forEach((_value, key) => {
         if (key.startsWith(playerId)) {
             keysToDelete.push(key);
         }
     });
-    keysToDelete.forEach(key => petalPhysicsStates.delete(key));
+    keysToDelete.forEach(key => {
+        petalPhysicsStates.delete(key);
+        petalLastDamageTime.delete(key);
+    });
 }
 
 // Interface for player state dependencies
@@ -951,10 +957,19 @@ export function updatePlayerState(
                 const minDistance = enemyRadius + petalRadius;
 
                 if (distance < minDistance && distance > 0) {
+                    // Check if petal has a damage cooldown and is still on cooldown
+                    const damageCooldownKey = `${player.id}_${loadoutIndex}_${instanceIndex}`;
+                    if (petalStats.damageCooldown) {
+                        const lastDmgTime = petalLastDamageTime.get(damageCooldownKey) || 0;
+                        if (currentTime - lastDmgTime < petalStats.damageCooldown) {
+                            continue; // Skip damage, petal stays active
+                        }
+                    }
+
                     // Petal hits enemy - deal damage to both
                     const damageMultiplier = getDamageMultiplier(player);
                     const finalDamage = petalStats.damage * damageMultiplier;
-                    
+
                     // console.log('[Server] Petal collision detected', {
                     //     enemyId: enemy.id,
                     //     enemyType: enemy.type,
@@ -963,18 +978,24 @@ export function updatePlayerState(
                     //     playerId: player.id,
                     //     petalType: petal.petalType
                     // });
-                    
+
                     // Track damage dealt by this player (always track, even if enemy is dead)
                     trackDamage(enemy, player.id, finalDamage);
-                    
+
                     // Skip further processing if enemy is already dead (being processed)
                     if ((enemy as any).isDead) {
                         continue;
                     }
-                    
+
                     enemy.health = Math.max(0, enemy.health - finalDamage);
-                    const mobDamage = mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
-                    petal.health = Math.max(0, petal.health - mobDamage);
+
+                    // Petals with damageCooldown don't take damage from mobs (they can't break)
+                    if (petalStats.damageCooldown) {
+                        petalLastDamageTime.set(damageCooldownKey, currentTime);
+                    } else {
+                        const mobDamage = mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
+                        petal.health = Math.max(0, petal.health - mobDamage);
+                    }
 
                     // Apply poison effect if the petal has poison
                     if (petalStats.poison && petalStats.poison > 0 && petalStats.poisonDuration && petalStats.poisonDuration > 0) {

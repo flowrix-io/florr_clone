@@ -46,6 +46,7 @@ export interface PetalStats {
     fixedDirection?: number; // Fixed angle (radians) the petal visual faces in orbit, instead of spinning around its own center
     visualOffsetX?: number; // X shift for the petal visual relative to its center (pixels, default: 0)
     visualOffsetY?: number; // Y shift for the petal visual relative to its center (pixels, default: 0)
+    damageCooldown?: number; // Time in ms between damage hits (petal stays active but can't deal damage during cooldown)
 }
 
 export interface PetalConfig {
@@ -127,6 +128,7 @@ interface BasePetalConfig {
     fixedDirection?: number; // Fixed angle (radians) the petal visual faces in orbit, instead of spinning around its own center
     visualOffsetX?: number; // X shift for the petal visual relative to its center (pixels, default: 0)
     visualOffsetY?: number; // Y shift for the petal visual relative to its center (pixels, default: 0)
+    damageCooldown?: number; // Time in ms between damage hits (petal stays active but can't deal damage during cooldown)
 }
 
 // Special rarity overrides for specific petals
@@ -156,6 +158,7 @@ interface RarityOverride {
     fixedDirection?: number;
     visualOffsetX?: number;
     visualOffsetY?: number;
+    damageCooldown?: number;
 }
 
 // Rarity-specific overrides for special cases
@@ -1474,6 +1477,29 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 <ellipse cx="16" cy="14" rx="8" ry="10" fill="#FFF8DC"/>
 </svg>`,
         isAdminPetal: true
+    },
+    glass: {
+        name: "Glass Petal",
+        damage: 12,
+        health: Infinity,
+        size: 1.0,
+        cooldown: 1000,
+        description: "Fragile-looking but unbreakable. Hits hard but needs time between strikes",
+        color: "#B0E0E6",
+        knockback: 0,
+        count: 1,
+        damageCooldown: 1000,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="glass_grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E0F7FA" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#B0E0E6" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#87CEEB" stop-opacity="0.5"/>
+    </linearGradient>
+  </defs>
+  <circle cx="16" cy="16" r="13" fill="url(#glass_grad)" stroke="#ADD8E6" stroke-width="1.5"/>
+  <ellipse cx="12" cy="12" rx="4" ry="3" fill="white" fill-opacity="0.5" transform="rotate(-30 12 12)"/>
+</svg>`
     }
 };
 
@@ -1730,6 +1756,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         fixedDirection: overrides.fixedDirection ?? baseConfig.fixedDirection,
         visualOffsetX: overrides.visualOffsetX ?? baseConfig.visualOffsetX,
         visualOffsetY: overrides.visualOffsetY ?? baseConfig.visualOffsetY,
+        damageCooldown: overrides.damageCooldown ?? baseConfig.damageCooldown,
     };
 }
 

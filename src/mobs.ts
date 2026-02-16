@@ -3010,9 +3010,9 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
             },
             {
                 type: 'petal',
-                itemType: 'basic',
-                rarity: 'uncommon',
-                probability: 0.1,
+                itemType: 'glass',
+                rarity: 'common',
+                probability: 0.8,
                 minQuantity: 1,
                 maxQuantity: 1
             },
