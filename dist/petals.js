@@ -1126,11 +1126,11 @@ const BASE_PETAL_CONFIGS = {
     third_eye: {
         name: "Third Eye Petal",
         damage: 0,
-        health: 100,
+        health: Infinity,
         size: 1.0,
         speed: 0.0,
         range: 0.0,
-        cooldown: 5000,
+        cooldown: 1,
         fixedDirection: 0,
         visualOffsetY: -15,
         description: "Increases your petal range",
