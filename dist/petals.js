@@ -1349,16 +1349,15 @@ const BASE_PETAL_CONFIGS = {
         knockback: 0,
         count: 1,
         damageCooldown: 1000,
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <defs>
-    <linearGradient id="glass_grad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#E0F7FA" stop-opacity="0.9"/>
-      <stop offset="50%" stop-color="#B0E0E6" stop-opacity="0.7"/>
-      <stop offset="100%" stop-color="#87CEEB" stop-opacity="0.5"/>
-    </linearGradient>
-  </defs>
-  <circle cx="16" cy="16" r="13" fill="url(#glass_grad)" stroke="#ADD8E6" stroke-width="1.5"/>
-  <ellipse cx="12" cy="12" rx="4" ry="3" fill="white" fill-opacity="0.5" transform="rotate(-30 12 12)"/>
+        image: `<svg width="20" height="20" viewBox="-10 -10 20 20" xmlns="http://www.w3.org/2000/svg">
+  <path
+    d="M 7 0 L 3.5 6.062 L -3.5 6.062 L -7 0 L -3.5 -6.062 L 3.5 -6.062 Z"
+    fill="rgba(255, 255, 255, 0.25)"
+    stroke="rgba(255, 255, 255, 0.75)"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>`
     }
 };
