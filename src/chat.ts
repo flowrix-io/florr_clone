@@ -11,10 +11,43 @@ interface SandboxWindow extends Window {
     eval?: (code: string) => any;
 }
 
+interface CommandDefinition {
+    command: string;
+    description: string;
+    isAdmin: boolean;
+}
+
+const COMMANDS: CommandDefinition[] = [
+    { command: '/help', description: 'Show available commands', isAdmin: false },
+    { command: '/list_ultra', description: 'List all ultra mobs', isAdmin: false },
+    { command: '/list_super', description: 'List all super mobs', isAdmin: false },
+    { command: '/list_unique', description: 'List all unique mobs', isAdmin: false },
+    { command: '/admin save', description: 'Save player progress', isAdmin: true },
+    { command: '/admin list-players', description: 'List online players', isAdmin: true },
+    { command: '/admin list-sockets', description: 'List connected sockets', isAdmin: true },
+    { command: '/admin set_max_enemies', description: 'Set max enemy count', isAdmin: true },
+    { command: '/admin spawn_special_mobs', description: 'Spawn special mobs', isAdmin: true },
+    { command: '/admin spawn', description: 'Spawn a mob', isAdmin: true },
+    { command: '/admin teleport', description: 'Teleport a player', isAdmin: true },
+    { command: '/admin tp', description: 'Teleport a player (shorthand)', isAdmin: true },
+    { command: '/admin generate_code', description: 'Generate a star code', isAdmin: true },
+    { command: '/admin gen_code', description: 'Generate a star code (shorthand)', isAdmin: true },
+    { command: '/admin list_codes', description: 'List all generated codes', isAdmin: true },
+    { command: '/admin delete_code', description: 'Delete a code', isAdmin: true },
+    { command: '/admin notification', description: 'Create a notification', isAdmin: true },
+    { command: '/admin notify', description: 'Create a notification (shorthand)', isAdmin: true },
+    { command: '/admin clear_notifications', description: 'Clear all notifications', isAdmin: true },
+    { command: '/admin clear_notifs', description: 'Clear notifications (shorthand)', isAdmin: true },
+    { command: '/admin give', description: 'Give item to a player', isAdmin: true },
+    { command: '/cmd', description: 'Execute server command (alias)', isAdmin: true },
+];
+
 export class Chat {
     public chatContainer: HTMLDivElement | null = null;
     public chatInput: HTMLInputElement | null = null;
     private chatMessages: HTMLDivElement | null = null;
+    private suggestionsContainer: HTMLDivElement | null = null;
+    private selectedSuggestionIndex: number = -1;
     private isChatFocused: boolean = false;
     private pendingScripts: Map<string, SandboxedScript> = new Map();
     private socket: Socket;
@@ -96,7 +129,14 @@ export class Chat {
           display: flex;
           flex-direction: column;
           z-index: 200;
-          font-family: Ubuntu, sans-serif;
+          font-family: 'Ubuntu', sans-serif;
+          font-weight: 700;
+          text-shadow:
+              -1px -1px 0 #000,
+              1px -1px 0 #000,
+              -1px 1px 0 #000,
+              1px 1px 0 #000,
+              0 0 3px rgba(0,0,0,0.8);
       `;
 
         // Create messages container with transparent background
@@ -107,10 +147,8 @@ export class Chat {
           overflow-y: auto;
           padding: 5px;
           color: white;
-          text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
           background: transparent;
           z-index: 200;
-          font-family: Ubuntu, sans-serif;
       `;
 
         // Create input container
@@ -119,7 +157,6 @@ export class Chat {
         inputContainer.style.cssText = `
           padding: 5px;
           background: transparent;
-          font-family: Ubuntu, sans-serif;
           z-index: 200;
       `;
 
@@ -136,7 +173,7 @@ export class Chat {
           background: rgba(0, 0, 0, 0.3);
           color: white;
           outline: none;
-          font-family: Ubuntu, sans-serif;
+          font-family: inherit;
           z-index: 200;
       `;
 
@@ -151,31 +188,173 @@ export class Chat {
             this.isChatFocused = false;
             // Restore original transparency when blurred
             this.chatInput!.style.background = 'rgba(0, 0, 0, 0.3)';
+            // Hide suggestions after a short delay (allows click events to fire first)
+            setTimeout(() => this.hideSuggestions(), 150);
         });
 
-        // Send all messages to server (including /help for server-side handling)
-        this.chatInput.addEventListener('keypress', (e) => {
+        // Handle keyboard navigation for suggestions and sending messages
+        this.chatInput.addEventListener('keydown', (e) => {
+            const suggestions = this.suggestionsContainer?.querySelectorAll('.chat-suggestion-item');
+            if (suggestions && suggestions.length > 0 && this.suggestionsContainer?.style.display !== 'none') {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    this.selectedSuggestionIndex = Math.min(this.selectedSuggestionIndex + 1, suggestions.length - 1);
+                    this.highlightSuggestion(suggestions);
+                    return;
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    this.selectedSuggestionIndex = Math.max(this.selectedSuggestionIndex - 1, 0);
+                    this.highlightSuggestion(suggestions);
+                    return;
+                } else if (e.key === 'Tab' || (e.key === 'Enter' && this.selectedSuggestionIndex >= 0)) {
+                    e.preventDefault();
+                    const selected = suggestions[this.selectedSuggestionIndex] as HTMLElement;
+                    if (selected) {
+                        const cmd = selected.getAttribute('data-command') || '';
+                        this.chatInput!.value = cmd + ' ';
+                        this.hideSuggestions();
+                    }
+                    return;
+                } else if (e.key === 'Escape') {
+                    this.hideSuggestions();
+                    return;
+                }
+            }
+
             if (e.key === 'Enter' && this.chatInput?.value.trim()) {
                 // Check if socket is authenticated (username is set during authentication)
                 if (!(this.socket as any).username) {
                     console.warn('[CHAT] Socket not authenticated yet, message will be sent when authenticated');
-                    // Store message to send later if needed, or just show error
                     alert('Please wait for authentication to complete');
                     return;
                 }
                 // Send the chat message to the server
                 this.socket.emit('chatMessage', this.chatInput.value.trim());
                 this.chatInput.value = '';
+                this.hideSuggestions();
             }
         });
 
+        // Show command suggestions as user types
+        this.chatInput.addEventListener('input', () => {
+            const value = this.chatInput?.value || '';
+            if (value.startsWith('/')) {
+                const query = value.toLowerCase();
+                const matches = COMMANDS.filter(cmd => cmd.command.toLowerCase().startsWith(query));
+                if (matches.length > 0 && value !== '') {
+                    this.showSuggestions(matches);
+                } else {
+                    this.hideSuggestions();
+                }
+            } else {
+                this.hideSuggestions();
+            }
+        });
+
+        // Create suggestions container (replaces chat messages when visible)
+        this.suggestionsContainer = document.createElement('div');
+        this.suggestionsContainer.className = 'chat-suggestions';
+        this.suggestionsContainer.style.cssText = `
+          display: none;
+          flex-grow: 1;
+          overflow-y: auto;
+          padding: 5px;
+          font-size: 13px;
+          z-index: 201;
+      `;
+
         this.chatContainer.appendChild(this.chatMessages);
+        this.chatContainer.appendChild(this.suggestionsContainer);
         inputContainer.appendChild(this.chatInput);
         this.chatContainer.appendChild(inputContainer);
         document.body.appendChild(this.chatContainer);
 
         // Request chat history
         this.socket.emit('requestChatHistory');
+    }
+
+    private showSuggestions(matches: CommandDefinition[]) {
+        if (!this.suggestionsContainer) return;
+        this.suggestionsContainer.innerHTML = '';
+        this.selectedSuggestionIndex = 0;
+
+        // Hide chat messages, show suggestions in their place
+        if (this.chatMessages) this.chatMessages.style.display = 'none';
+        this.suggestionsContainer.style.display = 'block';
+
+        matches.forEach((cmd, index) => {
+            const item = document.createElement('div');
+            item.className = 'chat-suggestion-item';
+            item.setAttribute('data-command', cmd.command);
+            item.style.cssText = `
+              padding: 4px 8px;
+              cursor: pointer;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              color: white;
+          `;
+
+            if (cmd.isAdmin) {
+                const adminTag = document.createElement('span');
+                adminTag.textContent = '[ADMIN]';
+                adminTag.style.cssText = `
+                  color: #ff4444;
+                  font-weight: bold;
+                  font-size: 11px;
+                  flex-shrink: 0;
+              `;
+                item.appendChild(adminTag);
+            }
+
+            const cmdText = document.createElement('span');
+            cmdText.textContent = cmd.command;
+            cmdText.style.cssText = `color: #aaddff; flex-shrink: 0;`;
+            item.appendChild(cmdText);
+
+            const descText = document.createElement('span');
+            descText.textContent = `- ${cmd.description}`;
+            descText.style.cssText = `color: rgba(255,255,255,0.5); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`;
+            item.appendChild(descText);
+
+            item.addEventListener('mouseenter', () => {
+                this.selectedSuggestionIndex = index;
+                this.highlightSuggestion(this.suggestionsContainer!.querySelectorAll('.chat-suggestion-item'));
+            });
+
+            item.addEventListener('click', () => {
+                if (this.chatInput) {
+                    this.chatInput.value = cmd.command + ' ';
+                    this.chatInput.focus();
+                    this.hideSuggestions();
+                }
+            });
+
+            this.suggestionsContainer!.appendChild(item);
+        });
+
+        this.highlightSuggestion(this.suggestionsContainer.querySelectorAll('.chat-suggestion-item'));
+    }
+
+    private hideSuggestions() {
+        if (!this.suggestionsContainer) return;
+        this.suggestionsContainer.style.display = 'none';
+        this.suggestionsContainer.innerHTML = '';
+        this.selectedSuggestionIndex = -1;
+        // Restore chat messages
+        if (this.chatMessages) this.chatMessages.style.display = 'block';
+    }
+
+    private highlightSuggestion(items: NodeListOf<Element>) {
+        items.forEach((item, i) => {
+            (item as HTMLElement).style.background = i === this.selectedSuggestionIndex
+                ? 'rgba(255, 255, 255, 0.15)'
+                : 'transparent';
+        });
+        // Scroll selected item into view
+        if (this.selectedSuggestionIndex >= 0 && items[this.selectedSuggestionIndex]) {
+            (items[this.selectedSuggestionIndex] as HTMLElement).scrollIntoView({ block: 'nearest' });
+        }
     }
 
     private sanitizeHTML(str: string): string {
@@ -285,7 +464,8 @@ export class Chat {
           border: 1px solid orange;
           color: white;
           z-index: 2000;
-          font-family: Ubuntu, sans-serif;
+          font-family: 'Ubuntu', sans-serif;
+          font-weight: 700;
           max-width: 80%;
       `;
 
@@ -414,7 +594,6 @@ export class Chat {
           margin: 2px 0;
           font-size: 14px;
           word-wrap: break-word;
-          font-family: Ubuntu, sans-serif;
       `;
 
         const time = new Date(message.timestamp).toLocaleTimeString();
