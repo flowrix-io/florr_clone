@@ -171,6 +171,15 @@ export const CHANGELOG: ChangelogEntry[] = [
             '˜ªº˜˚¬ˆçß••',
             'New petal: ∆å√åßç®ˆπ†'
         ]
+    },
+    {
+        date: 'February 16, 2026',
+        changes: [
+            'New petal: Glass',
+            'New petal: Third Eye',
+            'New petal: Corn',
+            'Commands are now suggested in the chat',
+        ]
     }
 ];
 

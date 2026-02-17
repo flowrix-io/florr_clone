@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 181808786,
+      "totalXP": 181809056,
       "inventory": {
         "common": {
           "shield": 211,
@@ -411,7 +411,7 @@
           "petal_lightning_cutter": 5,
           "petal_wing": 61,
           "petal_dandelion": 27,
-          "petal_square": 4,
+          "petal_square": 5,
           "petal_sparkle": 2,
           "petal_poison_cactus": 1,
           "petal_cactus": 2,
@@ -453,7 +453,7 @@
           "petal_dust_egg": 4,
           "petal_osaka_egg": 2,
           "petal_starfish": 3,
-          "petal_target_dummy_egg": 2,
+          "petal_target_dummy_egg": 3,
           "petal_glass": 2
         },
         "ultra": {
@@ -692,7 +692,7 @@
           "uncommon": 9,
           "rare": 11,
           "unique": 6,
-          "epic": 7
+          "epic": 8
         },
         "shiny_ladybug": {
           "super": 1,
