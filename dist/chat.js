@@ -34,6 +34,7 @@ class Chat {
         this.selectedSuggestionIndex = -1;
         this.isChatFocused = false;
         this.pendingScripts = new Map();
+        this.pendingIframes = new Map();
         this.socket = socket;
         this.initialize();
         this.setupSocketListeners();
@@ -313,7 +314,7 @@ class Chat {
     }
     sanitizeHTML(str) {
         // Add 'script' to allowed tags
-        const allowedTags = new Set(['b', 'i', 'u', 'strong', 'em', 'span', 'color', 'blink', 'script']);
+        const allowedTags = new Set(['b', 'i', 'u', 'strong', 'em', 'span', 'color', 'blink', 'script', 'a', 'iframe']);
         const allowedAttributes = new Set(['style', 'color']);
         // Create a temporary div to parse HTML
         const temp = document.createElement('div');
@@ -349,6 +350,55 @@ class Chat {
                     warningBtn.textContent = '⚠️ Click to run script';
                     // Replace the script node with our warning button
                     node.parentNode?.replaceChild(warningBtn, node);
+                    return;
+                }
+                if (tagName === 'iframe') {
+                    const iframeId = 'iframe_' + Math.random().toString(36).substr(2, 9);
+                    const src = element.getAttribute('src') || '';
+                    this.pendingIframes.set(iframeId, {
+                        id: iframeId,
+                        src: src,
+                        width: element.getAttribute('width') || '280',
+                        height: element.getAttribute('height') || '160',
+                        sender: 'Unknown'
+                    });
+                    const embedBtn = document.createElement('button');
+                    embedBtn.className = 'iframe-warning';
+                    embedBtn.setAttribute('data-iframe-id', iframeId);
+                    embedBtn.style.cssText = `
+                      background: rgba(100, 149, 237, 0.2);
+                      border: 1px solid cornflowerblue;
+                      color: white;
+                      padding: 2px 5px;
+                      border-radius: 3px;
+                      cursor: pointer;
+                      font-size: 12px;
+                      margin: 0 5px;
+                      font-family: inherit;
+                  `;
+                    embedBtn.textContent = '🔗 Click to show embed';
+                    node.parentNode?.replaceChild(embedBtn, node);
+                    return;
+                }
+                if (tagName === 'a') {
+                    // Keep the link but force safe attributes
+                    const href = element.getAttribute('href') || '';
+                    // Strip all attributes first
+                    Array.from(element.attributes).forEach(attr => {
+                        element.removeAttribute(attr.name);
+                    });
+                    // Only allow http/https links
+                    if (href.startsWith('http://') || href.startsWith('https://')) {
+                        element.setAttribute('href', href);
+                    }
+                    else {
+                        element.removeAttribute('href');
+                    }
+                    element.setAttribute('target', '_blank');
+                    element.setAttribute('rel', 'noopener noreferrer');
+                    element.setAttribute('style', 'color: #5bf; text-decoration: underline; cursor: pointer;');
+                    // Sanitize children
+                    Array.from(node.childNodes).forEach(sanitizeNode);
                     return;
                 }
                 // Remove node if tag is not allowed
@@ -515,6 +565,72 @@ class Chat {
             }
         };
     }
+    showIframeEmbed(iframeData, button) {
+        // Replace the button with the actual iframe
+        const container = document.createElement('div');
+        container.style.cssText = `
+          margin: 4px 0;
+          border: 1px solid rgba(100, 149, 237, 0.5);
+          border-radius: 3px;
+          overflow: hidden;
+          max-width: 100%;
+      `;
+        const iframe = document.createElement('iframe');
+        iframe.src = iframeData.src;
+        iframe.width = iframeData.width;
+        iframe.height = iframeData.height;
+        iframe.style.cssText = `
+          display: block;
+          max-width: 100%;
+          border: none;
+      `;
+        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+        // Add a close button above the iframe
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕ Hide embed';
+        closeBtn.style.cssText = `
+          background: rgba(100, 149, 237, 0.3);
+          border: none;
+          border-bottom: 1px solid rgba(100, 149, 237, 0.5);
+          color: white;
+          padding: 2px 6px;
+          cursor: pointer;
+          font-size: 11px;
+          font-family: inherit;
+          width: 100%;
+          text-align: left;
+      `;
+        closeBtn.addEventListener('click', () => {
+            // Replace the container back with a button
+            const newBtn = document.createElement('button');
+            newBtn.className = 'iframe-warning';
+            newBtn.setAttribute('data-iframe-id', iframeData.id);
+            newBtn.style.cssText = `
+              background: rgba(100, 149, 237, 0.2);
+              border: 1px solid cornflowerblue;
+              color: white;
+              padding: 2px 5px;
+              border-radius: 3px;
+              cursor: pointer;
+              font-size: 12px;
+              margin: 0 5px;
+              font-family: inherit;
+          `;
+            newBtn.textContent = '🔗 Click to show embed';
+            this.pendingIframes.set(iframeData.id, iframeData);
+            newBtn.addEventListener('click', () => {
+                const data = this.pendingIframes.get(iframeData.id);
+                if (data) {
+                    this.showIframeEmbed(data, newBtn);
+                    this.pendingIframes.delete(iframeData.id);
+                }
+            });
+            container.parentNode?.replaceChild(newBtn, container);
+        });
+        container.appendChild(closeBtn);
+        container.appendChild(iframe);
+        button.parentNode?.replaceChild(container, button);
+    }
     addChatMessage(message) {
         if (!this.chatMessages)
             return;
@@ -526,10 +642,13 @@ class Chat {
           word-wrap: break-word;
       `;
         const time = new Date(message.timestamp).toLocaleTimeString();
-        // Update pending scripts with sender information
+        // Update pending scripts/iframes with sender information
         const sanitizedContent = this.sanitizeHTML(message.content);
         this.pendingScripts.forEach(script => {
             script.sender = message.sender;
+        });
+        this.pendingIframes.forEach(iframe => {
+            iframe.sender = message.sender;
         });
         messageElement.innerHTML = `
           <span class="chat-time" style="color: rgba(255, 255, 255, 0.6);">[${time}]</span>
@@ -545,6 +664,19 @@ class Chat {
                     if (script) {
                         this.createSandbox(script);
                         this.pendingScripts.delete(scriptId);
+                    }
+                }
+            });
+        });
+        // Add click handlers for iframe buttons
+        messageElement.querySelectorAll('.iframe-warning').forEach(button => {
+            button.addEventListener('click', () => {
+                const iframeId = button.getAttribute('data-iframe-id');
+                if (iframeId) {
+                    const iframeData = this.pendingIframes.get(iframeId);
+                    if (iframeData) {
+                        this.showIframeEmbed(iframeData, button);
+                        this.pendingIframes.delete(iframeId);
                     }
                 }
             });

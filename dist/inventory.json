@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 181779626,
+      "totalXP": 181808786,
       "inventory": {
         "common": {
           "shield": 211,
@@ -687,8 +687,8 @@
           "legendary": 3,
           "common": 7,
           "mythic": 14,
-          "ultra": 36,
-          "super": 43,
+          "ultra": 37,
+          "super": 44,
           "uncommon": 9,
           "rare": 11,
           "unique": 6,
@@ -900,7 +900,7 @@
           "ultra": 5
         }
       },
-      "stars": 121358
+      "stars": 121388
     },
     "1g99g1gfk": {
       "totalXP": 93,
