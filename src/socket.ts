@@ -87,7 +87,10 @@ function setupSocketListeners(game: any) {
     game.socket.on('connect', () => {
         const connectTime = performance.now();
         console.log(`[CLIENT] Socket connected with ID ${game.socket.id} at ${connectTime.toFixed(0)}`);
-        
+
+        // Hide disconnect message on reconnect
+        game.hideDisconnectMessage();
+
         // Handle cross-server transfer claim if pending
         if (game.pendingTransfer) {
             console.log(`[CLIENT] Connected to new server, claiming transferred player`);
@@ -170,17 +173,21 @@ function setupSocketListeners(game: any) {
                 console.error('[CLIENT] Error claiming transferred player:', error);
                 game.showTransferMessage('Transfer failed. Please try again.');
             });
+        } else if (game._hasConnected) {
+            // Reconnection after disconnect (e.g. server restart/build update)
+            // Reload the page to get fresh client code and clean state
+            console.log('[CLIENT] Reconnected after disconnect, reloading page...');
+            window.location.reload();
+            return;
         } else {
-            // Normal connection (not a transfer)
-            if (game.socket.id) {
-                game.socket.emit('chatMessage', `${game.players.get(game.socket.id)?.name} has joined the game`);
-            }
-            
-            // Update chat system to use new socket (for reconnections)
+            // Initial connection (authentication handled by game.authenticate())
+            // Update chat system to use new socket
             if (game.chat) {
                 game.chat.updateSocket(game.socket);
             }
         }
+
+        game._hasConnected = true;
 
         // Start heartbeat monitoring (clear any existing interval first)
         if (game.heartbeatInterval) {
@@ -417,9 +424,14 @@ function setupSocketListeners(game: any) {
             clearInterval(game.heartbeatInterval);
             game.heartbeatInterval = null;
         }
-        
+
         // Hide teleporter UI on disconnect to prevent UI from staying visible
         game.hideTeleporterUI();
+
+        // Show disconnect message (but not during intentional transfers)
+        if (!game.pendingTransfer) {
+            game.showDisconnectMessage();
+        }
     });
 
     game.socket.on('pong', (serverTime: number) => {

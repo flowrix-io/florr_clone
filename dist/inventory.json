@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 181809056,
+      "totalXP": 181809058,
       "inventory": {
         "common": {
           "shield": 211,
@@ -594,7 +594,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 200,
+          "common": 201,
           "legendary": 149,
           "uncommon": 59,
           "mythic": 114,
@@ -606,7 +606,7 @@
         "soldier_ant": {
           "epic": 92,
           "legendary": 262,
-          "common": 259,
+          "common": 260,
           "rare": 113,
           "mythic": 386,
           "ultra": 13,

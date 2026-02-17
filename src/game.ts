@@ -749,7 +749,7 @@ export class Game {
         const credentials = {
             username: localStorage.getItem('username') || 'player1',
             password: localStorage.getItem('password') || 'password123',
-            playerName: this.nameInput?.value || 'Unnamed',
+            playerName: this.nameInput?.value || localStorage.getItem('playerName') || 'Unnamed',
             spawnBiome: localStorage.getItem('spawnBiome') || 'default'
         };
 
@@ -1933,6 +1933,37 @@ export class Game {
     }
     public showSaveIndicator() {
         this.graphics.showFloatingText(this.canvas.width / 2, 0, 'Progress Saved', 'white', 20);
+    }
+
+    // UI methods for disconnect/reconnect
+    showDisconnectMessage() {
+        let disconnectDiv = document.getElementById('disconnect-message');
+        if (!disconnectDiv) {
+            disconnectDiv = document.createElement('div');
+            disconnectDiv.id = 'disconnect-message';
+            disconnectDiv.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                background: rgba(200, 30, 30, 0.85);
+                color: white;
+                padding: 10px;
+                font-size: 16px;
+                font-family: Ubuntu, sans-serif;
+                z-index: 1000;
+                text-align: center;
+            `;
+            document.body.appendChild(disconnectDiv);
+        }
+        disconnectDiv.textContent = 'Disconnected from server. Reconnecting...';
+    }
+
+    hideDisconnectMessage() {
+        const disconnectDiv = document.getElementById('disconnect-message');
+        if (disconnectDiv) {
+            disconnectDiv.remove();
+        }
     }
 
     // UI methods for cross-server transfer
