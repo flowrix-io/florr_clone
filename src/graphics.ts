@@ -1663,8 +1663,8 @@ export class Graphics {
         this.ctx.closePath();
         this.ctx.fill();
 
-        // Draw dark brown outline along the jagged polyline only
-        this.ctx.strokeStyle = '#8c5222';
+        // Draw dark brown outline matching wall dot color
+        this.ctx.strokeStyle = '#783f01';
         this.ctx.lineWidth = 3;
         this.ctx.lineJoin = 'round';
         this.ctx.beginPath();
@@ -1693,6 +1693,87 @@ export class Graphics {
             }
         }
 
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+
+    /**
+     * Draw a smooth curved edge protrusion on an exposed water tile edge.
+     * Uses quadratic bezier curves through the jagged points for a smooth water look.
+     */
+    private drawSmoothedEdge(
+        worldX: number, worldY: number,
+        edge: 'top' | 'bottom' | 'left' | 'right',
+        points: JaggedPoint[],
+        fillColor: string,
+        strokeColor: string
+    ): void {
+        if (points.length < 3) return;
+
+        this.ctx.save();
+        this.ctx.fillStyle = fillColor;
+
+        // Helper to get world coords from a JaggedPoint for each edge direction
+        const getXY = (pt: JaggedPoint): [number, number] => {
+            if (edge === 'top') return [worldX + pt.t, worldY - pt.offset];
+            if (edge === 'bottom') return [worldX + pt.t, worldY + WALL_TILE_SIZE + pt.offset];
+            if (edge === 'left') return [worldX - pt.offset, worldY + pt.t];
+            // right
+            return [worldX + WALL_TILE_SIZE + pt.offset, worldY + pt.t];
+        };
+
+        const getBase = (pt: JaggedPoint): [number, number] => {
+            if (edge === 'top') return [worldX + pt.t, worldY];
+            if (edge === 'bottom') return [worldX + pt.t, worldY + WALL_TILE_SIZE];
+            if (edge === 'left') return [worldX, worldY + pt.t];
+            // right
+            return [worldX + WALL_TILE_SIZE, worldY + pt.t];
+        };
+
+        // Draw filled region with smooth curves
+        this.ctx.beginPath();
+        const [startBaseX, startBaseY] = getBase(points[0]);
+        this.ctx.moveTo(startBaseX, startBaseY);
+
+        // Smooth curve through the jagged points using quadratic bezier
+        const [firstX, firstY] = getXY(points[0]);
+        this.ctx.lineTo(firstX, firstY);
+
+        for (let i = 1; i < points.length - 1; i++) {
+            const [px, py] = getXY(points[i]);
+            const [nx, ny] = getXY(points[i + 1]);
+            const cpx = px;
+            const cpy = py;
+            const endx = (px + nx) / 2;
+            const endy = (py + ny) / 2;
+            this.ctx.quadraticCurveTo(cpx, cpy, endx, endy);
+        }
+
+        const [lastX, lastY] = getXY(points[points.length - 1]);
+        this.ctx.lineTo(lastX, lastY);
+
+        const [endBaseX, endBaseY] = getBase(points[points.length - 1]);
+        this.ctx.lineTo(endBaseX, endBaseY);
+        this.ctx.closePath();
+        this.ctx.fill();
+
+        // Draw smooth outline along the curved edge only
+        this.ctx.strokeStyle = strokeColor;
+        this.ctx.lineWidth = 2;
+        this.ctx.lineJoin = 'round';
+        this.ctx.beginPath();
+
+        this.ctx.moveTo(firstX, firstY);
+
+        for (let i = 1; i < points.length - 1; i++) {
+            const [px, py] = getXY(points[i]);
+            const [nx, ny] = getXY(points[i + 1]);
+            const endx = (px + nx) / 2;
+            const endy = (py + ny) / 2;
+            this.ctx.quadraticCurveTo(px, py, endx, endy);
+        }
+
+        this.ctx.lineTo(lastX, lastY);
         this.ctx.stroke();
         this.ctx.restore();
     }
@@ -1820,6 +1901,15 @@ export class Graphics {
                     // Add a subtle water effect (optional: add animation later)
                     this.ctx.fillStyle = 'rgba(65, 105, 225, 0.3)';
                     this.ctx.fillRect(worldX, worldY, WALL_TILE_SIZE, WALL_TILE_SIZE);
+
+                    // Draw smooth curved edges on exposed sides
+                    const waterEdges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
+                    const waterFill = '#4169E1';
+                    const waterStroke = '#2a4fa0';
+                    if (waterEdges.top) this.drawSmoothedEdge(worldX, worldY, 'top', waterEdges.top, waterFill, waterStroke);
+                    if (waterEdges.bottom) this.drawSmoothedEdge(worldX, worldY, 'bottom', waterEdges.bottom, waterFill, waterStroke);
+                    if (waterEdges.left) this.drawSmoothedEdge(worldX, worldY, 'left', waterEdges.left, waterFill, waterStroke);
+                    if (waterEdges.right) this.drawSmoothedEdge(worldX, worldY, 'right', waterEdges.right, waterFill, waterStroke);
                 }
             }
         }

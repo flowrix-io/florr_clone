@@ -147,8 +147,8 @@ function checkTileCollision(worldX, worldY, halfSize) {
             let effectiveRight = tileWorldX + constants_1.WALL_TILE_SIZE;
             let effectiveTop = tileWorldY;
             let effectiveBottom = tileWorldY + constants_1.WALL_TILE_SIZE;
-            // For wall tiles (state=1), extend boundaries with jagged edges
-            if (state === 1) {
+            // For wall tiles (state=1) and water tiles (state=2), extend boundaries with jagged/curved edges
+            if (state === 1 || state === 2) {
                 const jaggedEdges = (0, constants_1.getTileJaggedEdges)(constants_1.WALL_GRID, tileX, tileY);
                 if (jaggedEdges.top) {
                     const minT = Math.max(0, entityLeft - tileWorldX);

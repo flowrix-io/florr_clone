@@ -195,8 +195,8 @@ function checkTileCollision(worldX: number, worldY: number, halfSize: number): T
             let effectiveTop = tileWorldY;
             let effectiveBottom = tileWorldY + WALL_TILE_SIZE;
 
-            // For wall tiles (state=1), extend boundaries with jagged edges
-            if (state === 1) {
+            // For wall tiles (state=1) and water tiles (state=2), extend boundaries with jagged/curved edges
+            if (state === 1 || state === 2) {
                 const jaggedEdges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
 
                 if (jaggedEdges.top) {
