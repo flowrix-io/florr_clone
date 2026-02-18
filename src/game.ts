@@ -66,7 +66,7 @@ export class Game {
     private readonly DOT_SIZE = 5;
     private readonly DOT_COUNT = 20;
     private readonly PLAYER_ACCELERATION = 0.5;  // Adjusted for smoother acceleration
-    private readonly MAX_SPEED = 90;            // Further increased speed for better responsiveness
+    private readonly MAX_SPEED = 120;            // Further increased speed for better responsiveness
     // private readonly FRICTION = 0.95;        // Removed sliding physics
     private cameraX = 0;
     private cameraY = 0;

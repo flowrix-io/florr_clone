@@ -22,7 +22,7 @@ class Game {
         this.DOT_SIZE = 5;
         this.DOT_COUNT = 20;
         this.PLAYER_ACCELERATION = 0.5; // Adjusted for smoother acceleration
-        this.MAX_SPEED = 90; // Further increased speed for better responsiveness
+        this.MAX_SPEED = 120; // Further increased speed for better responsiveness
         // private readonly FRICTION = 0.95;        // Removed sliding physics
         this.cameraX = 0;
         this.cameraY = 0;

@@ -121,7 +121,7 @@ exports.ENEMY_TIERS = {
 };
 exports.MAX_INVENTORY_SIZE = 5;
 exports.RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
-exports.MAX_SPEED = 135;
+exports.MAX_SPEED = 160;
 // Nonlinear mouse movement parameters
 exports.MOUSE_NONLINEAR_SCALE = 200; // Reference distance for nonlinear scaling (pixels)
 exports.MOUSE_NONLINEAR_EXPONENT = 0.6; // Power curve exponent (0.6 = slower for small distances, faster for large)
