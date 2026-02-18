@@ -123,68 +123,105 @@ function resolvePlayerWallCollision(playerX, playerY, playerSize, wallX, wallY, 
     return { x: playerX, y: playerY };
 }
 /**
- * Check if a position collides with a wall or water tile
+ * Check if a position collides with a wall or water tile, accounting for jagged edges
  */
 function checkTileCollision(worldX, worldY, halfSize) {
-    // Check all tiles that the entity overlaps with
-    const minTileX = (0, constants_1.worldToTileX)(worldX - halfSize);
-    const maxTileX = (0, constants_1.worldToTileX)(worldX + halfSize);
-    const minTileY = (0, constants_1.worldToTileY)(worldY - halfSize);
-    const maxTileY = (0, constants_1.worldToTileY)(worldY + halfSize);
+    // Expand search range by JAGGED_MAX_OFFSET to catch jagged protrusions
+    const minTileX = (0, constants_1.worldToTileX)(worldX - halfSize - constants_1.JAGGED_MAX_OFFSET);
+    const maxTileX = (0, constants_1.worldToTileX)(worldX + halfSize + constants_1.JAGGED_MAX_OFFSET);
+    const minTileY = (0, constants_1.worldToTileY)(worldY - halfSize - constants_1.JAGGED_MAX_OFFSET);
+    const maxTileY = (0, constants_1.worldToTileY)(worldY + halfSize + constants_1.JAGGED_MAX_OFFSET);
+    const entityLeft = worldX - halfSize;
+    const entityRight = worldX + halfSize;
+    const entityTop = worldY - halfSize;
+    const entityBottom = worldY + halfSize;
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
             const state = (0, constants_1.getTileState)(constants_1.WALL_GRID, (0, constants_1.tileToWorldX)(tileX), (0, constants_1.tileToWorldY)(tileY));
-            // State 1 (wall) or 2 (water) both have collision
-            if (state === 1 || state === 2) {
-                // Check if the entity actually overlaps with this tile
-                const tileWorldX = (0, constants_1.tileToWorldX)(tileX);
-                const tileWorldY = (0, constants_1.tileToWorldY)(tileY);
-                const tileRight = tileWorldX + constants_1.WALL_TILE_SIZE;
-                const tileBottom = tileWorldY + constants_1.WALL_TILE_SIZE;
-                if (worldX + halfSize > tileWorldX &&
-                    worldX - halfSize < tileRight &&
-                    worldY + halfSize > tileWorldY &&
-                    worldY - halfSize < tileBottom) {
-                    return { collided: true, tileX, tileY, state };
+            if (state !== 1 && state !== 2)
+                continue;
+            const tileWorldX = (0, constants_1.tileToWorldX)(tileX);
+            const tileWorldY = (0, constants_1.tileToWorldY)(tileY);
+            // Start with base tile boundaries
+            let effectiveLeft = tileWorldX;
+            let effectiveRight = tileWorldX + constants_1.WALL_TILE_SIZE;
+            let effectiveTop = tileWorldY;
+            let effectiveBottom = tileWorldY + constants_1.WALL_TILE_SIZE;
+            // For wall tiles (state=1), extend boundaries with jagged edges
+            if (state === 1) {
+                const jaggedEdges = (0, constants_1.getTileJaggedEdges)(constants_1.WALL_GRID, tileX, tileY);
+                if (jaggedEdges.top) {
+                    const minT = Math.max(0, entityLeft - tileWorldX);
+                    const maxT = Math.min(constants_1.WALL_TILE_SIZE, entityRight - tileWorldX);
+                    if (maxT > minT) {
+                        effectiveTop = tileWorldY - (0, constants_1.getMaxJaggedOffset)(jaggedEdges.top, minT, maxT);
+                    }
                 }
+                if (jaggedEdges.bottom) {
+                    const minT = Math.max(0, entityLeft - tileWorldX);
+                    const maxT = Math.min(constants_1.WALL_TILE_SIZE, entityRight - tileWorldX);
+                    if (maxT > minT) {
+                        effectiveBottom = tileWorldY + constants_1.WALL_TILE_SIZE + (0, constants_1.getMaxJaggedOffset)(jaggedEdges.bottom, minT, maxT);
+                    }
+                }
+                if (jaggedEdges.left) {
+                    const minT = Math.max(0, entityTop - tileWorldY);
+                    const maxT = Math.min(constants_1.WALL_TILE_SIZE, entityBottom - tileWorldY);
+                    if (maxT > minT) {
+                        effectiveLeft = tileWorldX - (0, constants_1.getMaxJaggedOffset)(jaggedEdges.left, minT, maxT);
+                    }
+                }
+                if (jaggedEdges.right) {
+                    const minT = Math.max(0, entityTop - tileWorldY);
+                    const maxT = Math.min(constants_1.WALL_TILE_SIZE, entityBottom - tileWorldY);
+                    if (maxT > minT) {
+                        effectiveRight = tileWorldX + constants_1.WALL_TILE_SIZE + (0, constants_1.getMaxJaggedOffset)(jaggedEdges.right, minT, maxT);
+                    }
+                }
+            }
+            // Check overlap with effective boundaries
+            if (entityRight > effectiveLeft &&
+                entityLeft < effectiveRight &&
+                entityBottom > effectiveTop &&
+                entityTop < effectiveBottom) {
+                return {
+                    collided: true, tileX, tileY, state,
+                    effectiveLeft, effectiveRight, effectiveTop, effectiveBottom
+                };
             }
         }
     }
     return null;
 }
 /**
- * Resolve collision with a tile by pushing entity away
+ * Resolve collision with a tile by pushing entity away from effective (jagged) boundaries
  */
-function resolveTileCollision(entityX, entityY, entityHalfSize, tileX, tileY) {
-    const tileWorldX = (0, constants_1.tileToWorldX)(tileX);
-    const tileWorldY = (0, constants_1.tileToWorldY)(tileY);
-    const tileRight = tileWorldX + constants_1.WALL_TILE_SIZE;
-    const tileBottom = tileWorldY + constants_1.WALL_TILE_SIZE;
+function resolveTileCollision(entityX, entityY, entityHalfSize, collision) {
     const entityLeft = entityX - entityHalfSize;
     const entityRight = entityX + entityHalfSize;
     const entityTop = entityY - entityHalfSize;
     const entityBottom = entityY + entityHalfSize;
-    // Calculate overlap amounts
-    const overlapLeft = entityRight - tileWorldX;
-    const overlapRight = tileRight - entityLeft;
-    const overlapTop = entityBottom - tileWorldY;
-    const overlapBottom = tileBottom - entityTop;
+    // Calculate overlap amounts against effective boundaries
+    const overlapLeft = entityRight - collision.effectiveLeft;
+    const overlapRight = collision.effectiveRight - entityLeft;
+    const overlapTop = entityBottom - collision.effectiveTop;
+    const overlapBottom = collision.effectiveBottom - entityTop;
     // Find the minimum overlap to determine push direction
     const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
     let newX = entityX;
     let newY = entityY;
     // Push entity away from tile in the direction of minimum overlap
     if (minOverlap === overlapLeft) {
-        newX = tileWorldX - entityHalfSize - COLLISION_BUFFER;
+        newX = collision.effectiveLeft - entityHalfSize - COLLISION_BUFFER;
     }
     else if (minOverlap === overlapRight) {
-        newX = tileRight + entityHalfSize + COLLISION_BUFFER;
+        newX = collision.effectiveRight + entityHalfSize + COLLISION_BUFFER;
     }
     else if (minOverlap === overlapTop) {
-        newY = tileWorldY - entityHalfSize - COLLISION_BUFFER;
+        newY = collision.effectiveTop - entityHalfSize - COLLISION_BUFFER;
     }
     else if (minOverlap === overlapBottom) {
-        newY = tileBottom + entityHalfSize + COLLISION_BUFFER;
+        newY = collision.effectiveBottom + entityHalfSize + COLLISION_BUFFER;
     }
     return { x: newX, y: newY };
 }
@@ -200,7 +237,7 @@ function checkPlayerWallCollisions(playerX, playerY, playerSize = constants_1.PL
     for (let i = 0; i < 4; i++) {
         const collision = checkTileCollision(newX, newY, halfSize);
         if (collision && collision.collided) {
-            const resolved = resolveTileCollision(newX, newY, halfSize, collision.tileX, collision.tileY);
+            const resolved = resolveTileCollision(newX, newY, halfSize, collision);
             newX = resolved.x;
             newY = resolved.y;
             collided = true;
@@ -222,7 +259,7 @@ function checkEnemyWallCollisions(enemy) {
     for (let i = 0; i < 4; i++) {
         const collision = checkTileCollision(enemy.x, enemy.y, halfSize);
         if (collision && collision.collided) {
-            const resolved = resolveTileCollision(enemy.x, enemy.y, halfSize, collision.tileX, collision.tileY);
+            const resolved = resolveTileCollision(enemy.x, enemy.y, halfSize, collision);
             enemy.x = resolved.x;
             enemy.y = resolved.y;
         }
@@ -241,7 +278,7 @@ function checkItemWallCollisions(item) {
     for (let i = 0; i < 4; i++) {
         const collision = checkTileCollision(item.x, item.y, halfSize);
         if (collision && collision.collided) {
-            const resolved = resolveTileCollision(item.x, item.y, halfSize, collision.tileX, collision.tileY);
+            const resolved = resolveTileCollision(item.x, item.y, halfSize, collision);
             item.x = resolved.x;
             item.y = resolved.y;
         }

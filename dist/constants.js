@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KNOCKBACK_FORCE = exports.MOUSE_NONLINEAR_EXPONENT = exports.MOUSE_NONLINEAR_SCALE = exports.MAX_SPEED = exports.RESPAWN_INVULNERABILITY_TIME = exports.MAX_INVENTORY_SIZE = exports.ENEMY_TIERS = exports.MAX_SAND_RADIUS = exports.MIN_SAND_RADIUS = exports.SAND_COUNT = exports.DECORATION_COUNT = exports.ENEMY_DAMAGE = exports.PLAYER_DAMAGE = exports.ENEMY_MAX_HEALTH = exports.PLAYER_MAX_HEALTH = exports.ENEMY_CORAL_DAMAGE = exports.ENEMY_CORAL_HEALTH = exports.ENEMY_CORAL_PROBABILITY = exports.OBSTACLE_COUNT = exports.SCALE_FACTOR = exports.PVP_WORLD_HEIGHT = exports.PVP_WORLD_WIDTH = exports.OLD_WORLD_HEIGHT = exports.OLD_WORLD_WIDTH = exports.ENEMIES_PER_VIEWPORT = exports.VIEWPORT_WITH_BUFFER_AREA = exports.ORIGINAL_ENEMY_DENSITY = exports.ORIGINAL_ENEMY_COUNT = exports.TOTAL_WORLD_AREA = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.enemies = exports.dots = exports.players = exports.VIEWPORT_AREA = exports.VIEWPORT_HEIGHT = exports.VIEWPORT_WIDTH = exports.ENEMY_DESPAWN_TIME = exports.VIEWPORT_BUFFER = exports.SERVER_PROTOCOL = exports.USE_HTTPS = exports.FISH_RETURN_SPEED = exports.FISH_DETECTION_RADIUS = void 0;
-exports.WALL_GRID = exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = exports.DEFAULT_SERVER_CONFIGS = exports.WORLD_MAP_FULL = exports.WORLD_MAP = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = exports.KNOCKBACK_RECOVERY_SPEED = void 0;
+exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = exports.DEFAULT_SERVER_CONFIGS = exports.WORLD_MAP_FULL = exports.WORLD_MAP = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = exports.KNOCKBACK_RECOVERY_SPEED = void 0;
 exports.getMobAnimationFramerate = getMobAnimationFramerate;
 exports.getMobAnimationFrameTime = getMobAnimationFrameTime;
 exports.getHighQualityMobs = getHighQualityMobs;
@@ -22,6 +22,11 @@ exports.getTileState = getTileState;
 exports.setTileState = setTileState;
 exports.collidesWithWallTile = collidesWithWallTile;
 exports.isInWater = isInWater;
+exports.seededRandom = seededRandom;
+exports.isTileEdgeExposed = isTileEdgeExposed;
+exports.generateJaggedEdgePoints = generateJaggedEdgePoints;
+exports.getTileJaggedEdges = getTileJaggedEdges;
+exports.getMaxJaggedOffset = getMaxJaggedOffset;
 // Add these constants at the top with the others
 exports.FISH_DETECTION_RADIUS = 500; // How far fish can detect players
 exports.FISH_RETURN_SPEED = 0.5; // Speed at which fish return to their normal behavior
@@ -43680,4 +43685,95 @@ function collidesWithWallTile(grid, worldX, worldY) {
 // Check if a point is in water
 function isInWater(grid, worldX, worldY) {
     return getTileState(grid, worldX, worldY) === 2;
+}
+// --- Jagged Edge System (shared between client and server) ---
+/** Deterministic seeded random number generator */
+function seededRandom(seed) {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+}
+exports.JAGGED_MAX_OFFSET = 20;
+exports.JAGGED_NUM_SEGMENTS = 7;
+const JAGGED_EDGE_CACHE = new Map();
+/** Check if a tile edge is exposed (adjacent tile is air) */
+function isTileEdgeExposed(grid, tileX, tileY, edge) {
+    let adjX = tileX, adjY = tileY;
+    if (edge === 'top')
+        adjY--;
+    else if (edge === 'bottom')
+        adjY++;
+    else if (edge === 'left')
+        adjX--;
+    else if (edge === 'right')
+        adjX++;
+    if (adjY < 0 || adjY >= grid.length || adjX < 0 || adjX >= (grid[0]?.length || 0)) {
+        return true; // Out of bounds = exposed
+    }
+    return grid[adjY][adjX] === 0;
+}
+/** Generate jagged edge points for one edge of a tile */
+function generateJaggedEdgePoints(tileX, tileY, edge) {
+    const edgeIndex = edge === 'top' ? 0 : edge === 'bottom' ? 1 : edge === 'left' ? 2 : 3;
+    const baseSeed = ((tileX * 73856093) ^ (tileY * 19349669)) + edgeIndex * 1000;
+    const points = [];
+    points.push({ t: 0, offset: 0 });
+    const segmentLength = exports.WALL_TILE_SIZE / (exports.JAGGED_NUM_SEGMENTS + 1);
+    for (let i = 1; i <= exports.JAGGED_NUM_SEGMENTS; i++) {
+        const seed = baseSeed + i;
+        const jitter = (seededRandom(seed) - 0.5) * segmentLength * 0.4;
+        const t = Math.max(1, Math.min(exports.WALL_TILE_SIZE - 1, i * segmentLength + jitter));
+        const offset = seededRandom(seed + 100) * exports.JAGGED_MAX_OFFSET;
+        points.push({ t, offset });
+    }
+    points.push({ t: exports.WALL_TILE_SIZE, offset: 0 });
+    points.sort((a, b) => a.t - b.t);
+    return points;
+}
+/** Get jagged edge data for a tile (cached) */
+function getTileJaggedEdges(grid, tileX, tileY) {
+    const key = `${tileX},${tileY}`;
+    const cached = JAGGED_EDGE_CACHE.get(key);
+    if (cached)
+        return cached;
+    const edges = {
+        top: isTileEdgeExposed(grid, tileX, tileY, 'top')
+            ? generateJaggedEdgePoints(tileX, tileY, 'top') : null,
+        bottom: isTileEdgeExposed(grid, tileX, tileY, 'bottom')
+            ? generateJaggedEdgePoints(tileX, tileY, 'bottom') : null,
+        left: isTileEdgeExposed(grid, tileX, tileY, 'left')
+            ? generateJaggedEdgePoints(tileX, tileY, 'left') : null,
+        right: isTileEdgeExposed(grid, tileX, tileY, 'right')
+            ? generateJaggedEdgePoints(tileX, tileY, 'right') : null,
+    };
+    JAGGED_EDGE_CACHE.set(key, edges);
+    return edges;
+}
+/** Get the maximum jagged protrusion within a range [minT, maxT] on an edge */
+function getMaxJaggedOffset(points, minT, maxT) {
+    let maxOffset = 0;
+    for (const pt of points) {
+        if (pt.t >= minT && pt.t <= maxT) {
+            if (pt.offset > maxOffset)
+                maxOffset = pt.offset;
+        }
+    }
+    // Interpolate at range boundaries for segments that cross them
+    for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[i], p1 = points[i + 1];
+        if (p1.t < minT || p0.t > maxT)
+            continue;
+        if (p0.t < minT && p1.t > minT) {
+            const frac = (minT - p0.t) / (p1.t - p0.t);
+            const interpOffset = p0.offset + frac * (p1.offset - p0.offset);
+            if (interpOffset > maxOffset)
+                maxOffset = interpOffset;
+        }
+        if (p0.t < maxT && p1.t > maxT) {
+            const frac = (maxT - p0.t) / (p1.t - p0.t);
+            const interpOffset = p0.offset + frac * (p1.offset - p0.offset);
+            if (interpOffset > maxOffset)
+                maxOffset = interpOffset;
+        }
+    }
+    return maxOffset;
 }

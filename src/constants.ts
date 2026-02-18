@@ -43775,3 +43775,126 @@ export function isInWater(grid: WallGrid, worldX: number, worldY: number): boole
     return getTileState(grid, worldX, worldY) === 2;
 }
 
+// --- Jagged Edge System (shared between client and server) ---
+
+/** Deterministic seeded random number generator */
+export function seededRandom(seed: number): number {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+}
+
+/** A point on a jagged edge in tile-local coordinates.
+ *  t = distance along the edge (0..WALL_TILE_SIZE)
+ *  offset = perpendicular distance outward into air (0..JAGGED_MAX_OFFSET) */
+export interface JaggedPoint {
+    t: number;
+    offset: number;
+}
+
+/** Cached jagged edge data for a single tile. null = edge not exposed. */
+export interface TileJaggedEdges {
+    top: JaggedPoint[] | null;
+    bottom: JaggedPoint[] | null;
+    left: JaggedPoint[] | null;
+    right: JaggedPoint[] | null;
+}
+
+export const JAGGED_MAX_OFFSET = 20;
+export const JAGGED_NUM_SEGMENTS = 7;
+
+const JAGGED_EDGE_CACHE: Map<string, TileJaggedEdges> = new Map();
+
+/** Check if a tile edge is exposed (adjacent tile is air) */
+export function isTileEdgeExposed(
+    grid: WallGrid, tileX: number, tileY: number,
+    edge: 'top' | 'bottom' | 'left' | 'right'
+): boolean {
+    let adjX = tileX, adjY = tileY;
+    if (edge === 'top') adjY--;
+    else if (edge === 'bottom') adjY++;
+    else if (edge === 'left') adjX--;
+    else if (edge === 'right') adjX++;
+
+    if (adjY < 0 || adjY >= grid.length || adjX < 0 || adjX >= (grid[0]?.length || 0)) {
+        return true; // Out of bounds = exposed
+    }
+    return grid[adjY][adjX] === 0;
+}
+
+/** Generate jagged edge points for one edge of a tile */
+export function generateJaggedEdgePoints(
+    tileX: number, tileY: number,
+    edge: 'top' | 'bottom' | 'left' | 'right'
+): JaggedPoint[] {
+    const edgeIndex = edge === 'top' ? 0 : edge === 'bottom' ? 1 : edge === 'left' ? 2 : 3;
+    const baseSeed = ((tileX * 73856093) ^ (tileY * 19349669)) + edgeIndex * 1000;
+
+    const points: JaggedPoint[] = [];
+    points.push({ t: 0, offset: 0 });
+
+    const segmentLength = WALL_TILE_SIZE / (JAGGED_NUM_SEGMENTS + 1);
+
+    for (let i = 1; i <= JAGGED_NUM_SEGMENTS; i++) {
+        const seed = baseSeed + i;
+        const jitter = (seededRandom(seed) - 0.5) * segmentLength * 0.4;
+        const t = Math.max(1, Math.min(WALL_TILE_SIZE - 1, i * segmentLength + jitter));
+        const offset = seededRandom(seed + 100) * JAGGED_MAX_OFFSET;
+        points.push({ t, offset });
+    }
+
+    points.push({ t: WALL_TILE_SIZE, offset: 0 });
+    points.sort((a, b) => a.t - b.t);
+
+    return points;
+}
+
+/** Get jagged edge data for a tile (cached) */
+export function getTileJaggedEdges(grid: WallGrid, tileX: number, tileY: number): TileJaggedEdges {
+    const key = `${tileX},${tileY}`;
+    const cached = JAGGED_EDGE_CACHE.get(key);
+    if (cached) return cached;
+
+    const edges: TileJaggedEdges = {
+        top: isTileEdgeExposed(grid, tileX, tileY, 'top')
+            ? generateJaggedEdgePoints(tileX, tileY, 'top') : null,
+        bottom: isTileEdgeExposed(grid, tileX, tileY, 'bottom')
+            ? generateJaggedEdgePoints(tileX, tileY, 'bottom') : null,
+        left: isTileEdgeExposed(grid, tileX, tileY, 'left')
+            ? generateJaggedEdgePoints(tileX, tileY, 'left') : null,
+        right: isTileEdgeExposed(grid, tileX, tileY, 'right')
+            ? generateJaggedEdgePoints(tileX, tileY, 'right') : null,
+    };
+
+    JAGGED_EDGE_CACHE.set(key, edges);
+    return edges;
+}
+
+/** Get the maximum jagged protrusion within a range [minT, maxT] on an edge */
+export function getMaxJaggedOffset(points: JaggedPoint[], minT: number, maxT: number): number {
+    let maxOffset = 0;
+
+    for (const pt of points) {
+        if (pt.t >= minT && pt.t <= maxT) {
+            if (pt.offset > maxOffset) maxOffset = pt.offset;
+        }
+    }
+
+    // Interpolate at range boundaries for segments that cross them
+    for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[i], p1 = points[i + 1];
+        if (p1.t < minT || p0.t > maxT) continue;
+        if (p0.t < minT && p1.t > minT) {
+            const frac = (minT - p0.t) / (p1.t - p0.t);
+            const interpOffset = p0.offset + frac * (p1.offset - p0.offset);
+            if (interpOffset > maxOffset) maxOffset = interpOffset;
+        }
+        if (p0.t < maxT && p1.t > maxT) {
+            const frac = (maxT - p0.t) / (p1.t - p0.t);
+            const interpOffset = p0.offset + frac * (p1.offset - p0.offset);
+            if (interpOffset > maxOffset) maxOffset = interpOffset;
+        }
+    }
+
+    return maxOffset;
+}
+

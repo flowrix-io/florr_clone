@@ -868,13 +868,6 @@ class Graphics {
         }
     }
     /**
-     * Simple seeded random number generator for consistent spikes per wall
-     */
-    seededRandom(seed) {
-        const x = Math.sin(seed) * 10000;
-        return x - Math.floor(x);
-    }
-    /**
      * Draw spiky edges on a wall using the tiled texture pattern
      * Spikes are randomly positioned and can connect together, with softer curves
      */
@@ -954,18 +947,18 @@ class Graphics {
         let clusterMaxSpikes = 0;
         let prevSpikeEnd = 0; // Track where previous spike ends to prevent overlap
         while (prevSpikeEnd < edgeLength) {
-            const rand = this.seededRandom(seed + seedOffset++);
+            const rand = (0, constants_1.seededRandom)(seed + seedOffset++);
             // Check if we should start a new cluster
             if (!inCluster && rand < clusterChance) {
                 inCluster = true;
                 clusterSpikeCount = 0;
-                clusterMaxSpikes = 2 + Math.floor(this.seededRandom(seed + seedOffset++) * 3); // 2-4 spikes in cluster
+                clusterMaxSpikes = 2 + Math.floor((0, constants_1.seededRandom)(seed + seedOffset++) * 3); // 2-4 spikes in cluster
             }
             // Calculate spacing from previous spike end
             let spacing = 0;
             if (inCluster && clusterSpikeCount > 0) {
                 // Small spacing within cluster
-                spacing = minSpacing * 0.3 + (minSpacing * 0.5) * this.seededRandom(seed + seedOffset++);
+                spacing = minSpacing * 0.3 + (minSpacing * 0.5) * (0, constants_1.seededRandom)(seed + seedOffset++);
             }
             else if (!inCluster) {
                 // Normal spacing for non-clustered spikes
@@ -975,11 +968,11 @@ class Graphics {
             currentPos = prevSpikeEnd + spacing;
             if (currentPos >= edgeLength)
                 break;
-            const spikeWidth = minWidth + (maxWidth - minWidth) * this.seededRandom(seed + seedOffset++);
-            const spikeHeight = minHeight + (maxHeight - minHeight) * this.seededRandom(seed + seedOffset++);
+            const spikeWidth = minWidth + (maxWidth - minWidth) * (0, constants_1.seededRandom)(seed + seedOffset++);
+            const spikeHeight = minHeight + (maxHeight - minHeight) * (0, constants_1.seededRandom)(seed + seedOffset++);
             // Clustered spikes are wider and can vary in height
-            const finalWidth = inCluster ? spikeWidth * (1.3 + this.seededRandom(seed + seedOffset++) * 0.7) : spikeWidth;
-            const finalHeight = inCluster ? spikeHeight * (1.1 + this.seededRandom(seed + seedOffset++) * 0.2) : spikeHeight;
+            const finalWidth = inCluster ? spikeWidth * (1.3 + (0, constants_1.seededRandom)(seed + seedOffset++) * 0.7) : spikeWidth;
+            const finalHeight = inCluster ? spikeHeight * (1.1 + (0, constants_1.seededRandom)(seed + seedOffset++) * 0.2) : spikeHeight;
             // Ensure spike doesn't go beyond edge
             if (currentPos + finalWidth > edgeLength) {
                 break;
@@ -1015,7 +1008,7 @@ class Graphics {
             const spikeHeight = spike.height;
             // Make spikes less sharp by using a flat top instead of sharp point
             // Top width is 20-40% of base width for less sharp appearance
-            const topWidth = spikeWidth * (0.2 + this.seededRandom((spike.pos * 1000) % 1000) * 0.2);
+            const topWidth = spikeWidth * (0.2 + (0, constants_1.seededRandom)((spike.pos * 1000) % 1000) * 0.2);
             this.ctx.beginPath();
             if (direction === 'top') {
                 // Trapezoid spike pointing upward with flat top
@@ -1113,15 +1106,15 @@ class Graphics {
         let clusterMaxSpikes = 0;
         let prevSpikeEnd = 0;
         while (prevSpikeEnd < edgeLength) {
-            const rand = this.seededRandom(seed + seedOffset++);
+            const rand = (0, constants_1.seededRandom)(seed + seedOffset++);
             if (!inCluster && rand < clusterChance) {
                 inCluster = true;
                 clusterSpikeCount = 0;
-                clusterMaxSpikes = 2 + Math.floor(this.seededRandom(seed + seedOffset++) * 3);
+                clusterMaxSpikes = 2 + Math.floor((0, constants_1.seededRandom)(seed + seedOffset++) * 3);
             }
             let spacing = 0;
             if (inCluster && clusterSpikeCount > 0) {
-                spacing = minSpacing * 0.3 + (minSpacing * 0.5) * this.seededRandom(seed + seedOffset++);
+                spacing = minSpacing * 0.3 + (minSpacing * 0.5) * (0, constants_1.seededRandom)(seed + seedOffset++);
             }
             else if (!inCluster) {
                 spacing = minSpacing + (maxSpacing - minSpacing) * rand;
@@ -1129,10 +1122,10 @@ class Graphics {
             currentPos = prevSpikeEnd + spacing;
             if (currentPos >= edgeLength)
                 break;
-            const spikeWidth = minWidth + (maxWidth - minWidth) * this.seededRandom(seed + seedOffset++);
-            const spikeHeight = minHeight + (maxHeight - minHeight) * this.seededRandom(seed + seedOffset++);
-            const finalWidth = inCluster ? spikeWidth * (1.3 + this.seededRandom(seed + seedOffset++) * 0.7) : spikeWidth;
-            const finalHeight = inCluster ? spikeHeight * (1.1 + this.seededRandom(seed + seedOffset++) * 0.2) : spikeHeight;
+            const spikeWidth = minWidth + (maxWidth - minWidth) * (0, constants_1.seededRandom)(seed + seedOffset++);
+            const spikeHeight = minHeight + (maxHeight - minHeight) * (0, constants_1.seededRandom)(seed + seedOffset++);
+            const finalWidth = inCluster ? spikeWidth * (1.3 + (0, constants_1.seededRandom)(seed + seedOffset++) * 0.7) : spikeWidth;
+            const finalHeight = inCluster ? spikeHeight * (1.1 + (0, constants_1.seededRandom)(seed + seedOffset++) * 0.2) : spikeHeight;
             if (currentPos + finalWidth > edgeLength) {
                 break;
             }
@@ -1161,7 +1154,7 @@ class Graphics {
                 : startY;
             const spikeWidth = spike.width;
             const spikeHeight = spike.height;
-            const topWidth = spikeWidth * (0.2 + this.seededRandom((spike.pos * 1000) % 1000) * 0.2);
+            const topWidth = spikeWidth * (0.2 + (0, constants_1.seededRandom)((spike.pos * 1000) % 1000) * 0.2);
             // Sample color at the center of the shadow area for this spike
             let shadowCenterX;
             let shadowCenterY;
@@ -1246,6 +1239,80 @@ class Graphics {
             this.ctx.closePath();
             this.ctx.fill();
         });
+    }
+    /**
+     * Draw a jagged edge protrusion on an exposed wall tile edge
+     */
+    drawJaggedEdge(worldX, worldY, edge, points, pattern) {
+        this.ctx.save();
+        this.ctx.fillStyle = pattern;
+        // Draw filled region between straight tile edge and jagged polyline
+        this.ctx.beginPath();
+        if (edge === 'top') {
+            this.ctx.moveTo(worldX + points[0].t, worldY);
+            for (const pt of points) {
+                this.ctx.lineTo(worldX + pt.t, worldY - pt.offset);
+            }
+            this.ctx.lineTo(worldX + points[points.length - 1].t, worldY);
+        }
+        else if (edge === 'bottom') {
+            const baseY = worldY + constants_1.WALL_TILE_SIZE;
+            this.ctx.moveTo(worldX + points[0].t, baseY);
+            for (const pt of points) {
+                this.ctx.lineTo(worldX + pt.t, baseY + pt.offset);
+            }
+            this.ctx.lineTo(worldX + points[points.length - 1].t, baseY);
+        }
+        else if (edge === 'left') {
+            this.ctx.moveTo(worldX, worldY + points[0].t);
+            for (const pt of points) {
+                this.ctx.lineTo(worldX - pt.offset, worldY + pt.t);
+            }
+            this.ctx.lineTo(worldX, worldY + points[points.length - 1].t);
+        }
+        else if (edge === 'right') {
+            const baseX = worldX + constants_1.WALL_TILE_SIZE;
+            this.ctx.moveTo(baseX, worldY + points[0].t);
+            for (const pt of points) {
+                this.ctx.lineTo(baseX + pt.offset, worldY + pt.t);
+            }
+            this.ctx.lineTo(baseX, worldY + points[points.length - 1].t);
+        }
+        this.ctx.closePath();
+        this.ctx.fill();
+        // Draw dark brown outline along the jagged polyline only
+        this.ctx.strokeStyle = '#8c5222';
+        this.ctx.lineWidth = 3;
+        this.ctx.lineJoin = 'round';
+        this.ctx.beginPath();
+        if (edge === 'top') {
+            this.ctx.moveTo(worldX + points[0].t, worldY - points[0].offset);
+            for (let i = 1; i < points.length; i++) {
+                this.ctx.lineTo(worldX + points[i].t, worldY - points[i].offset);
+            }
+        }
+        else if (edge === 'bottom') {
+            const baseY = worldY + constants_1.WALL_TILE_SIZE;
+            this.ctx.moveTo(worldX + points[0].t, baseY + points[0].offset);
+            for (let i = 1; i < points.length; i++) {
+                this.ctx.lineTo(worldX + points[i].t, baseY + points[i].offset);
+            }
+        }
+        else if (edge === 'left') {
+            this.ctx.moveTo(worldX - points[0].offset, worldY + points[0].t);
+            for (let i = 1; i < points.length; i++) {
+                this.ctx.lineTo(worldX - points[i].offset, worldY + points[i].t);
+            }
+        }
+        else if (edge === 'right') {
+            const baseX = worldX + constants_1.WALL_TILE_SIZE;
+            this.ctx.moveTo(baseX + points[0].offset, worldY + points[0].t);
+            for (let i = 1; i < points.length; i++) {
+                this.ctx.lineTo(baseX + points[i].offset, worldY + points[i].t);
+            }
+        }
+        this.ctx.stroke();
+        this.ctx.restore();
     }
     drawMap(world_map_data) {
         // Calculate viewport accounting for zoom level
@@ -1338,6 +1405,16 @@ class Graphics {
                         this.ctx.fillStyle = pattern;
                         this.ctx.fillRect(worldX, worldY, constants_1.WALL_TILE_SIZE, constants_1.WALL_TILE_SIZE);
                         this.ctx.restore();
+                        // Draw jagged edges on exposed sides
+                        const jaggedEdges = (0, constants_1.getTileJaggedEdges)(constants_1.WALL_GRID, tileX, tileY);
+                        if (jaggedEdges.top)
+                            this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, pattern);
+                        if (jaggedEdges.bottom)
+                            this.drawJaggedEdge(worldX, worldY, 'bottom', jaggedEdges.bottom, pattern);
+                        if (jaggedEdges.left)
+                            this.drawJaggedEdge(worldX, worldY, 'left', jaggedEdges.left, pattern);
+                        if (jaggedEdges.right)
+                            this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, pattern);
                     }
                     else {
                         // Fallback: gray color
