@@ -56,11 +56,14 @@ function getPlayerViewports() {
             !isNaN(player.x) && !isNaN(player.y) &&
             player.x >= 0 && player.x <= constants_1.ACTUAL_WORLD_WIDTH &&
             player.y >= 0 && player.y <= constants_1.ACTUAL_WORLD_HEIGHT) {
+            // Use per-player viewport size if available, otherwise fall back to default
+            const vpWidth = player.viewportWidth || constants_1.VIEWPORT_WIDTH;
+            const vpHeight = player.viewportHeight || constants_1.VIEWPORT_HEIGHT;
             viewports.push({
-                x: player.x - constants_1.VIEWPORT_WIDTH / 2,
-                y: player.y - constants_1.VIEWPORT_HEIGHT / 2,
-                width: constants_1.VIEWPORT_WIDTH,
-                height: constants_1.VIEWPORT_HEIGHT
+                x: player.x - vpWidth / 2,
+                y: player.y - vpHeight / 2,
+                width: vpWidth,
+                height: vpHeight
             });
         }
     }

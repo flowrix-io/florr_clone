@@ -1032,7 +1032,9 @@ class Game {
         // Only send input, don't update position locally
         const inputData = {
             keys: Array.from(this.keysPressed),
-            petalExtension: this.petalExtension
+            petalExtension: this.petalExtension,
+            viewportWidth: this.canvas.width / this.zoomLevel,
+            viewportHeight: this.canvas.height / this.zoomLevel
         };
         // Calculate mouse movement direction on client when mouse controls are enabled
         if (this.useMouseControls && !isAnyMenuOpen) {

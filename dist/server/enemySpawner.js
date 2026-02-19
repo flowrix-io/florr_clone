@@ -276,11 +276,13 @@ function createEnemy(helpers) {
         const randomPlayerId = Object.keys(constants_1.players)[Math.floor(Math.random() * Object.keys(constants_1.players).length)];
         const player = constants_1.players[randomPlayerId];
         // Generate position within player's viewport (with buffer)
+        const vpW = player.viewportWidth || constants_2.VIEWPORT_WIDTH;
+        const vpH = player.viewportHeight || constants_2.VIEWPORT_HEIGHT;
         const viewportBuffer = constants_2.VIEWPORT_BUFFER;
-        const minX = player.x - constants_2.VIEWPORT_WIDTH / 2 - viewportBuffer;
-        const maxX = player.x + constants_2.VIEWPORT_WIDTH / 2 + viewportBuffer;
-        const minY = player.y - constants_2.VIEWPORT_HEIGHT / 2 - viewportBuffer;
-        const maxY = player.y + constants_2.VIEWPORT_HEIGHT / 2 + viewportBuffer;
+        const minX = player.x - vpW / 2 - viewportBuffer;
+        const maxX = player.x + vpW / 2 + viewportBuffer;
+        const minY = player.y - vpH / 2 - viewportBuffer;
+        const maxY = player.y + vpH / 2 + viewportBuffer;
         x = minX + Math.random() * (maxX - minX);
         y = minY + Math.random() * (maxY - minY);
         // Clamp to world boundaries
@@ -307,7 +309,108 @@ function createEnemy(helpers) {
     if (!validPosition) {
         return null;
     }
-    // Check if position is in a biome first
+    // --- Phase 2: Find final position (petal range & mob spacing retries) ---
+    // We need a preliminary mob size estimate for spacing checks.
+    // Use a common tier size as approximation; the actual mob is selected after position is finalized.
+    const PRELIMINARY_MOB_SIZE = 40; // Base mob size for spacing checks
+    // Check if the spawn position would overlap with any player's petal range
+    if (helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE)) {
+        let newValidPosition = false;
+        let newAttempts = 0;
+        const MAX_NEW_ATTEMPTS = 50;
+        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
+            newAttempts++;
+            const randomPlayerId = Object.keys(constants_1.players)[Math.floor(Math.random() * Object.keys(constants_1.players).length)];
+            const player = constants_1.players[randomPlayerId];
+            const vpW = player.viewportWidth || constants_2.VIEWPORT_WIDTH;
+            const vpH = player.viewportHeight || constants_2.VIEWPORT_HEIGHT;
+            const viewportBuffer = constants_2.VIEWPORT_BUFFER;
+            const minX = player.x - vpW / 2 - viewportBuffer;
+            const maxX = player.x + vpW / 2 + viewportBuffer;
+            const minY = player.y - vpH / 2 - viewportBuffer;
+            const maxY = player.y + vpH / 2 + viewportBuffer;
+            x = minX + Math.random() * (maxX - minX);
+            y = minY + Math.random() * (maxY - minY);
+            x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
+            y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
+            if (isInOutOfBoundsZone(x, y))
+                continue;
+            const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+                x >= element.x * constants_2.SCALE_FACTOR &&
+                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
+                y >= element.y * constants_2.SCALE_FACTOR &&
+                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
+            const collidesWithWall = tileState === 1 || tileState === 2;
+            const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
+            if (!inSafeZone && !collidesWithWall && !inPetalRange) {
+                newValidPosition = true;
+            }
+        }
+        if (!newValidPosition) {
+            return null;
+        }
+    }
+    // Check if spawn position is too close to other mobs
+    const MIN_MOB_SPAWN_DISTANCE = 80;
+    const halfPrelimSize = PRELIMINARY_MOB_SIZE / 2;
+    const tooCloseToOtherMob = constants_1.enemies.some((otherEnemy) => {
+        const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
+        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
+        const otherHalfSize = otherMobSize / 2;
+        const dx = otherEnemy.x - x;
+        const dy = otherEnemy.y - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
+    });
+    if (tooCloseToOtherMob) {
+        let newValidPosition = false;
+        let newAttempts = 0;
+        const MAX_NEW_ATTEMPTS = 50;
+        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
+            newAttempts++;
+            const randomPlayerId = Object.keys(constants_1.players)[Math.floor(Math.random() * Object.keys(constants_1.players).length)];
+            const player = constants_1.players[randomPlayerId];
+            const vpW = player.viewportWidth || constants_2.VIEWPORT_WIDTH;
+            const vpH = player.viewportHeight || constants_2.VIEWPORT_HEIGHT;
+            const viewportBuffer = constants_2.VIEWPORT_BUFFER;
+            const minX = player.x - vpW / 2 - viewportBuffer;
+            const maxX = player.x + vpW / 2 + viewportBuffer;
+            const minY = player.y - vpH / 2 - viewportBuffer;
+            const maxY = player.y + vpH / 2 + viewportBuffer;
+            x = minX + Math.random() * (maxX - minX);
+            y = minY + Math.random() * (maxY - minY);
+            x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
+            y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
+            if (isInOutOfBoundsZone(x, y))
+                continue;
+            const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+                x >= element.x * constants_2.SCALE_FACTOR &&
+                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
+                y >= element.y * constants_2.SCALE_FACTOR &&
+                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
+            const collidesWithWall = tileState === 1 || tileState === 2;
+            const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
+            const tooClose = constants_1.enemies.some((otherEnemy) => {
+                const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
+                const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
+                const otherHalfSize = otherMobSize / 2;
+                const dx = otherEnemy.x - x;
+                const dy = otherEnemy.y - y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
+            });
+            if (!inSafeZone && !collidesWithWall && !inPetalRange && !tooClose) {
+                newValidPosition = true;
+            }
+        }
+        if (!newValidPosition) {
+            return null;
+        }
+    }
+    // --- Phase 3: Select tier and mob type based on the FINAL position ---
+    // Position is now fully finalized - select tier and mob based on where the mob actually is.
     const biome = getBiomeAtPosition(x, y);
     let tier = 'common';
     let mobType;
@@ -318,72 +421,56 @@ function createEnemy(helpers) {
         if (spawnSelection) {
             tier = spawnSelection.tier;
             reversed = spawnSelection.reversed;
-            // If spawn table specifies a mob type, use it; otherwise pick randomly
             if (spawnSelection.mobType) {
                 mobType = spawnSelection.mobType;
-                // For target dummies, check if one of this tier already exists
                 if (mobType === 'target_dummy') {
                     const existingDummy = constants_1.enemies.find((e) => e.type === 'target_dummy' && e.tier === tier);
                     if (existingDummy) {
-                        // Target dummy of this tier already exists, don't spawn another
                         return null;
                     }
                 }
             }
             else {
-                // No specific mob type - spawn any mob of this tier that belongs to the current section
                 const allMobTypes = (0, mobs_1.getAllMobTypes)();
                 if (allMobTypes.length === 0) {
-                    console.error("No mob types found in MOB_CONFIG.");
                     return null;
                 }
-                // Filter to mobs that belong to this section and exclude target_dummy
                 const currentSection = getSectionAtPosition(x, y);
                 const eligibleMobTypes = allMobTypes.filter(type => {
-                    if (type === 'target_dummy') {
-                        return false; // Never spawn target dummies as normal mobs
-                    }
+                    if (type === 'target_dummy')
+                        return false;
                     const stats = (0, mobs_1.getMobStats)(type, tier);
                     return stats && stats.section === currentSection;
                 });
                 if (eligibleMobTypes.length === 0) {
-                    // No eligible mobs for this tier and section
                     return null;
                 }
                 mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
             }
         }
         else {
-            // Fallback if spawn table selection fails - use section filtering
             const allMobTypes = (0, mobs_1.getAllMobTypes)();
             if (allMobTypes.length === 0) {
-                console.error("No mob types found in MOB_CONFIG.");
                 return null;
             }
-            // Filter to mobs that belong to this section and exclude target_dummy
             const currentSection = getSectionAtPosition(x, y);
             const eligibleMobTypes = allMobTypes.filter(type => {
-                if (type === 'target_dummy') {
-                    return false; // Never spawn target dummies as normal mobs
-                }
+                if (type === 'target_dummy')
+                    return false;
                 const stats = (0, mobs_1.getMobStats)(type, 'common');
                 return stats && stats.section === currentSection;
             });
             if (eligibleMobTypes.length === 0) {
-                // No eligible mobs for this section
                 return null;
             }
             mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
         }
-        // Tier upgrade or downgrade (mutually exclusive)
-        // Try upgrade first, if it doesn't happen, try downgrade
+        // Tier upgrade or downgrade
         const upgradeRoll = Math.random();
         if (upgradeRoll < 0.02) {
-            // Upgrade succeeded
             tier = upgradeTier(tier);
         }
         else {
-            // Upgrade didn't happen, try downgrade
             const downgradeChance = getMobDowngradeChance(tier);
             if (downgradeChance > 0 && Math.random() < downgradeChance) {
                 tier = downgradeTier(tier);
@@ -394,18 +481,14 @@ function createEnemy(helpers) {
         // Check if position is in a spawn zone
         const spawnZoneType = getSpawnZoneType(x, y);
         if (spawnZoneType) {
-            // In a spawn zone - only spawn the specific rarity for this zone
             tier = spawnZoneType;
         }
         else {
-            // Outside spawn zones and biomes - check if section has equal rarity spawning
             const currentSection = getSectionAtPosition(x, y);
             if (exports.EQUAL_RARITY_SECTIONS.includes(currentSection)) {
-                // Weighted spawn chance for all tiers
                 tier = selectEqualRarityTier();
             }
             else {
-                // Use normal probability distribution
                 const tierRoll = Math.random();
                 let cumulativeProbability = 0;
                 for (const [t, data] of Object.entries(constants_2.ENEMY_TIERS)) {
@@ -417,164 +500,38 @@ function createEnemy(helpers) {
                 }
             }
         }
-        // Tier upgrade or downgrade (mutually exclusive)
-        // Try upgrade first, if it doesn't happen, try downgrade
+        // Tier upgrade or downgrade
         const upgradeRoll = Math.random();
         if (upgradeRoll < 0.02) {
-            // Upgrade succeeded
             tier = upgradeTier(tier);
         }
         else {
-            // Upgrade didn't happen, try downgrade
             const downgradeChance = getMobDowngradeChance(tier);
             if (downgradeChance > 0 && Math.random() < downgradeChance) {
                 tier = downgradeTier(tier);
             }
         }
-        // Select mob type (fish, octopus, or shark)
-        // Filter out biome-only mobs when spawning outside biomes
+        // Select mob type - filter to mobs belonging to this section
         const allMobTypes = (0, mobs_1.getAllMobTypes)();
         if (allMobTypes.length === 0) {
-            console.error("No mob types found in MOB_CONFIG.");
             return null;
         }
-        // Filter to only allow mobs that belong to this section
-        // Also exclude target_dummy (they should only spawn from explicit map biome entries)
         const currentSection = getSectionAtPosition(x, y);
         const eligibleMobTypes = allMobTypes.filter(type => {
-            if (type === 'target_dummy') {
-                return false; // Never spawn target dummies as normal mobs
-            }
+            if (type === 'target_dummy')
+                return false;
             const stats = (0, mobs_1.getMobStats)(type, tier);
             return stats && stats.section === currentSection;
         });
         if (eligibleMobTypes.length === 0) {
-            // No eligible mobs for this tier outside biomes
             return null;
         }
         mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
     }
     // Get mob stats from config
-    const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
+    let mobStats = (0, mobs_1.getMobStats)(mobType, tier);
     if (!mobStats) {
-        console.error(`No mob stats found for ${mobType} ${tier}`);
         return null;
-    }
-    // Check if the spawn position would overlap with any player's petal range
-    const mobSize = mobStats.size * 40;
-    if (helpers.isPositionInPlayerPetalRange(x, y, mobSize)) {
-        // Position is too close to player petal range, try to find a new position
-        let newValidPosition = false;
-        let newAttempts = 0;
-        const MAX_NEW_ATTEMPTS = 50;
-        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
-            newAttempts++;
-            // Pick a random player and spawn near their viewport
-            const randomPlayerId = Object.keys(constants_1.players)[Math.floor(Math.random() * Object.keys(constants_1.players).length)];
-            const player = constants_1.players[randomPlayerId];
-            // Generate position within player's viewport (with buffer)
-            const viewportBuffer = constants_2.VIEWPORT_BUFFER;
-            const minX = player.x - constants_2.VIEWPORT_WIDTH / 2 - viewportBuffer;
-            const maxX = player.x + constants_2.VIEWPORT_WIDTH / 2 + viewportBuffer;
-            const minY = player.y - constants_2.VIEWPORT_HEIGHT / 2 - viewportBuffer;
-            const maxY = player.y + constants_2.VIEWPORT_HEIGHT / 2 + viewportBuffer;
-            x = minX + Math.random() * (maxX - minX);
-            y = minY + Math.random() * (maxY - minY);
-            // Clamp to world boundaries
-            x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
-            y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
-            // Skip if position is in out-of-bounds zone
-            if (isInOutOfBoundsZone(x, y)) {
-                continue;
-            }
-            // Check if position is in a safe zone
-            const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
-                x >= element.x * constants_2.SCALE_FACTOR &&
-                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-                y >= element.y * constants_2.SCALE_FACTOR &&
-                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
-            const collidesWithWall = tileState === 1 || tileState === 2;
-            // Check if position is safe from petal range
-            const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, mobSize);
-            if (!inSafeZone && !collidesWithWall && !inPetalRange) {
-                newValidPosition = true;
-            }
-        }
-        // If we still couldn't find a valid position, return null
-        if (!newValidPosition) {
-            return null;
-        }
-    }
-    // Check if spawn position is too close to other mobs
-    const MIN_MOB_SPAWN_DISTANCE = 80; // Minimum distance between mob spawns (2x base mob size)
-    const halfMobSize = mobSize / 2;
-    const tooCloseToOtherMob = constants_1.enemies.some((otherEnemy) => {
-        const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
-        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
-        const otherHalfSize = otherMobSize / 2;
-        const dx = otherEnemy.x - x;
-        const dy = otherEnemy.y - y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const minDistance = halfMobSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
-        return distance < minDistance;
-    });
-    if (tooCloseToOtherMob) {
-        // Position is too close to another mob, try to find a new position
-        let newValidPosition = false;
-        let newAttempts = 0;
-        const MAX_NEW_ATTEMPTS = 50;
-        while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
-            newAttempts++;
-            // Pick a random player and spawn near their viewport
-            const randomPlayerId = Object.keys(constants_1.players)[Math.floor(Math.random() * Object.keys(constants_1.players).length)];
-            const player = constants_1.players[randomPlayerId];
-            // Generate position within player's viewport (with buffer)
-            const viewportBuffer = constants_2.VIEWPORT_BUFFER;
-            const minX = player.x - constants_2.VIEWPORT_WIDTH / 2 - viewportBuffer;
-            const maxX = player.x + constants_2.VIEWPORT_WIDTH / 2 + viewportBuffer;
-            const minY = player.y - constants_2.VIEWPORT_HEIGHT / 2 - viewportBuffer;
-            const maxY = player.y + constants_2.VIEWPORT_HEIGHT / 2 + viewportBuffer;
-            x = minX + Math.random() * (maxX - minX);
-            y = minY + Math.random() * (maxY - minY);
-            // Clamp to world boundaries
-            x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
-            y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
-            // Skip if position is in out-of-bounds zone
-            if (isInOutOfBoundsZone(x, y)) {
-                continue;
-            }
-            // Check if position is in a safe zone
-            const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
-                x >= element.x * constants_2.SCALE_FACTOR &&
-                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-                y >= element.y * constants_2.SCALE_FACTOR &&
-                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
-            const collidesWithWall = tileState === 1 || tileState === 2;
-            // Check if position is safe from petal range
-            const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, mobSize);
-            // Check if position is far enough from other mobs
-            const tooClose = constants_1.enemies.some((otherEnemy) => {
-                const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
-                const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
-                const otherHalfSize = otherMobSize / 2;
-                const dx = otherEnemy.x - x;
-                const dy = otherEnemy.y - y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const minDistance = halfMobSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
-                return distance < minDistance;
-            });
-            if (!inSafeZone && !collidesWithWall && !inPetalRange && !tooClose) {
-                newValidPosition = true;
-            }
-        }
-        // If we still couldn't find a valid position, return null
-        if (!newValidPosition) {
-            return null;
-        }
     }
     const currentTime = Date.now();
     const enemy = {

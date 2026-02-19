@@ -105,6 +105,8 @@ export interface ServerPlayer {
   isDead?: boolean;
   killedBy?: { type: string; tier: string }; // Track which enemy killed the player
   spawnBiome?: string; // The biome selected on the title screen (for respawning)
+  viewportWidth?: number; // Client's effective viewport width (canvas.width / zoomLevel)
+  viewportHeight?: number; // Client's effective viewport height (canvas.height / zoomLevel)
   effects?: PlayerEffect[]; // Active petal effects
   tp?: number; // Talent Points
   skills?: {

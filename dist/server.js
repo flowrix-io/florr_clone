@@ -315,7 +315,8 @@ function triggerViewportUpdate() {
         const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
         const currentViewportEnemies = (0, playerState_1.getEnemiesInViewportCount)();
         if (currentViewportEnemies < targetEnemyCount) {
-            const enemiesToSpawn = Math.min(5, targetEnemyCount - currentViewportEnemies);
+            // Scale spawn cap with player count so each player's viewport fills at the same rate
+            const enemiesToSpawn = Math.min(5 * playerCount, targetEnemyCount - currentViewportEnemies);
             let spawned = 0;
             for (let i = 0; i < enemiesToSpawn; i++) {
                 const newEnemy = createEnemy();
@@ -454,11 +455,13 @@ function spawnMob(mobType, rarity, x, y) {
                 const randomPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)];
                 const player = constants_2.players[randomPlayerId];
                 // Spawn within viewport of a random player
+                const vpW = player.viewportWidth || constants_2.VIEWPORT_WIDTH;
+                const vpH = player.viewportHeight || constants_2.VIEWPORT_HEIGHT;
                 const viewportBuffer = constants_2.VIEWPORT_BUFFER;
-                const minX = player.x - constants_2.VIEWPORT_WIDTH / 2 - viewportBuffer;
-                const maxX = player.x + constants_2.VIEWPORT_WIDTH / 2 + viewportBuffer;
-                const minY = player.y - constants_2.VIEWPORT_HEIGHT / 2 - viewportBuffer;
-                const maxY = player.y + constants_2.VIEWPORT_HEIGHT / 2 + viewportBuffer;
+                const minX = player.x - vpW / 2 - viewportBuffer;
+                const maxX = player.x + vpW / 2 + viewportBuffer;
+                const minY = player.y - vpH / 2 - viewportBuffer;
+                const maxY = player.y + vpH / 2 + viewportBuffer;
                 spawnX = minX + Math.random() * (maxX - minX);
                 spawnY = minY + Math.random() * (maxY - minY);
                 // Clamp to world boundaries
@@ -756,6 +759,13 @@ io.on('connection', (socket) => {
     socket.on('playerInput', (inputData) => {
         const player = constants_2.players[socket.id];
         if (player) {
+            // Update per-player viewport dimensions if provided
+            if (inputData.viewportWidth && inputData.viewportHeight &&
+                isFinite(inputData.viewportWidth) && isFinite(inputData.viewportHeight) &&
+                inputData.viewportWidth > 0 && inputData.viewportHeight > 0) {
+                player.viewportWidth = inputData.viewportWidth;
+                player.viewportHeight = inputData.viewportHeight;
+            }
             // Check if player is split and route inputs to active player
             const { splitPlayers } = require('./petal_actions');
             const originalId = socket.id.replace('_split2', '').replace('_split1', '');
@@ -3390,7 +3400,8 @@ setInterval(() => {
         const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
         const currentViewportEnemies = (0, playerState_1.getEnemiesInViewportCount)();
         if (currentViewportEnemies < targetEnemyCount) {
-            const enemiesToSpawn = Math.min(3, targetEnemyCount - currentViewportEnemies);
+            // Scale spawn cap with player count so each player's viewport fills at the same rate
+            const enemiesToSpawn = Math.min(3 * playerCount, targetEnemyCount - currentViewportEnemies);
             let spawned = 0;
             for (let i = 0; i < enemiesToSpawn; i++) {
                 const newEnemy = createEnemy();

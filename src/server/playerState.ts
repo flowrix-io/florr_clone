@@ -114,23 +114,27 @@ export interface PlayerStateDependencies {
  */
 export function getPlayerViewports(): Array<{x: number, y: number, width: number, height: number}> {
     const viewports: Array<{x: number, y: number, width: number, height: number}> = [];
-    
+
     for (const playerId in players) {
         const player = players[playerId];
-        if (player && player.x !== undefined && player.y !== undefined && 
+        if (player && player.x !== undefined && player.y !== undefined &&
             !isNaN(player.x) && !isNaN(player.y) &&
             player.x >= 0 && player.x <= ACTUAL_WORLD_WIDTH &&
             player.y >= 0 && player.y <= ACTUAL_WORLD_HEIGHT) {
-            
+
+            // Use per-player viewport size if available, otherwise fall back to default
+            const vpWidth = player.viewportWidth || VIEWPORT_WIDTH;
+            const vpHeight = player.viewportHeight || VIEWPORT_HEIGHT;
+
             viewports.push({
-                x: player.x - VIEWPORT_WIDTH / 2,
-                y: player.y - VIEWPORT_HEIGHT / 2,
-                width: VIEWPORT_WIDTH,
-                height: VIEWPORT_HEIGHT
+                x: player.x - vpWidth / 2,
+                y: player.y - vpHeight / 2,
+                width: vpWidth,
+                height: vpHeight
             });
         }
     }
-    
+
     return viewports;
 }
 
