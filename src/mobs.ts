@@ -2154,6 +2154,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         range: 100,
         section: 7,
         hideRotation: true,
+        noEggDrop: true,
     },
     fly: {
         name: "Fly",
@@ -2289,6 +2290,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         is_hostile: false,
         range: 100,
         section: 8,
+        noEggDrop: true,
     },
     spider: {
         name: "Spider",
@@ -2543,7 +2545,85 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         },
         hideRotation: true,
         noEggDrop: true,
-    }
+    },
+    cube: {
+        name: "Cube",
+        health: 100,
+        damage: 10,
+        size: 1.0,
+        visual_scale: 1.0,
+        speed: 0.0,
+        cooldown: 2000,
+        description: "©¥∫∂ç∆ˆßµ∑ππœ",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <g transform="translate(16, 16)">
+    
+    <g transform="translate(0, 8) scale(1, 0.5)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="0; -360" dur="4s" repeatCount="indefinite" />
+        <rect x="-8" y="-8" width="16" height="16" fill="#8B00FF" fill-opacity="0.8" stroke="#111" stroke-width="0.5" stroke-linejoin="round"/>
+      </g>
+    </g>
+
+    <g>
+      <animateTransform attributeName="transform" type="translate" values="0,-4; -4,-3.464; -6.928,-2; -8,0; -6.928,2; -4,3.464; 0,4; 4,3.464; 6.928,2; 8,0; 6.928,-2; 4,-3.464; 0,-4" dur="4s" repeatCount="indefinite" />
+      <g>
+        <animateTransform attributeName="transform" type="scale" values="-1,1; -0.866,1; -0.5,1; 0.001,1; 0.5,1; 0.866,1; 1,1; 0.866,1; 0.5,1; 0.001,1; -0.5,1; -0.866,1; -1,1" dur="4s" repeatCount="indefinite" />
+        <g>
+          <animateTransform attributeName="transform" type="skewY" values="0; 14.036; 23.413; 26.565; 23.413; 14.036; 0; -14.036; -23.413; -26.565; -23.413; -14.036; 0" dur="4s" repeatCount="indefinite" />
+          <rect x="-8" y="-8" width="16" height="16" fill="#FFFF00" fill-opacity="0.8" stroke="#111" stroke-width="0.5" stroke-linejoin="round" />
+        </g>
+      </g>
+    </g>
+
+    <g>
+      <animateTransform attributeName="transform" type="translate" values="-8,0; -6.928,2; -4,3.464; 0,4; 4,3.464; 6.928,2; 8,0; 6.928,-2; 4,-3.464; 0,-4; -4,-3.464; -6.928,-2; -8,0" dur="4s" repeatCount="indefinite" />
+      <g>
+        <animateTransform attributeName="transform" type="scale" values="0.001,1; 0.5,1; 0.866,1; 1,1; 0.866,1; 0.5,1; 0.001,1; -0.5,1; -0.866,1; -1,1; -0.866,1; -0.5,1; 0.001,1" dur="4s" repeatCount="indefinite" />
+        <g>
+          <animateTransform attributeName="transform" type="skewY" values="26.565; 23.413; 14.036; 0; -14.036; -23.413; -26.565; -23.413; -14.036; 0; 14.036; 23.413; 26.565" dur="4s" repeatCount="indefinite" />
+          <rect x="-8" y="-8" width="16" height="16" fill="#00FF00" fill-opacity="0.8" stroke="#111" stroke-width="0.5" stroke-linejoin="round" />
+        </g>
+      </g>
+    </g>
+
+    <g>
+      <animateTransform attributeName="transform" type="translate" values="8,0; 6.928,-2; 4,-3.464; 0,-4; -4,-3.464; -6.928,-2; -8,0; -6.928,2; -4,3.464; 0,4; 4,3.464; 6.928,2; 8,0" dur="4s" repeatCount="indefinite" />
+      <g>
+        <animateTransform attributeName="transform" type="scale" values="0.001,1; -0.5,1; -0.866,1; -1,1; -0.866,1; -0.5,1; 0.001,1; 0.5,1; 0.866,1; 1,1; 0.866,1; 0.5,1; 0.001,1" dur="4s" repeatCount="indefinite" />
+        <g>
+          <animateTransform attributeName="transform" type="skewY" values="-26.565; -23.413; -14.036; 0; 14.036; 23.413; 26.565; 23.413; 14.036; 0; -14.036; -23.413; -26.565" dur="4s" repeatCount="indefinite" />
+          <rect x="-8" y="-8" width="16" height="16" fill="#FF7F00" fill-opacity="0.8" stroke="#111" stroke-width="0.5" stroke-linejoin="round" />
+        </g>
+      </g>
+    </g>
+
+    <g>
+      <animateTransform attributeName="transform" type="translate" values="0,4; 4,3.464; 6.928,2; 8,0; 6.928,-2; 4,-3.464; 0,-4; -4,-3.464; -6.928,-2; -8,0; -6.928,2; -4,3.464; 0,4" dur="4s" repeatCount="indefinite" />
+      <g>
+        <animateTransform attributeName="transform" type="scale" values="1,1; 0.866,1; 0.5,1; 0.001,1; -0.5,1; -0.866,1; -1,1; -0.866,1; -0.5,1; 0.001,1; 0.5,1; 0.866,1; 1,1" dur="4s" repeatCount="indefinite" />
+        <g>
+          <animateTransform attributeName="transform" type="skewY" values="0; -14.036; -23.413; -26.565; -23.413; -14.036; 0; 14.036; 23.413; 26.565; 23.413; 14.036; 0" dur="4s" repeatCount="indefinite" />
+          <rect x="-8" y="-8" width="16" height="16" fill="#FF0000" fill-opacity="0.8" stroke="#111" stroke-width="0.5" stroke-linejoin="round" />
+        </g>
+      </g>
+    </g>
+
+    <g transform="translate(0, -8) scale(1, 0.5)">
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="0; -360" dur="4s" repeatCount="indefinite" />
+        <rect x="-8" y="-8" width="16" height="16" fill="#0000FF" fill-opacity="0.8" stroke="#111" stroke-width="0.5" stroke-linejoin="round"/>
+      </g>
+    </g>
+    
+  </g>
+</svg>`,
+        color: "#ff0000",
+        is_hostile: false,
+        range: 100,
+        section: 7,
+        hideRotation: true,
+    },
 }
 
 // Rarity-specific overrides for special cases
