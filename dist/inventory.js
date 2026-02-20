@@ -1255,10 +1255,12 @@ class InventoryManager {
                     const baseRarity90 = lowerRarity;
                     const baseRarity10 = drop.rarity;
                     // Calculate upgrade/downgrade chances for both rarities
-                    const upgradeChance90 = getDropUpgradeChance(baseRarity90);
+                    // Ultra mobs get 20x upgrade chance
+                    const ultraMultiplier = rarity === 'ultra' ? 20 : 1;
+                    const upgradeChance90 = Math.min(100, getDropUpgradeChance(baseRarity90) * ultraMultiplier);
                     const downgradeChance90 = getDropDowngradeChance(baseRarity90);
                     const sameChance90 = Math.max(0, 100 - upgradeChance90 - downgradeChance90);
-                    const upgradeChance10 = getDropUpgradeChance(baseRarity10);
+                    const upgradeChance10 = Math.min(100, getDropUpgradeChance(baseRarity10) * ultraMultiplier);
                     const downgradeChance10 = getDropDowngradeChance(baseRarity10);
                     const sameChance10 = Math.max(0, 100 - upgradeChance10 - downgradeChance10);
                     const itemName = drop.type === 'petal' ? drop.itemType : drop.itemType;

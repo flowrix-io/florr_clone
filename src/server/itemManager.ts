@@ -143,7 +143,8 @@ export function handleMobDrops(enemyData: { type?: string, tier: string, x: numb
             // Apply drop upgrade or downgrade chance (mutually exclusive)
             // Try upgrade first, if it doesn't happen, try downgrade
             let finalRarity = drop.rarity;
-            const upgradeChance = getDropUpgradeChance(drop.rarity);
+            const baseUpgradeChance = getDropUpgradeChance(drop.rarity);
+            const upgradeChance = enemyData.tier === 'ultra' ? baseUpgradeChance * 20 : baseUpgradeChance;
             const upgradeRoll = upgradeChance > 0 ? Math.random() * 100 : 1;
 
             if (upgradeRoll < upgradeChance) {
