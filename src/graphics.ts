@@ -3035,43 +3035,52 @@ export class Graphics {
      * Draw health bar and tier for an enemy
      */
     private drawEnemyHealthBar(enemy: Enemy, enemySize: number) {
-        // Draw health bar
+        const mobStats = getMobStats(enemy.type, enemy.tier);
+        const mobName = mobStats ? mobStats.name : `${enemy.tier} ${enemy.type}`;
+
         this.ctx.save();
         this.ctx.translate(enemy.x, enemy.y);
-        
+
         const healthBarWidth = enemySize;
-        const healthBarHeight = 5;
-        const healthBarY = -enemySize / 2 - 10;
+        const healthBarHeight = 8;
+        const healthBarY = enemySize / 2 + 8;
+        const radius = healthBarHeight / 2;
 
-        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-        this.ctx.fillRect(-healthBarWidth / 2, healthBarY, healthBarWidth, healthBarHeight);
-
-        this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
-        // Clamp health to prevent negative values from causing rendering issues
-        const clampedHealth = Math.max(0, Math.min(enemy.health, enemy.maxHealth));
-        this.ctx.fillRect(
-            -healthBarWidth / 2,
-            healthBarY,
-            (clampedHealth / enemy.maxHealth) * healthBarWidth,
-            healthBarHeight
-        );
-        
-        this.ctx.restore();
-
-        // Draw enemy tier with tier color
-        this.ctx.save();
-        this.ctx.translate(enemy.x, enemy.y);
-        this.ctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
-        this.ctx.textAlign = 'center';
+        // Draw mob name above health bar, left-aligned
+        this.ctx.textAlign = 'left';
         this.ctx.font = '12px Ubuntu, sans-serif';
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 3;
+        const nameX = -healthBarWidth / 2;
+        const nameY = healthBarY - 4;
+        this.ctx.strokeText(mobName, nameX, nameY);
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillText(mobName, nameX, nameY);
 
-        // Add black outline to text for better visibility
-        this.ctx.strokeStyle = 'white';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeText(enemy.tier.toUpperCase(), 0, enemySize / 2 + 20);
+        // Health bar background (rounded)
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(-healthBarWidth / 2 - 1, healthBarY - 1, healthBarWidth + 2, healthBarHeight + 2, radius);
+        this.ctx.fill();
 
-        // Draw the text
-        this.ctx.fillText(enemy.tier.toUpperCase(), 0, enemySize / 2 + 20);
+        // Health bar fill (rounded) - same green as player health bar
+        const clampedHealth = Math.max(0, Math.min(enemy.health, enemy.maxHealth));
+        const healthFillWidth = (clampedHealth / enemy.maxHealth) * healthBarWidth;
+        this.ctx.fillStyle = '#73ff54';
+        this.ctx.beginPath();
+        this.ctx.roundRect(-healthBarWidth / 2, healthBarY, healthFillWidth, healthBarHeight, radius);
+        this.ctx.fill();
+
+        // Draw rarity below the health bar at bottom right
+        this.ctx.textAlign = 'right';
+        this.ctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
+        this.ctx.font = '10px Ubuntu, sans-serif';
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 3;
+        const tierX = healthBarWidth / 2;
+        const tierY = healthBarY + healthBarHeight + 12;
+        this.ctx.strokeText(enemy.tier.toUpperCase(), tierX, tierY);
+        this.ctx.fillText(enemy.tier.toUpperCase(), tierX, tierY);
 
         // Draw DPS for target dummies
         if (enemy.type === 'target_dummy' && enemy.currentDPS !== undefined) {
@@ -3082,9 +3091,9 @@ export class Graphics {
             this.ctx.font = '10px Ubuntu, sans-serif';
             this.ctx.strokeStyle = '#000000';
             this.ctx.lineWidth = 2;
-            const dpsY = enemySize / 2 + 40;
-            this.ctx.strokeText(dpsText, 0, dpsY);
-            this.ctx.fillText(dpsText, 0, dpsY);
+            const dpsY = tierY + 14;
+            this.ctx.strokeText(dpsText, tierX, dpsY);
+            this.ctx.fillText(dpsText, tierX, dpsY);
         }
 
         this.ctx.restore();
