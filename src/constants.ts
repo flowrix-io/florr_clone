@@ -43804,7 +43804,7 @@ export const JAGGED_NUM_SEGMENTS = 7;
 
 const JAGGED_EDGE_CACHE: Map<string, TileJaggedEdges> = new Map();
 
-/** Check if a tile edge is exposed (adjacent tile is air) */
+/** Check if a tile edge is exposed (adjacent tile is air, or wall adjacent to water) */
 export function isTileEdgeExposed(
     grid: WallGrid, tileX: number, tileY: number,
     edge: 'top' | 'bottom' | 'left' | 'right'
@@ -43818,7 +43818,12 @@ export function isTileEdgeExposed(
     if (adjY < 0 || adjY >= grid.length || adjX < 0 || adjX >= (grid[0]?.length || 0)) {
         return true; // Out of bounds = exposed
     }
-    return grid[adjY][adjX] === 0;
+    const adjState = grid[adjY][adjX];
+    if (adjState === 0) return true; // Adjacent to air = exposed
+    // Wall tiles (dirt) show edges against water
+    const currentState = grid[tileY]?.[tileX] || 0;
+    if (currentState === 1 && adjState === 2) return true;
+    return false;
 }
 
 /** Generate jagged edge points for one edge of a tile */

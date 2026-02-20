@@ -1455,26 +1455,46 @@ class Graphics {
         const maxTileX = Math.min(constants_1.WALL_GRID[0]?.length - 1 || 0, (0, constants_1.worldToTileX)(viewport.right));
         const minTileY = Math.max(0, (0, constants_1.worldToTileY)(viewport.top));
         const maxTileY = Math.min(constants_1.WALL_GRID.length - 1, (0, constants_1.worldToTileY)(viewport.bottom));
-        // Draw each visible tile
-        // Note: The canvas context is already translated by the camera position,
-        // so we use world coordinates directly, not screen coordinates
+        // Pass 1: Draw all tile fills (walls and water rectangles)
         for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
             for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
                 const state = constants_1.WALL_GRID[tileY]?.[tileX] || 0;
                 if (state === 0)
-                    continue; // Skip air tiles
-                // Use world coordinates directly (context is already translated)
+                    continue;
                 const worldX = (0, constants_1.tileToWorldX)(tileX);
                 const worldY = (0, constants_1.tileToWorldY)(tileY);
                 if (state === 1) {
-                    // Draw wall tile
                     const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
                     if (pattern) {
                         this.ctx.save();
                         this.ctx.fillStyle = pattern;
                         this.ctx.fillRect(worldX, worldY, constants_1.WALL_TILE_SIZE, constants_1.WALL_TILE_SIZE);
                         this.ctx.restore();
-                        // Draw jagged edges on exposed sides
+                    }
+                    else {
+                        this.ctx.fillStyle = '#666666';
+                        this.ctx.fillRect(worldX, worldY, constants_1.WALL_TILE_SIZE, constants_1.WALL_TILE_SIZE);
+                    }
+                }
+                else if (state === 2) {
+                    this.ctx.fillStyle = '#4169E1';
+                    this.ctx.fillRect(worldX, worldY, constants_1.WALL_TILE_SIZE, constants_1.WALL_TILE_SIZE);
+                    this.ctx.fillStyle = 'rgba(65, 105, 225, 0.3)';
+                    this.ctx.fillRect(worldX, worldY, constants_1.WALL_TILE_SIZE, constants_1.WALL_TILE_SIZE);
+                }
+            }
+        }
+        // Pass 2: Draw all edges on top so they aren't covered by adjacent tile fills
+        for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+            for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+                const state = constants_1.WALL_GRID[tileY]?.[tileX] || 0;
+                if (state === 0)
+                    continue;
+                const worldX = (0, constants_1.tileToWorldX)(tileX);
+                const worldY = (0, constants_1.tileToWorldY)(tileY);
+                if (state === 1) {
+                    const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
+                    if (pattern) {
                         const jaggedEdges = (0, constants_1.getTileJaggedEdges)(constants_1.WALL_GRID, tileX, tileY);
                         if (jaggedEdges.top)
                             this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, pattern);
@@ -1485,20 +1505,8 @@ class Graphics {
                         if (jaggedEdges.right)
                             this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, pattern);
                     }
-                    else {
-                        // Fallback: gray color
-                        this.ctx.fillStyle = '#666666';
-                        this.ctx.fillRect(worldX, worldY, constants_1.WALL_TILE_SIZE, constants_1.WALL_TILE_SIZE);
-                    }
                 }
                 else if (state === 2) {
-                    // Draw water tile (blue)
-                    this.ctx.fillStyle = '#4169E1'; // Royal blue
-                    this.ctx.fillRect(worldX, worldY, constants_1.WALL_TILE_SIZE, constants_1.WALL_TILE_SIZE);
-                    // Add a subtle water effect (optional: add animation later)
-                    this.ctx.fillStyle = 'rgba(65, 105, 225, 0.3)';
-                    this.ctx.fillRect(worldX, worldY, constants_1.WALL_TILE_SIZE, constants_1.WALL_TILE_SIZE);
-                    // Draw smooth curved edges on exposed sides
                     const waterEdges = (0, constants_1.getTileJaggedEdges)(constants_1.WALL_GRID, tileX, tileY);
                     const waterFill = '#4169E1';
                     const waterStroke = '#2a4fa0';
