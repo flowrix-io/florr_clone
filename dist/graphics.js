@@ -2470,7 +2470,8 @@ class Graphics {
         const mobName = mobStats ? mobStats.name : `${enemy.tier} ${enemy.type}`;
         this.ctx.save();
         this.ctx.translate(enemy.x, enemy.y);
-        const healthBarWidth = enemySize;
+        const minHealthBarWidth = 60; // Minimum size: common hornet (size 1.0 * 40 * visual_scale 1.5)
+        const healthBarWidth = Math.max(enemySize, minHealthBarWidth);
         const healthBarHeight = 8;
         const healthBarY = enemySize / 2 + 8;
         const radius = healthBarHeight / 2;
