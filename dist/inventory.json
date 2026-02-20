@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 221826469,
+      "totalXP": 221871829,
       "inventory": {
         "common": {
           "shield": 228,
@@ -289,7 +289,7 @@
           "petal_spider_egg": 17,
           "petal_roach_egg": 15,
           "petal_moth_egg": 18,
-          "petal_bubble_egg": 25,
+          "petal_bubble_egg": 26,
           "petal_garbage_egg": 18,
           "petal_bush_egg": 3,
           "petal_fly_egg": 17,
@@ -306,7 +306,7 @@
           "petal_sponge_2_egg": 5,
           "petal_starfish": 8,
           "petal_starfish_egg": 8,
-          "petal_sponge": 9,
+          "petal_sponge": 10,
           "petal_sponge_1_egg": 5,
           "petal_glitch_egg": 17,
           "petal_glitch": 37,
@@ -323,7 +323,7 @@
         },
         "epic": {
           "petal_stinger": 67,
-          "speed_boost": 161,
+          "speed_boost": 162,
           "petal_basic": 111,
           "petal_rose": 162,
           "petal_sand": 21,
@@ -368,7 +368,7 @@
           "petal_jelly": 9,
           "petal_jellyfish_egg": 19,
           "petal_soldier_fire_ant_egg": 39,
-          "petal_bubble_egg": 25,
+          "petal_bubble_egg": 26,
           "petal_bulb": 12,
           "petal_sandstorm_egg": 7,
           "petal_item_spawner_egg": 1,
@@ -686,8 +686,8 @@
         },
         "bubble": {
           "ultra": 7,
-          "mythic": 56,
-          "legendary": 90,
+          "mythic": 58,
+          "legendary": 92,
           "uncommon": 36,
           "rare": 33,
           "common": 17,
@@ -698,7 +698,7 @@
           "uncommon": 37,
           "ultra": 4,
           "legendary": 73,
-          "mythic": 55,
+          "mythic": 59,
           "unique": 1,
           "epic": 22,
           "common": 14,
@@ -858,7 +858,7 @@
           "legendary": 76,
           "common": 20,
           "epic": 18,
-          "mythic": 45,
+          "mythic": 49,
           "super": 1
         },
         "sponge_1": {
@@ -867,7 +867,7 @@
           "legendary": 54,
           "common": 5,
           "epic": 18,
-          "mythic": 31,
+          "mythic": 33,
           "ultra": 2,
           "super": 1
         },
@@ -877,7 +877,7 @@
           "legendary": 44,
           "common": 10,
           "epic": 20,
-          "mythic": 24,
+          "mythic": 30,
           "ultra": 3
         },
         "osaka": {
@@ -929,7 +929,7 @@
           "ultra": 1
         }
       },
-      "stars": 123572
+      "stars": 123590
     },
     "1g99g1gfk": {
       "totalXP": 93,

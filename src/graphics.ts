@@ -3080,8 +3080,9 @@ export class Graphics {
         this.ctx.lineWidth = 3;
         const tierX = healthBarWidth / 2;
         const tierY = healthBarY + healthBarHeight + 12;
-        this.ctx.strokeText(enemy.tier.toUpperCase(), tierX, tierY);
-        this.ctx.fillText(enemy.tier.toUpperCase(), tierX, tierY);
+        const tierLabel = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
+        this.ctx.strokeText(tierLabel, tierX, tierY);
+        this.ctx.fillText(tierLabel, tierX, tierY);
 
         // Draw DPS for target dummies
         if (enemy.type === 'target_dummy' && enemy.currentDPS !== undefined) {
