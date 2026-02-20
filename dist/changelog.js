@@ -176,7 +176,14 @@ exports.CHANGELOG = [
             'New petal: Corn',
             'Commands are now suggested in the chat',
         ]
-    }
+    },
+    {
+        date: 'February 20, 2026',
+        changes: [
+            'Buffed droprates of ultras by 20x',
+            'Changed the UI of mobs',
+        ]
+    },
 ];
 class ChangelogManager {
     constructor() {
