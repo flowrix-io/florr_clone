@@ -1118,7 +1118,7 @@ export class TitleScreen {
             }
         });
 
-        this.settingsMenu.querySelectorAll('.tab-button').forEach(button => {
+        this.settingsMenu.querySelectorAll('.tab-button[data-tab]').forEach(button => {
             button.addEventListener('click', () => {
                 const tab = button.getAttribute('data-tab');
                 this.settingsMenu.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
@@ -1671,6 +1671,12 @@ export class TitleScreen {
         document.addEventListener('keydown', (e) => {
             // Don't interfere if game is running
             if (window.currentGame) return;
+
+            // Don't interfere if a real HTML input/textarea is focused
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                return;
+            }
 
             // Handle auth form input
             if (this.showAuthForm && this.authFocusedField) {
