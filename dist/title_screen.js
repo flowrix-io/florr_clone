@@ -142,6 +142,10 @@ class TitleScreen {
         this.authServerIP = window.location.origin;
         this.authAdvancedSettingsVisible = false;
         this.hoveredAuthButton = null; // 'login', 'register', 'guest', 'offline', 'toggleAdvanced', 'showRegister', 'showLogin'
+        // FPS/stats tracking for title screen
+        this.titleFrameCount = 0;
+        this.titleFpsCounter = 0;
+        this.titleFpsUpdateTime = performance.now();
         this.initializeElements();
         this.changelogManager = new changelog_1.ChangelogManager();
         this.notificationsManager = new notifications_1.NotificationsManager();
@@ -1985,6 +1989,14 @@ class TitleScreen {
         const centerY = height / 2;
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
+        // Track FPS
+        this.titleFrameCount++;
+        const currentTime = performance.now();
+        if (currentTime - this.titleFpsUpdateTime >= 1000) {
+            this.titleFpsCounter = this.titleFrameCount;
+            this.titleFrameCount = 0;
+            this.titleFpsUpdateTime = currentTime;
+        }
         // Draw title
         ctx.save();
         ctx.font = 'bold 48px Ubuntu, sans-serif';
@@ -2166,6 +2178,36 @@ class TitleScreen {
             // Draw text fill
             ctx.fillText(text, centerX, y);
         });
+        // Draw stats counters
+        this.renderStatsCounters(ctx, width, height);
+    }
+    /**
+     * Renders stats counters (FPS, memory, mobs, players) in the bottom-right corner
+     */
+    renderStatsCounters(ctx, width, height) {
+        const showStats = localStorage.getItem('showStats') === 'true';
+        if (!showStats)
+            return;
+        ctx.save();
+        ctx.font = 'bold 14px Ubuntu, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#000000';
+        // FPS & Memory
+        ctx.fillStyle = '#00ff00';
+        const fpsText = `FPS: ${this.titleFpsCounter} | Memory: 0.00 MB`;
+        ctx.strokeText(fpsText, width - 10, height - 10);
+        ctx.fillText(fpsText, width - 10, height - 10);
+        // Mobs
+        ctx.fillStyle = '#ff6b6b';
+        ctx.strokeText('Mobs: 0', width - 10, height - 30);
+        ctx.fillText('Mobs: 0', width - 10, height - 30);
+        // Players
+        ctx.fillStyle = '#4ecdc4';
+        ctx.strokeText('Players: 0', width - 10, height - 50);
+        ctx.fillText('Players: 0', width - 10, height - 50);
+        ctx.restore();
     }
     /**
      * Renders the connecting state on canvas
@@ -2193,6 +2235,8 @@ class TitleScreen {
         const connectingText = 'Connecting...';
         ctx.strokeText(connectingText, centerX, centerY);
         ctx.fillText(connectingText, centerX, centerY);
+        // Draw stats counters
+        this.renderStatsCounters(ctx, this.uiCanvas.width, this.uiCanvas.height);
     }
     /**
      * Renders the auth form on canvas
@@ -2303,6 +2347,8 @@ class TitleScreen {
             ctx.textBaseline = 'middle';
             ctx.fillText('Already have an account? Login', centerX, currentY + 10);
         }
+        // Draw stats counters
+        this.renderStatsCounters(ctx, this.uiCanvas.width, this.uiCanvas.height);
     }
     /**
      * Draws an auth input field
