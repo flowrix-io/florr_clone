@@ -24,6 +24,7 @@ exports.addXPToPlayer = addXPToPlayer;
 exports.savePlayerProgress = savePlayerProgress;
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
+const mobs_1 = require("../mobs");
 const RARITY_TP_COSTS = {
     common: 0,
     uncommon: 1,
@@ -132,11 +133,33 @@ function hasTooManyMobsNearby(x, y, radius = 200, maxMobs = 5) {
     return false;
 }
 /**
- * Check if a spawn position is safe (not in wall and not too many mobs nearby)
+ * Check if a position would directly overlap with any mob
+ */
+function isOverlappingMob(x, y, playerSize = constants_1.PLAYER_SIZE) {
+    const playerRadius = playerSize / 2;
+    for (const enemy of constants_1.enemies) {
+        const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+        const mobRadius = mobStats ? (mobStats.size * 40) / 2 : 20;
+        const dx = enemy.x - x;
+        const dy = enemy.y - y;
+        const distSq = dx * dx + dy * dy;
+        const minDist = playerRadius + mobRadius;
+        if (distSq < minDist * minDist) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * Check if a spawn position is safe (not in wall, not overlapping mobs, and not too many mobs nearby)
  */
 function isSafeSpawnPosition(x, y, playerSize = constants_1.PLAYER_SIZE) {
     // Check if position is inside a wall
     if (isPositionInsideWall(x, y, playerSize)) {
+        return false;
+    }
+    // Check if position would overlap with any mob
+    if (isOverlappingMob(x, y, playerSize)) {
         return false;
     }
     // Check if there are too many mobs nearby
