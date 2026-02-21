@@ -457,6 +457,61 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
         ultra: 19800,
         super: 2100000,
         unique: 6800000
+    },
+    javascript: {
+        common: 1,
+        uncommon: 2,
+        rare: 5,
+        epic: 35,
+        legendary: 490,
+        mythic: 8200,
+        ultra: 200000,
+        super: 1600000,
+        unique: 8000000
+    },
+    glitch: {
+        common: 1,
+        uncommon: 3,
+        rare: 10,
+        epic: 70,
+        legendary: 980,
+        mythic: 14800,
+        ultra: 220000,
+        super: 1800000,
+        unique: 10000000
+    },
+    dust: {
+        common: 1,
+        uncommon: 1,
+        rare: 2,
+        epic: 22,
+        legendary: 125,
+        mythic: 1800,
+        ultra: 12500,
+        super: 1250000,
+        unique: 5000000
+    },
+    osaka: {
+        common: 1,
+        uncommon: 2,
+        rare: 5,
+        epic: 35,
+        legendary: 980,
+        mythic: 8100,
+        ultra: 220000,
+        super: 1800000,
+        unique: 10000000
+    },
+    cube: {
+        common: 1,
+        uncommon: 1,
+        rare: 10,
+        epic: 70,
+        legendary: 980,
+        mythic: 8100,
+        ultra: 220000,
+        super: 1800000,
+        unique: 10000000
     }
 };
 
