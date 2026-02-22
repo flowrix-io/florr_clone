@@ -1116,6 +1116,10 @@ io.on('connection', (socket) => {
                 // Emit playerDisconnected event for this split player
                 io.emit('playerDisconnected', playerId);
             }
+            // Despawn all pets owned by any of the split players
+            for (const playerId of splitPlayerIds) {
+                (0, petal_actions_1.despawnAllPlayerPets)(playerId, io);
+            }
             // Remove split state
             splitPlayers.delete(originalId);
         }
@@ -1144,6 +1148,8 @@ io.on('connection', (socket) => {
             keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
             // Clean up petal physics states for this player
             (0, playerState_1.cleanupPetalPhysicsStates)(socket.id);
+            // Despawn all pets owned by this player
+            (0, petal_actions_1.despawnAllPlayerPets)(socket.id, io);
             delete constants_2.players[socket.id];
             delete gameState_1.playerUserIds[socket.id]; // Clean up the mapping
         }
@@ -2978,6 +2984,7 @@ function updateMobProjectiles(deltaTimeMs) {
                         if (player.health <= 0) {
                             player.isDead = true;
                             player.health = 0;
+                            (0, petal_actions_1.despawnAllPlayerPets)(player.id, io);
                             io.emit('playerDied', { playerId: player.id });
                         }
                     }

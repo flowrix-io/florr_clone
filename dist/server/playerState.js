@@ -1351,6 +1351,8 @@ function updatePlayerState(player, deltaTime, deps) {
         player.isDead = true;
         // Set random rotation for the corpse
         player.angle = Math.random() * Math.PI * 2;
+        // Despawn all pets owned by this player
+        (0, petal_actions_1.despawnAllPlayerPets)(player.id, io);
         io.emit('playerDied', {
             playerId: player.id,
             x: player.x,

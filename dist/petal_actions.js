@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.splitPlayers = exports.globalPetalMemory = void 0;
 exports.executePetalActions = executePetalActions;
 exports.despawnPet = despawnPet;
+exports.despawnAllPlayerPets = despawnAllPlayerPets;
 exports.spawnPet = spawnPet;
 exports.updatePlayerEffects = updatePlayerEffects;
 exports.getDamageMultiplier = getDamageMultiplier;
@@ -380,6 +381,15 @@ function despawnPet(pet, io) {
         constants_1.enemies.splice(index, 1);
         io.emit('enemyDestroyed', pet.id);
         // console.log(`Despawned pet ${pet.tier} ${pet.type} for player ${pet.ownerId}`);
+    }
+}
+// Despawn all pets owned by a player
+function despawnAllPlayerPets(playerId, io) {
+    for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
+        if (constants_1.enemies[i].ownerId === playerId) {
+            io.emit('enemyDestroyed', constants_1.enemies[i].id);
+            constants_1.enemies.splice(i, 1);
+        }
     }
 }
 // Spawn a pet mob that belongs to a player

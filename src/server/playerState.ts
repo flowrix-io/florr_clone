@@ -46,7 +46,8 @@ import {
     updatePetalActions,
     handlePetalCollision,
     updatePetalPosition,
-    executePetalActions
+    executePetalActions,
+    despawnAllPlayerPets
 } from '../petal_actions';
 import { getMobStats } from '../mobs';
 import { addItem, applyPetalHealthBonus, calculatePlayerModifiers } from './playerManager';
@@ -1633,6 +1634,8 @@ export function updatePlayerState(
         player.isDead = true;
         // Set random rotation for the corpse
         player.angle = Math.random() * Math.PI * 2;
+        // Despawn all pets owned by this player
+        despawnAllPlayerPets(player.id, io);
 
         io.emit('playerDied', {
             playerId: player.id,

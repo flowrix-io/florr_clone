@@ -496,6 +496,16 @@ export function despawnPet(pet: Enemy, io: any): void {
     }
 }
 
+// Despawn all pets owned by a player
+export function despawnAllPlayerPets(playerId: string, io: any): void {
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        if (enemies[i].ownerId === playerId) {
+            io.emit('enemyDestroyed', enemies[i].id);
+            enemies.splice(i, 1);
+        }
+    }
+}
+
 // Spawn a pet mob that belongs to a player
 export function spawnPet(mobType: string, rarity: string, x: number, y: number, ownerId: string, io: any): void {
     // Validate mob type

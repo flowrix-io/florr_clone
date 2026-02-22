@@ -41,7 +41,7 @@ if (invalidEggTypes.size > 0) {
 }
 
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
-import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet } from './petal_actions';
+import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet, despawnAllPlayerPets } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, FISH_DETECTION_RADIUS, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, WORLD_MAP, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, WALL_GRID, getTileState } from './constants';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect } from './server_utils';
@@ -1370,6 +1370,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 io.emit('playerDisconnected', playerId);
             }
             
+            // Despawn all pets owned by any of the split players
+            for (const playerId of splitPlayerIds) {
+                despawnAllPlayerPets(playerId, io);
+            }
+
             // Remove split state
             splitPlayers.delete(originalId);
         } else {
@@ -1400,7 +1405,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             
             // Clean up petal physics states for this player
             cleanupPetalPhysicsStates(socket.id);
-            
+
+            // Despawn all pets owned by this player
+            despawnAllPlayerPets(socket.id, io);
+
             delete players[socket.id];
             delete playerUserIds[socket.id]; // Clean up the mapping
         }
@@ -3498,6 +3506,7 @@ function updateMobProjectiles(deltaTimeMs: number) {
                         if (player.health <= 0) {
                             player.isDead = true;
                             player.health = 0;
+                            despawnAllPlayerPets(player.id, io);
                             io.emit('playerDied', { playerId: player.id });
                         }
                     }
