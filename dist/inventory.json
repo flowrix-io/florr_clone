@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 234187976,
+      "totalXP": 234187986,
       "inventory": {
         "common": {
           "shield": 229,
@@ -637,7 +637,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 323,
+          "common": 324,
           "legendary": 266,
           "mythic": 268,
           "uncommon": 136,
@@ -989,116 +989,6 @@
       "skills": {},
       "mobKills": {},
       "stars": 1000
-    },
-    "ebrlykqz6": {
-      "totalXP": 3,
-      "inventory": {
-        "common": {
-          "petal_basic": 5,
-          "petal_stinger": 1
-        }
-      },
-      "loadout": [
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 10,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 10,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 10,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 10,
-          "onCooldown": false
-        },
-        {
-          "type": "petal",
-          "petalType": "basic",
-          "rarity": "common",
-          "maxHealth": 10,
-          "health": 10,
-          "onCooldown": false
-        },
-        null,
-        null,
-        null,
-        null,
-        null
-      ]
-    },
-    "eo37v9184": {
-      "totalXP": 22,
-      "inventory": {
-        "common": {
-          "petal_basic": 5
-        }
-      },
-      "loadout": [
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        null,
-        null,
-        null,
-        null,
-        null
-      ],
-      "tp": 1,
-      "skills": {},
-      "mobKills": {
-        "bee": {
-          "common": 2
-        },
-        "dandelion": {
-          "common": 1
-        },
-        "hornet": {
-          "common": 1
-        }
-      },
-      "stars": 0
     }
   },
   "users": {
@@ -1112,16 +1002,6 @@
       "id": "1g99g1gfk",
       "username": "dev",
       "password": "$2b$12$Xs7mqEPcCz8DP47/3KI38.VqcIsdZh/I3KpcjVJkr8ldwj4SdDu8S"
-    },
-    "User06617766": {
-      "id": "ebrlykqz6",
-      "username": "User06617766",
-      "password": "$2b$12$y6mBNBi873G7GRqGk7AJI.vKGect1m0qdMHizhcK12LgbsHKjXNoy"
-    },
-    "User68753183": {
-      "id": "eo37v9184",
-      "username": "User68753183",
-      "password": "$2b$12$heLfqK17snGEEPz7DsDR9.tRJ97du.VJFCGPcebqblC3fV2RE.N9a"
     }
   },
   "codes": {},

@@ -413,6 +413,9 @@ export function executeServerCommand(
             sendOutput('    Consumables: health_potion, speed_boost, shield', socketId, io);
             sendOutput(`  Valid rarities: ${RARITY_LEVELS.join(', ')}`, socketId, io);
         }
+    } else if (trimmedCommand === 'delete_guests') {
+        const count = database.deleteGuestAccounts();
+        sendOutput(`Deleted ${count} guest account(s) and their player data.`, socketId, io);
     }
 }
 
@@ -477,6 +480,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, give <playerId/name> <rarity>, notification <type> <message>, clear_notifications';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, give <playerId/name> <rarity>, notification <type> <message>, clear_notifications, delete_guests';
 }
 

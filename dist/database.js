@@ -291,4 +291,23 @@ exports.database = {
         writeDatabase();
         return count;
     },
+    // Delete all guest accounts (usernames matching "User" + 8 digits)
+    deleteGuestAccounts: () => {
+        const guestPattern = /^User\d{8}$/;
+        let deleted = 0;
+        for (const username in db.users) {
+            if (guestPattern.test(username)) {
+                const userId = db.users[username].id;
+                // Remove player progress data
+                delete db.players[userId];
+                // Remove user account
+                delete db.users[username];
+                deleted++;
+            }
+        }
+        if (deleted > 0) {
+            writeDatabase();
+        }
+        return deleted;
+    },
 };

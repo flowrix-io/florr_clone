@@ -402,6 +402,10 @@ function executeServerCommand(command, executor, deps, socketId) {
             sendOutput(`  Valid rarities: ${petals_1.RARITY_LEVELS.join(', ')}`, socketId, io);
         }
     }
+    else if (trimmedCommand === 'delete_guests') {
+        const count = database_1.database.deleteGuestAccounts();
+        sendOutput(`Deleted ${count} guest account(s) and their player data.`, socketId, io);
+    }
 }
 // Generate a random code
 function generateCode() {
@@ -456,5 +460,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, give <playerId/name> <rarity>, notification <type> <message>, clear_notifications';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, give <playerId/name> <rarity>, notification <type> <message>, clear_notifications, delete_guests';
 }
