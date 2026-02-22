@@ -188,6 +188,12 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Changed the UI of mobs',
         ]
     },
+    {
+        date: 'February 21, 2026',
+        changes: [
+            'Bugfix',
+        ]
+    },
 ];
 
 export class ChangelogManager {

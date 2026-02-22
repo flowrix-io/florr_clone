@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 234190165,
+      "totalXP": 234190210,
       "inventory": {
         "common": {
           "shield": 230,
@@ -610,18 +610,18 @@
         "soldier_ant": {
           "epic": 112,
           "legendary": 274,
-          "common": 318,
+          "common": 320,
           "rare": 151,
           "mythic": 441,
           "ultra": 16,
-          "uncommon": 185,
+          "uncommon": 186,
           "super": 8,
           "unique": 3
         },
         "rock": {
           "legendary": 135,
           "ultra": 8,
-          "common": 255,
+          "common": 256,
           "mythic": 143,
           "epic": 49,
           "rare": 51,
@@ -641,7 +641,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 330,
+          "common": 331,
           "legendary": 266,
           "mythic": 268,
           "uncommon": 137,
@@ -653,7 +653,7 @@
         },
         "dandelion": {
           "legendary": 159,
-          "common": 229,
+          "common": 231,
           "mythic": 155,
           "uncommon": 73,
           "unique": 2,
