@@ -4,7 +4,7 @@
  */
 
 import { PETAL_CONFIG, RARITY_LEVELS, PetalStats, getPetalStats, getAllPetalTypes } from './petals';
-import { ChangelogManager } from './changelog';
+import { ChangelogManager, CHANGELOG } from './changelog';
 import { NotificationsManager } from './notifications';
 import { WORLD_MAP, invalidateSettingsCache } from './constants';
 import { Item } from './item';
@@ -721,7 +721,24 @@ export class TitleScreen {
             <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Settings">
                 ${formattedSettingsIcon}
             </div>
-            <div id="changelogButton" style="width: 42px; height: 42px; cursor: pointer; background: #00db3e; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Changelog">
+            <style>
+                @keyframes changelog-shake {
+                    0%, 100% { transform: rotate(0deg); }
+                    10% { transform: rotate(-12deg); }
+                    20% { transform: rotate(12deg); }
+                    30% { transform: rotate(-10deg); }
+                    40% { transform: rotate(10deg); }
+                    50% { transform: rotate(-6deg); }
+                    60% { transform: rotate(6deg); }
+                    70% { transform: rotate(-2deg); }
+                    80% { transform: rotate(0deg); }
+                }
+                #changelogButton.shake {
+                    animation: changelog-shake 0.8s ease-in-out infinite;
+                    animation-delay: 0s;
+                }
+            </style>
+            <div id="changelogButton" class="${CHANGELOG.length > parseInt(localStorage.getItem('lastSeenChangelogCount') || '0') ? 'shake' : ''}" style="width: 42px; height: 42px; cursor: pointer; background: #00db3e; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Changelog">
                 ${formattedChangelogIcon}
             </div>
             <div id="notificationsButton" style="width: 42px; height: 42px; cursor: pointer; background: #4a90e2; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Notifications">
@@ -946,6 +963,9 @@ export class TitleScreen {
                 const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
                 console.log('[CHANGELOG] Canvas exists:', !!gameCanvas, 'Canvas width:', gameCanvas?.width, 'Canvas height:', gameCanvas?.height);
                 console.log('[CHANGELOG] Manager canvas:', !!this.changelogManager['canvas'], 'Manager ctx:', !!this.changelogManager['ctx']);
+                // Mark changelog as seen and stop shaking
+                changelogButton.classList.remove('shake');
+                localStorage.setItem('lastSeenChangelogCount', String(CHANGELOG.length));
             });
         } else {
             console.error('[CHANGELOG] Button not found!');

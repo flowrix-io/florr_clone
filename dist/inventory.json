@@ -993,6 +993,50 @@
       "skills": {},
       "mobKills": {},
       "stars": 1000
+    },
+    "rvu5butjz": {
+      "totalXP": 0,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "stars": 0
     }
   },
   "users": {
