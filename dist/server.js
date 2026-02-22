@@ -31,12 +31,28 @@ const migratedPlayers = database_1.database.migratePlayerData();
 if (migratedPlayers > 0) {
     console.log(`[SERVER] Migrated ${migratedPlayers} players to new XP format`);
 }
+// Remove eggs for mobs that should not have eggs
+const mobs_1 = require("./mobs");
+const invalidEggTypes = new Set();
+for (const mobType in mobs_1.BASE_MOB_CONFIGS) {
+    if (mobType.endsWith('_pet'))
+        continue;
+    if (mobs_1.BASE_MOB_CONFIGS[mobType].noEggDrop) {
+        invalidEggTypes.add(`petal_${mobType}_egg`);
+    }
+}
+if (invalidEggTypes.size > 0) {
+    const cleanedPlayers = database_1.database.removeInvalidEggs(invalidEggTypes);
+    if (cleanedPlayers > 0) {
+        console.log(`[SERVER] Removed invalid eggs from ${cleanedPlayers} players (${[...invalidEggTypes].join(', ')})`);
+    }
+}
 const petal_actions_1 = require("./petal_actions");
 const petals_1 = require("./petals");
 const constants_2 = require("./constants");
 const server_utils_1 = require("./server_utils");
 const petals_2 = require("./petals");
-const mobs_1 = require("./mobs");
+const mobs_2 = require("./mobs");
 // Import from refactored modules
 const utils_1 = require("./server/utils");
 Object.defineProperty(exports, "trackDamage", { enumerable: true, get: function () { return utils_1.trackDamage; } });
@@ -386,7 +402,7 @@ function createEnemy() {
 // Function to spawn a specific mob with a specific rarity at optional coordinates
 function spawnMob(mobType, rarity, x, y) {
     // Validate mob type
-    const allMobTypes = (0, mobs_1.getAllMobTypes)();
+    const allMobTypes = (0, mobs_2.getAllMobTypes)();
     if (!allMobTypes.includes(mobType)) {
         console.log(`Invalid mob type: ${mobType}`);
         console.log(`Available mob types: ${allMobTypes.join(', ')}`);
@@ -400,7 +416,7 @@ function spawnMob(mobType, rarity, x, y) {
         return;
     }
     const tier = rarity.toLowerCase();
-    const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
+    const mobStats = (0, mobs_2.getMobStats)(mobType, tier);
     if (!mobStats) {
         console.log(`No stats found for ${mobType} with rarity ${tier}`);
         return;
@@ -2355,7 +2371,7 @@ function moveEnemies() {
                 }
             }
             // Handle pet projectiles (same as regular enemies)
-            const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+            const mobStats = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
             if (mobStats?.projectile && enemy.speed > 0) {
                 // Find closest wild mob for projectile target
                 let projectileTarget;
@@ -2396,7 +2412,7 @@ function moveEnemies() {
                                     projectileAngle = angleToTarget + spreadOffset;
                                 }
                                 // Scale projectile distance and size by 1/9 of mob's rarity size scaling
-                                const sizeScale = (mobs_1.SIZE_SCALING[enemy.tier] || 1) / 9;
+                                const sizeScale = (mobs_2.SIZE_SCALING[enemy.tier] || 1) / 9;
                                 const scaledDistance = projectileConfig.distance * sizeScale;
                                 const scaledSize = petalStats.size * sizeScale;
                                 const projectile = {
@@ -2425,7 +2441,7 @@ function moveEnemies() {
                 }
             }
             // Skip regular enemy behavior for pets - handle wall collisions and move to next enemy
-            const mobStatsForSize = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+            const mobStatsForSize = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
             (0, physics_1.checkEnemyWallCollisions)(enemy);
             // Continue to next iteration (pets skip regular enemy behavior)
         }
@@ -2534,7 +2550,7 @@ function moveEnemies() {
                     }
                 }
                 // Check if mob can shoot projectiles
-                const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                const mobStats = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
                 if (mobStats?.projectile && target) {
                     const projectileConfig = mobStats.projectile;
                     const lastShotTime = enemy.lastProjectileTime || 0;
@@ -2560,7 +2576,7 @@ function moveEnemies() {
                                     projectileAngle = angleToTarget + spreadOffset;
                                 }
                                 // Scale projectile distance and size by 1/9 of mob's rarity size scaling
-                                const sizeScale = (mobs_1.SIZE_SCALING[enemy.tier] || 1) / 9;
+                                const sizeScale = (mobs_2.SIZE_SCALING[enemy.tier] || 1) / 9;
                                 const scaledDistance = projectileConfig.distance * sizeScale;
                                 const scaledSize = petalStats.size * sizeScale;
                                 const projectile = {
@@ -2631,7 +2647,7 @@ function moveEnemies() {
                 }
             }
             // Get enemy size based on mob stats
-            const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+            const mobStats = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
             const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
             const halfSize = enemySize / 2;
             // // Check if enemy goes out of bounds - kill them -- no longer needed since enemies no longer spawn out of bounds
@@ -2863,7 +2879,7 @@ function updateMobProjectiles(deltaTimeMs) {
                 if (targetEnemy.ownerId || targetEnemy.id === projectile.enemyId) {
                     continue;
                 }
-                const targetMobStats = (0, mobs_1.getMobStats)(targetEnemy.type, targetEnemy.tier);
+                const targetMobStats = (0, mobs_2.getMobStats)(targetEnemy.type, targetEnemy.tier);
                 const targetEnemySize = targetMobStats ? targetMobStats.size * 40 : constants_2.ENEMY_SIZE;
                 const targetEnemyHalfSize = targetEnemySize / 2;
                 const dx = targetEnemy.x - projectile.x;
@@ -3045,7 +3061,7 @@ function updatePlayerProjectiles(deltaTimeMs) {
             if (enemy.ownerId) {
                 continue;
             }
-            const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+            const mobStats = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
             const enemySize = mobStats ? mobStats.size * 40 : constants_2.ENEMY_SIZE;
             const enemyHalfSize = enemySize / 2;
             const dx = enemy.x - projectile.x;

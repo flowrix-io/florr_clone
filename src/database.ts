@@ -225,6 +225,51 @@ export const database = {
         return migrated;
     },
 
+    // Remove invalid eggs from all player inventories and loadouts
+    removeInvalidEggs: (invalidEggTypes: Set<string>): number => {
+        let cleaned = 0;
+        for (const userId in db.players) {
+            const player = db.players[userId];
+            if (!player) continue;
+            let playerModified = false;
+
+            // Clean inventory
+            if (player.inventory) {
+                for (const rarity in player.inventory) {
+                    for (const itemType in player.inventory[rarity]) {
+                        if (invalidEggTypes.has(itemType)) {
+                            delete player.inventory[rarity][itemType];
+                            playerModified = true;
+                        }
+                    }
+                    // Clean up empty rarity objects
+                    if (Object.keys(player.inventory[rarity]).length === 0) {
+                        delete player.inventory[rarity];
+                    }
+                }
+            }
+
+            // Clean loadout
+            if (player.loadout) {
+                for (let i = 0; i < player.loadout.length; i++) {
+                    const item = player.loadout[i];
+                    if (item && item.petalType && invalidEggTypes.has(item.petalType)) {
+                        player.loadout[i] = null;
+                        playerModified = true;
+                    }
+                }
+            }
+
+            if (playerModified) {
+                cleaned++;
+            }
+        }
+        if (cleaned > 0) {
+            writeDatabase();
+        }
+        return cleaned;
+    },
+
     // Code-related functions
     saveCode: (code: string, codeData: RedeemedCode) => {
         if (!db.codes) {

@@ -24,6 +24,22 @@ if (migratedPlayers > 0) {
     console.log(`[SERVER] Migrated ${migratedPlayers} players to new XP format`);
 }
 
+// Remove eggs for mobs that should not have eggs
+import { BASE_MOB_CONFIGS } from './mobs';
+const invalidEggTypes = new Set<string>();
+for (const mobType in BASE_MOB_CONFIGS) {
+    if (mobType.endsWith('_pet')) continue;
+    if (BASE_MOB_CONFIGS[mobType].noEggDrop) {
+        invalidEggTypes.add(`petal_${mobType}_egg`);
+    }
+}
+if (invalidEggTypes.size > 0) {
+    const cleanedPlayers = database.removeInvalidEggs(invalidEggTypes);
+    if (cleanedPlayers > 0) {
+        console.log(`[SERVER] Removed invalid eggs from ${cleanedPlayers} players (${[...invalidEggTypes].join(', ')})`);
+    }
+}
+
 import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
