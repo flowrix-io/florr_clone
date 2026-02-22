@@ -2336,7 +2336,14 @@ class TitleScreen {
             const guestButtonWidth = inputWidth * 0.5; // Half width
             const guestButtonX = inputX + (inputWidth - guestButtonWidth) / 2; // Centered
             this.drawAuthButton(ctx, guestButtonX, currentY, guestButtonWidth, buttonHeight * 0.8, inputRadius, 'guest', 'Guest', '#6A1B9A'); // Darker purple, smaller
-            currentY += buttonHeight + buttonSpacing;
+            currentY += buttonHeight * 0.8 + 4;
+            // Guest warning text
+            ctx.font = '11px Ubuntu, sans-serif';
+            ctx.fillStyle = '#FF9800';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Guest accounts do not keep progress', centerX, currentY + 6);
+            currentY += buttonSpacing + 8;
         }
         else {
             // Register button (purple)

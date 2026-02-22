@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 234190210,
+      "totalXP": 234190213,
       "inventory": {
         "common": {
           "shield": 230,
@@ -598,7 +598,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 250,
+          "common": 252,
           "legendary": 169,
           "uncommon": 74,
           "mythic": 148,
@@ -663,7 +663,7 @@
           "super": 4
         },
         "bee": {
-          "common": 267,
+          "common": 268,
           "epic": 89,
           "mythic": 178,
           "uncommon": 79,
@@ -1006,6 +1006,11 @@
       "id": "1g99g1gfk",
       "username": "dev",
       "password": "$2b$12$Xs7mqEPcCz8DP47/3KI38.VqcIsdZh/I3KpcjVJkr8ldwj4SdDu8S"
+    },
+    "User79735867": {
+      "id": "rvu5butjz",
+      "username": "User79735867",
+      "password": "$2b$12$lHpAvWWJ6NgAoTyr4xu2kugVGLxOHGk4H/1r4b44q0bmC0UhiFaPe"
     }
   },
   "codes": {},
