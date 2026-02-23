@@ -194,6 +194,12 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Bugfix',
         ]
     },
+    {
+        date: 'February 22, 2026',
+        changes: [
+            'Fixed an animation loop bug',
+        ]
+    },
 ];
 
 export class ChangelogManager {

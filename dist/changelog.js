@@ -190,6 +190,12 @@ exports.CHANGELOG = [
             'Bugfix',
         ]
     },
+    {
+        date: 'February 22, 2026',
+        changes: [
+            'Fixed an animation loop bug',
+        ]
+    },
 ];
 class ChangelogManager {
     constructor() {

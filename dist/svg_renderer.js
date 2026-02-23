@@ -43,6 +43,7 @@ class SVGRendererWrapper {
         this.animatedCache = {};
         this.preloadingComplete = false; // Track if preloading phase is complete
         this.baseCacheKeyMap = new Map(); // Cache normalized base keys per SVG string
+        this.cycleLengthMap = new Map(); // Per-SVG framesPerCycle for smooth looping
         this.initPromise = this.initialize();
     }
     async initialize() {
@@ -239,14 +240,6 @@ class SVGRendererWrapper {
                 animatedSVG = this.applyAnimationsToSVG(svgString, time);
             }
         }
-        // For animated SVGs, we need to use a time-based cache key to ensure
-        // the animation updates each frame. Use configurable framerate for smooth animation
-        // Use modulo to wrap time within animation cycle
-        const frameTime = this.getFrameTime(); // Get milliseconds per frame from settings
-        const framesPerCycle = 30; // Number of frames in a complete animation cycle
-        const animationCycleDuration = framesPerCycle * frameTime; // Total cycle duration
-        const relativeTime = time % animationCycleDuration;
-        const timeBucket = Math.floor(relativeTime / frameTime); // Update based on configured framerate
         // Use cached base key to avoid expensive regex normalization per enemy per frame
         let baseCacheKey = this.baseCacheKeyMap.get(svgString);
         if (!baseCacheKey) {
@@ -262,6 +255,13 @@ class SVGRendererWrapper {
             ].join('|');
             this.baseCacheKeyMap.set(svgString, baseCacheKey);
         }
+        // For animated SVGs, we need to use a time-based cache key to ensure
+        // the animation updates each frame. Use per-SVG cycle length for smooth looping.
+        const frameTime = this.getFrameTime();
+        const framesPerCycle = this.getCycleLength(baseCacheKey);
+        const animationCycleDuration = framesPerCycle * frameTime;
+        const relativeTime = time % animationCycleDuration;
+        const timeBucket = Math.floor(relativeTime / frameTime);
         const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
         // Check if we already have this frame as a canvas (preferred - no data URLs)
         if (this.canvasCache.has(animatedCacheKey)) {
@@ -313,7 +313,7 @@ class SVGRendererWrapper {
                 // Also check wrapping distance (e.g., if target is 29 and we have 0, distance is 1)
                 for (const bucket of availableBuckets) {
                     const distance = Math.abs(targetBucket - bucket);
-                    const wrapDistance = Math.min(distance, 30 - distance); // 30 frames total
+                    const wrapDistance = Math.min(distance, framesPerCycle - distance);
                     if (wrapDistance < minDistance) {
                         minDistance = wrapDistance;
                         closestBucket = bucket;
@@ -363,6 +363,22 @@ class SVGRendererWrapper {
     // Public method to check if a canvas is cached
     isCanvasCached(key) {
         return this.canvasCache.has(key);
+    }
+    // Set the cycle length (framesPerCycle) for a specific baseCacheKey
+    setCycleLength(baseCacheKey, framesPerCycle) {
+        this.cycleLengthMap.set(baseCacheKey, framesPerCycle);
+    }
+    // Get the cycle length for a baseCacheKey (defaults to 30 for backwards compatibility)
+    getCycleLength(baseCacheKey) {
+        return this.cycleLengthMap.get(baseCacheKey) || 30;
+    }
+    // Get framesPerCycle for a given SVG string (looks up baseCacheKey first)
+    getFramesPerCycleForSVG(svgString) {
+        const baseCacheKey = this.baseCacheKeyMap.get(svgString);
+        if (baseCacheKey) {
+            return this.getCycleLength(baseCacheKey);
+        }
+        return 30;
     }
     clearCache() {
         if (this.renderer) {

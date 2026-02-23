@@ -377,6 +377,95 @@ export class Graphics {
         return getMobAnimationFrameTime();
     }
 
+    private static gcd(a: number, b: number): number {
+        a = Math.abs(Math.round(a));
+        b = Math.abs(Math.round(b));
+        while (b > 0) {
+            [a, b] = [b, a % b];
+        }
+        return a;
+    }
+
+    private static lcm(a: number, b: number): number {
+        if (a === 0 || b === 0) return 0;
+        return Math.abs(Math.round(a) * Math.round(b)) / Graphics.gcd(a, b);
+    }
+
+    /**
+     * Parse all animation durations from an SVG string.
+     * Returns durations in milliseconds.
+     */
+    private parseSVGAnimationDurations(svg: string): number[] {
+        const durations: number[] = [];
+        const durRegex = /dur="([^"]*)"/g;
+        let match;
+        while ((match = durRegex.exec(svg)) !== null) {
+            const durStr = match[1];
+            let ms: number;
+            if (durStr.endsWith('ms')) {
+                ms = parseFloat(durStr);
+            } else if (durStr.endsWith('s')) {
+                ms = parseFloat(durStr) * 1000;
+            } else {
+                ms = parseFloat(durStr) * 1000; // assume seconds
+            }
+            if (ms > 0 && !isNaN(ms)) {
+                durations.push(Math.round(ms));
+            }
+        }
+        return durations;
+    }
+
+    /**
+     * Calculate the optimal framesPerCycle for a mob SVG based on its animation durations.
+     * Uses LCM of all durations to ensure all animations loop seamlessly.
+     * Caps at MAX_FRAMES_PER_CYCLE to limit memory usage.
+     */
+    private calculateFramesPerCycle(svg: string, frameTime: number): number {
+        const MAX_FRAMES_PER_CYCLE = 60;
+        const MIN_FRAMES_PER_CYCLE = 6;
+        const DEFAULT_FRAMES = 30;
+
+        const durations = this.parseSVGAnimationDurations(svg);
+        if (durations.length === 0) {
+            return DEFAULT_FRAMES;
+        }
+
+        // Deduplicate durations
+        const uniqueDurations = [...new Set(durations)];
+
+        // Compute LCM of all durations
+        let cycleDuration = uniqueDurations[0];
+        for (let i = 1; i < uniqueDurations.length; i++) {
+            cycleDuration = Graphics.lcm(cycleDuration, uniqueDurations[i]);
+            // Safety: if LCM grows too large, stop and cap
+            if (cycleDuration > MAX_FRAMES_PER_CYCLE * frameTime) {
+                break;
+            }
+        }
+
+        let framesPerCycle = Math.ceil(cycleDuration / frameTime);
+
+        if (framesPerCycle > MAX_FRAMES_PER_CYCLE) {
+            // LCM is too large. Find the largest cycle ≤ MAX that is a multiple
+            // of the shortest animation duration (most visually critical).
+            const shortestDuration = Math.min(...uniqueDurations);
+            const maxCycleDuration = MAX_FRAMES_PER_CYCLE * frameTime;
+            // How many full repetitions of the shortest duration fit in the max?
+            const reps = Math.floor(maxCycleDuration / shortestDuration);
+            if (reps >= 1) {
+                cycleDuration = reps * shortestDuration;
+                framesPerCycle = Math.ceil(cycleDuration / frameTime);
+            } else {
+                // Shortest duration itself exceeds max - use max frames
+                framesPerCycle = MAX_FRAMES_PER_CYCLE;
+            }
+        }
+
+        framesPerCycle = Math.max(MIN_FRAMES_PER_CYCLE, Math.min(MAX_FRAMES_PER_CYCLE, framesPerCycle));
+        return framesPerCycle;
+    }
+
     /**
      * Pre-render animation frames for a mob
      * @param mobStats The mob stats containing the SVG image
@@ -404,31 +493,26 @@ export class Graphics {
             baseCacheKey = keyParts.join('|');
         }
 
-        // Pre-render multiple animation frames to avoid data URL creation during gameplay
-        // Pre-render frames for a full animation cycle (configurable framerate)
-        // For most mobs, animations are typically 1-2 seconds, so pre-render ~30 frames (2 seconds)
+        // Calculate per-mob cycle based on SVG animation durations (LCM)
+        const frameTime = this.getMobAnimationFrameTime();
+        const framesPerCycle = this.calculateFramesPerCycle(mobStats.image, frameTime);
+
+        // Store cycle length in the renderer for use during rendering
+        this.svgRenderer.setCycleLength(baseCacheKey!, framesPerCycle);
+
         const promise = (async () => {
             try {
-                // Use 256x256 for canvas size when high quality is off (better image quality)
-                // When high quality is on, use the mob's actual size
                 const highQualityMobs = getHighQualityMobs();
                 const mobSize = highQualityMobs ? mobStats.size * 40 : 256;
-                
-                // Pre-render multiple frames (30 frames per animation cycle)
-                const framesToPreload = 30;
-                for (let frame = 0; frame < framesToPreload; frame++) {
-                    // Check if preloading was marked complete (user might have set it manually)
-                    // If so, stop pre-rendering to avoid data URL creation
+
+                for (let frame = 0; frame < framesPerCycle; frame++) {
                     if (this.svgRenderer.isPreloadingComplete()) {
                         console.log(`[Graphics] Preloading marked complete, stopping pre-render for ${cacheKey} at frame ${frame}`);
                         break;
                     }
-                    
-                    const frameTime = this.getMobAnimationFrameTime(); // Get milliseconds per frame from settings
-                    const time = frame * frameTime; // Time in ms for this frame
-                    // Use same relative time calculation as renderSVGToCanvas
-                    const framesPerCycle = 30; // Number of frames in a complete animation cycle
-                    const animationCycleDuration = framesPerCycle * frameTime; // Total cycle duration
+
+                    const time = frame * frameTime;
+                    const animationCycleDuration = framesPerCycle * frameTime;
                     const relativeTime = time % animationCycleDuration;
                     const timeBucket = Math.floor(relativeTime / frameTime);
                     const animatedCacheKey = `${baseCacheKey}_${timeBucket}`;
@@ -637,17 +721,19 @@ export class Graphics {
         // Store the base cache key for later unloading
         this.mobBaseCacheKeys.set(cacheKey, baseCacheKey);
 
+        // Calculate per-mob cycle and store it
+        const frameTime = getMobAnimationFrameTime();
+        const framesPerCycle = this.calculateFramesPerCycle(mobStats.image, frameTime);
+        this.svgRenderer.setCycleLength(baseCacheKey, framesPerCycle);
+
         // Pre-render frames asynchronously
         (async () => {
             try {
                 const highQualityMobs = getHighQualityMobs();
                 const mobSize = highQualityMobs ? mobStats.size * 40 : 256;
-                const framesToPreload = 30;
-                const frameTime = getMobAnimationFrameTime();
 
-                for (let frame = 0; frame < framesToPreload; frame++) {
+                for (let frame = 0; frame < framesPerCycle; frame++) {
                     const time = frame * frameTime;
-                    const framesPerCycle = 30;
                     const animationCycleDuration = framesPerCycle * frameTime;
                     const relativeTime = time % animationCycleDuration;
                     const timeBucket = Math.floor(relativeTime / frameTime);
@@ -2820,9 +2906,9 @@ export class Graphics {
         const mobSVG = this.mobSVGCache[cacheKey];
         
         // Use relative time for animation (wraps within animation cycle)
-        // This MUST match the preloading calculation in preloadMobFrames and loadMobFrames
+        // Per-mob cycle duration ensures animations loop seamlessly
         const frameTime = getMobAnimationFrameTime();
-        const framesPerCycle = 30; // Must match preloading
+        const framesPerCycle = this.svgRenderer.getFramesPerCycleForSVG(mobSVG);
         const animationCycleDuration = framesPerCycle * frameTime;
         let currentTime = this.frameTimestamp % animationCycleDuration;
 
