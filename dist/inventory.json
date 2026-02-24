@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 234243848,
+      "totalXP": 234244208,
       "inventory": {
         "common": {
           "shield": 230,
@@ -396,7 +396,7 @@
           "petal_missile": 61,
           "petal_leaf": 5,
           "petal_iris": 5,
-          "petal_yucca": 9,
+          "petal_yucca": 10,
           "petal_jelly": 4,
           "petal_cutter": 2,
           "petal_lightning_cutter": 5,
@@ -421,7 +421,7 @@
           "petal_bush_egg": 2,
           "petal_spider_egg": 17,
           "petal_fly_egg": 14,
-          "petal_soldier_fire_ant_egg": 17,
+          "petal_soldier_fire_ant_egg": 18,
           "petal_bulb": 3,
           "petal_gas": 10,
           "petal_blood_leaf": 2,
@@ -783,10 +783,10 @@
           "epic": 12
         },
         "soldier_fire_ant": {
-          "uncommon": 174,
+          "uncommon": 177,
           "common": 15,
           "rare": 56,
-          "epic": 92,
+          "epic": 93,
           "mythic": 49,
           "legendary": 109,
           "super": 1,

@@ -720,35 +720,41 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         cooldown: 2000,
         description: "It hurts, hostile towards flowers",
         color: "#ff8800",
-        image: `<svg id="soldier-fire-ant-svg" width="32" height="32" viewBox="-35 -40 80 80" xmlns="http://www.w3.org/2000/svg">
+        image: `<svg id="soldier-fire-ant-svg" width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
   <circle cx="-12" cy="0" r="10" fill="#b02a22" stroke="#8c221b" stroke-width="7" />
 
   <g fill="#ffdddd" fill-opacity="0.37">
-    <g>
-      <animateTransform attributeName="transform" type="rotate" from="-5" to="5" dur="0.4s" repeatCount="indefinite" autoreverse="true" />
-      <g transform="translate(-11, -8) rotate(18)">
-        <ellipse cx="0" cy="0" rx="15" ry="7" />
-      </g>
-    </g>
-    <g>
-      <animateTransform attributeName="transform" type="rotate" from="5" to="-5" dur="0.4s" repeatCount="indefinite" autoreverse="true" />
-      <g transform="translate(-11, 8) rotate(-18)">
-        <ellipse cx="0" cy="0" rx="15" ry="7" />
-      </g>
-    </g>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 -8) rotate(0)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="15" ry="7" transform="translate(-11 8) rotate(0)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
   </g>
 
-  <path stroke="#3d1512" stroke-width="7" stroke-linecap="round" fill="none">
-    <animate 
-        attributeName="d" 
-        dur="2.5s" 
-        repeatCount="indefinite" 
-        autoreverse="true"
-        values="M 4 -7 Q 15 -12 26 -7 M 4 7 Q 15 12 26 7;
-                M 4 -7 Q 15 -8 26 -3 M 4 7 Q 15 8 26 3;
-                M 4 -7 Q 15 -12 26 -7 M 4 7 Q 15 12 26 7" />
-  </path>
-  
+  <path fill="none" stroke="#3d1512" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="1s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+             </path>
+
   <circle cx="4" cy="0" r="14" fill="#b02a22" stroke="#8c221b" stroke-width="7" />
 
 </svg>`,
