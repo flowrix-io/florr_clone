@@ -2121,9 +2121,10 @@ exports.BASE_MOB_CONFIGS = {
         cooldown: 2000,
         description: "Buzzzzzzzz",
         color: "#919191",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="14" stroke-width="4" fill="#333333" stroke="#5c5c5c"/>
-  <ellipse cx="0" cy="0" rx="10" ry="7" transform="translate(22 23) rotate(0)" fill="rgba(128, 128, 128, 0.5)">
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-16 -16 32 32">
+  <circle cx="0" cy="0" r="14" stroke-width="4" fill="#333333" stroke="#5c5c5c"/>
+  <g fill="#808080" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="10" ry="7" transform="translate(6 7) rotate(0)">
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
@@ -2132,7 +2133,7 @@ exports.BASE_MOB_CONFIGS = {
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
-  <ellipse cx="0" cy="0" rx="10" ry="7" transform="translate(22 9) rotate(0)" fill="rgba(128, 128, 128, 0.5)">
+    <ellipse cx="0" cy="0" rx="10" ry="7" transform="translate(6 -7) rotate(0)">
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
@@ -2141,6 +2142,7 @@ exports.BASE_MOB_CONFIGS = {
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
+  </g>
 </svg>`,
         is_hostile: false,
         range: 100,
@@ -2195,9 +2197,10 @@ exports.BASE_MOB_CONFIGS = {
         cooldown: 2000,
         description: "A moth",
         color: "#bcc286",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="10" stroke-width="2" fill="#c4c1af" stroke="#858275"/>
-  <ellipse cx="0" cy="0" rx="6" ry="4" transform="translate(22 23) rotate(0)" fill="rgba(128, 128, 128, 0.5)">
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-16 -16 32 32">
+  <circle cx="0" cy="0" r="10" stroke-width="2" fill="#c4c1af" stroke="#858275"/>
+  <g fill="#808080" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="6" ry="4" transform="translate(6 7) rotate(0)">
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
@@ -2206,7 +2209,7 @@ exports.BASE_MOB_CONFIGS = {
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
-  <ellipse cx="0" cy="0" rx="6" ry="4" transform="translate(22 9) rotate(0)" fill="rgba(128, 128, 128, 0.5)">
+    <ellipse cx="0" cy="0" rx="6" ry="4" transform="translate(6 -7) rotate(0)">
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
@@ -2215,8 +2218,9 @@ exports.BASE_MOB_CONFIGS = {
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
     </ellipse>
-  <path d="M 10 13 Q 5 10 3 5" stroke="#000000" stroke-linecap="round"/>
-  <path d="M 10 19 Q 5 22 3 27" stroke="#000000" stroke-linecap="round"/>
+  </g>
+  <path d="M -6 -3 Q -11 -6 -13 -11" stroke="#000000" stroke-linecap="round" fill="none"/>
+  <path d="M -6 3 Q -11 6 -13 11" stroke="#000000" stroke-linecap="round" fill="none"/>
 </svg>`,
         is_hostile: false,
         range: 100,
