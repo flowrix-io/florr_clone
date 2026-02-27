@@ -443,22 +443,24 @@ function spawnMob(mobType, rarity, x, y) {
             spawnX = undefined;
             spawnY = undefined;
         }
-        // Check if position is in a safe zone
-        const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
-            spawnX >= element.x * constants_2.SCALE_FACTOR &&
-            spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-            spawnY >= element.y * constants_2.SCALE_FACTOR &&
-            spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-        // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-        const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, spawnX, spawnY);
-        const collidesWithWall = tileState === 1 || tileState === 2;
-        if (!inSafeZone && !collidesWithWall) {
-            validPosition = true;
-        }
         else {
-            console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) are in a safe zone or wall. Finding alternative position...`);
-            spawnX = undefined;
-            spawnY = undefined;
+            // Check if position is in a safe zone
+            const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+                spawnX >= element.x * constants_2.SCALE_FACTOR &&
+                spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
+                spawnY >= element.y * constants_2.SCALE_FACTOR &&
+                spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, spawnX, spawnY);
+            const collidesWithWall = tileState === 1 || tileState === 2;
+            if (!inSafeZone && !collidesWithWall) {
+                validPosition = true;
+            }
+            else {
+                console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) are in a safe zone or wall. Finding alternative position...`);
+                spawnX = undefined;
+                spawnY = undefined;
+            }
         }
     }
     // If coordinates weren't provided or were invalid, find a valid position

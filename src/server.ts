@@ -584,27 +584,27 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
             console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) are in out-of-bounds zone. Finding alternative position...`);
             spawnX = undefined;
             spawnY = undefined;
-        }
-        
-        // Check if position is in a safe zone
-        const inSafeZone = WORLD_MAP.some(element =>
-            element.type === 'safe_zone' &&
-            spawnX! >= element.x * SCALE_FACTOR &&
-            spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
-            spawnY! >= element.y * SCALE_FACTOR &&
-            spawnY! <= (element.y + element.height) * SCALE_FACTOR
-        );
-
-        // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-        const tileState = getTileState(WALL_GRID, spawnX!, spawnY!);
-        const collidesWithWall = tileState === 1 || tileState === 2;
-
-        if (!inSafeZone && !collidesWithWall) {
-            validPosition = true;
         } else {
-            console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) are in a safe zone or wall. Finding alternative position...`);
-            spawnX = undefined;
-            spawnY = undefined;
+            // Check if position is in a safe zone
+            const inSafeZone = WORLD_MAP.some(element =>
+                element.type === 'safe_zone' &&
+                spawnX! >= element.x * SCALE_FACTOR &&
+                spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
+                spawnY! >= element.y * SCALE_FACTOR &&
+                spawnY! <= (element.y + element.height) * SCALE_FACTOR
+            );
+
+            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
+            const tileState = getTileState(WALL_GRID, spawnX!, spawnY!);
+            const collidesWithWall = tileState === 1 || tileState === 2;
+
+            if (!inSafeZone && !collidesWithWall) {
+                validPosition = true;
+            } else {
+                console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) are in a safe zone or wall. Finding alternative position...`);
+                spawnX = undefined;
+                spawnY = undefined;
+            }
         }
     }
 

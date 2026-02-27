@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 234504998,
+      "totalXP": 234599896,
       "inventory": {
         "common": {
           "shield": 230,
@@ -72,8 +72,7 @@
           "petal_third_eye": 3,
           "petal_gas": 5,
           "petal_glass": 15,
-          "petal_cube_egg": 12,
-          "petal_target_dummy_egg": 1
+          "petal_cube_egg": 12
         },
         "unique": {
           "petal_stinger": 1002,
@@ -607,7 +606,7 @@
         "soldier_ant": {
           "epic": 113,
           "legendary": 274,
-          "common": 321,
+          "common": 325,
           "rare": 156,
           "mythic": 444,
           "ultra": 16,
@@ -618,7 +617,7 @@
         "rock": {
           "legendary": 135,
           "ultra": 8,
-          "common": 256,
+          "common": 257,
           "mythic": 144,
           "epic": 49,
           "rare": 51,
@@ -638,7 +637,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 333,
+          "common": 335,
           "legendary": 267,
           "mythic": 272,
           "uncommon": 137,
@@ -660,7 +659,7 @@
           "super": 4
         },
         "bee": {
-          "common": 269,
+          "common": 273,
           "epic": 89,
           "mythic": 181,
           "uncommon": 79,
@@ -695,11 +694,11 @@
           "legendary": 3,
           "common": 10,
           "mythic": 16,
-          "ultra": 48,
-          "super": 74,
+          "ultra": 49,
+          "super": 75,
           "uncommon": 11,
-          "rare": 12,
-          "unique": 11,
+          "rare": 13,
+          "unique": 12,
           "epic": 11
         },
         "shiny_ladybug": {
@@ -928,7 +927,7 @@
           "rare": 5
         }
       },
-      "stars": 124894
+      "stars": 125024
     },
     "1g99g1gfk": {
       "totalXP": 93,
