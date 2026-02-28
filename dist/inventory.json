@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 234610019,
+      "totalXP": 234754432,
       "inventory": {
         "common": {
           "shield": 230,
@@ -25,7 +25,7 @@
           "petal_wing": 297,
           "petal_rose": 124,
           "health_potion": 66,
-          "petal_basic": 66,
+          "petal_basic": 67,
           "petal_square": 25,
           "petal_shield": 1,
           "petal_golden_leaf": 14,
@@ -33,11 +33,11 @@
           "petal_fire_ant_egg": 6,
           "petal_yucca": 17,
           "petal_hornet_egg": 88,
-          "petal_dandelion_egg": 94,
+          "petal_dandelion_egg": 95,
           "petal_ladybug_egg": 81,
           "petal_soldier_ant_egg": 121,
           "petal_dark_ladybug_egg": 78,
-          "petal_bee_egg": 93,
+          "petal_bee_egg": 94,
           "petal_fly_egg": 75,
           "petal_bubble_egg": 17,
           "petal_rock_egg": 86,
@@ -134,7 +134,7 @@
           "petal_cutter": 5,
           "petal_clover": 4,
           "petal_lightning_cutter": 1,
-          "petal_square": 17,
+          "petal_square": 18,
           "petal_wing": 10,
           "petal_jelly": 2,
           "petal_golden_leaf": 2,
@@ -257,7 +257,7 @@
           "petal_iris": 27,
           "petal_missile": 76,
           "petal_jelly": 14,
-          "shield": 86,
+          "shield": 87,
           "petal_leaf": 6,
           "petal_lightning": 15,
           "petal_cutter": 2,
@@ -268,11 +268,11 @@
           "petal_basic": 67,
           "petal_blood_leaf": 19,
           "petal_ant_egg": 5,
-          "petal_dark_ladybug_egg": 40,
-          "petal_dandelion_egg": 82,
+          "petal_dark_ladybug_egg": 41,
+          "petal_dandelion_egg": 83,
           "petal_hornet_egg": 88,
-          "petal_ladybug_egg": 45,
-          "petal_bee_egg": 50,
+          "petal_ladybug_egg": 46,
+          "petal_bee_egg": 51,
           "petal_rock_egg": 50,
           "petal_soldier_ant_egg": 132,
           "petal_bone": 37,
@@ -597,7 +597,7 @@
           "common": 253,
           "legendary": 169,
           "uncommon": 74,
-          "mythic": 149,
+          "mythic": 150,
           "rare": 57,
           "ultra": 13,
           "epic": 67,
@@ -605,7 +605,7 @@
         },
         "soldier_ant": {
           "epic": 113,
-          "legendary": 274,
+          "legendary": 275,
           "common": 326,
           "rare": 156,
           "mythic": 444,
@@ -618,7 +618,7 @@
           "legendary": 135,
           "ultra": 8,
           "common": 257,
-          "mythic": 144,
+          "mythic": 146,
           "epic": 49,
           "rare": 51,
           "uncommon": 80,
@@ -626,9 +626,9 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 312,
+          "common": 313,
           "legendary": 123,
-          "mythic": 123,
+          "mythic": 124,
           "uncommon": 102,
           "rare": 66,
           "epic": 46,
@@ -637,9 +637,9 @@
           "unique": 2
         },
         "hornet": {
-          "common": 337,
-          "legendary": 267,
-          "mythic": 272,
+          "common": 338,
+          "legendary": 268,
+          "mythic": 274,
           "uncommon": 138,
           "rare": 101,
           "epic": 86,
@@ -649,8 +649,8 @@
         },
         "dandelion": {
           "legendary": 160,
-          "common": 232,
-          "mythic": 155,
+          "common": 233,
+          "mythic": 157,
           "uncommon": 73,
           "unique": 2,
           "ultra": 13,
@@ -659,9 +659,9 @@
           "super": 4
         },
         "bee": {
-          "common": 274,
+          "common": 277,
           "epic": 89,
-          "mythic": 181,
+          "mythic": 183,
           "uncommon": 79,
           "legendary": 188,
           "rare": 84,
@@ -694,8 +694,8 @@
           "legendary": 3,
           "common": 10,
           "mythic": 16,
-          "ultra": 49,
-          "super": 75,
+          "ultra": 50,
+          "super": 76,
           "uncommon": 11,
           "rare": 13,
           "unique": 12,
@@ -927,7 +927,7 @@
           "rare": 5
         }
       },
-      "stars": 125029
+      "stars": 125069
     },
     "1g99g1gfk": {
       "totalXP": 93,

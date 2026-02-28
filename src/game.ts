@@ -229,6 +229,7 @@ export class Game {
     public shopManager!: ShopManager;
     private controls!: { [key: string]: string };
     private tutorial: Tutorial;
+    private beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
 
     constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null, shadersEnabled: boolean = false, showStats: boolean = false, dynamicSkybox: boolean = false) {
         this.showHitboxes = showHitboxes;
@@ -675,7 +676,13 @@ export class Game {
         // });
 
         this.chat = new Chat(this.socket);
-        
+
+        // Warn before leaving the page
+        this.beforeUnloadHandler = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+        };
+        window.addEventListener('beforeunload', this.beforeUnloadHandler);
+
         // Initialize tutorial
         this.tutorial = new Tutorial();
         document.getElementById('connectingDiv')?.remove();
@@ -1540,6 +1547,12 @@ export class Game {
         if (this.gameLoopId) {
             cancelAnimationFrame(this.gameLoopId);
             this.gameLoopId = null;
+        }
+
+        // Remove beforeunload handler
+        if (this.beforeUnloadHandler) {
+            window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+            this.beforeUnloadHandler = null;
         }
 
         // Disconnect socket if it exists

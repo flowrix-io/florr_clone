@@ -146,6 +146,7 @@ class Game {
         this.gameStartTime = 0;
         // Add chat property
         this.chat = null;
+        this.beforeUnloadHandler = null;
         this.itemSpriteDataUrls = new Map();
         this.showHitboxes = showHitboxes;
         this.showStats = showStats;
@@ -517,6 +518,11 @@ class Game {
         //     randomizationFactor: 0.5
         // });
         this.chat = new chat_1.Chat(this.socket);
+        // Warn before leaving the page
+        this.beforeUnloadHandler = (e) => {
+            e.preventDefault();
+        };
+        window.addEventListener('beforeunload', this.beforeUnloadHandler);
         // Initialize tutorial
         this.tutorial = new tutorial_1.Tutorial();
         document.getElementById('connectingDiv')?.remove();
@@ -1245,6 +1251,11 @@ class Game {
         if (this.gameLoopId) {
             cancelAnimationFrame(this.gameLoopId);
             this.gameLoopId = null;
+        }
+        // Remove beforeunload handler
+        if (this.beforeUnloadHandler) {
+            window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+            this.beforeUnloadHandler = null;
         }
         // Disconnect socket if it exists
         if (this.socket) {
