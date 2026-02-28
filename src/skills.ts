@@ -451,4 +451,8 @@ export class SkillsManager {
     public isSkillsOpen(): boolean {
         return this.isOpen;
     }
+
+    public cleanup(): void {
+        this.skillsPanel?.remove();
+    }
 }

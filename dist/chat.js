@@ -687,5 +687,8 @@ class Chat {
             this.chatMessages.removeChild(this.chatMessages.firstChild);
         }
     }
+    cleanup() {
+        this.chatContainer?.remove();
+    }
 }
 exports.Chat = Chat;

@@ -214,6 +214,8 @@ export class Graphics {
     private irisTransitionActive: boolean = false;
     private irisTransitionStartTime: number = 0;
     private irisScreenshot: HTMLCanvasElement | null = null;
+    private irisClosing: boolean = false;
+    private irisOnComplete: (() => void) | null = null;
     private readonly IRIS_TRANSITION_DURATION: number = 800; // ms
     private readonly IRIS_OUTLINE_WIDTH: number = 6;
 
@@ -267,6 +269,16 @@ export class Graphics {
         this.irisTransitionActive = true;
         this.irisTransitionStartTime = Date.now();
         this.irisScreenshot = screenshot;
+        this.irisClosing = false;
+        this.irisOnComplete = null;
+    }
+
+    public startIrisClose(screenshot: HTMLCanvasElement | null, onComplete: () => void): void {
+        this.irisTransitionActive = true;
+        this.irisTransitionStartTime = Date.now();
+        this.irisScreenshot = screenshot;
+        this.irisClosing = true;
+        this.irisOnComplete = onComplete;
     }
 
     private drawIrisTransition(): void {
@@ -274,13 +286,35 @@ export class Graphics {
         const progress = Math.min(elapsed / this.IRIS_TRANSITION_DURATION, 1);
 
         if (progress >= 1) {
+            // Draw final frame for closing (fully covered)
+            if (this.irisClosing) {
+                this.ctx.save();
+                if (this.irisScreenshot) {
+                    this.ctx.drawImage(this.irisScreenshot, 0, 0, this.canvas.width, this.canvas.height);
+                } else {
+                    this.ctx.fillStyle = 'black';
+                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                }
+                this.ctx.restore();
+            }
             this.irisTransitionActive = false;
             this.irisScreenshot = null;
+            if (this.irisOnComplete) {
+                const cb = this.irisOnComplete;
+                this.irisOnComplete = null;
+                cb();
+            }
             return;
         }
 
-        // Ease out cubic for smooth deceleration
-        const eased = 1 - Math.pow(1 - progress, 3);
+        // Opening: circle grows (ease out), Closing: circle shrinks (ease in)
+        let eased: number;
+        if (this.irisClosing) {
+            eased = Math.pow(1 - progress, 3); // starts big (1), shrinks to 0
+        } else {
+            eased = 1 - Math.pow(1 - progress, 3); // starts small (0), grows to 1
+        }
+
         const centerX = this.canvas.width / 2;
         const centerY = this.canvas.height / 2;
         const maxRadius = Math.sqrt(centerX * centerX + centerY * centerY);
@@ -290,7 +324,7 @@ export class Graphics {
         // Clip to the area outside the circle (title screen overlay region)
         this.ctx.beginPath();
         this.ctx.rect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2, true);
+        this.ctx.arc(centerX, centerY, Math.max(currentRadius, 0), 0, Math.PI * 2, true);
         this.ctx.clip();
 
         // Draw captured title screen screenshot as overlay
@@ -303,13 +337,15 @@ export class Graphics {
         this.ctx.restore();
 
         // Draw black outline ring around the circle edge
-        this.ctx.save();
-        this.ctx.beginPath();
-        this.ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
-        this.ctx.strokeStyle = 'black';
-        this.ctx.lineWidth = this.IRIS_OUTLINE_WIDTH;
-        this.ctx.stroke();
-        this.ctx.restore();
+        if (currentRadius > 0) {
+            this.ctx.save();
+            this.ctx.beginPath();
+            this.ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+            this.ctx.strokeStyle = 'black';
+            this.ctx.lineWidth = this.IRIS_OUTLINE_WIDTH;
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
     }
 
     private async preloadMobImages() {

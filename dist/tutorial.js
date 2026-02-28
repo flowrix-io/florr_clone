@@ -456,5 +456,10 @@ class Tutorial {
         this.reset();
         this.start();
     }
+    cleanup() {
+        this.tutorialBox?.remove();
+        this.tutorialOverlay?.remove();
+        this.highlightOverlay?.remove();
+    }
 }
 exports.Tutorial = Tutorial;

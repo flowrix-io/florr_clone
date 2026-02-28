@@ -874,11 +874,7 @@ class TitleScreen {
         else {
             console.error('[NOTIFICATIONS] Button not found!');
         }
-        if (exitButton) {
-            exitButton.addEventListener('click', () => {
-                window.location.reload();
-            });
-        }
+        // Exit button is handled by index.ts setupGameEventListeners
         // Craft, Skills, and Inventory button event listeners
         // Using setTimeout to ensure these run after the DOM is fully ready
         setTimeout(() => {
@@ -2698,7 +2694,8 @@ class TitleScreen {
         this.gameMenu.style.display = 'none';
     }
     showGameMenu() {
-        this.gameMenu.style.display = 'flex';
+        // gameMenu is empty (contents moved elsewhere), keep it hidden
+        this.gameMenu.style.display = 'none';
     }
     hideCenterText() {
         this.centerText.style.display = 'none';
@@ -2822,12 +2819,25 @@ class TitleScreen {
         }
         // Restart canvas rendering
         this.startCanvasRendering();
-        this.showAuthContainer();
+        // Only show auth form if the user is not logged in
+        const username = localStorage.getItem('username');
+        const password = localStorage.getItem('password');
+        const currentUser = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
+        if (!username || !password || !currentUser) {
+            this.showAuthContainer();
+        }
+        else {
+            this.hideAuthContainer();
+        }
         this.showGameMenu();
         this.showCenterText();
         this.showFloatingPetals();
         this.showBackgroundCanvas();
         this.startBackgroundAnimation();
+        // Re-show title screen chat
+        if (this.titleScreenChat) {
+            this.titleScreenChat.show();
+        }
         // Hide game canvas initially (it will be shown when menus are opened)
         const gameCanvas = document.getElementById('gameCanvas');
         if (gameCanvas) {

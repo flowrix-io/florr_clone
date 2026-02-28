@@ -52,8 +52,6 @@ export function initMultiPlayerMode(game: any, serverIp: string) {
             if (connectingDiv) {
                 connectingDiv.remove();
             }
-            game.hideTitleScreen();
-            game.showExitButton();
         });
         
         game.socket.on('connect_error', (error: Error) => {
@@ -71,11 +69,9 @@ export function initMultiPlayerMode(game: any, serverIp: string) {
         setupSocketListeners(game);
     }
     
-    // If socket is already connected (preconnected), hide title screen now
+    // If socket is already connected (preconnected), remove connecting message
     if (game.socket.connected) {
-        console.log(`[CLIENT] Socket already connected, hiding title screen`);
-        game.hideTitleScreen();
-        // Remove connecting message
+        console.log(`[CLIENT] Socket already connected`);
         const connectingDiv = document.getElementById('connectingDiv');
         if (connectingDiv) {
             connectingDiv.remove();

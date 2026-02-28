@@ -364,7 +364,7 @@ function setupGameEventListeners() {
                 }
             }
             
-            // Capture title screen screenshot for iris transition
+            // Capture title screen screenshot for iris transition (also stored for exit animation)
             if (currentGame?.graphics) {
                 const bgCanvas = document.getElementById('title-background-canvas') as HTMLCanvasElement | null;
                 const uiCanvas = document.getElementById('title-ui-canvas') as HTMLCanvasElement | null;
@@ -397,15 +397,57 @@ function setupGameEventListeners() {
     const exitButton = titleScreen.getExitButtonContainer().querySelector('#exitButton');
     if (exitButton) {
         exitButton.addEventListener('click', () => {
-            if (currentGame) {
-                currentGame.cleanup();
-                currentGame = null;
-                window.currentGame = null;
-            }
-            
-            // Show title screen and hide game
-            titleScreen?.showTitleScreen();
+            if (!currentGame) return;
+
             titleScreen?.hideExitButton();
+
+            // Briefly show title screen canvases to capture a fresh screenshot
+            const bgCanvas = document.getElementById('title-background-canvas') as HTMLCanvasElement | null;
+            const uiCanvas = document.getElementById('title-ui-canvas') as HTMLCanvasElement | null;
+            if (bgCanvas) bgCanvas.style.display = 'block';
+            if (uiCanvas) uiCanvas.style.display = 'block';
+            titleScreen?.startBackgroundAnimation();
+            (titleScreen as any)?.startCanvasRendering();
+
+            // Wait a few frames for title screen canvases to fully render
+            let framesWaited = 0;
+            const waitForRender = () => {
+                framesWaited++;
+                if (framesWaited < 3) {
+                    requestAnimationFrame(waitForRender);
+                    return;
+                }
+
+                // Capture screenshot from the now-rendered canvases
+                const screenshot = document.createElement('canvas');
+                screenshot.width = window.innerWidth;
+                screenshot.height = window.innerHeight;
+                const sctx = screenshot.getContext('2d')!;
+                if (bgCanvas) sctx.drawImage(bgCanvas, 0, 0, screenshot.width, screenshot.height);
+                if (uiCanvas) sctx.drawImage(uiCanvas, 0, 0, screenshot.width, screenshot.height);
+
+                // Hide title screen canvases so only game canvas is visible during animation
+                if (bgCanvas) bgCanvas.style.display = 'none';
+                if (uiCanvas) uiCanvas.style.display = 'none';
+                (titleScreen as any)?.stopCanvasRendering();
+                titleScreen?.stopBackgroundAnimation();
+
+                // Start iris close animation
+                currentGame!.graphics.startIrisClose(screenshot, () => {
+                    if (currentGame) {
+                        currentGame.cleanup();
+                        currentGame = null;
+                        window.currentGame = null;
+                    }
+
+                    // Now fully show the title screen
+                    titleScreen?.showTitleScreen();
+
+                    // Reset connecting flag so user can rejoin
+                    isConnecting = false;
+                });
+            };
+            requestAnimationFrame(waitForRender);
         });
     }
 }

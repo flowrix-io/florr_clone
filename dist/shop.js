@@ -591,5 +591,8 @@ class ShopManager {
     handleCodeRedeemError(message) {
         alert(`Code redemption failed: ${message}`);
     }
+    cleanup() {
+        this.shopPanel?.remove();
+    }
 }
 exports.ShopManager = ShopManager;

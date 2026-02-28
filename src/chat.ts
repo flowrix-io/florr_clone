@@ -780,4 +780,8 @@ export class Chat {
             this.chatMessages.removeChild(this.chatMessages.firstChild!);
         }
     }
+
+    public cleanup(): void {
+        this.chatContainer?.remove();
+    }
 }

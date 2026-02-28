@@ -2900,13 +2900,11 @@ export class InventoryManager {
     }
 
     public cleanup() {
-        if (this.inventoryPanel) this.inventoryPanel.style.display = 'none';
-        if (this.craftingPanel) this.craftingPanel.style.display = 'none';
-
-        const loadoutBar = document.getElementById('loadoutBar');
-        if (loadoutBar) {
-            loadoutBar.remove();
-        }
+        this.inventoryPanel?.remove();
+        this.craftingPanel?.remove();
+        this.mobGalleryPanel?.remove();
+        this.tooltipElement?.remove();
+        document.getElementById('loadoutBar')?.remove();
     }
 
     private getItemCount(rarity: string, type: string): number {

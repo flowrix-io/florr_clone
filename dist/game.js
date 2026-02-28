@@ -147,6 +147,8 @@ class Game {
         // Add chat property
         this.chat = null;
         this.beforeUnloadHandler = null;
+        this.abortController = new AbortController();
+        this.createdElements = []; // Track DOM elements for cleanup
         this.itemSpriteDataUrls = new Map();
         this.showHitboxes = showHitboxes;
         this.showStats = showStats;
@@ -173,7 +175,7 @@ class Game {
         // Set initial canvas size
         this.resizeCanvas();
         // Add resize listener
-        window.addEventListener('resize', () => this.resizeCanvas());
+        window.addEventListener('resize', () => this.resizeCanvas(), { signal: this.abortController.signal });
         // Create and set up preview canvas BEFORE using it
         this.colorPreviewCanvas = document.createElement('canvas');
         this.colorPreviewCanvas.width = 64; // Set fixed size for preview
@@ -237,7 +239,7 @@ class Game {
             hueSlider.addEventListener('input', (e) => {
                 const value = e.target.value;
                 colorPreview.style.backgroundColor = `hsl(${value}, 100%, 50%)`;
-            });
+            }, { signal: this.abortController.signal });
             // Add update color button handler
             const updateColorButton = document.getElementById('updateColorButton');
             if (updateColorButton) {
@@ -254,7 +256,7 @@ class Game {
                     }
                     // Show confirmation message
                     this.showFloatingText(this.canvas.width / 2, 50, 'Color Updated!', '#4CAF50', 20);
-                });
+                }, { signal: this.abortController.signal });
             }
         }
         this.setupEventListeners();
@@ -281,7 +283,7 @@ class Game {
             if (this.isPlayerDead) {
                 this.socket.emit('requestRespawn');
             }
-        });
+        }, { signal: this.abortController.signal });
         // Add mouse move listener - always track mouse position so it's available when toggling mouse controls
         this.canvas.addEventListener('mousemove', (event) => {
             const rect = this.canvas.getBoundingClientRect();
@@ -305,7 +307,7 @@ class Game {
             this.lastMouseTargetX = worldX;
             this.lastMouseTargetY = worldY;
             this.hasValidMouseTarget = true;
-        });
+        }, { signal: this.abortController.signal });
         // Add mouse button listeners for petal extension/retraction
         this.canvas.addEventListener('mousedown', (event) => {
             this.mouseButtonsPressed.add(event.button);
@@ -313,19 +315,19 @@ class Game {
             if (event.button === 2) {
                 event.preventDefault();
             }
-        });
+        }, { signal: this.abortController.signal });
         this.canvas.addEventListener('mouseup', (event) => {
             this.mouseButtonsPressed.delete(event.button);
-        });
+        }, { signal: this.abortController.signal });
         // Prevent context menu on right click
         this.canvas.addEventListener('contextmenu', (event) => {
             event.preventDefault();
-        });
+        }, { signal: this.abortController.signal });
         // Initialize exit button
         this.exitButton = document.getElementById('exitButton');
         this.exitButtonContainer = document.getElementById('exitButtonContainer');
         // Add exit button click handler
-        this.exitButton?.addEventListener('click', () => this.handleExit());
+        this.exitButton?.addEventListener('click', () => this.handleExit(), { signal: this.abortController.signal });
         // Set up item sprites
         this.assetLoader.setupItemSprites().then(() => {
             this.graphics.setupItemSprites(this.assetLoader.itemSprites);
@@ -342,12 +344,14 @@ class Game {
         inventoryContent.className = 'inventory-content';
         this.inventoryPanel.appendChild(inventoryContent);
         document.body.appendChild(this.inventoryPanel);
+        this.createdElements.push(this.inventoryPanel);
         // Create save indicator
         this.saveIndicator = document.createElement('div');
         this.saveIndicator.className = 'save-indicator';
         this.saveIndicator.textContent = 'Progress Saved';
         this.saveIndicator.style.display = 'none';
         document.body.appendChild(this.saveIndicator);
+        this.createdElements.push(this.saveIndicator);
         // Create FPS display element
         this.fpsDisplayElement = document.createElement('div');
         this.fpsDisplayElement.id = 'fpsDisplay';
@@ -366,6 +370,7 @@ class Game {
         `;
         this.fpsDisplayElement.textContent = 'FPS: 0';
         document.body.appendChild(this.fpsDisplayElement);
+        this.createdElements.push(this.fpsDisplayElement);
         // Set initial stats display visibility
         if (this.fpsDisplayElement) {
             this.fpsDisplayElement.style.display = this.showStats ? 'block' : 'none';
@@ -388,6 +393,7 @@ class Game {
         `;
         this.mobCounterElement.textContent = 'Mobs: 0';
         document.body.appendChild(this.mobCounterElement);
+        this.createdElements.push(this.mobCounterElement);
         // Create player counter element
         this.playerCounterElement = document.createElement('div');
         this.playerCounterElement.id = 'playerCounter';
@@ -406,6 +412,7 @@ class Game {
         `;
         this.playerCounterElement.textContent = 'Players: 0';
         document.body.appendChild(this.playerCounterElement);
+        this.createdElements.push(this.playerCounterElement);
         // Set initial counter visibility
         if (this.mobCounterElement) {
             this.mobCounterElement.style.display = this.showStats ? 'block' : 'none';
@@ -436,6 +443,7 @@ class Game {
           }
       `;
         document.head.appendChild(style);
+        this.createdElements.push(style);
         // Add to constructor after other UI initialization
         this.inventoryManager = new inventory_1.InventoryManager(this, this.chat);
         this.skillsManager = new skills_1.SkillsManager(this);
@@ -522,7 +530,7 @@ class Game {
         this.beforeUnloadHandler = (e) => {
             e.preventDefault();
         };
-        window.addEventListener('beforeunload', this.beforeUnloadHandler);
+        window.addEventListener('beforeunload', this.beforeUnloadHandler, { signal: this.abortController.signal });
         // Initialize tutorial
         this.tutorial = new tutorial_1.Tutorial();
         document.getElementById('connectingDiv')?.remove();
@@ -615,6 +623,7 @@ class Game {
         });
     }
     setupEventListeners() {
+        const signal = this.abortController.signal;
         document.addEventListener('keydown', (event) => {
             if (this.chat && this.chat.isFocused) {
                 if (event.key === 'Escape') {
@@ -722,32 +731,33 @@ class Game {
                 event.preventDefault();
                 this.graphics.showRarityGlow = true;
             }
-        });
+        }, { signal });
         document.addEventListener('keyup', (event) => {
             this.keysPressed.delete(event.key);
             // ALT key toggles rarity glow on petals
             if (event.key === 'Alt') {
                 this.graphics.showRarityGlow = false;
             }
-        });
+        }, { signal });
         // Add name input change listener
         this.nameInput?.addEventListener('change', () => {
             if (this.socket && this.nameInput) {
                 this.socket.emit('updateName', this.nameInput.value);
             }
-        });
+        }, { signal });
         // Add drag and drop handlers for loadout
         const loadoutBar = document.getElementById('loadoutBar');
         if (loadoutBar) {
             loadoutBar.addEventListener('dragover', (e) => {
                 e.preventDefault();
-            });
+            }, { signal });
         }
         // Add settings change listeners
         this.setupSettingsListeners();
     }
     setupSettingsListeners() {
         // Listen for settings changes from the title screen
+        const signal = this.abortController.signal;
         const settingsMenu = document.getElementById('settingsMenu');
         if (settingsMenu) {
             const hitboxesCheckbox = settingsMenu.querySelector('#showHitboxesCheckbox');
@@ -756,7 +766,7 @@ class Game {
                 hitboxesCheckbox.addEventListener('change', () => {
                     this.showHitboxes = hitboxesCheckbox.checked;
                     this.graphics.showHitboxes = this.showHitboxes;
-                });
+                }, { signal });
             }
             if (statsCheckbox) {
                 statsCheckbox.addEventListener('change', () => {
@@ -786,7 +796,7 @@ class Game {
                             this.playerCounterElement.style.display = 'none';
                         }
                     }
-                });
+                }, { signal });
             }
             const mobDeathAnimationCheckbox = settingsMenu.querySelector('#mobDeathAnimationCheckbox');
             if (mobDeathAnimationCheckbox) {
@@ -794,7 +804,7 @@ class Game {
                     this.mobDeathAnimation = mobDeathAnimationCheckbox.checked;
                     this.graphics.mobDeathAnimation = mobDeathAnimationCheckbox.checked;
                     localStorage.setItem('mobDeathAnimation', mobDeathAnimationCheckbox.checked.toString());
-                });
+                }, { signal });
             }
         }
     }
@@ -1252,14 +1262,17 @@ class Game {
             cancelAnimationFrame(this.gameLoopId);
             this.gameLoopId = null;
         }
-        // Remove beforeunload handler
-        if (this.beforeUnloadHandler) {
-            window.removeEventListener('beforeunload', this.beforeUnloadHandler);
-            this.beforeUnloadHandler = null;
-        }
-        // Disconnect socket if it exists
+        // Abort all event listeners registered with the signal
+        this.abortController.abort();
+        // Remove all socket listeners before disconnecting
         if (this.socket) {
+            this.socket.removeAllListeners();
             this.socket.disconnect();
+        }
+        // Clear heartbeat interval
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
         }
         // Clear all game data
         this.players.clear();
@@ -1271,24 +1284,6 @@ class Game {
         this.floatingTexts = [];
         this.decorations = [];
         this.sands = [];
-        // Define clear canvas function
-        const clearCanvas = () => {
-            // Clear the main canvas
-            this.graphics.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            // Fill with white background
-            this.graphics.ctx.fillStyle = 'white';
-            this.graphics.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-            // Explicitly clear the minimap area
-            const minimapX = this.canvas.width - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
-            const minimapY = this.MINIMAP_PADDING;
-            this.graphics.ctx.clearRect(minimapX - 5, minimapY - 5, this.MINIMAP_WIDTH + 10, this.MINIMAP_HEIGHT + 10);
-            this.graphics.ctx.fillStyle = 'white';
-            this.graphics.ctx.fillRect(minimapX - 5, minimapY - 5, this.MINIMAP_WIDTH + 10, this.MINIMAP_HEIGHT + 10);
-        };
-        // Clear multiple times to ensure everything is gone
-        clearCanvas();
-        requestAnimationFrame(clearCanvas);
-        setTimeout(clearCanvas, 50);
         // Reset game state
         this.isInventoryOpen = false;
         this.isCraftingOpen = false;
@@ -1296,25 +1291,25 @@ class Game {
         this.shieldActive = false;
         this.isPlayerDead = false;
         this.useMouseControls = false;
-        // Hide all game UI elements
-        if (this.inventoryPanel)
-            this.inventoryPanel.style.display = 'none';
-        if (this.craftingPanel)
-            this.craftingPanel.style.display = 'none';
-        if (this.chatContainer)
-            this.chatContainer.style.display = 'none';
-        if (this.saveIndicator)
-            this.saveIndicator.style.display = 'none';
+        // Remove all dynamically created DOM elements
+        for (const el of this.createdElements) {
+            el.remove();
+        }
+        this.createdElements = [];
         // Clear loadout bar
         const loadoutBar = document.getElementById('loadoutBar');
         if (loadoutBar) {
             loadoutBar.style.display = 'none';
-            // Clear all loadout slots
             const slots = loadoutBar.querySelectorAll('.loadout-slot');
             slots.forEach(slot => {
                 slot.innerHTML = '';
             });
         }
+        // Remove other dynamic UI elements
+        document.getElementById('disconnect-message')?.remove();
+        document.getElementById('transfer-message')?.remove();
+        document.getElementById('teleporter-ui')?.remove();
+        document.getElementById('deathScreen')?.remove();
         // Reset camera position
         this.cameraX = 0;
         this.cameraY = 0;
@@ -1323,15 +1318,16 @@ class Game {
             clearTimeout(this.saveIndicatorTimeout);
             this.saveIndicatorTimeout = null;
         }
-        // Remove any event listeners
         this.keysPressed.clear();
         this.mouseButtonsPressed.clear();
-        // Set canvas background to white
-        this.canvas.style.backgroundColor = 'white';
-        // Stop drawing the game loop
-        this.gameLoopId = null;
-        // Clean up inventory manager
+        // Hide game canvas
+        this.canvas.style.display = 'none';
+        // Clean up sub-managers
         this.inventoryManager.cleanup();
+        this.skillsManager.cleanup();
+        this.shopManager.cleanup();
+        this.chat?.cleanup();
+        this.tutorial.cleanup();
     }
     hideExitButton() {
         if (this.exitButtonContainer) {
@@ -1339,50 +1335,7 @@ class Game {
         }
     }
     handleExit() {
-        // Clean up game state
         this.cleanup();
-        // Show title screen elements with proper styling
-        if (this.titleScreen) {
-            this.titleScreen.style.display = 'flex';
-            this.titleScreen.style.opacity = '1';
-            this.titleScreen.style.zIndex = '1000';
-            this.titleScreen.style.pointerEvents = 'auto';
-        }
-        if (this.nameInput) {
-            this.nameInput.style.display = 'block';
-            this.nameInput.style.opacity = '1';
-            this.nameInput.value = ''; // Clear the input
-        }
-        // Hide exit button
-        this.hideExitButton();
-        // Show game menu with proper styling
-        const gameMenu = document.getElementById('gameMenu');
-        if (gameMenu) {
-            gameMenu.style.display = 'flex';
-            gameMenu.style.opacity = '1';
-            gameMenu.style.zIndex = '3000';
-            gameMenu.style.pointerEvents = 'auto';
-        }
-        // Reset canvas state
-        this.canvas.style.zIndex = '0';
-        this.canvas.style.pointerEvents = 'none';
-        this.canvas.style.backgroundColor = 'white';
-        // Clear any remaining timeouts or intervals
-        if (this.saveIndicatorTimeout) {
-            clearTimeout(this.saveIndicatorTimeout);
-            this.saveIndicatorTimeout = null;
-        }
-        // Remove any event listeners
-        this.keysPressed.clear();
-        this.mouseButtonsPressed.clear();
-        // Force multiple clear attempts to ensure everything is gone
-        for (let i = 0; i < 3; i++) {
-            requestAnimationFrame(() => {
-                this.graphics.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this.graphics.ctx.fillStyle = 'white';
-                this.graphics.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-            });
-        }
     }
     updateColorPreview() {
         if (!this.assetLoader.playerSprite.complete)

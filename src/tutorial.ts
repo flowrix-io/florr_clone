@@ -506,5 +506,11 @@ export class Tutorial {
         this.reset();
         this.start();
     }
+
+    public cleanup(): void {
+        this.tutorialBox?.remove();
+        this.tutorialOverlay?.remove();
+        this.highlightOverlay?.remove();
+    }
 }
 

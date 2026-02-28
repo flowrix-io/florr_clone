@@ -413,5 +413,8 @@ class SkillsManager {
     isSkillsOpen() {
         return this.isOpen;
     }
+    cleanup() {
+        this.skillsPanel?.remove();
+    }
 }
 exports.SkillsManager = SkillsManager;

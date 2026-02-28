@@ -685,5 +685,9 @@ export class ShopManager {
     public handleCodeRedeemError(message: string): void {
         alert(`Code redemption failed: ${message}`);
     }
+
+    public cleanup(): void {
+        this.shopPanel?.remove();
+    }
 }
 
