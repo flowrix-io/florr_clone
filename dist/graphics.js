@@ -136,6 +136,12 @@ class Graphics {
         this.loadedSections = new Set(); // Sections with loaded textures
         this.loadingMobs = new Set(); // Mobs currently being loaded (prevents duplicate loads)
         this.mobBaseCacheKeys = new Map(); // Map mob cache key to base cache key for unloading
+        // Iris transition (circle reveal) animation
+        this.irisTransitionActive = false;
+        this.irisTransitionStartTime = 0;
+        this.irisScreenshot = null;
+        this.IRIS_TRANSITION_DURATION = 800; // ms
+        this.IRIS_OUTLINE_WIDTH = 6;
         this.wallGridLogOnce = false;
         /**
          * Draw a garbage mob as a pile of random petals
@@ -153,6 +159,49 @@ class Graphics {
         this.backgroundTexture = backgroundTexture;
         // Preload all mob SVG images
         this.preloadMobImages();
+    }
+    startIrisTransition(screenshot) {
+        this.irisTransitionActive = true;
+        this.irisTransitionStartTime = Date.now();
+        this.irisScreenshot = screenshot;
+    }
+    drawIrisTransition() {
+        const elapsed = Date.now() - this.irisTransitionStartTime;
+        const progress = Math.min(elapsed / this.IRIS_TRANSITION_DURATION, 1);
+        if (progress >= 1) {
+            this.irisTransitionActive = false;
+            this.irisScreenshot = null;
+            return;
+        }
+        // Ease out cubic for smooth deceleration
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        const maxRadius = Math.sqrt(centerX * centerX + centerY * centerY);
+        const currentRadius = eased * maxRadius;
+        this.ctx.save();
+        // Clip to the area outside the circle (title screen overlay region)
+        this.ctx.beginPath();
+        this.ctx.rect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2, true);
+        this.ctx.clip();
+        // Draw captured title screen screenshot as overlay
+        if (this.irisScreenshot) {
+            this.ctx.drawImage(this.irisScreenshot, 0, 0, this.canvas.width, this.canvas.height);
+        }
+        else {
+            this.ctx.fillStyle = 'black';
+            this.ctx.fill();
+        }
+        this.ctx.restore();
+        // Draw black outline ring around the circle edge
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+        this.ctx.strokeStyle = 'black';
+        this.ctx.lineWidth = this.IRIS_OUTLINE_WIDTH;
+        this.ctx.stroke();
+        this.ctx.restore();
     }
     async preloadMobImages() {
         // Initialize SVG renderer
@@ -3535,6 +3584,10 @@ class Graphics {
         }
         if (this.notificationsManager) {
             this.notificationsManager.render();
+        }
+        // Draw iris circle-reveal transition on top of everything
+        if (this.irisTransitionActive) {
+            this.drawIrisTransition();
         }
     }
     setChangelogManager(changelogManager) {

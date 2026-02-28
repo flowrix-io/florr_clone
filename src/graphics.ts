@@ -210,6 +210,13 @@ export class Graphics {
     private loadingMobs: Set<string> = new Set(); // Mobs currently being loaded (prevents duplicate loads)
     private mobBaseCacheKeys: Map<string, string> = new Map(); // Map mob cache key to base cache key for unloading
 
+    // Iris transition (circle reveal) animation
+    private irisTransitionActive: boolean = false;
+    private irisTransitionStartTime: number = 0;
+    private irisScreenshot: HTMLCanvasElement | null = null;
+    private readonly IRIS_TRANSITION_DURATION: number = 800; // ms
+    private readonly IRIS_OUTLINE_WIDTH: number = 6;
+
     /**
      * Get the canvas to use for a petal at a given time
      * Returns the canvas for static petals, or the appropriate frame for animated petals
@@ -254,6 +261,55 @@ export class Graphics {
         
         // Preload all mob SVG images
         this.preloadMobImages();
+    }
+
+    public startIrisTransition(screenshot: HTMLCanvasElement): void {
+        this.irisTransitionActive = true;
+        this.irisTransitionStartTime = Date.now();
+        this.irisScreenshot = screenshot;
+    }
+
+    private drawIrisTransition(): void {
+        const elapsed = Date.now() - this.irisTransitionStartTime;
+        const progress = Math.min(elapsed / this.IRIS_TRANSITION_DURATION, 1);
+
+        if (progress >= 1) {
+            this.irisTransitionActive = false;
+            this.irisScreenshot = null;
+            return;
+        }
+
+        // Ease out cubic for smooth deceleration
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        const maxRadius = Math.sqrt(centerX * centerX + centerY * centerY);
+        const currentRadius = eased * maxRadius;
+
+        this.ctx.save();
+        // Clip to the area outside the circle (title screen overlay region)
+        this.ctx.beginPath();
+        this.ctx.rect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2, true);
+        this.ctx.clip();
+
+        // Draw captured title screen screenshot as overlay
+        if (this.irisScreenshot) {
+            this.ctx.drawImage(this.irisScreenshot, 0, 0, this.canvas.width, this.canvas.height);
+        } else {
+            this.ctx.fillStyle = 'black';
+            this.ctx.fill();
+        }
+        this.ctx.restore();
+
+        // Draw black outline ring around the circle edge
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+        this.ctx.strokeStyle = 'black';
+        this.ctx.lineWidth = this.IRIS_OUTLINE_WIDTH;
+        this.ctx.stroke();
+        this.ctx.restore();
     }
 
     private async preloadMobImages() {
@@ -4287,6 +4343,11 @@ export class Graphics {
         }
         if (this.notificationsManager) {
             this.notificationsManager.render();
+        }
+
+        // Draw iris circle-reveal transition on top of everything
+        if (this.irisTransitionActive) {
+            this.drawIrisTransition();
         }
     }
 

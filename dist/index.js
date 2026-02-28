@@ -297,6 +297,20 @@ function setupGameEventListeners() {
                     currentGame.graphics.setNotificationsManager(notificationsManager);
                 }
             }
+            // Capture title screen screenshot for iris transition
+            if (currentGame?.graphics) {
+                const bgCanvas = document.getElementById('title-background-canvas');
+                const uiCanvas = document.getElementById('title-ui-canvas');
+                const screenshot = document.createElement('canvas');
+                screenshot.width = window.innerWidth;
+                screenshot.height = window.innerHeight;
+                const sctx = screenshot.getContext('2d');
+                if (bgCanvas)
+                    sctx.drawImage(bgCanvas, 0, 0, screenshot.width, screenshot.height);
+                if (uiCanvas)
+                    sctx.drawImage(uiCanvas, 0, 0, screenshot.width, screenshot.height);
+                currentGame.graphics.startIrisTransition(screenshot);
+            }
             // Hide title screen and show game
             titleScreen?.hideTitleScreen();
             titleScreen?.showExitButton();
