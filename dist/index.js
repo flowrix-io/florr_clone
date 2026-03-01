@@ -365,6 +365,10 @@ function setupGameEventListeners() {
                     uiCanvas.style.display = 'none';
                 titleScreen?.stopCanvasRendering();
                 titleScreen?.stopBackgroundAnimation();
+                // Ensure game canvas is visible (animateBackground may have hidden it)
+                const gameCanvas = document.getElementById('gameCanvas');
+                if (gameCanvas)
+                    gameCanvas.style.display = 'block';
                 // Start iris close animation
                 currentGame.graphics.startIrisClose(screenshot, () => {
                     if (currentGame) {

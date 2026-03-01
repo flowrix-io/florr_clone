@@ -285,6 +285,7 @@ export class Graphics {
         const elapsed = Date.now() - this.irisTransitionStartTime;
         const progress = Math.min(elapsed / this.IRIS_TRANSITION_DURATION, 1);
 
+
         if (progress >= 1) {
             // Draw final frame for closing (fully covered)
             if (this.irisClosing) {
