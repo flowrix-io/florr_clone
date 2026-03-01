@@ -1154,7 +1154,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
             players[socket.id] = {
                 id: socket.id,
-                name: credentials.playerName || 'Unnamed',
+                name: (credentials.playerName || 'Unnamed').slice(0, 20),
                 x: spawnX,
                 y: spawnY,
                 angle: 0,
@@ -1563,7 +1563,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     socket.on('updateName', (newName: string) => {
         const player = players[socket.id];
         if (player) {
-            player.name = newName;
+            player.name = newName.slice(0, 20);
             io.emit('playerUpdated', player);
         }
     });

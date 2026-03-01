@@ -929,7 +929,7 @@ io.on('connection', (socket) => {
             const reconstructedLoadout = reconstructLoadout(savedProgress?.loadout);
             constants_2.players[socket.id] = {
                 id: socket.id,
-                name: credentials.playerName || 'Unnamed',
+                name: (credentials.playerName || 'Unnamed').slice(0, 20),
                 x: spawnX,
                 y: spawnY,
                 angle: 0,
@@ -1289,7 +1289,7 @@ io.on('connection', (socket) => {
     socket.on('updateName', (newName) => {
         const player = constants_2.players[socket.id];
         if (player) {
-            player.name = newName;
+            player.name = newName.slice(0, 20);
             io.emit('playerUpdated', player);
         }
     });
