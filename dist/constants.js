@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KNOCKBACK_FORCE = exports.MOUSE_NONLINEAR_EXPONENT = exports.MOUSE_NONLINEAR_SCALE = exports.MAX_SPEED = exports.RESPAWN_INVULNERABILITY_TIME = exports.MAX_INVENTORY_SIZE = exports.ENEMY_TIERS = exports.MAX_SAND_RADIUS = exports.MIN_SAND_RADIUS = exports.SAND_COUNT = exports.DECORATION_COUNT = exports.ENEMY_DAMAGE = exports.PLAYER_DAMAGE = exports.ENEMY_MAX_HEALTH = exports.PLAYER_MAX_HEALTH = exports.ENEMY_CORAL_DAMAGE = exports.ENEMY_CORAL_HEALTH = exports.ENEMY_CORAL_PROBABILITY = exports.OBSTACLE_COUNT = exports.SCALE_FACTOR = exports.PVP_WORLD_HEIGHT = exports.PVP_WORLD_WIDTH = exports.OLD_WORLD_HEIGHT = exports.OLD_WORLD_WIDTH = exports.ENEMIES_PER_VIEWPORT = exports.VIEWPORT_WITH_BUFFER_AREA = exports.ORIGINAL_ENEMY_DENSITY = exports.ORIGINAL_ENEMY_COUNT = exports.TOTAL_WORLD_AREA = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.enemies = exports.dots = exports.players = exports.VIEWPORT_AREA = exports.VIEWPORT_HEIGHT = exports.VIEWPORT_WIDTH = exports.ENEMY_DESPAWN_TIME = exports.VIEWPORT_BUFFER = exports.SERVER_PROTOCOL = exports.USE_HTTPS = exports.FISH_RETURN_SPEED = exports.FISH_DETECTION_RADIUS = void 0;
-exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = exports.DEFAULT_SERVER_CONFIGS = exports.WORLD_MAP_FULL = exports.WORLD_MAP = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = exports.KNOCKBACK_RECOVERY_SPEED = void 0;
+exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = exports.DEFAULT_SERVER_CONFIGS = exports.WORLD_MAP_FULL = exports.WORLD_MAP = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.TELEPORTER_COOLDOWN = exports.TELEPORTER_SUCTION_FORCE = exports.TELEPORTER_SUCTION_RADIUS = exports.TELEPORTER_RADIUS = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = exports.KNOCKBACK_RECOVERY_SPEED = void 0;
 exports.getMobAnimationFramerate = getMobAnimationFramerate;
 exports.getMobAnimationFrameTime = getMobAnimationFrameTime;
 exports.getHighQualityMobs = getHighQualityMobs;
@@ -135,6 +135,10 @@ exports.HEALTH_PER_LEVEL = 10;
 exports.DAMAGE_PER_LEVEL = 1;
 exports.PLAYER_SIZE = 40;
 exports.ENEMY_SIZE = 40;
+exports.TELEPORTER_RADIUS = 60; // Radius for point-based teleporter interaction
+exports.TELEPORTER_SUCTION_RADIUS = 150; // Larger radius for suction pull effect
+exports.TELEPORTER_SUCTION_FORCE = 400; // Force magnitude (enough to overcome knockback of 25)
+exports.TELEPORTER_COOLDOWN = 5000; // 5 second cooldown after teleporting
 // Define zone boundaries for different tiers
 exports.ZONE_BOUNDARIES = {
     common: { start: 0, end: 12000 },
@@ -3097,6 +3101,58 @@ const WORLD_MAP_DATA = {
             "height": 2690,
             "properties": {
                 "spawnType": "rare"
+            }
+        },
+        {
+            "type": "teleporter",
+            "x": 18089.453125,
+            "y": 18195.078125,
+            "width": 0,
+            "height": 0,
+            "properties": {
+                "teleportTo": {
+                    "x": 29479,
+                    "y": 38705
+                }
+            }
+        },
+        {
+            "type": "teleporter",
+            "x": 29509.453125,
+            "y": 38695.078125,
+            "width": 0,
+            "height": 0,
+            "properties": {
+                "teleportTo": {
+                    "x": 19000,
+                    "y": 19000
+                }
+            }
+        },
+        {
+            "type": "teleporter",
+            "x": 1519.453125,
+            "y": 59615.078125,
+            "width": 0,
+            "height": 0,
+            "properties": {
+                "teleportTo": {
+                    "x": 11000,
+                    "y": 10000
+                }
+            }
+        },
+        {
+            "type": "teleporter",
+            "x": 11629.453125,
+            "y": 9995.078125,
+            "width": 0,
+            "height": 0,
+            "properties": {
+                "teleportTo": {
+                    "x": 1500,
+                    "y": 59000
+                }
             }
         }
     ],
@@ -43597,14 +43653,10 @@ exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = [
         type: 'teleporter',
         x: 2000,
         y: 1000,
-        width: 300,
-        height: 300,
+        width: 0,
+        height: 0,
         properties: {
-            teleportTo: {
-                x: 800,
-                y: 800,
-                serverPort: 3001
-            }
+            teleportTo: { x: 800, y: 800, serverPort: 3001 }
         }
     },
     // Teleporter from Server 3001 to Server 3002
@@ -43612,14 +43664,10 @@ exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = [
         type: 'teleporter',
         x: 1200,
         y: 1200,
-        width: 300,
-        height: 300,
+        width: 0,
+        height: 0,
         properties: {
-            teleportTo: {
-                x: 1500,
-                y: 1500,
-                serverPort: 3002
-            }
+            teleportTo: { x: 1500, y: 1500, serverPort: 3002 }
         }
     },
     // Return teleporter from Server 3002 to Server 3000
@@ -43627,14 +43675,10 @@ exports.EXAMPLE_CROSS_SERVER_TELEPORTERS = [
         type: 'teleporter',
         x: 1500,
         y: 2000,
-        width: 300,
-        height: 300,
+        width: 0,
+        height: 0,
         properties: {
-            teleportTo: {
-                x: 2000,
-                y: 1000,
-                serverPort: 3000
-            }
+            teleportTo: { x: 2000, y: 1000, serverPort: 3000 }
         }
     }
 ];

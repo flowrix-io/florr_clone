@@ -1978,16 +1978,20 @@ export class Graphics {
             const width = element.width;
             const height = element.height;
 
+            // Teleporters are points — expand visibility check by visual radius
+            const margin = element.type === 'teleporter' ? 140 : 0;
             // Only draw elements that are visible in the viewport (accounting for zoom)
             if (
-                x + width >= viewport.left &&
-                x <= viewport.right &&
-                y + height >= viewport.top &&
-                y <= viewport.bottom
+                x + width + margin >= viewport.left &&
+                x - margin <= viewport.right &&
+                y + height + margin >= viewport.top &&
+                y - margin <= viewport.bottom
             ) {
-                // Draw other elements normally (no more wall type)
-                this.ctx.fillStyle = this.MAP_COLORS[element.type] || 'rgba(128, 128, 128, 0.0)';
-                this.ctx.fillRect(x, y, width, height);
+                // Draw area fill for non-teleporter elements
+                if (element.type !== 'teleporter') {
+                    this.ctx.fillStyle = this.MAP_COLORS[element.type] || 'rgba(128, 128, 128, 0.0)';
+                    this.ctx.fillRect(x, y, width, height);
+                }
 
                 // Add visual indicators for special elements
                 if (element.type === 'teleporter') {
@@ -2100,58 +2104,60 @@ export class Graphics {
     }
 
     private drawTeleporter(x: number, y: number, width: number, height: number) {
-        // Create a pulsing effect
-        const time = Date.now() / 1000;
-        const pulseSize = 0.2 * Math.sin(time * 2) + 0.8; // Pulse between 0.6 and 1.0
+        const time = performance.now() / 1000;
+        const cx = x + width / 2;
+        const cy = y + height / 2;
 
-        // Draw outer glow
-        const gradient = this.ctx.createRadialGradient(
-            x + width / 2, y + height / 2, 0,
-            x + width / 2, y + height / 2, (width / 2) * pulseSize
-        );
-        gradient.addColorStop(0, 'rgba(0, 183, 255, 0.6)');
-        gradient.addColorStop(0.6, 'rgba(0, 106, 255, 0.3)');
-        gradient.addColorStop(1, 'rgba(0, 47, 255, 0)');
+        // Soft white glow (180x180 area)
+        const glow = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, 130);
+        glow.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+        glow.addColorStop(0.4, 'rgba(255, 255, 255, 0.1)');
+        glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        this.ctx.fillStyle = glow;
+        this.ctx.beginPath();
+        this.ctx.arc(cx, cy, 130, 0, Math.PI * 2);
+        this.ctx.fill();
 
-        this.ctx.fillStyle = gradient;
-        this.ctx.fillRect(x, y, width, height);
+        // Rotating filled squares (180x180 outer)
+        const squares = [
+            { size: 180, speed: 0.8, opacity: 0.12 },
+            { size: 120, speed: -1.3, opacity: 0.18 },
+            { size: 70, speed: 1.8, opacity: 0.25 },
+        ];
 
-        // Draw portal rings
-        const numRings = 3;
-        this.ctx.lineWidth = 4;
-
-        for (let i = 0; i < numRings; i++) {
-            const ringSize = ((i + 1) / numRings) * width / 2 * pulseSize;
-            const opacity = 1 - (i / numRings);
-
-            this.ctx.strokeStyle = `rgba(255, 255, 255, ${opacity})`;
-            this.ctx.beginPath();
-            this.ctx.ellipse(
-                x + width / 2,
-                y + height / 2,
-                ringSize,
-                ringSize * 0.4,
-                0,
-                0,
-                Math.PI * 2
-            );
-            this.ctx.stroke();
+        for (const sq of squares) {
+            this.ctx.save();
+            this.ctx.translate(cx, cy);
+            this.ctx.rotate(time * sq.speed);
+            this.ctx.fillStyle = `rgba(255, 255, 255, ${sq.opacity})`;
+            this.ctx.fillRect(-sq.size / 2, -sq.size / 2, sq.size, sq.size);
+            this.ctx.restore();
         }
 
-        // Add some particle effects
-        const numParticles = 8;
-        const particleTime = time * 3;
-
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        // White particles spiraling inward
+        const numParticles = 12;
         for (let i = 0; i < numParticles; i++) {
-            const angle = (i / numParticles) * Math.PI * 2 + particleTime;
-            const particleX = x + width / 2 + Math.cos(angle) * width / 3 * pulseSize;
-            const particleY = y + height / 2 + Math.sin(angle) * height / 4 * pulseSize;
+            const seed = i * 137.508;
+            const cycle = (time * 0.8 + seed) % 3;
+            const progress = cycle / 3;
+            const angle = seed + time * 0.5 + progress * 2;
+            const radius = (1 - progress) * 120;
+            const px = cx + Math.cos(angle) * radius;
+            const py = cy + Math.sin(angle) * radius;
+            const alpha = progress * 0.7;
+            const size = (1 - progress) * 3 + 0.5;
 
+            this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
             this.ctx.beginPath();
-            this.ctx.arc(particleX, particleY, 3, 0, Math.PI * 2);
+            this.ctx.arc(px, py, size, 0, Math.PI * 2);
             this.ctx.fill();
         }
+
+        // Center dot
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.beginPath();
+        this.ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        this.ctx.fill();
     }
 
     private getTierColor(tier: string): string {
@@ -3818,13 +3824,19 @@ export class Graphics {
             if (scaledX + scaledWidth > minimapX && scaledX < minimapX + this.MINIMAP_WIDTH &&
                 scaledY + scaledHeight > minimapY && scaledY < minimapY + this.MINIMAP_HEIGHT) {
                 if (element.type === 'teleporter') {
-                    this.ctx.fillStyle = element.properties?.teleportTo?.serverPort ? '#FFD700' : '#2196F3'; // Gold for cross-server, blue for same-server
+                    // Draw teleporter as a point on minimap
+                    const dotX = scaledX + scaledWidth / 2;
+                    const dotY = scaledY + scaledHeight / 2;
+                    this.ctx.fillStyle = element.properties?.teleportTo?.serverPort ? '#FFD700' : '#FFFFFF';
+                    this.ctx.beginPath();
+                    this.ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
+                    this.ctx.fill();
                 } else if (element.type === 'safe_zone') {
                     this.ctx.fillStyle = '#FFC107'; // Yellow for safe zone
+                    this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
                 } else {
                     return; // Skip unknown types
                 }
-                this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
             }
         });
 

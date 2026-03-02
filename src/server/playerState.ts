@@ -16,6 +16,10 @@ import {
     VIEWPORT_HEIGHT,
     VIEWPORT_BUFFER,
     SCALE_FACTOR,
+    TELEPORTER_RADIUS,
+    TELEPORTER_SUCTION_RADIUS,
+    TELEPORTER_SUCTION_FORCE,
+    TELEPORTER_COOLDOWN,
     WORLD_MAP,
     isTeleporter,
     RESPAWN_INVULNERABILITY_TIME,
@@ -1515,63 +1519,67 @@ export function updatePlayerState(
         }
     }
 
-    // Check for teleporter interactions with 1-second delay
+    // Check for teleporter interactions
     let currentTeleporter: string | null = null;
     const currentTime = Date.now();
-    
-    // Check if player is currently in a teleporter
-    for (const element of WORLD_MAP.filter(isTeleporter)) {
-        const teleporterId = `teleporter_${element.x}_${element.y}_${element.width}_${element.height}`;
-        const teleporterX = element.x * SCALE_FACTOR;
-        const teleporterY = element.y * SCALE_FACTOR;
-        const teleporterWidth = element.width * SCALE_FACTOR;
-        const teleporterHeight = element.height * SCALE_FACTOR;
+    const isOnCooldown = player.teleportCooldown && currentTime < player.teleportCooldown;
 
-        // Check if player is inside teleporter bounds (using proper collision detection)
-        if (
-            newX + PLAYER_SIZE > teleporterX &&
-            newX < teleporterX + teleporterWidth &&
-            newY + PLAYER_SIZE > teleporterY &&
-            newY < teleporterY + teleporterHeight &&
-            element.properties?.teleportTo
-        ) {
+    for (const element of WORLD_MAP.filter(isTeleporter)) {
+        if (!element.properties?.teleportTo) continue;
+
+        const teleporterId = `teleporter_${element.x}_${element.y}`;
+        const teleporterCX = (element.x + element.width / 2) * SCALE_FACTOR;
+        const teleporterCY = (element.y + element.height / 2) * SCALE_FACTOR;
+        const playerCX = newX + PLAYER_SIZE / 2;
+        const playerCY = newY + PLAYER_SIZE / 2;
+        const dx = playerCX - teleporterCX;
+        const dy = playerCY - teleporterCY;
+        const distSq = dx * dx + dy * dy;
+        const suctionRadius = TELEPORTER_SUCTION_RADIUS * SCALE_FACTOR;
+        const activationRadius = TELEPORTER_RADIUS * SCALE_FACTOR;
+
+        // Apply suction force if player is within suction radius and NOT on cooldown
+        if (distSq <= suctionRadius * suctionRadius && !isOnCooldown) {
+            const dist = Math.sqrt(distSq) || 1;
+            // Stronger pull as player gets closer
+            const pullStrength = TELEPORTER_SUCTION_FORCE * (1 - dist / suctionRadius) * deltaTime;
+            newX -= (dx / dist) * pullStrength;
+            newY -= (dy / dist) * pullStrength;
+        }
+
+        // Check if player is within activation radius
+        if (distSq <= activationRadius * activationRadius) {
             currentTeleporter = teleporterId;
-            
+
             // Check if player just entered this teleporter
             if (player.currentTeleporter !== teleporterId) {
                 player.currentTeleporter = teleporterId;
                 player.teleporterEnterTime = currentTime;
-                
-                // Notify client that player entered teleporter (for UI feedback)
+
                 io.to(player.id).emit('teleporterEntered', {
                     teleporterId,
-                    timeRequired: 1000, // 1 second
+                    timeRequired: 1000,
                     teleportTo: element.properties.teleportTo
                 });
-                
+
                 console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
             }
-            
+
             // Check if player has been in teleporter for 1 second and is not on cooldown
             const timeInTeleporter = currentTime - (player.teleporterEnterTime || currentTime);
-            const isOnCooldown = player.teleportCooldown && currentTime < player.teleportCooldown;
-            
+
             if (timeInTeleporter >= 1000 && !isOnCooldown) {
                 const teleportTo = element.properties.teleportTo;
-                
-                // Set cooldown to prevent rapid teleportations
-                player.teleportCooldown = currentTime + 2000; // 2 second cooldown
-                
-                // Check if this is a cross-server teleporter
+
+                // Set 5 second player-based cooldown
+                player.teleportCooldown = currentTime + TELEPORTER_COOLDOWN;
+
                 if (teleportTo.serverPort && teleportTo.serverPort !== currentServerPort) {
-                    // Cross-server teleportation
                     console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
-                    
-                    // Reset teleporter state
+
                     player.currentTeleporter = undefined;
                     player.teleporterEnterTime = undefined;
-                    
-                    // Attempt to transfer player to target server
+
                     transferPlayerToServer(
                         player,
                         teleportTo.serverPort,
@@ -1584,26 +1592,20 @@ export function updatePlayerState(
                         currentServerPort
                     ).catch(error => {
                         console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player ${player.name}:`, error);
-                        // Optionally notify the player about the failed transfer
                         io.to(player.id).emit('transferFailed', { message: 'Failed to connect to target server' });
-                        // Reset cooldown on failure
                         player.teleportCooldown = undefined;
                     });
-                    
-                    // Don't update player position this tick as they're being transferred
+
                     return;
                 } else {
-                    // Same-server teleportation
                     newX = teleportTo.x * SCALE_FACTOR;
                     newY = teleportTo.y * SCALE_FACTOR;
-                    
-                    // Reset teleporter state
+
                     player.currentTeleporter = undefined;
                     player.teleporterEnterTime = undefined;
-                    
+
                     console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
-                    
-                    // Emit teleport event to client for visual effects
+
                     io.to(player.id).emit('playerTeleported', {
                         newX,
                         newY,
@@ -1611,18 +1613,17 @@ export function updatePlayerState(
                     });
                 }
             }
-            
-            break; // Player can only be in one teleporter at a time
+
+            break;
         }
     }
-    
+
     // If player is no longer in any teleporter, reset teleporter state
     if (!currentTeleporter && player.currentTeleporter) {
         console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
         player.currentTeleporter = undefined;
         player.teleporterEnterTime = undefined;
-        
-        // Notify client that player left teleporter
+
         io.to(player.id).emit('teleporterExited');
     }
 

@@ -266,6 +266,7 @@
         const WALL_GRID_WIDTH = Math.ceil(WORLD_WIDTH / WALL_TILE_SIZE);
         const WALL_GRID_HEIGHT = Math.ceil(WORLD_HEIGHT / WALL_TILE_SIZE);
         const SECTION_SIZE = 20000; // Each 9th section is 20000x20000
+        const TELEPORTER_RADIUS = 60; // Matches game constant
         const COLORS = {
             wall: '#666',
             water: '#4169E1',
@@ -404,6 +405,14 @@
                 createNewElement(x, y);
             }
 
+            // Teleporters are single-point, no drag needed
+            if (currentTool === 'teleporter') {
+                isDragging = false;
+                updateElementList();
+                render();
+                return;
+            }
+
             isDragging = true;
             dragStart = { x, y };
             render();
@@ -457,7 +466,7 @@
                     selectedElement.x = x - dragOffset.x;
                     selectedElement.y = y - dragOffset.y;
                 }
-            } else if (currentTool !== 'select' && currentTool !== 'delete') {
+            } else if (currentTool !== 'select' && currentTool !== 'delete' && currentTool !== 'teleporter') {
                 const width = x - dragStart.x;
                 const height = y - dragStart.y;
                 elements[elements.length - 1].width = Math.abs(width);
@@ -564,11 +573,18 @@
             elements.push(element);
         }
 
+        function isPointInElement(x, y, element) {
+            if (element.type === 'teleporter') {
+                const dx = x - element.x;
+                const dy = y - element.y;
+                return dx * dx + dy * dy <= TELEPORTER_RADIUS * TELEPORTER_RADIUS;
+            }
+            return x >= element.x && x <= element.x + element.width &&
+                   y >= element.y && y <= element.y + element.height;
+        }
+
         function handleSelection(x, y) {
-            selectedElement = elements.find(element => 
-                x >= element.x && x <= element.x + element.width &&
-                y >= element.y && y <= element.y + element.height
-            );
+            selectedElement = elements.find(element => isPointInElement(x, y, element));
 
             if (selectedElement) {
                 dragOffset.x = x - selectedElement.x;
@@ -577,10 +593,7 @@
         }
 
         function handleDeletion(x, y) {
-            const index = elements.findIndex(element => 
-                x >= element.x && x <= element.x + element.width &&
-                y >= element.y && y <= element.y + element.height
-            );
+            const index = elements.findIndex(element => isPointInElement(x, y, element));
 
             if (index !== -1) {
                 elements.splice(index, 1);
@@ -670,58 +683,101 @@
 
             // Draw elements (if visible)
             if (showElements) {
+                const time = Date.now() / 1000;
                 elements.forEach(element => {
-                    ctx.fillStyle = COLORS[element.type];
-                    ctx.fillRect(
-                        element.x * scale - cameraOffset.x,
-                        element.y * scale - cameraOffset.y,
-                        element.width * scale,
-                        element.height * scale
-                    );
+                    if (element.type === 'teleporter') {
+                        // Draw teleporter as a single point with filled rotating squares
+                        const cx = element.x * scale - cameraOffset.x;
+                        const cy = element.y * scale - cameraOffset.y;
 
-                    // Add special visual indicator for cross-server teleporters
-                    if (element.type === 'teleporter' && element.properties.teleportTo?.serverPort) {
-                        // Draw cross-server indicator (small diamond in corner)
-                        const x = element.x * scale - cameraOffset.x;
-                        const y = element.y * scale - cameraOffset.y;
-                        const size = Math.min(element.width * scale, element.height * scale) * 0.3;
+                        // Soft glow (larger than hitbox)
+                        const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 130 * scale);
+                        glow.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+                        glow.addColorStop(0.4, 'rgba(255, 255, 255, 0.1)');
+                        glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                        ctx.fillStyle = glow;
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, 130 * scale, 0, Math.PI * 2);
+                        ctx.fill();
 
-                        ctx.fillStyle = '#FFD700'; // Gold color
-                        ctx.save();
-                        ctx.translate(x + size / 2, y + size / 2);
-                        ctx.rotate(Math.PI / 4); // 45 degrees
-                        ctx.fillRect(-size / 4, -size / 4, size / 2, size / 2);
-                        ctx.restore();
+                        // Rotating filled squares (180x180 outer)
+                        const squares = [
+                            { size: 180 * scale, speed: 0.8, opacity: 0.12 },
+                            { size: 120 * scale, speed: -1.3, opacity: 0.18 },
+                            { size: 70 * scale, speed: 1.8, opacity: 0.25 },
+                        ];
+                        for (const sq of squares) {
+                            ctx.save();
+                            ctx.translate(cx, cy);
+                            ctx.rotate(time * sq.speed);
+                            ctx.fillStyle = `rgba(255, 255, 255, ${sq.opacity})`;
+                            ctx.fillRect(-sq.size / 2, -sq.size / 2, sq.size, sq.size);
+                            ctx.restore();
+                        }
 
-                        // Add port number text
-                        ctx.fillStyle = '#fff';
-                        ctx.font = `${Math.max(10, element.width * scale * 0.1)}px Ubuntu, sans-serif`;
-                        ctx.textAlign = 'center';
-                        ctx.fillText(
-                            element.properties.teleportTo.serverPort.toString(),
-                            x + element.width * scale / 2,
-                            y + element.height * scale / 2 + 15
+                        // White particles spiraling inward
+                        for (let i = 0; i < 12; i++) {
+                            const seed = i * 137.508;
+                            const cycle = (time * 0.8 + seed) % 3;
+                            const progress = cycle / 3;
+                            const angle = seed + time * 0.5 + progress * 2;
+                            const radius = (1 - progress) * 120 * scale;
+                            const px = cx + Math.cos(angle) * radius;
+                            const py = cy + Math.sin(angle) * radius;
+                            const alpha = progress * 0.6;
+                            const sz = ((1 - progress) * 2 + 0.5) * scale;
+                            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                            ctx.beginPath();
+                            ctx.arc(px, py, sz, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                        // Center dot
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, 2.5 * scale, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Cross-server port label
+                        if (element.properties.teleportTo?.serverPort) {
+                            ctx.fillStyle = '#FFD700';
+                            ctx.font = `${Math.max(10, 12 * scale)}px Arial`;
+                            ctx.textAlign = 'center';
+                            ctx.fillText(
+                                `Port ${element.properties.teleportTo.serverPort}`,
+                                cx, cy + 60 * scale
+                            );
+                        }
+                    } else {
+                        ctx.fillStyle = COLORS[element.type];
+                        ctx.fillRect(
+                            element.x * scale - cameraOffset.x,
+                            element.y * scale - cameraOffset.y,
+                            element.width * scale,
+                            element.height * scale
                         );
                     }
 
                     // Draw on minimap (showing 20000x20000 area instead of full map)
                     const MINIMAP_AREA_SIZE = 20000;
-                    minimapCtx.fillStyle = COLORS[element.type];
-                    minimapCtx.fillRect(
-                        (element.x / MINIMAP_AREA_SIZE) * minimap.width,
-                        (element.y / MINIMAP_AREA_SIZE) * minimap.height,
-                        (element.width / MINIMAP_AREA_SIZE) * minimap.width,
-                        (element.height / MINIMAP_AREA_SIZE) * minimap.height
-                    );
-
-                    // Add indicator on minimap for cross-server teleporters
-                    if (element.type === 'teleporter' && element.properties.teleportTo?.serverPort) {
-                        minimapCtx.fillStyle = '#FFD700';
+                    if (element.type === 'teleporter') {
+                        // Draw teleporter as a dot on minimap
+                        const dotColor = element.properties.teleportTo?.serverPort ? '#FFD700' : '#FFFFFF';
+                        minimapCtx.fillStyle = dotColor;
+                        minimapCtx.beginPath();
+                        minimapCtx.arc(
+                            (element.x / MINIMAP_AREA_SIZE) * minimap.width,
+                            (element.y / MINIMAP_AREA_SIZE) * minimap.height,
+                            3, 0, Math.PI * 2
+                        );
+                        minimapCtx.fill();
+                    } else {
+                        minimapCtx.fillStyle = COLORS[element.type];
                         minimapCtx.fillRect(
                             (element.x / MINIMAP_AREA_SIZE) * minimap.width,
                             (element.y / MINIMAP_AREA_SIZE) * minimap.height,
-                            Math.max(2, (element.width / MINIMAP_AREA_SIZE) * minimap.width),
-                            Math.max(2, (element.height / MINIMAP_AREA_SIZE) * minimap.height)
+                            (element.width / MINIMAP_AREA_SIZE) * minimap.width,
+                            (element.height / MINIMAP_AREA_SIZE) * minimap.height
                         );
                     }
                 });
@@ -731,12 +787,21 @@
             if (selectedElement) {
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(
-                    selectedElement.x * scale - cameraOffset.x,
-                    selectedElement.y * scale - cameraOffset.y,
-                    selectedElement.width * scale,
-                    selectedElement.height * scale
-                );
+                if (selectedElement.type === 'teleporter') {
+                    // Draw selection circle around point teleporter
+                    const cx = selectedElement.x * scale - cameraOffset.x;
+                    const cy = selectedElement.y * scale - cameraOffset.y;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, TELEPORTER_RADIUS * scale, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else {
+                    ctx.strokeRect(
+                        selectedElement.x * scale - cameraOffset.x,
+                        selectedElement.y * scale - cameraOffset.y,
+                        selectedElement.width * scale,
+                        selectedElement.height * scale
+                    );
+                }
             }
         }
 
@@ -1022,8 +1087,8 @@
             const serverPorts = new Set();
             
             elements.forEach((element, index) => {
-                // Check for elements with invalid dimensions
-                if (element.width <= 0 || element.height <= 0) {
+                // Check for elements with invalid dimensions (teleporters are points, skip them)
+                if (element.type !== 'teleporter' && (element.width <= 0 || element.height <= 0)) {
                     results.push({
                         type: 'error',
                         message: `Element ${index + 1} (${element.type}) has invalid dimensions: ${element.width}x${element.height}`
@@ -1191,8 +1256,17 @@
         document.getElementById('customServerPort').addEventListener('blur', updateElementFromProperties);
         document.getElementById('spawnType').addEventListener('change', updateElementFromProperties);
 
+        // Animation loop for teleporter rotating squares
+        function animationLoop() {
+            if (elements.some(e => e.type === 'teleporter')) {
+                render();
+            }
+            requestAnimationFrame(animationLoop);
+        }
+
         // Initial render
         render();
+        requestAnimationFrame(animationLoop);
     </script>
 </body>
 </html> 

@@ -137,6 +137,10 @@ export const HEALTH_PER_LEVEL = 10;
 export const DAMAGE_PER_LEVEL = 1;
 export const PLAYER_SIZE = 40;
 export const ENEMY_SIZE = 40;
+export const TELEPORTER_RADIUS = 60; // Radius for point-based teleporter interaction
+export const TELEPORTER_SUCTION_RADIUS = 150; // Larger radius for suction pull effect
+export const TELEPORTER_SUCTION_FORCE = 400; // Force magnitude (enough to overcome knockback of 25)
+export const TELEPORTER_COOLDOWN = 5000; // 5 second cooldown after teleporting
 
 // Define zone boundaries for different tiers
 export const ZONE_BOUNDARIES = {
@@ -3147,6 +3151,58 @@ const WORLD_MAP_DATA: MapData = {
       "height": 2690,
       "properties": {
         "spawnType": "rare"
+      }
+    },
+    {
+      "type": "teleporter",
+      "x": 18089.453125,
+      "y": 18195.078125,
+      "width": 0,
+      "height": 0,
+      "properties": {
+        "teleportTo": {
+          "x": 29479,
+          "y": 38705
+        }
+      }
+    },
+    {
+      "type": "teleporter",
+      "x": 29509.453125,
+      "y": 38695.078125,
+      "width": 0,
+      "height": 0,
+      "properties": {
+        "teleportTo": {
+          "x": 19000,
+          "y": 19000
+        }
+      }
+    },
+    {
+      "type": "teleporter",
+      "x": 1519.453125,
+      "y": 59615.078125,
+      "width": 0,
+      "height": 0,
+      "properties": {
+        "teleportTo": {
+          "x": 11000,
+          "y": 10000
+        }
+      }
+    },
+    {
+      "type": "teleporter",
+      "x": 11629.453125,
+      "y": 9995.078125,
+      "width": 0,
+      "height": 0,
+      "properties": {
+        "teleportTo": {
+          "x": 1500,
+          "y": 59000
+        }
       }
     }
   ],
@@ -43675,14 +43731,10 @@ export const EXAMPLE_CROSS_SERVER_TELEPORTERS: MapElement[] = [
         type: 'teleporter',
         x: 2000,
         y: 1000,
-        width: 300,
-        height: 300,
+        width: 0,
+        height: 0,
         properties: {
-            teleportTo: { 
-                x: 800, 
-                y: 800, 
-                serverPort: 3001 
-            }
+            teleportTo: { x: 800, y: 800, serverPort: 3001 }
         }
     },
     // Teleporter from Server 3001 to Server 3002
@@ -43690,14 +43742,10 @@ export const EXAMPLE_CROSS_SERVER_TELEPORTERS: MapElement[] = [
         type: 'teleporter',
         x: 1200,
         y: 1200,
-        width: 300,
-        height: 300,
+        width: 0,
+        height: 0,
         properties: {
-            teleportTo: { 
-                x: 1500, 
-                y: 1500, 
-                serverPort: 3002 
-            }
+            teleportTo: { x: 1500, y: 1500, serverPort: 3002 }
         }
     },
     // Return teleporter from Server 3002 to Server 3000
@@ -43705,14 +43753,10 @@ export const EXAMPLE_CROSS_SERVER_TELEPORTERS: MapElement[] = [
         type: 'teleporter',
         x: 1500,
         y: 2000,
-        width: 300,
-        height: 300,
+        width: 0,
+        height: 0,
         properties: {
-            teleportTo: { 
-                x: 2000, 
-                y: 1000,
-                serverPort: 3000
-            }
+            teleportTo: { x: 2000, y: 1000, serverPort: 3000 }
         }
     }
 ];
