@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 235260115,
+      "totalXP": 235261715,
       "inventory": {
         "common": {
           "shield": 230,
@@ -16,8 +16,8 @@
           "petal_bone": 126,
           "petal_cactus": 16,
           "petal_iris": 10,
-          "petal_poison_cactus": 14,
-          "petal_lightning": 53,
+          "petal_poison_cactus": 15,
+          "petal_lightning": 54,
           "petal_missile": 153,
           "petal_jelly": 29,
           "petal_leaf": 19,
@@ -46,7 +46,7 @@
           "petal_cactus_egg": 12,
           "petal_spider_egg": 16,
           "petal_moth_egg": 10,
-          "petal_garbage_egg": 94,
+          "petal_garbage_egg": 96,
           "petal_hel_beetle_egg": 14,
           "petal_soldier_fire_ant_egg": 27,
           "petal_mantis_egg": 5,
@@ -54,7 +54,7 @@
           "petal_beetle_egg": 5,
           "petal_leafbug_egg": 2,
           "petal_shiny_ladybug_egg": 7,
-          "petal_sandstorm_egg": 5,
+          "petal_sandstorm_egg": 6,
           "petal_jellyfish_egg": 4,
           "petal_starfish_egg": 26,
           "petal_sponge_1_egg": 9,
@@ -73,8 +73,7 @@
           "petal_gas": 6,
           "petal_glass": 17,
           "petal_cube_egg": 13,
-          "petal_corn": 2,
-          "petal_osaka_egg": 1
+          "petal_corn": 2
         },
         "unique": {
           "petal_stinger": 1002,
@@ -665,7 +664,7 @@
           "epic": 91,
           "mythic": 184,
           "uncommon": 81,
-          "legendary": 192,
+          "legendary": 193,
           "rare": 85,
           "ultra": 24,
           "super": 4,
@@ -736,8 +735,8 @@
           "ultra": 3,
           "super": 2,
           "epic": 53,
-          "common": 450,
-          "uncommon": 40
+          "common": 467,
+          "uncommon": 41
         },
         "roach": {
           "rare": 35,
