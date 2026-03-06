@@ -762,8 +762,10 @@
                     const MINIMAP_AREA_SIZE = 20000;
                     if (element.type === 'teleporter') {
                         // Draw teleporter as a dot on minimap
-                        const dotColor = element.properties.teleportTo?.serverPort ? '#FFD700' : '#FFFFFF';
+                        const dotColor = element.properties.teleportTo?.serverPort ? '#FFD700' : '#00FF00';
                         minimapCtx.fillStyle = dotColor;
+                        minimapCtx.strokeStyle = '#000000';
+                        minimapCtx.lineWidth = 1;
                         minimapCtx.beginPath();
                         minimapCtx.arc(
                             (element.x / MINIMAP_AREA_SIZE) * minimap.width,
@@ -771,6 +773,7 @@
                             3, 0, Math.PI * 2
                         );
                         minimapCtx.fill();
+                        minimapCtx.stroke();
                     } else {
                         minimapCtx.fillStyle = COLORS[element.type];
                         minimapCtx.fillRect(

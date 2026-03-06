@@ -730,6 +730,7 @@ class Game {
             if (event.key === 'Alt') {
                 event.preventDefault();
                 this.graphics.showRarityGlow = true;
+                this.graphics.altKeyPressed = true;
             }
         }, { signal });
         document.addEventListener('keyup', (event) => {
@@ -737,6 +738,7 @@ class Game {
             // ALT key toggles rarity glow on petals
             if (event.key === 'Alt') {
                 this.graphics.showRarityGlow = false;
+                this.graphics.altKeyPressed = false;
             }
         }, { signal });
         // Add name input change listener

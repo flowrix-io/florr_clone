@@ -945,6 +945,7 @@ export class Game {
             if (event.key === 'Alt') {
                 event.preventDefault();
                 this.graphics.showRarityGlow = true;
+                this.graphics.altKeyPressed = true;
             }
         }, { signal });
 
@@ -954,6 +955,7 @@ export class Game {
             // ALT key toggles rarity glow on petals
             if (event.key === 'Alt') {
                 this.graphics.showRarityGlow = false;
+                this.graphics.altKeyPressed = false;
             }
         }, { signal });
 

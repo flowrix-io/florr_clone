@@ -196,6 +196,7 @@ export class Graphics {
     };
     public showHitboxes: boolean = false;
     public showRarityGlow: boolean = false; // Show petal rarity glow (toggled by ALT key)
+    public altKeyPressed: boolean = false; // Track ALT key state for minimap
     public dynamicSkybox: boolean = false;
     public mobDeathAnimation: boolean = true;  // Mob death animation setting (default true)
     private itemSprites: Record<string, HTMLImageElement> = {};
@@ -3827,10 +3828,13 @@ export class Graphics {
                     // Draw teleporter as a point on minimap
                     const dotX = scaledX + scaledWidth / 2;
                     const dotY = scaledY + scaledHeight / 2;
-                    this.ctx.fillStyle = element.properties?.teleportTo?.serverPort ? '#FFD700' : '#FFFFFF';
+                    this.ctx.fillStyle = element.properties?.teleportTo?.serverPort ? '#FFD700' : '#00FF00';
+                    this.ctx.strokeStyle = '#000000';
+                    this.ctx.lineWidth = 1;
                     this.ctx.beginPath();
                     this.ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
                     this.ctx.fill();
+                    this.ctx.stroke();
                 } else if (element.type === 'safe_zone') {
                     this.ctx.fillStyle = '#FFC107'; // Yellow for safe zone
                     this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
@@ -3842,34 +3846,48 @@ export class Graphics {
 
         // Draw all players on minimap with solid colors (with scroll offset)
         players.forEach(player => {
+            const isCurrentPlayer = player.id === socket;
+            // Only show other players when ALT is pressed, always show current player
+            if (!isCurrentPlayer && !this.altKeyPressed) {
+                return;
+            }
+            
             const playerMinimapX = minimapX + ((player.x - this.minimapScrollX) * minimapScale.x);
             const playerMinimapY = minimapY + ((player.y - this.minimapScrollY) * minimapScale.y);
             
             // Only draw if player is within the visible minimap area
             if (playerMinimapX > minimapX && playerMinimapX < minimapX + this.MINIMAP_WIDTH &&
                 playerMinimapY > minimapY && playerMinimapY < minimapY + this.MINIMAP_HEIGHT) {
-                this.ctx.fillStyle = player.id === socket ? '#FF0000' : '#000000'; // Red for current player, black for others
-                this.ctx.beginPath();
-                this.ctx.arc(
-                    playerMinimapX,
-                    playerMinimapY,
-                    4, // Slightly larger dots
-                    0,
-                    Math.PI * 2
-                );
-                this.ctx.fill();
+                if (isCurrentPlayer) {
+                    // Current player: blue dot with black outline, same size as portals
+                    this.ctx.fillStyle = '#0000FF'; // Blue for current player
+                    this.ctx.strokeStyle = '#000000';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.beginPath();
+                    this.ctx.arc(playerMinimapX, playerMinimapY, 3, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                } else {
+                    // Other players: black dot
+                    this.ctx.fillStyle = '#000000';
+                    this.ctx.beginPath();
+                    this.ctx.arc(playerMinimapX, playerMinimapY, 4, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
             }
         });
 
-        // Draw viewport rectangle in black (with scroll offset)
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(
-            minimapX + ((this.cameraX - this.minimapScrollX) * minimapScale.x),
-            minimapY + ((this.cameraY - this.minimapScrollY) * minimapScale.y),
-            (this.canvas.width / this.zoomLevel) * minimapScale.x,
-            (this.canvas.height / this.zoomLevel) * minimapScale.y
-        );
+        // Draw viewport rectangle in black (with scroll offset) - only when hitboxes are enabled
+        if (this.showHitboxes) {
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(
+                minimapX + ((this.cameraX - this.minimapScrollX) * minimapScale.x),
+                minimapY + ((this.cameraY - this.minimapScrollY) * minimapScale.y),
+                (this.canvas.width / this.zoomLevel) * minimapScale.x,
+                (this.canvas.height / this.zoomLevel) * minimapScale.y
+            );
+        }
 
         // Restore context to remove clipping region
         this.ctx.restore();
