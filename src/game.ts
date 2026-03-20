@@ -67,7 +67,6 @@ export class Game {
     private readonly DOT_COUNT = 20;
     private readonly PLAYER_ACCELERATION = 0.5;  // Adjusted for smoother acceleration
     private readonly MAX_SPEED = 120;            // Further increased speed for better responsiveness
-    // private readonly FRICTION = 0.95;        // Removed sliding physics
     private cameraX = 0;
     private cameraY = 0;
     private playerEye: { x: number, y: number } = { x: 0, y: 0 };
@@ -254,10 +253,8 @@ export class Game {
 
         this.graphics = new Graphics(
             this.canvas, 
-            this.assetLoader.playerSprite, 
+            this.assetLoader.playerSprite,
             this.assetLoader.wallTexture,
-            this.assetLoader.octopusSprite,
-            this.assetLoader.fishSprite,
             this.assetLoader.healthPotionSprite,
             this.assetLoader.speedBoostSprite,
             this.assetLoader.shieldSprite,

@@ -50,6 +50,7 @@ if (invalidEggTypes.size > 0) {
 const petal_actions_1 = require("./petal_actions");
 const petals_1 = require("./petals");
 const constants_2 = require("./constants");
+const map_data_1 = require("./map_data");
 const server_utils_1 = require("./server_utils");
 const petals_2 = require("./petals");
 const mobs_2 = require("./mobs");
@@ -445,13 +446,13 @@ function spawnMob(mobType, rarity, x, y) {
         }
         else {
             // Check if position is in a safe zone
-            const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+            const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
                 spawnX >= element.x * constants_2.SCALE_FACTOR &&
                 spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
                 spawnY >= element.y * constants_2.SCALE_FACTOR &&
                 spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
             // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, spawnX, spawnY);
+            const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, spawnX, spawnY);
             const collidesWithWall = tileState === 1 || tileState === 2;
             if (!inSafeZone && !collidesWithWall) {
                 validPosition = true;
@@ -495,13 +496,13 @@ function spawnMob(mobType, rarity, x, y) {
                     continue;
                 }
                 // Check if position is in a safe zone
-                const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+                const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
                     spawnX >= element.x * constants_2.SCALE_FACTOR &&
                     spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
                     spawnY >= element.y * constants_2.SCALE_FACTOR &&
                     spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
                 // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-                const tileState2 = (0, constants_2.getTileState)(constants_2.WALL_GRID, spawnX, spawnY);
+                const tileState2 = (0, constants_2.getTileState)(map_data_1.WALL_GRID, spawnX, spawnY);
                 const collidesWithWall = tileState2 === 1 || tileState2 === 2;
                 if (!inSafeZone && !collidesWithWall) {
                     validPosition = true;
@@ -524,13 +525,13 @@ function spawnMob(mobType, rarity, x, y) {
                     continue;
                 }
                 // Check if position is in a safe zone
-                const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+                const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
                     spawnX >= element.x * constants_2.SCALE_FACTOR &&
                     spawnX <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
                     spawnY >= element.y * constants_2.SCALE_FACTOR &&
                     spawnY <= (element.y + element.height) * constants_2.SCALE_FACTOR);
                 // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-                const tileState3 = (0, constants_2.getTileState)(constants_2.WALL_GRID, spawnX, spawnY);
+                const tileState3 = (0, constants_2.getTileState)(map_data_1.WALL_GRID, spawnX, spawnY);
                 const collidesWithWall = tileState3 === 1 || tileState3 === 2;
                 if (!inSafeZone && !collidesWithWall) {
                     validPosition = true;
@@ -770,8 +771,8 @@ io.on('connection', (socket) => {
     console.log('A user connected');
     // Send map data to the client (includes elements and wallGrid)
     const mapData = {
-        elements: constants_2.WORLD_MAP,
-        wallGrid: constants_2.WALL_GRID
+        elements: map_data_1.WORLD_MAP,
+        wallGrid: map_data_1.WALL_GRID
     };
     socket.emit('mapData', mapData);
     socket.on('playerInput', (inputData) => {
@@ -842,7 +843,7 @@ io.on('connection', (socket) => {
                     const sectionY = Math.max(0, Math.min(2, Math.floor(worldY / SECTION_SIZE)));
                     return sectionY * 3 + sectionX;
                 };
-                const validSpawnPoints = constants_2.WORLD_MAP.filter(element => element.type === 'spawn' &&
+                const validSpawnPoints = map_data_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
                     element.properties?.spawnType === 'common');
                 if (validSpawnPoints.length > 0) {
                     // Prioritize spawn points in section 0 (first section) for default spawning
@@ -2292,7 +2293,7 @@ function moveEnemies() {
                         const teleportX = owner.x + Math.cos(angle) * teleportDistance;
                         const teleportY = owner.y + Math.sin(angle) * teleportDistance;
                         // Check if teleport position is in a wall tile
-                        const teleportTileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, teleportX, teleportY);
+                        const teleportTileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, teleportX, teleportY);
                         const isInWall = teleportTileState === 1 || teleportTileState === 2;
                         // If position is safe and has line of sight, teleport there
                         if (!isInWall && (0, physics_1.hasLineOfSight)(teleportX, teleportY, owner.x, owner.y)) {
@@ -2310,7 +2311,7 @@ function moveEnemies() {
                     // If no good teleport position found, try owner's position directly
                     if (!teleported) {
                         // Check if owner's position is safe for pet (not in wall tile)
-                        const ownerTileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, owner.x, owner.y);
+                        const ownerTileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, owner.x, owner.y);
                         const isOwnerPosInWall = ownerTileState === 1 || ownerTileState === 2;
                         if (!isOwnerPosInWall) {
                             enemy.x = owner.x;
@@ -3397,13 +3398,13 @@ server.listen(PORT, () => {
     console.log(`Server is running on ${constants_1.SERVER_PROTOCOL}://localhost:${PORT}`);
     // Debug: verify WALL_GRID is loaded
     let nonZeroTiles = 0;
-    for (let y = 0; y < constants_2.WALL_GRID.length; y++) {
-        for (let x = 0; x < constants_2.WALL_GRID[y].length; x++) {
-            if (constants_2.WALL_GRID[y][x] !== 0)
+    for (let y = 0; y < map_data_1.WALL_GRID.length; y++) {
+        for (let x = 0; x < map_data_1.WALL_GRID[y].length; x++) {
+            if (map_data_1.WALL_GRID[y][x] !== 0)
                 nonZeroTiles++;
         }
     }
-    console.log(`[SERVER] WALL_GRID loaded: ${constants_2.WALL_GRID.length}x${constants_2.WALL_GRID[0]?.length || 0}, non-zero tiles: ${nonZeroTiles}`);
+    console.log(`[SERVER] WALL_GRID loaded: ${map_data_1.WALL_GRID.length}x${map_data_1.WALL_GRID[0]?.length || 0}, non-zero tiles: ${nonZeroTiles}`);
 });
 start_loop();
 // Add density maintenance interval (every 0.5 seconds) to spawn enemies as viewport moves

@@ -12,6 +12,7 @@ exports.updatePlayerState = updatePlayerState;
 const server_utils_1 = require("../server_utils");
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
+const map_data_1 = require("../map_data");
 const gameState_1 = require("./gameState");
 const physics_1 = require("./physics");
 const physics_2 = require("./physics");
@@ -1267,7 +1268,7 @@ function updatePlayerState(player, deltaTime, deps) {
     let currentTeleporter = null;
     const currentTime = Date.now();
     const isOnCooldown = player.teleportCooldown && currentTime < player.teleportCooldown;
-    for (const element of constants_1.WORLD_MAP.filter(constants_1.isTeleporter)) {
+    for (const element of map_data_1.WORLD_MAP.filter(constants_1.isTeleporter)) {
         if (!element.properties?.teleportTo)
             continue;
         const teleporterId = `teleporter_${element.x}_${element.y}`;

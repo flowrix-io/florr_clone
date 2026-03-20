@@ -4,7 +4,6 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AssetLoader = void 0;
-const imageAssets_1 = require("./imageAssets");
 const constants_1 = require("./constants");
 class AssetLoader {
     constructor() {
@@ -12,8 +11,6 @@ class AssetLoader {
         this.assets = {
             sprites: {
                 player: new Image(),
-                octopus: new Image(),
-                fish: new Image(),
                 coral: new Image(),
                 palm: new Image(),
                 healthPotion: new Image(),
@@ -34,8 +31,6 @@ class AssetLoader {
     initializeFromPreloaded(preloadedAssets) {
         console.log('[AssetLoader] Initializing from preloaded assets');
         this.assets.sprites.player = preloadedAssets.sprites.player;
-        this.assets.sprites.octopus = preloadedAssets.sprites.octopus;
-        this.assets.sprites.fish = preloadedAssets.sprites.fish;
         this.assets.sprites.coral = preloadedAssets.sprites.coral;
         this.assets.sprites.palm = preloadedAssets.sprites.palm;
         this.assets.sprites.healthPotion = preloadedAssets.sprites.healthPotion;
@@ -75,8 +70,6 @@ class AssetLoader {
         try {
             await Promise.allSettled([
                 loadSprite(this.assets.sprites.player, 'player.png'),
-                loadSprite(this.assets.sprites.octopus, 'octopus.png'),
-                loadSprite(this.assets.sprites.fish, 'fish.png'),
                 loadSprite(this.assets.sprites.coral, 'coral.png'),
                 loadSprite(this.assets.sprites.palm, 'palm.png')
             ]);
@@ -373,18 +366,6 @@ class AssetLoader {
      * Get asset URL (handles file:// protocol)
      */
     async getAssetUrl(filename) {
-        // Remove the file extension to get the asset key
-        const assetKey = filename.replace('.png', '');
-        // If running from file:// protocol, use base64 data
-        if (window.location.protocol === 'file:') {
-            // Get the base64 data from our assets
-            const base64Data = imageAssets_1.IMAGE_ASSETS[assetKey];
-            if (base64Data) {
-                return base64Data;
-            }
-            console.error(`No base64 data found for asset: ${filename}`);
-        }
-        // Otherwise use normal URL
         return `./assets/${filename}`;
     }
     /**
@@ -478,7 +459,7 @@ class AssetLoader {
      * Load wall texture
      */
     loadWallTexture() {
-        this.assets.sprites.wall.src = imageAssets_1.IMAGE_ASSETS["wall"];
+        this.assets.sprites.wall.src = './assets/wall.png';
         this.assets.sprites.wall.onload = () => {
             console.log('Wall texture loaded successfully');
         };
@@ -498,12 +479,6 @@ class AssetLoader {
     }
     get playerSprite() {
         return this.assets.sprites.player;
-    }
-    get octopusSprite() {
-        return this.assets.sprites.octopus;
-    }
-    get fishSprite() {
-        return this.assets.sprites.fish;
     }
     get coralSprite() {
         return this.assets.sprites.coral;

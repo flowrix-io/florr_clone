@@ -23,7 +23,6 @@ class Game {
         this.DOT_COUNT = 20;
         this.PLAYER_ACCELERATION = 0.5; // Adjusted for smoother acceleration
         this.MAX_SPEED = 120; // Further increased speed for better responsiveness
-        // private readonly FRICTION = 0.95;        // Removed sliding physics
         this.cameraX = 0;
         this.cameraY = 0;
         this.playerEye = { x: 0, y: 0 };
@@ -164,7 +163,7 @@ class Game {
             console.log('[Game] Using preloaded assets');
             this.assetLoader.initializeFromPreloaded(preloadedAssets);
         }
-        this.graphics = new graphics_1.Graphics(this.canvas, this.assetLoader.playerSprite, this.assetLoader.wallTexture, this.assetLoader.octopusSprite, this.assetLoader.fishSprite, this.assetLoader.healthPotionSprite, this.assetLoader.speedBoostSprite, this.assetLoader.shieldSprite, this.assetLoader.backgroundTexture);
+        this.graphics = new graphics_1.Graphics(this.canvas, this.assetLoader.playerSprite, this.assetLoader.wallTexture, this.assetLoader.healthPotionSprite, this.assetLoader.speedBoostSprite, this.assetLoader.shieldSprite, this.assetLoader.backgroundTexture);
         this.graphics.showHitboxes = this.showHitboxes;
         this.graphics.dynamicSkybox = dynamicSkybox;
         this.graphics.mobDeathAnimation = this.mobDeathAnimation;

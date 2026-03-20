@@ -127,7 +127,7 @@ function executeServerCommand(command, executor, deps, socketId) {
             sendOutput('Usage: spawn <mobType> <rarity> [x] [y]', socketId, io);
             sendOutput('  Examples:', socketId, io);
             sendOutput('    spawn bee rare', socketId, io);
-            sendOutput('    spawn octopus legendary 1000 2000', socketId, io);
+            sendOutput('    spawn bee legendary 1000 2000', socketId, io);
             sendOutput(`Available mob types: ${(0, mobs_1.getAllMobTypes)().join(', ')}`, socketId, io);
             sendOutput('Valid rarities: common, uncommon, rare, epic, legendary, mythic, ultra, super, unique', socketId, io);
         }

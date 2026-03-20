@@ -3,7 +3,6 @@ import { ServerPlayer, PlayerInventory } from '../player';
 import { Item } from '../item';
 import { getPetalStats, PlayerModifiers } from '../petals';
 import {
-    WORLD_MAP,
     SCALE_FACTOR,
     ACTUAL_WORLD_WIDTH,
     ACTUAL_WORLD_HEIGHT,
@@ -17,12 +16,12 @@ import {
     players,
     enemies,
     PLAYER_SIZE,
-    WALL_GRID,
     getTileState,
     WALL_TILE_SIZE,
     worldToTileX,
     worldToTileY
 } from '../constants';
+import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { MapElement } from '../constants';
 import { RARITY_LEVELS, Rarity } from '../petals';
 import { getDamageMultiplier } from '../petal_actions';

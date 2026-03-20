@@ -14,7 +14,6 @@ import {
     clearSuperMobFromSection
 } from './gameState';
 import {
-    WORLD_MAP,
     ENEMY_TIERS,
     ACTUAL_WORLD_WIDTH,
     ACTUAL_WORLD_HEIGHT,
@@ -26,10 +25,10 @@ import {
     TOTAL_WORLD_AREA,
     MapElement,
     BiomeSpawnEntry,
-    WALL_GRID,
     getTileState,
     WALL_TILE_SIZE
 } from '../constants';
+import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { getMobStats, getAllMobTypes } from '../mobs';
 
 // Tier order from lowest to highest

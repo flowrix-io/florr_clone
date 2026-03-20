@@ -25,7 +25,7 @@ class Graphics {
             return petalImage;
         }
     }
-    constructor(canvas, playerSprite, wallTexture, octopusSprite, fishSprite, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
+    constructor(canvas, playerSprite, wallTexture, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
         this.cameraX = 0;
         this.cameraY = 0;
         this.zoomLevel = 1.0;
@@ -63,8 +63,6 @@ class Graphics {
         this.MIN_ATTRACTION_DISTANCE = 1; // Minimum distance to avoid division by zero (pixels) - reduced from 30
         this.SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after spawn - reduced from 500
         this.wallTexture = new Image();
-        this.octopusSprite = new Image();
-        this.fishSprite = new Image();
         this.healthPotionSprite = new Image();
         this.speedBoostSprite = new Image();
         this.shieldSprite = new Image();
@@ -154,8 +152,6 @@ class Graphics {
         this.ctx = this.canvas.getContext('2d');
         this.playerSprite = playerSprite;
         this.wallTexture = wallTexture;
-        this.octopusSprite = octopusSprite;
-        this.fishSprite = fishSprite;
         this.healthPotionSprite = healthPotionSprite;
         this.speedBoostSprite = speedBoostSprite;
         this.shieldSprite = shieldSprite;
@@ -2505,29 +2501,9 @@ class Graphics {
         }
         // If WASM renderer didn't work, use sprite fallback (no data URLs)
         if (!rendered) {
-            // Determine which sprite to use based on enemy type
-            let sprite = null;
-            if (enemy.type === 'octopus') {
-                sprite = this.octopusSprite;
-            }
-            else if (enemy.type === 'fish' || enemy.type === 'shark') {
-                sprite = this.fishSprite;
-            }
-            // For other types (bee, ladybug, soldier_ant), sprite will be null
-            // Try to use sprite if available and loaded
-            // Note: The scale(-1, 1) is already applied at the beginning if reversed is true
-            if (sprite && sprite.complete && sprite.naturalWidth > 0 && sprite.naturalHeight > 0) {
-                try {
-                    this.ctx.drawImage(sprite, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
-                    rendered = true;
-                }
-                catch (error) {
-                    // Sprite draw failed, fall through to circle
-                }
-            }
-            // If nothing rendered yet, draw a colored circle as fallback
+            // Draw a colored circle as fallback
             // This should ALWAYS render something visible
-            if (!rendered) {
+            {
                 const tierColor = this.ENEMY_COLORS[enemy.tier] || '#ff0000';
                 // Ensure we're in the right context state
                 this.ctx.globalAlpha = 1.0;

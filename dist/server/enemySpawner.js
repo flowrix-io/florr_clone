@@ -9,6 +9,7 @@ exports.spawnSpecialMobs = spawnSpecialMobs;
 const constants_1 = require("../constants");
 const gameState_1 = require("./gameState");
 const constants_2 = require("../constants");
+const map_data_1 = require("../map_data");
 const mobs_1 = require("../mobs");
 // Tier order from lowest to highest
 const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
@@ -97,7 +98,7 @@ function getMobDowngradeChance(currentTier) {
 }
 // Helper function to get spawn zone type for a given position
 function getSpawnZoneType(x, y) {
-    for (const element of constants_2.WORLD_MAP) {
+    for (const element of map_data_1.WORLD_MAP) {
         if (element.type === 'spawn' && element.properties?.spawnType) {
             const scaledX = x / constants_2.SCALE_FACTOR;
             const scaledY = y / constants_2.SCALE_FACTOR;
@@ -113,7 +114,7 @@ function getSpawnZoneType(x, y) {
 }
 // Helper function to get biome at a given position
 function getBiomeAtPosition(x, y) {
-    for (const element of constants_2.WORLD_MAP) {
+    for (const element of map_data_1.WORLD_MAP) {
         if (element.type === 'biome') {
             const scaledX = x / constants_2.SCALE_FACTOR;
             const scaledY = y / constants_2.SCALE_FACTOR;
@@ -164,7 +165,7 @@ function getRandomPositionInZoneTypeInSection(zoneType, section) {
     const sectionMinY = sectionY * SECTION_SIZE;
     const sectionMaxY = (sectionY + 1) * SECTION_SIZE;
     // Find zones of the specified type that overlap with this section
-    const zonesInSection = constants_2.WORLD_MAP.filter(element => {
+    const zonesInSection = map_data_1.WORLD_MAP.filter(element => {
         if (element.type !== 'spawn' || element.properties?.spawnType !== zoneType) {
             return false;
         }
@@ -209,7 +210,7 @@ function getRandomPositionInZoneTypeInSection(zoneType, section) {
 }
 // Helper function to get random position in a specific zone type
 function getRandomPositionInZoneType(zoneType) {
-    const zones = constants_2.WORLD_MAP.filter(element => element.type === 'spawn' &&
+    const zones = map_data_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
         element.properties?.spawnType === zoneType);
     if (zones.length === 0)
         return null;
@@ -293,13 +294,13 @@ function createEnemy(helpers) {
             continue;
         }
         // Check if position is in a safe zone
-        const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+        const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
             x >= element.x * constants_2.SCALE_FACTOR &&
             x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
             y >= element.y * constants_2.SCALE_FACTOR &&
             y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
         // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-        const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
+        const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
         const collidesWithWall = tileState === 1 || tileState === 2;
         if (!inSafeZone && !collidesWithWall) {
             validPosition = true;
@@ -335,12 +336,12 @@ function createEnemy(helpers) {
             y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
             if (isInOutOfBoundsZone(x, y))
                 continue;
-            const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+            const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
                 x >= element.x * constants_2.SCALE_FACTOR &&
                 x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
                 y >= element.y * constants_2.SCALE_FACTOR &&
                 y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
+            const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
             const collidesWithWall = tileState === 1 || tileState === 2;
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
             if (!inSafeZone && !collidesWithWall && !inPetalRange) {
@@ -384,12 +385,12 @@ function createEnemy(helpers) {
             y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
             if (isInOutOfBoundsZone(x, y))
                 continue;
-            const inSafeZone = constants_2.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+            const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
                 x >= element.x * constants_2.SCALE_FACTOR &&
                 x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
                 y >= element.y * constants_2.SCALE_FACTOR &&
                 y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-            const tileState = (0, constants_2.getTileState)(constants_2.WALL_GRID, x, y);
+            const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
             const collidesWithWall = tileState === 1 || tileState === 2;
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
             const tooClose = constants_1.enemies.some((otherEnemy) => {

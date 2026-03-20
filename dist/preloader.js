@@ -27,7 +27,6 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Preloader = void 0;
-const imageAssets_1 = require("./imageAssets");
 class Preloader {
     constructor(onProgress) {
         this.progress = 0;
@@ -43,8 +42,6 @@ class Preloader {
         const assets = {
             sprites: {
                 player: new Image(),
-                octopus: new Image(),
-                fish: new Image(),
                 coral: new Image(),
                 palm: new Image(),
                 healthPotion: new Image(),
@@ -63,8 +60,6 @@ class Preloader {
             // Load all sprites in parallel
             await Promise.all([
                 this.loadSprite(assets.sprites.player, 'player.png'),
-                this.loadSprite(assets.sprites.octopus, 'octopus.png'),
-                this.loadSprite(assets.sprites.fish, 'fish.png'),
                 this.loadSprite(assets.sprites.coral, 'coral.png'),
                 this.loadSprite(assets.sprites.palm, 'palm.png'),
                 this.loadSprite(assets.sprites.healthPotion, 'health_potion.png'),
@@ -313,19 +308,9 @@ class Preloader {
         }
     }
     /**
-     * Get asset URL (handles file:// protocol)
+     * Get asset URL
      */
     async getAssetUrl(filename) {
-        const assetKey = filename.replace('.png', '');
-        // If running from file:// protocol, use base64 data
-        if (window.location.protocol === 'file:') {
-            const base64Data = imageAssets_1.IMAGE_ASSETS[assetKey];
-            if (base64Data) {
-                return base64Data;
-            }
-            console.error(`[Preloader] No base64 data found for asset: ${filename}`);
-        }
-        // Otherwise use normal URL
         return `./assets/${filename}`;
     }
     /**

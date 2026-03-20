@@ -9,6 +9,7 @@ exports.hasLineOfSight = hasLineOfSight;
 exports.checkEnemyEnemyCollisions = checkEnemyEnemyCollisions;
 exports.checkPlayerEnemyCollision = checkPlayerEnemyCollision;
 const constants_1 = require("../constants");
+const map_data_1 = require("../map_data");
 const mobs_1 = require("../mobs");
 // Boundary threshold for wall extension (same as out-of-bounds zone)
 const BOUNDARY_THRESHOLD = 100;
@@ -137,7 +138,7 @@ function checkTileCollision(worldX, worldY, halfSize) {
     const entityBottom = worldY + halfSize;
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
-            const state = (0, constants_1.getTileState)(constants_1.WALL_GRID, (0, constants_1.tileToWorldX)(tileX), (0, constants_1.tileToWorldY)(tileY));
+            const state = (0, constants_1.getTileState)(map_data_1.WALL_GRID, (0, constants_1.tileToWorldX)(tileX), (0, constants_1.tileToWorldY)(tileY));
             if (state !== 1 && state !== 2)
                 continue;
             const tileWorldX = (0, constants_1.tileToWorldX)(tileX);
@@ -149,7 +150,7 @@ function checkTileCollision(worldX, worldY, halfSize) {
             let effectiveBottom = tileWorldY + constants_1.WALL_TILE_SIZE;
             // For wall tiles (state=1) and water tiles (state=2), extend boundaries with jagged/curved edges
             if (state === 1 || state === 2) {
-                const jaggedEdges = (0, constants_1.getTileJaggedEdges)(constants_1.WALL_GRID, tileX, tileY);
+                const jaggedEdges = (0, constants_1.getTileJaggedEdges)(map_data_1.WALL_GRID, tileX, tileY);
                 if (jaggedEdges.top) {
                     const minT = Math.max(0, entityLeft - tileWorldX);
                     const maxT = Math.min(constants_1.WALL_TILE_SIZE, entityRight - tileWorldX);
@@ -313,7 +314,7 @@ function hasLineOfSight(x1, y1, x2, y2, sampleCount = 20) {
         const sampleX = x1 + dx * t;
         const sampleY = y1 + dy * t;
         // Check if this sample point is in a wall or water tile
-        const state = (0, constants_1.getTileState)(constants_1.WALL_GRID, sampleX, sampleY);
+        const state = (0, constants_1.getTileState)(map_data_1.WALL_GRID, sampleX, sampleY);
         if (state === 1 || state === 2) { // Wall or water blocks line of sight
             return false;
         }

@@ -20,11 +20,11 @@ import {
     TELEPORTER_SUCTION_RADIUS,
     TELEPORTER_SUCTION_FORCE,
     TELEPORTER_COOLDOWN,
-    WORLD_MAP,
     isTeleporter,
     RESPAWN_INVULNERABILITY_TIME,
     ServerConfig
 } from '../constants';
+import { WORLD_MAP } from '../map_data';
 import {
     items,
     playerUserIds,

@@ -20,6 +20,7 @@ exports.getPlayerProjectiles = getPlayerProjectiles;
 exports.setEnemyCount = setEnemyCount;
 exports.getEnemyCount = getEnemyCount;
 const constants_1 = require("../constants");
+const map_data_1 = require("../map_data");
 // Game state variables
 exports.items = [];
 // Special mob tracking - using getters/setters for mutability
@@ -91,7 +92,7 @@ exports.ITEM_EXPIRATION_TIMES = {
 function initializeMapObstacles() {
     const mapObstacles = [];
     // Convert wall elements from WORLD_MAP to obstacles
-    constants_1.WORLD_MAP.filter(constants_1.isWall).forEach(wall => {
+    map_data_1.WORLD_MAP.filter(constants_1.isWall).forEach(wall => {
         mapObstacles.push({
             id: Math.random().toString(36).substr(2, 9),
             x: wall.x * constants_1.SCALE_FACTOR,

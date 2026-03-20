@@ -6,7 +6,7 @@
 import { PETAL_CONFIG, RARITY_LEVELS, PetalStats, getPetalStats, getAllPetalTypes } from './petals';
 import { ChangelogManager, CHANGELOG } from './changelog';
 import { NotificationsManager } from './notifications';
-import { WORLD_MAP, invalidateSettingsCache } from './constants';
+import { invalidateSettingsCache } from './constants';
 import { Item } from './item';
 import { Player, PlayerInventory } from './player';
 import { Chat } from './chat';
@@ -245,8 +245,7 @@ export class TitleScreen {
         this.initializeTitleScreenChat();
         this.initializeTitleScreenSkills();
         
-        // Initialize biome selector with local map data
-        this.updateBiomesFromMapData(WORLD_MAP);
+        // Biome selector is populated when server sends mapData
     }
 
     /**
@@ -551,7 +550,6 @@ export class TitleScreen {
         `;
         this.centerText.innerHTML = `
             <p class="title" style="-webkit-text-stroke: 3px black;">florr.io clone</p>
-            <!-- <p class="instructions">Use arrow keys to move. Hold space to extend petals.</p> -->
             <div class="name-input-container">
                 <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
                 <button id="multiPlayerButton" class="ready-button">Ready▶︎</button>
@@ -1461,17 +1459,7 @@ export class TitleScreen {
             enableShadersCheckbox.checked = shadersEnabled;
         }
 
-        // Load combined stats setting (migrate from old separate settings if needed)
-        let showStats = localStorage.getItem('showStats') === 'true';
-        if (!localStorage.getItem('showStats')) {
-            // Migrate from old settings
-            const oldShowFPS = localStorage.getItem('showFPS') === 'true';
-            const oldShowCounters = localStorage.getItem('showCounters') === 'true';
-            showStats = oldShowFPS || oldShowCounters;
-            if (showStats) {
-                localStorage.setItem('showStats', 'true');
-            }
-        }
+        const showStats = localStorage.getItem('showStats') === 'true';
         const showStatsCheckbox = this.settingsMenu.querySelector('#showStats') as HTMLInputElement;
         if (showStatsCheckbox) {
             showStatsCheckbox.checked = showStats;

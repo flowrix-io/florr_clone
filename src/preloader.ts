@@ -2,13 +2,9 @@
  * Preloader - Handles loading all game assets and systems before showing the title screen
  */
 
-import { IMAGE_ASSETS } from './imageAssets';
-
 export interface PreloadedAssets {
     sprites: {
         player: HTMLImageElement;
-        octopus: HTMLImageElement;
-        fish: HTMLImageElement;
         coral: HTMLImageElement;
         palm: HTMLImageElement;
         healthPotion: HTMLImageElement;
@@ -40,8 +36,6 @@ export class Preloader {
         const assets: PreloadedAssets = {
             sprites: {
                 player: new Image(),
-                octopus: new Image(),
-                fish: new Image(),
                 coral: new Image(),
                 palm: new Image(),
                 healthPotion: new Image(),
@@ -62,8 +56,6 @@ export class Preloader {
             // Load all sprites in parallel
             await Promise.all([
                 this.loadSprite(assets.sprites.player, 'player.png'),
-                this.loadSprite(assets.sprites.octopus, 'octopus.png'),
-                this.loadSprite(assets.sprites.fish, 'fish.png'),
                 this.loadSprite(assets.sprites.coral, 'coral.png'),
                 this.loadSprite(assets.sprites.palm, 'palm.png'),
                 this.loadSprite(assets.sprites.healthPotion, 'health_potion.png'),
@@ -336,21 +328,9 @@ export class Preloader {
     }
 
     /**
-     * Get asset URL (handles file:// protocol)
+     * Get asset URL
      */
     private async getAssetUrl(filename: string): Promise<string> {
-        const assetKey = filename.replace('.png', '');
-
-        // If running from file:// protocol, use base64 data
-        if (window.location.protocol === 'file:') {
-            const base64Data = IMAGE_ASSETS[assetKey as keyof typeof IMAGE_ASSETS];
-            if (base64Data) {
-                return base64Data;
-            }
-            console.error(`[Preloader] No base64 data found for asset: ${filename}`);
-        }
-
-        // Otherwise use normal URL
         return `./assets/${filename}`;
     }
 

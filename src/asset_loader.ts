@@ -2,15 +2,12 @@
  * AssetLoader - Handles loading and management of game assets
  */
 
-import { IMAGE_ASSETS } from './imageAssets';
 import { PreloadedAssets } from './preloader';
 import { MapElement, SECTION_CONFIGS } from './constants';
 
 export interface GameAssets {
     sprites: {
         player: HTMLImageElement;
-        octopus: HTMLImageElement;
-        fish: HTMLImageElement;
         coral: HTMLImageElement;
         palm: HTMLImageElement;
         healthPotion: HTMLImageElement;
@@ -37,8 +34,6 @@ export class AssetLoader {
         this.assets = {
             sprites: {
                 player: new Image(),
-                octopus: new Image(),
-                fish: new Image(),
                 coral: new Image(),
                 palm: new Image(),
                 healthPotion: new Image(),
@@ -60,8 +55,6 @@ export class AssetLoader {
     initializeFromPreloaded(preloadedAssets: PreloadedAssets): void {
         console.log('[AssetLoader] Initializing from preloaded assets');
         this.assets.sprites.player = preloadedAssets.sprites.player;
-        this.assets.sprites.octopus = preloadedAssets.sprites.octopus;
-        this.assets.sprites.fish = preloadedAssets.sprites.fish;
         this.assets.sprites.coral = preloadedAssets.sprites.coral;
         this.assets.sprites.palm = preloadedAssets.sprites.palm;
         this.assets.sprites.healthPotion = preloadedAssets.sprites.healthPotion;
@@ -105,8 +98,6 @@ export class AssetLoader {
         try {
             await Promise.allSettled([
                 loadSprite(this.assets.sprites.player, 'player.png'),
-                loadSprite(this.assets.sprites.octopus, 'octopus.png'),
-                loadSprite(this.assets.sprites.fish, 'fish.png'),
                 loadSprite(this.assets.sprites.coral, 'coral.png'),
                 loadSprite(this.assets.sprites.palm, 'palm.png')
             ]);
@@ -429,20 +420,6 @@ export class AssetLoader {
      * Get asset URL (handles file:// protocol)
      */
     private async getAssetUrl(filename: string): Promise<string> {
-        // Remove the file extension to get the asset key
-        const assetKey = filename.replace('.png', '');
-
-        // If running from file:// protocol, use base64 data
-        if (window.location.protocol === 'file:') {
-            // Get the base64 data from our assets
-            const base64Data = IMAGE_ASSETS[assetKey as keyof typeof IMAGE_ASSETS];
-            if (base64Data) {
-                return base64Data;
-            }
-            console.error(`No base64 data found for asset: ${filename}`);
-        }
-
-        // Otherwise use normal URL
         return `./assets/${filename}`;
     }
 
@@ -540,7 +517,7 @@ export class AssetLoader {
      * Load wall texture
      */
     loadWallTexture(): void {
-        this.assets.sprites.wall.src = IMAGE_ASSETS["wall"];
+        this.assets.sprites.wall.src = './assets/wall.png';
         this.assets.sprites.wall.onload = () => {
             console.log('Wall texture loaded successfully');
         };
@@ -565,14 +542,6 @@ export class AssetLoader {
 
     get playerSprite() {
         return this.assets.sprites.player;
-    }
-
-    get octopusSprite() {
-        return this.assets.sprites.octopus;
-    }
-
-    get fishSprite() {
-        return this.assets.sprites.fish;
     }
 
     get coralSprite() {

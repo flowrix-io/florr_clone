@@ -2,14 +2,12 @@ import { Enemy } from '../server_utils';
 import { ServerPlayer } from '../player';
 import { WorldItem } from '../item';
 import {
-    WORLD_MAP,
     isWall,
     SCALE_FACTOR,
     ACTUAL_WORLD_WIDTH,
     ACTUAL_WORLD_HEIGHT,
     PLAYER_SIZE,
     ENEMY_SIZE,
-    WALL_GRID,
     WALL_TILE_SIZE,
     worldToTileX,
     worldToTileY,
@@ -21,6 +19,7 @@ import {
     getMaxJaggedOffset,
     JAGGED_MAX_OFFSET
 } from '../constants';
+import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { getMobStats } from '../mobs';
 
 // Boundary threshold for wall extension (same as out-of-bounds zone)

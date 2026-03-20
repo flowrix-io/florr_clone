@@ -24,6 +24,7 @@ exports.addXPToPlayer = addXPToPlayer;
 exports.savePlayerProgress = savePlayerProgress;
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
+const map_data_1 = require("../map_data");
 const mobs_1 = require("../mobs");
 const RARITY_TP_COSTS = {
     common: 0,
@@ -100,7 +101,7 @@ function isPositionInsideWall(x, y, playerSize = constants_1.PLAYER_SIZE) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
             const tileWorldX = tileX * constants_1.WALL_TILE_SIZE;
             const tileWorldY = tileY * constants_1.WALL_TILE_SIZE;
-            const state = (0, constants_1.getTileState)(constants_1.WALL_GRID, tileWorldX, tileWorldY);
+            const state = (0, constants_1.getTileState)(map_data_1.WALL_GRID, tileWorldX, tileWorldY);
             // State 1 = wall, State 2 = water - both block spawning
             if (state === 1 || state === 2) {
                 return true;
@@ -193,7 +194,7 @@ function respawnPlayer(player, io) {
     }
     // If no spawn found in the player's selected biome, fall back to level-based spawn points
     if (!spawnPosition) {
-        const validSpawnPoints = constants_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
+        const validSpawnPoints = map_data_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
             element.properties?.spawnType === getSpawnTypeForLevel(player.level));
         if (validSpawnPoints.length > 0) {
             // Try to find a safe spawn position in valid spawn points
@@ -223,7 +224,7 @@ function respawnPlayer(player, io) {
         // Final fallback: use first spawn point or center of world (even if not safe)
         if (!spawnPosition) {
             console.warn('No safe spawn position found after all attempts - using unsafe fallback');
-            const validSpawnPointsFallback = constants_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
+            const validSpawnPointsFallback = map_data_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
                 element.properties?.spawnType === getSpawnTypeForLevel(player.level));
             if (validSpawnPointsFallback.length > 0) {
                 const spawn = validSpawnPointsFallback[0];
@@ -287,7 +288,7 @@ function isBiomeSafeForSpawn(biome) {
 // Helper function to find a spawn position within a specific biome
 function getSpawnPositionInBiome(biomeName) {
     // Find all biome elements with the specified name
-    const biomes = constants_1.WORLD_MAP.filter(element => element.type === 'biome' &&
+    const biomes = map_data_1.WORLD_MAP.filter(element => element.type === 'biome' &&
         element.properties?.biomeName === biomeName &&
         element.width > 0 &&
         element.height > 0);

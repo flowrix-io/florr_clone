@@ -3,15 +3,15 @@ import { Decoration, Sand } from '../server_utils';
 import { MobProjectile, PlayerProjectile } from '../enemy';
 import { ServerPlayer } from '../player';
 import { Enemy, Obstacle } from '../server_utils';
-import { 
-    WORLD_MAP, 
-    isWall, 
-    SCALE_FACTOR, 
-    enemies, 
-    players, 
+import {
+    isWall,
+    SCALE_FACTOR,
+    enemies,
+    players,
     obstacles,
     dots
 } from '../constants';
+import { WORLD_MAP } from '../map_data';
 
 // Game state variables
 export const items: WorldItem[] = [];

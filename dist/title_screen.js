@@ -183,8 +183,7 @@ class TitleScreen {
         // Initialize chat and skills when socket is available
         this.initializeTitleScreenChat();
         this.initializeTitleScreenSkills();
-        // Initialize biome selector with local map data
-        this.updateBiomesFromMapData(constants_1.WORLD_MAP);
+        // Biome selector is populated when server sends mapData
     }
     /**
      * Scans map data for available biomes and updates the biome selector
@@ -462,7 +461,6 @@ class TitleScreen {
         `;
         this.centerText.innerHTML = `
             <p class="title" style="-webkit-text-stroke: 3px black;">florr.io clone</p>
-            <!-- <p class="instructions">Use arrow keys to move. Hold space to extend petals.</p> -->
             <div class="name-input-container">
                 <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
                 <button id="multiPlayerButton" class="ready-button">Ready▶︎</button>
@@ -1294,17 +1292,7 @@ class TitleScreen {
         if (enableShadersCheckbox) {
             enableShadersCheckbox.checked = shadersEnabled;
         }
-        // Load combined stats setting (migrate from old separate settings if needed)
-        let showStats = localStorage.getItem('showStats') === 'true';
-        if (!localStorage.getItem('showStats')) {
-            // Migrate from old settings
-            const oldShowFPS = localStorage.getItem('showFPS') === 'true';
-            const oldShowCounters = localStorage.getItem('showCounters') === 'true';
-            showStats = oldShowFPS || oldShowCounters;
-            if (showStats) {
-                localStorage.setItem('showStats', 'true');
-            }
-        }
+        const showStats = localStorage.getItem('showStats') === 'true';
         const showStatsCheckbox = this.settingsMenu.querySelector('#showStats');
         if (showStatsCheckbox) {
             showStatsCheckbox.checked = showStats;
