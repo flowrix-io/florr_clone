@@ -103,6 +103,13 @@ class Game {
         this.fpsDisplayElement = null;
         this.mobCounterElement = null;
         this.playerCounterElement = null;
+        this.networkStatsElement = null;
+        this.bytesReceived = 0;
+        this.bytesSent = 0;
+        this.lastBytesReceived = 0;
+        this.lastBytesSent = 0;
+        this.incomingThroughput = 0;
+        this.outgoingThroughput = 0;
         this.playerHue = 0;
         this.playerColor = 'hsl(0, 100%, 50%)';
         this.LOADOUT_SLOTS = 10;
@@ -412,12 +419,34 @@ class Game {
         this.playerCounterElement.textContent = 'Players: 0';
         document.body.appendChild(this.playerCounterElement);
         this.createdElements.push(this.playerCounterElement);
+        // Create network stats element
+        this.networkStatsElement = document.createElement('div');
+        this.networkStatsElement.id = 'networkStats';
+        this.networkStatsElement.style.cssText = `
+            position: fixed;
+            bottom: 70px;
+            right: 10px;
+            color: #a78bfa;
+            font-family: Ubuntu, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 10000;
+            display: block;
+            pointer-events: none;
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+        `;
+        this.networkStatsElement.textContent = 'Ping: -- | In: 0 B/s | Out: 0 B/s';
+        document.body.appendChild(this.networkStatsElement);
+        this.createdElements.push(this.networkStatsElement);
         // Set initial counter visibility
         if (this.mobCounterElement) {
             this.mobCounterElement.style.display = this.showStats ? 'block' : 'none';
         }
         if (this.playerCounterElement) {
             this.playerCounterElement.style.display = this.showStats ? 'block' : 'none';
+        }
+        if (this.networkStatsElement) {
+            this.networkStatsElement.style.display = this.showStats ? 'block' : 'none';
         }
         // Add this to the constructor after creating the loadout bar
         const style = document.createElement('style');
@@ -785,6 +814,9 @@ class Game {
                         if (this.playerCounterElement) {
                             this.playerCounterElement.style.display = 'block';
                         }
+                        if (this.networkStatsElement) {
+                            this.networkStatsElement.style.display = 'block';
+                        }
                     }
                     else {
                         if (this.fpsDisplayElement) {
@@ -795,6 +827,9 @@ class Game {
                         }
                         if (this.playerCounterElement) {
                             this.playerCounterElement.style.display = 'none';
+                        }
+                        if (this.networkStatsElement) {
+                            this.networkStatsElement.style.display = 'none';
                         }
                     }
                 }, { signal });
@@ -927,6 +962,15 @@ class Game {
                     // Calculate memory usage
                     const memoryMB = this.getOffscreenCanvasMemoryMB();
                     this.fpsDisplayElement.textContent = `FPS: ${this.fpsCounter} | Memory: ${memoryMB.toFixed(2)} MB`;
+                }
+                // Calculate throughput (bytes per second)
+                this.incomingThroughput = this.bytesReceived - this.lastBytesReceived;
+                this.outgoingThroughput = this.bytesSent - this.lastBytesSent;
+                this.lastBytesReceived = this.bytesReceived;
+                this.lastBytesSent = this.bytesSent;
+                if (this.networkStatsElement) {
+                    const pingStr = this.averagePing > 0 ? `${Math.round(this.averagePing)}ms` : '--';
+                    this.networkStatsElement.textContent = `Ping: ${pingStr} | In: ${this.formatBytes(this.incomingThroughput)}/s | Out: ${this.formatBytes(this.outgoingThroughput)}/s`;
                 }
             }
         }
@@ -1131,6 +1175,21 @@ class Game {
             return 50; // ~20 TPS for medium connections
         }
         return this.MIN_INPUT_INTERVAL; // ~30 TPS for good connections
+    }
+    formatBytes(bytes) {
+        if (bytes < 1024)
+            return `${bytes} B`;
+        if (bytes < 1024 * 1024)
+            return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    trackSocketBytes(bytes, direction) {
+        if (direction === 'in') {
+            this.bytesReceived += bytes;
+        }
+        else {
+            this.bytesSent += bytes;
+        }
     }
     updateConnectionQuality(ping) {
         // Add ping to samples

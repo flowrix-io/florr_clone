@@ -218,6 +218,15 @@ export class Graphics {
     private readonly IRIS_TRANSITION_DURATION: number = 800; // ms
     private readonly IRIS_OUTLINE_WIDTH: number = 6;
 
+    // Console log overlay
+    private showConsoleLogs: boolean = false;
+    private consoleLogs: { text: string; color: string; timestamp: number }[] = [];
+    private readonly MAX_CONSOLE_LOGS = 20;
+    private readonly CONSOLE_LOG_LIFETIME = 10000; // ms
+    private originalConsoleLog: ((...args: any[]) => void) | null = null;
+    private originalConsoleWarn: ((...args: any[]) => void) | null = null;
+    private originalConsoleError: ((...args: any[]) => void) | null = null;
+
     /**
      * Get the canvas to use for a petal at a given time
      * Returns the canvas for static petals, or the appropriate frame for animated petals
@@ -258,6 +267,11 @@ export class Graphics {
         
         // Preload all mob SVG images
         this.preloadMobImages();
+
+        // Initialize console log overlay from saved setting
+        if (localStorage.getItem('showConsoleLogs') === 'true') {
+            this.setShowConsoleLogs(true);
+        }
     }
 
     public startIrisTransition(screenshot: HTMLCanvasElement): void {
@@ -4380,6 +4394,9 @@ export class Graphics {
             this.notificationsManager.render();
         }
 
+        // Draw console logs overlay
+        this.drawConsoleLogs();
+
         // Draw iris circle-reveal transition on top of everything
         if (this.irisTransitionActive) {
             this.drawIrisTransition();
@@ -4457,6 +4474,99 @@ export class Graphics {
         this.ctx.stroke();
         
         this.ctx.restore();
+    }
+
+    public setShowConsoleLogs(enabled: boolean): void {
+        if (enabled && !this.showConsoleLogs) {
+            this.showConsoleLogs = true;
+            this.originalConsoleLog = console.log.bind(console);
+            this.originalConsoleWarn = console.warn.bind(console);
+            this.originalConsoleError = console.error.bind(console);
+
+            console.log = (...args: any[]) => {
+                this.addConsoleLog(args, '#ffffff');
+                this.originalConsoleLog!(...args);
+            };
+            console.warn = (...args: any[]) => {
+                this.addConsoleLog(args, '#ffdd57');
+                this.originalConsoleWarn!(...args);
+            };
+            console.error = (...args: any[]) => {
+                this.addConsoleLog(args, '#ff4444');
+                this.originalConsoleError!(...args);
+            };
+        } else if (!enabled && this.showConsoleLogs) {
+            this.showConsoleLogs = false;
+            if (this.originalConsoleLog) {
+                console.log = this.originalConsoleLog;
+                console.warn = this.originalConsoleWarn!;
+                console.error = this.originalConsoleError!;
+                this.originalConsoleLog = null;
+                this.originalConsoleWarn = null;
+                this.originalConsoleError = null;
+            }
+            this.consoleLogs = [];
+        }
+    }
+
+    private addConsoleLog(args: any[], color: string): void {
+        const text = args.map(a => {
+            if (typeof a === 'object') {
+                try { return JSON.stringify(a); } catch { return String(a); }
+            }
+            return String(a);
+        }).join(' ');
+
+        this.consoleLogs.push({ text, color, timestamp: Date.now() });
+        if (this.consoleLogs.length > this.MAX_CONSOLE_LOGS) {
+            this.consoleLogs.shift();
+        }
+    }
+
+    public drawConsoleLogs(): void {
+        if (!this.showConsoleLogs || this.consoleLogs.length === 0) return;
+
+        const now = Date.now();
+        // Remove expired logs
+        this.consoleLogs = this.consoleLogs.filter(log => now - log.timestamp < this.CONSOLE_LOG_LIFETIME);
+        if (this.consoleLogs.length === 0) return;
+
+        const ctx = this.ctx;
+        const lineHeight = 16;
+        const padding = 8;
+        const x = padding;
+        const maxWidth = Math.min(600, this.canvas.width * 0.4);
+        const totalHeight = this.consoleLogs.length * lineHeight + padding * 2;
+        const y = this.canvas.height - totalHeight - padding;
+
+        // Draw background
+        ctx.save();
+        // ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        // ctx.beginPath();
+        // ctx.roundRect(x, y, maxWidth, totalHeight, 6);
+        // ctx.fill();
+
+        // Draw log lines
+        ctx.font = '12px monospace';
+        ctx.textBaseline = 'top';
+        for (let i = 0; i < this.consoleLogs.length; i++) {
+            const log = this.consoleLogs[i];
+            const age = now - log.timestamp;
+            const fadeStart = this.CONSOLE_LOG_LIFETIME * 0.7;
+            const alpha = age > fadeStart ? 1 - (age - fadeStart) / (this.CONSOLE_LOG_LIFETIME - fadeStart) : 1;
+
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = log.color;
+
+            // Truncate text to fit
+            let displayText = log.text;
+            while (ctx.measureText(displayText).width > maxWidth - padding * 2 && displayText.length > 0) {
+                displayText = displayText.slice(0, -4) + '...';
+            }
+
+            ctx.fillText(displayText, x + padding, y + padding + i * lineHeight);
+        }
+        ctx.restore();
     }
 
 }

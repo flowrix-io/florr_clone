@@ -143,6 +143,14 @@ class Graphics {
         this.irisOnComplete = null;
         this.IRIS_TRANSITION_DURATION = 800; // ms
         this.IRIS_OUTLINE_WIDTH = 6;
+        // Console log overlay
+        this.showConsoleLogs = false;
+        this.consoleLogs = [];
+        this.MAX_CONSOLE_LOGS = 20;
+        this.CONSOLE_LOG_LIFETIME = 10000; // ms
+        this.originalConsoleLog = null;
+        this.originalConsoleWarn = null;
+        this.originalConsoleError = null;
         this.wallGridLogOnce = false;
         /**
          * Draw a garbage mob as a pile of random petals
@@ -158,6 +166,10 @@ class Graphics {
         this.backgroundTexture = backgroundTexture;
         // Preload all mob SVG images
         this.preloadMobImages();
+        // Initialize console log overlay from saved setting
+        if (localStorage.getItem('showConsoleLogs') === 'true') {
+            this.setShowConsoleLogs(true);
+        }
     }
     startIrisTransition(screenshot) {
         this.irisTransitionActive = true;
@@ -3645,6 +3657,8 @@ class Graphics {
         if (this.notificationsManager) {
             this.notificationsManager.render();
         }
+        // Draw console logs overlay
+        this.drawConsoleLogs();
         // Draw iris circle-reveal transition on top of everything
         if (this.irisTransitionActive) {
             this.drawIrisTransition();
@@ -3710,6 +3724,95 @@ class Graphics {
         this.ctx.quadraticCurveTo(0, 15, 6, 10);
         this.ctx.stroke();
         this.ctx.restore();
+    }
+    setShowConsoleLogs(enabled) {
+        if (enabled && !this.showConsoleLogs) {
+            this.showConsoleLogs = true;
+            this.originalConsoleLog = console.log.bind(console);
+            this.originalConsoleWarn = console.warn.bind(console);
+            this.originalConsoleError = console.error.bind(console);
+            console.log = (...args) => {
+                this.addConsoleLog(args, '#ffffff');
+                this.originalConsoleLog(...args);
+            };
+            console.warn = (...args) => {
+                this.addConsoleLog(args, '#ffdd57');
+                this.originalConsoleWarn(...args);
+            };
+            console.error = (...args) => {
+                this.addConsoleLog(args, '#ff4444');
+                this.originalConsoleError(...args);
+            };
+        }
+        else if (!enabled && this.showConsoleLogs) {
+            this.showConsoleLogs = false;
+            if (this.originalConsoleLog) {
+                console.log = this.originalConsoleLog;
+                console.warn = this.originalConsoleWarn;
+                console.error = this.originalConsoleError;
+                this.originalConsoleLog = null;
+                this.originalConsoleWarn = null;
+                this.originalConsoleError = null;
+            }
+            this.consoleLogs = [];
+        }
+    }
+    addConsoleLog(args, color) {
+        const text = args.map(a => {
+            if (typeof a === 'object') {
+                try {
+                    return JSON.stringify(a);
+                }
+                catch {
+                    return String(a);
+                }
+            }
+            return String(a);
+        }).join(' ');
+        this.consoleLogs.push({ text, color, timestamp: Date.now() });
+        if (this.consoleLogs.length > this.MAX_CONSOLE_LOGS) {
+            this.consoleLogs.shift();
+        }
+    }
+    drawConsoleLogs() {
+        if (!this.showConsoleLogs || this.consoleLogs.length === 0)
+            return;
+        const now = Date.now();
+        // Remove expired logs
+        this.consoleLogs = this.consoleLogs.filter(log => now - log.timestamp < this.CONSOLE_LOG_LIFETIME);
+        if (this.consoleLogs.length === 0)
+            return;
+        const ctx = this.ctx;
+        const lineHeight = 16;
+        const padding = 8;
+        const x = padding;
+        const maxWidth = Math.min(600, this.canvas.width * 0.4);
+        const totalHeight = this.consoleLogs.length * lineHeight + padding * 2;
+        const y = this.canvas.height - totalHeight - padding;
+        // Draw background
+        ctx.save();
+        // ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        // ctx.beginPath();
+        // ctx.roundRect(x, y, maxWidth, totalHeight, 6);
+        // ctx.fill();
+        // Draw log lines
+        ctx.font = '12px monospace';
+        ctx.textBaseline = 'top';
+        for (let i = 0; i < this.consoleLogs.length; i++) {
+            const log = this.consoleLogs[i];
+            const age = now - log.timestamp;
+            const fadeStart = this.CONSOLE_LOG_LIFETIME * 0.7;
+            const alpha = age > fadeStart ? 1 - (age - fadeStart) / (this.CONSOLE_LOG_LIFETIME - fadeStart) : 1;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = log.color;
+            // Truncate text to fit
+            let displayText = log.text;
+            while (ctx.measureText(displayText).width > maxWidth - padding * 2 && displayText.length > 0) {
+                displayText = displayText.slice(0, -4) + '...';
+            }
+            ctx.fillText(displayText, x + padding, y + padding + i * lineHeight);
+        }
+        ctx.restore();
     }
 }
 exports.Graphics = Graphics;

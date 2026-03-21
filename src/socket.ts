@@ -80,6 +80,44 @@ export function initMultiPlayerMode(game: any, serverIp: string) {
 }
 
 function setupSocketListeners(game: any) {
+    // Track incoming bytes for network stats
+    game.socket.onAny((_event: string, ...args: any[]) => {
+        if (game.trackSocketBytes) {
+            let bytes = 0;
+            for (const arg of args) {
+                if (typeof arg === 'string') {
+                    bytes += arg.length;
+                } else if (arg instanceof ArrayBuffer) {
+                    bytes += arg.byteLength;
+                } else if (arg !== undefined) {
+                    try { bytes += JSON.stringify(arg).length; } catch { bytes += 64; }
+                }
+            }
+            game.trackSocketBytes(bytes, 'in');
+        }
+    });
+
+    // Track outgoing bytes by wrapping emit
+    const originalEmit = game.socket.emit.bind(game.socket);
+    game.socket.emit = (event: string, ...args: any[]) => {
+        if (game.trackSocketBytes) {
+            let bytes = event.length;
+            for (const arg of args) {
+                if (typeof arg === 'string') {
+                    bytes += arg.length;
+                } else if (arg instanceof ArrayBuffer) {
+                    bytes += arg.byteLength;
+                } else if (typeof arg === 'function') {
+                    // callback, skip
+                } else if (arg !== undefined) {
+                    try { bytes += JSON.stringify(arg).length; } catch { bytes += 64; }
+                }
+            }
+            game.trackSocketBytes(bytes, 'out');
+        }
+        return originalEmit(event, ...args);
+    };
+
     game.socket.on('connect', () => {
         const connectTime = performance.now();
         console.log(`[CLIENT] Socket connected with ID ${game.socket.id} at ${connectTime.toFixed(0)}`);

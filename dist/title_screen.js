@@ -539,11 +539,6 @@ class TitleScreen {
                         </label>
                         <br/><br/>
                         <label>
-                            <input type="checkbox" id="enableParticles">
-                            Enable Particle Effects
-                        </label>
-                        <br/><br/>
-                        <label>
                             Mob Animation Framerate: <span id="mobFramerateValue">15</span> FPS
                             <input type="range" id="mobFramerateSlider" min="5" max="60" value="15" step="1">
                         </label>
@@ -574,28 +569,8 @@ class TitleScreen {
                         </div>
                         <br/><br/>
                         <label>
-                            <input type="checkbox" class="tab-button" id="debugMode">
-                            Enable Debug Mode
-                        </label>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" class="tab-button" id="autoReconnect">
-                            Auto-reconnect on disconnect
-                        </label>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" class="tab-button" id="showNetworkStats">
-                            Show Network Statistics
-                        </label>
-                        <br/><br/>
-                        <h3>Performance</h3>
-                        <label>
-                            <select class="tab-button" id="renderDistance">
-                                <option value="low">Low</option>
-                                <option value="medium" selected>Medium</option>
-                                <option value="high">High</option>
-                            </select>
-                            Render Distance
+                            <input type="checkbox" class="tab-button" id="showConsoleLogs">
+                            Show Console Logs on Screen
                         </label>
                     </div>
                 </div>
@@ -1107,6 +1082,15 @@ class TitleScreen {
                 }
             });
         }
+        const showConsoleLogsCheckbox = this.settingsMenu.querySelector('#showConsoleLogs');
+        if (showConsoleLogsCheckbox) {
+            showConsoleLogsCheckbox.addEventListener('change', () => {
+                localStorage.setItem('showConsoleLogs', showConsoleLogsCheckbox.checked.toString());
+                if (window.currentGame && window.currentGame.graphics) {
+                    window.currentGame.graphics.setShowConsoleLogs(showConsoleLogsCheckbox.checked);
+                }
+            });
+        }
         // Reset tutorial button
         const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
         if (resetTutorialButton) {
@@ -1326,6 +1310,11 @@ class TitleScreen {
         const mobDeathAnimationCheckbox = this.settingsMenu.querySelector('#mobDeathAnimationCheckbox');
         if (mobDeathAnimationCheckbox) {
             mobDeathAnimationCheckbox.checked = mobDeathAnimation;
+        }
+        const showConsoleLogs = localStorage.getItem('showConsoleLogs') === 'true';
+        const showConsoleLogsCheckbox = this.settingsMenu.querySelector('#showConsoleLogs');
+        if (showConsoleLogsCheckbox) {
+            showConsoleLogsCheckbox.checked = showConsoleLogs;
         }
     }
     addAdvancedSettingsStyles() {
