@@ -82,7 +82,9 @@ export function executeServerCommand(
     } else if (trimmedCommand === 'list-players') {
         const playerList: string[] = [];
         Object.entries(players).forEach(([socketId, player]) => {
-            playerList.push(`Player ID: ${socketId}, Name: ${player.name}, Level: ${player.level}`);
+            const socket = io.sockets.sockets.get(socketId) as AuthenticatedSocket;
+            const username = socket?.username || 'Unknown';
+            playerList.push(`Player ID: ${socketId}, Username: ${username}, Nickname: ${player.name}, Level: ${player.level}`);
         });
         if (playerList.length === 0) {
             sendOutput('No players online', socketId, io);
@@ -154,46 +156,47 @@ export function executeServerCommand(
                 return;
             }
             
-            // Try to find player by ID first, then by name
+            // Try to find player by ID first, then by username
             let targetPlayer: ServerPlayer | undefined;
             let targetPlayerId: string | undefined;
-            
+
             // Check if it's a socket ID
             if (players[playerIdentifier]) {
                 targetPlayer = players[playerIdentifier];
                 targetPlayerId = playerIdentifier;
             } else {
-                // Search by name
-                for (const [socketId, player] of Object.entries(players)) {
-                    if (player.name.toLowerCase() === playerIdentifier.toLowerCase()) {
+                // Search by username
+                for (const [sid, player] of Object.entries(players)) {
+                    const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
+                    if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
                         targetPlayer = player;
-                        targetPlayerId = socketId;
+                        targetPlayerId = sid;
                         break;
                     }
                 }
             }
-            
+
             if (targetPlayer && targetPlayerId) {
                 // Teleport the player
                 targetPlayer.x = x;
                 targetPlayer.y = y;
-                
+
                 // Emit teleport event to client for visual effects
                 io.to(targetPlayerId).emit('playerTeleported', {
                     newX: x,
                     newY: y,
                     playerId: targetPlayerId
                 });
-                
+
                 sendOutput(`Teleported player ${targetPlayer.name} (${targetPlayerId}) to (${x}, ${y})`, socketId, io);
             } else {
                 sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
             }
         } else {
-            sendOutput('Usage: teleport <playerId/name> <x> <y>', socketId, io);
+            sendOutput('Usage: teleport <playerId/username> <x> <y>', socketId, io);
             sendOutput('  Examples:', socketId, io);
             sendOutput('    teleport abc123 1000 2000', socketId, io);
-            sendOutput('    teleport PlayerName 5000 3000', socketId, io);
+            sendOutput('    teleport Username 5000 3000', socketId, io);
             sendOutput('    tp abc123 1000 2000  (shorthand)', socketId, io);
         }
     } else if (trimmedCommand.startsWith('generate_code') || trimmedCommand.startsWith('gen_code')) {
@@ -341,23 +344,24 @@ export function executeServerCommand(
                 return;
             }
             
-            // Try to find player by ID first, then by name
+            // Try to find player by ID first, then by username
             let targetPlayer: ServerPlayer | undefined;
             let targetPlayerId: string | undefined;
             let targetSocket: AuthenticatedSocket | undefined;
-            
+
             // Check if it's a socket ID
             if (players[playerIdentifier]) {
                 targetPlayer = players[playerIdentifier];
                 targetPlayerId = playerIdentifier;
                 targetSocket = io.sockets.sockets.get(playerIdentifier) as AuthenticatedSocket;
             } else {
-                // Search by name
-                for (const [socketId, player] of Object.entries(players)) {
-                    if (player.name.toLowerCase() === playerIdentifier.toLowerCase()) {
+                // Search by username
+                for (const [sid, player] of Object.entries(players)) {
+                    const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
+                    if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
                         targetPlayer = player;
-                        targetPlayerId = socketId;
-                        targetSocket = io.sockets.sockets.get(socketId) as AuthenticatedSocket;
+                        targetPlayerId = sid;
+                        targetSocket = s;
                         break;
                     }
                 }
@@ -403,10 +407,10 @@ export function executeServerCommand(
                 sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
             }
         } else {
-            sendOutput('Usage: give <playerId/name> <itemType> <rarity>', socketId, io);
+            sendOutput('Usage: give <playerId/username> <itemType> <rarity>', socketId, io);
             sendOutput('  Examples:', socketId, io);
             sendOutput('    give abc123 basic rare', socketId, io);
-            sendOutput('    give PlayerName rose legendary', socketId, io);
+            sendOutput('    give Username rose legendary', socketId, io);
             sendOutput('    give abc123 health_potion epic', socketId, io);
             sendOutput('  Item types:', socketId, io);
             sendOutput('    Petals: any petal type (e.g., basic, rose, stinger)', socketId, io);
@@ -480,6 +484,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, give <playerId/name> <rarity>, notification <type> <message>, clear_notifications, delete_guests';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests';
 }
 

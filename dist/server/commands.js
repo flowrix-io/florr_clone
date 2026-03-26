@@ -62,7 +62,9 @@ function executeServerCommand(command, executor, deps, socketId) {
     else if (trimmedCommand === 'list-players') {
         const playerList = [];
         Object.entries(constants_1.players).forEach(([socketId, player]) => {
-            playerList.push(`Player ID: ${socketId}, Name: ${player.name}, Level: ${player.level}`);
+            const socket = io.sockets.sockets.get(socketId);
+            const username = socket?.username || 'Unknown';
+            playerList.push(`Player ID: ${socketId}, Username: ${username}, Nickname: ${player.name}, Level: ${player.level}`);
         });
         if (playerList.length === 0) {
             sendOutput('No players online', socketId, io);
@@ -143,7 +145,7 @@ function executeServerCommand(command, executor, deps, socketId) {
                 console.log('Invalid coordinates. Usage: teleport <playerId/name> <x> <y>');
                 return;
             }
-            // Try to find player by ID first, then by name
+            // Try to find player by ID first, then by username
             let targetPlayer;
             let targetPlayerId;
             // Check if it's a socket ID
@@ -152,11 +154,12 @@ function executeServerCommand(command, executor, deps, socketId) {
                 targetPlayerId = playerIdentifier;
             }
             else {
-                // Search by name
-                for (const [socketId, player] of Object.entries(constants_1.players)) {
-                    if (player.name.toLowerCase() === playerIdentifier.toLowerCase()) {
+                // Search by username
+                for (const [sid, player] of Object.entries(constants_1.players)) {
+                    const s = io.sockets.sockets.get(sid);
+                    if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
                         targetPlayer = player;
-                        targetPlayerId = socketId;
+                        targetPlayerId = sid;
                         break;
                     }
                 }
@@ -178,10 +181,10 @@ function executeServerCommand(command, executor, deps, socketId) {
             }
         }
         else {
-            sendOutput('Usage: teleport <playerId/name> <x> <y>', socketId, io);
+            sendOutput('Usage: teleport <playerId/username> <x> <y>', socketId, io);
             sendOutput('  Examples:', socketId, io);
             sendOutput('    teleport abc123 1000 2000', socketId, io);
-            sendOutput('    teleport PlayerName 5000 3000', socketId, io);
+            sendOutput('    teleport Username 5000 3000', socketId, io);
             sendOutput('    tp abc123 1000 2000  (shorthand)', socketId, io);
         }
     }
@@ -333,7 +336,7 @@ function executeServerCommand(command, executor, deps, socketId) {
                 sendOutput(`Invalid rarity. Valid rarities: ${petals_1.RARITY_LEVELS.join(', ')}`, socketId, io);
                 return;
             }
-            // Try to find player by ID first, then by name
+            // Try to find player by ID first, then by username
             let targetPlayer;
             let targetPlayerId;
             let targetSocket;
@@ -344,12 +347,13 @@ function executeServerCommand(command, executor, deps, socketId) {
                 targetSocket = io.sockets.sockets.get(playerIdentifier);
             }
             else {
-                // Search by name
-                for (const [socketId, player] of Object.entries(constants_1.players)) {
-                    if (player.name.toLowerCase() === playerIdentifier.toLowerCase()) {
+                // Search by username
+                for (const [sid, player] of Object.entries(constants_1.players)) {
+                    const s = io.sockets.sockets.get(sid);
+                    if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
                         targetPlayer = player;
-                        targetPlayerId = socketId;
-                        targetSocket = io.sockets.sockets.get(socketId);
+                        targetPlayerId = sid;
+                        targetSocket = s;
                         break;
                     }
                 }
@@ -391,10 +395,10 @@ function executeServerCommand(command, executor, deps, socketId) {
             }
         }
         else {
-            sendOutput('Usage: give <playerId/name> <itemType> <rarity>', socketId, io);
+            sendOutput('Usage: give <playerId/username> <itemType> <rarity>', socketId, io);
             sendOutput('  Examples:', socketId, io);
             sendOutput('    give abc123 basic rare', socketId, io);
-            sendOutput('    give PlayerName rose legendary', socketId, io);
+            sendOutput('    give Username rose legendary', socketId, io);
             sendOutput('    give abc123 health_potion epic', socketId, io);
             sendOutput('  Item types:', socketId, io);
             sendOutput('    Petals: any petal type (e.g., basic, rose, stinger)', socketId, io);
@@ -460,5 +464,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/name> <x> <y>, give <playerId/name> <rarity>, notification <type> <message>, clear_notifications, delete_guests';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests';
 }
