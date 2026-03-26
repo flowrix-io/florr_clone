@@ -150,6 +150,7 @@ export class Game {
     private showHitboxes: boolean = false;  // Changed from true to false
     private showStats: boolean = false;  // Combined setting for FPS, counters, and memory
     public mobDeathAnimation: boolean = true;  // Mob death animation setting (default true)
+    public interpolationAmount: number = 0.15;  // Interpolation factor (0 = no interpolation/snap, 1 = instant)
     private fpsCounter: number = 0;
     private fpsUpdateTime: number = 0;
     // Connection quality tracking for slow connection optimization
@@ -242,6 +243,7 @@ export class Game {
     constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null, shadersEnabled: boolean = false, showStats: boolean = false, dynamicSkybox: boolean = false) {
         this.showHitboxes = showHitboxes;
         this.showStats = showStats;
+        this.interpolationAmount = parseFloat(localStorage.getItem('interpolationAmount') || '0.15');
         this.loadControls();
         console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled, 'show stats:', showStats, 'dynamic skybox:', dynamicSkybox);
         
@@ -1287,22 +1289,37 @@ export class Game {
         }
         
         // Interpolate all players' positions
+        const lerpFactor = this.interpolationAmount;
         for (const player of this.players.values()) {
             if (player.targetX !== undefined && player.targetY !== undefined) {
-                const lerpFactor = 0.1; // Adjust for smoother or more responsive movement
                 player.x += (player.targetX - player.x) * lerpFactor;
                 player.y += (player.targetY - player.y) * lerpFactor;
             }
-            
+
             // Interpolate petal positions
             if (player.petalPositions) {
-                const lerpFactor = 0.1; // Same interpolation factor as player position
                 player.petalPositions.forEach((petalPos: any) => {
                     if (petalPos.targetX !== undefined && petalPos.targetY !== undefined) {
                         petalPos.x += (petalPos.targetX - petalPos.x) * lerpFactor;
                         petalPos.y += (petalPos.targetY - petalPos.y) * lerpFactor;
                     }
                 });
+            }
+        }
+
+        // Interpolate all enemies' positions
+        const enemyLerp = this.interpolationAmount;
+        for (const enemy of this.enemies.values()) {
+            if (enemy.targetX !== undefined && enemy.targetY !== undefined) {
+                enemy.x += (enemy.targetX - enemy.x) * enemyLerp;
+                enemy.y += (enemy.targetY - enemy.y) * enemyLerp;
+            }
+            if (enemy.targetAngle !== undefined) {
+                // Interpolate angle with wrapping
+                let angleDiff = enemy.targetAngle - enemy.angle;
+                if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                enemy.angle += angleDiff * enemyLerp;
             }
         }
 

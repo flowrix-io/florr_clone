@@ -12,7 +12,7 @@ exports.deleteCodeFromDatabase = deleteCodeFromDatabase;
 const express_1 = __importDefault(require("express"));
 const https_1 = require("https");
 const http_1 = require("http");
-const socket_io_1 = require("socket.io");
+const ws_server_1 = require("./ws_server");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const database_1 = require("./database");
@@ -231,19 +231,7 @@ else {
     server = (0, http_1.createServer)(app);
     console.log(`[SERVER] Using HTTP protocol`);
 }
-const io = new socket_io_1.Server(server, {
-    cors: {
-        origin: function (origin, callback) {
-            // Allow requests with no origin (like mobile apps or curl requests)
-            if (!origin)
-                return callback(null, true);
-            // Use the origin of the request
-            callback(null, origin);
-        },
-        methods: ["GET", "POST"],
-        credentials: true
-    }
-});
+const io = new ws_server_1.Server(server);
 // Set ioInstance for use in modules
 ioInstance = io;
 // Get current server port and configuration
@@ -3000,22 +2988,18 @@ function updateMobProjectiles(deltaTimeMs) {
             }
         }
     }
-    // Emit projectile updates to nearby players only (spatial filtering, throttled to ~15 TPS)
-    if (gameState_1.mobProjectiles.length > 0) {
-        for (const playerId of Object.keys(constants_2.players)) {
-            const player = constants_2.players[playerId];
-            if (!player)
-                continue;
-            const socket = io.sockets.sockets.get(playerId);
-            if (!socket || !socket.userId)
-                continue;
-            const vw = (player.viewportWidth || constants_2.VIEWPORT_WIDTH) * 1.5;
-            const vh = (player.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 1.5;
-            const filtered = gameState_1.mobProjectiles.filter(p => Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh);
-            if (filtered.length > 0) {
-                io.to(playerId).emit('mobProjectilesUpdate', filtered);
-            }
-        }
+    // Emit projectile updates to nearby players only (spatial filtering)
+    for (const playerId of Object.keys(constants_2.players)) {
+        const player = constants_2.players[playerId];
+        if (!player)
+            continue;
+        const socket = io.sockets.sockets.get(playerId);
+        if (!socket || !socket.userId)
+            continue;
+        const vw = (player.viewportWidth || constants_2.VIEWPORT_WIDTH) * 1.5;
+        const vh = (player.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 1.5;
+        const filtered = gameState_1.mobProjectiles.filter(p => Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh);
+        io.to(playerId).emit('mobProjectilesUpdate', filtered);
     }
 }
 // Update and move player projectiles
@@ -3183,21 +3167,17 @@ function updatePlayerProjectiles(deltaTimeMs) {
         }
     }
     // Emit projectile updates to nearby players only (spatial filtering)
-    if (gameState_1.playerProjectiles.length > 0) {
-        for (const playerId of Object.keys(constants_2.players)) {
-            const player = constants_2.players[playerId];
-            if (!player)
-                continue;
-            const socket = io.sockets.sockets.get(playerId);
-            if (!socket || !socket.userId)
-                continue;
-            const vw = (player.viewportWidth || constants_2.VIEWPORT_WIDTH) * 1.5;
-            const vh = (player.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 1.5;
-            const filtered = gameState_1.playerProjectiles.filter(p => Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh);
-            if (filtered.length > 0) {
-                io.to(playerId).emit('playerProjectilesUpdate', filtered);
-            }
-        }
+    for (const playerId of Object.keys(constants_2.players)) {
+        const player = constants_2.players[playerId];
+        if (!player)
+            continue;
+        const socket = io.sockets.sockets.get(playerId);
+        if (!socket || !socket.userId)
+            continue;
+        const vw = (player.viewportWidth || constants_2.VIEWPORT_WIDTH) * 1.5;
+        const vh = (player.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 1.5;
+        const filtered = gameState_1.playerProjectiles.filter(p => Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh);
+        io.to(playerId).emit('playerProjectilesUpdate', filtered);
     }
 }
 // updatePlayerState moved to playerState module - using imported function
@@ -3369,19 +3349,17 @@ function start_loop() {
                 continue;
             const quality = socket.connectionQuality || 'good';
             const now = Date.now();
-            // Adaptive update rate: 15 TPS for good (smooth), lower for weaker connections
+            // Adaptive update rate: 30 TPS for good, lower for weaker connections
             let shouldUpdate = true;
             if (socket.lastUpdateTime) {
                 const timeSinceLastUpdate = now - socket.lastUpdateTime;
-                if (quality === 'slow' && timeSinceLastUpdate < 150) { // ~7 TPS for slow
+                if (quality === 'slow' && timeSinceLastUpdate < 100) { // ~10 TPS for slow
                     shouldUpdate = false;
                 }
-                else if (quality === 'medium' && timeSinceLastUpdate < 100) { // ~10 TPS for medium
+                else if (quality === 'medium' && timeSinceLastUpdate < 67) { // ~15 TPS for medium
                     shouldUpdate = false;
                 }
-                else if (quality === 'good' && timeSinceLastUpdate < 67) { // ~15 TPS for good
-                    shouldUpdate = false;
-                }
+                // 'good' quality: send every tick (~30 TPS)
             }
             if (!shouldUpdate)
                 continue;

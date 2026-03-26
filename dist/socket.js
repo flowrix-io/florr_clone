@@ -1,9 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Socket = void 0;
 exports.initMultiPlayerMode = initMultiPlayerMode;
-const socket_io_client_1 = require("socket.io-client");
-Object.defineProperty(exports, "Socket", { enumerable: true, get: function () { return socket_io_client_1.Socket; } });
+const ws_client_1 = require("./ws_client");
 function initMultiPlayerMode(game, serverIp) {
     // Remove connecting message immediately
     const connectingDiv = document.getElementById('connectingDiv');
@@ -33,7 +31,7 @@ function initMultiPlayerMode(game, serverIp) {
         // Use provided server IP or current origin as default
         const serverUrl = serverIp || window.location.origin;
         console.log(`[CLIENT] Connecting to server: ${serverUrl}`);
-        game.socket = (0, socket_io_client_1.io)(serverUrl, {
+        game.socket = (0, ws_client_1.io)(serverUrl, {
             secure: serverUrl.startsWith('https'),
             rejectUnauthorized: false,
             withCredentials: true,
@@ -270,7 +268,7 @@ function setupSocketListeners(game) {
             // Connect to new server
             const protocol = transferData.targetServer.protocol || 'https';
             const newServerUrl = `${protocol}://${transferData.targetServer.host}:${transferData.targetServer.port}`;
-            game.socket = (0, socket_io_client_1.io)(newServerUrl, {
+            game.socket = (0, ws_client_1.io)(newServerUrl, {
                 secure: newServerUrl.startsWith('https'),
                 rejectUnauthorized: false,
                 withCredentials: true
@@ -569,7 +567,26 @@ function setupSocketListeners(game) {
                 return;
             }
         }
-        game.enemies.set(enemy.id, enemy);
+        if (existingEnemy) {
+            // Update existing enemy: set interpolation targets instead of snapping
+            existingEnemy.targetX = enemy.x;
+            existingEnemy.targetY = enemy.y;
+            existingEnemy.targetAngle = enemy.angle;
+            existingEnemy.health = enemy.health;
+            existingEnemy.maxHealth = enemy.maxHealth;
+            // Update other fields directly
+            if (enemy.type)
+                existingEnemy.type = enemy.type;
+            if (enemy.tier)
+                existingEnemy.tier = enemy.tier;
+        }
+        else {
+            // New enemy: set position immediately (no interpolation on first appearance)
+            enemy.targetX = enemy.x;
+            enemy.targetY = enemy.y;
+            enemy.targetAngle = enemy.angle;
+            game.enemies.set(enemy.id, enemy);
+        }
     }
     // Handler for enemy killed - plays death animation
     function handleEnemyRemoval(enemyId) {

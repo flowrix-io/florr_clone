@@ -6,7 +6,7 @@ import { TitleScreen, injectTitleScreenStyles } from './title_screen';
 import { Preloader, PreloadedAssets } from './preloader';
 import { PETAL_CONFIG } from './petals';
 import { ShaderManager } from './shader/shaderManager';
-import { io } from 'socket.io-client';
+import { io } from './ws_client';
 
 // Add interfaces before the workerCode string
 interface Decoration {

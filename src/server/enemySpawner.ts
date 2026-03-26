@@ -1,4 +1,4 @@
-import { Server as SocketIOServer } from 'socket.io';
+import { Server as SocketIOServer } from '../ws_server';
 import { Enemy } from '../server_utils';
 import { 
     players,

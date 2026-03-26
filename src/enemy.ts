@@ -76,6 +76,10 @@ export interface Enemy {
   dpsHistory?: Array<{ time: number; dps: number }>;  // History of DPS values over time
   // Death animation
   deathAnimationStartTime?: number;  // Timestamp when death animation started
+  // Client-side interpolation targets
+  targetX?: number;
+  targetY?: number;
+  targetAngle?: number;
 }
 
 export interface Obstacle {

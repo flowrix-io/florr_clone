@@ -648,6 +648,12 @@ export class TitleScreen {
                             Mob Death Animation
                         </label>
                         <br/><br/>
+                        <label>
+                            Interpolation: <span id="interpolationValue">0.15</span>
+                            <br/>
+                            <input type="range" id="interpolationSlider" min="0.05" max="0.5" step="0.05" value="0.15" style="width: 200px;">
+                        </label>
+                        <br/><br/>
                         <h3>Tutorial</h3>
                         <button id="resetTutorialButton" class="tab-button">Reset Tutorial</button>
                     </div>
@@ -1218,6 +1224,24 @@ export class TitleScreen {
                 // Update game if running
                 if (window.currentGame) {
                     window.currentGame.mobDeathAnimation = mobDeathAnimationCheckbox.checked;
+                }
+            });
+        }
+
+        const interpolationSlider = this.settingsMenu.querySelector('#interpolationSlider') as HTMLInputElement;
+        const interpolationValue = this.settingsMenu.querySelector('#interpolationValue') as HTMLSpanElement;
+        if (interpolationSlider) {
+            const saved = localStorage.getItem('interpolationAmount');
+            if (saved) {
+                interpolationSlider.value = saved;
+                if (interpolationValue) interpolationValue.textContent = saved;
+            }
+            interpolationSlider.addEventListener('input', () => {
+                const val = interpolationSlider.value;
+                if (interpolationValue) interpolationValue.textContent = val;
+                localStorage.setItem('interpolationAmount', val);
+                if (window.currentGame) {
+                    window.currentGame.interpolationAmount = parseFloat(val);
                 }
             });
         }

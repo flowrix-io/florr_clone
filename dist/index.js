@@ -7,7 +7,7 @@ const title_screen_1 = require("./title_screen");
 const preloader_1 = require("./preloader");
 const petals_1 = require("./petals");
 const shaderManager_1 = require("./shader/shaderManager");
-const socket_io_client_1 = require("socket.io-client");
+const ws_client_1 = require("./ws_client");
 let currentGame = null;
 let preconnectedSocket = null; // Store preconnected socket
 let preconnectedMapData = null; // Store map data received during preconnect
@@ -160,7 +160,7 @@ function preconnectToServer() {
     const serverIp = titleScreen?.getServerIP() || window.location.origin;
     const serverUrl = serverIp || window.location.origin;
     console.log(`[Index] Preconnecting to server: ${serverUrl}`);
-    preconnectedSocket = (0, socket_io_client_1.io)(serverUrl, {
+    preconnectedSocket = (0, ws_client_1.io)(serverUrl, {
         secure: serverUrl.startsWith('https'),
         rejectUnauthorized: false,
         withCredentials: true,

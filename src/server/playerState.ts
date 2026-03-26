@@ -1,4 +1,4 @@
-import { Server as SocketIOServer } from 'socket.io';
+import { Server as SocketIOServer } from '../ws_server';
 import { ServerPlayer } from '../player';
 import { Enemy, getXPFromEnemy } from '../server_utils';
 import { PlayerProjectile } from '../enemy';

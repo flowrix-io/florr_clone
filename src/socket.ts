@@ -1,4 +1,4 @@
-import { io, Socket } from 'socket.io-client';
+import { io, Socket } from './ws_client';
 import { Player, PlayerInventory, ServerPlayer } from './player';
 import { Enemy, Obstacle } from './enemy';
 import { Item, WorldItem } from './item';
@@ -646,7 +646,24 @@ function setupSocketListeners(game: any) {
                 return;
             }
         }
-        game.enemies.set(enemy.id, enemy);
+
+        if (existingEnemy) {
+            // Update existing enemy: set interpolation targets instead of snapping
+            existingEnemy.targetX = enemy.x;
+            existingEnemy.targetY = enemy.y;
+            existingEnemy.targetAngle = enemy.angle;
+            existingEnemy.health = enemy.health;
+            existingEnemy.maxHealth = enemy.maxHealth;
+            // Update other fields directly
+            if (enemy.type) existingEnemy.type = enemy.type;
+            if (enemy.tier) existingEnemy.tier = enemy.tier;
+        } else {
+            // New enemy: set position immediately (no interpolation on first appearance)
+            enemy.targetX = enemy.x;
+            enemy.targetY = enemy.y;
+            enemy.targetAngle = enemy.angle;
+            game.enemies.set(enemy.id, enemy);
+        }
     }
 
     // Handler for enemy killed - plays death animation

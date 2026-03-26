@@ -1,7 +1,7 @@
 import express from 'express';
 import https from 'https';
 import http from 'http';
-import { Server as SocketIOServer } from 'socket.io';
+import { Server as SocketIOServer } from '../ws_server';
 import { ServerPlayer } from '../player';
 import { 
     WORLD_HEIGHT, 

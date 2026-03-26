@@ -1,7 +1,7 @@
 import express from 'express';
 import { createServer } from 'https';
 import { createServer as createHttpServer } from 'http';
-import { Server, Socket } from 'socket.io';
+import { Server, Socket } from './ws_server';
 import path from 'path';
 import fs from 'fs';
 import https from 'https';
@@ -329,19 +329,7 @@ if (USE_HTTPS) {
     console.log(`[SERVER] Using HTTP protocol`);
 }
 
-const io = new Server(server, {
-    cors: {
-        origin: function (origin, callback) {
-            // Allow requests with no origin (like mobile apps or curl requests)
-            if (!origin) return callback(null, true);
-
-            // Use the origin of the request
-            callback(null, origin);
-        },
-        methods: ["GET", "POST"],
-        credentials: true
-    }
-});
+const io = new Server(server);
 
 // Set ioInstance for use in modules
 ioInstance = io;
@@ -3523,22 +3511,18 @@ function updateMobProjectiles(deltaTimeMs: number) {
         }
     }
     
-    // Emit projectile updates to nearby players only (spatial filtering, throttled to ~15 TPS)
-    if (mobProjectiles.length > 0) {
-        for (const playerId of Object.keys(players)) {
-            const player = players[playerId];
-            if (!player) continue;
-            const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
-            if (!socket || !socket.userId) continue;
-            const vw = (player.viewportWidth || VIEWPORT_WIDTH) * 1.5;
-            const vh = (player.viewportHeight || VIEWPORT_HEIGHT) * 1.5;
-            const filtered = mobProjectiles.filter(p =>
-                Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh
-            );
-            if (filtered.length > 0) {
-                io.to(playerId).emit('mobProjectilesUpdate', filtered);
-            }
-        }
+    // Emit projectile updates to nearby players only (spatial filtering)
+    for (const playerId of Object.keys(players)) {
+        const player = players[playerId];
+        if (!player) continue;
+        const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
+        if (!socket || !socket.userId) continue;
+        const vw = (player.viewportWidth || VIEWPORT_WIDTH) * 1.5;
+        const vh = (player.viewportHeight || VIEWPORT_HEIGHT) * 1.5;
+        const filtered = mobProjectiles.filter(p =>
+            Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh
+        );
+        io.to(playerId).emit('mobProjectilesUpdate', filtered);
     }
 }
 
@@ -3737,21 +3721,17 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
     }
     
     // Emit projectile updates to nearby players only (spatial filtering)
-    if (playerProjectiles.length > 0) {
-        for (const playerId of Object.keys(players)) {
-            const player = players[playerId];
-            if (!player) continue;
-            const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
-            if (!socket || !socket.userId) continue;
-            const vw = (player.viewportWidth || VIEWPORT_WIDTH) * 1.5;
-            const vh = (player.viewportHeight || VIEWPORT_HEIGHT) * 1.5;
-            const filtered = playerProjectiles.filter(p =>
-                Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh
-            );
-            if (filtered.length > 0) {
-                io.to(playerId).emit('playerProjectilesUpdate', filtered);
-            }
-        }
+    for (const playerId of Object.keys(players)) {
+        const player = players[playerId];
+        if (!player) continue;
+        const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
+        if (!socket || !socket.userId) continue;
+        const vw = (player.viewportWidth || VIEWPORT_WIDTH) * 1.5;
+        const vh = (player.viewportHeight || VIEWPORT_HEIGHT) * 1.5;
+        const filtered = playerProjectiles.filter(p =>
+            Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh
+        );
+        io.to(playerId).emit('playerProjectilesUpdate', filtered);
     }
 }
 
@@ -3949,17 +3929,16 @@ function start_loop() {
             const quality = socket.connectionQuality || 'good';
             const now = Date.now();
 
-            // Adaptive update rate: 15 TPS for good (smooth), lower for weaker connections
+            // Adaptive update rate: 30 TPS for good, lower for weaker connections
             let shouldUpdate = true;
             if (socket.lastUpdateTime) {
                 const timeSinceLastUpdate = now - socket.lastUpdateTime;
-                if (quality === 'slow' && timeSinceLastUpdate < 150) { // ~7 TPS for slow
+                if (quality === 'slow' && timeSinceLastUpdate < 100) { // ~10 TPS for slow
                     shouldUpdate = false;
-                } else if (quality === 'medium' && timeSinceLastUpdate < 100) { // ~10 TPS for medium
-                    shouldUpdate = false;
-                } else if (quality === 'good' && timeSinceLastUpdate < 67) { // ~15 TPS for good
+                } else if (quality === 'medium' && timeSinceLastUpdate < 67) { // ~15 TPS for medium
                     shouldUpdate = false;
                 }
+                // 'good' quality: send every tick (~30 TPS)
             }
 
             if (!shouldUpdate) continue;
