@@ -201,7 +201,6 @@ export class Graphics {
     public petalImageCache: Record<string, HTMLCanvasElement | HTMLCanvasElement[]> = {}; // Canvas for static, array for animated
     private mobSVGCache: Record<string, string> = {}; // Store original SVG strings for WASM rendering
     private svgRenderer = getSVGRenderer();
-    private lastEnemyDebugLog: number = 0;
 
     // Section-based texture loading state
     private currentSection: number = -1; // Current player section (0-8)
@@ -394,10 +393,7 @@ export class Graphics {
             }
         }
 
-        console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings');
-
         // Pre-render ALL mob frames at startup to avoid rendering issues
-        // (Mobs from unloaded sections would appear as circles otherwise)
         const mobTypesToPrerender = new Set<string>(allMobTypes);
 
         // Mark all sections as loaded since we're preloading everything
@@ -405,8 +401,6 @@ export class Graphics {
             this.loadedSections.add(section);
         }
         this.currentSection = 0;
-
-        console.log(`[Graphics] Pre-rendering frames for ALL ${mobTypesToPrerender.size} mob types`)
 
         if (highQualityMobs) {
             // High quality mode: Pre-render frames for each rarity separately (old approach)
@@ -466,30 +460,15 @@ export class Graphics {
 
         // Wait for all pre-renders to complete (but don't block - they'll cache in background)
         if (preloadPromises.length === 0) {
-            // No mobs to pre-render, mark as complete immediately
-            console.log('[Graphics] No mobs to pre-render, marking preloading complete');
             this.svgRenderer.markPreloadingComplete();
         } else {
-            console.log(`[Graphics] Starting pre-render of ${preloadPromises.length} mob types...`);
             Promise.all(preloadPromises).then(() => {
-                console.log('[Graphics] Pre-rendered mob canvases - marking preloading complete');
-                // Mark preloading as complete to prevent data URL creation during gameplay
                 this.svgRenderer.markPreloadingComplete();
-                console.log('[Graphics] Preloading complete flag set:', this.svgRenderer.isPreloadingComplete());
             }).catch((error) => {
                 console.warn('[Graphics] Some mob canvases failed to pre-render:', error);
-                // Still mark as complete to prevent data URLs even if some failed
                 this.svgRenderer.markPreloadingComplete();
-                console.log('[Graphics] Preloading complete flag set (after error):', this.svgRenderer.isPreloadingComplete());
             });
         }
-
-        console.log('[Graphics] Loaded', Object.keys(this.mobSVGCache).length, 'mob SVG strings for WASM rendering (section-based loading)');
-    }
-
-    // Method to get mob animation frame time in milliseconds
-    private getMobAnimationFrameTime(): number {
-        return getMobAnimationFrameTime();
     }
 
     private static gcd(a: number, b: number): number {
@@ -609,7 +588,7 @@ export class Graphics {
         }
 
         // Calculate per-mob cycle based on SVG animation durations (LCM)
-        const frameTime = this.getMobAnimationFrameTime();
+        const frameTime = getMobAnimationFrameTime();
         const framesPerCycle = this.calculateFramesPerCycle(mobStats.image, frameTime);
 
         // Store cycle length in the renderer for use during rendering
@@ -622,7 +601,6 @@ export class Graphics {
 
                 for (let frame = 0; frame < framesPerCycle; frame++) {
                     if (this.svgRenderer.isPreloadingComplete()) {
-                        console.log(`[Graphics] Preloading marked complete, stopping pre-render for ${cacheKey} at frame ${frame}`);
                         break;
                     }
 
@@ -641,12 +619,7 @@ export class Graphics {
                     const animatedSVG = this.svgRenderer.getAnimatedSVGString(mobStats.image, time);
                     const canvas = await this.svgRenderer.renderSVGToOffscreenCanvas(animatedSVG, mobSize, mobSize);
                     if (canvas) {
-                        // Cache the canvas directly
                         this.svgRenderer.cacheCanvas(animatedCacheKey, canvas);
-                        // Debug: Log first few cached frames
-                        if (frame < 3) {
-                            console.log(`[Graphics] Pre-rendered frame ${frame} for ${cacheKey} (baseCacheKey="${baseCacheKey.substring(0, 60)}...", timeBucket=${timeBucket})`);
-                        }
                     }
                 }
             } catch (error) {
@@ -760,7 +733,6 @@ export class Graphics {
         const mobTypes = getMobTypesBySection(section);
         const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
 
-        console.log(`[Graphics] Loading animation frames for ${mobTypes.length} mob types in section ${section}`);
         this.loadedSections.add(section);
 
         // SVG strings are already all cached at startup
@@ -784,7 +756,6 @@ export class Graphics {
         const mobTypes = getMobTypesBySection(section);
         const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
 
-        console.log(`[Graphics] Unloading animation frames for ${mobTypes.length} mob types from section ${section}`);
         this.loadedSections.delete(section);
 
         let clearedCount = 0;
@@ -807,7 +778,6 @@ export class Graphics {
             }
         }
 
-        console.log(`[Graphics] Cleared ${clearedCount} cached canvas entries for section ${section}`);
     }
 
     /**
@@ -872,13 +842,6 @@ export class Graphics {
                 this.loadingMobs.delete(cacheKey);
             }
         })();
-    }
-
-    /**
-     * Load animation frames on-demand (no-op since all frames are pre-loaded at startup)
-     */
-    public loadMobOnDemand(mobType: string, rarity: string): void {
-        // All frames are pre-loaded at startup, no on-demand loading needed
     }
 
     // Method to find the closest wall or biome edge to an out-of-bounds position
@@ -2034,29 +1997,12 @@ export class Graphics {
         });
     }
 
-    private wallGridLogOnce = false;
     /**
      * Draw the wall grid (walls and water tiles)
      */
     private drawWallGrid(viewport: { left: number; right: number; top: number; bottom: number }): void {
         if (!WALL_GRID || !WALL_GRID.length) {
-            if (!this.wallGridLogOnce) {
-                console.warn('[Graphics] WALL_GRID is empty or undefined');
-                this.wallGridLogOnce = true;
-            }
             return;
-        }
-
-        // Log once
-        if (!this.wallGridLogOnce) {
-            let nonZero = 0;
-            for (let y = 0; y < WALL_GRID.length; y++) {
-                for (let x = 0; x < WALL_GRID[y].length; x++) {
-                    if (WALL_GRID[y][x] !== 0) nonZero++;
-                }
-            }
-            console.log(`[Graphics] WALL_GRID: ${WALL_GRID.length}x${WALL_GRID[0]?.length || 0}, non-zero tiles: ${nonZero}`);
-            this.wallGridLogOnce = true;
         }
 
         // Calculate which tiles are visible in the viewport
@@ -2195,25 +2141,7 @@ export class Graphics {
     }
 
     public drawSpawnPoint(x: number, y: number, width: number, height: number, type?: string) {
-        // // Draw spawn area indicator
-        // const color = type ? this.getTierColor(type) : 'rgba(76, 175, 80, 0.3)';
-        // this.ctx.fillStyle = color;
-        // this.ctx.fillRect(x, y, width, height);
-
-        // // Add spawn point marker
-        // this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-        // this.ctx.lineWidth = 2;
-        // this.ctx.beginPath();
-        // this.ctx.arc(x + width / 2, y + height / 2, Math.min(width, height) / 4, 0, Math.PI * 2);
-        // this.ctx.stroke();
-
-        // // Add tier label
-        // if (type) {
-        //     this.ctx.fillStyle = 'white';
-        //     this.ctx.font = '20px Ubuntu, sans-serif';
-        //     this.ctx.textAlign = 'center';
-        //     this.ctx.fillText(type.toUpperCase(), x + width / 2, y + height / 2);
-        // }
+        // Spawn points are invisible - rendering handled by spawn zones
     }
 
     private drawSpawnZones(mapData: MapElement[]) {
@@ -4568,11 +4496,6 @@ export class Graphics {
 
         // Draw background
         ctx.save();
-        // ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        // ctx.beginPath();
-        // ctx.roundRect(x, y, maxWidth, totalHeight, 6);
-        // ctx.fill();
-
         // Draw log lines
         ctx.font = '12px monospace';
         ctx.textBaseline = 'top';
