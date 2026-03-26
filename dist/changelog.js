@@ -196,6 +196,16 @@ exports.CHANGELOG = [
             'Fixed an animation loop bug',
         ]
     },
+    {
+        date: 'February 22-March 25, 2026',
+        changes: [
+            'Fixed performance issues',
+            'Your settings now save',
+            'Fixed teleporter system',
+            'Backend changes',
+            'FPS should be higher now, and ping should be lower',
+        ]
+    }
 ];
 class ChangelogManager {
     constructor() {

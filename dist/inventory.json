@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 238989818,
+      "totalXP": 239056898,
       "inventory": {
         "common": {
           "shield": 233,
@@ -69,7 +69,7 @@
           "petal_dust_egg": 20,
           "petal_osaka": 8,
           "petal_bulb": 6,
-          "petal_third_eye": 3,
+          "petal_third_eye": 4,
           "petal_gas": 7,
           "petal_glass": 18,
           "petal_cube_egg": 15,
@@ -653,7 +653,7 @@
           "common": 246,
           "mythic": 163,
           "uncommon": 79,
-          "unique": 2,
+          "unique": 3,
           "ultra": 13,
           "rare": 62,
           "epic": 46,
@@ -664,7 +664,7 @@
           "epic": 93,
           "mythic": 196,
           "uncommon": 84,
-          "legendary": 205,
+          "legendary": 206,
           "rare": 85,
           "ultra": 25,
           "super": 4,
@@ -735,7 +735,7 @@
           "ultra": 3,
           "super": 2,
           "epic": 53,
-          "common": 563,
+          "common": 570,
           "uncommon": 41
         },
         "roach": {
@@ -928,7 +928,7 @@
           "rare": 5
         }
       },
-      "stars": 126457
+      "stars": 126557
     },
     "1g99g1gfk": {
       "totalXP": 93,
