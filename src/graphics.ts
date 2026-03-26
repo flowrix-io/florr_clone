@@ -274,7 +274,7 @@ export class Graphics {
         }
     }
 
-    public startIrisTransition(screenshot: HTMLCanvasElement): void {
+    public startIrisTransition(screenshot: HTMLCanvasElement | null): void {
         this.irisTransitionActive = true;
         this.irisTransitionStartTime = Date.now();
         this.irisScreenshot = screenshot;
@@ -290,23 +290,26 @@ export class Graphics {
         this.irisOnComplete = onComplete;
     }
 
+    /** Capture the current canvas contents as a screenshot for use in transitions. */
+    public captureScreenshot(): HTMLCanvasElement {
+        const shot = document.createElement('canvas');
+        shot.width = this.canvas.width;
+        shot.height = this.canvas.height;
+        shot.getContext('2d')!.drawImage(this.canvas, 0, 0);
+        return shot;
+    }
+
     private drawIrisTransition(): void {
         const elapsed = Date.now() - this.irisTransitionStartTime;
         const progress = Math.min(elapsed / this.IRIS_TRANSITION_DURATION, 1);
 
 
         if (progress >= 1) {
-            // Draw final frame for closing (fully covered)
-            if (this.irisClosing) {
-                this.ctx.save();
-                if (this.irisScreenshot) {
-                    this.ctx.drawImage(this.irisScreenshot, 0, 0, this.canvas.width, this.canvas.height);
-                } else {
-                    this.ctx.fillStyle = 'black';
-                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-                }
-                this.ctx.restore();
-            }
+            // Draw final frame
+            this.ctx.save();
+            this.ctx.fillStyle = 'black';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.restore();
             this.irisTransitionActive = false;
             this.irisScreenshot = null;
             if (this.irisOnComplete) {
@@ -330,21 +333,31 @@ export class Graphics {
         const maxRadius = Math.sqrt(centerX * centerX + centerY * centerY);
         const currentRadius = eased * maxRadius;
 
-        this.ctx.save();
-        // Clip to the area outside the circle (title screen overlay region)
-        this.ctx.beginPath();
-        this.ctx.rect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.arc(centerX, centerY, Math.max(currentRadius, 0), 0, Math.PI * 2, true);
-        this.ctx.clip();
+        if (this.irisClosing && this.irisScreenshot) {
+            // Closing with frozen frame: black everywhere, frozen screenshot inside circle
+            this.ctx.save();
+            this.ctx.fillStyle = 'black';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.restore();
 
-        // Draw captured title screen screenshot as overlay
-        if (this.irisScreenshot) {
+            // Clip to inside the circle and draw the frozen frame
+            this.ctx.save();
+            this.ctx.beginPath();
+            this.ctx.arc(centerX, centerY, Math.max(currentRadius, 0), 0, Math.PI * 2);
+            this.ctx.clip();
             this.ctx.drawImage(this.irisScreenshot, 0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.restore();
         } else {
+            // Opening or closing without screenshot: black outside the circle, live game inside
+            this.ctx.save();
+            this.ctx.beginPath();
+            this.ctx.rect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.arc(centerX, centerY, Math.max(currentRadius, 0), 0, Math.PI * 2, true);
+            this.ctx.clip();
             this.ctx.fillStyle = 'black';
             this.ctx.fill();
+            this.ctx.restore();
         }
-        this.ctx.restore();
 
         // Draw black outline ring around the circle edge
         if (currentRadius > 0) {
@@ -2524,6 +2537,13 @@ export class Graphics {
         }
         
 
+        // Apply spinning animation when charging in a teleporter
+        if (player.teleporterCharging && player.teleporterChargeStart) {
+            const elapsed = this.frameTimestamp - player.teleporterChargeStart;
+            const spinAngle = elapsed * 0.008;
+            this.ctx.rotate(spinAngle);
+        }
+
         // Draw player sprite
         if (player.id === socket) {
             // Calculate target eye position
@@ -2577,6 +2597,13 @@ export class Graphics {
         if (player.isInvulnerable) {
             this.ctx.globalAlpha = 1.0;
             this.ctx.shadowBlur = 0;
+        }
+
+        // Reset rotation before drawing petals so they don't spin
+        if (player.teleporterCharging && player.teleporterChargeStart) {
+            const elapsed = this.frameTimestamp - player.teleporterChargeStart;
+            const spinAngle = elapsed * 0.008;
+            this.ctx.rotate(-spinAngle);
         }
 
         // Draw petals around player (while still in player's transform context)

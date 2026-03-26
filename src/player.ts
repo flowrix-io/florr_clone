@@ -47,6 +47,8 @@ export interface Player {
   };
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
+  teleporterCharging?: boolean; // True when player is standing in a teleporter charging up
+  teleporterChargeStart?: number; // Timestamp when teleporter charge began
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)

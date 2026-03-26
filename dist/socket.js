@@ -253,8 +253,12 @@ function setupSocketListeners(game) {
     game.socket.on('playerTransferred', async (transferData) => {
         console.log(`[CLIENT] Player being transferred to server ${transferData.targetServer.name} on port ${transferData.targetServer.port}`);
         try {
-            // Hide teleporter UI since we're transferring
-            game.hideTeleporterUI();
+            // Clear spinning state since we're transferring
+            const transferPlayer = game.players.get(game.socket.id);
+            if (transferPlayer) {
+                transferPlayer.teleporterCharging = false;
+                transferPlayer.teleporterChargeStart = undefined;
+            }
             // Disconnect from current server
             game.socket.disconnect();
             // Clear heartbeat interval
@@ -296,30 +300,45 @@ function setupSocketListeners(game) {
     // Handle same-server teleportation
     game.socket.on('playerTeleported', (data) => {
         console.log(`[CLIENT] Player ${data.playerId} teleported to (${data.newX}, ${data.newY})`);
-        // Update player position if it's the current player
         const player = game.players.get(data.playerId);
-        if (player) {
+        const isCurrentPlayer = data.playerId === game.socket.id;
+        if (isCurrentPlayer && player && game.graphics) {
+            // Freeze the current frame and iris close over it
+            const screenshot = game.graphics.captureScreenshot();
+            game.graphics.startIrisClose(screenshot, () => {
+                player.x = data.newX;
+                player.y = data.newY;
+                player.teleporterCharging = false;
+                player.teleporterChargeStart = undefined;
+                // Open iris to reveal new location
+                game.graphics.startIrisTransition(null);
+            });
+        }
+        else if (player) {
+            // Other players just teleport instantly
             player.x = data.newX;
             player.y = data.newY;
-            // Add teleport effect
-            game.addTeleportEffect(data.newX, data.newY);
-        }
-        // Hide teleporter UI if it's the current player
-        if (data.playerId === game.socket.id) {
-            game.hideTeleporterUI();
         }
     });
     // Handle teleporter entry (player entered teleporter)
     game.socket.on('teleporterEntered', (data) => {
         console.log(`[CLIENT] Entered teleporter, waiting ${data.timeRequired}ms to teleport`);
-        // Show teleporter countdown UI
-        game.showTeleporterUI(data.teleportTo, data.timeRequired);
+        // Set spinning state on the current player
+        const currentPlayer = game.players.get(game.socket.id);
+        if (currentPlayer) {
+            currentPlayer.teleporterCharging = true;
+            currentPlayer.teleporterChargeStart = Date.now();
+        }
     });
     // Handle teleporter exit (player left teleporter before teleporting)
     game.socket.on('teleporterExited', () => {
         console.log('[CLIENT] Left teleporter before teleporting');
-        // Hide teleporter UI
-        game.hideTeleporterUI();
+        // Clear spinning state on the current player
+        const currentPlayer = game.players.get(game.socket.id);
+        if (currentPlayer) {
+            currentPlayer.teleporterCharging = false;
+            currentPlayer.teleporterChargeStart = undefined;
+        }
     });
     // Handle player split event
     game.socket.on('playerSplit', (data) => {
@@ -436,8 +455,6 @@ function setupSocketListeners(game) {
             clearInterval(game.heartbeatInterval);
             game.heartbeatInterval = null;
         }
-        // Hide teleporter UI on disconnect to prevent UI from staying visible
-        game.hideTeleporterUI();
         // Show disconnect message (but not during intentional transfers)
         if (!game.pendingTransfer) {
             game.showDisconnectMessage();
