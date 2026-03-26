@@ -1282,8 +1282,8 @@ io.on('connection', (socket) => {
             item: itemData,
         });
         // Add cooldown to the item in player's loadout (client-side handles the visual)
-        // Update the player state
-        io.emit('playerUpdated', player);
+        // Update the player state (only relevant to this player)
+        socket.emit('playerUpdated', player);
     });
     // XP handling is now managed by the global addXPToPlayer function
     // Add a name update handler
@@ -1291,7 +1291,8 @@ io.on('connection', (socket) => {
         const player = constants_2.players[socket.id];
         if (player) {
             player.name = newName.slice(0, 20);
-            io.emit('playerUpdated', player);
+            // Name changes need to go to all players
+            io.emit('playerUpdated', { id: player.id, name: player.name });
         }
     });
     /**
@@ -1583,7 +1584,8 @@ io.on('connection', (socket) => {
             }
             // Recalculate player stats based on equipped petal modifiers
             (0, playerManager_1.recalculatePlayerStats)(player, io);
-            io.emit('playerUpdated', player);
+            // Only the player needs their own loadout update
+            socket.emit('playerUpdated', player);
         }
     });
     // Add to class-level variables after other declarations
@@ -1855,14 +1857,14 @@ io.on('connection', (socket) => {
         if (socket.userId) {
             savePlayerProgress(player, socket.userId);
         }
-        // Emit skills update
-        io.emit('skillsUpdated', {
+        // Emit skills update (only to this player)
+        socket.emit('skillsUpdated', {
             playerId: player.id,
             tp: player.tp,
             skills: player.skills
         });
-        // Emit player update to sync stats
-        io.emit('playerUpdated', player);
+        // Emit player update to sync stats (only to this player)
+        socket.emit('playerUpdated', player);
     });
     socket.on('resetSkills', () => {
         const player = constants_2.players[socket.id];
@@ -1918,14 +1920,14 @@ io.on('connection', (socket) => {
         if (socket.userId) {
             savePlayerProgress(player, socket.userId);
         }
-        // Emit skills update
-        io.emit('skillsUpdated', {
+        // Emit skills update (only to this player)
+        socket.emit('skillsUpdated', {
             playerId: player.id,
             tp: player.tp,
             skills: player.skills
         });
-        // Emit player update to sync stats
-        io.emit('playerUpdated', player);
+        // Emit player update to sync stats (only to this player)
+        socket.emit('playerUpdated', player);
     });
     socket.on('craftItems', (data) => {
         try {
@@ -2083,12 +2085,12 @@ io.on('connection', (socket) => {
             if (userId) {
                 savePlayerProgress(player, userId);
             }
-            // Emit success
+            // Emit success (only to this player)
             socket.emit('shopPurchaseSuccess', {
                 inventory: player.inventory,
                 stars: player.stars
             });
-            io.emit('playerUpdated', player);
+            socket.emit('playerUpdated', player);
         }
         catch (error) {
             console.error('[SHOP] Error during purchase:', error);
@@ -2161,7 +2163,7 @@ io.on('connection', (socket) => {
                 timestamp: Date.now()
             };
             database_1.database.addNotification(notification);
-            io.emit('playerUpdated', player);
+            socket.emit('playerUpdated', player);
         }
         catch (error) {
             console.error('[SHOP] Error during code redemption:', error);
@@ -2998,8 +3000,23 @@ function updateMobProjectiles(deltaTimeMs) {
             }
         }
     }
-    // Emit projectile updates to clients
-    io.emit('mobProjectilesUpdate', gameState_1.mobProjectiles);
+    // Emit projectile updates to nearby players only (spatial filtering, throttled to ~15 TPS)
+    if (gameState_1.mobProjectiles.length > 0) {
+        for (const playerId of Object.keys(constants_2.players)) {
+            const player = constants_2.players[playerId];
+            if (!player)
+                continue;
+            const socket = io.sockets.sockets.get(playerId);
+            if (!socket || !socket.userId)
+                continue;
+            const vw = (player.viewportWidth || constants_2.VIEWPORT_WIDTH) * 1.5;
+            const vh = (player.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 1.5;
+            const filtered = gameState_1.mobProjectiles.filter(p => Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh);
+            if (filtered.length > 0) {
+                io.to(playerId).emit('mobProjectilesUpdate', filtered);
+            }
+        }
+    }
 }
 // Update and move player projectiles
 function updatePlayerProjectiles(deltaTimeMs) {
@@ -3165,8 +3182,23 @@ function updatePlayerProjectiles(deltaTimeMs) {
             }
         }
     }
-    // Emit projectile updates to clients
-    io.emit('playerProjectilesUpdate', gameState_1.playerProjectiles);
+    // Emit projectile updates to nearby players only (spatial filtering)
+    if (gameState_1.playerProjectiles.length > 0) {
+        for (const playerId of Object.keys(constants_2.players)) {
+            const player = constants_2.players[playerId];
+            if (!player)
+                continue;
+            const socket = io.sockets.sockets.get(playerId);
+            if (!socket || !socket.userId)
+                continue;
+            const vw = (player.viewportWidth || constants_2.VIEWPORT_WIDTH) * 1.5;
+            const vh = (player.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 1.5;
+            const filtered = gameState_1.playerProjectiles.filter(p => Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh);
+            if (filtered.length > 0) {
+                io.to(playerId).emit('playerProjectilesUpdate', filtered);
+            }
+        }
+    }
 }
 // updatePlayerState moved to playerState module - using imported function
 function start_loop() {
@@ -3294,6 +3326,7 @@ function start_loop() {
             return Math.round(value / precision) * precision;
         };
         // Helper function to create optimized player data
+        // Only send fields that change frequently; name/level/score are sent via playerUpdated
         const createPlayerData = (p, quality) => {
             const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
             return {
@@ -3308,7 +3341,8 @@ function start_loop() {
                 score: p.score,
                 petalExtension: quantize(p.inputs?.petalExtension || 1.0, 0.1),
                 petalPositions: (p.petalPositions || []).map((pos) => ({
-                    ...pos,
+                    loadoutIndex: pos.loadoutIndex,
+                    instanceIndex: pos.instanceIndex,
                     x: quantize(pos.x, precision),
                     y: quantize(pos.y, precision)
                 }))
@@ -3328,22 +3362,6 @@ function start_loop() {
                 maxHealth: Math.round(e.maxHealth)
             };
         };
-        // Helper function for delta compression - only send changed data
-        // Delta check: skip sending if state hasn't changed
-        // Use a lightweight hash instead of full JSON.stringify comparison
-        const getStateHash = (state) => {
-            // Quick hash based on player/enemy count and positions
-            let hash = state.players.length * 31 + state.enemies.length * 17;
-            for (const p of state.players) {
-                hash = (hash * 31 + (p.x | 0) + (p.y | 0) * 7 + (p.health | 0)) | 0;
-            }
-            for (const e of state.enemies) {
-                hash = (hash * 31 + (e.x | 0) + (e.y | 0) * 7 + (e.health | 0)) | 0;
-            }
-            return hash;
-        };
-        // Filter enemies to only send those in viewport with 200% buffer for optimization
-        const enemiesInViewport = (0, playerState_1.getEnemiesInViewport200Percent)();
         // Send optimized updates to each player based on their connection quality
         for (const playerId of authenticatedPlayerIds) {
             const socket = io.sockets.sockets.get(playerId);
@@ -3351,43 +3369,70 @@ function start_loop() {
                 continue;
             const quality = socket.connectionQuality || 'good';
             const now = Date.now();
-            // Adaptive update rate based on connection quality
+            // Adaptive update rate: 15 TPS for good (smooth), lower for weaker connections
             let shouldUpdate = true;
             if (socket.lastUpdateTime) {
                 const timeSinceLastUpdate = now - socket.lastUpdateTime;
-                if (quality === 'slow' && timeSinceLastUpdate < 100) { // ~10 TPS for slow
+                if (quality === 'slow' && timeSinceLastUpdate < 150) { // ~7 TPS for slow
                     shouldUpdate = false;
                 }
-                else if (quality === 'medium' && timeSinceLastUpdate < 50) { // ~20 TPS for medium
+                else if (quality === 'medium' && timeSinceLastUpdate < 100) { // ~10 TPS for medium
                     shouldUpdate = false;
                 }
-                else if (quality === 'good' && timeSinceLastUpdate < 33) { // ~30 TPS for good
+                else if (quality === 'good' && timeSinceLastUpdate < 67) { // ~15 TPS for good
                     shouldUpdate = false;
                 }
             }
             if (!shouldUpdate)
                 continue;
+            const player = constants_2.players[playerId];
             // Create optimized player data
             const playersForBroadcast = Object.values(constants_2.players).map(p => createPlayerData(p, quality));
-            // Create optimized enemy data
-            const enemiesForBroadcast = enemiesInViewport.map(e => createEnemyData(e, quality));
-            // Create game state update
+            // Filter enemies to this player's viewport (200% buffer)
+            const vw = (player?.viewportWidth || constants_2.VIEWPORT_WIDTH) * 2;
+            const vh = (player?.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 2;
+            const px = player?.x || 0;
+            const py = player?.y || 0;
+            const viewportEnemies = constants_2.enemies.filter(e => Math.abs(e.x - px) < vw && Math.abs(e.y - py) < vh);
+            // Delta compression: only send full data for enemies that changed
+            if (!socket.lastSentEnemies) {
+                socket.lastSentEnemies = new Map();
+            }
+            const lastSent = socket.lastSentEnemies;
+            const changedEnemies = [];
+            const unchangedIds = [];
+            const currentEnemyIds = new Set();
+            for (const e of viewportEnemies) {
+                currentEnemyIds.add(e.id);
+                const prev = lastSent.get(e.id);
+                const ex = quantize(e.x, 1);
+                const ey = quantize(e.y, 1);
+                const ea = quantize(e.angle, 0.05);
+                const eh = Math.round(e.health);
+                if (!prev || prev.x !== ex || prev.y !== ey || prev.a !== ea || prev.h !== eh) {
+                    changedEnemies.push(createEnemyData(e, quality));
+                    lastSent.set(e.id, { x: ex, y: ey, a: ea, h: eh });
+                }
+                else {
+                    unchangedIds.push(e.id);
+                }
+            }
+            // Clean up enemies that left viewport
+            for (const id of lastSent.keys()) {
+                if (!currentEnemyIds.has(id)) {
+                    lastSent.delete(id);
+                }
+            }
+            // Build compact game state
             const gameState = {
                 players: playersForBroadcast,
-                enemies: enemiesForBroadcast,
-                items: [], // Items are sent via itemSpawned/itemRemoved events
-                dots: constants_2.dots.map(d => ({
-                    x: quantize(d.x, quality === 'slow' ? 2 : 1),
-                    y: quantize(d.y, quality === 'slow' ? 2 : 1)
-                })),
+                enemies: changedEnemies,
                 timestamp: now
             };
-            // Skip sending if state hasn't changed (lightweight hash comparison)
-            const currentHash = getStateHash(gameState);
-            if (socket.lastStateHash === currentHash) {
-                continue; // No meaningful changes, skip update
+            // Only include unchanged IDs if there are any (client uses this to know they're still in view)
+            if (unchangedIds.length > 0) {
+                gameState.unchanged = unchangedIds;
             }
-            socket.lastStateHash = currentHash;
             socket.lastUpdateTime = now;
             io.to(playerId).emit('gameStateUpdate', gameState);
         }

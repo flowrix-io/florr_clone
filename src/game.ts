@@ -298,6 +298,10 @@ export class Game {
         previewContainer.appendChild(this.colorPreviewCanvas);
         document.querySelector('.color-picker')?.appendChild(previewContainer);
 
+        // Register as the active game instance before starting the loop
+        // (so any previous game loop will detect it's no longer active and stop)
+        window.currentGame = this;
+
         // Initialize sprites and start game
         if (preloadedAssets) {
             // Assets already loaded, just set up item sprites and start
@@ -1206,6 +1210,10 @@ export class Game {
     }
 
     private gameLoop() {
+        // Stop this loop if a different Game instance has taken over
+        // (prevents duplicate loops after exit + re-enter)
+        if (window.currentGame && window.currentGame !== this) return;
+
         // Calculate FPS and update stats
         if (this.showStats) {
             this.frameCount++;

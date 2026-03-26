@@ -69,13 +69,35 @@ export function initMultiPlayerMode(game: any, serverIp: string) {
         setupSocketListeners(game);
     }
     
-    // If socket is already connected (preconnected), remove connecting message
+    // If socket is already connected (preconnected), the 'connect' handler in
+    // setupSocketListeners won't fire, so we need to manually run its initialization.
     if (game.socket.connected) {
-        console.log(`[CLIENT] Socket already connected`);
+        console.log(`[CLIENT] Socket already connected, running post-connect init`);
         const connectingDiv = document.getElementById('connectingDiv');
         if (connectingDiv) {
             connectingDiv.remove();
         }
+
+        // Update chat system
+        if (game.chat) {
+            game.chat.updateSocket(game.socket);
+        }
+
+        game._hasConnected = true;
+
+        // Start heartbeat monitoring
+        if (game.heartbeatInterval) {
+            clearInterval(game.heartbeatInterval);
+        }
+        game.lastHeartbeat = performance.now();
+        game.heartbeatInterval = setInterval(() => {
+            const now = performance.now();
+            const timeSinceLastHeartbeat = now - game.lastHeartbeat;
+            if (timeSinceLastHeartbeat > 5000) {
+                console.log(`[CLIENT] Warning: No server response for ${timeSinceLastHeartbeat.toFixed(0)}ms`);
+            }
+            game.socket.emit('ping', now);
+        }, 1000);
     }
 }
 
@@ -1174,7 +1196,7 @@ function setupSocketListeners(game: any) {
     });
 
     // Listen for server game state updates for better synchronization
-    game.socket.on('gameStateUpdate', (data: { players: Player[], enemies: any[], items: any[], dots: any[], timestamp: number }) => {
+    game.socket.on('gameStateUpdate', (data: { players: Player[], enemies: any[], unchanged?: string[], timestamp: number }) => {
         const serverPlayers = data.players;
         const serverEnemies = data.enemies;
 
@@ -1259,9 +1281,14 @@ function setupSocketListeners(game: any) {
         });
 
         if (serverEnemies) {
-            // Optimize: Only update changed enemies instead of clearing entire map
-            const serverEnemyIds = new Set(serverEnemies.map(e => e.id));
-            
+            // Build set of all enemy IDs still in viewport (changed + unchanged)
+            const serverEnemyIds = new Set(serverEnemies.map((e: any) => e.id));
+            if (data.unchanged) {
+                for (const id of data.unchanged) {
+                    serverEnemyIds.add(id);
+                }
+            }
+
             // Remove enemies that left the viewport - no death animation
             for (const [enemyId] of game.enemies) {
                 if (!serverEnemyIds.has(enemyId)) {
@@ -1269,8 +1296,8 @@ function setupSocketListeners(game: any) {
                 }
             }
 
-            // Update or add enemies - uses same path as all enemy updates
-            serverEnemies.forEach(enemy => {
+            // Update or add enemies that changed - unchanged ones keep their current state
+            serverEnemies.forEach((enemy: any) => {
                 handleEnemyUpdate(enemy);
             });
         }
