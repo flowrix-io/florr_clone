@@ -1986,18 +1986,8 @@ class Graphics {
             this.ctx.strokeRect(-constants_1.PLAYER_SIZE / 2, -constants_1.PLAYER_SIZE / 2, constants_1.PLAYER_SIZE, constants_1.PLAYER_SIZE);
             this.ctx.restore();
         }
-        // Draw player name
-        // Reset any effects that might interfere with text rendering
-        this.ctx.globalAlpha = 1.0;
-        this.ctx.shadowBlur = 0;
-        this.ctx.shadowColor = 'transparent';
-        this.ctx.fillStyle = 'black';
-        this.ctx.textAlign = 'center';
-        this.ctx.font = '14px Ubuntu, sans-serif';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeText(player.name || 'Unnamed', 0, -50);
-        this.ctx.fillStyle = 'white';
-        this.ctx.fillText(player.name || 'Unnamed', 0, -50);
+        // Draw player name and health bar
+        this.drawPlayerHealthBar(player);
         // Apply invulnerability visual effect
         if (player.isInvulnerable) {
             const flashRate = 200; // Flash every 200ms
@@ -2650,6 +2640,67 @@ class Graphics {
             this.ctx.fillText(dpsText, tierX, dpsY);
         }
         this.ctx.restore();
+    }
+    /**
+     * Draw health bar, name, and level for a player (similar to enemy health bars)
+     */
+    drawPlayerHealthBar(player) {
+        const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+        // Reset any effects that might interfere with text rendering
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowColor = 'transparent';
+        const healthBarWidth = 60;
+        const healthBarHeight = 8;
+        const healthBarY = constants_1.PLAYER_SIZE / 2 + 24;
+        const radius = healthBarHeight / 2;
+        // Draw player name above health bar, left-aligned
+        this.ctx.textAlign = 'left';
+        this.ctx.font = '12px Ubuntu, sans-serif';
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 3;
+        const nameX = -healthBarWidth / 2;
+        const nameY = healthBarY - 4;
+        this.ctx.strokeText(player.name || 'Unnamed', nameX, nameY);
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillText(player.name || 'Unnamed', nameX, nameY);
+        // Health bar background (rounded)
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(-healthBarWidth / 2 - 1, healthBarY - 1, healthBarWidth + 2, healthBarHeight + 2, radius);
+        this.ctx.fill();
+        // Health bar fill (rounded)
+        const clampedHealth = Math.max(0, Math.min(player.health, player.maxHealth));
+        const healthFillWidth = (clampedHealth / player.maxHealth) * healthBarWidth;
+        this.ctx.fillStyle = '#73ff54';
+        this.ctx.beginPath();
+        this.ctx.roundRect(-healthBarWidth / 2, healthBarY, healthFillWidth, healthBarHeight, radius);
+        this.ctx.fill();
+        // Determine max rarity from player loadout
+        let maxRarityIndex = 0;
+        if (player.loadout && Array.isArray(player.loadout)) {
+            for (const item of player.loadout) {
+                if (item && item.rarity) {
+                    const idx = RARITY_ORDER.indexOf(item.rarity);
+                    if (idx > maxRarityIndex) {
+                        maxRarityIndex = idx;
+                    }
+                }
+            }
+        }
+        const maxRarity = RARITY_ORDER[maxRarityIndex];
+        const rarityColor = this.ITEM_RARITY_COLORS[maxRarity];
+        // Draw level label below health bar, right-aligned
+        this.ctx.textAlign = 'right';
+        this.ctx.fillStyle = rarityColor;
+        this.ctx.font = '10px Ubuntu, sans-serif';
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 3;
+        const levelX = healthBarWidth / 2;
+        const levelY = healthBarY + healthBarHeight + 12;
+        const levelLabel = `Lv. ${player.level}`;
+        this.ctx.strokeText(levelLabel, levelX, levelY);
+        this.ctx.fillText(levelLabel, levelX, levelY);
     }
     /**
      * Darken a hex color by a specified percentage
