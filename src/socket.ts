@@ -1271,6 +1271,7 @@ function setupSocketListeners(game: any) {
                             if (existingPos) {
                                 existingPos.targetX = serverPos.x;
                                 existingPos.targetY = serverPos.y;
+                                existingPos.noPhysics = serverPos.noPhysics;
                             } else {
                                 // New petal position
                                 existingPlayer.petalPositions!.push({

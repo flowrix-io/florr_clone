@@ -10,6 +10,7 @@ exports.parsePetalActions = parsePetalActions;
 const test_action_1 = require("./petal_action/test.action");
 const blood_leaf_action_1 = require("./petal_action/blood_leaf.action");
 const mobs_1 = require("./mobs");
+const player_1 = require("./player");
 // Rarity levels in order from lowest to highest
 exports.RARITY_LEVELS = [
     'common',
@@ -557,6 +558,8 @@ const BASE_PETAL_CONFIGS = {
         speed: 2.0,
         count: 1,
         range: 0.0,
+        equipFlags: player_1.EquipmentFlags.Cutter,
+        noPhysics: true,
         image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
   <path fill="#111111" fill-rule="evenodd" d="
     M 25 0 A 25 25 0 1 0 -25 0 A 25 25 0 1 0 25 0
@@ -587,6 +590,8 @@ const BASE_PETAL_CONFIGS = {
         speed: 2.0,
         count: 1,
         range: 0.0,
+        equipFlags: player_1.EquipmentFlags.Cutter,
+        noPhysics: true,
         image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
   <path fill="#00ffff" fill-rule="evenodd" d="
     M 25 0 A 25 25 0 1 0 -25 0 A 25 25 0 1 0 25 0
@@ -1135,7 +1140,9 @@ const BASE_PETAL_CONFIGS = {
         visualOffsetY: -15,
         description: "Increases your petal range",
         color: "#000000",
-        count: 1,
+        count: 0,
+        equipFlags: player_1.EquipmentFlags.ThirdEye,
+        noPhysics: true,
         image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <path id="eyeShape"
@@ -1589,6 +1596,9 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         visualOffsetX: overrides.visualOffsetX ?? baseConfig.visualOffsetX,
         visualOffsetY: overrides.visualOffsetY ?? baseConfig.visualOffsetY,
         damageCooldown: overrides.damageCooldown ?? baseConfig.damageCooldown,
+        faceFlags: baseConfig.faceFlags,
+        equipFlags: baseConfig.equipFlags,
+        noPhysics: baseConfig.noPhysics,
     };
 }
 // Generate the full petal configuration

@@ -1032,8 +1032,15 @@ class Game {
             if (player.petalPositions) {
                 player.petalPositions.forEach((petalPos) => {
                     if (petalPos.targetX !== undefined && petalPos.targetY !== undefined) {
-                        petalPos.x += (petalPos.targetX - petalPos.x) * lerpFactor;
-                        petalPos.y += (petalPos.targetY - petalPos.y) * lerpFactor;
+                        if (petalPos.noPhysics) {
+                            // Snap directly to target — no interpolation lag
+                            petalPos.x = petalPos.targetX;
+                            petalPos.y = petalPos.targetY;
+                        }
+                        else {
+                            petalPos.x += (petalPos.targetX - petalPos.x) * lerpFactor;
+                            petalPos.y += (petalPos.targetY - petalPos.y) * lerpFactor;
+                        }
                     }
                 });
             }

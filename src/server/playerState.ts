@@ -774,8 +774,8 @@ export function updatePlayerState(
                 // Fixed-direction petals stay directly on the player
                 petalX = player.x;
                 petalY = player.y;
-            } else if (petalRange === 0) {
-                // No physics for range 0 petals - use target position directly
+            } else if (petalRange === 0 || petalStats.noPhysics) {
+                // No physics for range 0 or noPhysics petals - snap to orbit position directly
                 petalX = targetX;
                 petalY = targetY;
             } else {
@@ -889,7 +889,8 @@ export function updatePlayerState(
                 loadoutIndex,
                 instanceIndex,
                 x: petalX,
-                y: petalY
+                y: petalY,
+                noPhysics: petalStats.noPhysics || false
             });
 
             // Check if petal can shoot projectiles (only when extended)

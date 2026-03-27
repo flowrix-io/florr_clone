@@ -1,6 +1,7 @@
 import { test_petal_action } from "./petal_action/test.action";
 import { blood_leaf_action } from "./petal_action/blood_leaf.action";
 import { BASE_MOB_CONFIGS } from "./mobs";
+import { EquipmentFlags } from "./player";
 export interface PlayerModifiers {
     damage?: number; // Multiplier for player damage (e.g., 1.2 = +20% damage)
     maxHealth?: number; // Multiplier for player max health (e.g., 1.15 = +15% health)
@@ -47,6 +48,10 @@ export interface PetalStats {
     visualOffsetX?: number; // X shift for the petal visual relative to its center (pixels, default: 0)
     visualOffsetY?: number; // Y shift for the petal visual relative to its center (pixels, default: 0)
     damageCooldown?: number; // Time in ms between damage hits (petal stays active but can't deal damage during cooldown)
+    // Appearance flags applied to the player when this petal is equipped
+    faceFlags?: number; // Bitmask of FaceFlags to apply (e.g., FaceFlags.SquareEyes)
+    equipFlags?: number; // Bitmask of EquipmentFlags to apply (e.g., EquipmentFlags.ThirdEye)
+    noPhysics?: boolean; // When true, petal snaps to orbit position without spring/damping physics (no lag behind player)
 }
 
 export interface PetalConfig {
@@ -129,6 +134,10 @@ interface BasePetalConfig {
     visualOffsetX?: number; // X shift for the petal visual relative to its center (pixels, default: 0)
     visualOffsetY?: number; // Y shift for the petal visual relative to its center (pixels, default: 0)
     damageCooldown?: number; // Time in ms between damage hits (petal stays active but can't deal damage during cooldown)
+    // Appearance flags applied to the player when this petal is equipped
+    faceFlags?: number; // Bitmask of FaceFlags to apply (e.g., FaceFlags.SquareEyes)
+    equipFlags?: number; // Bitmask of EquipmentFlags to apply (e.g., EquipmentFlags.ThirdEye)
+    noPhysics?: boolean; // When true, petal snaps to orbit position without spring/damping physics (no lag behind player)
 }
 
 // Special rarity overrides for specific petals
@@ -697,6 +706,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         speed: 2.0,
         count: 1,
         range: 0.0,
+        equipFlags: EquipmentFlags.Cutter,
+        noPhysics: true,
         image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
   <path fill="#111111" fill-rule="evenodd" d="
     M 25 0 A 25 25 0 1 0 -25 0 A 25 25 0 1 0 25 0
@@ -727,6 +738,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         speed: 2.0,
         count: 1,
         range: 0.0,
+        equipFlags: EquipmentFlags.Cutter,
+        noPhysics: true,
         image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
   <path fill="#00ffff" fill-rule="evenodd" d="
     M 25 0 A 25 25 0 1 0 -25 0 A 25 25 0 1 0 25 0
@@ -1275,7 +1288,9 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         visualOffsetY: -15,
         description: "Increases your petal range",
         color: "#000000",
-        count: 1,
+        count: 0,
+        equipFlags: EquipmentFlags.ThirdEye,
+        noPhysics: true,
         image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <path id="eyeShape"
@@ -1756,6 +1771,9 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         visualOffsetX: overrides.visualOffsetX ?? baseConfig.visualOffsetX,
         visualOffsetY: overrides.visualOffsetY ?? baseConfig.visualOffsetY,
         damageCooldown: overrides.damageCooldown ?? baseConfig.damageCooldown,
+        faceFlags: baseConfig.faceFlags,
+        equipFlags: baseConfig.equipFlags,
+        noPhysics: baseConfig.noPhysics,
     };
 }
 

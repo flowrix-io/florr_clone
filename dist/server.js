@@ -3322,17 +3322,19 @@ function start_loop() {
                 faceFlags |= player_1.FaceFlags.Defending;
                 mouth = 4; // Closed mouth for defensive face
             }
-            // Compute equipment flags from loadout
+            // Compute equipment and petal-driven face flags from loadout
             let equipFlags = 0;
             if (p.loadout) {
                 for (const item of p.loadout) {
                     if (!item || item.type !== 'petal')
                         continue;
-                    const pt = item.petalType;
-                    if (pt === 'cutter' || pt === 'lightning_cutter')
-                        equipFlags |= player_1.EquipmentFlags.Cutter;
-                    else if (pt === 'third_eye')
-                        equipFlags |= player_1.EquipmentFlags.ThirdEye;
+                    if (!item.petalType)
+                        continue;
+                    const stats = (0, petals_2.getPetalStats)(item.petalType, item.rarity ?? 'common');
+                    if (stats?.equipFlags)
+                        equipFlags |= stats.equipFlags;
+                    if (stats?.faceFlags)
+                        faceFlags |= stats.faceFlags;
                 }
             }
             return {
