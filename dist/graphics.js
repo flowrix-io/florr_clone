@@ -2089,7 +2089,9 @@ class Graphics {
         ctx.moveTo(-6, 10);
         ctx.quadraticCurveTo(0, mouth, 6, 10);
         ctx.stroke();
-        // Angry eyebrows when attacking (and not dead, and mouth is closed enough)
+        // Angry triangle when attacking (and not dead, and mouth closed enough)
+        // The triangle is filled with baseColor to mask the top of the eyes,
+        // creating the appearance of angry/squinted eyes
         if (!(faceFlags & player_1.FaceFlags.DeadEyes) && mouth <= 8 && (faceFlags & player_1.FaceFlags.Attacking)) {
             ctx.save();
             ctx.translate(0, -mouth - 8);
@@ -2098,7 +2100,7 @@ class Graphics {
             ctx.moveTo(-12, 0);
             ctx.lineTo(12, 0);
             ctx.lineTo(0, 6);
-            ctx.closePath();
+            ctx.lineTo(-12, 0);
             ctx.fill();
             ctx.restore();
         }

@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 239126322,
+      "totalXP": 239254924,
       "inventory": {
         "common": {
           "shield": 233,
@@ -595,7 +595,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 274,
+          "common": 278,
           "legendary": 192,
           "uncommon": 85,
           "mythic": 159,
@@ -605,20 +605,20 @@
           "super": 4
         },
         "soldier_ant": {
-          "epic": 117,
-          "legendary": 303,
-          "common": 366,
+          "epic": 118,
+          "legendary": 304,
+          "common": 368,
           "rare": 166,
-          "mythic": 465,
+          "mythic": 468,
           "ultra": 16,
-          "uncommon": 220,
+          "uncommon": 222,
           "super": 9,
           "unique": 3
         },
         "rock": {
           "legendary": 151,
           "ultra": 9,
-          "common": 274,
+          "common": 275,
           "mythic": 165,
           "epic": 53,
           "rare": 57,
@@ -627,9 +627,9 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 343,
+          "common": 347,
           "legendary": 129,
-          "mythic": 136,
+          "mythic": 137,
           "uncommon": 112,
           "rare": 76,
           "epic": 51,
@@ -638,10 +638,10 @@
           "unique": 2
         },
         "hornet": {
-          "common": 367,
-          "legendary": 294,
-          "mythic": 296,
-          "uncommon": 147,
+          "common": 371,
+          "legendary": 296,
+          "mythic": 298,
+          "uncommon": 148,
           "rare": 115,
           "epic": 88,
           "ultra": 17,
@@ -650,7 +650,7 @@
         },
         "dandelion": {
           "legendary": 180,
-          "common": 247,
+          "common": 249,
           "mythic": 163,
           "uncommon": 79,
           "unique": 3,
@@ -696,7 +696,7 @@
           "common": 12,
           "mythic": 20,
           "ultra": 57,
-          "super": 101,
+          "super": 102,
           "uncommon": 11,
           "rare": 14,
           "unique": 18,
@@ -928,7 +928,7 @@
           "rare": 5
         }
       },
-      "stars": 126633
+      "stars": 126664
     },
     "1g99g1gfk": {
       "totalXP": 93,

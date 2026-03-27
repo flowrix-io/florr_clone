@@ -3887,9 +3887,17 @@ function start_loop() {
             const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
             const petalExtension = p.inputs?.petalExtension || 1.0;
 
-            // Compute face flags
+            // Compute face flags and mouth
             let faceFlags = 0;
-            if (petalExtension < 0.5) faceFlags |= FaceFlags.Attacking;
+            let mouth = 14.5; // Default smile
+            if (petalExtension > 1.0) {
+                faceFlags |= FaceFlags.Attacking;
+                mouth = 4; // Closed mouth, positions angry triangle over eyes
+            }
+            if (petalExtension < 0.5) {
+                faceFlags |= FaceFlags.Defending;
+                mouth = 4; // Closed mouth for defensive face
+            }
 
             // Compute equipment flags from loadout
             let equipFlags = 0;
@@ -3921,6 +3929,7 @@ function start_loop() {
                 })),
                 faceFlags,
                 equipFlags,
+                mouth,
             };
         };
 

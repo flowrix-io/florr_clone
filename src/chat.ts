@@ -1,4 +1,5 @@
 import { Socket } from './ws_client';
+import { FaceFlags, EquipmentFlags } from './player';
 
 interface SandboxedScript {
     id: string;
@@ -48,6 +49,7 @@ const COMMANDS: CommandDefinition[] = [
     { command: '/admin clear_notifs', description: 'Clear notifications (shorthand)', isAdmin: true },
     { command: '/admin give', description: 'Give item to a player', isAdmin: true },
     { command: '/cmd', description: 'Execute server command (alias)', isAdmin: true },
+    { command: '/forcelocalplayerflags', description: 'Set local player face/equip flags (client-only)', isAdmin: false },
 ];
 
 export class Chat {
@@ -93,6 +95,75 @@ export class Chat {
         this.socket.on('chatHistory', (history: Array<{ sender: string; content: string; timestamp: number }>) => {
             history.forEach(message => this.addChatMessage(message));
         });
+    }
+
+    private handleClientCommand(message: string): boolean {
+        if (message.startsWith('/forcelocalplayerflags')) {
+            const args = message.slice('/forcelocalplayerflags'.length).trim().split(/\s+/);
+            const game = (window as any).currentGame;
+            if (!game) {
+                this.addChatMessage({ sender: 'System', content: 'Game not loaded.', timestamp: Date.now() });
+                return true;
+            }
+            const localPlayer = game.getLocalPlayer();
+            if (!localPlayer) {
+                this.addChatMessage({ sender: 'System', content: 'Local player not found.', timestamp: Date.now() });
+                return true;
+            }
+
+            if (args.length === 0 || args[0] === '') {
+                const faceNames = Object.keys(FaceFlags).filter(k => isNaN(Number(k)));
+                const equipNames = Object.keys(EquipmentFlags).filter(k => isNaN(Number(k)));
+                this.addChatMessage({
+                    sender: 'System',
+                    content: `Usage: /forcelocalplayerflags <face|equip> <flag1> [flag2] ...\n` +
+                        `Face flags: ${faceNames.join(', ')}\n` +
+                        `Equip flags: ${equipNames.join(', ')}\n` +
+                        `Current: faceFlags=${localPlayer.faceFlags ?? 0}, equipFlags=${localPlayer.equipFlags ?? 0}`,
+                    timestamp: Date.now()
+                });
+                return true;
+            }
+
+            const type = args[0].toLowerCase();
+            const flagNames = args.slice(1);
+
+            if (type === 'face') {
+                let value = 0;
+                for (const name of flagNames) {
+                    const flag = FaceFlags[name as keyof typeof FaceFlags];
+                    if (flag === undefined) {
+                        const num = parseInt(name);
+                        if (!isNaN(num)) { value = num; break; }
+                        this.addChatMessage({ sender: 'System', content: `Unknown face flag: ${name}`, timestamp: Date.now() });
+                        return true;
+                    }
+                    value |= flag;
+                }
+                localPlayer.faceFlags = value;
+                localPlayer.forcedFlags = true;
+                this.addChatMessage({ sender: 'System', content: `Set local faceFlags to ${value} (server updates frozen until reload)`, timestamp: Date.now() });
+            } else if (type === 'equip') {
+                let value = 0;
+                for (const name of flagNames) {
+                    const flag = EquipmentFlags[name as keyof typeof EquipmentFlags];
+                    if (flag === undefined) {
+                        const num = parseInt(name);
+                        if (!isNaN(num)) { value = num; break; }
+                        this.addChatMessage({ sender: 'System', content: `Unknown equip flag: ${name}`, timestamp: Date.now() });
+                        return true;
+                    }
+                    value |= flag;
+                }
+                localPlayer.equipFlags = value;
+                localPlayer.forcedFlags = true;
+                this.addChatMessage({ sender: 'System', content: `Set local equipFlags to ${value} (server updates frozen until reload)`, timestamp: Date.now() });
+            } else {
+                this.addChatMessage({ sender: 'System', content: `Unknown flag type: ${type}. Use "face" or "equip".`, timestamp: Date.now() });
+            }
+            return true;
+        }
+        return false;
     }
 
     public get isFocused(): boolean {
@@ -231,6 +302,15 @@ export class Chat {
             }
 
             if (e.key === 'Enter' && this.chatInput?.value.trim()) {
+                const messageText = this.chatInput.value.trim();
+
+                // Handle client-only commands
+                if (this.handleClientCommand(messageText)) {
+                    this.chatInput.value = '';
+                    this.hideSuggestions();
+                    return;
+                }
+
                 // Check if socket is authenticated (username is set during authentication)
                 if (!(this.socket as any).username) {
                     console.warn('[CHAT] Socket not authenticated yet, message will be sent when authenticated');
@@ -238,7 +318,7 @@ export class Chat {
                     return;
                 }
                 // Send the chat message to the server
-                this.socket.emit('chatMessage', this.chatInput.value.trim());
+                this.socket.emit('chatMessage', messageText);
                 this.chatInput.value = '';
                 this.hideSuggestions();
             }

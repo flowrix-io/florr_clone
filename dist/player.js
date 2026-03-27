@@ -8,6 +8,7 @@ var FaceFlags;
     FaceFlags[FaceFlags["DeadEyes"] = 4] = "DeadEyes";
     FaceFlags[FaceFlags["SquareEyes"] = 8] = "SquareEyes";
     FaceFlags[FaceFlags["Attacking"] = 16] = "Attacking";
+    FaceFlags[FaceFlags["Defending"] = 32] = "Defending";
 })(FaceFlags || (exports.FaceFlags = FaceFlags = {}));
 var EquipmentFlags;
 (function (EquipmentFlags) {

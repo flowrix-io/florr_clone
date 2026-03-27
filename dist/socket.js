@@ -1025,9 +1025,14 @@ function setupSocketListeners(game) {
                 existingPlayer.health = serverPlayer.health;
                 existingPlayer.maxHealth = serverPlayer.maxHealth;
                 existingPlayer.level = serverPlayer.level;
-                // Sync face/equipment flags
-                existingPlayer.faceFlags = serverPlayer.faceFlags || 0;
-                existingPlayer.equipFlags = serverPlayer.equipFlags || 0;
+                // Sync face/equipment flags and mouth (skip if locally forced)
+                if (!existingPlayer.forcedFlags) {
+                    existingPlayer.faceFlags = serverPlayer.faceFlags || 0;
+                    existingPlayer.equipFlags = serverPlayer.equipFlags || 0;
+                    if ('mouth' in serverPlayer) {
+                        existingPlayer.mouth = serverPlayer.mouth;
+                    }
+                }
                 // Sync petal extension from server (if available in gameStateUpdate)
                 if ('petalExtension' in serverPlayer) {
                     existingPlayer.petalExtension = serverPlayer.petalExtension || 1.0;

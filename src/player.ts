@@ -7,6 +7,7 @@ export enum FaceFlags {
     DeadEyes = 1 << 2,
     SquareEyes = 1 << 3,
     Attacking = 1 << 4,
+    Defending = 1 << 5,
 }
 
 export enum EquipmentFlags {
@@ -69,6 +70,7 @@ export interface Player {
   equipFlags?: number;     // Bitmask of EquipmentFlags (cutter, third eye, observer, antennae)
   mouth?: number;          // Mouth curve Y control point (14.5 = smile, higher = more open)
   cutterAngle?: number;    // Rotation angle for cutter equipment
+  forcedFlags?: boolean;   // When true, server flag updates are ignored (set by /forcelocalplayerflags)
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
