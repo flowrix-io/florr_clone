@@ -3926,7 +3926,8 @@ function start_loop() {
                     loadoutIndex: pos.loadoutIndex,
                     instanceIndex: pos.instanceIndex,
                     x: quantize(pos.x, precision),
-                    y: quantize(pos.y, precision)
+                    y: quantize(pos.y, precision),
+                    noPhysics: pos.noPhysics || undefined
                 })),
                 faceFlags,
                 equipFlags,

@@ -253,6 +253,10 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
             // Fixed-direction petals stay directly on the player
             petalX = 0;
             petalY = 0;
+        } else if (stats.noPhysics) {
+            // noPhysics petals compute orbit position locally each frame — no server interpolation lag
+            petalX = Math.cos(totalAngle) * petalRadius;
+            petalY = Math.sin(totalAngle) * petalRadius;
         } else if (serverPetalPos) {
             // Use server-provided position (already interpolated on client)
             // Convert from world coordinates to relative coordinates for rendering
