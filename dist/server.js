@@ -47,6 +47,7 @@ if (invalidEggTypes.size > 0) {
         console.log(`[SERVER] Removed invalid eggs from ${cleanedPlayers} players (${[...invalidEggTypes].join(', ')})`);
     }
 }
+const player_1 = require("./player");
 const petal_actions_1 = require("./petal_actions");
 const petals_1 = require("./petals");
 const constants_2 = require("./constants");
@@ -3309,6 +3310,24 @@ function start_loop() {
         // Only send fields that change frequently; name/level/score are sent via playerUpdated
         const createPlayerData = (p, quality) => {
             const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
+            const petalExtension = p.inputs?.petalExtension || 1.0;
+            // Compute face flags
+            let faceFlags = 0;
+            if (petalExtension < 0.5)
+                faceFlags |= player_1.FaceFlags.Attacking;
+            // Compute equipment flags from loadout
+            let equipFlags = 0;
+            if (p.loadout) {
+                for (const item of p.loadout) {
+                    if (!item || item.type !== 'petal')
+                        continue;
+                    const pt = item.petalType;
+                    if (pt === 'cutter' || pt === 'lightning_cutter')
+                        equipFlags |= player_1.EquipmentFlags.Cutter;
+                    else if (pt === 'third_eye')
+                        equipFlags |= player_1.EquipmentFlags.ThirdEye;
+                }
+            }
             return {
                 id: p.id,
                 name: p.name,
@@ -3319,13 +3338,15 @@ function start_loop() {
                 maxHealth: Math.round(p.maxHealth),
                 level: p.level,
                 score: p.score,
-                petalExtension: quantize(p.inputs?.petalExtension || 1.0, 0.1),
+                petalExtension: quantize(petalExtension, 0.1),
                 petalPositions: (p.petalPositions || []).map((pos) => ({
                     loadoutIndex: pos.loadoutIndex,
                     instanceIndex: pos.instanceIndex,
                     x: quantize(pos.x, precision),
                     y: quantize(pos.y, precision)
-                }))
+                })),
+                faceFlags,
+                equipFlags,
             };
         };
         // Helper function to create optimized enemy data

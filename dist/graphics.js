@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Graphics = void 0;
+const player_1 = require("./player");
 const constants_1 = require("./constants");
 const petals_1 = require("./petals");
 const mobs_1 = require("./mobs");
@@ -1816,13 +1817,22 @@ class Graphics {
             this.ctx.fillStyle = 'white';
             this.ctx.fillText(xpText, xpTextX, xpTextY);
             this.ctx.save();
-            // Draw black outline around flower
+            this.ctx.translate(flowerCenterX, flowerCenterY);
+            // Black outline around flower
             this.ctx.beginPath();
-            this.ctx.arc(flowerCenterX, flowerCenterY, 27, 0, Math.PI * 2, false);
+            this.ctx.arc(0, 0, 27, 0, Math.PI * 2, false);
             this.ctx.strokeStyle = '#000000';
             this.ctx.lineWidth = 4;
             this.ctx.stroke();
-            this.drawFlower({ x: flowerCenterX, y: flowerCenterY }, flowerEye);
+            this.drawFlower({
+                radius: 25,
+                color: '#FFE763',
+                faceFlags: 0,
+                equipFlags: 0,
+                eyeX: flowerEye.x,
+                eyeY: flowerEye.y,
+                mouth: 14.5,
+            });
             this.ctx.restore();
         }
         // Draw floating texts
@@ -1933,45 +1943,200 @@ class Graphics {
             return String(Math.round(num));
         }
     }
-    s(size) {
-        return 1 * size;
+    /** Darken a hex color by reducing its value (HSV model). factor=0.8 means 80% brightness. */
+    static darkenColor(hex, factor) {
+        // Parse hex color
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        const nr = Math.round(r * factor);
+        const ng = Math.round(g * factor);
+        const nb = Math.round(b * factor);
+        return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`;
     }
-    drawFlower(center, eye) {
-        this.ctx.lineCap = "round";
-        this.ctx.lineWidth = this.s(1.7);
-        this.ctx.beginPath();
-        this.ctx.arc(center.x, center.y, this.s(26.5), 0, Math.PI * 2, false);
-        this.ctx.fillStyle = "#CFBB50";
-        this.ctx.closePath();
-        this.ctx.fill();
-        this.ctx.beginPath();
-        this.ctx.arc(center.x, center.y, this.s(23.5), 0, Math.PI * 2, false);
-        this.ctx.fillStyle = "#FFE763";
-        this.ctx.closePath();
-        this.ctx.fill();
-        this.ctx.beginPath();
-        this.ctx.moveTo(center.x - this.s(6), center.y + this.s(10));
-        this.ctx.quadraticCurveTo(center.x, center.y + this.s(14.5), center.x + this.s(6), center.y + this.s(10));
-        this.ctx.strokeStyle = "#000";
-        this.ctx.fillStyle = "#000";
-        this.ctx.stroke();
-        this.ctx.beginPath();
-        this.ctx.ellipse(center.x + this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
-        this.ctx.ellipse(center.x - this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
-        this.ctx.fill();
-        this.ctx.clip();
-        this.ctx.beginPath();
-        this.ctx.fillStyle = "#fff";
-        this.ctx.arc(center.x + this.s(7) + eye.x, center.y + eye.y - this.s(4.8), this.s(3), 0, Math.PI * 2, false);
-        this.ctx.arc(center.x - this.s(7) + eye.x, center.y + eye.y - this.s(4.8), this.s(3), 0, Math.PI * 2, false);
-        this.ctx.fill();
-        this.ctx.lineWidth = this.s(1);
-        this.ctx.beginPath();
-        this.ctx.ellipse(center.x + this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
-        this.ctx.stroke();
-        this.ctx.beginPath();
-        this.ctx.ellipse(center.x - this.s(7), center.y - this.s(4.8), this.s(3.2), this.s(6.5), 0, 0, Math.PI * 2, false);
-        this.ctx.stroke();
+    /** Mix two hex colors. t=0 returns c1, t=1 returns c2. */
+    static mixColors(c1, c2, t) {
+        const r1 = parseInt(c1.slice(1, 3), 16), g1 = parseInt(c1.slice(3, 5), 16), b1 = parseInt(c1.slice(5, 7), 16);
+        const r2 = parseInt(c2.slice(1, 3), 16), g2 = parseInt(c2.slice(3, 5), 16), b2 = parseInt(c2.slice(5, 7), 16);
+        const r = Math.round(r1 + (r2 - r1) * t);
+        const g = Math.round(g1 + (g2 - g1) * t);
+        const b = Math.round(b1 + (b2 - b1) * t);
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    }
+    /**
+     * Draw a flower (player character) at the current canvas origin (0,0).
+     * Caller must save/translate/restore around this call.
+     *
+     * The base coordinate system matches the old flower: radius 25 means
+     * the body circle is drawn at r=23.5 (inner fill) with a 3-pixel-wide
+     * stroke reaching out to r≈26.5 — identical to the legacy two-circle approach.
+     */
+    drawFlower(attrs) {
+        const ctx = this.ctx;
+        const { radius, faceFlags, equipFlags, eyeX, eyeY, mouth } = attrs;
+        const prevSmoothing = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = false;
+        // Determine base color, applying status effects
+        let baseColor = attrs.color;
+        if (faceFlags & player_1.FaceFlags.Poisoned) {
+            baseColor = '#ce76db';
+        }
+        else if (faceFlags & player_1.FaceFlags.Dandelioned) {
+            baseColor = Graphics.mixColors(baseColor, '#ffffff', 0.4);
+        }
+        // The old flower drew two concentric circles:
+        //   outer r=26.5  fill=#CFBB50   (acts as thick border)
+        //   inner r=23.5  fill=#FFE763   (face)
+        // We replicate this with a single stroked arc.  lineWidth=6 on
+        // r=25 puts the outer edge at 28 and inner at 22, so instead we
+        // draw the stroke circle at 26.5 with lineWidth=6 and fill at 23.5.
+        const outerR = radius * (26.5 / 25);
+        const innerR = radius * (23.5 / 25);
+        const strokeColor = Graphics.darkenColor(baseColor, 0.8);
+        // Outer border circle
+        ctx.fillStyle = strokeColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, outerR, 0, Math.PI * 2);
+        ctx.fill();
+        // Inner fill circle
+        ctx.fillStyle = baseColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, innerR, 0, Math.PI * 2);
+        ctx.fill();
+        // Scale to normalised face space where the old hardcoded pixel
+        // values (eyes at ±7, mouth at y=10, etc.) apply directly.
+        // Old flower face was drawn inside the 23.5-radius circle, so
+        // scale = radius / 25 keeps everything proportional.
+        const scale = radius / 25;
+        ctx.save();
+        ctx.scale(scale, scale);
+        // ── Eyes ──────────────────────────────────────────────────
+        // Disable image smoothing for crisp edges (matches original)
+        ctx.imageSmoothingEnabled = false;
+        ctx.save();
+        ctx.fillStyle = '#000000';
+        ctx.strokeStyle = '#000000';
+        if (faceFlags & player_1.FaceFlags.DeadEyes) {
+            // X eyes for dead players
+            const len = 4;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-7 - len, -4.8 - len);
+            ctx.lineTo(-7 + len, -4.8 + len);
+            ctx.moveTo(-7 + len, -4.8 - len);
+            ctx.lineTo(-7 - len, -4.8 + len);
+            ctx.moveTo(7 - len, -4.8 - len);
+            ctx.lineTo(7 + len, -4.8 + len);
+            ctx.moveTo(7 + len, -4.8 - len);
+            ctx.lineTo(7 - len, -4.8 + len);
+            ctx.stroke();
+        }
+        else if (faceFlags & player_1.FaceFlags.SquareEyes) {
+            // Square eyes — fill only before clip (no stroke)
+            ctx.beginPath();
+            ctx.rect(-7 - 3, -4.8 - 6.5, 6, 13);
+            ctx.rect(7 - 3, -4.8 - 6.5, 6, 13);
+            ctx.fill();
+            ctx.clip();
+            // Pupils
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.rect(-7 + eyeX - 3, -4.8 + eyeY - 3, 6, 6);
+            ctx.rect(7 + eyeX - 3, -4.8 + eyeY - 3, 6, 6);
+            ctx.fill();
+            // Outline strokes drawn while clipped (only inner half visible)
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.rect(-7 - 3, -4.8 - 6.5, 6, 13);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.rect(7 - 3, -4.8 - 6.5, 6, 13);
+            ctx.stroke();
+        }
+        else {
+            // Normal ellipse eyes — fill only before clip (no stroke),
+            // matching the original which only stroked after clip so only
+            // the inner half of the outline was visible.
+            ctx.beginPath();
+            ctx.ellipse(-7, -4.8, 3.2, 6.5, 0, 0, Math.PI * 2);
+            ctx.moveTo(10.2, -4.8);
+            ctx.ellipse(7, -4.8, 3.2, 6.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.clip();
+            // Pupils
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(-7 + eyeX, -4.8 + eyeY, 3, 0, Math.PI * 2);
+            ctx.arc(7 + eyeX, -4.8 + eyeY, 3, 0, Math.PI * 2);
+            ctx.fill();
+            // Outline strokes drawn while clipped (only inner half visible)
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(-7, -4.8, 3.2, 6.5, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.ellipse(7, -4.8, 3.2, 6.5, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore(); // Restore from eye clipping
+        // ── Mouth ─────────────────────────────────────────────────
+        ctx.strokeStyle = '#222222';
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-6, 10);
+        ctx.quadraticCurveTo(0, mouth, 6, 10);
+        ctx.stroke();
+        // Angry eyebrows when attacking (and not dead, and mouth is closed enough)
+        if (!(faceFlags & player_1.FaceFlags.DeadEyes) && mouth <= 8 && (faceFlags & player_1.FaceFlags.Attacking)) {
+            ctx.save();
+            ctx.translate(0, -mouth - 8);
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.moveTo(-12, 0);
+            ctx.lineTo(12, 0);
+            ctx.lineTo(0, 6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+        // ── Equipment: Third Eye ──────────────────────────────────
+        if (equipFlags & player_1.EquipmentFlags.ThirdEye) {
+            ctx.save();
+            ctx.translate(0, -14);
+            ctx.scale(0.5, 0.5);
+            if (faceFlags & player_1.FaceFlags.DeadEyes) {
+                const len = 4;
+                ctx.strokeStyle = '#222222';
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(-len, -len);
+                ctx.lineTo(len, len);
+                ctx.moveTo(len, -len);
+                ctx.lineTo(-len, len);
+                ctx.stroke();
+            }
+            else {
+                ctx.fillStyle = '#222222';
+                ctx.strokeStyle = '#222222';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 3.2, 6.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.clip();
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(eyeX, eyeY, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+        ctx.restore(); // Restore from face scale
+        ctx.imageSmoothingEnabled = prevSmoothing;
     }
     drawPlayer(player, socket, petalExtension = 1.0, enemies = new Map()) {
         this.ctx.save();
@@ -2012,24 +2177,25 @@ class Graphics {
         if (player.id === socket) {
             // Calculate target eye position
             const targetEye = {
-                x: Math.cos(player.angle) * this.s(2),
-                y: Math.sin(player.angle) * this.s(4.4)
+                x: Math.cos(player.angle) * 2,
+                y: Math.sin(player.angle) * 4.4
             };
             // Smooth interpolation of eye position (lerp factor controls smoothness)
-            const lerpFactor = 0.15; // Lower = smoother, higher = more responsive
+            const lerpFactor = 0.15;
             this.playerEye.x += (targetEye.x - this.playerEye.x) * lerpFactor;
             this.playerEye.y += (targetEye.y - this.playerEye.y) * lerpFactor;
-            // Apply hue rotation for current player
-            const offscreen = document.createElement('canvas');
-            offscreen.width = this.playerSprite.width;
-            offscreen.height = this.playerSprite.height;
-            const offCtx = offscreen.getContext('2d');
-            offCtx.drawImage(this.playerSprite, 0, 0);
-            const imageData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
-            offCtx.putImageData(imageData, 0, 0);
-            this.ctx.save(); // Save before flower drawing to contain the clip
-            this.drawFlower(this.playerSprite, this.playerEye);
-            this.ctx.restore(); // Restore after flower drawing to remove the clip
+            this.ctx.save();
+            this.drawFlower({
+                radius: 25,
+                color: player.flowerColor || '#FFE763',
+                faceFlags: player.faceFlags || 0,
+                equipFlags: player.equipFlags || 0,
+                eyeX: this.playerEye.x,
+                eyeY: this.playerEye.y,
+                mouth: player.mouth ?? 14.5,
+                cutterAngle: player.cutterAngle,
+            });
+            this.ctx.restore();
         }
         else {
             // For other players, use their own smooth eye interpolation
@@ -2039,16 +2205,25 @@ class Graphics {
             }
             // Calculate target eye position for this player
             player.targetEye = {
-                x: Math.sin(player.angle) * this.s(2),
-                y: Math.cos(player.angle) * this.s(-4.4)
+                x: Math.sin(player.angle) * 2,
+                y: Math.cos(player.angle) * -4.4
             };
             // Smooth interpolation
             const lerpFactor = 0.15;
             player.eye.x += (player.targetEye.x - player.eye.x) * lerpFactor;
             player.eye.y += (player.targetEye.y - player.eye.y) * lerpFactor;
-            this.ctx.save(); // Save before flower drawing to contain the clip
-            this.drawFlower(this.playerSprite, player.eye);
-            this.ctx.restore(); // Restore after flower drawing to remove the clip
+            this.ctx.save();
+            this.drawFlower({
+                radius: 25,
+                color: player.flowerColor || '#FFE763',
+                faceFlags: player.faceFlags || 0,
+                equipFlags: player.equipFlags || 0,
+                eyeX: player.eye.x,
+                eyeY: player.eye.y,
+                mouth: player.mouth ?? 14.5,
+                cutterAngle: player.cutterAngle,
+            });
+            this.ctx.restore();
         }
         // Reset effects after drawing
         if (player.isInvulnerable) {
@@ -3522,7 +3697,7 @@ class Graphics {
                 player.y > viewport.top - constants_1.PLAYER_SIZE && player.y < viewport.bottom + constants_1.PLAYER_SIZE) {
                 if (player.isDead) {
                     // Draw corpse for dead players
-                    this.drawCorpse(player.x, player.y, player.angle);
+                    this.drawCorpse(player.x, player.y, player.angle, player);
                 }
                 else {
                     // Use each player's own petal extension, or fallback to the passed value (for current player)
@@ -3696,42 +3871,19 @@ class Graphics {
         // This is kept as a fallback but should not be used
         console.warn('[Graphics] preloadPetalImages called - this should be handled by Preloader');
     }
-    drawCorpse(x, y, angle) {
+    drawCorpse(x, y, angle, player) {
         this.ctx.save();
         this.ctx.translate(x, y);
         this.ctx.rotate(angle);
-        // Draw the corpse SVG
-        this.ctx.fillStyle = '#ffe763';
-        this.ctx.strokeStyle = '#cfbb50';
-        this.ctx.lineWidth = 3;
-        // Draw the main circle (face)
-        this.ctx.beginPath();
-        this.ctx.arc(0, 0, 25, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
-        // Draw the X eyes
-        this.ctx.strokeStyle = '#222222';
-        this.ctx.lineWidth = 1.5;
-        this.ctx.lineCap = 'round';
-        // Left eye X
-        this.ctx.beginPath();
-        this.ctx.moveTo(-10, -8);
-        this.ctx.lineTo(-4, -2);
-        this.ctx.moveTo(-4, -8);
-        this.ctx.lineTo(-10, -2);
-        this.ctx.stroke();
-        // Right eye X
-        this.ctx.beginPath();
-        this.ctx.moveTo(10, -8);
-        this.ctx.lineTo(4, -2);
-        this.ctx.moveTo(4, -8);
-        this.ctx.lineTo(10, -2);
-        this.ctx.stroke();
-        // Draw the sad mouth
-        this.ctx.beginPath();
-        this.ctx.moveTo(-6, 10);
-        this.ctx.quadraticCurveTo(0, 15, 6, 10);
-        this.ctx.stroke();
+        this.drawFlower({
+            radius: 25,
+            color: player?.flowerColor || '#FFE763',
+            faceFlags: player_1.FaceFlags.DeadEyes,
+            equipFlags: player?.equipFlags || 0,
+            eyeX: 0,
+            eyeY: 0,
+            mouth: 15, // Sad mouth (curve goes down)
+        });
         this.ctx.restore();
     }
     setShowConsoleLogs(enabled) {

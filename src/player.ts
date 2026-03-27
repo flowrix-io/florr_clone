@@ -1,6 +1,21 @@
 import {Item, ItemWithRarity} from './item';
 import { PlayerEffect } from './petal_actions';
 
+export enum FaceFlags {
+    Poisoned = 1 << 0,
+    Dandelioned = 1 << 1,
+    DeadEyes = 1 << 2,
+    SquareEyes = 1 << 3,
+    Attacking = 1 << 4,
+}
+
+export enum EquipmentFlags {
+    Cutter = 1 << 0,
+    ThirdEye = 1 << 1,
+    Observer = 1 << 2,
+    Antennae = 1 << 3,
+}
+
 export interface PlayerInventory {
     [rarity: string]: {
         [itemType: string]: number;
@@ -49,6 +64,11 @@ export interface Player {
   stars?: number; // In-game currency earned from challenges and codes
   teleporterCharging?: boolean; // True when player is standing in a teleporter charging up
   teleporterChargeStart?: number; // Timestamp when teleporter charge began
+  flowerColor?: string;    // Base flower color (hex like '#FFE763')
+  faceFlags?: number;      // Bitmask of FaceFlags (poisoned, dead eyes, square eyes, etc.)
+  equipFlags?: number;     // Bitmask of EquipmentFlags (cutter, third eye, observer, antennae)
+  mouth?: number;          // Mouth curve Y control point (14.5 = smile, higher = more open)
+  cutterAngle?: number;    // Rotation angle for cutter equipment
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
@@ -120,4 +140,7 @@ export interface ServerPlayer {
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
   petalPositions?: Array<{ loadoutIndex: number; instanceIndex: number; x: number; y: number }>; // Petal positions calculated on server
+  faceFlags?: number;      // Bitmask of FaceFlags (computed each tick)
+  equipFlags?: number;     // Bitmask of EquipmentFlags (computed from loadout)
+  mouth?: number;          // Mouth curve Y control point
 }

@@ -40,7 +40,7 @@ if (invalidEggTypes.size > 0) {
     }
 }
 
-import { ServerPlayer, PlayerProgress, PlayerInventory } from './player';
+import { ServerPlayer, PlayerProgress, PlayerInventory, FaceFlags, EquipmentFlags } from './player';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet, despawnAllPlayerPets } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState } from './constants';
@@ -3885,6 +3885,23 @@ function start_loop() {
         // Only send fields that change frequently; name/level/score are sent via playerUpdated
         const createPlayerData = (p: ServerPlayer, quality: 'good' | 'medium' | 'slow') => {
             const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
+            const petalExtension = p.inputs?.petalExtension || 1.0;
+
+            // Compute face flags
+            let faceFlags = 0;
+            if (petalExtension < 0.5) faceFlags |= FaceFlags.Attacking;
+
+            // Compute equipment flags from loadout
+            let equipFlags = 0;
+            if (p.loadout) {
+                for (const item of p.loadout) {
+                    if (!item || item.type !== 'petal') continue;
+                    const pt = item.petalType;
+                    if (pt === 'cutter' || pt === 'lightning_cutter') equipFlags |= EquipmentFlags.Cutter;
+                    else if (pt === 'third_eye') equipFlags |= EquipmentFlags.ThirdEye;
+                }
+            }
+
             return {
                 id: p.id,
                 name: p.name,
@@ -3895,13 +3912,15 @@ function start_loop() {
                 maxHealth: Math.round(p.maxHealth),
                 level: p.level,
                 score: p.score,
-                petalExtension: quantize(p.inputs?.petalExtension || 1.0, 0.1),
+                petalExtension: quantize(petalExtension, 0.1),
                 petalPositions: (p.petalPositions || []).map((pos: any) => ({
                     loadoutIndex: pos.loadoutIndex,
                     instanceIndex: pos.instanceIndex,
                     x: quantize(pos.x, precision),
                     y: quantize(pos.y, precision)
-                }))
+                })),
+                faceFlags,
+                equipFlags,
             };
         };
 
