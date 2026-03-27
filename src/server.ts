@@ -3894,7 +3894,7 @@ function start_loop() {
                 faceFlags |= FaceFlags.Attacking;
                 mouth = 4; // Closed mouth, positions angry triangle over eyes
             }
-            if (petalExtension < 0.5) {
+            if (petalExtension < 1.0) {
                 faceFlags |= FaceFlags.Defending;
                 mouth = 4; // Closed mouth for defensive face
             }
