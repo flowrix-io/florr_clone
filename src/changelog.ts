@@ -209,6 +209,13 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Backend changes',
             'FPS should be higher now, and ping should be lower',
         ]
+    },
+    {
+        date: 'March 27, 2026',
+        changes: [
+            'New petal: Faster',
+            'More bug fixes and UI improvements',
+        ]
     }
 ];
 

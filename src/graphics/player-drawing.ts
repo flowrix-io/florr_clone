@@ -173,13 +173,17 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
     const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
     const angleStep = (Math.PI * 2) / petalInstances.length; // Evenly space petals
 
-    // Calculate player range modifier from equipped petals
+    // Calculate player range and rotation speed modifiers from equipped petals
     let playerRangeModifier = 1.0;
+    let playerRotationSpeedModifier = 1.0;
     for (const item of player.loadout) {
         if (item && item.type === 'petal' && item.petalType && item.rarity) {
             const pStats = getPetalStats(item.petalType, item.rarity);
             if (pStats?.playerModifiers?.range !== undefined) {
                 playerRangeModifier *= pStats.playerModifiers.range;
+            }
+            if (pStats?.playerModifiers?.rotationSpeed !== undefined) {
+                playerRotationSpeedModifier *= pStats.playerModifiers.rotationSpeed;
             }
         }
     }
@@ -206,7 +210,7 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
         }
 
         // Calculate rotation angle
-        const rotationSpeed = (stats.speed ?? 1.0) * 0.002; // Convert to radians per ms
+        const rotationSpeed = (stats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002; // Convert to radians per ms
         const baseAngle = index * angleStep;
         const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
         // Fixed-direction petals don't orbit - they stay at a fixed relative position

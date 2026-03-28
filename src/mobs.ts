@@ -3077,20 +3077,12 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
             // Rarity-based drops (50% common, 10% unusual for common mobs)
             {
                 type: 'petal',
-                itemType: 'basic',
+                itemType: 'faster',
                 rarity: 'common',
                 probability: 0.5,
                 minQuantity: 1,
                 maxQuantity: 1
             },
-            {
-                type: 'petal',
-                itemType: 'basic',
-                rarity: 'uncommon',
-                probability: 0.1,
-                minQuantity: 1,
-                maxQuantity: 1
-            }
         ]
     },
     ladybug: {
@@ -3661,7 +3653,15 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 1
-            }
+            },
+            {
+                type: 'petal',
+                itemType: 'faster',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
         ]
     },
     spider: {
@@ -3682,7 +3682,15 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 probability: 0.99,
                 minQuantity: 1,
                 maxQuantity: 1
-            }
+            },
+            {
+                type: 'petal',
+                itemType: 'faster',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
         ]
     },
     javascript: {

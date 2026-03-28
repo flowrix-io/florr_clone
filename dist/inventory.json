@@ -1,15 +1,15 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 239973438,
+      "totalXP": 240042827,
       "inventory": {
         "common": {
           "shield": 234,
           "petal_light": 71,
-          "petal_dandelion": 31,
+          "petal_dandelion": 32,
           "petal_stinger": 50,
           "petal_yggdrasil": 10,
-          "speed_boost": 140,
+          "speed_boost": 145,
           "petal_sand": 44,
           "petal_rock": 185,
           "petal_clover": 53,
@@ -18,35 +18,35 @@
           "petal_iris": 10,
           "petal_poison_cactus": 15,
           "petal_lightning": 56,
-          "petal_missile": 158,
+          "petal_missile": 160,
           "petal_jelly": 29,
           "petal_leaf": 20,
           "petal_cutter": 2,
-          "petal_wing": 299,
+          "petal_wing": 302,
           "petal_rose": 134,
           "health_potion": 69,
           "petal_basic": 71,
           "petal_square": 25,
           "petal_shield": 1,
-          "petal_golden_leaf": 15,
+          "petal_golden_leaf": 18,
           "petal_ant_egg": 6,
           "petal_fire_ant_egg": 6,
           "petal_yucca": 17,
-          "petal_hornet_egg": 95,
-          "petal_dandelion_egg": 100,
-          "petal_ladybug_egg": 89,
+          "petal_hornet_egg": 97,
+          "petal_dandelion_egg": 103,
+          "petal_ladybug_egg": 90,
           "petal_soldier_ant_egg": 127,
           "petal_dark_ladybug_egg": 88,
-          "petal_bee_egg": 96,
-          "petal_fly_egg": 76,
+          "petal_bee_egg": 97,
+          "petal_fly_egg": 78,
           "petal_bubble_egg": 20,
           "petal_rock_egg": 91,
           "petal_bush_egg": 6,
-          "petal_roach_egg": 11,
+          "petal_roach_egg": 13,
           "petal_cactus_egg": 12,
-          "petal_spider_egg": 16,
-          "petal_moth_egg": 10,
-          "petal_garbage_egg": 121,
+          "petal_spider_egg": 19,
+          "petal_moth_egg": 13,
+          "petal_garbage_egg": 126,
           "petal_hel_beetle_egg": 14,
           "petal_soldier_fire_ant_egg": 28,
           "petal_mantis_egg": 6,
@@ -56,7 +56,7 @@
           "petal_shiny_ladybug_egg": 7,
           "petal_sandstorm_egg": 6,
           "petal_jellyfish_egg": 6,
-          "petal_starfish_egg": 26,
+          "petal_starfish_egg": 27,
           "petal_sponge_1_egg": 10,
           "petal_sponge_2_egg": 10,
           "petal_starfish": 14,
@@ -64,16 +64,18 @@
           "petal_blood_leaf": 8,
           "petal_javascript": 52,
           "petal_glitch": 46,
-          "petal_javascript_egg": 20,
-          "petal_glitch_egg": 25,
+          "petal_javascript_egg": 21,
+          "petal_glitch_egg": 26,
           "petal_dust_egg": 21,
           "petal_osaka": 9,
-          "petal_bulb": 6,
+          "petal_bulb": 7,
           "petal_third_eye": 4,
           "petal_gas": 7,
-          "petal_glass": 18,
+          "petal_glass": 19,
           "petal_cube_egg": 15,
-          "petal_corn": 4
+          "petal_corn": 4,
+          "petal_faster": 3,
+          "petal_item_spawner_egg": 1
         },
         "unique": {
           "petal_stinger": 1002,
@@ -181,7 +183,7 @@
           "petal_dandelion": 80,
           "petal_basic": 131,
           "petal_sand": 12,
-          "speed_boost": 103,
+          "speed_boost": 104,
           "petal_stinger": 46,
           "shield": 108,
           "petal_clover": 64,
@@ -202,7 +204,7 @@
           "petal_yucca": 10,
           "petal_square": 13,
           "petal_wing": 81,
-          "petal_golden_leaf": 17,
+          "petal_golden_leaf": 18,
           "petal_blood_leaf": 6,
           "petal_ant_egg": 4,
           "petal_dandelion_egg": 57,
@@ -211,10 +213,10 @@
           "petal_bee_egg": 43,
           "petal_hornet_egg": 54,
           "petal_soldier_ant_egg": 72,
-          "petal_fly_egg": 22,
-          "petal_garbage_egg": 29,
+          "petal_fly_egg": 23,
+          "petal_garbage_egg": 32,
           "petal_roach_egg": 15,
-          "petal_moth_egg": 11,
+          "petal_moth_egg": 12,
           "petal_bush_egg": 7,
           "petal_rock_egg": 47,
           "petal_soldier_fire_ant_egg": 16,
@@ -530,7 +532,11 @@
         }
       },
       "loadout": [
-        null,
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "faster"
+        },
         {
           "type": "petal",
           "rarity": "unique",
@@ -595,7 +601,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 287,
+          "common": 288,
           "legendary": 193,
           "uncommon": 88,
           "mythic": 159,
@@ -607,7 +613,7 @@
         "soldier_ant": {
           "epic": 118,
           "legendary": 309,
-          "common": 380,
+          "common": 384,
           "rare": 170,
           "mythic": 470,
           "ultra": 17,
@@ -618,19 +624,19 @@
         "rock": {
           "legendary": 153,
           "ultra": 9,
-          "common": 284,
+          "common": 287,
           "mythic": 167,
           "epic": 53,
           "rare": 61,
-          "uncommon": 91,
+          "uncommon": 92,
           "super": 3,
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 355,
+          "common": 359,
           "legendary": 133,
           "mythic": 140,
-          "uncommon": 114,
+          "uncommon": 116,
           "rare": 77,
           "epic": 51,
           "ultra": 12,
@@ -638,8 +644,8 @@
           "unique": 2
         },
         "hornet": {
-          "common": 382,
-          "legendary": 313,
+          "common": 387,
+          "legendary": 314,
           "mythic": 301,
           "uncommon": 154,
           "rare": 118,
@@ -649,8 +655,8 @@
           "unique": 1
         },
         "dandelion": {
-          "legendary": 181,
-          "common": 259,
+          "legendary": 182,
+          "common": 262,
           "mythic": 164,
           "uncommon": 80,
           "unique": 3,
@@ -660,7 +666,7 @@
           "super": 5
         },
         "bee": {
-          "common": 312,
+          "common": 316,
           "epic": 97,
           "mythic": 197,
           "uncommon": 85,
@@ -697,9 +703,9 @@
           "mythic": 21,
           "ultra": 59,
           "super": 117,
-          "uncommon": 11,
+          "uncommon": 12,
           "rare": 15,
-          "unique": 19,
+          "unique": 20,
           "epic": 15
         },
         "shiny_ladybug": {
@@ -720,7 +726,7 @@
           "uncommon": 1
         },
         "fly": {
-          "uncommon": 230,
+          "uncommon": 237,
           "common": 148,
           "rare": 20,
           "legendary": 45,
@@ -735,8 +741,8 @@
           "ultra": 3,
           "super": 2,
           "epic": 53,
-          "common": 633,
-          "uncommon": 43
+          "common": 683,
+          "uncommon": 52
         },
         "roach": {
           "rare": 35,
@@ -744,17 +750,17 @@
           "mythic": 38,
           "epic": 77,
           "super": 1,
-          "uncommon": 37,
+          "uncommon": 45,
           "common": 6,
           "ultra": 1
         },
         "moth": {
-          "rare": 25,
+          "rare": 26,
           "legendary": 62,
           "mythic": 46,
           "ultra": 4,
           "epic": 54,
-          "uncommon": 33,
+          "uncommon": 42,
           "common": 4
         },
         "bush": {
@@ -770,7 +776,7 @@
           "epic": 76,
           "mythic": 46,
           "unique": 1,
-          "uncommon": 46,
+          "uncommon": 56,
           "rare": 25,
           "common": 9
         },
@@ -928,7 +934,7 @@
           "rare": 5
         }
       },
-      "stars": 127167
+      "stars": 127267
     },
     "1g99g1gfk": {
       "totalXP": 93,

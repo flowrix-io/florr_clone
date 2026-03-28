@@ -650,7 +650,9 @@ export function updatePlayerState(
         const petalExtension = player.inputs.petalExtension || 1.0;
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
-        const playerRangeModifier = calculatePlayerModifiers(player).range ?? 1.0;
+        const playerModifiers = calculatePlayerModifiers(player);
+        const playerRangeModifier = playerModifiers.range ?? 1.0;
+        const playerRotationSpeedModifier = playerModifiers.rotationSpeed ?? 1.0;
 
         // Initialize petal positions array
         player.petalPositions = [];
@@ -675,7 +677,7 @@ export function updatePlayerState(
                     if (petalStats.actions) {
                         const baseRadius = 60 + (player.level * 2);
                         const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
-                        const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002;
+                        const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002;
                         const baseAngle = idx * angleStep;
                         const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
                         const totalAngle = baseAngle + rotationAngle;
@@ -749,7 +751,7 @@ export function updatePlayerState(
             // Get effective size (custom size if set, otherwise base stats)
             const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
             
-            const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002; // Convert to radians per ms
+            const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002; // Convert to radians per ms
             const baseAngle = idx * angleStep;
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             // Fixed-direction petals don't orbit - they stay at a fixed relative position

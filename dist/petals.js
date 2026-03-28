@@ -197,7 +197,49 @@ const RARITY_OVERRIDES = {
         unique: {
             knockback: 50000.0
         }
-    }
+    },
+    faster: {
+        uncommon: {
+            playerModifiers: {
+                rotationSpeed: 1.2
+            }
+        },
+        rare: {
+            playerModifiers: {
+                rotationSpeed: 1.3
+            }
+        },
+        epic: {
+            playerModifiers: {
+                rotationSpeed: 1.4
+            }
+        },
+        legendary: {
+            playerModifiers: {
+                rotationSpeed: 1.6
+            }
+        },
+        mythic: {
+            playerModifiers: {
+                rotationSpeed: 1.8
+            }
+        },
+        ultra: {
+            playerModifiers: {
+                rotationSpeed: 2.1
+            }
+        },
+        super: {
+            playerModifiers: {
+                rotationSpeed: 2.7
+            }
+        },
+        unique: {
+            playerModifiers: {
+                rotationSpeed: 3.5
+            }
+        },
+    },
 };
 // Base petal configurations - only common rarity stats
 const BASE_PETAL_CONFIGS = {
@@ -252,7 +294,7 @@ const BASE_PETAL_CONFIGS = {
         color: "#90EE90",
         count: 1,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
     },
     rock: {
@@ -1165,6 +1207,21 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false,
         playerModifiers: { range: 1.15 }
     },
+    faster: {
+        name: "Faster",
+        damage: 5,
+        health: 5,
+        size: 0.5,
+        cooldown: 500,
+        description: "Makes your petals move faster",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#faffc9"/>
+</svg>`,
+        isAdminPetal: false,
+        playerModifiers: { rotationSpeed: 1.1 }
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
@@ -1541,16 +1598,17 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         // For modifiers, we can either:
         // 1. Use override if provided (for rarity-specific scaling) - overrides are NOT scaled
         // 2. Scale base modifiers by rarity multiplier
-        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined) {
+        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined) {
             // Use override modifiers directly (not scaled, as they're already rarity-specific)
             playerModifiers = {
                 damage: overrideModifiers.damage ?? baseModifiers.damage,
                 maxHealth: overrideModifiers.maxHealth ?? baseModifiers.maxHealth,
                 speed: overrideModifiers.speed ?? baseModifiers.speed,
-                range: overrideModifiers.range ?? baseModifiers.range
+                range: overrideModifiers.range ?? baseModifiers.range,
+                rotationSpeed: overrideModifiers.rotationSpeed ?? baseModifiers.rotationSpeed
             };
         }
-        else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined) {
+        else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined) {
             // Scale base modifiers by rarity multiplier
             // Formula: baseValue * (1 + (rarityIndex / 8) * 3)
             // This scales from 1x at common to 4x at unique
@@ -1566,6 +1624,9 @@ function generatePetalStats(baseConfig, rarity, petalType) {
                     : undefined,
                 range: baseModifiers.range !== undefined
                     ? 1 + (baseModifiers.range - 1) * modifierRarityMultiplier
+                    : undefined,
+                rotationSpeed: baseModifiers.rotationSpeed !== undefined
+                    ? 1 + (baseModifiers.rotationSpeed - 1) * modifierRarityMultiplier
                     : undefined
             };
         }

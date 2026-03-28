@@ -400,7 +400,8 @@ function calculatePlayerModifiers(player) {
         damage: 1.0,
         maxHealth: 1.0,
         speed: 1.0,
-        range: 1.0
+        range: 1.0,
+        rotationSpeed: 1.0
     };
     if (!player.loadout)
         return modifiers;
@@ -424,6 +425,9 @@ function calculatePlayerModifiers(player) {
         }
         if (petalModifiers.range !== undefined && modifiers.range !== undefined) {
             modifiers.range *= petalModifiers.range;
+        }
+        if (petalModifiers.rotationSpeed !== undefined && modifiers.rotationSpeed !== undefined) {
+            modifiers.rotationSpeed *= petalModifiers.rotationSpeed;
         }
     }
     return modifiers;

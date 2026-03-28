@@ -515,7 +515,9 @@ function updatePlayerState(player, deltaTime, deps) {
         const petalExtension = player.inputs.petalExtension || 1.0;
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
         const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
-        const playerRangeModifier = (0, playerManager_1.calculatePlayerModifiers)(player).range ?? 1.0;
+        const playerModifiers = (0, playerManager_1.calculatePlayerModifiers)(player);
+        const playerRangeModifier = playerModifiers.range ?? 1.0;
+        const playerRotationSpeedModifier = playerModifiers.rotationSpeed ?? 1.0;
         // Initialize petal positions array
         player.petalPositions = [];
         for (let idx = 0; idx < petalInstances.length; idx++) {
@@ -535,7 +537,7 @@ function updatePlayerState(player, deltaTime, deps) {
                     if (petalStats.actions) {
                         const baseRadius = 60 + (player.level * 2);
                         const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
-                        const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002;
+                        const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002;
                         const baseAngle = idx * angleStep;
                         const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
                         const totalAngle = baseAngle + rotationAngle;
@@ -600,7 +602,7 @@ function updatePlayerState(player, deltaTime, deps) {
                 continue;
             // Get effective size (custom size if set, otherwise base stats)
             const effectiveSize = petal.customSize !== undefined ? petal.customSize : petalStats.size;
-            const rotationSpeed = (petalStats.speed ?? 1.0) * 0.002; // Convert to radians per ms
+            const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002; // Convert to radians per ms
             const baseAngle = idx * angleStep;
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             // Fixed-direction petals don't orbit - they stay at a fixed relative position
