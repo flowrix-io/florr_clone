@@ -868,7 +868,19 @@ function setupSocketListeners(game) {
                 inventoryChanged = updatedPlayer.inventory !== undefined && player.inventory !== updatedPlayer.inventory;
                 mobKillsChanged = updatedPlayer.mobKills !== undefined && player.mobKills !== updatedPlayer.mobKills;
             }
+            // Set position as interpolation targets to avoid camera jitter
+            const prevX = player.x;
+            const prevY = player.y;
+            const newX = updatedPlayer.x;
+            const newY = updatedPlayer.y;
             Object.assign(player, updatedPlayer);
+            // Restore interpolated position, update targets
+            if (newX !== undefined && newY !== undefined) {
+                player.x = prevX;
+                player.y = prevY;
+                player.targetX = newX;
+                player.targetY = newY;
+            }
             // Update displays if this is the current player
             if (updatedPlayer.id === game.socket?.id) {
                 if (game.isInventoryOpen && inventoryChanged) {

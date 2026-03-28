@@ -1313,9 +1313,10 @@ export class Game {
             }
         }
 
-        // Interpolate all enemies' positions
+        // Interpolate all enemies' positions (skip dying enemies)
         const enemyLerp = this.interpolationAmount;
         for (const enemy of this.enemies.values()) {
+            if (enemy.deathAnimationStartTime) continue;
             if (enemy.targetX !== undefined && enemy.targetY !== undefined) {
                 enemy.x += (enemy.targetX - enemy.x) * enemyLerp;
                 enemy.y += (enemy.targetY - enemy.y) * enemyLerp;
