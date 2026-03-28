@@ -151,6 +151,7 @@ class Graphics {
         this.irisTransitionStartTime = 0;
         this.irisScreenshot = null;
         this.irisClosing = false;
+        this.irisTitleScreen = false;
         this.irisOnComplete = null;
         this.IRIS_TRANSITION_DURATION = 800;
         this.IRIS_OUTLINE_WIDTH = 6;

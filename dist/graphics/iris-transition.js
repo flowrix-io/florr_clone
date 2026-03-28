@@ -6,6 +6,7 @@ core_1.Graphics.prototype.startIrisTransition = function (screenshot) {
     this.irisTransitionStartTime = Date.now();
     this.irisScreenshot = screenshot;
     this.irisClosing = false;
+    this.irisTitleScreen = false;
     this.irisOnComplete = null;
 };
 core_1.Graphics.prototype.startIrisClose = function (screenshot, onComplete) {
@@ -13,6 +14,7 @@ core_1.Graphics.prototype.startIrisClose = function (screenshot, onComplete) {
     this.irisTransitionStartTime = Date.now();
     this.irisScreenshot = screenshot;
     this.irisClosing = true;
+    this.irisTitleScreen = false;
     this.irisOnComplete = onComplete;
 };
 /** Capture the current canvas contents as a screenshot for use in transitions. */
@@ -53,13 +55,12 @@ core_1.Graphics.prototype.drawIrisTransition = function () {
     const centerY = this.canvas.height / 2;
     const maxRadius = Math.sqrt(centerX * centerX + centerY * centerY);
     const currentRadius = eased * maxRadius;
-    if (this.irisClosing && this.irisScreenshot) {
-        // Closing with frozen frame: black everywhere, frozen screenshot inside circle
+    if (this.irisClosing && !this.irisTitleScreen && this.irisScreenshot) {
+        // Teleporter close: black everywhere, frozen screenshot inside shrinking circle
         this.ctx.save();
         this.ctx.fillStyle = 'black';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         this.ctx.restore();
-        // Clip to inside the circle and draw the frozen frame
         this.ctx.save();
         this.ctx.beginPath();
         this.ctx.arc(centerX, centerY, Math.max(currentRadius, 0), 0, Math.PI * 2);
@@ -68,14 +69,19 @@ core_1.Graphics.prototype.drawIrisTransition = function () {
         this.ctx.restore();
     }
     else {
-        // Opening or closing without screenshot: black outside the circle, live game inside
+        // Title screen transitions or teleporter open: draw outside the circle
         this.ctx.save();
         this.ctx.beginPath();
         this.ctx.rect(0, 0, this.canvas.width, this.canvas.height);
         this.ctx.arc(centerX, centerY, Math.max(currentRadius, 0), 0, Math.PI * 2, true);
         this.ctx.clip();
-        this.ctx.fillStyle = 'black';
-        this.ctx.fill();
+        if (this.irisTitleScreen && this.irisScreenshot) {
+            this.ctx.drawImage(this.irisScreenshot, 0, 0, this.canvas.width, this.canvas.height);
+        }
+        else {
+            this.ctx.fillStyle = 'black';
+            this.ctx.fill();
+        }
         this.ctx.restore();
     }
     // Draw black outline ring around the circle edge

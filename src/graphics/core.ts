@@ -141,6 +141,7 @@ export class Graphics {
     public irisTransitionStartTime: number = 0;
     public irisScreenshot: HTMLCanvasElement | null = null;
     public irisClosing: boolean = false;
+    public irisTitleScreen: boolean = false;
     public irisOnComplete: (() => void) | null = null;
     public readonly IRIS_TRANSITION_DURATION: number = 800;
     public readonly IRIS_OUTLINE_WIDTH: number = 6;

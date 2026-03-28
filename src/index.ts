@@ -375,6 +375,7 @@ function setupGameEventListeners() {
                 if (bgCanvas) sctx.drawImage(bgCanvas, 0, 0, screenshot.width, screenshot.height);
                 if (uiCanvas) sctx.drawImage(uiCanvas, 0, 0, screenshot.width, screenshot.height);
                 currentGame.graphics.startIrisTransition(screenshot);
+                currentGame.graphics.irisTitleScreen = true;
             }
 
             // Hide title screen and show game
@@ -450,6 +451,7 @@ function setupGameEventListeners() {
                     // Reset connecting flag so user can rejoin
                     isConnecting = false;
                 });
+                currentGame!.graphics.irisTitleScreen = true;
             };
             requestAnimationFrame(waitForRender);
         });
