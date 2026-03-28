@@ -42,11 +42,13 @@ Graphics.prototype.drawIrisTransition = function(this: Graphics): void {
 
 
     if (progress >= 1) {
-        // Draw final frame
-        this.ctx.save();
-        this.ctx.fillStyle = 'black';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.restore();
+        if (this.irisClosing) {
+            // Closing complete: draw final black frame
+            this.ctx.save();
+            this.ctx.fillStyle = 'black';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.restore();
+        }
         this.irisTransitionActive = false;
         this.irisScreenshot = null;
         if (this.irisOnComplete) {

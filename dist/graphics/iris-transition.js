@@ -29,11 +29,13 @@ core_1.Graphics.prototype.drawIrisTransition = function () {
     const elapsed = Date.now() - this.irisTransitionStartTime;
     const progress = Math.min(elapsed / this.IRIS_TRANSITION_DURATION, 1);
     if (progress >= 1) {
-        // Draw final frame
-        this.ctx.save();
-        this.ctx.fillStyle = 'black';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.restore();
+        if (this.irisClosing) {
+            // Closing complete: draw final black frame
+            this.ctx.save();
+            this.ctx.fillStyle = 'black';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.restore();
+        }
         this.irisTransitionActive = false;
         this.irisScreenshot = null;
         if (this.irisOnComplete) {

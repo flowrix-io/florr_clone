@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 239972598,
+      "totalXP": 239973438,
       "inventory": {
         "common": {
           "shield": 234,
@@ -639,7 +639,7 @@
         },
         "hornet": {
           "common": 382,
-          "legendary": 312,
+          "legendary": 313,
           "mythic": 301,
           "uncommon": 154,
           "rare": 118,
@@ -735,7 +735,7 @@
           "ultra": 3,
           "super": 2,
           "epic": 53,
-          "common": 630,
+          "common": 633,
           "uncommon": 43
         },
         "roach": {
