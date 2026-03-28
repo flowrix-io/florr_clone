@@ -116,6 +116,10 @@ export class Graphics {
         super: '#2bffa4',
         unique: '#bf00ff'
     };
+    // Track invulnerability fade-out per player: maps playerId -> timestamp when invulnerability ended
+    public invulFadeStates: Map<string, { endTime: number, wasInvulnerable: boolean }> = new Map();
+    public readonly INVUL_FADE_DURATION = 500; // ms to fade from yellow back to green
+
     public showHitboxes: boolean = false;
     public showRarityGlow: boolean = false;
     public altKeyPressed: boolean = false;

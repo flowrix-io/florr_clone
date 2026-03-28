@@ -129,6 +129,9 @@ class Graphics {
             super: '#2bffa4',
             unique: '#bf00ff'
         };
+        // Track invulnerability fade-out per player: maps playerId -> timestamp when invulnerability ended
+        this.invulFadeStates = new Map();
+        this.INVUL_FADE_DURATION = 500; // ms to fade from yellow back to green
         this.showHitboxes = false;
         this.showRarityGlow = false;
         this.altKeyPressed = false;

@@ -75,8 +75,23 @@ core_1.Graphics.prototype.drawUI = function (players, socket) {
         this.ctx.beginPath();
         this.ctx.roundRect(healthX - 2, healthY - 2, healthBarWidth + 4, healthBarHeight + 4, radius);
         this.ctx.fill();
-        // Health bar fill (rounded)
-        this.ctx.fillStyle = '#73ff54';
+        // Health bar fill (rounded) - match invulnerability color from in-world bar
+        const fadeState = this.invulFadeStates.get(socket);
+        let hudHealthColor = '#73ff54';
+        if (player.isInvulnerable) {
+            hudHealthColor = '#faffc9';
+        }
+        else if (fadeState?.endTime) {
+            const elapsed = this.frameTimestamp - fadeState.endTime;
+            const t = Math.min(elapsed / this.INVUL_FADE_DURATION, 1);
+            if (t < 1) {
+                const r = Math.round(0xfa + (0x73 - 0xfa) * t);
+                const g = Math.round(0xff + (0xff - 0xff) * t);
+                const b = Math.round(0xc9 + (0x54 - 0xc9) * t);
+                hudHealthColor = `rgb(${r}, ${g}, ${b})`;
+            }
+        }
+        this.ctx.fillStyle = hudHealthColor;
         this.ctx.beginPath();
         this.ctx.roundRect(healthX, healthY, healthFillWidth, healthBarHeight, radius);
         this.ctx.fill();

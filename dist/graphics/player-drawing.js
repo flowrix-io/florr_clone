@@ -16,20 +16,6 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
     }
     // Draw player name and health bar
     this.drawPlayerHealthBar(player);
-    // Apply invulnerability visual effect
-    if (player.isInvulnerable) {
-        const flashRate = 200; // Flash every 200ms
-        const currentTime = this.frameTimestamp;
-        const shouldFlash = Math.floor(currentTime / flashRate) % 2 === 0;
-        if (shouldFlash) {
-            this.ctx.globalAlpha = 0.3; // Make player semi-transparent when flashing
-        }
-        // Draw invulnerability glow effect
-        this.ctx.shadowColor = '#FFFF00';
-        this.ctx.shadowBlur = 15;
-        this.ctx.shadowOffsetX = 0;
-        this.ctx.shadowOffsetY = 0;
-    }
     // Apply spinning animation when charging in a teleporter
     if (player.teleporterCharging && player.teleporterChargeStart) {
         const elapsed = this.frameTimestamp - player.teleporterChargeStart;
@@ -87,11 +73,6 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
             cutterAngle: player.cutterAngle,
         });
         this.ctx.restore();
-    }
-    // Reset effects after drawing
-    if (player.isInvulnerable) {
-        this.ctx.globalAlpha = 1.0;
-        this.ctx.shadowBlur = 0;
     }
     // Reset rotation before drawing petals so they don't spin
     if (player.teleporterCharging && player.teleporterChargeStart) {
@@ -350,7 +331,36 @@ core_1.Graphics.prototype.drawPlayerHealthBar = function (player) {
     // Health bar fill (rounded)
     const clampedHealth = Math.max(0, Math.min(player.health, player.maxHealth));
     const healthFillWidth = (clampedHealth / player.maxHealth) * healthBarWidth;
-    this.ctx.fillStyle = '#73ff54';
+    // Track invulnerability fade state
+    const fadeState = this.invulFadeStates.get(player.id);
+    if (player.isInvulnerable) {
+        this.invulFadeStates.set(player.id, { endTime: 0, wasInvulnerable: true });
+    }
+    else if (fadeState?.wasInvulnerable) {
+        // Just transitioned out of invulnerability - start fade
+        fadeState.endTime = this.frameTimestamp;
+        fadeState.wasInvulnerable = false;
+    }
+    // Determine health bar color with fade
+    let healthColor = '#73ff54'; // default green
+    if (player.isInvulnerable) {
+        healthColor = '#faffc9'; // XP bar yellow
+    }
+    else if (fadeState?.endTime) {
+        const elapsed = this.frameTimestamp - fadeState.endTime;
+        const t = Math.min(elapsed / this.INVUL_FADE_DURATION, 1);
+        if (t < 1) {
+            // Lerp from yellow (#faffc9) to green (#73ff54)
+            const r = Math.round(0xfa + (0x73 - 0xfa) * t);
+            const g = Math.round(0xff + (0xff - 0xff) * t);
+            const b = Math.round(0xc9 + (0x54 - 0xc9) * t);
+            healthColor = `rgb(${r}, ${g}, ${b})`;
+        }
+        else {
+            this.invulFadeStates.delete(player.id);
+        }
+    }
+    this.ctx.fillStyle = healthColor;
     this.ctx.beginPath();
     this.ctx.roundRect(-healthBarWidth / 2, healthBarY, healthFillWidth, healthBarHeight, radius);
     this.ctx.fill();
