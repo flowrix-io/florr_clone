@@ -1636,6 +1636,10 @@ class TitleScreen {
     handleCanvasClick(x, y) {
         const centerX = this.uiCanvas.width / 2;
         const centerY = this.uiCanvas.height / 2;
+        // Ignore clicks while connecting animation is playing
+        if (this.isConnecting) {
+            return;
+        }
         // Handle auth form clicks
         if (this.showAuthForm) {
             this.handleAuthFormClick(x, y, centerX, centerY);
@@ -2815,6 +2819,8 @@ class TitleScreen {
         }
     }
     showTitleScreen() {
+        // Reset connecting state so the title screen doesn't show the connecting animation
+        this.isConnecting = false;
         // Show canvas
         if (this.uiCanvas) {
             this.uiCanvas.style.display = 'block';
