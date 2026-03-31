@@ -73,6 +73,9 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     if (this.notificationsManager) {
         this.notificationsManager.render();
     }
+    if (this.leaderboardManager) {
+        this.leaderboardManager.render();
+    }
 
     // Draw console logs overlay
     this.drawConsoleLogs();

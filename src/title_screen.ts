@@ -6,6 +6,7 @@
 import { PETAL_CONFIG, RARITY_LEVELS, PetalStats, getPetalStats, getAllPetalTypes } from './petals';
 import { ChangelogManager, CHANGELOG } from './changelog';
 import { NotificationsManager } from './notifications';
+import { LeaderboardManager } from './leaderboard';
 import { invalidateSettingsCache } from './constants';
 import { Item } from './item';
 import { Player, PlayerInventory } from './player';
@@ -174,6 +175,7 @@ export class TitleScreen {
     private backgroundTime: number = 0;
     private changelogManager!: ChangelogManager;
     private notificationsManager!: NotificationsManager;
+    private leaderboardManager!: LeaderboardManager;
     private titleScreenInventoryManager!: TitleScreenInventoryManager;
     private titleScreenChat: Chat | null = null;
     private titleScreenSkillsManager: SkillsManager | null = null;
@@ -207,6 +209,7 @@ export class TitleScreen {
         this.initializeElements();
         this.changelogManager = new ChangelogManager();
         this.notificationsManager = new NotificationsManager();
+        this.leaderboardManager = new LeaderboardManager();
         // Make notifications manager globally accessible
         (window as any).notificationsManager = this.notificationsManager;
         
@@ -222,6 +225,7 @@ export class TitleScreen {
             canvas.style.pointerEvents = 'auto';
             this.changelogManager.setCanvas(canvas);
             this.notificationsManager.setCanvas(canvas);
+            this.leaderboardManager.setCanvas(canvas);
         };
         
         const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -690,11 +694,13 @@ export class TitleScreen {
         const settingsIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'settings')?.value || '';
         const changelogIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'changelog')?.value || '';
         const notificationsIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'notifications')?.value || '';
+        const leaderboardIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'leaderboard')?.value || '';
         const exitIcon = GAME_ICONS_NET_ICONS.find((icon: any) => icon.name === 'exit_button')?.value || '';
         // Update the SVG to be 32x32
         const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedChangelogIcon = changelogIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedNotificationsIcon = notificationsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        const formattedLeaderboardIcon = leaderboardIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
             <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Settings">
@@ -722,6 +728,9 @@ export class TitleScreen {
             </div>
             <div id="notificationsButton" style="width: 42px; height: 42px; cursor: pointer; background: #4a90e2; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Notifications">
                 ${formattedNotificationsIcon}
+            </div>
+            <div id="leaderboardButton" style="width: 42px; height: 42px; cursor: pointer; background: #e8a023; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Leaderboard">
+                ${formattedLeaderboardIcon}
             </div>
             <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center; box-sizing: border-box;" title="Exit to Menu">
                 ${formattedExitIcon}
@@ -920,6 +929,7 @@ export class TitleScreen {
         const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
         const changelogButton = this.exitButtonContainer.querySelector('#changelogButton');
         const notificationsButton = this.exitButtonContainer.querySelector('#notificationsButton');
+        const leaderboardButton = this.exitButtonContainer.querySelector('#leaderboardButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
 
@@ -965,6 +975,14 @@ export class TitleScreen {
             this.notificationsManager.setNotificationButton(notificationsButton as HTMLElement);
         } else {
             console.error('[NOTIFICATIONS] Button not found!');
+        }
+
+        if (leaderboardButton) {
+            leaderboardButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                this.leaderboardManager.toggle();
+            });
         }
 
         // Exit button is handled by index.ts setupGameEventListeners
@@ -3558,14 +3576,15 @@ export class TitleScreen {
             if (gameCanvas) {
                 const changelogOpen = this.changelogManager.isChangelogOpen();
                 const notificationsOpen = this.notificationsManager.isNotificationsOpen();
-                
-                if (changelogOpen || notificationsOpen) {
+                const leaderboardOpen = this.leaderboardManager.isLeaderboardOpen();
+
+                if (changelogOpen || notificationsOpen || leaderboardOpen) {
                     // Menu is open - resize canvas to only cover menu area
                     const PANEL_X = 20;
                     const PANEL_Y = 72;
                     const PANEL_WIDTH = 600;
                     const PANEL_HEIGHT = 500;
-                    
+
                     // Set canvas size to menu dimensions
                     if (gameCanvas.width !== PANEL_WIDTH || gameCanvas.height !== PANEL_HEIGHT) {
                         gameCanvas.width = PANEL_WIDTH;
@@ -3573,8 +3592,9 @@ export class TitleScreen {
                         // Re-setup canvas on managers if dimensions changed
                         this.changelogManager.setCanvas(gameCanvas);
                         this.notificationsManager.setCanvas(gameCanvas);
+                        this.leaderboardManager.setCanvas(gameCanvas);
                     }
-                    
+
                     // Position canvas at menu location and show it
                     gameCanvas.style.position = 'absolute';
                     gameCanvas.style.left = `${PANEL_X}px`;
@@ -3584,16 +3604,17 @@ export class TitleScreen {
                     gameCanvas.style.zIndex = '2000';
                     gameCanvas.style.pointerEvents = 'auto';
                     gameCanvas.style.display = 'block';
-                    
+
                     // Clear canvas before rendering
                     const ctx = gameCanvas.getContext('2d');
                     if (ctx) {
                         ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
                     }
-                    
+
                     // Render menus (coordinates are relative to canvas, which is now at menu position)
                     this.changelogManager.render();
                     this.notificationsManager.render();
+                    this.leaderboardManager.render();
                 } else {
                     // No menus open - hide canvas
                     gameCanvas.style.display = 'none';

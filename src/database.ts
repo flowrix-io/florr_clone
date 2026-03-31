@@ -344,6 +344,20 @@ export const database = {
         return count;
     },
 
+    // Get leaderboard data: all accounts sorted by totalXP descending
+    getLeaderboard: (limit: number = 50): { username: string; totalXP: number }[] => {
+        const entries: { username: string; totalXP: number }[] = [];
+        for (const username in db.users) {
+            const user = db.users[username];
+            const progress = db.players[user.id];
+            const totalXP = progress?.totalXP || 0;
+            entries.push({ username, totalXP });
+        }
+        // Sort by totalXP descending
+        entries.sort((a, b) => b.totalXP - a.totalXP);
+        return entries.slice(0, limit);
+    },
+
     // Delete all guest accounts (usernames matching "User" + 8 digits)
     deleteGuestAccounts: (): number => {
         const guestPattern = /^User\d{8}$/;

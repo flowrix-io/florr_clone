@@ -296,6 +296,10 @@ function setupGameEventListeners() {
                 if (notificationsManager) {
                     currentGame.graphics.setNotificationsManager(notificationsManager);
                 }
+                const leaderboardManager = titleScreen.leaderboardManager;
+                if (leaderboardManager) {
+                    currentGame.graphics.setLeaderboardManager(leaderboardManager);
+                }
             }
             // Capture title screen screenshot for iris transition (also stored for exit animation)
             if (currentGame?.graphics) {

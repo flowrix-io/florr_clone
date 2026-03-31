@@ -52,6 +52,9 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     if (this.notificationsManager) {
         this.notificationsManager.render();
     }
+    if (this.leaderboardManager) {
+        this.leaderboardManager.render();
+    }
     // Draw console logs overlay
     this.drawConsoleLogs();
     // Draw iris circle-reveal transition on top of everything

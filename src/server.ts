@@ -309,6 +309,13 @@ app.post('/api/notifications', (req, res) => {
     res.json({ success: true, notification });
 });
 
+// Leaderboard endpoint
+app.get('/api/leaderboard', (req, res) => {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const leaderboard = database.getLeaderboard(limit);
+    res.json({ leaderboard });
+});
+
 // Create server based on protocol configuration
 let server: http.Server | https.Server;
 

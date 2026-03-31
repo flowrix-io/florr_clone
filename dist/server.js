@@ -212,6 +212,12 @@ app.post('/api/notifications', (req, res) => {
     database_1.database.addNotification(notification);
     res.json({ success: true, notification });
 });
+// Leaderboard endpoint
+app.get('/api/leaderboard', (req, res) => {
+    const limit = parseInt(req.query.limit) || 50;
+    const leaderboard = database_1.database.getLeaderboard(limit);
+    res.json({ leaderboard });
+});
 // Create server based on protocol configuration
 let server;
 if (constants_1.USE_HTTPS) {

@@ -9,6 +9,7 @@ exports.injectTitleScreenStyles = injectTitleScreenStyles;
 const petals_1 = require("./petals");
 const changelog_1 = require("./changelog");
 const notifications_1 = require("./notifications");
+const leaderboard_1 = require("./leaderboard");
 const constants_1 = require("./constants");
 const chat_1 = require("./chat");
 const skills_1 = require("./skills");
@@ -149,6 +150,7 @@ class TitleScreen {
         this.initializeElements();
         this.changelogManager = new changelog_1.ChangelogManager();
         this.notificationsManager = new notifications_1.NotificationsManager();
+        this.leaderboardManager = new leaderboard_1.LeaderboardManager();
         // Make notifications manager globally accessible
         window.notificationsManager = this.notificationsManager;
         // Set canvas on managers after canvas is available
@@ -163,6 +165,7 @@ class TitleScreen {
             canvas.style.pointerEvents = 'auto';
             this.changelogManager.setCanvas(canvas);
             this.notificationsManager.setCanvas(canvas);
+            this.leaderboardManager.setCanvas(canvas);
         };
         const gameCanvas = document.getElementById('gameCanvas');
         if (gameCanvas) {
@@ -598,11 +601,13 @@ class TitleScreen {
         const settingsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'settings')?.value || '';
         const changelogIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'changelog')?.value || '';
         const notificationsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'notifications')?.value || '';
+        const leaderboardIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'leaderboard')?.value || '';
         const exitIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'exit_button')?.value || '';
         // Update the SVG to be 32x32
         const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedChangelogIcon = changelogIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedNotificationsIcon = notificationsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        const formattedLeaderboardIcon = leaderboardIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
             <div id="settingsButton" style="width: 42px; height: 42px; cursor: pointer; background: #b3b3b3; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Settings">
@@ -630,6 +635,9 @@ class TitleScreen {
             </div>
             <div id="notificationsButton" style="width: 42px; height: 42px; cursor: pointer; background: #4a90e2; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Notifications">
                 ${formattedNotificationsIcon}
+            </div>
+            <div id="leaderboardButton" style="width: 42px; height: 42px; cursor: pointer; background: #e8a023; padding: 5px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-sizing: border-box;" title="Leaderboard">
+                ${formattedLeaderboardIcon}
             </div>
             <div id="exitButton" style="width: 42px; height: 42px; cursor: pointer; background: #ff0000; padding: 5px; border-radius: 5px; display: none; align-items: center; justify-content: center; box-sizing: border-box;" title="Exit to Menu">
                 ${formattedExitIcon}
@@ -809,6 +817,7 @@ class TitleScreen {
         const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
         const changelogButton = this.exitButtonContainer.querySelector('#changelogButton');
         const notificationsButton = this.exitButtonContainer.querySelector('#notificationsButton');
+        const leaderboardButton = this.exitButtonContainer.querySelector('#leaderboardButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
         console.log('Setting up buttons - changelogButton:', !!changelogButton, 'notificationsButton:', !!notificationsButton);
@@ -852,6 +861,13 @@ class TitleScreen {
         }
         else {
             console.error('[NOTIFICATIONS] Button not found!');
+        }
+        if (leaderboardButton) {
+            leaderboardButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                this.leaderboardManager.toggle();
+            });
         }
         // Exit button is handled by index.ts setupGameEventListeners
         // Craft, Skills, and Inventory button event listeners
@@ -3185,7 +3201,8 @@ class TitleScreen {
             if (gameCanvas) {
                 const changelogOpen = this.changelogManager.isChangelogOpen();
                 const notificationsOpen = this.notificationsManager.isNotificationsOpen();
-                if (changelogOpen || notificationsOpen) {
+                const leaderboardOpen = this.leaderboardManager.isLeaderboardOpen();
+                if (changelogOpen || notificationsOpen || leaderboardOpen) {
                     // Menu is open - resize canvas to only cover menu area
                     const PANEL_X = 20;
                     const PANEL_Y = 72;
@@ -3198,6 +3215,7 @@ class TitleScreen {
                         // Re-setup canvas on managers if dimensions changed
                         this.changelogManager.setCanvas(gameCanvas);
                         this.notificationsManager.setCanvas(gameCanvas);
+                        this.leaderboardManager.setCanvas(gameCanvas);
                     }
                     // Position canvas at menu location and show it
                     gameCanvas.style.position = 'absolute';
@@ -3216,6 +3234,7 @@ class TitleScreen {
                     // Render menus (coordinates are relative to canvas, which is now at menu position)
                     this.changelogManager.render();
                     this.notificationsManager.render();
+                    this.leaderboardManager.render();
                 }
                 else {
                     // No menus open - hide canvas

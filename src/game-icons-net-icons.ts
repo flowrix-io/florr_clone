@@ -34,5 +34,9 @@ export const GAME_ICONS_NET_ICONS = [
     {
         name: 'notifications',
         value: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="height: 512px; width: 512px;"><g class="" transform="translate(0,0)" style=""><path d="M134.5 30.5v451h243v-451zm100.68 20h41.6a8 8 0 0 1 0 16h-41.6a8 8 0 1 1 0-16zm20.32 420.51a19.26 19.26 0 1 1 19.26-19.26 19.26 19.26 0 0 1-19.26 19.26zm105-44.51h-211v-343h211z" fill="#fff" fill-opacity="1"></path></g></svg>'
+    },
+    {
+        name: 'leaderboard',
+        value: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="height: 512px; width: 512px;"><g class="" transform="translate(0,0)" style=""><path d="M256 21.52l-60 90v30h120v-30l-60-90zM152 160.52v240h80v-240h-80zm128 80v160h80v-160h-80zm-192 48v112h80v-112h-80zm320 48v64h80v-64h-64zM26 468.52v22h460v-22H26z" fill="#fff" fill-opacity="1"></path></g></svg>'
     }
 ]

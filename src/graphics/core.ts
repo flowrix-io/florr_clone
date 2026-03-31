@@ -38,6 +38,7 @@ export class Graphics {
     public mapData: MapElement[] = [];
     public changelogManager: any = null;
     public notificationsManager: any = null;
+    public leaderboardManager: any = null;
 
     public readonly MINIMAP_WIDTH = 200;
     public readonly MINIMAP_HEIGHT = 200;
@@ -404,6 +405,13 @@ export class Graphics {
         this.notificationsManager = notificationsManager;
         if (notificationsManager && this.canvas) {
             notificationsManager.setCanvas(this.canvas);
+        }
+    }
+
+    public setLeaderboardManager(leaderboardManager: any): void {
+        this.leaderboardManager = leaderboardManager;
+        if (leaderboardManager && this.canvas) {
+            leaderboardManager.setCanvas(this.canvas);
         }
     }
 

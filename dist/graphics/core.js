@@ -53,6 +53,7 @@ class Graphics {
         this.mapData = [];
         this.changelogManager = null;
         this.notificationsManager = null;
+        this.leaderboardManager = null;
         this.MINIMAP_WIDTH = 200;
         this.MINIMAP_HEIGHT = 200;
         this.MINIMAP_PADDING = 10;
@@ -369,6 +370,12 @@ class Graphics {
         this.notificationsManager = notificationsManager;
         if (notificationsManager && this.canvas) {
             notificationsManager.setCanvas(this.canvas);
+        }
+    }
+    setLeaderboardManager(leaderboardManager) {
+        this.leaderboardManager = leaderboardManager;
+        if (leaderboardManager && this.canvas) {
+            leaderboardManager.setCanvas(this.canvas);
         }
     }
     setupItemSprites(itemSprites) {
