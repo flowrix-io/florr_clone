@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 240837228,
+      "totalXP": 240837249,
       "inventory": {
         "common": {
           "shield": 234,
@@ -100,7 +100,6 @@
           "petal_missile": 2,
           "petal_bone": 6,
           "petal_wing": 999,
-          "petal_leaf": 1,
           "petal_blood_leaf": 999,
           "petal_action_test": 1,
           "petal_egg": 1000,
@@ -113,7 +112,8 @@
           "petal_splitter": 999,
           "petal_rock_egg": 1,
           "petal_glitch_egg": 1,
-          "petal_glass": 1
+          "petal_glass": 1,
+          "petal_leaf": 1
         },
         "mythic": {
           "speed_boost": 31,
@@ -604,7 +604,7 @@
         "soldier_ant": {
           "epic": 118,
           "legendary": 311,
-          "common": 384,
+          "common": 385,
           "rare": 170,
           "mythic": 480,
           "ultra": 17,
@@ -624,7 +624,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 359,
+          "common": 360,
           "legendary": 136,
           "mythic": 146,
           "uncommon": 116,
@@ -635,7 +635,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 388,
+          "common": 389,
           "legendary": 316,
           "mythic": 315,
           "uncommon": 154,

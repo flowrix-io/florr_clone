@@ -207,7 +207,6 @@ label {
     transition: background-color 0.2s;
     margin: auto;
     user-select: none;
-    -webkit-user-drag: element;
 }
 
 .inventory-item:hover {
@@ -491,10 +490,6 @@ label {
     z-index: 1000;
     padding: 10px;
     border-radius: 5px;
-}
-
-.inventory-item.dragging {
-    opacity: 0.5;
 }
 
 .inventory-grid.drag-over {

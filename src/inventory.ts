@@ -44,6 +44,13 @@ export class InventoryManager {
     private tooltipElement: HTMLDivElement | null = null;
     private tooltipTimeout: number | null = null;
     private hoveredElement: HTMLElement | null = null;
+
+    // Custom canvas drag and drop state
+    private dragCanvas: HTMLCanvasElement | null = null;
+    private isDragging: boolean = false;
+    private dragSource: { type: 'inventory' | 'loadout'; rarity?: string; itemType?: string; slotIndex?: number } | null = null;
+    private dragImage: HTMLCanvasElement | HTMLImageElement | null = null;
+    private dragStartElement: HTMLElement | null = null;
     private readonly ITEM_RARITY_COLORS: Record<string, string> = {
         common: '#7eef6d',
         uncommon: '#ffe65d',
@@ -305,14 +312,13 @@ export class InventoryManager {
      * Setup hover tooltip for an element
      */
     private setupTooltip(element: HTMLElement, petalType: string, rarity: string): void {
-        let isDragging = false;
         let mouseDownTime = 0;
 
         const handleMouseEnter = () => {
-            if (isDragging) return;
+            if (this.isDragging) return;
             this.hoveredElement = element;
             this.tooltipTimeout = window.setTimeout(() => {
-                if (this.hoveredElement === element && !isDragging) {
+                if (this.hoveredElement === element && !this.isDragging) {
                     this.showTooltip(element, petalType, rarity);
                     // Check initial ALT state
                     this.updateTooltipValues((window as any).altKeyPressed || false);
@@ -324,7 +330,7 @@ export class InventoryManager {
             this.hideTooltip();
         };
 
-        const handleMouseMove = (e: MouseEvent) => {
+        const handleMouseMove = () => {
             if (this.tooltipElement && this.hoveredElement === element) {
                 this.updateTooltipPosition(element, this.tooltipElement);
             }
@@ -342,25 +348,11 @@ export class InventoryManager {
             }
         };
 
-        const handleDragStart = () => {
-            isDragging = true;
-            this.hideTooltip();
-        };
-
-        const handleDragEnd = () => {
-            // Reset dragging flag after a short delay to allow mouse events to settle
-            setTimeout(() => {
-                isDragging = false;
-            }, 100);
-        };
-
         element.addEventListener('mouseenter', handleMouseEnter);
         element.addEventListener('mouseleave', handleMouseLeave);
         element.addEventListener('mousemove', handleMouseMove);
         element.addEventListener('mousedown', handleMouseDown);
         element.addEventListener('mouseup', handleMouseUp);
-        element.addEventListener('dragstart', handleDragStart);
-        element.addEventListener('dragend', handleDragEnd);
     }
 
     /**
@@ -1923,150 +1915,197 @@ export class InventoryManager {
             keyText.className = 'key-binding';
             keyText.textContent = this.LOADOUT_KEY_BINDINGS[index];
             slot.appendChild(keyText);
+
+            // Setup mousedown for custom canvas drag on loadout slots with items
+            if (item) {
+                slotElement.style.cursor = 'grab';
+                slotElement.style.userSelect = 'none';
+                slotElement.addEventListener('mousedown', (e: MouseEvent) => {
+                    if (e.button !== 0) return; // Left click only
+                    e.preventDefault();
+                    this.startDrag(e, { type: 'loadout', slotIndex: index }, slotElement);
+                });
+            }
         });
     }
 
-    private setupDragAndDrop() {
-        document.addEventListener('dragover', (e: Event) => {
-            e.preventDefault();
-        });
+    private createDragCanvas(): HTMLCanvasElement {
+        const canvas = document.createElement('canvas');
+        canvas.width = 50;
+        canvas.height = 50;
+        canvas.style.cssText = `
+            position: fixed;
+            width: 50px;
+            height: 50px;
+            pointer-events: none;
+            z-index: 10000;
+            display: none;
+            opacity: 0.85;
+        `;
+        document.body.appendChild(canvas);
+        return canvas;
+    }
 
-        document.addEventListener('drop', (e: Event) => {
-            e.preventDefault();
-            const dragEvent = e as DragEvent;
-            const target = e.target as HTMLElement;
+    private renderDragCanvas(rarity?: string, itemType?: string) {
+        if (!this.dragCanvas) return;
+        const ctx = this.dragCanvas.getContext('2d');
+        if (!ctx) return;
 
-            if (!target.closest('.loadout-slot') && !target.closest('.inventory-grid')) {
-                const loadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
-                if (loadoutSlot) {
-                    this.moveItemToInventory(parseInt(loadoutSlot));
+        ctx.clearRect(0, 0, 50, 50);
+
+        // Draw background with rarity color
+        const bgColor = rarity ? (this.ITEM_RARITY_COLORS[rarity] || '#666') : '#666';
+        const borderColor = rarity ? this.darkenColor(bgColor) : '#444';
+        ctx.fillStyle = bgColor;
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(1.5, 1.5, 47, 47, 5);
+        ctx.fill();
+        ctx.stroke();
+
+        // Draw the item image
+        if (itemType && itemType.startsWith('petal_')) {
+            const petalType = itemType.replace('petal_', '');
+            const petalCanvas = this.game.getPetalCanvas?.(petalType, rarity || 'common', Date.now());
+            if (petalCanvas) {
+                ctx.drawImage(petalCanvas, 10, 10, 30, 30);
+            }
+        } else if (itemType) {
+            const dataUrl = this.game.getItemSpriteDataUrl?.(itemType);
+            if (dataUrl) {
+                const img = new Image();
+                img.src = dataUrl;
+                // Draw immediately if cached
+                if (img.complete) {
+                    ctx.drawImage(img, 10, 10, 30, 30);
                 }
             }
+        }
+    }
+
+    private startDrag(e: MouseEvent, source: typeof InventoryManager.prototype.dragSource, sourceElement: HTMLElement) {
+        this.isDragging = true;
+        this.dragSource = source;
+        this.dragStartElement = sourceElement;
+
+        if (!this.dragCanvas) {
+            this.dragCanvas = this.createDragCanvas();
+        }
+
+        // Render the item onto the drag canvas
+        if (source?.type === 'inventory') {
+            this.renderDragCanvas(source.rarity, source.itemType);
+        } else if (source?.type === 'loadout') {
+            const player = this.game.getLocalPlayer();
+            const item = player?.loadout[source.slotIndex!];
+            if (item) {
+                const itemKey = item.type === 'petal' ? `petal_${item.petalType}` : item.type;
+                this.renderDragCanvas(item.rarity, itemKey);
+            }
+        }
+
+        // Position and show
+        this.dragCanvas.style.display = 'block';
+        this.dragCanvas.style.left = `${e.clientX - 25}px`;
+        this.dragCanvas.style.top = `${e.clientY - 25}px`;
+
+        // Dim the source element
+        sourceElement.style.opacity = '0.5';
+
+        // Hide tooltip
+        this.hideTooltip();
+    }
+
+    private onDragMove(e: MouseEvent) {
+        if (!this.isDragging || !this.dragCanvas) return;
+
+        this.dragCanvas.style.left = `${e.clientX - 25}px`;
+        this.dragCanvas.style.top = `${e.clientY - 25}px`;
+
+        // Update drag-over highlights
+        this.updateDragHighlights(e);
+    }
+
+    private updateDragHighlights(e: MouseEvent) {
+        // Clear all existing highlights
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+
+        const elemUnder = document.elementFromPoint(e.clientX, e.clientY);
+        if (!elemUnder) return;
+
+        const loadoutSlot = elemUnder.closest('.loadout-slot') as HTMLElement;
+        if (loadoutSlot) {
+            loadoutSlot.classList.add('drag-over');
+            return;
+        }
+
+        const inventoryGrid = elemUnder.closest('.inventory-grid') as HTMLElement;
+        if (inventoryGrid && this.dragSource?.type === 'loadout') {
+            inventoryGrid.classList.add('drag-over');
+        }
+    }
+
+    private endDrag(e: MouseEvent) {
+        if (!this.isDragging) return;
+
+        // Clear highlights
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+
+        // Hide drag canvas
+        if (this.dragCanvas) {
+            this.dragCanvas.style.display = 'none';
+        }
+
+        // Restore source element opacity
+        if (this.dragStartElement) {
+            this.dragStartElement.style.opacity = '';
+        }
+
+        // Determine drop target
+        const elemUnder = document.elementFromPoint(e.clientX, e.clientY);
+        if (elemUnder) {
+            const loadoutSlot = elemUnder.closest('.loadout-slot') as HTMLElement;
+            const inventoryGrid = elemUnder.closest('.inventory-grid') as HTMLElement;
+
+            if (loadoutSlot) {
+                const slotIndex = parseInt(loadoutSlot.dataset.slot || '-1');
+                if (slotIndex >= 0) {
+                    if (this.dragSource?.type === 'inventory' && this.dragSource.rarity && this.dragSource.itemType) {
+                        this.equipItemToLoadout(this.dragSource.rarity, this.dragSource.itemType, slotIndex);
+                    } else if (this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
+                        if (this.dragSource.slotIndex !== slotIndex) {
+                            this.swapLoadoutItems(this.dragSource.slotIndex, slotIndex);
+                        }
+                    }
+                }
+            } else if (inventoryGrid && this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
+                this.moveItemToInventory(this.dragSource.slotIndex);
+            } else if (!loadoutSlot && !inventoryGrid) {
+                // Dropped outside any valid target - move loadout item back to inventory
+                if (this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
+                    this.moveItemToInventory(this.dragSource.slotIndex);
+                }
+            }
+        }
+
+        // Reset state
+        this.isDragging = false;
+        this.dragSource = null;
+        this.dragStartElement = null;
+    }
+
+    private setupDragAndDrop() {
+        // Global mouse move and mouse up for drag operations
+        document.addEventListener('mousemove', (e: MouseEvent) => {
+            this.onDragMove(e);
         });
 
-        const updateLoadoutDraggable = () => {
-            // Only update slots in the game's loadout bar (id='loadoutBar'), not the title screen one
-            const loadoutBar = document.getElementById('loadoutBar');
-            if (!loadoutBar) return;
-            
-            const slots = loadoutBar.querySelectorAll('.loadout-slot');
-            slots.forEach((slot, slotIndex) => {
-                const slotElement = slot as HTMLElement;
-                
-                // Find the draggable element - prefer img, then petal div, then slot itself
-                const img = slot.querySelector('img');
-                let draggableElement: HTMLElement | null = null;
-                
-                if (img) {
-                    draggableElement = img as HTMLElement;
-                } else {
-                    // Look for petal div (has display: flex style)
-                    const petalDiv = Array.from(slot.children).find((child: Element) => {
-                        const htmlChild = child as HTMLElement;
-                        return htmlChild.style.display === 'flex' || 
-                               htmlChild.style.cssText.includes('display: flex') ||
-                               htmlChild.style.cssText.includes('display:flex');
-                    }) as HTMLElement;
-                    if (petalDiv) {
-                        draggableElement = petalDiv;
-                    }
-                }
-                
-                // If we found a child element, make it draggable
-                if (draggableElement) {
-                    draggableElement.draggable = true;
-                    draggableElement.style.cursor = 'grab';
-                    
-                    // Remove existing dragstart listeners by cloning
-                    const newElement = draggableElement.cloneNode(true) as HTMLElement;
-                    draggableElement.parentNode?.replaceChild(newElement, draggableElement);
-                    
-                    // Add dragstart listener
-                    newElement.addEventListener('dragstart', (e: Event) => {
-                        const dragEvent = e as DragEvent;
-                        dragEvent.dataTransfer?.setData('text/loadoutSlot', slotIndex.toString());
-                        dragEvent.dataTransfer!.effectAllowed = 'move';
-                        e.stopPropagation(); // Prevent event bubbling
-                    });
-                } else if (slotElement && slotElement.children.length === 0) {
-                    // If slot is empty, make the slot itself draggable (shouldn't happen, but just in case)
-                    slotElement.draggable = true;
-                    slotElement.style.cursor = 'grab';
-                    slotElement.addEventListener('dragstart', (e: Event) => {
-                        const dragEvent = e as DragEvent;
-                        dragEvent.dataTransfer?.setData('text/loadoutSlot', slotIndex.toString());
-                        dragEvent.dataTransfer!.effectAllowed = 'move';
-                    });
-                }
-            });
-        };
-
-        // Function to setup drag and drop listeners on loadout slots
-        const setupLoadoutSlotListeners = () => {
-            // Only update slots in the game's loadout bar (id='loadoutBar'), not the title screen one
-            const loadoutBar = document.getElementById('loadoutBar');
-            if (!loadoutBar) return;
-            
-            const slots = loadoutBar.querySelectorAll('.loadout-slot');
-            slots.forEach((slot, slotIndex) => {
-                const slotElement = slot as HTMLElement;
-                slotElement.dataset.slot = slotIndex.toString();
-
-                // Remove existing listeners by cloning the element
-                const newSlot = slotElement.cloneNode(true) as HTMLElement;
-                slotElement.parentNode?.replaceChild(newSlot, slotElement);
-
-                newSlot.addEventListener('dragenter', (e: Event) => {
-                    e.preventDefault();
-                    newSlot.classList.add('drag-over');
-                });
-
-                newSlot.addEventListener('dragover', (e: Event) => {
-                    e.preventDefault();
-                    const dragEvent = e as DragEvent;
-                    dragEvent.dataTransfer!.dropEffect = 'move';
-                    newSlot.classList.add('drag-over');
-                });
-
-                newSlot.addEventListener('dragleave', (e: Event) => {
-                    newSlot.classList.remove('drag-over');
-                });
-
-                newSlot.addEventListener('drop', (e: Event) => {
-                    e.preventDefault();
-                    const dragEvent = e as DragEvent;
-                    newSlot.classList.remove('drag-over');
-
-                    const itemData = dragEvent.dataTransfer?.getData('text/plain');
-                    const fromLoadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
-
-                    if (itemData) {
-                        const { rarity, type } = JSON.parse(itemData);
-                        const slot = parseInt(newSlot.dataset.slot || '-1');
-                        if (rarity && type && slot >= 0) {
-                            this.equipItemToLoadout(rarity, type, slot);
-                        }
-                    } else if (fromLoadoutSlot) {
-                        const fromSlot = parseInt(fromLoadoutSlot);
-                        const toSlot = slotIndex;
-                        if (fromSlot !== toSlot) {
-                            this.swapLoadoutItems(fromSlot, toSlot);
-                        }
-                    }
-                });
-            });
-        };
-
-        // Setup listeners initially
-        setupLoadoutSlotListeners();
-
-        // Wrap updateLoadoutDisplay to re-setup listeners after update
-        const originalUpdateLoadoutDisplay = this.updateLoadoutDisplay.bind(this);
-        this.updateLoadoutDisplay = () => {
-            originalUpdateLoadoutDisplay();
-            setupLoadoutSlotListeners(); // Re-setup drop listeners after innerHTML is cleared
-            updateLoadoutDraggable(); // Re-setup drag listeners after innerHTML is cleared
-        };
+        document.addEventListener('mouseup', (e: MouseEvent) => {
+            if (this.isDragging) {
+                this.endDrag(e);
+            }
+        });
 
         const craftingSlots = this.craftingPanel?.querySelectorAll('.crafting-slot');
         craftingSlots?.forEach(slot => {
@@ -2074,32 +2113,6 @@ export class InventoryManager {
                 this.removeCraftingBatch();
             });
         });
-
-        if (this.inventoryPanel) {
-            const grid = this.inventoryPanel.querySelector('.inventory-grid');
-            if (grid) {
-                grid.addEventListener('dragover', (e: Event) => {
-                    e.preventDefault();
-                    const dragEvent = e as DragEvent;
-                    dragEvent.dataTransfer!.dropEffect = 'move';
-                    grid.classList.add('drag-over');
-                });
-
-                grid.addEventListener('dragleave', (e: Event) => {
-                    grid.classList.remove('drag-over');
-                });
-
-                grid.addEventListener('drop', (e: Event) => {
-                    e.preventDefault();
-                    grid.classList.remove('drag-over');
-                    const dragEvent = e as DragEvent;
-                    const loadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
-                    if (loadoutSlot) {
-                        this.moveItemToInventory(parseInt(loadoutSlot));
-                    }
-                });
-            }
-        }
     }
 
     public swapLoadoutItems(fromSlot: number, toSlot: number) {
@@ -2189,8 +2202,6 @@ export class InventoryManager {
                 Object.entries(items).forEach(([type, count]) => {
                     const itemElement = document.createElement('div');
                     itemElement.className = 'inventory-item';
-                    itemElement.draggable = true;
-
                     const rarityColor = this.ITEM_RARITY_COLORS[rarity];
                     const darkenedColor = this.darkenColor(rarityColor);
                     itemElement.style.cssText = `
@@ -2203,27 +2214,29 @@ export class InventoryManager {
                       display: flex;
                       align-items: center;
                       justify-content: center;
-                      cursor: pointer;
+                      cursor: grab;
                       transition: all 0.2s ease;
+                      user-select: none;
                   `;
 
                     itemElement.addEventListener('mouseover', () => {
-                        itemElement.style.transform = 'scale(1.05)';
-                        itemElement.style.boxShadow = `0 0 10px ${this.ITEM_RARITY_COLORS[rarity]}`;
+                        if (!this.isDragging) {
+                            itemElement.style.transform = 'scale(1.05)';
+                            itemElement.style.boxShadow = `0 0 10px ${this.ITEM_RARITY_COLORS[rarity]}`;
+                        }
                     });
 
                     itemElement.addEventListener('mouseout', () => {
-                        itemElement.style.transform = 'scale(1)';
-                        itemElement.style.boxShadow = 'none';
+                        if (!this.isDragging) {
+                            itemElement.style.transform = 'scale(1)';
+                            itemElement.style.boxShadow = 'none';
+                        }
                     });
 
-                    itemElement.addEventListener('dragstart', (e) => {
-                        e.dataTransfer?.setData('text/plain', JSON.stringify({ rarity, type }));
-                        itemElement.classList.add('dragging');
-                    });
-
-                    itemElement.addEventListener('dragend', () => {
-                        itemElement.classList.remove('dragging');
+                    itemElement.addEventListener('mousedown', (e: MouseEvent) => {
+                        if (e.button !== 0) return; // Left click only
+                        e.preventDefault();
+                        this.startDrag(e, { type: 'inventory', rarity, itemType: type }, itemElement);
                     });
 
                     // Handle different item types for display
@@ -2903,6 +2916,7 @@ export class InventoryManager {
         this.inventoryPanel?.remove();
         this.craftingPanel?.remove();
         this.mobGalleryPanel?.remove();
+        this.dragCanvas?.remove();
         this.tooltipElement?.remove();
         document.getElementById('loadoutBar')?.remove();
     }
