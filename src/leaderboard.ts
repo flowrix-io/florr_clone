@@ -11,6 +11,7 @@ export class LeaderboardManager {
     private ctx: CanvasRenderingContext2D | null = null;
     private isOpen: boolean = false;
     private entries: LeaderboardEntry[] = [];
+    private totalAccounts: number = 0;
     private isLoading: boolean = false;
     private serverBaseUrl: string = '';
     private scrollY: number = 0;
@@ -72,6 +73,7 @@ export class LeaderboardManager {
             }
             const data = await response.json();
             const rawEntries = data.leaderboard || [];
+            this.totalAccounts = data.totalAccounts || 0;
 
             this.entries = rawEntries.map((entry: { username: string; totalXP: number }) => ({
                 username: entry.username,
@@ -222,6 +224,14 @@ export class LeaderboardManager {
         ctx.lineWidth = 2;
         ctx.strokeText('Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING);
         ctx.fillText('Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING);
+
+        // Total accounts count
+        if (this.totalAccounts > 0) {
+            ctx.font = '13px Ubuntu, sans-serif';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.lineWidth = 0;
+            ctx.fillText(`${this.totalAccounts} accounts`, offsetX + this.PADDING + 140, offsetY + this.PADDING + 5);
+        }
 
         // Refresh button
         const refreshButtonX = offsetX + this.PANEL_WIDTH - 140;

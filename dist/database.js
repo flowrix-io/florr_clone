@@ -300,9 +300,10 @@ exports.database = {
             const totalXP = progress?.totalXP || 0;
             entries.push({ username, totalXP });
         }
+        const totalAccounts = entries.length;
         // Sort by totalXP descending
         entries.sort((a, b) => b.totalXP - a.totalXP);
-        return entries.slice(0, limit);
+        return { entries: entries.slice(0, limit), totalAccounts };
     },
     // Delete all guest accounts (usernames matching "User" + 8 digits)
     deleteGuestAccounts: () => {
