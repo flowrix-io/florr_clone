@@ -224,9 +224,10 @@ app.get('/api/leaderboard', (req, res) => {
 let server;
 if (constants_1.USE_HTTPS) {
     try {
+        const certDir = path_1.default.resolve(__dirname, '..');
         server = (0, https_1.createServer)({
-            key: fs_1.default.readFileSync('cert.key'),
-            cert: fs_1.default.readFileSync('cert.crt')
+            key: fs_1.default.readFileSync(path_1.default.join(certDir, 'cert.key')),
+            cert: fs_1.default.readFileSync(path_1.default.join(certDir, 'cert.crt'))
         }, app);
         console.log(`[SERVER] Using HTTPS protocol`);
     }

@@ -335,9 +335,10 @@ let server: http.Server | https.Server;
 
 if (USE_HTTPS) {
     try {
+        const certDir = path.resolve(__dirname, '..');
         server = createServer({
-            key: fs.readFileSync('cert.key'),
-            cert: fs.readFileSync('cert.crt')
+            key: fs.readFileSync(path.join(certDir, 'cert.key')),
+            cert: fs.readFileSync(path.join(certDir, 'cert.crt'))
         }, app);
         console.log(`[SERVER] Using HTTPS protocol`);
     } catch (error) {
