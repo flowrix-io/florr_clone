@@ -41,6 +41,7 @@ if (invalidEggTypes.size > 0) {
 }
 
 import { ServerPlayer, PlayerProgress, PlayerInventory, FaceFlags, EquipmentFlags } from './player';
+import { dictToInventory } from './inventoryCodec';
 import { executePetalActions, updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet, despawnAllPlayerPets } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState } from './constants';
@@ -1174,7 +1175,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 health: baseMaxHealth, // Will be recalculated with modifiers
                 maxHealth: baseMaxHealth, // Will be recalculated with modifiers
                 damage: baseDamage, // Will be recalculated with modifiers
-                inventory: savedProgress?.inventory || createInitialInventory(),
+                inventory: savedProgress?.inventory ? dictToInventory(savedProgress.inventory as any) : createInitialInventory(),
                 loadout: reconstructedLoadout,
                 isInvulnerable: true,
                 level: level,
@@ -1602,9 +1603,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         oldInventory: PlayerInventory
     ): (Item | null)[] {
         // Validate inventory structure
-        if (!newInventory || typeof newInventory !== 'object') {
+        if (!newInventory || !Array.isArray(newInventory)) {
             console.warn('[SERVER] Invalid inventory structure, using empty inventory');
-            newInventory = {};
+            newInventory = [];
         }
 
         // Create a validated copy of the loadout
@@ -1614,7 +1615,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         // Helper function to check if an item exists in inventory
         function itemExistsInInventory(inventory: PlayerInventory, item: Item): boolean {
             if (!item.rarity) return false;
-            
+
             let inventoryKey: string;
             if (item.type === 'petal') {
                 if (!item.petalType) return false;
@@ -1623,13 +1624,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 inventoryKey = item.type;
             }
 
-            const rarityInventory = inventory[item.rarity];
-            if (!rarityInventory || typeof rarityInventory !== 'object') {
-                return false;
-            }
-
-            const itemCount = rarityInventory[inventoryKey];
-            return itemCount !== undefined && itemCount !== null && itemCount > 0;
+            return hasItem(inventory, item.rarity, inventoryKey, 1);
         }
 
         // Helper function to check if an item matches (same type, rarity, petalType)
@@ -1705,13 +1700,13 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         if (player) {
             // Track which slots had items before to detect changes
             const oldLoadout = player.loadout || [];
-            const oldInventory = player.inventory || {};
-            
+            const oldInventory = player.inventory || [];
+
             // IMPORTANT: Use server's inventory as source of truth, NOT client's
             // This prevents console-added items from being accepted
             // For split players, we need to use the shared inventory directly (not a copy)
             // If split, use the shared inventory directly; otherwise create a copy for validation
-            const serverInventory = splitState ? oldInventory : { ...oldInventory };
+            const serverInventory = splitState ? oldInventory : [...oldInventory];
             
             // Validate inventory and loadout - unequip items that don't exist in inventory
             const validatedLoadout = validateInventoryAndLoadout(serverInventory, data.loadout, oldLoadout, serverInventory);
@@ -1773,8 +1768,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 if (newItem && (!oldItem || !itemsMatch(oldItem, newItem))) {
                     if (newKey && newItem.rarity) {
                         // Remove item from inventory (if it exists)
-                        const rarityInv = serverInventory[newItem.rarity];
-                        if (rarityInv && rarityInv[newKey] && rarityInv[newKey] > 0) {
+                        if (hasItem(serverInventory, newItem.rarity, newKey, 1)) {
                             removeItem(serverInventory, newItem.rarity, newKey, 1);
                         } else {
                             console.warn(`[SERVER] Attempted to equip ${newKey} (${newItem.rarity}) but it doesn't exist in inventory`);

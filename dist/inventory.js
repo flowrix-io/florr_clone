@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryManager = void 0;
 const petals_1 = require("./petals");
 const mobs_1 = require("./mobs");
+const inventoryCodec_1 = require("./inventoryCodec");
 class InventoryManager {
     getIsInventoryOpen() {
         return this.isInventoryOpen;
@@ -1467,7 +1468,6 @@ class InventoryManager {
                 item.onCooldown = true; // New petals should start on cooldown
             }
         }
-        const newInventory = { ...player.inventory };
         const newLoadout = [...player.loadout];
         this.removeItem(rarity, type, 1);
         const existingItem = newLoadout[loadoutSlot];
@@ -1908,10 +1908,9 @@ class InventoryManager {
         if (!player)
             return;
         // Safety check: ensure inventory exists and is properly initialized
-        if (!player.inventory || typeof player.inventory !== 'object') {
+        if (!player.inventory || !Array.isArray(player.inventory)) {
             console.warn('[INVENTORY] Player inventory is not properly initialized:', player.inventory);
-            // Initialize empty inventory if missing
-            player.inventory = {};
+            player.inventory = [];
             return;
         }
         const content = this.inventoryPanel.querySelector('.inventory-content');
@@ -1930,8 +1929,9 @@ class InventoryManager {
           gap: 10px;
           padding: 10px;
       `;
+        const invDict = (0, inventoryCodec_1.inventoryToDict)(player.inventory);
         rarities.forEach(rarity => {
-            const items = player.inventory[rarity];
+            const items = invDict[rarity];
             if (items && Object.keys(items).length > 0) {
                 const rarityRow = document.createElement('div');
                 rarityRow.className = 'rarity-row';
@@ -2456,7 +2456,7 @@ class InventoryManager {
         let totalPetals = 0;
         const petalRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
         petalRarities.forEach(rarity => {
-            const petalCount = player.inventory[rarity]?.['petal'] || 0;
+            const petalCount = (0, inventoryCodec_1.getItemCount)(player.inventory, rarity, 'petal');
             totalPetals += petalCount;
         });
         return totalPetals;
@@ -2470,8 +2470,9 @@ class InventoryManager {
             return;
         inventoryGrid.innerHTML = '';
         const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        const craftDict = (0, inventoryCodec_1.inventoryToDict)(player.inventory);
         rarities.forEach(rarity => {
-            const rarityItems = player.inventory[rarity];
+            const rarityItems = craftDict[rarity];
             if (rarityItems) {
                 Object.entries(rarityItems).forEach(([itemType, count]) => {
                     if (count > 0) {
@@ -2598,32 +2599,20 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player)
             return 0;
-        return player.inventory[rarity]?.[type] || 0;
+        return (0, inventoryCodec_1.getItemCount)(player.inventory, rarity, type);
     }
     addItem(rarity, type, count) {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
-        if (!player.inventory[rarity]) {
-            player.inventory[rarity] = {};
-        }
-        if (!player.inventory[rarity][type]) {
-            player.inventory[rarity][type] = 0;
-        }
-        player.inventory[rarity][type] += count;
+        (0, inventoryCodec_1.addItem)(player.inventory, rarity, type, count);
     }
     removeItem(rarity, type, count) {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
         if (this.getItemCount(rarity, type) >= count) {
-            player.inventory[rarity][type] -= count;
-            if (player.inventory[rarity][type] === 0) {
-                delete player.inventory[rarity][type];
-                if (Object.keys(player.inventory[rarity]).length === 0) {
-                    delete player.inventory[rarity];
-                }
-            }
+            (0, inventoryCodec_1.removeItem)(player.inventory, rarity, type, count);
         }
     }
 }

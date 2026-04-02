@@ -1671,6 +1671,9 @@ for (const petalType in BASE_PETAL_CONFIGS) {
         exports.PETAL_CONFIG[petalType][rarity] = generatePetalStats(BASE_PETAL_CONFIGS[petalType], rarity, petalType);
     }
 }
+// Register all petal types for compact inventory encoding
+const inventoryCodec_1 = require("./inventoryCodec");
+(0, inventoryCodec_1.initInventoryCodec)(exports.RARITY_LEVELS, Object.keys(exports.PETAL_CONFIG));
 function getPetalStats(petalType, rarity) {
     return exports.PETAL_CONFIG[petalType]?.[rarity] || null;
 }

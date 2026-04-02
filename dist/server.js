@@ -48,6 +48,7 @@ if (invalidEggTypes.size > 0) {
     }
 }
 const player_1 = require("./player");
+const inventoryCodec_1 = require("./inventoryCodec");
 const petal_actions_1 = require("./petal_actions");
 const petals_1 = require("./petals");
 const constants_2 = require("./constants");
@@ -936,7 +937,7 @@ io.on('connection', (socket) => {
                 health: baseMaxHealth, // Will be recalculated with modifiers
                 maxHealth: baseMaxHealth, // Will be recalculated with modifiers
                 damage: baseDamage, // Will be recalculated with modifiers
-                inventory: savedProgress?.inventory || (0, playerManager_1.createInitialInventory)(),
+                inventory: savedProgress?.inventory ? (0, inventoryCodec_1.dictToInventory)(savedProgress.inventory) : (0, playerManager_1.createInitialInventory)(),
                 loadout: reconstructedLoadout,
                 isInvulnerable: true,
                 level: level,
@@ -1308,9 +1309,9 @@ io.on('connection', (socket) => {
      */
     function validateInventoryAndLoadout(newInventory, newLoadout, oldLoadout, oldInventory) {
         // Validate inventory structure
-        if (!newInventory || typeof newInventory !== 'object') {
+        if (!newInventory || !Array.isArray(newInventory)) {
             console.warn('[SERVER] Invalid inventory structure, using empty inventory');
-            newInventory = {};
+            newInventory = [];
         }
         // Create a validated copy of the loadout
         const validatedLoadout = [...newLoadout];
@@ -1328,12 +1329,7 @@ io.on('connection', (socket) => {
             else {
                 inventoryKey = item.type;
             }
-            const rarityInventory = inventory[item.rarity];
-            if (!rarityInventory || typeof rarityInventory !== 'object') {
-                return false;
-            }
-            const itemCount = rarityInventory[inventoryKey];
-            return itemCount !== undefined && itemCount !== null && itemCount > 0;
+            return (0, playerManager_1.hasItem)(inventory, item.rarity, inventoryKey, 1);
         }
         // Helper function to check if an item matches (same type, rarity, petalType)
         function itemsMatch(item1, item2) {
@@ -1402,12 +1398,12 @@ io.on('connection', (socket) => {
         if (player) {
             // Track which slots had items before to detect changes
             const oldLoadout = player.loadout || [];
-            const oldInventory = player.inventory || {};
+            const oldInventory = player.inventory || [];
             // IMPORTANT: Use server's inventory as source of truth, NOT client's
             // This prevents console-added items from being accepted
             // For split players, we need to use the shared inventory directly (not a copy)
             // If split, use the shared inventory directly; otherwise create a copy for validation
-            const serverInventory = splitState ? oldInventory : { ...oldInventory };
+            const serverInventory = splitState ? oldInventory : [...oldInventory];
             // Validate inventory and loadout - unequip items that don't exist in inventory
             const validatedLoadout = validateInventoryAndLoadout(serverInventory, data.loadout, oldLoadout, serverInventory);
             // Calculate inventory changes based on loadout changes
@@ -1464,8 +1460,7 @@ io.on('connection', (socket) => {
                 if (newItem && (!oldItem || !itemsMatch(oldItem, newItem))) {
                     if (newKey && newItem.rarity) {
                         // Remove item from inventory (if it exists)
-                        const rarityInv = serverInventory[newItem.rarity];
-                        if (rarityInv && rarityInv[newKey] && rarityInv[newKey] > 0) {
+                        if ((0, playerManager_1.hasItem)(serverInventory, newItem.rarity, newKey, 1)) {
                             (0, playerManager_1.removeItem)(serverInventory, newItem.rarity, newKey, 1);
                         }
                         else {

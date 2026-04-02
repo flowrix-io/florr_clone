@@ -7,6 +7,7 @@ import { Preloader, PreloadedAssets } from './preloader';
 import { PETAL_CONFIG } from './petals';
 import { ShaderManager } from './shader/shaderManager';
 import { io } from './ws_client';
+import { dictToInventory } from './inventoryCodec';
 
 // Add interfaces before the workerCode string
 interface Decoration {
@@ -252,7 +253,7 @@ function preconnectToServer() {
             
             // Update title screen inventory manager with player data
             (titleScreen as any).titleScreenInventoryManager?.updateFromPlayerData({
-                inventory: response.player.inventory || {},
+                inventory: response.player.inventory ? dictToInventory(response.player.inventory) : [],
                 loadout: response.player.loadout || Array(10).fill(null),
                 tp: response.player.tp,
                 skills: response.player.skills

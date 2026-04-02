@@ -24,8 +24,18 @@ import {
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { MapElement } from '../constants';
 import { RARITY_LEVELS, Rarity } from '../petals';
+import {
+    addItem,
+    removeItem,
+    hasItem,
+    createInitialInventory,
+    inventoryToDict
+} from '../inventoryCodec';
 import { getDamageMultiplier } from '../petal_actions';
 import { getMobStats } from '../mobs';
+
+// Re-export inventory functions so existing imports keep working
+export { addItem, removeItem, hasItem, createInitialInventory };
 
 const RARITY_TP_COSTS: Record<string, number> = {
     common: 0,
@@ -46,7 +56,7 @@ export function createInitialBasicPetals() {
         console.error('Failed to get basic petal stats');
         return [];
     }
-    
+
     return Array(5).fill(null).map(() => ({
         type: 'petal' as const,
         rarity: 'common' as const,
@@ -55,43 +65,6 @@ export function createInitialBasicPetals() {
         maxHealth: basicPetalStats.health,
         onCooldown: true
     }));
-}
-
-// Helper function to create initial inventory with basic petals
-export function createInitialInventory(): PlayerInventory {
-    return {
-        common: {
-            'petal_basic': 5
-        }
-    };
-}
-
-export function addItem(inventory: PlayerInventory, rarity: string, type: string, count: number) {
-    if (!inventory[rarity]) {
-        inventory[rarity] = {};
-    }
-    if (!inventory[rarity][type]) {
-        inventory[rarity][type] = 0;
-    }
-    inventory[rarity][type] += count;
-}
-
-export function removeItem(inventory: PlayerInventory, rarity: string, type: string, count: number): boolean {
-    if (inventory[rarity] && inventory[rarity][type] && inventory[rarity][type] >= count) {
-        inventory[rarity][type] -= count;
-        if (inventory[rarity][type] === 0) {
-            delete inventory[rarity][type];
-            if (Object.keys(inventory[rarity]).length === 0) {
-                delete inventory[rarity];
-            }
-        }
-        return true;
-    }
-    return false;
-}
-
-export function hasItem(inventory: PlayerInventory, rarity: string, type: string, count: number): boolean {
-    return inventory[rarity]?.[type] >= count;
 }
 
 /**
@@ -624,7 +597,7 @@ export function savePlayerProgress(
 
         database.savePlayer(userId, {
             totalXP: totalXP,
-            inventory: player.inventory,
+            inventory: inventoryToDict(player.inventory),
             loadout: cleanLoadout,
             tp: player.tp || 0,
             skills: player.skills || {},

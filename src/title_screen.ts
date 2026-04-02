@@ -12,6 +12,7 @@ import { Item } from './item';
 import { Player, PlayerInventory } from './player';
 import { Chat } from './chat';
 import { SkillsManager } from './skills';
+import { inventoryToDict, addItem as codecAddItem, removeItem as codecRemoveItem, getItemCount as codecGetItemCount, dictToInventory } from './inventoryCodec';
 
 interface FloatingPetal {
     element: HTMLElement;
@@ -3985,9 +3986,9 @@ class TitleScreenInventoryManager {
         if (!this.socket) return;
         
         // Listen for crafting finished event (server emits 'craftingFinished', not 'craftResult')
-        this.socket.on('craftingFinished', (data: { successCount: number; failCount: number; newItem: { type: string; rarity: string }; inventory: PlayerInventory }) => {
+        this.socket.on('craftingFinished', (data: { successCount: number; failCount: number; newItem: { type: string; rarity: string }; inventory: any }) => {
             console.log('[TitleScreen] craftingFinished received:', data);
-            
+
             // Update inventory
             if (this.playerData) {
                 this.playerData.inventory = data.inventory;
@@ -4081,7 +4082,7 @@ class TitleScreenInventoryManager {
                 console.log('[TitleScreenInventory] Received player data:', response.player);
                 this.isAuthenticated = true;
                 this.playerData = {
-                    inventory: response.player.inventory || {},
+                    inventory: response.player.inventory ? dictToInventory(response.player.inventory) : [],
                     loadout: response.player.loadout || Array(10).fill(null)
                 };
                 this.updateLoadoutDisplay();
@@ -4544,8 +4545,9 @@ class TitleScreenInventoryManager {
           padding: 10px;
       `;
 
+        const invDict = this.playerData?.inventory ? inventoryToDict(this.playerData.inventory) : {};
         rarities.forEach(rarity => {
-            const items = this.playerData?.inventory[rarity];
+            const items = invDict[rarity];
             if (items && Object.keys(items).length > 0) {
                 const rarityRow = document.createElement('div');
                 rarityRow.className = 'rarity-row';
@@ -5218,27 +5220,17 @@ class TitleScreenInventoryManager {
 
     private getItemCount(rarity: string, type: string): number {
         if (!this.playerData || !this.playerData.inventory) return 0;
-        const rarityInventory = this.playerData.inventory[rarity];
-        if (!rarityInventory) return 0;
-        return rarityInventory[type] || 0;
+        return codecGetItemCount(this.playerData.inventory, rarity, type);
     }
 
     private removeItem(rarity: string, type: string, count: number): void {
         if (!this.playerData || !this.playerData.inventory) return;
-        if (!this.playerData.inventory[rarity]) {
-            this.playerData.inventory[rarity] = {};
-        }
-        const currentCount = this.playerData.inventory[rarity][type] || 0;
-        this.playerData.inventory[rarity][type] = Math.max(0, currentCount - count);
+        codecRemoveItem(this.playerData.inventory, rarity, type, count);
     }
 
     private addItem(rarity: string, type: string, count: number): void {
         if (!this.playerData || !this.playerData.inventory) return;
-        if (!this.playerData.inventory[rarity]) {
-            this.playerData.inventory[rarity] = {};
-        }
-        const currentCount = this.playerData.inventory[rarity][type] || 0;
-        this.playerData.inventory[rarity][type] = currentCount + count;
+        codecAddItem(this.playerData.inventory, rarity, type, count);
     }
 
     private addItemToCraftingSlot(rarity: string, type: string, slotIndex: number): void {
@@ -5429,9 +5421,9 @@ class TitleScreenInventoryManager {
         inventoryGrid.innerHTML = '';
 
         const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
-        
+        const craftInvDict = this.playerData?.inventory ? inventoryToDict(this.playerData.inventory) : {};
         rarities.forEach(rarity => {
-            const items = this.playerData?.inventory[rarity];
+            const items = craftInvDict[rarity];
             if (items && Object.keys(items).length > 0) {
                 Object.entries(items).forEach(([itemType, count]) => {
                     const itemCount = typeof count === 'number' ? count : 0;

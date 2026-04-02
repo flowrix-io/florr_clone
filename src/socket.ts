@@ -179,9 +179,9 @@ function setupSocketListeners(game: any) {
                         }
                         
                         // Ensure inventory is properly initialized
-                        if (!data.playerData.inventory || typeof data.playerData.inventory !== 'object') {
-                            data.playerData.inventory = {};
-                            console.warn('[CLIENT] Transferred player had invalid inventory, initialized empty object');
+                        if (!data.playerData.inventory || !Array.isArray(data.playerData.inventory)) {
+                            data.playerData.inventory = [];
+                            console.warn('[CLIENT] Transferred player had invalid inventory, initialized empty array');
                         }
                         
                         // Create new player object with transferred data
@@ -199,7 +199,7 @@ function setupSocketListeners(game: any) {
                             health: data.playerData.health || 100,
                             maxHealth: data.playerData.maxHealth || 100,
                             damage: data.playerData.damage || 10,
-                            inventory: data.playerData.inventory || {},
+                            inventory: data.playerData.inventory || [],
                             loadout: data.playerData.loadout || [],
                             level: data.playerData.level || 1,
                             xp: data.playerData.xp || 0,
@@ -1005,10 +1005,10 @@ function setupSocketListeners(game: any) {
     let mobGalleryUpdateTimeout: NodeJS.Timeout | null = null;
     
     game.socket.on('playerUpdated', (updatedPlayer: Player) => {
-        // console.log('[MobGallery] Received playerUpdated event', { 
-        //     playerId: updatedPlayer.id, 
+        // console.log('[MobGallery] Received playerUpdated event', {
+        //     playerId: updatedPlayer.id,
         //     hasMobKills: !!updatedPlayer.mobKills,
-        //     mobKills: updatedPlayer.mobKills 
+        //     mobKills: updatedPlayer.mobKills
         // });
         let player = game.players.get(updatedPlayer.id);
         
@@ -1104,7 +1104,7 @@ function setupSocketListeners(game: any) {
         game.showSaveIndicator();
     });
 
-    game.socket.on('craftingFinished', (data: { successCount: number, failCount: number, newItem: Item, inventory: PlayerInventory }) => {
+    game.socket.on('craftingFinished', (data: { successCount: number, failCount: number, newItem: Item, inventory: any }) => {
         console.log('[CLIENT] craftingFinished received:', data);
         const player = game.players.get(game.socket?.id || '');
         if (player) {
@@ -1174,7 +1174,7 @@ function setupSocketListeners(game: any) {
     });
 
     // Shop handlers
-    game.socket.on('shopPurchaseSuccess', (data: { inventory: PlayerInventory, stars: number }) => {
+    game.socket.on('shopPurchaseSuccess', (data: { inventory: any, stars: number }) => {
         console.log('[CLIENT] shopPurchaseSuccess received:', data);
         const player = game.players.get(game.socket.id);
         if (player) {

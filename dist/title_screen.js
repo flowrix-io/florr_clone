@@ -13,6 +13,7 @@ const leaderboard_1 = require("./leaderboard");
 const constants_1 = require("./constants");
 const chat_1 = require("./chat");
 const skills_1 = require("./skills");
+const inventoryCodec_1 = require("./inventoryCodec");
 class FloatingPetalManager {
     constructor(container) {
         this.petals = [];
@@ -3659,7 +3660,7 @@ class TitleScreenInventoryManager {
                 console.log('[TitleScreenInventory] Received player data:', response.player);
                 this.isAuthenticated = true;
                 this.playerData = {
-                    inventory: response.player.inventory || {},
+                    inventory: response.player.inventory ? (0, inventoryCodec_1.dictToInventory)(response.player.inventory) : [],
                     loadout: response.player.loadout || Array(10).fill(null)
                 };
                 this.updateLoadoutDisplay();
@@ -4070,8 +4071,9 @@ class TitleScreenInventoryManager {
           gap: 10px;
           padding: 10px;
       `;
+        const invDict = this.playerData?.inventory ? (0, inventoryCodec_1.inventoryToDict)(this.playerData.inventory) : {};
         rarities.forEach(rarity => {
-            const items = this.playerData?.inventory[rarity];
+            const items = invDict[rarity];
             if (items && Object.keys(items).length > 0) {
                 const rarityRow = document.createElement('div');
                 rarityRow.className = 'rarity-row';
@@ -4675,28 +4677,17 @@ class TitleScreenInventoryManager {
     getItemCount(rarity, type) {
         if (!this.playerData || !this.playerData.inventory)
             return 0;
-        const rarityInventory = this.playerData.inventory[rarity];
-        if (!rarityInventory)
-            return 0;
-        return rarityInventory[type] || 0;
+        return (0, inventoryCodec_1.getItemCount)(this.playerData.inventory, rarity, type);
     }
     removeItem(rarity, type, count) {
         if (!this.playerData || !this.playerData.inventory)
             return;
-        if (!this.playerData.inventory[rarity]) {
-            this.playerData.inventory[rarity] = {};
-        }
-        const currentCount = this.playerData.inventory[rarity][type] || 0;
-        this.playerData.inventory[rarity][type] = Math.max(0, currentCount - count);
+        (0, inventoryCodec_1.removeItem)(this.playerData.inventory, rarity, type, count);
     }
     addItem(rarity, type, count) {
         if (!this.playerData || !this.playerData.inventory)
             return;
-        if (!this.playerData.inventory[rarity]) {
-            this.playerData.inventory[rarity] = {};
-        }
-        const currentCount = this.playerData.inventory[rarity][type] || 0;
-        this.playerData.inventory[rarity][type] = currentCount + count;
+        (0, inventoryCodec_1.addItem)(this.playerData.inventory, rarity, type, count);
     }
     addItemToCraftingSlot(rarity, type, slotIndex) {
         if (this.getItemCount(rarity, type) === 0)
@@ -4866,8 +4857,9 @@ class TitleScreenInventoryManager {
             return;
         inventoryGrid.innerHTML = '';
         const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        const craftInvDict = this.playerData?.inventory ? (0, inventoryCodec_1.inventoryToDict)(this.playerData.inventory) : {};
         rarities.forEach(rarity => {
-            const items = this.playerData?.inventory[rarity];
+            const items = craftInvDict[rarity];
             if (items && Object.keys(items).length > 0) {
                 Object.entries(items).forEach(([itemType, count]) => {
                     const itemCount = typeof count === 'number' ? count : 0;

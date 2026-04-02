@@ -1,11 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RARITY_TP_COSTS = void 0;
+exports.RARITY_TP_COSTS = exports.createInitialInventory = exports.hasItem = exports.removeItem = exports.addItem = void 0;
 exports.createInitialBasicPetals = createInitialBasicPetals;
-exports.createInitialInventory = createInitialInventory;
-exports.addItem = addItem;
-exports.removeItem = removeItem;
-exports.hasItem = hasItem;
 exports.findSafeSpawnPosition = findSafeSpawnPosition;
 exports.respawnPlayer = respawnPlayer;
 exports.isBiomeSafeForSpawn = isBiomeSafeForSpawn;
@@ -25,6 +21,11 @@ exports.savePlayerProgress = savePlayerProgress;
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
 const map_data_1 = require("../map_data");
+const inventoryCodec_1 = require("../inventoryCodec");
+Object.defineProperty(exports, "addItem", { enumerable: true, get: function () { return inventoryCodec_1.addItem; } });
+Object.defineProperty(exports, "removeItem", { enumerable: true, get: function () { return inventoryCodec_1.removeItem; } });
+Object.defineProperty(exports, "hasItem", { enumerable: true, get: function () { return inventoryCodec_1.hasItem; } });
+Object.defineProperty(exports, "createInitialInventory", { enumerable: true, get: function () { return inventoryCodec_1.createInitialInventory; } });
 const mobs_1 = require("../mobs");
 const RARITY_TP_COSTS = {
     common: 0,
@@ -53,39 +54,6 @@ function createInitialBasicPetals() {
         maxHealth: basicPetalStats.health,
         onCooldown: true
     }));
-}
-// Helper function to create initial inventory with basic petals
-function createInitialInventory() {
-    return {
-        common: {
-            'petal_basic': 5
-        }
-    };
-}
-function addItem(inventory, rarity, type, count) {
-    if (!inventory[rarity]) {
-        inventory[rarity] = {};
-    }
-    if (!inventory[rarity][type]) {
-        inventory[rarity][type] = 0;
-    }
-    inventory[rarity][type] += count;
-}
-function removeItem(inventory, rarity, type, count) {
-    if (inventory[rarity] && inventory[rarity][type] && inventory[rarity][type] >= count) {
-        inventory[rarity][type] -= count;
-        if (inventory[rarity][type] === 0) {
-            delete inventory[rarity][type];
-            if (Object.keys(inventory[rarity]).length === 0) {
-                delete inventory[rarity];
-            }
-        }
-        return true;
-    }
-    return false;
-}
-function hasItem(inventory, rarity, type, count) {
-    return inventory[rarity]?.[type] >= count;
 }
 /**
  * Check if a position is inside a wall or water tile
@@ -532,7 +500,7 @@ function savePlayerProgress(player, userId, database) {
         });
         database.savePlayer(userId, {
             totalXP: totalXP,
-            inventory: player.inventory,
+            inventory: (0, inventoryCodec_1.inventoryToDict)(player.inventory),
             loadout: cleanLoadout,
             tp: player.tp || 0,
             skills: player.skills || {},

@@ -1850,6 +1850,10 @@ for (const petalType in BASE_PETAL_CONFIGS) {
     }
 }
 
+// Register all petal types for compact inventory encoding
+import { initInventoryCodec } from './inventoryCodec';
+initInventoryCodec(RARITY_LEVELS, Object.keys(PETAL_CONFIG));
+
 export function getPetalStats(petalType: string, rarity: string): PetalStats | null {
     return PETAL_CONFIG[petalType]?.[rarity] || null;
 }

@@ -8,6 +8,7 @@ const preloader_1 = require("./preloader");
 const petals_1 = require("./petals");
 const shaderManager_1 = require("./shader/shaderManager");
 const ws_client_1 = require("./ws_client");
+const inventoryCodec_1 = require("./inventoryCodec");
 let currentGame = null;
 let preconnectedSocket = null; // Store preconnected socket
 let preconnectedMapData = null; // Store map data received during preconnect
@@ -203,7 +204,7 @@ function preconnectToServer() {
             }
             // Update title screen inventory manager with player data
             titleScreen.titleScreenInventoryManager?.updateFromPlayerData({
-                inventory: response.player.inventory || {},
+                inventory: response.player.inventory ? (0, inventoryCodec_1.dictToInventory)(response.player.inventory) : [],
                 loadout: response.player.loadout || Array(10).fill(null),
                 tp: response.player.tp,
                 skills: response.player.skills

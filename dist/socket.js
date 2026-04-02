@@ -172,9 +172,9 @@ function setupSocketListeners(game) {
                             console.warn('[CLIENT] Transferred player had invalid loadout, initialized empty array');
                         }
                         // Ensure inventory is properly initialized
-                        if (!data.playerData.inventory || typeof data.playerData.inventory !== 'object') {
-                            data.playerData.inventory = {};
-                            console.warn('[CLIENT] Transferred player had invalid inventory, initialized empty object');
+                        if (!data.playerData.inventory || !Array.isArray(data.playerData.inventory)) {
+                            data.playerData.inventory = [];
+                            console.warn('[CLIENT] Transferred player had invalid inventory, initialized empty array');
                         }
                         // Create new player object with transferred data
                         const currentPlayer = {
@@ -191,7 +191,7 @@ function setupSocketListeners(game) {
                             health: data.playerData.health || 100,
                             maxHealth: data.playerData.maxHealth || 100,
                             damage: data.playerData.damage || 10,
-                            inventory: data.playerData.inventory || {},
+                            inventory: data.playerData.inventory || [],
                             loadout: data.playerData.loadout || [],
                             level: data.playerData.level || 1,
                             xp: data.playerData.xp || 0,
@@ -839,10 +839,10 @@ function setupSocketListeners(game) {
     // Debounce mob gallery updates to prevent lag when multiple mobs die
     let mobGalleryUpdateTimeout = null;
     game.socket.on('playerUpdated', (updatedPlayer) => {
-        // console.log('[MobGallery] Received playerUpdated event', { 
-        //     playerId: updatedPlayer.id, 
+        // console.log('[MobGallery] Received playerUpdated event', {
+        //     playerId: updatedPlayer.id,
         //     hasMobKills: !!updatedPlayer.mobKills,
-        //     mobKills: updatedPlayer.mobKills 
+        //     mobKills: updatedPlayer.mobKills
         // });
         let player = game.players.get(updatedPlayer.id);
         // If player doesn't exist yet, create it (e.g., for split players)

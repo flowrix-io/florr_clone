@@ -17,7 +17,11 @@ export enum EquipmentFlags {
     Antennae = 1 << 3,
 }
 
-export interface PlayerInventory {
+// Compact inventory: flat number array of [rarityId, itemId, count, ...] triplets
+export type PlayerInventory = number[];
+
+// Legacy string-based format used only for database storage and configs
+export interface PlayerInventoryDict {
     [rarity: string]: {
         [itemType: string]: number;
     };
