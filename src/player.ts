@@ -71,6 +71,7 @@ export interface Player {
   mouth?: number;          // Mouth curve Y control point (14.5 = smile, higher = more open)
   cutterAngle?: number;    // Rotation angle for cutter equipment
   forcedFlags?: boolean;   // When true, server flag updates are ignored (set by /forcelocalplayerflags)
+  squadId?: string;        // ID of the squad this player belongs to
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
@@ -145,4 +146,5 @@ export interface ServerPlayer {
   faceFlags?: number;      // Bitmask of FaceFlags (computed each tick)
   equipFlags?: number;     // Bitmask of EquipmentFlags (computed from loadout)
   mouth?: number;          // Mouth curve Y control point
+  squadId?: string;        // ID of the squad this player belongs to
 }

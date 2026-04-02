@@ -53,13 +53,26 @@ import { MOB_CONFIG, getMobStats, getAllMobTypes, calculateMobDrops, DropItem, S
 
 // Import from refactored modules
 import {
-    trackDamage, 
-    calculateDPS, 
-    getEligiblePlayers, 
+    trackDamage,
+    calculateDPS,
+    getEligiblePlayers,
     sendBossMobDefeatedMessage,
     cleanupEnemy,
     trackMobKill
 } from './server/utils';
+import {
+    createSquad,
+    inviteToSquad,
+    acceptInvite,
+    declineInvite,
+    leaveSquad as leaveSquadFn,
+    getSquadForPlayer,
+    sendSquadChatMessage,
+    sendSquadSystemMessage,
+    findPlayerByUsername,
+    handlePlayerDisconnect as handleSquadDisconnect,
+    playerSquadMap
+} from './server/squadManager';
 import {
     checkPlayerWallCollisions,
     checkEnemyWallCollisions,
@@ -1320,7 +1333,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
     socket.on('disconnect', () => {
         console.log('A user disconnected');
-        
+
+        // Clean up squad membership
+        handleSquadDisconnect(socket.id, io);
+
         // Check if player is split and clean up both split players
         const { splitPlayers } = require('./petal_actions');
         const originalId = socket.id.replace('_split2', '').replace('_split1', '');
@@ -1907,16 +1923,134 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 return; // Don't process as regular chat message
         }
 
+        // Check for squad commands
+        if (message.startsWith('/squad ') || message === '/squad') {
+            const args = message.substring('/squad'.length).trim().split(/\s+/);
+            const subCommand = (args[0] || '').toLowerCase();
+
+            if (subCommand === 'create') {
+                socket.emit('squadCreate' as any);
+                // Trigger the squadCreate handler directly
+                const squad = createSquad(socket.id);
+                if (!squad) {
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are already in a squad.', timestamp: Date.now() });
+                } else {
+                    const player = players[socket.id];
+                    if (player) player.squadId = squad.id;
+                    io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: '<span style="color: #4fc3f7;">Squad created! Use /squad invite &lt;username&gt; to invite players.</span>', timestamp: Date.now() });
+                }
+            } else if (subCommand === 'invite' && args[1]) {
+                const targetUsername = args[1];
+                const targetSocketId = findPlayerByUsername(targetUsername, io);
+                if (!targetSocketId) {
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: `Player "${targetUsername}" not found.`, timestamp: Date.now() });
+                } else if (targetSocketId === socket.id) {
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You cannot invite yourself.', timestamp: Date.now() });
+                } else {
+                    const error = inviteToSquad(socket.id, targetSocketId, socket.username);
+                    if (error) {
+                        io.to(socket.id).emit('chatMessage', { sender: 'System', content: error, timestamp: Date.now() });
+                    } else {
+                        io.to(socket.id).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">Invite sent to ${targetUsername}.</span>`, timestamp: Date.now() });
+                        io.to(targetSocketId).emit('squadInviteReceived', { fromUsername: socket.username });
+                        io.to(targetSocketId).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">@${socket.username} has invited you to their squad. Use /squad accept or /squad decline.</span>`, timestamp: Date.now() });
+                    }
+                }
+            } else if (subCommand === 'accept') {
+                const { squad, error } = acceptInvite(socket.id);
+                if (error) {
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: error, timestamp: Date.now() });
+                } else {
+                    const player = players[socket.id];
+                    if (player) player.squadId = squad.id;
+                    const playerName = player ? player.name : socket.username;
+                    sendSquadSystemMessage(squad, io, `${playerName} has joined the squad.`);
+                    for (const memberId of squad.memberIds) {
+                        io.to(memberId).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+                    }
+                }
+            } else if (subCommand === 'decline') {
+                declineInvite(socket.id);
+                io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'Squad invite declined.', timestamp: Date.now() });
+            } else if (subCommand === 'leave') {
+                const squad = getSquadForPlayer(socket.id);
+                if (!squad) {
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
+                } else {
+                    const player = players[socket.id];
+                    const playerName = player ? player.name : socket.username;
+                    if (player) player.squadId = undefined;
+                    const membersBefore = [...squad.memberIds];
+                    leaveSquadFn(socket.id, io);
+                    io.to(socket.id).emit('squadUpdate', null);
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You have left the squad.', timestamp: Date.now() });
+                    // Notify remaining members
+                    const remainingId = membersBefore.find(id => id !== socket.id);
+                    if (remainingId) {
+                        const remainingSquad = getSquadForPlayer(remainingId);
+                        if (remainingSquad) {
+                            sendSquadSystemMessage(remainingSquad, io, `${playerName} has left the squad.`);
+                            for (const memberId of remainingSquad.memberIds) {
+                                io.to(memberId).emit('squadUpdate', { squadId: remainingSquad.id, memberIds: remainingSquad.memberIds, leaderId: remainingSquad.leaderId });
+                            }
+                        }
+                    }
+                }
+            } else if (subCommand === 'info') {
+                const squad = getSquadForPlayer(socket.id);
+                if (!squad) {
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
+                } else {
+                    const memberNames = squad.memberIds.map(id => {
+                        const p = players[id];
+                        const s = io.sockets.sockets.get(id) as any;
+                        const username = s?.username || 'Unknown';
+                        const name = p ? p.name : 'Unknown';
+                        const isLeader = id === squad.leaderId ? ' (Leader)' : '';
+                        return `@${username} [${name}]${isLeader}`;
+                    });
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">Squad members (${squad.memberIds.length}/4):<br/>${memberNames.join('<br/>')}</span>`, timestamp: Date.now() });
+                }
+            } else {
+                io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'Squad commands: /squad create, /squad invite &lt;username&gt;, /squad accept, /squad decline, /squad leave, /squad info', timestamp: Date.now() });
+            }
+            return;
+        }
+
+        // Check for squad chat shorthand: /s <message>
+        if (message.startsWith('/s ')) {
+            const squadMsg = message.substring(3).trim();
+            if (squadMsg) {
+                const squad = getSquadForPlayer(socket.id);
+                if (!squad) {
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
+                } else {
+                    const player = players[socket.id];
+                    const playerName = player ? player.name : socket.username;
+                    sendSquadChatMessage(squad, io, socket.username, playerName, squadMsg);
+                }
+            }
+            return;
+        }
+
         // Check for commands
         if (message.startsWith('/')) {
             const command = message.substring(1).toLowerCase();
-            
+
             if (command === 'help') {
                 const isAdmin = socket.username ? database.isUserAdmin(socket.username) : false;
                 let helpText = 'Available commands:\n';
                 helpText += '/list_ultra - List all ultra mobs <br/>';
                 helpText += '/list_super - List all super mobs <br/>';
                 helpText += '/list_unique - List all unique mobs <br/>';
+                helpText += '<br/><b>Squad commands:</b><br/>';
+                helpText += '/squad create - Create a new squad<br/>';
+                helpText += '/squad invite &lt;username&gt; - Invite a player<br/>';
+                helpText += '/squad accept / decline - Respond to an invite<br/>';
+                helpText += '/squad leave - Leave your squad<br/>';
+                helpText += '/squad info - Show squad members<br/>';
+                helpText += '/s &lt;message&gt; - Send a message to your squad<br/>';
                 helpText += '<br/>Chat supports HTML tags: <b>bold</b>, <i>italic</i>, <u>underline</u>, <span style="color: red">colored text</span>, <blink>blinking text</blink>';
                 
                 if (isAdmin) {
@@ -2061,6 +2195,101 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     // Add this after socket handlers but before socket.on('authenticate'...)
     socket.on('requestChatHistory', () => {
         socket.emit('chatHistory', chatHistory);
+    });
+
+    // --- Squad events ---
+    socket.on('squadCreate', () => {
+        if (!socket.username) return;
+        const squad = createSquad(socket.id);
+        if (!squad) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are already in a squad.', timestamp: Date.now() });
+            return;
+        }
+        const player = players[socket.id];
+        if (player) player.squadId = squad.id;
+        io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: '<span style="color: #4fc3f7;">Squad created! Use /squad invite &lt;username&gt; to invite players.</span>', timestamp: Date.now() });
+    });
+
+    socket.on('squadInvite', (targetUsername: string) => {
+        if (!socket.username) return;
+        const targetSocketId = findPlayerByUsername(targetUsername, io);
+        if (!targetSocketId) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: `Player "${targetUsername}" not found.`, timestamp: Date.now() });
+            return;
+        }
+        if (targetSocketId === socket.id) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You cannot invite yourself.', timestamp: Date.now() });
+            return;
+        }
+        const error = inviteToSquad(socket.id, targetSocketId, socket.username);
+        if (error) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: error, timestamp: Date.now() });
+            return;
+        }
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">Invite sent to ${targetUsername}.</span>`, timestamp: Date.now() });
+        io.to(targetSocketId).emit('squadInviteReceived', { fromUsername: socket.username });
+        io.to(targetSocketId).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">@${socket.username} has invited you to their squad. Use /squad accept or /squad decline.</span>`, timestamp: Date.now() });
+    });
+
+    socket.on('squadAccept', () => {
+        if (!socket.username) return;
+        const { squad, error } = acceptInvite(socket.id);
+        if (error) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: error, timestamp: Date.now() });
+            return;
+        }
+        const player = players[socket.id];
+        if (player) player.squadId = squad.id;
+        const playerName = player ? player.name : socket.username;
+        sendSquadSystemMessage(squad, io, `${playerName} has joined the squad.`);
+        // Send squad update to all members
+        for (const memberId of squad.memberIds) {
+            io.to(memberId).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+        }
+    });
+
+    socket.on('squadDecline', () => {
+        if (!socket.username) return;
+        declineInvite(socket.id);
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'Squad invite declined.', timestamp: Date.now() });
+    });
+
+    socket.on('squadLeave', () => {
+        if (!socket.username) return;
+        const squad = getSquadForPlayer(socket.id);
+        if (!squad) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
+            return;
+        }
+        const player = players[socket.id];
+        const playerName = player ? player.name : socket.username;
+        if (player) player.squadId = undefined;
+
+        leaveSquadFn(socket.id, io);
+        io.to(socket.id).emit('squadUpdate', null);
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You have left the squad.', timestamp: Date.now() });
+
+        // Notify remaining members
+        const remainingSquad = getSquadForPlayer(squad.memberIds.find(id => id !== socket.id) || '');
+        if (remainingSquad) {
+            sendSquadSystemMessage(remainingSquad, io, `${playerName} has left the squad.`);
+            for (const memberId of remainingSquad.memberIds) {
+                io.to(memberId).emit('squadUpdate', { squadId: remainingSquad.id, memberIds: remainingSquad.memberIds, leaderId: remainingSquad.leaderId });
+            }
+        }
+    });
+
+    socket.on('squadChat', (message: string) => {
+        if (!socket.username) return;
+        const squad = getSquadForPlayer(socket.id);
+        if (!squad) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
+            return;
+        }
+        const player = players[socket.id];
+        const playerName = player ? player.name : socket.username;
+        sendSquadChatMessage(squad, io, socket.username, playerName, message);
     });
 
     // Handle ping/pong for heartbeat monitoring and connection quality tracking

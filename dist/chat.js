@@ -27,6 +27,13 @@ const COMMANDS = [
     { command: '/admin delete_guests', description: 'Delete default guest accounts', isAdmin: true },
     { command: '/cmd', description: 'Execute server command (alias)', isAdmin: true },
     { command: '/forcelocalplayerflags', description: 'Set local player face/equip flags (client-only)', isAdmin: false },
+    { command: '/squad create', description: 'Create a new squad', isAdmin: false },
+    { command: '/squad invite', description: 'Invite a player to your squad', isAdmin: false },
+    { command: '/squad accept', description: 'Accept a squad invite', isAdmin: false },
+    { command: '/squad decline', description: 'Decline a squad invite', isAdmin: false },
+    { command: '/squad leave', description: 'Leave your current squad', isAdmin: false },
+    { command: '/squad info', description: 'Show squad members', isAdmin: false },
+    { command: '/s', description: 'Send a message to your squad', isAdmin: false },
 ];
 class Chat {
     constructor(socket) {
@@ -38,6 +45,7 @@ class Chat {
         this.isChatFocused = false;
         this.pendingScripts = new Map();
         this.pendingIframes = new Map();
+        this.currentSquad = null;
         this.socket = socket;
         this.initialize();
         this.setupSocketListeners();
@@ -47,6 +55,8 @@ class Chat {
         // Remove old listeners
         this.socket.off('chatMessage');
         this.socket.off('chatHistory');
+        this.socket.off('squadUpdate');
+        this.socket.off('squadInviteReceived');
         // Update socket reference
         this.socket = newSocket;
         // Set up new listeners
@@ -61,6 +71,12 @@ class Chat {
         });
         this.socket.on('chatHistory', (history) => {
             history.forEach(message => this.addChatMessage(message));
+        });
+        this.socket.on('squadUpdate', (data) => {
+            this.currentSquad = data;
+        });
+        this.socket.on('squadInviteReceived', (data) => {
+            // Visual notification is already handled via chatMessage from server
         });
     }
     handleClientCommand(message) {

@@ -51,6 +51,13 @@ const COMMANDS: CommandDefinition[] = [
     { command: '/admin delete_guests', description: 'Delete default guest accounts', isAdmin: true },
     { command: '/cmd', description: 'Execute server command (alias)', isAdmin: true },
     { command: '/forcelocalplayerflags', description: 'Set local player face/equip flags (client-only)', isAdmin: false },
+    { command: '/squad create', description: 'Create a new squad', isAdmin: false },
+    { command: '/squad invite', description: 'Invite a player to your squad', isAdmin: false },
+    { command: '/squad accept', description: 'Accept a squad invite', isAdmin: false },
+    { command: '/squad decline', description: 'Decline a squad invite', isAdmin: false },
+    { command: '/squad leave', description: 'Leave your current squad', isAdmin: false },
+    { command: '/squad info', description: 'Show squad members', isAdmin: false },
+    { command: '/s', description: 'Send a message to your squad', isAdmin: false },
 ];
 
 export class Chat {
@@ -63,6 +70,7 @@ export class Chat {
     private pendingScripts: Map<string, SandboxedScript> = new Map();
     private pendingIframes: Map<string, PendingIframe> = new Map();
     private socket: Socket;
+    private currentSquad: { squadId: string; memberIds: string[]; leaderId: string } | null = null;
 
     constructor(socket: Socket) {
         this.socket = socket;
@@ -75,6 +83,8 @@ export class Chat {
         // Remove old listeners
         this.socket.off('chatMessage');
         this.socket.off('chatHistory');
+        this.socket.off('squadUpdate');
+        this.socket.off('squadInviteReceived');
         
         // Update socket reference
         this.socket = newSocket;
@@ -95,6 +105,14 @@ export class Chat {
 
         this.socket.on('chatHistory', (history: Array<{ sender: string; content: string; timestamp: number }>) => {
             history.forEach(message => this.addChatMessage(message));
+        });
+
+        this.socket.on('squadUpdate', (data: { squadId: string; memberIds: string[]; leaderId: string } | null) => {
+            this.currentSquad = data;
+        });
+
+        this.socket.on('squadInviteReceived', (data: { fromUsername: string }) => {
+            // Visual notification is already handled via chatMessage from server
         });
     }
 

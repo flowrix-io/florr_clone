@@ -9,6 +9,7 @@ exports.trackMobKill = trackMobKill;
 exports.cleanupEnemy = cleanupEnemy;
 const constants_1 = require("../constants");
 const petal_actions_1 = require("../petal_actions");
+const squadManager_1 = require("./squadManager");
 // Helper function to track damage dealt to an enemy
 function trackDamage(enemy, playerId, damage) {
     if (!enemy.damageContributors) {
@@ -66,19 +67,25 @@ function getOriginalSocketId(playerId) {
     return playerId;
 }
 // Helper function to get eligible players for a drop based on damage ranking
+// Squad members' damage is pooled (averaged) and they count as a single loot entry.
+// Returns individual player socket IDs (squads are expanded back to members).
 function getEligiblePlayers(enemy) {
     if (!enemy.damageContributors || enemy.damageContributors.size === 0) {
         return [];
     }
-    // Sort players by damage dealt (highest first)
-    const sortedPlayers = Array.from(enemy.damageContributors.entries())
+    // Pool squad damage: squad members' damage is averaged into a single squad entry
+    const pooled = (0, squadManager_1.getPooledDamageContributors)(enemy.damageContributors);
+    // Sort entities (players or squad IDs) by pooled damage (highest first)
+    const sortedEntities = Array.from(pooled.entries())
         .sort((a, b) => b[1] - a[1])
         .map(entry => entry[0]);
     // Determine placement requirement based on mob rarity
     const isUltraOrAbove = ['ultra', 'super', 'unique'].includes(enemy.tier);
     const placementRequirement = isUltraOrAbove ? 15 : 4;
-    // Return top N players who qualify
-    return sortedPlayers.slice(0, placementRequirement);
+    // Get top N entities (a squad counts as 1 slot)
+    const topEntities = sortedEntities.slice(0, placementRequirement);
+    // Expand squad IDs back to individual player socket IDs
+    return (0, squadManager_1.expandEligibleToPlayerIds)(topEntities);
 }
 // Helper function to send boss mob defeated message in chat
 function sendBossMobDefeatedMessage(enemy, io, players) {
