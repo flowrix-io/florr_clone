@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 240969845,
+      "totalXP": 240969886,
       "inventory": {
         "common": {
           "shield": 236,
@@ -609,7 +609,7 @@
         "soldier_ant": {
           "epic": 120,
           "legendary": 311,
-          "common": 386,
+          "common": 387,
           "rare": 170,
           "mythic": 480,
           "ultra": 17,
@@ -629,7 +629,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 363,
+          "common": 364,
           "legendary": 136,
           "mythic": 147,
           "uncommon": 116,
@@ -640,7 +640,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 390,
+          "common": 391,
           "legendary": 318,
           "mythic": 318,
           "uncommon": 154,
@@ -652,7 +652,7 @@
         },
         "dandelion": {
           "legendary": 191,
-          "common": 264,
+          "common": 266,
           "mythic": 171,
           "uncommon": 82,
           "unique": 3,
@@ -1040,50 +1040,6 @@
         }
       },
       "stars": 0
-    },
-    "o8snz5r1c": {
-      "totalXP": 0,
-      "inventory": {
-        "common": {
-          "petal_basic": 5
-        }
-      },
-      "loadout": [
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
-          "rarity": "common",
-          "petalType": "basic"
-        },
-        null,
-        null,
-        null,
-        null,
-        null
-      ],
-      "tp": 1,
-      "skills": {},
-      "mobKills": {},
-      "stars": 0
     }
   },
   "users": {
@@ -1103,45 +1059,10 @@
       "username": "User79735867",
       "password": "$2b$12$lHpAvWWJ6NgAoTyr4xu2kugVGLxOHGk4H/1r4b44q0bmC0UhiFaPe"
     },
-    "User35518289": {
-      "id": "o8snz5r1c",
-      "username": "User35518289",
-      "password": "$2b$12$nNYmNG.rJ6Ft5PQr3Ip5sePB9ZtZaFRbaHrv4/XJtbgmI.di6fupq"
-    },
-    "User38690228": {
-      "id": "kzqff7jyu",
-      "username": "User38690228",
-      "password": "$2b$12$4OjD5VCexw5hSlaAzn1WuuII3jOL4gdT51C8NdHmzVIjk5DJxCcwu"
-    },
-    "User22847546": {
-      "id": "a5g2r9vp6",
-      "username": "User22847546",
-      "password": "$2b$12$Kqyu79qWPqJYOyezLFMP9u0XihksJKb9HDbnEvHCS4xCxgHseOlbe"
-    },
     "User8653728": {
       "id": "nspzdvgg4",
       "username": "User8653728",
       "password": "$2b$12$AE0ypqnbf5l62qPihl9wD.frL4xry9qavBBvrT4xCyoxxuRlCv7ry"
-    },
-    "User51096963": {
-      "id": "lab8rv0wz",
-      "username": "User51096963",
-      "password": "$2b$12$mcTKfE.2oMDc8pLB1FU44uaC5GmYnW/C/fer1t8DmR021vLELnBsq"
-    },
-    "User32824314": {
-      "id": "3ioctxqlk",
-      "username": "User32824314",
-      "password": "$2b$12$Tc1eYk1VqHy535Bz87ne0es/jDJGUDk2g73oM49k4GE.aEpzcVyXm"
-    },
-    "User62901498": {
-      "id": "z69hw8v2v",
-      "username": "User62901498",
-      "password": "$2b$12$70DNBmOk91v7Wk/WrfStBe3HQnkc1D7wfYpFPNMeo2nBJ7NDZaGb2"
-    },
-    "User78498027": {
-      "id": "isrzd5pt3",
-      "username": "User78498027",
-      "password": "$2b$12$HfZ0ImDj5Flnioo/PwbSweJqJJuPf770y1VrIAVsNN5/2NFFZJnSK"
     }
   },
   "codes": {},

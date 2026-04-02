@@ -91,6 +91,32 @@ const writeDatabase = () => {
 readDatabase();
 
 
+function isDefaultProgress(progress: PlayerProgress): boolean {
+    // Has gained any XP
+    if (progress.totalXP > 0) return false;
+
+    // Check inventory: default is only { common: { petal_basic: 5 } }
+    if (progress.inventory) {
+        const rarities = Object.keys(progress.inventory);
+        if (rarities.length === 0) return true; // empty inventory counts as default
+        if (rarities.length > 1) return false;
+        if (rarities[0] !== 'common') return false;
+        const items = progress.inventory['common'];
+        const itemTypes = Object.keys(items);
+        if (itemTypes.length > 1) return false;
+        if (itemTypes.length === 1 && (itemTypes[0] !== 'petal_basic' || items['petal_basic'] !== 5)) return false;
+    }
+
+    // Check loadout: default is 5 basic common petals
+    if (progress.loadout) {
+        for (const slot of progress.loadout) {
+            if (slot && (slot.petalType !== 'basic' || slot.rarity !== 'common')) return false;
+        }
+    }
+
+    return true;
+}
+
 export const database = {
     // User-related functions
     createUser: (username: string, password: string): User | null => {
@@ -359,13 +385,20 @@ export const database = {
         return { entries: entries.slice(0, limit), totalAccounts };
     },
 
-    // Delete all guest accounts (usernames matching "User" + 8 digits)
+    // Delete guest accounts that still have the default initial inventory/loadout
     deleteGuestAccounts: (): number => {
         const guestPattern = /^User\d{8}$/;
         let deleted = 0;
         for (const username in db.users) {
             if (guestPattern.test(username)) {
                 const userId = db.users[username].id;
+                const progress = db.players[userId];
+
+                // Skip guests that have progressed beyond the initial state
+                if (progress && !isDefaultProgress(progress)) {
+                    continue;
+                }
+
                 // Remove player progress data
                 delete db.players[userId];
                 // Remove user account
