@@ -12,6 +12,9 @@ const shop_1 = require("./shop");
 const tutorial_1 = require("./tutorial");
 const asset_loader_1 = require("./asset_loader");
 class Game {
+    get isInventoryOpen() {
+        return this.inventoryManager?.getIsInventoryOpen() ?? false;
+    }
     constructor(showHitboxes, serverIp, preloadedAssets, shadersEnabled = false, showStats = false, dynamicSkybox = false) {
         this.speedBoostActive = false;
         this.shieldActive = false;
@@ -56,7 +59,6 @@ class Game {
         this.ENEMY_CORAL_MAX_HEALTH = 50;
         this.items = new Map();
         this.pickedUpItems = new Set(); // Track items picked up by this player
-        this.isInventoryOpen = false;
         this.gameLoopId = null;
         this.socketHandlers = new Map();
         this.BASE_XP_REQUIREMENT = 100;
@@ -1379,7 +1381,6 @@ class Game {
         this.decorations = [];
         this.sands = [];
         // Reset game state
-        this.isInventoryOpen = false;
         this.isCraftingOpen = false;
         this.speedBoostActive = false;
         this.shieldActive = false;

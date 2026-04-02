@@ -4,6 +4,9 @@ exports.InventoryManager = void 0;
 const petals_1 = require("./petals");
 const mobs_1 = require("./mobs");
 class InventoryManager {
+    getIsInventoryOpen() {
+        return this.isInventoryOpen;
+    }
     getIsMobGalleryOpen() {
         return this.isMobGalleryOpen;
     }

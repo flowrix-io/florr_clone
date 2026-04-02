@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 241251772,
+      "totalXP": 241251793,
       "inventory": {
         "common": {
           "shield": 236,
@@ -13,17 +13,17 @@
           "petal_sand": 44,
           "petal_rock": 185,
           "petal_clover": 53,
-          "petal_bone": 128,
+          "petal_bone": 129,
           "petal_cactus": 16,
           "petal_iris": 10,
           "petal_poison_cactus": 16,
           "petal_lightning": 56,
-          "petal_missile": 160,
+          "petal_missile": 161,
           "petal_jelly": 31,
           "petal_leaf": 20,
           "petal_cutter": 2,
           "petal_wing": 302,
-          "petal_rose": 134,
+          "petal_rose": 135,
           "health_potion": 69,
           "petal_basic": 71,
           "petal_square": 25,
@@ -32,12 +32,12 @@
           "petal_ant_egg": 6,
           "petal_fire_ant_egg": 6,
           "petal_yucca": 17,
-          "petal_hornet_egg": 99,
+          "petal_hornet_egg": 100,
           "petal_dandelion_egg": 105,
           "petal_ladybug_egg": 91,
           "petal_soldier_ant_egg": 129,
           "petal_dark_ladybug_egg": 90,
-          "petal_bee_egg": 99,
+          "petal_bee_egg": 100,
           "petal_fly_egg": 78,
           "petal_bubble_egg": 20,
           "petal_rock_egg": 91,
@@ -208,7 +208,7 @@
           "petal_blood_leaf": 6,
           "petal_ant_egg": 4,
           "petal_dandelion_egg": 57,
-          "petal_dark_ladybug_egg": 43,
+          "petal_dark_ladybug_egg": 44,
           "petal_ladybug_egg": 31,
           "petal_bee_egg": 43,
           "petal_hornet_egg": 54,
@@ -245,7 +245,8 @@
           "petal_third_eye": 2,
           "petal_glass": 11,
           "petal_cube_egg": 3,
-          "petal_splitter": 3
+          "petal_splitter": 3,
+          "petal_faster": 1
         },
         "legendary": {
           "speed_boost": 103,
@@ -633,7 +634,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 366,
+          "common": 367,
           "legendary": 136,
           "mythic": 147,
           "uncommon": 116,
@@ -644,7 +645,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 396,
+          "common": 397,
           "legendary": 319,
           "mythic": 320,
           "uncommon": 155,
@@ -666,7 +667,7 @@
           "super": 5
         },
         "bee": {
-          "common": 321,
+          "common": 322,
           "epic": 97,
           "mythic": 204,
           "uncommon": 89,

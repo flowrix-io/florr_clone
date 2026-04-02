@@ -33,6 +33,10 @@ export class InventoryManager {
     private isCraftingOpen: boolean = false;
     private isMobGalleryOpen: boolean = false;
     
+    public getIsInventoryOpen(): boolean {
+        return this.isInventoryOpen;
+    }
+
     public getIsMobGalleryOpen(): boolean {
         return this.isMobGalleryOpen;
     }

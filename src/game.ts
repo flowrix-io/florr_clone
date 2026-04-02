@@ -100,7 +100,9 @@ export class Game {
     private readonly ENEMY_CORAL_MAX_HEALTH = 50;
     private items: Map<string, WorldItem> = new Map();
     private pickedUpItems: Set<string> = new Set(); // Track items picked up by this player
-    private isInventoryOpen: boolean = false;
+    get isInventoryOpen(): boolean {
+        return this.inventoryManager?.getIsInventoryOpen() ?? false;
+    }
     private gameLoopId: number | null = null;
     private socketHandlers: Map<string, Function> = new Map();
     private readonly BASE_XP_REQUIREMENT = 100;
@@ -1678,7 +1680,6 @@ export class Game {
         this.sands = [];
 
         // Reset game state
-        this.isInventoryOpen = false;
         this.isCraftingOpen = false;
         this.speedBoostActive = false;
         this.shieldActive = false;
