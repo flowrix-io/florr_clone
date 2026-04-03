@@ -233,6 +233,24 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
         // If we translate first, then rotate, it rotates around the petal position
         // Step 1: Translate to petal's orbital position (relative to player)
         this.ctx.translate(petalX, petalY);
+        // Draw emissive light glow behind petal (before rotation so glow stays circular)
+        if (stats.emissive) {
+            const hex = stats.lightColor || stats.color || '#ffffff';
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            const lightRadius = stats.lightRadius ?? (petalSize * 3);
+            this.ctx.save();
+            const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, lightRadius);
+            gradient.addColorStop(0, `rgba(${r},${g},${b},0.6)`);
+            gradient.addColorStop(0.4, `rgba(${r},${g},${b},0.25)`);
+            gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
+            this.ctx.fillStyle = gradient;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, lightRadius, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+        }
         // Step 2: Rotate around the petal's position (which is now at origin after translate)
         // If fixedDirection is set, the petal always faces that angle instead of spinning
         if (stats.fixedDirection !== undefined) {

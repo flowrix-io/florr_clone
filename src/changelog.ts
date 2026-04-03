@@ -216,6 +216,16 @@ export const CHANGELOG: ChangelogEntry[] = [
             'New petal: Faster',
             'More bug fixes and UI improvements',
         ]
+    },
+    {
+        date: 'April 2, 2026',
+        changes: [
+            'New mob: Sun',
+            'New petal: Pollen',
+            'Bulb now emits light',
+            'Nerfed blood leaf',
+            'Fixed some bugs',
+        ]
     }
 ];
 

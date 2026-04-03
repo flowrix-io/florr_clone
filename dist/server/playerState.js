@@ -153,7 +153,9 @@ function isPositionInPlayerPetalRange(x, y, mobSize) {
             }
         }
         // Calculate the maximum range from player center (base radius * max range multiplier + half petal size + half mob size)
-        const maxRange = (baseRadius * maxPetalRange) + (maxPetalSize / 2) + (mobSize / 2);
+        // Ensure mobs never spawn on top of the player body (PLAYER_SIZE/2 + mobSize/2 + buffer)
+        const minBodyRange = constants_1.PLAYER_SIZE / 2 + mobSize / 2 + 20;
+        const maxRange = Math.max(minBodyRange, (baseRadius * maxPetalRange) + (maxPetalSize / 2) + (mobSize / 2));
         // Check if the mob spawn position is within this range
         const dx = x - player.x;
         const dy = y - player.y;

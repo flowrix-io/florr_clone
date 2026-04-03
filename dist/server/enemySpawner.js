@@ -45,6 +45,21 @@ function selectEqualRarityTier() {
     }
     return 'common'; // Fallback
 }
+// Helper function to select a mob type using spawn_weight for weighted random selection
+function selectWeightedMobType(eligibleMobTypes, tier) {
+    const weights = eligibleMobTypes.map(type => {
+        const stats = (0, mobs_1.getMobStats)(type, tier);
+        return stats?.spawn_weight ?? 1;
+    });
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    let roll = Math.random() * totalWeight;
+    for (let i = 0; i < eligibleMobTypes.length; i++) {
+        roll -= weights[i];
+        if (roll <= 0)
+            return eligibleMobTypes[i];
+    }
+    return eligibleMobTypes[eligibleMobTypes.length - 1];
+}
 // Boundary threshold for out-of-bounds zone (same as wall extension threshold)
 const BOUNDARY_THRESHOLD = 100;
 // Helper function to check if a position is in the out-of-bounds zone
@@ -446,7 +461,7 @@ function createEnemy(helpers) {
                 if (eligibleMobTypes.length === 0) {
                     return null;
                 }
-                mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
+                mobType = selectWeightedMobType(eligibleMobTypes, tier);
             }
         }
         else {
@@ -464,7 +479,7 @@ function createEnemy(helpers) {
             if (eligibleMobTypes.length === 0) {
                 return null;
             }
-            mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
+            mobType = selectWeightedMobType(eligibleMobTypes, tier);
         }
         // Tier upgrade or downgrade
         const upgradeRoll = Math.random();
@@ -527,11 +542,26 @@ function createEnemy(helpers) {
         if (eligibleMobTypes.length === 0) {
             return null;
         }
-        mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
+        mobType = selectWeightedMobType(eligibleMobTypes, tier);
     }
     // Get mob stats from config
     let mobStats = (0, mobs_1.getMobStats)(mobType, tier);
     if (!mobStats) {
+        return null;
+    }
+    // Final overlap check using the ACTUAL mob size (Phase 2 used a preliminary estimate)
+    const actualMobSize = mobStats.size * 40;
+    const actualHalfSize = actualMobSize / 2;
+    const overlapsExistingMob = constants_1.enemies.some((otherEnemy) => {
+        const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
+        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
+        const otherHalfSize = otherMobSize / 2;
+        const dx = otherEnemy.x - x;
+        const dy = otherEnemy.y - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        return distance < actualHalfSize + otherHalfSize;
+    });
+    if (overlapsExistingMob) {
         return null;
     }
     const currentTime = Date.now();
@@ -622,7 +652,7 @@ function createSpecialMob(tier, helpers, targetSection) {
         mobType = fallbackMobTypes[Math.floor(Math.random() * fallbackMobTypes.length)];
     }
     else {
-        mobType = eligibleMobTypes[Math.floor(Math.random() * eligibleMobTypes.length)];
+        mobType = selectWeightedMobType(eligibleMobTypes, tier);
     }
     const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
     if (!mobStats) {
@@ -670,6 +700,20 @@ function createSpecialMob(tier, helpers, targetSection) {
         if (!newValidPosition) {
             return null;
         }
+    }
+    // Final overlap check with existing mobs using actual size
+    const halfMobSize = mobSize / 2;
+    const overlapsExistingMob = constants_1.enemies.some((otherEnemy) => {
+        const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
+        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
+        const otherHalfSize = otherMobSize / 2;
+        const dx = otherEnemy.x - position.x;
+        const dy = otherEnemy.y - position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        return distance < halfMobSize + otherHalfSize;
+    });
+    if (overlapsExistingMob) {
+        return null;
     }
     const currentTime = Date.now();
     return {

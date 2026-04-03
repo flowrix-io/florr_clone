@@ -106,6 +106,28 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
         // Apply scale to size
         enemySize *= deathScale;
     }
+    // Draw emissive light glow behind mob if emissive (before rotation/flip transforms)
+    if (mobStats?.emissive) {
+        const hex = mobStats.light_color || mobStats.color || '#ffffff';
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        const lightRadius = mobStats.light_radius ?? (enemySize * 2);
+        this.ctx.save();
+        this.ctx.translate(enemy.x, enemy.y);
+        if (isDying) {
+            this.ctx.globalAlpha = deathAlpha;
+        }
+        const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, lightRadius);
+        gradient.addColorStop(0, `rgba(${r},${g},${b},0.6)`);
+        gradient.addColorStop(0.4, `rgba(${r},${g},${b},0.25)`);
+        gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        this.ctx.fillStyle = gradient;
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, lightRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.restore();
+    }
     // Always set up the transform for the enemy position
     // The context already has camera transforms applied, so we translate to world position
     this.ctx.save();
