@@ -338,8 +338,8 @@ function checkEnemyEnemyCollisions(enemies, io) {
             const otherEnemy = enemies[j];
             // Skip collision resolution if both mobs are passive and not chasing
             // BUT allow pets (enemies with ownerId) to collide with each other
-            const thisMobIsPassive = !enemy.isHostile && !enemy.isChasing;
-            const otherMobIsPassive = !otherEnemy.isHostile && !otherEnemy.isChasing;
+            const thisMobIsPassive = (enemy.aiType === 'passive' || enemy.aiType === 'sandstorm') && !enemy.isChasing;
+            const otherMobIsPassive = (otherEnemy.aiType === 'passive' || otherEnemy.aiType === 'sandstorm') && !otherEnemy.isChasing;
             const thisMobIsPet = !!enemy.ownerId;
             const otherMobIsPet = !!otherEnemy.ownerId;
             // Allow pet-to-pet collisions, but skip if both are passive wild mobs

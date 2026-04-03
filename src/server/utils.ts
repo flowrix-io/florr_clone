@@ -11,7 +11,12 @@ export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
     }
     const currentDamage = enemy.damageContributors.get(playerId) || 0;
     enemy.damageContributors.set(playerId, currentDamage + damage);
-    
+
+    // Provoke neutral mobs when they take damage from a player
+    if (enemy.aiType === 'neutral' && !enemy.targetPlayerId) {
+        enemy.targetPlayerId = playerId;
+    }
+
     // Track DPS for target dummies
     if (enemy.type === 'target_dummy') {
         const now = Date.now();

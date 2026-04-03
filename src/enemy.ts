@@ -62,7 +62,7 @@ export interface Enemy {
   knockbackY?: number;
   wanderTarget?: { x: number; y: number };
   lastWanderTime?: number;
-  isHostile?: boolean;
+  aiType?: 'passive' | 'neutral' | 'hostile' | 'sandstorm';
   isChasing?: boolean;  // Whether the enemy is currently chasing a player
   poisonEffects?: PoisonEffect[];  // Active poison effects on this enemy
   range?: number;

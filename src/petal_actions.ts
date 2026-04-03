@@ -558,7 +558,7 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
         damage: mobStats.damage,
         knockbackX: 0,
         knockbackY: 0,
-        isHostile: false, // Pets are not hostile to players
+        aiType: 'passive', // Pets are not hostile to players
         range: petRange,
         reversed: mobStats.reversed ?? false,
         ownerId: ownerId, // Set the owner

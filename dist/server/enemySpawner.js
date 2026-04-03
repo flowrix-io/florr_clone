@@ -548,7 +548,7 @@ function createEnemy(helpers) {
         damage: mobStats.damage,
         knockbackX: 0,
         knockbackY: 0,
-        isHostile: mobStats.is_hostile,
+        aiType: mobStats.ai_type,
         range: mobStats.range,
         reversed: reversed ?? mobStats.reversed ?? false,
         spawnTime: currentTime,
@@ -685,7 +685,7 @@ function createSpecialMob(tier, helpers, targetSection) {
         damage: mobStats.damage,
         knockbackX: 0,
         knockbackY: 0,
-        isHostile: mobStats.is_hostile,
+        aiType: mobStats.ai_type,
         range: mobStats.range
     };
 }

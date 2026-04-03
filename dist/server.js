@@ -556,7 +556,7 @@ function spawnMob(mobType, rarity, x, y) {
         damage: mobStats.damage,
         knockbackX: 0,
         knockbackY: 0,
-        isHostile: mobStats.is_hostile,
+        aiType: mobStats.ai_type,
         range: mobStats.range,
         reversed: mobStats.reversed ?? false,
         spawnTime: currentTime,
@@ -2708,7 +2708,8 @@ function moveEnemies() {
                 }
             }
             // If no existing target or existing target is out of range, look for new targets
-            if (!targetPlayer) {
+            // Neutral and sandstorm mobs don't actively scan for targets — neutral only targets via provocation
+            if (!targetPlayer && enemy.aiType !== 'neutral' && enemy.aiType !== 'sandstorm' && enemy.aiType !== 'passive') {
                 // Find closest living player with line of sight (for initial targeting)
                 let closestPlayer;
                 let closestDistance = Infinity;
@@ -2759,7 +2760,9 @@ function moveEnemies() {
                 ? targetPlayer
                 : (closestPet ? closestPet : null);
             // Move enemy based on behavior
-            if (target && enemy.isHostile) {
+            // Neutral mobs only chase if provoked (have a targetPlayerId from taking damage)
+            const isProvoked = enemy.aiType === 'neutral' && !!enemy.targetPlayerId;
+            if (target && (enemy.aiType === 'hostile' || isProvoked)) {
                 const isTargetingPlayer = target === targetPlayer;
                 const targetX = isTargetingPlayer ? targetPlayer.x : closestPet.x;
                 const targetY = isTargetingPlayer ? targetPlayer.y : closestPet.y;
@@ -2834,6 +2837,54 @@ function moveEnemies() {
                             }
                             // Update last shot time
                             enemy.lastProjectileTime = currentTime;
+                        }
+                    }
+                }
+            }
+            else if (enemy.aiType === 'sandstorm') {
+                // Sandstorm AI: fast random movement, changes direction frequently
+                enemy.isChasing = false;
+                const SANDSTORM_DIRECTION_CHANGE_INTERVAL = 300; // Change direction every 300ms
+                if (!enemy.wanderTarget || currentTime - (enemy.lastWanderTime || 0) > SANDSTORM_DIRECTION_CHANGE_INTERVAL) {
+                    // Pick a random direction and move far in that direction
+                    const randomAngle = Math.random() * Math.PI * 2;
+                    const wanderDistance = ENEMY_WANDER_RANGE * 2;
+                    enemy.wanderTarget = {
+                        x: enemy.x + Math.cos(randomAngle) * wanderDistance,
+                        y: enemy.y + Math.sin(randomAngle) * wanderDistance
+                    };
+                    enemy.lastWanderTime = currentTime;
+                }
+                if (enemy.wanderTarget && enemy.speed > 0) {
+                    const dx = enemy.wanderTarget.x - enemy.x;
+                    const dy = enemy.wanderTarget.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance > 5) {
+                        // Sandstorms move at full speed (not the 0.5x wander speed)
+                        const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
+                        enemy.x += (dx / distance) * speed;
+                        enemy.y += (dy / distance) * speed;
+                        enemy.angle = Math.atan2(dy, dx);
+                    }
+                }
+                // Suck in nearby players if sandstorm is super rarity or above
+                const sandstormRarityIndex = petals_1.RARITY_LEVELS.indexOf(enemy.tier);
+                const superRarityIndex = petals_1.RARITY_LEVELS.indexOf('super');
+                if (sandstormRarityIndex >= superRarityIndex) {
+                    const SANDSTORM_SUCK_RANGE = 400;
+                    const SANDSTORM_SUCK_FORCE = 1.5;
+                    const playerArray = Object.values(constants_2.players);
+                    for (const player of playerArray) {
+                        if (player.isDead)
+                            continue;
+                        const dx = enemy.x - player.x;
+                        const dy = enemy.y - player.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        if (distance < SANDSTORM_SUCK_RANGE && distance > 0) {
+                            // Pull strength increases as player gets closer
+                            const pullStrength = SANDSTORM_SUCK_FORCE * (1 - distance / SANDSTORM_SUCK_RANGE);
+                            player.x += (dx / distance) * pullStrength;
+                            player.y += (dy / distance) * pullStrength;
                         }
                     }
                 }

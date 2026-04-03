@@ -154,7 +154,7 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
     const animationCycleDuration = framesPerCycle * frameTime;
     let currentTime = this.frameTimestamp % animationCycleDuration;
     // If enemy is chasing, play animation 2x faster
-    if (enemy.isChasing && enemy.isHostile) {
+    if (enemy.isChasing && (enemy.aiType === 'hostile' || enemy.aiType === 'neutral')) {
         // Multiply time by 2 to make animation play 2x faster
         currentTime = (currentTime * 2) % animationCycleDuration;
     }

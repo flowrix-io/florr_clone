@@ -663,7 +663,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         damage: mobStats.damage,
         knockbackX: 0,
         knockbackY: 0,
-        isHostile: mobStats.is_hostile,
+        aiType: mobStats.ai_type,
         range: mobStats.range,
         reversed: reversed ?? mobStats.reversed ?? false,
         spawnTime: currentTime,
@@ -820,7 +820,7 @@ export function createSpecialMob(
         damage: mobStats.damage,
         knockbackX: 0,
         knockbackY: 0,
-        isHostile: mobStats.is_hostile,
+        aiType: mobStats.ai_type,
         range: mobStats.range
     };
 }
