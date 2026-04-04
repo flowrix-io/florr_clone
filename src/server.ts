@@ -4261,7 +4261,17 @@ function start_loop() {
             const player = players[playerId];
 
             // Create optimized player data
-            const playersForBroadcast = Object.values(players).map(p => createPlayerData(p, quality));
+            // Send full-precision position for the player's own data to avoid quantization jitter
+            const playersForBroadcast = Object.values(players).map(p => {
+                const data = createPlayerData(p, quality);
+                if (p.id === playerId) {
+                    // Override with full-precision position for self
+                    data.x = p.x;
+                    data.y = p.y;
+                    data.angle = p.angle;
+                }
+                return data;
+            });
 
             // Filter enemies to this player's viewport (200% buffer)
             const vw = (player?.viewportWidth || VIEWPORT_WIDTH) * 2;

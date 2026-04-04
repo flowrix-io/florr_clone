@@ -91,7 +91,8 @@ class Game {
         this.showHitboxes = false; // Changed from true to false
         this.showStats = false; // Combined setting for FPS, counters, and memory
         this.mobDeathAnimation = true; // Mob death animation setting (default true)
-        this.interpolationAmount = 0.15; // Interpolation factor (0 = no interpolation/snap, 1 = instant)
+        this.interpolationAmount = 0.3; // Interpolation factor (0 = no interpolation/snap, 1 = instant)
+        this.lastInterpolationTime = 0;
         this.fpsCounter = 0;
         this.fpsUpdateTime = 0;
         // Connection quality tracking for slow connection optimization
@@ -1023,12 +1024,28 @@ class Game {
         for (const enemyId of enemiesToRemove) {
             this.enemies.delete(enemyId);
         }
-        // Interpolate all players' positions
+        // Interpolate all players' positions using frame-rate-independent smoothing
         const lerpFactor = this.interpolationAmount;
+        const now = performance.now();
+        const frameDeltaMs = this.lastInterpolationTime > 0 ? now - this.lastInterpolationTime : 16.67;
+        this.lastInterpolationTime = now;
+        // Frame-rate-independent exponential smoothing: equivalent to lerpFactor at 60fps
+        // rate ~= -ln(1 - lerpFactor) * 60
+        const smoothingRate = -Math.log(1 - lerpFactor) * 60;
+        const smoothingFactor = 1 - Math.exp(-smoothingRate * frameDeltaMs / 1000);
         for (const player of this.players.values()) {
             if (player.targetX !== undefined && player.targetY !== undefined) {
-                player.x += (player.targetX - player.x) * lerpFactor;
-                player.y += (player.targetY - player.y) * lerpFactor;
+                const dx = player.targetX - player.x;
+                const dy = player.targetY - player.y;
+                // Snap when close enough to avoid sub-pixel oscillation
+                if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+                    player.x = player.targetX;
+                    player.y = player.targetY;
+                }
+                else {
+                    player.x += dx * smoothingFactor;
+                    player.y += dy * smoothingFactor;
+                }
             }
             // Interpolate petal positions
             if (player.petalPositions) {
@@ -1040,37 +1057,35 @@ class Game {
                             petalPos.y = petalPos.targetY;
                         }
                         else {
-                            petalPos.x += (petalPos.targetX - petalPos.x) * lerpFactor;
-                            petalPos.y += (petalPos.targetY - petalPos.y) * lerpFactor;
+                            petalPos.x += (petalPos.targetX - petalPos.x) * smoothingFactor;
+                            petalPos.y += (petalPos.targetY - petalPos.y) * smoothingFactor;
                         }
                     }
                 });
             }
         }
         // Interpolate all enemies' positions (skip dying enemies)
-        const enemyLerp = this.interpolationAmount;
         for (const enemy of this.enemies.values()) {
             if (enemy.deathAnimationStartTime)
                 continue;
             if (enemy.targetX !== undefined && enemy.targetY !== undefined) {
-                enemy.x += (enemy.targetX - enemy.x) * enemyLerp;
-                enemy.y += (enemy.targetY - enemy.y) * enemyLerp;
+                enemy.x += (enemy.targetX - enemy.x) * smoothingFactor;
+                enemy.y += (enemy.targetY - enemy.y) * smoothingFactor;
             }
             if (enemy.targetAngle !== undefined) {
-                // Interpolate angle with wrapping
                 let angleDiff = enemy.targetAngle - enemy.angle;
                 if (angleDiff > Math.PI)
                     angleDiff -= Math.PI * 2;
                 if (angleDiff < -Math.PI)
                     angleDiff += Math.PI * 2;
-                enemy.angle += angleDiff * enemyLerp;
+                enemy.angle += angleDiff * smoothingFactor;
             }
         }
         // Update petal extension based on key presses
         this.updatePetalExtension();
         const player = this.getLocalPlayer();
         if (player) {
-            this.updatePlayerMovement(player, 1); // Assuming 60fps, so delta is roughly 1
+            this.updatePlayerMovement(player, 1); // Still needed to send input to server
             this.updateCamera(player);
             this.updatePlayerEye();
         }
