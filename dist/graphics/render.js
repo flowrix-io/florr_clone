@@ -42,8 +42,8 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     // Draw boss bars for ultra, super, and unique mobs in view
     this.drawBossBars(enemies);
     // Draw changelog and notifications menus
-    // Ensure canvas z-index is low so UI elements stay on top
-    if (this.canvas) {
+    // Ensure canvas z-index is low so UI elements stay on top (only while in-game)
+    if (this.canvas && window.currentGame) {
         this.canvas.style.zIndex = '0';
     }
     if (this.changelogManager) {

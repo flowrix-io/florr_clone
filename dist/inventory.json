@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244054106,
+      "totalXP": 244054216,
       "inventory": {
         "common": {
           "shield": 243,
@@ -597,7 +597,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 335,
+          "common": 337,
           "legendary": 213,
           "uncommon": 99,
           "mythic": 181,
@@ -609,7 +609,7 @@
         "soldier_ant": {
           "epic": 121,
           "legendary": 321,
-          "common": 436,
+          "common": 437,
           "rare": 172,
           "mythic": 513,
           "ultra": 18,
@@ -629,7 +629,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 406,
+          "common": 410,
           "legendary": 145,
           "mythic": 162,
           "uncommon": 121,
@@ -640,7 +640,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 465,
+          "common": 471,
           "legendary": 336,
           "mythic": 359,
           "uncommon": 170,
@@ -662,7 +662,7 @@
           "super": 5
         },
         "bee": {
-          "common": 369,
+          "common": 376,
           "epic": 99,
           "mythic": 214,
           "uncommon": 95,

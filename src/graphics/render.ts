@@ -62,8 +62,8 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     this.drawBossBars(enemies);
 
     // Draw changelog and notifications menus
-    // Ensure canvas z-index is low so UI elements stay on top
-    if (this.canvas) {
+    // Ensure canvas z-index is low so UI elements stay on top (only while in-game)
+    if (this.canvas && (window as any).currentGame) {
         this.canvas.style.zIndex = '0';
     }
 
