@@ -13,6 +13,8 @@ const leaderboard_1 = require("./leaderboard");
 const constants_1 = require("./constants");
 const chat_1 = require("./chat");
 const skills_1 = require("./skills");
+const inventory_1 = require("./inventory");
+const shop_1 = require("./shop");
 const inventoryCodec_1 = require("./inventoryCodec");
 class FloatingPetalManager {
     constructor(container) {
@@ -128,6 +130,8 @@ class TitleScreen {
         this.backgroundTime = 0;
         this.titleScreenChat = null;
         this.titleScreenSkillsManager = null;
+        this.titleScreenShopManager = null;
+        this.titleScreenMobGallery = null;
         this.playerName = '';
         this.isNameInputFocused = false;
         this.hoveredBiomeIndex = -1;
@@ -187,6 +191,8 @@ class TitleScreen {
         // Initialize chat and skills when socket is available
         this.initializeTitleScreenChat();
         this.initializeTitleScreenSkills();
+        this.initializeTitleScreenShop();
+        this.initializeTitleScreenMobGallery();
         // Biome selector is populated when server sends mapData
     }
     /**
@@ -808,7 +814,7 @@ class TitleScreen {
                 return;
             }
             // Skills shortcut
-            if (event.key === (controls.skills || 'k')) {
+            if (event.key === (controls.skills || 'x')) {
                 this.toggleSkillsOnTitleScreen();
                 event.preventDefault();
                 return;
@@ -913,9 +919,11 @@ class TitleScreen {
                     // Check if game is running
                     if (window.currentGame) {
                         // Get the controls from localStorage or use default
+                        // NOTE: default must match game's default ('x'), not 'k',
+                        // since 'k' is the default for toggle_mouse_controls.
                         const savedControls = localStorage.getItem('controls');
-                        const controls = savedControls ? JSON.parse(savedControls) : { skills: 'k' };
-                        const event = new KeyboardEvent('keydown', { key: controls.skills || 'k', bubbles: true, cancelable: true });
+                        const controls = savedControls ? JSON.parse(savedControls) : { skills: 'x' };
+                        const event = new KeyboardEvent('keydown', { key: controls.skills || 'x', bubbles: true, cancelable: true });
                         document.dispatchEvent(event);
                     }
                     else {
@@ -963,6 +971,12 @@ class TitleScreen {
                     if (window.currentGame && window.currentGame.shopManager) {
                         window.currentGame.shopManager.toggleShop();
                     }
+                    else if (this.titleScreenShopManager) {
+                        this.titleScreenShopManager.toggleShop();
+                    }
+                    else {
+                        console.log('Shop not yet available');
+                    }
                     return false;
                 }, true);
             }
@@ -980,9 +994,11 @@ class TitleScreen {
                     if (window.currentGame && window.currentGame.inventoryManager) {
                         window.currentGame.inventoryManager.toggleMobGallery();
                     }
+                    else if (this.titleScreenMobGallery) {
+                        this.titleScreenMobGallery.toggleMobGallery();
+                    }
                     else {
-                        // On title screen, could show a message or do nothing
-                        console.log('Mob Gallery only available in-game');
+                        console.log('Mob Gallery not yet available');
                     }
                     return false;
                 }, true);
@@ -1282,6 +1298,7 @@ class TitleScreen {
             move_right: 'd',
             inventory: 'z',
             crafting: 'c',
+            skills: 'x',
             toggle_mouse_controls: 'k',
             toggle_hitboxes: 'h',
             zoom_in: '=',
@@ -2834,6 +2851,18 @@ class TitleScreen {
         if (this.titleScreenChat && this.titleScreenChat.chatContainer) {
             this.titleScreenChat.hide();
         }
+        // Tear down title-screen shop and mob gallery panels so they don't
+        // conflict (duplicate IDs, stale event handlers) with the in-game
+        // versions created by the Game's InventoryManager/ShopManager.
+        if (this.titleScreenShopManager) {
+            this.titleScreenShopManager.cleanup();
+            this.titleScreenShopManager = null;
+        }
+        if (this.titleScreenMobGallery) {
+            const mobGalleryPanel = document.getElementById('mobGalleryPanel');
+            mobGalleryPanel?.remove();
+            this.titleScreenMobGallery = null;
+        }
     }
     showTitleScreen() {
         // Reset connecting state so the title screen doesn't show the connecting animation
@@ -3394,6 +3423,150 @@ class TitleScreen {
             }
         }, 5000);
     }
+    cloneCanvas(src) {
+        const c = document.createElement('canvas');
+        c.width = src.width;
+        c.height = src.height;
+        c.getContext('2d')?.drawImage(src, 0, 0);
+        return c;
+    }
+    buildTitleScreenGameInterface() {
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = window.innerWidth;
+        offscreenCanvas.height = window.innerHeight;
+        return {
+            getLocalPlayer: () => {
+                const playerData = this.titleScreenInventoryManager.playerData;
+                if (!playerData)
+                    return undefined;
+                return {
+                    id: window.preconnectedSocket?.id || '',
+                    name: localStorage.getItem('username') || 'Unnamed',
+                    x: 0,
+                    y: 0,
+                    angle: 0,
+                    score: 0,
+                    imageLoaded: true,
+                    image: new Image(),
+                    velocityX: 0,
+                    velocityY: 0,
+                    health: 100,
+                    maxHealth: 100,
+                    damage: 10,
+                    inventory: playerData.inventory,
+                    loadout: playerData.loadout,
+                    level: 1,
+                    xp: 0,
+                    xpToNextLevel: 100,
+                    tp: playerData.tp || 0,
+                    skills: playerData.skills || {},
+                    stars: playerData.stars || 0,
+                    mobKills: playerData.mobKills || {}
+                };
+            },
+            getSocket: () => window.preconnectedSocket,
+            showFloatingText: () => { },
+            showFallingStars: () => { },
+            canvas: offscreenCanvas,
+            getPetalCanvas: (petalType, rarity, time = Date.now()) => {
+                const assets = window.preloadedAssets;
+                if (!assets || !assets.petalImages)
+                    return null;
+                const key = `${petalType}_${rarity}`;
+                const entry = assets.petalImages[key];
+                if (!entry)
+                    return null;
+                if (Array.isArray(entry)) {
+                    const frameIndex = Math.floor((time / 42) % entry.length);
+                    // Clone so the same cache canvas isn't appended to multiple DOM nodes
+                    return this.cloneCanvas(entry[frameIndex]);
+                }
+                return this.cloneCanvas(entry);
+            },
+            getItemSpriteDataUrl: (itemType) => {
+                const assets = window.preloadedAssets;
+                if (!assets || !assets.itemSprites)
+                    return null;
+                const img = assets.itemSprites[itemType];
+                if (!img)
+                    return null;
+                try {
+                    const c = document.createElement('canvas');
+                    c.width = img.naturalWidth || 32;
+                    c.height = img.naturalHeight || 32;
+                    c.getContext('2d')?.drawImage(img, 0, 0);
+                    return c.toDataURL('image/png');
+                }
+                catch {
+                    return null;
+                }
+            }
+        };
+    }
+    initializeTitleScreenShop() {
+        const gameInterface = this.buildTitleScreenGameInterface();
+        const initShop = () => {
+            if (this.titleScreenShopManager)
+                return;
+            console.log('[TitleScreen] Initializing shop manager');
+            this.titleScreenShopManager = new shop_1.ShopManager(gameInterface);
+            // Wire up shop socket events (same as socket.ts in-game handlers)
+            const socket = window.preconnectedSocket;
+            if (!socket)
+                return;
+            socket.on('shopPurchaseSuccess', (data) => {
+                const playerData = this.titleScreenInventoryManager.playerData;
+                if (playerData) {
+                    playerData.inventory = data.inventory;
+                    playerData.stars = data.stars;
+                }
+                this.titleScreenShopManager?.handlePurchaseSuccess();
+                this.titleScreenShopManager?.updateStarsDisplay();
+            });
+            socket.on('shopPurchaseError', (message) => {
+                this.titleScreenShopManager?.handlePurchaseError(message);
+            });
+            socket.on('codeRedeemSuccess', (data) => {
+                const playerData = this.titleScreenInventoryManager.playerData;
+                if (playerData)
+                    playerData.stars = data.totalStars;
+                this.titleScreenShopManager?.handleCodeRedeemSuccess(data.stars);
+                this.titleScreenShopManager?.updateStarsDisplay();
+            });
+            socket.on('codeRedeemError', (message) => {
+                this.titleScreenShopManager?.handleCodeRedeemError(message);
+            });
+            socket.on('starsEarned', (data) => {
+                const playerData = this.titleScreenInventoryManager.playerData;
+                if (playerData)
+                    playerData.stars = data.total;
+                this.titleScreenShopManager?.updateStarsDisplay();
+            });
+        };
+        const checkSocket = setInterval(() => {
+            if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+                initShop();
+                clearInterval(checkSocket);
+            }
+        }, 100);
+        setTimeout(() => clearInterval(checkSocket), 5000);
+    }
+    initializeTitleScreenMobGallery() {
+        const gameInterface = this.buildTitleScreenGameInterface();
+        const initGallery = () => {
+            if (this.titleScreenMobGallery)
+                return;
+            console.log('[TitleScreen] Initializing mob gallery manager');
+            this.titleScreenMobGallery = new inventory_1.InventoryManager(gameInterface, null, { mobGalleryOnly: true });
+        };
+        const checkSocket = setInterval(() => {
+            if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+                initGallery();
+                clearInterval(checkSocket);
+            }
+        }, 100);
+        setTimeout(() => clearInterval(checkSocket), 5000);
+    }
 }
 exports.TitleScreen = TitleScreen;
 /**
@@ -3627,6 +3800,12 @@ class TitleScreenInventoryManager {
                     this.updateInventoryDisplay();
                 }
             }
+            if (this.playerData) {
+                if (updatedPlayer.stars !== undefined)
+                    this.playerData.stars = updatedPlayer.stars;
+                if (updatedPlayer.mobKills)
+                    this.playerData.mobKills = updatedPlayer.mobKills;
+            }
         });
     }
     authenticateAndFetchData() {
@@ -3659,12 +3838,28 @@ class TitleScreenInventoryManager {
             if (response.success && response.player) {
                 console.log('[TitleScreenInventory] Received player data:', response.player);
                 this.isAuthenticated = true;
+                // inventory may come as either a PlayerInventory array (triples
+                // of [rarityId, itemId, count]) or a dict keyed by rarity.
+                // Only run dictToInventory when it's a plain object.
+                const rawInv = response.player.inventory;
+                const normalizedInv = Array.isArray(rawInv)
+                    ? rawInv
+                    : (rawInv ? (0, inventoryCodec_1.dictToInventory)(rawInv) : []);
                 this.playerData = {
-                    inventory: response.player.inventory ? (0, inventoryCodec_1.dictToInventory)(response.player.inventory) : [],
-                    loadout: response.player.loadout || Array(10).fill(null)
+                    inventory: normalizedInv,
+                    loadout: response.player.loadout || Array(10).fill(null),
+                    tp: response.player.tp,
+                    skills: response.player.skills,
+                    stars: response.player.stars || 0,
+                    mobKills: response.player.mobKills || {}
                 };
+                console.log('[TitleScreenInventory] Normalized inventory, len=', normalizedInv.length, 'rawType=', Array.isArray(rawInv) ? 'array' : typeof rawInv);
                 this.updateLoadoutDisplay();
-                if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
+                // Always refresh the inventory display if the panel exists.
+                // The user may have already clicked the inventory button before
+                // authentication completed, leaving the panel open but empty;
+                // this re-populates it once data arrives.
+                if (this.inventoryPanel) {
                     this.updateInventoryDisplay();
                 }
                 // Mark socket as authenticated - this allows operations to proceed
@@ -4053,7 +4248,8 @@ class TitleScreenInventoryManager {
         this.updateLoadoutDisplay();
     }
     updateInventoryDisplay() {
-        if (!this.inventoryPanel || !this.playerData)
+        console.log('[TitleScreenInventory] updateInventoryDisplay. panel:', !!this.inventoryPanel, 'panel.display:', this.inventoryPanel?.style.display, 'panel.parent:', this.inventoryPanel?.parentElement?.tagName, 'playerData:', !!this.playerData, 'inventoryItems:', this.playerData?.inventory?.length);
+        if (!this.inventoryPanel)
             return;
         const content = this.inventoryPanel.querySelector('.inventory-content');
         if (!content)
@@ -4062,6 +4258,13 @@ class TitleScreenInventoryManager {
         const title = document.createElement('h2');
         title.textContent = 'Inventory';
         content.appendChild(title);
+        if (!this.playerData) {
+            const loading = document.createElement('div');
+            loading.textContent = 'Loading inventory...';
+            loading.style.cssText = 'color: white; padding: 20px; text-align: center;';
+            content.appendChild(loading);
+            return;
+        }
         const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
         const gridContainer = document.createElement('div');
         gridContainer.className = 'inventory-grid-container';
@@ -4434,6 +4637,7 @@ class TitleScreenInventoryManager {
         element.addEventListener('dragend', handleDragEnd);
     }
     toggleInventory() {
+        console.log('[TitleScreenInventory] toggleInventory called. playerData:', !!this.playerData, 'isAuthenticated:', this.isAuthenticated);
         let inventoryPanel = document.getElementById('inventoryPanel');
         if (!inventoryPanel) {
             inventoryPanel = document.createElement('div');
@@ -4444,14 +4648,27 @@ class TitleScreenInventoryManager {
             inventoryContent.className = 'inventory-content';
             inventoryPanel.appendChild(inventoryContent);
             document.body.appendChild(inventoryPanel);
-            this.inventoryPanel = inventoryPanel;
+        }
+        // Always bind the field to the current element (an existing panel
+        // from a previous game session won't update `this.inventoryPanel`
+        // otherwise, causing updateInventoryDisplay to early-return).
+        this.inventoryPanel = inventoryPanel;
+        // Ensure the content container exists (in case a stale panel was found
+        // whose content was torn down).
+        if (!inventoryPanel.querySelector('.inventory-content')) {
+            const inventoryContent = document.createElement('div');
+            inventoryContent.className = 'inventory-content';
+            inventoryPanel.appendChild(inventoryContent);
         }
         const isOpen = inventoryPanel.style.display === 'block';
+        console.log('[TitleScreenInventory] toggleInventory: isOpen=', isOpen, 'inDOM=', !!inventoryPanel.parentElement);
         if (!isOpen) {
             this.updateInventoryDisplay();
             inventoryPanel.style.display = 'block';
             setTimeout(() => {
                 inventoryPanel.classList.add('open');
+                const cs = getComputedStyle(inventoryPanel);
+                console.log('[TitleScreenInventory] .open added. classList=', inventoryPanel.className, 'transform=', cs.transform, 'left=', cs.left, 'position=', cs.position, 'rect=', inventoryPanel.getBoundingClientRect());
             }, 10);
         }
         else {

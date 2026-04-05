@@ -382,10 +382,11 @@ export class InventoryManager {
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
-    constructor(game: GameInterface,  chat: Chat | null) {
+    constructor(game: GameInterface,  chat: Chat | null, options?: { mobGalleryOnly?: boolean }) {
         this.game = game;
         this.chat = chat;
         this.allPetalTypes = getAllPetalTypes();
+        const mobGalleryOnly = options?.mobGalleryOnly === true;
         
         // Setup ALT key tracking for tooltip value display
         (window as any).altKeyPressed = false;
@@ -402,6 +403,7 @@ export class InventoryManager {
             }
         });
 
+        if (!mobGalleryOnly) {
         // Create loadout bar (or use existing one if it already exists)
         let loadoutBar = document.getElementById('loadoutBar') as HTMLDivElement;
         if (!loadoutBar) {
@@ -518,6 +520,7 @@ export class InventoryManager {
 
         this.craftingPanel.appendChild(craftingContent);
         document.body.appendChild(this.craftingPanel);
+        } // end !mobGalleryOnly
 
         // Create mob gallery panel
         this.mobGalleryPanel = document.createElement('div');
@@ -569,7 +572,7 @@ export class InventoryManager {
 
         // Add click handler to clear success display when clicking on crafting slots
         // (with minimum display time enforced in clearCraftingSuccessDisplay)
-        this.craftingPanel.addEventListener('click', (e) => {
+        this.craftingPanel?.addEventListener('click', (e) => {
             // Clear success display when clicking on crafting slots or circle container
             const target = e.target as HTMLElement;
             if (target.closest('.crafting-slot') || target.closest('.crafting-circle-container')) {
@@ -785,7 +788,9 @@ export class InventoryManager {
         document.head.appendChild(style);
 
         // Setup drag and drop
-        this.setupDragAndDrop();
+        if (!mobGalleryOnly) {
+            this.setupDragAndDrop();
+        }
     }
 
     public getLoadoutKeyBindings() {

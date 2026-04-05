@@ -122,6 +122,7 @@ window.onload = async () => {
         console.log('[Index] Loading assets...');
         preloadedAssets = await preloader.loadAssets();
         console.log('[Index] Assets loaded successfully');
+        (window as any).preloadedAssets = preloadedAssets;
 
         //debug
         Object.defineProperty(window, 'petalConfig', {

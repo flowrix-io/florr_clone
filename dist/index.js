@@ -92,6 +92,7 @@ window.onload = async () => {
         console.log('[Index] Loading assets...');
         preloadedAssets = await preloader.loadAssets();
         console.log('[Index] Assets loaded successfully');
+        window.preloadedAssets = preloadedAssets;
         //debug
         Object.defineProperty(window, 'petalConfig', {
             value: petals_1.PETAL_CONFIG,

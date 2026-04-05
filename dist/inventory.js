@@ -288,7 +288,7 @@ class InventoryManager {
         const b = num & 255;
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
-    constructor(game, chat) {
+    constructor(game, chat, options) {
         this.inventoryPanel = null;
         this.craftingPanel = null;
         this.mobGalleryPanel = null;
@@ -327,6 +327,7 @@ class InventoryManager {
         this.game = game;
         this.chat = chat;
         this.allPetalTypes = (0, petals_1.getAllPetalTypes)();
+        const mobGalleryOnly = options?.mobGalleryOnly === true;
         // Setup ALT key tracking for tooltip value display
         window.altKeyPressed = false;
         document.addEventListener('keydown', (e) => {
@@ -341,102 +342,104 @@ class InventoryManager {
                 this.updateTooltipValues(false);
             }
         });
-        // Create loadout bar (or use existing one if it already exists)
-        let loadoutBar = document.getElementById('loadoutBar');
-        if (!loadoutBar) {
-            loadoutBar = document.createElement('div');
-            loadoutBar.id = 'loadoutBar';
-            loadoutBar.style.position = 'fixed';
-            loadoutBar.style.bottom = '20px';
-            loadoutBar.style.left = '50%';
-            loadoutBar.style.transform = 'translateX(-50%)';
-            loadoutBar.style.display = 'flex';
-            loadoutBar.style.gap = '5px';
-            loadoutBar.style.zIndex = '1000';
-            document.body.appendChild(loadoutBar);
-        }
-        else {
-            // Clear existing slots if loadout bar already exists
-            loadoutBar.innerHTML = '';
-        }
-        // Create slots if they don't exist
-        if (loadoutBar.querySelectorAll('.loadout-slot').length === 0) {
-            for (let i = 0; i < this.LOADOUT_SLOTS; i++) {
-                const slot = document.createElement('div');
-                slot.className = 'loadout-slot';
-                slot.dataset.slot = i.toString();
-                slot.style.width = '50px';
-                slot.style.height = '50px';
-                slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
-                slot.style.border = '3px solid #00ba3e';
-                slot.style.borderRadius = '5px';
-                loadoutBar.appendChild(slot);
+        if (!mobGalleryOnly) {
+            // Create loadout bar (or use existing one if it already exists)
+            let loadoutBar = document.getElementById('loadoutBar');
+            if (!loadoutBar) {
+                loadoutBar = document.createElement('div');
+                loadoutBar.id = 'loadoutBar';
+                loadoutBar.style.position = 'fixed';
+                loadoutBar.style.bottom = '20px';
+                loadoutBar.style.left = '50%';
+                loadoutBar.style.transform = 'translateX(-50%)';
+                loadoutBar.style.display = 'flex';
+                loadoutBar.style.gap = '5px';
+                loadoutBar.style.zIndex = '1000';
+                document.body.appendChild(loadoutBar);
             }
-        }
-        // Create inventory panel
-        this.inventoryPanel = document.createElement('div');
-        this.inventoryPanel.id = 'inventoryPanel';
-        this.inventoryPanel.className = 'inventory-panel';
-        this.inventoryPanel.style.display = 'none';
-        const inventoryContent = document.createElement('div');
-        inventoryContent.className = 'inventory-content';
-        this.inventoryPanel.appendChild(inventoryContent);
-        document.body.appendChild(this.inventoryPanel);
-        // Create crafting panel
-        this.craftingPanel = document.createElement('div');
-        this.craftingPanel.id = 'craftingPanel';
-        this.craftingPanel.className = 'crafting-panel';
-        this.craftingPanel.style.display = 'none';
-        const craftingContent = document.createElement('div');
-        craftingContent.className = 'crafting-content';
-        const title = document.createElement('h2');
-        title.textContent = 'Crafting';
-        craftingContent.appendChild(title);
-        const craftingMain = document.createElement('div');
-        craftingMain.className = 'crafting-main';
-        craftingMain.style.flex = '0 0 50%';
-        const craftingCircleContainer = document.createElement('div');
-        craftingCircleContainer.className = 'crafting-circle-container';
-        for (let i = 0; i < 5; i++) {
-            const slot = document.createElement('div');
-            slot.className = 'crafting-slot';
-            slot.dataset.index = i.toString();
-            craftingCircleContainer.appendChild(slot);
-        }
-        const multiplierText = document.createElement('div');
-        multiplierText.className = 'crafting-multiplier';
-        craftingCircleContainer.appendChild(multiplierText);
-        // Success display in the center
-        const successDisplay = document.createElement('div');
-        successDisplay.className = 'crafting-success-display';
-        successDisplay.style.display = 'none';
-        craftingCircleContainer.appendChild(successDisplay);
-        craftingMain.appendChild(craftingCircleContainer);
-        const craftingActions = document.createElement('div');
-        craftingActions.className = 'crafting-actions';
-        const craftButton = document.createElement('button');
-        craftButton.className = 'craft-button';
-        craftButton.textContent = 'Craft';
-        craftButton.addEventListener('click', () => this.craftItems());
-        craftingActions.appendChild(craftButton);
-        const successChance = document.createElement('div');
-        successChance.className = 'success-chance';
-        successChance.textContent = 'Success Chance: 0%';
-        craftingActions.appendChild(successChance);
-        craftingMain.appendChild(craftingActions);
-        craftingContent.appendChild(craftingMain);
-        // Create inventory preview section
-        const inventoryPreview = document.createElement('div');
-        inventoryPreview.className = 'crafting-inventory-preview';
-        const previewTitle = document.createElement('h3');
-        previewTitle.textContent = 'Inventory';
-        inventoryPreview.appendChild(previewTitle);
-        const inventoryGrid = document.createElement('div');
-        inventoryGrid.className = 'crafting-inventory-grid';
-        inventoryPreview.appendChild(inventoryGrid);
-        craftingContent.appendChild(inventoryPreview);
-        this.craftingPanel.appendChild(craftingContent);
-        document.body.appendChild(this.craftingPanel);
+            else {
+                // Clear existing slots if loadout bar already exists
+                loadoutBar.innerHTML = '';
+            }
+            // Create slots if they don't exist
+            if (loadoutBar.querySelectorAll('.loadout-slot').length === 0) {
+                for (let i = 0; i < this.LOADOUT_SLOTS; i++) {
+                    const slot = document.createElement('div');
+                    slot.className = 'loadout-slot';
+                    slot.dataset.slot = i.toString();
+                    slot.style.width = '50px';
+                    slot.style.height = '50px';
+                    slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
+                    slot.style.border = '3px solid #00ba3e';
+                    slot.style.borderRadius = '5px';
+                    loadoutBar.appendChild(slot);
+                }
+            }
+            // Create inventory panel
+            this.inventoryPanel = document.createElement('div');
+            this.inventoryPanel.id = 'inventoryPanel';
+            this.inventoryPanel.className = 'inventory-panel';
+            this.inventoryPanel.style.display = 'none';
+            const inventoryContent = document.createElement('div');
+            inventoryContent.className = 'inventory-content';
+            this.inventoryPanel.appendChild(inventoryContent);
+            document.body.appendChild(this.inventoryPanel);
+            // Create crafting panel
+            this.craftingPanel = document.createElement('div');
+            this.craftingPanel.id = 'craftingPanel';
+            this.craftingPanel.className = 'crafting-panel';
+            this.craftingPanel.style.display = 'none';
+            const craftingContent = document.createElement('div');
+            craftingContent.className = 'crafting-content';
+            const title = document.createElement('h2');
+            title.textContent = 'Crafting';
+            craftingContent.appendChild(title);
+            const craftingMain = document.createElement('div');
+            craftingMain.className = 'crafting-main';
+            craftingMain.style.flex = '0 0 50%';
+            const craftingCircleContainer = document.createElement('div');
+            craftingCircleContainer.className = 'crafting-circle-container';
+            for (let i = 0; i < 5; i++) {
+                const slot = document.createElement('div');
+                slot.className = 'crafting-slot';
+                slot.dataset.index = i.toString();
+                craftingCircleContainer.appendChild(slot);
+            }
+            const multiplierText = document.createElement('div');
+            multiplierText.className = 'crafting-multiplier';
+            craftingCircleContainer.appendChild(multiplierText);
+            // Success display in the center
+            const successDisplay = document.createElement('div');
+            successDisplay.className = 'crafting-success-display';
+            successDisplay.style.display = 'none';
+            craftingCircleContainer.appendChild(successDisplay);
+            craftingMain.appendChild(craftingCircleContainer);
+            const craftingActions = document.createElement('div');
+            craftingActions.className = 'crafting-actions';
+            const craftButton = document.createElement('button');
+            craftButton.className = 'craft-button';
+            craftButton.textContent = 'Craft';
+            craftButton.addEventListener('click', () => this.craftItems());
+            craftingActions.appendChild(craftButton);
+            const successChance = document.createElement('div');
+            successChance.className = 'success-chance';
+            successChance.textContent = 'Success Chance: 0%';
+            craftingActions.appendChild(successChance);
+            craftingMain.appendChild(craftingActions);
+            craftingContent.appendChild(craftingMain);
+            // Create inventory preview section
+            const inventoryPreview = document.createElement('div');
+            inventoryPreview.className = 'crafting-inventory-preview';
+            const previewTitle = document.createElement('h3');
+            previewTitle.textContent = 'Inventory';
+            inventoryPreview.appendChild(previewTitle);
+            const inventoryGrid = document.createElement('div');
+            inventoryGrid.className = 'crafting-inventory-grid';
+            inventoryPreview.appendChild(inventoryGrid);
+            craftingContent.appendChild(inventoryPreview);
+            this.craftingPanel.appendChild(craftingContent);
+            document.body.appendChild(this.craftingPanel);
+        } // end !mobGalleryOnly
         // Create mob gallery panel
         this.mobGalleryPanel = document.createElement('div');
         this.mobGalleryPanel.id = 'mobGalleryPanel';
@@ -481,7 +484,7 @@ class InventoryManager {
         document.body.appendChild(this.mobGalleryPanel);
         // Add click handler to clear success display when clicking on crafting slots
         // (with minimum display time enforced in clearCraftingSuccessDisplay)
-        this.craftingPanel.addEventListener('click', (e) => {
+        this.craftingPanel?.addEventListener('click', (e) => {
             // Clear success display when clicking on crafting slots or circle container
             const target = e.target;
             if (target.closest('.crafting-slot') || target.closest('.crafting-circle-container')) {
@@ -695,7 +698,9 @@ class InventoryManager {
         `;
         document.head.appendChild(style);
         // Setup drag and drop
-        this.setupDragAndDrop();
+        if (!mobGalleryOnly) {
+            this.setupDragAndDrop();
+        }
     }
     getLoadoutKeyBindings() {
         return this.LOADOUT_KEY_BINDINGS;
