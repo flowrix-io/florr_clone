@@ -206,7 +206,8 @@ function preconnectToServer() {
             // Update title screen inventory manager with player data
             titleScreen.titleScreenInventoryManager?.updateFromPlayerData({
                 inventory: response.player.inventory ? (0, inventoryCodec_1.dictToInventory)(response.player.inventory) : [],
-                loadout: response.player.loadout || Array(10).fill(null),
+                loadout: (() => { const a = response.player.loadout || []; const o = new Array(20).fill(null); for (let i = 0; i < Math.min(a.length, 20); i++)
+                    o[i] = a[i] || null; return o; })(),
                 tp: response.player.tp,
                 skills: response.player.skills
             });

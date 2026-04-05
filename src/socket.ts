@@ -3,6 +3,12 @@ import { Player, PlayerInventory, ServerPlayer } from './player';
 import { Enemy, Obstacle } from './enemy';
 import { Item, WorldItem } from './item';
 
+function padLoadout(arr: (Item | null)[] | undefined, size: number): (Item | null)[] {
+    const out: (Item | null)[] = new Array(size).fill(null);
+    if (arr) for (let i = 0; i < Math.min(arr.length, size); i++) out[i] = arr[i] || null;
+    return out;
+}
+
 export { Socket };
 
 export function initMultiPlayerMode(game: any, serverIp: string) {
@@ -1436,7 +1442,7 @@ function setupSocketListeners(game: any) {
                 player.maxHealth = serverPlayer.maxHealth;
                 player.damage = serverPlayer.damage;
                 player.inventory = serverPlayer.inventory;
-                player.loadout = serverPlayer.loadout;
+                player.loadout = padLoadout(serverPlayer.loadout, 20);
                 player.isInvulnerable = serverPlayer.isInvulnerable;
                 player.knockbackX = serverPlayer.knockbackX;
                 player.knockbackY = serverPlayer.knockbackY;

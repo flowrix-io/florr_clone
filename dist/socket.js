@@ -2,6 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.initMultiPlayerMode = initMultiPlayerMode;
 const ws_client_1 = require("./ws_client");
+function padLoadout(arr, size) {
+    const out = new Array(size).fill(null);
+    if (arr)
+        for (let i = 0; i < Math.min(arr.length, size); i++)
+            out[i] = arr[i] || null;
+    return out;
+}
 function initMultiPlayerMode(game, serverIp) {
     // Remove connecting message immediately
     const connectingDiv = document.getElementById('connectingDiv');
@@ -1215,7 +1222,7 @@ function setupSocketListeners(game) {
                 player.maxHealth = serverPlayer.maxHealth;
                 player.damage = serverPlayer.damage;
                 player.inventory = serverPlayer.inventory;
-                player.loadout = serverPlayer.loadout;
+                player.loadout = padLoadout(serverPlayer.loadout, 20);
                 player.isInvulnerable = serverPlayer.isInvulnerable;
                 player.knockbackX = serverPlayer.knockbackX;
                 player.knockbackY = serverPlayer.knockbackY;

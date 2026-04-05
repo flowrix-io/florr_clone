@@ -46,7 +46,7 @@ export class InventoryManager {
         return this.isMobGalleryOpen;
     }
     private successDisplayShownAt: number = 0; // Timestamp when success display was shown
-    private readonly LOADOUT_SLOTS = 10;
+    private readonly LOADOUT_SLOTS = 20;
     private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
     private readonly allPetalTypes: string[];
     private chat: Chat | null = null;

@@ -301,7 +301,7 @@ class InventoryManager {
         this.renderedRarityRows = new Map();
         this.inventoryGridContainer = null;
         this.successDisplayShownAt = 0; // Timestamp when success display was shown
-        this.LOADOUT_SLOTS = 10;
+        this.LOADOUT_SLOTS = 20;
         this.LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
         this.chat = null;
         this.tooltipElement = null;
