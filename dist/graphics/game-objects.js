@@ -68,10 +68,16 @@ core_1.Graphics.prototype.drawGameObjects = function (players, enemies, items, m
             }
         }
     }
-    // Draw items
+    // Draw items (with viewport culling)
+    const ITEM_CULL_BUFFER = 50; // Item size ~50px + text
     for (const item of items.values()) {
-        // Add similar viewport culling for items
-        this.drawItem(item);
+        if (item.x + ITEM_CULL_BUFFER < viewport.left ||
+            item.x - ITEM_CULL_BUFFER > viewport.right ||
+            item.y + ITEM_CULL_BUFFER < viewport.top ||
+            item.y - ITEM_CULL_BUFFER > viewport.bottom) {
+            continue;
+        }
+        this.drawItem(item, players);
     }
     // Cache current time once per frame for animated projectiles
     const currentTime = Date.now();

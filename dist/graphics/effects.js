@@ -150,14 +150,9 @@ core_1.Graphics.prototype.drawPetalParticleEffects = function () {
             particle.x += particle.vx;
             particle.y += particle.vy;
             particle.life -= 16; // Assuming 60fps, reduce by ~16ms per frame
-            // Draw particle with white base color and faint rarity tinting
-            this.ctx.globalAlpha = particleProgress * 0.6; // More visible particles
-            // Create a gradient from white base to rarity color
-            const gradient = this.ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, particle.size);
-            gradient.addColorStop(0, particle.baseColor); // White center
-            gradient.addColorStop(0.7, particle.baseColor); // Mostly white
-            gradient.addColorStop(1, particle.color); // Faint rarity color at edges
-            this.ctx.fillStyle = gradient;
+            // Draw particle with white base color
+            this.ctx.globalAlpha = particleProgress * 0.6;
+            this.ctx.fillStyle = particle.baseColor;
             this.ctx.beginPath();
             this.ctx.arc(particle.x, particle.y, particle.size * particleProgress, 0, Math.PI * 2);
             this.ctx.fill();

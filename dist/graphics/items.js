@@ -1,15 +1,176 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
-core_1.Graphics.prototype.drawItem = function (item) {
+// Canvas size: 50x50 rarity box + text below (needs ~18px extra) + padding
+const ITEM_CANVAS_SIZE = 60;
+const ITEM_CANVAS_CENTER = 30;
+const SPAWN_ANIM_DURATION = 400; // ms
+const PICKUP_ANIM_DURATION = 150; // ms
+const DESPAWN_ANIM_DURATION = 300; // ms
+core_1.Graphics.prototype.getItemCanvas = function (item) {
+    if (!this.itemCanvasCache) {
+        this.itemCanvasCache = new Map();
+    }
+    // Build cache key from visual properties
+    // For petals: cache background (rarity box + text) only, petal drawn separately
+    const isPetal = item.type === 'petal';
+    const nameKey = isPetal ? (item.petalType || '') : item.type;
+    const key = `${item.type}|${item.rarity || 'none'}|${nameKey}|${isPetal ? 'bg' : 'full'}`;
+    let cached = this.itemCanvasCache.get(key);
+    if (cached)
+        return cached;
+    const canvas = document.createElement('canvas');
+    canvas.width = ITEM_CANVAS_SIZE;
+    canvas.height = ITEM_CANVAS_SIZE;
+    const ctx = canvas.getContext('2d');
+    if (!ctx)
+        return null;
+    ctx.translate(ITEM_CANVAS_CENTER, ITEM_CANVAS_CENTER);
+    // Draw rarity background
+    if (item.rarity) {
+        ctx.save();
+        ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+        ctx.roundRect(-30, -30, 60, 60, 3);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.roundRect(-25, -25, 50, 50, 3);
+        ctx.lineWidth = 5;
+        ctx.strokeStyle = this.darkenColor(this.ITEM_RARITY_COLORS[item.rarity], 30);
+        ctx.stroke();
+        ctx.fillStyle = `${this.ITEM_RARITY_COLORS[item.rarity]}`;
+        ctx.fill();
+        ctx.restore();
+    }
+    // Draw sprite only for non-petal items (petal drawn on top separately)
+    if (!isPetal) {
+        const sprite = this.itemSprites[item.type];
+        if (sprite) {
+            ctx.drawImage(sprite, -15, -15, 30, 30);
+        }
+    }
+    // Draw item name
+    let itemName;
+    if (isPetal && item.petalType) {
+        itemName = item.petalType[0].toUpperCase() + item.petalType.slice(1).toLowerCase();
+    }
+    else {
+        itemName = item.type[0].toUpperCase() + item.type.slice(1).toLowerCase();
+    }
+    itemName = itemName.replace('_', ' ');
+    ctx.font = '12px Ubuntu, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeText(itemName, 0, 20);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(itemName, 0, 20);
+    this.itemCanvasCache.set(key, canvas);
+    return canvas;
+};
+core_1.Graphics.prototype.drawItem = function (item, players) {
+    // Compute spawn spin-out animation offset
+    let drawX = item.x;
+    let drawY = item.y;
+    let rotation = 0;
+    let alpha = 1;
+    let scale = 1;
+    // Death animation (pickup or despawn) takes precedence
+    const deathAnim = this.itemDeathAnim?.get(item.id);
+    if (deathAnim) {
+        const elapsed = Date.now() - deathAnim.startTime;
+        const duration = deathAnim.type === 'pickup' ? PICKUP_ANIM_DURATION : DESPAWN_ANIM_DURATION;
+        const t = Math.min(1, elapsed / duration);
+        if (deathAnim.type === 'pickup') {
+            // Fly toward target player (tracking current position) with ease-in
+            const eased = t * t;
+            let targetX = deathAnim.startX;
+            let targetY = deathAnim.startY;
+            if (deathAnim.targetPlayerId && players) {
+                const targetPlayer = players.get(deathAnim.targetPlayerId);
+                if (targetPlayer) {
+                    targetX = targetPlayer.x;
+                    targetY = targetPlayer.y;
+                }
+            }
+            drawX = deathAnim.startX + (targetX - deathAnim.startX) * eased;
+            drawY = deathAnim.startY + (targetY - deathAnim.startY) * eased;
+            scale = 1 - eased * 0.7; // shrink as it flies in
+            alpha = 1 - eased * 0.5;
+        }
+        else {
+            // Despawn: spin and fade
+            rotation = t * Math.PI * 2;
+            alpha = 1 - t;
+            scale = 1 - t * 0.3;
+        }
+    }
+    else {
+        // Spawn spin-out animation
+        const anim = this.itemSpawnAnim?.get(item.id);
+        if (anim) {
+            const elapsed = Date.now() - anim.startTime;
+            if (elapsed >= SPAWN_ANIM_DURATION) {
+                this.itemSpawnAnim.delete(item.id);
+            }
+            else {
+                const t = elapsed / SPAWN_ANIM_DURATION;
+                const eased = 1 - (1 - t) * (1 - t);
+                const offset = anim.distance * (1 - eased);
+                drawX = item.x + Math.cos(anim.angle) * offset;
+                drawY = item.y + Math.sin(anim.angle) * offset;
+                rotation = anim.rotation * (1 - eased);
+            }
+        }
+    }
+    // Fast path: use cached background + overlay petal/sprite
+    const cached = this.getItemCanvas(item);
+    if (cached) {
+        const needsTransform = rotation !== 0 || scale !== 1 || alpha !== 1;
+        if (needsTransform) {
+            this.ctx.save();
+            this.ctx.globalAlpha = alpha;
+            this.ctx.translate(drawX, drawY);
+            if (rotation !== 0)
+                this.ctx.rotate(rotation);
+            if (scale !== 1)
+                this.ctx.scale(scale, scale);
+            this.ctx.drawImage(cached, -ITEM_CANVAS_CENTER, -ITEM_CANVAS_CENTER);
+            if (item.type === 'petal') {
+                this.drawWorldPetal(item);
+            }
+            this.ctx.restore();
+        }
+        else {
+            this.ctx.drawImage(cached, drawX - ITEM_CANVAS_CENTER, drawY - ITEM_CANVAS_CENTER);
+            if (item.type === 'petal') {
+                this.ctx.save();
+                this.ctx.translate(drawX, drawY);
+                this.drawWorldPetal(item);
+                this.ctx.restore();
+            }
+        }
+        if (this.showHitboxes) {
+            this.ctx.save();
+            this.ctx.strokeStyle = 'yellow';
+            this.ctx.lineWidth = 2;
+            this.ctx.globalAlpha = 1.0;
+            this.ctx.shadowBlur = 0;
+            this.ctx.strokeRect(item.x - 15, item.y - 15, 30, 30);
+            this.ctx.restore();
+        }
+        return;
+    }
+    console.warn('Item not cached, drawing normally');
+    // Fallback/petal path: draw normally
     this.ctx.save();
     this.ctx.translate(item.x, item.y);
     // Draw item rarity glow
     if (item.rarity) {
         this.ctx.save();
         this.ctx.beginPath();
-        this.ctx.roundRect(-25, -25, 50, 50, 5);
-        this.ctx.lineWidth = 3;
+        this.ctx.roundRect(-25, -25, 50, 50, 3);
+        this.ctx.lineWidth = 5;
         this.ctx.strokeStyle = this.darkenColor(this.ITEM_RARITY_COLORS[item.rarity], 30);
         this.ctx.stroke();
         this.ctx.fillStyle = `${this.ITEM_RARITY_COLORS[item.rarity]}`;
@@ -53,8 +214,8 @@ core_1.Graphics.prototype.drawItem = function (item) {
         this.ctx.save();
         this.ctx.strokeStyle = 'yellow';
         this.ctx.lineWidth = 2;
-        this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
-        this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.shadowBlur = 0;
         this.ctx.strokeRect(-15, -15, 30, 30);
         this.ctx.restore();
     }
@@ -74,12 +235,6 @@ core_1.Graphics.prototype.drawWorldPetal = function (item) {
         // Use consistent scaling to maintain aspect ratio
         const petalSize = size;
         this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
-        // Add rarity glow effect
-        if (item.rarity !== 'common') {
-            this.ctx.shadowColor = stats.color;
-            this.ctx.shadowBlur = 5;
-            this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
-        }
     }
     else {
         // Fallback to colored circle if image not loaded
@@ -91,11 +246,5 @@ core_1.Graphics.prototype.drawWorldPetal = function (item) {
         this.ctx.fill();
         this.ctx.stroke();
     }
-    // Create particle effects for ultra, super, and unique world petals
-    if (['ultra', 'super', 'unique'].includes(item.rarity)) {
-        // Only create particles occasionally to avoid performance issues
-        if (Math.random() < 0.05) { // 5% chance per frame for world petals
-            this.showPetalParticleEffect(item.x, item.y, item.rarity);
-        }
-    }
+    // Particle burst is now emitted once when the item spawns, not per-frame
 };

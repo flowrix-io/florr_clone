@@ -386,6 +386,40 @@ export class Graphics {
         });
     }
 
+    public showItemDropBurst(x: number, y: number, rarity: string) {
+        const rarityColor = this.ITEM_RARITY_COLORS[rarity as keyof typeof this.ITEM_RARITY_COLORS] || '#ffffff';
+
+        const particles: PetalParticle[] = [];
+        const particleCount = 10;
+
+        for (let i = 0; i < particleCount; i++) {
+            const angle = (Math.PI * 2 * i) / particleCount + Math.random() * 0.3;
+            const speed = 1.5 + Math.random() * 1.5;
+            const particleLife = 400 + Math.random() * 200;
+
+            particles.push({
+                x: x + (Math.random() - 0.5) * 4,
+                y: y + (Math.random() - 0.5) * 4,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: particleLife,
+                maxLife: particleLife,
+                size: 2 + Math.random() * 2,
+                color: rarityColor,
+                baseColor: rarityColor
+            });
+        }
+
+        this.petalParticleEffects.push({
+            x,
+            y,
+            rarity,
+            particles,
+            lifetime: 700,
+            startTime: Date.now()
+        });
+    }
+
     public setBiomeTexture(biomeName: string, texture: HTMLImageElement) {
         this.biomeTextures.set(biomeName, texture);
     }

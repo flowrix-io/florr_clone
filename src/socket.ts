@@ -775,15 +775,35 @@ function setupSocketListeners(game: any) {
         });
     });
 
+    const registerSpawnAnim = (item: WorldItem) => {
+        if (!game.graphics.itemSpawnAnim) {
+            game.graphics.itemSpawnAnim = new Map();
+        }
+        game.graphics.itemSpawnAnim.set(item.id, {
+            angle: Math.random() * Math.PI * 2,
+            distance: 30 + Math.random() * 20,
+            rotation: (Math.random() - 0.5) * Math.PI * 2,
+            startTime: Date.now()
+        });
+    };
+
     game.socket.on('itemSpawned', (item: WorldItem) => {
         // Legacy handler for single item spawn (kept for backwards compatibility)
         game.items.set(item.id, item);
+        registerSpawnAnim(item);
+        if (item.rarity) {
+            game.graphics.showItemDropBurst(item.x, item.y, item.rarity);
+        }
     });
 
     game.socket.on('itemsSpawned', (items: WorldItem[]) => {
         // Batch handler for multiple item spawns
         for (const item of items) {
             game.items.set(item.id, item);
+            registerSpawnAnim(item);
+            if (item.rarity) {
+                game.graphics.showItemDropBurst(item.x, item.y, item.rarity);
+            }
         }
     });
 
@@ -851,25 +871,65 @@ function setupSocketListeners(game: any) {
         }
     });
 
-    game.socket.on('itemPickedUp', (itemId: string) => {
-        if (game.pickedUpItems) {
-            game.pickedUpItems.add(itemId);
+    const PICKUP_ANIM_MS = 150;
+    const DESPAWN_ANIM_MS = 300;
+
+    const registerPickupAnim = (itemId: string, playerId?: string) => {
+        const item = game.items.get(itemId);
+        if (!item) return;
+        if (!game.graphics.itemDeathAnim) {
+            game.graphics.itemDeathAnim = new Map();
         }
+        if (game.graphics.itemDeathAnim.has(itemId)) return; // already animating
+        game.graphics.itemDeathAnim.set(itemId, {
+            type: 'pickup',
+            targetPlayerId: playerId,
+            startX: item.x,
+            startY: item.y,
+            startTime: Date.now()
+        });
+        setTimeout(() => {
+            game.items.delete(itemId);
+            game.graphics.itemDeathAnim?.delete(itemId);
+            if (game.pickedUpItems) game.pickedUpItems.delete(itemId);
+        }, PICKUP_ANIM_MS);
+    };
+
+    const registerDespawnAnim = (itemId: string) => {
+        const item = game.items.get(itemId);
+        if (!item) return;
+        if (!game.graphics.itemDeathAnim) {
+            game.graphics.itemDeathAnim = new Map();
+        }
+        if (game.graphics.itemDeathAnim.has(itemId)) return; // already animating (e.g. pickup)
+        game.graphics.itemDeathAnim.set(itemId, {
+            type: 'despawn',
+            startX: item.x,
+            startY: item.y,
+            startTime: Date.now()
+        });
+        setTimeout(() => {
+            game.items.delete(itemId);
+            game.graphics.itemDeathAnim?.delete(itemId);
+            if (game.pickedUpItems) game.pickedUpItems.delete(itemId);
+        }, DESPAWN_ANIM_MS);
+    };
+
+    game.socket.on('itemPickedUp', (itemId: string) => {
+        // Local player picked up this item — animate toward them
+        registerPickupAnim(itemId, game.socket?.id);
     });
 
     game.socket.on('itemRemoved', (itemId: string) => {
-        game.items.delete(itemId);
-        if (game.pickedUpItems) {
-            game.pickedUpItems.delete(itemId);
-        }
+        // If not already animating (e.g. pickup), show despawn animation
+        registerDespawnAnim(itemId);
     });
 
     game.socket.on('itemCollected', (data: { playerId: string, itemId: string }) => {
         const player = game.players.get(data.playerId);
         if (player) {
-            game.items.delete(data.itemId);
+            registerPickupAnim(data.itemId, data.playerId);
             if (data.playerId === game.socket.id) {
-                // Update inventory display if it's open
                 if (game.isInventoryOpen) {
                     game.updateInventoryDisplay();
                 }
