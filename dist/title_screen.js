@@ -717,6 +717,18 @@ class TitleScreen {
                 event.preventDefault();
                 return;
             }
+            // Crafting shortcut
+            if (event.key === (controls.crafting || 'c')) {
+                this.toggleCraftingOnTitleScreen();
+                event.preventDefault();
+                return;
+            }
+            // Inventory shortcut
+            if (event.key === (controls.inventory || 'z')) {
+                this.toggleInventoryOnTitleScreen();
+                event.preventDefault();
+                return;
+            }
         });
         // Settings button event listener (now in exitButtonContainer)
         const settingsButton = this.exitButtonContainer.querySelector('#settingsButton');
@@ -1536,21 +1548,6 @@ class TitleScreen {
                     }
                     e.preventDefault();
                 }
-            }
-            else if (!window.currentGame && !this.isNameInputFocused && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                // Auto-focus name input when typing
-                this.isNameInputFocused = true;
-                if (e.key === 'Backspace') {
-                    this.playerName = this.playerName.slice(0, -1);
-                }
-                else if (e.key.length === 1) {
-                    if (this.playerName.length < 20) {
-                        this.playerName += e.key;
-                    }
-                }
-                localStorage.setItem('playerName', this.playerName);
-                this.syncPlayerNameToInput();
-                e.preventDefault();
             }
         });
         // Handle window resize
