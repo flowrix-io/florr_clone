@@ -561,38 +561,6 @@ export class TitleScreen {
             box-shadow: none;
         `;
         this.centerText.innerHTML = `
-            <p class="title" style="-webkit-text-stroke: 3px black;">florr.io clone</p>
-            <div class="name-input-container">
-                <input type="text" id="nameInput" class="name-input" placeholder="This flower is called...">
-                <button id="multiPlayerButton" class="ready-button">Ready▶︎</button>
-            </div>
-            <div class="biome-selector-container">
-                <label>Spawn Biome:</label>
-                <div class="biome-buttons">
-                    <!-- Biome buttons will be dynamically generated here -->
-                </div>
-            </div>
-            <!-- <div class="color-picker">
-                <label for="hueSlider">Player Color:</label>
-                <input type="range" id="hueSlider" min="0" max="360" value="0" class="hue-slider">
-                <div id="colorPreview" class="color-preview"></div>
-                <button id="updateColorButton" class="color-update-btn">Update Color</button>
-            </div> -->
-            <div class="controls">
-                <p>Controls:</p>
-                <br/>
-                <p>Arrow keys to move</p>
-                <br/>
-                <p>Hold space to extend petals</p>
-                <br/>
-                <p>Press I to open the inventory.</p>
-                <br/>
-                <p>Press number keys 1-9 to use items.</p>
-                <br/>
-                <p>Press C to switch between mouse and keyboard controls</p>
-                <br/>
-                <p>Press R to craft items</p>
-            </div>
             <div id="titleScreenLoadoutWrap" style="margin-top: 20px; display: flex; justify-content: center;">
                 <canvas id="titleScreenLoadoutBar" width="900" height="210" style="background: transparent; display: block; pointer-events: auto; width: 900px; height: 211px;"></canvas>
             </div>
@@ -2462,10 +2430,11 @@ export class TitleScreen {
             'Controls:',
             'Arrow keys to move',
             'Hold space to extend petals',
-            'Press I to open the inventory.',
+            'Press Z to open the inventory.',
             'Press number keys 1-9 to use items.',
-            'Press C to switch between mouse and keyboard controls',
-            'Press R to craft items'
+            'Press K to switch between mouse and keyboard controls',
+            'Use Q and E to swap petals',
+            'Use T to unequip the selected petal'
         ];
 
         controlsText.forEach((text, index) => {
