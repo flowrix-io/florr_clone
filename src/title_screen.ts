@@ -284,56 +284,6 @@ export class TitleScreen {
         // Update available biomes
         this.availableBiomes = Array.from(biomeNames);
         console.log('Available biomes detected:', this.availableBiomes);
-        
-        // Update the biome selector UI
-        this.updateBiomeSelector();
-    }
-
-    /**
-     * Updates the biome selector UI with available biomes
-     */
-    private updateBiomeSelector(): void {
-        // Use setTimeout to ensure DOM is ready
-        setTimeout(() => {
-            const biomeButtonsContainer = document.querySelector('.biome-buttons');
-            if (!biomeButtonsContainer) {
-                console.warn('Biome buttons container not found, retrying...');
-                // Retry after a short delay
-                setTimeout(() => this.updateBiomeSelector(), 100);
-                return;
-            }
-            
-            // Clear existing buttons
-            biomeButtonsContainer.innerHTML = '';
-            
-            // Create biome buttons dynamically
-            this.availableBiomes.forEach(biomeName => {
-                const button = this.createBiomeButton(biomeName);
-                biomeButtonsContainer.appendChild(button);
-            });
-            
-            // Re-setup event listeners for the new buttons
-            this.setupBiomeButtonListeners();
-            
-            console.log('Biome selector updated with biomes:', this.availableBiomes);
-        }, 100);
-    }
-
-    /**
-     * Creates a biome button element
-     */
-    private createBiomeButton(biomeName: string): HTMLElement {
-        const button = document.createElement('button');
-        button.className = 'biome-button';
-        button.setAttribute('data-biome', biomeName);
-        
-        // Set biome-specific styling
-        const biomeConfig = this.getBiomeConfig(biomeName);
-        button.style.backgroundColor = biomeConfig.color;
-        button.title = biomeConfig.title;
-        button.textContent = biomeConfig.displayName;
-        
-        return button;
     }
 
     /**
@@ -379,43 +329,6 @@ export class TitleScreen {
             title: biomeName.charAt(0).toUpperCase() + biomeName.slice(1),
             displayName: biomeName.charAt(0).toUpperCase() + biomeName.slice(1)
         };
-    }
-
-    /**
-     * Sets up event listeners for biome buttons
-     */
-    private setupBiomeButtonListeners(): void {
-        const biomeButtons = document.querySelectorAll('.biome-button');
-        
-        biomeButtons.forEach(button => {
-            const biome = button.getAttribute('data-biome');
-            
-            // Add click handler
-            button.addEventListener('click', () => {
-                // Remove selected class from all buttons
-                biomeButtons.forEach(btn => btn.classList.remove('selected'));
-                
-                // Add selected class to clicked button
-                button.classList.add('selected');
-                
-                // Save to localStorage
-                const selectedBiome = biome || 'default';
-                localStorage.setItem('spawnBiome', selectedBiome);
-                console.log('Selected spawn biome:', selectedBiome);
-                
-                // Reload background with new biome
-                this.loadBackgroundTexture(selectedBiome);
-            });
-        });
-        
-        // Load saved biome selection from localStorage
-        const savedBiome = localStorage.getItem('spawnBiome') || 'default';
-        biomeButtons.forEach(button => {
-            const biome = button.getAttribute('data-biome');
-            if (biome === savedBiome) {
-                button.classList.add('selected');
-            }
-        });
     }
 
     private initializeElements(): void {
@@ -6091,62 +6004,6 @@ export const titleScreenStyles = `
         padding: 10px;
         width: 300px;
         border-radius: 5px;
-    }
-
-    .biome-selector-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
-        margin: 15px 0;
-    }
-
-    .biome-selector-container label {
-        color: white;
-        font-size: 18px;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-    }
-
-    .biome-buttons {
-        display: flex;
-        flex-wrap: nowrap;
-        gap: 8px;
-        justify-content: center;
-        max-width: 100%;
-        overflow-x: auto;
-        padding: 5px;
-    }
-
-    .biome-button {
-        padding: 8px 16px;
-        border: 2px solid rgba(255, 255, 255, 0.3);
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: bold;
-        color: #000;
-        transition: all 0.3s ease;
-        min-width: 70px;
-        text-align: center;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    }
-
-    .biome-button:hover {
-        transform: scale(1.05);
-        border-color: rgba(255, 255, 255, 0.6);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-    }
-
-    .biome-button.selected {
-        border-color: #fff;
-        border-width: 3px;
-        transform: scale(1.1);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
-    }
-
-    .biome-button.selected::after {
-        content: " ✓";
-        font-weight: bold;
     }
 
     .color-picker {

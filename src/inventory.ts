@@ -65,6 +65,9 @@ export class InventoryManager {
     private dragSource: { type: 'inventory' | 'loadout'; rarity?: string; itemType?: string; slotIndex?: number } | null = null;
     private dragImage: HTMLCanvasElement | HTMLImageElement | null = null;
     private dragStartElement: HTMLElement | null = null;
+    private dragStartX: number = 0;
+    private dragStartY: number = 0;
+    private readonly CLICK_DRAG_THRESHOLD: number = 5;
     private readonly ITEM_RARITY_COLORS: Record<string, string> = {
         common: '#7eef6d',
         uncommon: '#ffe65d',
@@ -2000,6 +2003,8 @@ export class InventoryManager {
         this.isDragging = true;
         this.dragSource = source;
         this.dragStartElement = sourceElement;
+        this.dragStartX = e.clientX;
+        this.dragStartY = e.clientY;
 
         if (!this.dragCanvas) {
             this.dragCanvas = this.createDragCanvas();
@@ -2072,6 +2077,31 @@ export class InventoryManager {
         // Restore source element opacity
         if (this.dragStartElement) {
             this.dragStartElement.style.opacity = '';
+        }
+
+        // If mouse barely moved, treat as a click: equip inventory item to first empty loadout slot
+        const dx = e.clientX - this.dragStartX;
+        const dy = e.clientY - this.dragStartY;
+        const movedDistSq = dx * dx + dy * dy;
+        const isClick = movedDistSq < this.CLICK_DRAG_THRESHOLD * this.CLICK_DRAG_THRESHOLD;
+        if (isClick && this.dragSource?.type === 'inventory' && this.dragSource.rarity && this.dragSource.itemType) {
+            const player = this.game.getLocalPlayer();
+            if (player && Array.isArray(player.loadout)) {
+                let emptySlot = -1;
+                const CANVAS_SLOT_COUNT = 20;
+                for (let i = 0; i < CANVAS_SLOT_COUNT; i++) {
+                    if (!player.loadout[i]) { emptySlot = i; break; }
+                }
+                if (emptySlot >= 0) {
+                    this.equipItemToLoadout(this.dragSource.rarity, this.dragSource.itemType, emptySlot);
+                }
+            }
+            const canvasBarRef = (this.game as any).loadoutBar;
+            if (canvasBarRef && canvasBarRef.endDrag) canvasBarRef.endDrag();
+            this.isDragging = false;
+            this.dragSource = null;
+            this.dragStartElement = null;
+            return;
         }
 
         // Canvas loadout bar hit-test (in canvas-local coordinates)

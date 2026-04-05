@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244483031,
+      "totalXP": 244483062,
       "inventory": {
         "common": {
           "shield": 247,
@@ -609,7 +609,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 355,
+          "common": 356,
           "legendary": 214,
           "uncommon": 101,
           "mythic": 183,
@@ -652,7 +652,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 482,
+          "common": 484,
           "legendary": 338,
           "mythic": 362,
           "uncommon": 177,
@@ -664,7 +664,7 @@
         },
         "dandelion": {
           "legendary": 204,
-          "common": 307,
+          "common": 308,
           "mythic": 185,
           "uncommon": 87,
           "unique": 3,
