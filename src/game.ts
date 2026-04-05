@@ -655,7 +655,7 @@ export class Game {
 
         // Add to constructor after other UI initialization
         this.inventoryManager = new InventoryManager(this, this.chat);
-        this.loadoutBar = new CanvasLoadoutBar(this);
+        this.loadoutBar = new CanvasLoadoutBar(this, 0.75);
         this.skillsManager = new SkillsManager(this);
         this.shopManager = new ShopManager(this);
 

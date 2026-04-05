@@ -41,6 +41,7 @@ export const LOADOUT_SLOT_COUNT = LOADOUT_PRIMARY_COUNT + LOADOUT_SECONDARY_COUN
 
 export class CanvasLoadoutBar {
     private game: GameAPI;
+    private scale: number;
     private slots: SlotRect[] = [];
     private trash: SlotRect = { x: 0, y: 0, w: 0, h: 0 };
     private visible: boolean = false;
@@ -65,8 +66,9 @@ export class CanvasLoadoutBar {
     // Shown-with-animation (slide-in/out)
     private slideAnim: number = 0; // 0..1
 
-    constructor(game: GameAPI) {
+    constructor(game: GameAPI, scale: number = 1) {
         this.game = game;
+        this.scale = scale;
     }
 
     public show() { this.visible = true; }
@@ -80,12 +82,13 @@ export class CanvasLoadoutBar {
         //   VContainer stacks primary above secondary with 0/0 margins
         //   Trash is appended to the secondary row (50x50, #cf8888) with a [T] label to its right
         const cols = LOADOUT_PRIMARY_COUNT;
-        const primarySize = 70;
-        const secondarySize = 50;
-        const primaryGap = 20;
-        const secondaryGap = 15;
-        const primaryMargin = 5;   // HContainer vertical padding for primary row
-        const secondaryMargin = 10; // HContainer vertical padding for secondary row
+        const s = this.scale;
+        const primarySize = 70 * s;
+        const secondarySize = 50 * s;
+        const primaryGap = 20 * s;
+        const secondaryGap = 15 * s;
+        const primaryMargin = 5 * s;   // HContainer vertical padding for primary row
+        const secondaryMargin = 10 * s; // HContainer vertical padding for secondary row
 
         const primaryRowW = cols * primarySize + (cols - 1) * primaryGap;
         // Secondary row width includes the trash slot appended with gap after the last slot

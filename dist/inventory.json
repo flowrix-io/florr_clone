@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244485041,
+      "totalXP": 244485042,
       "inventory": {
         "common": {
           "shield": 247,
@@ -621,7 +621,7 @@
         "soldier_ant": {
           "epic": 123,
           "legendary": 324,
-          "common": 456,
+          "common": 457,
           "rare": 175,
           "mythic": 516,
           "ultra": 18,

@@ -511,7 +511,7 @@ class Game {
         this.createdElements.push(style);
         // Add to constructor after other UI initialization
         this.inventoryManager = new inventory_1.InventoryManager(this, this.chat);
-        this.loadoutBar = new loadout_bar_1.CanvasLoadoutBar(this);
+        this.loadoutBar = new loadout_bar_1.CanvasLoadoutBar(this, 0.75);
         this.skillsManager = new skills_1.SkillsManager(this);
         this.shopManager = new shop_1.ShopManager(this);
         this.svgLoader = new SVGLoader_1.SVGLoader();
