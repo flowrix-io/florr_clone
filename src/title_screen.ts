@@ -4941,6 +4941,19 @@ class TitleScreenInventoryManager {
                             itemElement.classList.remove('dragging');
                         });
 
+                        // Click to equip to the next empty loadout slot
+                        itemElement.addEventListener('click', () => {
+                            if (!this.playerData) return;
+                            const loadout = this.playerData.loadout;
+                            let emptySlot = -1;
+                            for (let i = 0; i < CANVAS_LOADOUT_SLOT_COUNT; i++) {
+                                if (!loadout[i]) { emptySlot = i; break; }
+                            }
+                            if (emptySlot >= 0) {
+                                this.equipItemToLoadout(rarity, type, emptySlot);
+                            }
+                        });
+
                         // Handle different item types for display
                         if (type.startsWith('petal_')) {
                             const petalType = type.replace('petal_', '');

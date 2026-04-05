@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244482928,
+      "totalXP": 244483031,
       "inventory": {
         "common": {
           "shield": 247,
@@ -609,7 +609,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 354,
+          "common": 355,
           "legendary": 214,
           "uncommon": 101,
           "mythic": 183,
@@ -625,7 +625,7 @@
           "rare": 173,
           "mythic": 516,
           "ultra": 18,
-          "uncommon": 231,
+          "uncommon": 234,
           "super": 9,
           "unique": 3
         },
@@ -644,7 +644,7 @@
           "common": 434,
           "legendary": 146,
           "mythic": 164,
-          "uncommon": 126,
+          "uncommon": 127,
           "rare": 78,
           "epic": 55,
           "ultra": 13,
@@ -655,7 +655,7 @@
           "common": 482,
           "legendary": 338,
           "mythic": 362,
-          "uncommon": 175,
+          "uncommon": 177,
           "rare": 121,
           "epic": 92,
           "ultra": 18,
@@ -674,7 +674,7 @@
           "super": 5
         },
         "bee": {
-          "common": 393,
+          "common": 396,
           "epic": 99,
           "mythic": 217,
           "uncommon": 100,
