@@ -68,24 +68,7 @@ core_1.Graphics.prototype.drawPetalBreakEffects = function () {
     this.petalBreakEffects = this.petalBreakEffects.filter(effect => {
         const elapsed = Date.now() - effect.startTime;
         const progress = elapsed / effect.lifetime;
-        if (progress >= 1)
-            return false;
-        this.ctx.save();
-        this.ctx.globalAlpha = effect.alpha * (1 - progress);
-        // Draw petal fragments
-        const fragmentCount = 6;
-        for (let i = 0; i < fragmentCount; i++) {
-            const angle = (i / fragmentCount) * Math.PI * 2;
-            const distance = progress * 30;
-            const fragmentX = effect.x + Math.cos(angle) * distance;
-            const fragmentY = effect.y + Math.sin(angle) * distance;
-            this.ctx.fillStyle = '#FF69B4';
-            this.ctx.beginPath();
-            this.ctx.arc(fragmentX, fragmentY, 3, 0, Math.PI * 2);
-            this.ctx.fill();
-        }
-        this.ctx.restore();
-        return true;
+        return progress < 1;
     });
 };
 core_1.Graphics.prototype.drawLightningEffects = function () {
