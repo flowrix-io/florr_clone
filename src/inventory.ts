@@ -404,38 +404,10 @@ export class InventoryManager {
         });
 
         if (!mobGalleryOnly) {
-        // Create loadout bar (or use existing one if it already exists)
-        let loadoutBar = document.getElementById('loadoutBar') as HTMLDivElement;
-        if (!loadoutBar) {
-            loadoutBar = document.createElement('div');
-            loadoutBar.id = 'loadoutBar';
-            loadoutBar.style.position = 'fixed';
-            loadoutBar.style.bottom = '20px';
-            loadoutBar.style.left = '50%';
-            loadoutBar.style.transform = 'translateX(-50%)';
-            loadoutBar.style.display = 'flex';
-            loadoutBar.style.gap = '5px';
-            loadoutBar.style.zIndex = '1000';
-            document.body.appendChild(loadoutBar);
-        } else {
-            // Clear existing slots if loadout bar already exists
-            loadoutBar.innerHTML = '';
-        }
-
-        // Create slots if they don't exist
-        if (loadoutBar.querySelectorAll('.loadout-slot').length === 0) {
-            for (let i = 0; i < this.LOADOUT_SLOTS; i++) {
-                const slot = document.createElement('div');
-                slot.className = 'loadout-slot';
-                slot.dataset.slot = i.toString();
-                slot.style.width = '50px';
-                slot.style.height = '50px';
-                slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
-                slot.style.border = '3px solid #00ba3e';
-                slot.style.borderRadius = '5px';
-                loadoutBar.appendChild(slot);
-            }
-        }
+        // Loadout bar is now canvas-rendered (see graphics/loadout-bar.ts).
+        // Ensure any legacy DOM loadout bar is removed.
+        const legacy = document.getElementById('loadoutBar');
+        if (legacy) legacy.remove();
 
         // Create inventory panel
         this.inventoryPanel = document.createElement('div');
@@ -1653,6 +1625,8 @@ export class InventoryManager {
             inventory: player.inventory
         });
 
+        window.dispatchEvent(new CustomEvent('loadout:equip'));
+
         requestAnimationFrame(() => {
             this.updateInventoryDisplay();
             this.updateLoadoutDisplay();
@@ -1740,23 +1714,20 @@ export class InventoryManager {
                 break;
         }
 
-        const slot_element = document.querySelector(`.loadout-slot[data-slot="${slot}"]`);
-        if (slot_element) {
-            slot_element.classList.add('on-cooldown');
+        // Trigger canvas loadout cooldown animation
+        {
             let cooldownTime = 10000 * (1 / multiplier);
-            
             // Special cooldown for yggdrasil petals
             if (item.type === 'petal' && item.petalType === 'yggdrasil') {
-                // Get the petal stats to use the correct cooldown
                 const petalStats = this.game.getPetalStats?.(item.petalType, item.rarity);
                 if (petalStats) {
                     cooldownTime = petalStats.cooldown;
                 }
             }
-            
-            setTimeout(() => {
-                slot_element.classList.remove('on-cooldown');
-            }, cooldownTime);
+            const loadoutBar = (this.game as any).loadoutBar;
+            if (loadoutBar && typeof loadoutBar.triggerCooldown === 'function') {
+                loadoutBar.triggerCooldown(slot, cooldownTime);
+            }
         }
 
         if (this.isInventoryOpen) {
@@ -1766,22 +1737,17 @@ export class InventoryManager {
     }
 
     public updateLoadoutDisplay() {
-        const player = this.game.getLocalPlayer();
-        if (!player) {
-            console.warn('Player not yet initialized for loadout update');
-            return;
-        }
-        // Remove excessive logging - only log when debugging
-        // console.log('[INVENTORY] Updating loadout display with loadout:', player.loadout);
+        // Canvas loadout bar redraws every frame from player.loadout.
+        // Retained as a no-op for callers expecting to refresh visuals.
+        return;
+    }
 
-        // Only update slots in the game's loadout bar (id='loadoutBar'), not the title screen one
+    private _updateLoadoutDisplay_legacy_unused() {
+        const player = this.game.getLocalPlayer();
+        if (!player) return;
         const loadoutBar = document.getElementById('loadoutBar');
-        if (!loadoutBar) {
-            console.warn('[INVENTORY] Loadout bar not found');
-            return;
-        }
+        if (!loadoutBar) return;
         const slots = loadoutBar.querySelectorAll('.loadout-slot');
-        // console.log('[INVENTORY] Found ' + slots.length + ' loadout slots');
         slots.forEach((slot, index) => {
             slot.innerHTML = '';
             slot.classList.remove('on-cooldown', 'petal-slot');
@@ -1998,7 +1964,29 @@ export class InventoryManager {
         }
     }
 
-    private startDrag(e: MouseEvent, source: typeof InventoryManager.prototype.dragSource, sourceElement: HTMLElement) {
+    /**
+     * Called by Game when the user starts dragging a petal out of the canvas loadout bar.
+     * The canvas loadout bar handles its own visual for the dragged slot; we just sync state
+     * here so the document-level mouseup routes the drop correctly.
+     */
+    public beginCanvasLoadoutDrag(slotIndex: number) {
+        this.isDragging = true;
+        this.dragSource = { type: 'loadout', slotIndex };
+        this.dragStartElement = null;
+        this.hideTooltip();
+        // Also render the dragged item into the DOM overlay canvas so it's visible
+        // over the inventory panel (which sits above the game canvas).
+        if (!this.dragCanvas) this.dragCanvas = this.createDragCanvas();
+        const player = this.game.getLocalPlayer();
+        const item = player?.loadout?.[slotIndex];
+        if (item) {
+            const itemKey = item.type === 'petal' ? `petal_${item.petalType}` : item.type;
+            this.renderDragCanvas(item.rarity, itemKey);
+            this.dragCanvas.style.display = 'block';
+        }
+    }
+
+    private startDrag(e: MouseEvent, source: typeof InventoryManager.prototype.dragSource, sourceElement: HTMLElement | null) {
         this.isDragging = true;
         this.dragSource = source;
         this.dragStartElement = sourceElement;
@@ -2025,7 +2013,7 @@ export class InventoryManager {
         this.dragCanvas.style.top = `${e.clientY - 25}px`;
 
         // Dim the source element
-        sourceElement.style.opacity = '0.5';
+        if (sourceElement) sourceElement.style.opacity = '0.5';
 
         // Hide tooltip
         this.hideTooltip();
@@ -2076,32 +2064,45 @@ export class InventoryManager {
             this.dragStartElement.style.opacity = '';
         }
 
+        // Canvas loadout bar hit-test (in canvas-local coordinates)
+        const canvasBar = (this.game as any).loadoutBar;
+        const gameCanvas = (this.game as any).canvas as HTMLCanvasElement | undefined;
+        let canvasHit = -1;
+        if (canvasBar && gameCanvas && canvasBar.isVisible && canvasBar.isVisible()) {
+            const r = gameCanvas.getBoundingClientRect();
+            const sx = e.clientX - r.left;
+            const sy = e.clientY - r.top;
+            canvasHit = canvasBar.hitTest(sx, sy); // -1 | 0..9 slot | 10 trash
+        }
+
         // Determine drop target
         const elemUnder = document.elementFromPoint(e.clientX, e.clientY);
-        if (elemUnder) {
-            const loadoutSlot = elemUnder.closest('.loadout-slot') as HTMLElement;
-            const inventoryGrid = elemUnder.closest('.inventory-grid') as HTMLElement;
+        const inventoryGrid = elemUnder ? (elemUnder.closest('.inventory-grid') as HTMLElement) : null;
 
-            if (loadoutSlot) {
-                const slotIndex = parseInt(loadoutSlot.dataset.slot || '-1');
-                if (slotIndex >= 0) {
-                    if (this.dragSource?.type === 'inventory' && this.dragSource.rarity && this.dragSource.itemType) {
-                        this.equipItemToLoadout(this.dragSource.rarity, this.dragSource.itemType, slotIndex);
-                    } else if (this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
-                        if (this.dragSource.slotIndex !== slotIndex) {
-                            this.swapLoadoutItems(this.dragSource.slotIndex, slotIndex);
-                        }
-                    }
-                }
-            } else if (inventoryGrid && this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
+        const TRASH_INDEX = 10;
+        if (canvasHit === TRASH_INDEX) {
+            // Drop on trash: return loadout item to inventory
+            if (this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
                 this.moveItemToInventory(this.dragSource.slotIndex);
-            } else if (!loadoutSlot && !inventoryGrid) {
-                // Dropped outside any valid target - move loadout item back to inventory
-                if (this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
-                    this.moveItemToInventory(this.dragSource.slotIndex);
+            }
+        } else if (canvasHit >= 0) {
+            const slotIndex = canvasHit;
+            if (this.dragSource?.type === 'inventory' && this.dragSource.rarity && this.dragSource.itemType) {
+                this.equipItemToLoadout(this.dragSource.rarity, this.dragSource.itemType, slotIndex);
+            } else if (this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
+                if (this.dragSource.slotIndex !== slotIndex) {
+                    this.swapLoadoutItems(this.dragSource.slotIndex, slotIndex);
                 }
             }
+        } else if (inventoryGrid && this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
+            this.moveItemToInventory(this.dragSource.slotIndex);
+        } else if (this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
+            // Dropped outside any valid target — return to inventory
+            this.moveItemToInventory(this.dragSource.slotIndex);
         }
+
+        // Release any canvas loadout drag state
+        if (canvasBar && canvasBar.endDrag) canvasBar.endDrag();
 
         // Reset state
         this.isDragging = false;

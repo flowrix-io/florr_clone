@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244054271,
+      "totalXP": 244054334,
       "inventory": {
         "common": {
           "shield": 243,
@@ -118,7 +118,7 @@
           "speed_boost": 31,
           "petal_yggdrasil": 7,
           "petal_explosive": 7,
-          "petal_light": 9,
+          "petal_light": 4,
           "petal_rock": 7,
           "petal_sand": 2,
           "health_potion": 15,
@@ -169,7 +169,7 @@
           "petal_javascript_egg": 7,
           "petal_dust_egg": 7,
           "petal_bush_egg": 1,
-          "petal_javascript": 6,
+          "petal_javascript": 7,
           "petal_glass": 7,
           "petal_starfish": 2,
           "petal_cube_egg": 3,
@@ -528,11 +528,7 @@
         }
       },
       "loadout": [
-        {
-          "type": "petal",
-          "rarity": "mythic",
-          "petalType": "javascript"
-        },
+        null,
         {
           "type": "petal",
           "rarity": "mythic",
@@ -597,7 +593,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 339,
+          "common": 340,
           "legendary": 213,
           "uncommon": 99,
           "mythic": 181,
@@ -609,7 +605,7 @@
         "soldier_ant": {
           "epic": 121,
           "legendary": 321,
-          "common": 438,
+          "common": 439,
           "rare": 172,
           "mythic": 513,
           "ultra": 18,
@@ -629,7 +625,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 412,
+          "common": 417,
           "legendary": 145,
           "mythic": 162,
           "uncommon": 121,
@@ -640,7 +636,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 473,
+          "common": 474,
           "legendary": 336,
           "mythic": 359,
           "uncommon": 170,
@@ -662,7 +658,7 @@
           "super": 5
         },
         "bee": {
-          "common": 378,
+          "common": 379,
           "epic": 99,
           "mythic": 214,
           "uncommon": 95,

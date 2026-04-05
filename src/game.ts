@@ -13,6 +13,7 @@ import { PreloadedAssets } from './preloader';
 import { Tutorial } from './tutorial';
 import { ShaderManager } from './shader/shaderManager';
 import { AssetLoader } from './asset_loader';
+import { CanvasLoadoutBar, LOADOUT_SLOT_COUNT } from './graphics/loadout-bar';
 
 // Global interface declarations
 declare global {
@@ -235,6 +236,7 @@ export class Game {
 
     // Add property
     public inventoryManager!: InventoryManager;
+    public loadoutBar!: CanvasLoadoutBar;
     private skillsManager!: SkillsManager;
     public shopManager!: ShopManager;
     private controls!: { [key: string]: string };
@@ -421,6 +423,16 @@ export class Game {
 
         // Add mouse move listener - always track mouse position so it's available when toggling mouse controls
         this.canvas.addEventListener('mousemove', (event) => {
+            // Loadout bar hover/drag tracking (screen-space)
+            const cRect = this.canvas.getBoundingClientRect();
+            const sx = event.clientX - cRect.left;
+            const sy = event.clientY - cRect.top;
+            if (this.loadoutBar) {
+                this.loadoutBar.setHover(sx, sy);
+                if (this.loadoutBar.draggingSlotIndex >= 0) {
+                    this.loadoutBar.setDragPos(sx, sy);
+                }
+            }
             const rect = this.canvas.getBoundingClientRect();
             // Convert screen coordinates to world coordinates accounting for zoom
             // Formula: worldX = (screenX / zoom) + cameraX
@@ -449,6 +461,24 @@ export class Game {
 
         // Add mouse button listeners for petal extension/retraction
         this.canvas.addEventListener('mousedown', (event) => {
+            // Intercept left-clicks over the canvas loadout bar to start drag
+            if (event.button === 0 && this.loadoutBar && this.loadoutBar.isVisible()) {
+                const cRect = this.canvas.getBoundingClientRect();
+                const sx = event.clientX - cRect.left;
+                const sy = event.clientY - cRect.top;
+                const hit = this.loadoutBar.hitTest(sx, sy);
+                if (hit >= 0 && hit < LOADOUT_SLOT_COUNT) {
+                    const player = this.getLocalPlayer();
+                    if (player && player.loadout && player.loadout[hit]) {
+                        this.loadoutBar.beginDrag(hit, sx, sy);
+                        // Also inform inventoryManager so document-level mouseup routes correctly
+                        this.inventoryManager.beginCanvasLoadoutDrag(hit);
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                    }
+                }
+            }
             this.mouseButtonsPressed.add(event.button);
             // Prevent context menu on right click
             if (event.button === 2) {
@@ -625,6 +655,7 @@ export class Game {
 
         // Add to constructor after other UI initialization
         this.inventoryManager = new InventoryManager(this, this.chat);
+        this.loadoutBar = new CanvasLoadoutBar(this);
         this.skillsManager = new SkillsManager(this);
         this.shopManager = new ShopManager(this);
 
@@ -1002,13 +1033,7 @@ export class Game {
             }
         }, { signal });
 
-        // Add drag and drop handlers for loadout
-        const loadoutBar = document.getElementById('loadoutBar');
-        if (loadoutBar) {
-            loadoutBar.addEventListener('dragover', (e) => {
-                e.preventDefault();
-            }, { signal });
-        }
+        // Loadout is now canvas-rendered; no DOM drag listeners needed.
 
         // Add settings change listeners
         this.setupSettingsListeners();
@@ -1271,6 +1296,13 @@ export class Game {
         // Use active player ID for rendering (or socket.id if not split)
         const activePlayerId = this.activePlayerId || this.socket?.id || '';
         this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension);
+        // Draw canvas loadout bar on top of game UI
+        if (this.loadoutBar) {
+            const localPlayer = this.getLocalPlayer();
+            const alive = !this.isPlayerDead && !!localPlayer;
+            if (alive) this.loadoutBar.show(); else this.loadoutBar.hide();
+            this.loadoutBar.draw(this.graphics.ctx);
+        }
         requestAnimationFrame(() => this.gameLoop());
     }
 
@@ -1707,15 +1739,10 @@ export class Game {
         }
         this.createdElements = [];
 
-        // Clear loadout bar
-        const loadoutBar = document.getElementById('loadoutBar');
-        if (loadoutBar) {
-            loadoutBar.style.display = 'none';
-            const slots = loadoutBar.querySelectorAll('.loadout-slot');
-            slots.forEach(slot => {
-                slot.innerHTML = '';
-            });
-        }
+        // Hide canvas loadout bar
+        if (this.loadoutBar) this.loadoutBar.hide();
+        // Remove any legacy DOM loadout bar that may have been attached
+        document.getElementById('loadoutBar')?.remove();
 
         // Remove other dynamic UI elements
         document.getElementById('disconnect-message')?.remove();

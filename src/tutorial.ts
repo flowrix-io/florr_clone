@@ -416,29 +416,15 @@ export class Tutorial {
 
         document.addEventListener('keydown', handleKeyDown);
 
-        // Listen for item equipping via mutations
-        const observer = new MutationObserver((mutations) => {
-            if (!this.isActive) return; // Only observe while tutorial is active
-
-            // Check if any item is equipped (loadout slot has content)
-            const loadoutSlots = document.querySelectorAll('.loadout-slot');
-            loadoutSlots.forEach(slot => {
-                if (slot.querySelector('img') || slot.querySelector('div:not(.key-binding)')) {
-                    this.completedSteps.add('item_equipped');
-                }
-            });
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['style', 'class']
-        });
+        // Listen for loadout equip events emitted by the canvas loadout system
+        const onEquip = () => {
+            if (this.isActive) this.completedSteps.add('item_equipped');
+        };
+        window.addEventListener('loadout:equip', onEquip);
 
         // Store references for cleanup
         (this as any).keyDownHandler = handleKeyDown;
-        (this as any).mutationObserver = observer;
+        (this as any).loadoutEquipHandler = onEquip;
     }
 
     private nextStep(): void {
@@ -474,8 +460,8 @@ export class Tutorial {
         if ((this as any).keyDownHandler) {
             document.removeEventListener('keydown', (this as any).keyDownHandler);
         }
-        if ((this as any).mutationObserver) {
-            (this as any).mutationObserver.disconnect();
+        if ((this as any).loadoutEquipHandler) {
+            window.removeEventListener('loadout:equip', (this as any).loadoutEquipHandler);
         }
     }
 
