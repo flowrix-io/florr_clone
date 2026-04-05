@@ -57,8 +57,10 @@ export class CanvasLoadoutBar {
     public dragScreenX: number = 0;
     public dragScreenY: number = 0;
 
-    // Keyboard-selected slot (T to cycle) — simplified: only used as an indicator
-    public keySelected: number = -1;
+    // Secondary-row selection driven by Q/E. -1 = none, else 0..(LOADOUT_PRIMARY_COUNT-1)
+    public selectedSecondary: number = -1;
+    private lastSelectTime: number = 0;
+    private readonly SELECT_TIMEOUT_MS = 5000;
 
     // Shown-with-animation (slide-in/out)
     private slideAnim: number = 0; // 0..1
@@ -147,8 +149,57 @@ export class CanvasLoadoutBar {
         this.cooldownEnd.set(slotIndex, now + durationMs);
     }
 
-    /** Set keyboard-highlight position (use -1 to clear). */
-    public setKeySelected(i: number) { this.keySelected = i; }
+    /** Clear secondary-row selection. */
+    public clearSecondarySelection() {
+        this.selectedSecondary = -1;
+    }
+
+    /** Advance secondary selection to next non-empty slot (E key). */
+    public cycleSecondaryForward() {
+        const player = this.game.getLocalPlayer();
+        const loadout: (Item | null)[] | undefined = player?.loadout;
+        if (!loadout) return;
+        this.lastSelectTime = performance.now();
+        const start = this.selectedSecondary;
+        let cur = start === -1 ? -1 : start;
+        for (let i = 0; i < LOADOUT_PRIMARY_COUNT; i++) {
+            cur = (cur + 1) % LOADOUT_PRIMARY_COUNT;
+            const item = loadout[LOADOUT_PRIMARY_COUNT + cur];
+            if (item) {
+                this.selectedSecondary = cur;
+                return;
+            }
+        }
+        // No non-empty secondary slots
+        this.selectedSecondary = -1;
+    }
+
+    /** Move secondary selection back to previous non-empty slot (Q key). */
+    public cycleSecondaryBackward() {
+        const player = this.game.getLocalPlayer();
+        const loadout: (Item | null)[] | undefined = player?.loadout;
+        if (!loadout) return;
+        this.lastSelectTime = performance.now();
+        if (this.selectedSecondary === -1) { this.cycleSecondaryForward(); return; }
+        let cur = this.selectedSecondary;
+        for (let i = 0; i < LOADOUT_PRIMARY_COUNT; i++) {
+            cur = (cur - 1 + LOADOUT_PRIMARY_COUNT) % LOADOUT_PRIMARY_COUNT;
+            const item = loadout[LOADOUT_PRIMARY_COUNT + cur];
+            if (item) {
+                this.selectedSecondary = cur;
+                return;
+            }
+        }
+        this.selectedSecondary = -1;
+    }
+
+    /** Tick selection timeout; call each frame. */
+    private updateSecondarySelectionTimeout() {
+        if (this.selectedSecondary === -1) return;
+        if (performance.now() - this.lastSelectTime > this.SELECT_TIMEOUT_MS) {
+            this.selectedSecondary = -1;
+        }
+    }
 
     public setHover(screenX: number, screenY: number) {
         this.hoveredSlot = this.hitTest(screenX, screenY);
@@ -179,6 +230,8 @@ export class CanvasLoadoutBar {
         this.slideAnim += (target - this.slideAnim) * 0.2;
         if (Math.abs(this.slideAnim - target) < 0.005) this.slideAnim = target;
         if (this.slideAnim <= 0.005) return;
+
+        this.updateSecondarySelectionTimeout();
 
         // Sync client-side cooldown with server-driven onCooldown flag to keep visuals aligned
         for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
@@ -228,7 +281,9 @@ export class CanvasLoadoutBar {
         // Draw each slot background
         for (let i = 0; i < LOADOUT_SLOT_COUNT; i++) {
             const slot = this.slots[i];
-            this.drawSlot(ctx, slot, '#eeeeee', false, this.hoveredSlot === i);
+            const isSelectedSecondary = i >= LOADOUT_PRIMARY_COUNT
+                && i - LOADOUT_PRIMARY_COUNT === this.selectedSecondary;
+            this.drawSlot(ctx, slot, '#eeeeee', false, this.hoveredSlot === i || isSelectedSecondary);
 
             // Gardn draws [X] key labels above each primary slot (position < loadout_count),
             // translate(0, -height/2 - 15) → 15px above the top edge, font size 16
@@ -237,6 +292,26 @@ export class CanvasLoadoutBar {
                 const lx = slot.x + slot.w / 2;
                 const ly = slot.y - 15;
                 this.drawKeyLabel(ctx, label, lx, ly, 16, 'center');
+            }
+        }
+
+        // Draw selection ring around selected secondary slot
+        if (this.selectedSecondary >= 0) {
+            const slot = this.slots[LOADOUT_PRIMARY_COUNT + this.selectedSecondary];
+            if (slot) {
+                const wobble = Math.sin(performance.now() / 150) * 0.06;
+                ctx.save();
+                const cx = slot.x + slot.w / 2;
+                const cy = slot.y + slot.h / 2;
+                ctx.translate(cx, cy);
+                ctx.rotate(wobble);
+                const pad = 6;
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = '#ffffff';
+                ctx.beginPath();
+                (ctx as any).roundRect(-slot.w / 2 - pad, -slot.h / 2 - pad, slot.w + pad * 2, slot.h + pad * 2, slot.w / 20 + 2);
+                ctx.stroke();
+                ctx.restore();
             }
         }
 

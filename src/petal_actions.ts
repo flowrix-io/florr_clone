@@ -609,27 +609,32 @@ function markPetalForBreak(petalId: string, context: ActionContext): void {
         const petalStats = (petal.petalType && petal.rarity) ? PETAL_CONFIG[petal.petalType]?.[petal.rarity] : undefined;
         const cooldownTime = petalStats?.cooldown || 10000;
         
-        // Schedule petal restoration
+        // Schedule petal restoration.
+        // Snapshot identity so a stale timer doesn't clobber a swapped slot.
+        const snapshotPetalType = originalPetal.petalType;
+        const snapshotRarity = originalPetal.rarity;
         setTimeout(() => {
-            // Check if player and petal still exist
-            if (player.loadout[loadoutIndex] && player.loadout[loadoutIndex]!.onCooldown) {
-                // Restore petal after cooldown
-                player.loadout[loadoutIndex] = {
-                    ...originalPetal,
-                    health: originalPetal.maxHealth,
-                    onCooldown: false
-                };
-                
-                // Emit restoration event
-                io.emit('petalRestored', {
-                    playerId: player.id,
-                    loadoutIndex: loadoutIndex,
-                    petal: player.loadout[loadoutIndex]
-                });
-                
-                // Clean up action state
-                cleanupPetalActions(petalId);
-            }
+            const current = player.loadout[loadoutIndex];
+            if (!current || !current.onCooldown) return;
+            if (current.type !== 'petal' ||
+                current.petalType !== snapshotPetalType ||
+                current.rarity !== snapshotRarity) return;
+            // Restore petal after cooldown
+            player.loadout[loadoutIndex] = {
+                ...originalPetal,
+                health: originalPetal.maxHealth,
+                onCooldown: false
+            };
+
+            // Emit restoration event
+            io.emit('petalRestored', {
+                playerId: player.id,
+                loadoutIndex: loadoutIndex,
+                petal: player.loadout[loadoutIndex]
+            });
+
+            // Clean up action state
+            cleanupPetalActions(petalId);
         }, cooldownTime);
         
         // Deactivate action state

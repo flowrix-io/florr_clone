@@ -571,8 +571,18 @@ function updatePlayerState(player, deltaTime, deps) {
                     };
                     // Add cooldown (similar to other items)
                     const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
+                    // Snapshot identity so a stale timer doesn't clobber a swapped slot
+                    const snapshotPetalType = originalPetal.petalType;
+                    const snapshotRarity = originalPetal.rarity;
                     setTimeout(() => {
-                        if (constants_1.players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex].onCooldown) {
+                        const current = constants_1.players[player.id]?.loadout?.[loadoutIndex];
+                        if (!constants_1.players[player.id] || !current || !current.onCooldown)
+                            return;
+                        if (current.type !== 'petal' ||
+                            current.petalType !== snapshotPetalType ||
+                            current.rarity !== snapshotRarity)
+                            return;
+                        {
                             // Restore petal after cooldown
                             const restoredPetal = {
                                 ...originalPetal,
@@ -587,7 +597,6 @@ function updatePlayerState(player, deltaTime, deps) {
                                 slotIndex: loadoutIndex,
                                 petal: player.loadout[loadoutIndex]
                             });
-                            // console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
                         }
                     }, cooldownTime);
                     io.emit('petalBroken', {
@@ -1045,8 +1054,18 @@ function updatePlayerState(player, deltaTime, deps) {
                         };
                         // Add cooldown (similar to other items)
                         const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
+                        // Snapshot identity so a stale timer doesn't clobber a swapped slot
+                        const snapshotPetalType = originalPetal.petalType;
+                        const snapshotRarity = originalPetal.rarity;
                         setTimeout(() => {
-                            if (constants_1.players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex].onCooldown) {
+                            const current = constants_1.players[player.id]?.loadout?.[loadoutIndex];
+                            if (!constants_1.players[player.id] || !current || !current.onCooldown)
+                                return;
+                            if (current.type !== 'petal' ||
+                                current.petalType !== snapshotPetalType ||
+                                current.rarity !== snapshotRarity)
+                                return;
+                            {
                                 // Restore petal after cooldown
                                 const restoredPetal = {
                                     ...originalPetal,
@@ -1061,7 +1080,6 @@ function updatePlayerState(player, deltaTime, deps) {
                                     slotIndex: loadoutIndex,
                                     petal: player.loadout[loadoutIndex]
                                 });
-                                // console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
                             }
                         }, cooldownTime);
                         io.emit('petalBroken', {

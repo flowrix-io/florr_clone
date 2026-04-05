@@ -715,8 +715,16 @@ export function updatePlayerState(
                     
                     // Add cooldown (similar to other items)
                     const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
+                    // Snapshot identity so a stale timer doesn't clobber a swapped slot
+                    const snapshotPetalType = originalPetal.petalType;
+                    const snapshotRarity = originalPetal.rarity;
                     setTimeout(() => {
-                        if (players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex]!.onCooldown) {
+                        const current = players[player.id]?.loadout?.[loadoutIndex];
+                        if (!players[player.id] || !current || !current.onCooldown) return;
+                        if (current.type !== 'petal' ||
+                            current.petalType !== snapshotPetalType ||
+                            current.rarity !== snapshotRarity) return;
+                        {
                             // Restore petal after cooldown
                             const restoredPetal = {
                                 ...originalPetal,
@@ -726,14 +734,12 @@ export function updatePlayerState(
                             // Apply petal health bonus
                             applyPetalHealthBonus(restoredPetal, player);
                             player.loadout[loadoutIndex] = restoredPetal;
-                            
+
                             io.emit('petalRestored', {
                                 playerId: player.id,
                                 slotIndex: loadoutIndex,
                                 petal: player.loadout[loadoutIndex]
                             });
-                            
-                            // console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
                         }
                     }, cooldownTime);
 
@@ -1269,8 +1275,16 @@ export function updatePlayerState(
                         
                         // Add cooldown (similar to other items)
                         const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
+                        // Snapshot identity so a stale timer doesn't clobber a swapped slot
+                        const snapshotPetalType = originalPetal.petalType;
+                        const snapshotRarity = originalPetal.rarity;
                         setTimeout(() => {
-                            if (players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex]!.onCooldown) {
+                            const current = players[player.id]?.loadout?.[loadoutIndex];
+                            if (!players[player.id] || !current || !current.onCooldown) return;
+                            if (current.type !== 'petal' ||
+                                current.petalType !== snapshotPetalType ||
+                                current.rarity !== snapshotRarity) return;
+                            {
                                 // Restore petal after cooldown
                                 const restoredPetal = {
                                     ...originalPetal,
@@ -1280,14 +1294,12 @@ export function updatePlayerState(
                                 // Apply petal health bonus
                                 applyPetalHealthBonus(restoredPetal, player);
                                 player.loadout[loadoutIndex] = restoredPetal;
-                                
+
                                 io.emit('petalRestored', {
                                     playerId: player.id,
                                     slotIndex: loadoutIndex,
                                     petal: player.loadout[loadoutIndex]
                                 });
-                                
-                                // console.log(`Petal ${petal.petalType} restored for player ${player.id} after ${cooldownTime}ms`);
                             }
                         }, cooldownTime);
 

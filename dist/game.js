@@ -786,9 +786,43 @@ class Game {
                 return;
             }
             const key = event.key;
+            // Gardn-style Q/E secondary-row selection cycling
+            if (key === 'q' || key === 'Q') {
+                this.loadoutBar?.cycleSecondaryBackward();
+                return;
+            }
+            if (key === 'e' || key === 'E') {
+                this.loadoutBar?.cycleSecondaryForward();
+                return;
+            }
             const slotIndex = this.inventoryManager.getLoadoutKeyBindings().indexOf(key);
             if (slotIndex !== -1) {
-                this.inventoryManager.useLoadoutItem(slotIndex);
+                // If a secondary slot is selected, number keys swap primary<->secondary (gardn)
+                const selectedSecondary = this.loadoutBar?.selectedSecondary ?? -1;
+                if (selectedSecondary >= 0) {
+                    const secondaryIdx = 10 + selectedSecondary;
+                    this.inventoryManager.swapLoadoutItems(slotIndex, secondaryIdx);
+                    // Move to next non-empty secondary (or clear if exhausted)
+                    this.loadoutBar?.cycleSecondaryForward();
+                }
+                else {
+                    this.inventoryManager.useLoadoutItem(slotIndex);
+                }
+                return;
+            }
+            // T deletes the selected secondary petal (gardn)
+            if (key === 't' || key === 'T') {
+                const selectedSecondary = this.loadoutBar?.selectedSecondary ?? -1;
+                if (selectedSecondary >= 0) {
+                    const secondaryIdx = 10 + selectedSecondary;
+                    this.inventoryManager.moveItemToInventory(secondaryIdx);
+                    this.loadoutBar?.cycleSecondaryForward();
+                    return;
+                }
+            }
+            // Escape clears secondary selection
+            if (key === 'Escape' && (this.loadoutBar?.selectedSecondary ?? -1) >= 0) {
+                this.loadoutBar?.clearSecondarySelection();
                 return;
             }
             this.keysPressed.add(event.key);

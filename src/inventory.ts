@@ -38,6 +38,11 @@ export class InventoryManager {
     private renderedRarityRows: Map<string, { row: HTMLElement; grid: HTMLElement }> = new Map();
     private inventoryGridContainer: HTMLElement | null = null;
     
+    /** Timestamp of the most recent local loadout mutation; used to suppress
+     *  stale server broadcasts that would overwrite in-flight optimistic state. */
+    public lastLocalLoadoutChange: number = 0;
+    public readonly LOADOUT_SYNC_SUPPRESS_MS: number = 600;
+
     public getIsInventoryOpen(): boolean {
         return this.isInventoryOpen;
     }
@@ -1606,7 +1611,11 @@ export class InventoryManager {
             }
         }
 
-        const newLoadout = [...player.loadout];
+        // Ensure loadout is padded to LOADOUT_SLOTS length (supports both primary and secondary rows)
+        const newLoadout: (Item | null)[] = new Array(this.LOADOUT_SLOTS).fill(null);
+        for (let i = 0; i < Math.min(player.loadout.length, this.LOADOUT_SLOTS); i++) {
+            newLoadout[i] = player.loadout[i] || null;
+        }
 
         this.removeItem(rarity, type, 1);
 
@@ -1617,8 +1626,9 @@ export class InventoryManager {
         }
 
         newLoadout[loadoutSlot] = item;
-        
+
         player.loadout = newLoadout;
+        this.lastLocalLoadoutChange = Date.now();
 
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,
@@ -2072,14 +2082,14 @@ export class InventoryManager {
             const r = gameCanvas.getBoundingClientRect();
             const sx = e.clientX - r.left;
             const sy = e.clientY - r.top;
-            canvasHit = canvasBar.hitTest(sx, sy); // -1 | 0..9 slot | 10 trash
+            canvasHit = canvasBar.hitTest(sx, sy); // -1 | 0..19 slot | 20 trash
         }
 
         // Determine drop target
         const elemUnder = document.elementFromPoint(e.clientX, e.clientY);
         const inventoryGrid = elemUnder ? (elemUnder.closest('.inventory-grid') as HTMLElement) : null;
 
-        const TRASH_INDEX = 10;
+        const TRASH_INDEX = 20; // matches LOADOUT_SLOT_COUNT in graphics/loadout-bar.ts
         if (canvasHit === TRASH_INDEX) {
             // Drop on trash: return loadout item to inventory
             if (this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
@@ -2134,10 +2144,15 @@ export class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player) return;
 
-        const newLoadout = [...player.loadout];
+        // Pad to full loadout length so secondary-row swaps always have valid targets
+        const newLoadout: (Item | null)[] = new Array(this.LOADOUT_SLOTS).fill(null);
+        for (let i = 0; i < Math.min(player.loadout.length, this.LOADOUT_SLOTS); i++) {
+            newLoadout[i] = player.loadout[i] || null;
+        }
         [newLoadout[fromSlot], newLoadout[toSlot]] = [newLoadout[toSlot], newLoadout[fromSlot]];
 
         player.loadout = newLoadout;
+        this.lastLocalLoadoutChange = Date.now();
 
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,
@@ -2468,21 +2483,26 @@ export class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player) return;
 
-        // Safety check: ensure loadout exists and is properly initialized
-        if (!player.loadout || !Array.isArray(player.loadout) || loadoutSlot >= player.loadout.length) {
+        // Safety check: ensure loadout exists and slot is within bounds
+        if (!player.loadout || !Array.isArray(player.loadout) || loadoutSlot >= this.LOADOUT_SLOTS) {
             console.warn(`[INVENTORY] Invalid loadout access: slot ${loadoutSlot}, loadout:`, player.loadout);
             return;
         }
 
         const item = player.loadout[loadoutSlot];
         if (!item || !item.rarity) return;
-        
+
         const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
         this.addItem(item.rarity, itemKey, 1);
-        
-        const newLoadout = [...player.loadout];
+
+        // Pad to full loadout length so secondary-row removals are preserved
+        const newLoadout: (Item | null)[] = new Array(this.LOADOUT_SLOTS).fill(null);
+        for (let i = 0; i < Math.min(player.loadout.length, this.LOADOUT_SLOTS); i++) {
+            newLoadout[i] = player.loadout[i] || null;
+        }
         newLoadout[loadoutSlot] = null;
         player.loadout = newLoadout;
+        this.lastLocalLoadoutChange = Date.now();
 
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,

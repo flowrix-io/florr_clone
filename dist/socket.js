@@ -1221,8 +1221,34 @@ function setupSocketListeners(game) {
                 player.health = serverPlayer.health;
                 player.maxHealth = serverPlayer.maxHealth;
                 player.damage = serverPlayer.damage;
-                player.inventory = serverPlayer.inventory;
-                player.loadout = padLoadout(serverPlayer.loadout, 20);
+                // Suppress stale server-driven loadout/inventory overwrites during in-flight
+                // optimistic updates (swaps, drops, etc.) that haven't been round-tripped yet.
+                const inv = game.inventoryManager;
+                const suppressMs = inv?.LOADOUT_SYNC_SUPPRESS_MS ?? 0;
+                const lastLocal = inv?.lastLocalLoadoutChange ?? 0;
+                const isLocal = serverPlayer.id === game.socket?.id;
+                const suppress = isLocal && Date.now() - lastLocal < suppressMs;
+                if (!suppress) {
+                    player.inventory = serverPlayer.inventory;
+                    player.loadout = padLoadout(serverPlayer.loadout, 20);
+                }
+                else {
+                    // Still overlay server-side per-petal state (cooldowns, health) onto matching
+                    // client slots so cooldown animations tick correctly while we hold the swap.
+                    const serverPad = padLoadout(serverPlayer.loadout, 20);
+                    for (let i = 0; i < player.loadout.length && i < serverPad.length; i++) {
+                        const local = player.loadout[i];
+                        const remote = serverPad[i];
+                        if (local && remote &&
+                            local.type === remote.type &&
+                            local.rarity === remote.rarity &&
+                            (local.type !== 'petal' || local.petalType === remote.petalType)) {
+                            local.health = remote.health;
+                            local.maxHealth = remote.maxHealth;
+                            local.onCooldown = remote.onCooldown;
+                        }
+                    }
+                }
                 player.isInvulnerable = serverPlayer.isInvulnerable;
                 player.knockbackX = serverPlayer.knockbackX;
                 player.knockbackY = serverPlayer.knockbackY;
@@ -1265,6 +1291,7 @@ function setupSocketListeners(game) {
                     targetX: serverPlayer.x,
                     targetY: serverPlayer.y,
                 };
+                player.loadout = padLoadout(serverPlayer.loadout, 20);
                 player.image.src = 'assets/player.png';
                 player.image.onload = () => {
                     player.imageLoaded = true;

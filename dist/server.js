@@ -974,9 +974,19 @@ io.on('connection', (socket) => {
                         if (petal.onCooldown && petalStats) {
                             const cooldownTime = petalStats.cooldown || 10000;
                             const timeoutKey = `${socket.id}-${i}`;
+                            // Snapshot identity so a stale timer doesn't clobber a swapped slot
+                            const snapshotPetalType = petal.petalType;
+                            const snapshotRarity = petal.rarity;
                             const timeout = setTimeout(() => {
                                 gameState_1.petalCooldownTimeouts.delete(timeoutKey);
-                                if (constants_2.players[socket.id] && constants_2.players[socket.id].loadout[i] && constants_2.players[socket.id].loadout[i].onCooldown) {
+                                const current = constants_2.players[socket.id]?.loadout[i];
+                                if (!constants_2.players[socket.id] || !current || !current.onCooldown)
+                                    return;
+                                if (current.type !== 'petal' ||
+                                    current.petalType !== snapshotPetalType ||
+                                    current.rarity !== snapshotRarity)
+                                    return;
+                                {
                                     // Restore petal after cooldown
                                     const restoredPetal = {
                                         type: petal.type,
@@ -1345,32 +1355,65 @@ io.on('connection', (socket) => {
             }
             return true;
         }
-        // Check each item in the new loadout
-        validatedLoadout.forEach((item, index) => {
-            if (!item) {
-                return; // Skip null items
+        // Build a reservoir of available items = oldInventory + all items in oldLoadout.
+        // This lets us accept swaps between loadout slots (the items *conceptually* exist,
+        // just not in inventory proper).
+        const reservoir = {};
+        const keyOfItem = (it) => {
+            if (!it.rarity)
+                return null;
+            if (it.type === 'petal') {
+                if (!it.petalType)
+                    return null;
+                return `${it.rarity}|petal_${it.petalType}`;
             }
+            return `${it.rarity}|${it.type}`;
+        };
+        // Seed reservoir with every item in oldInventory (compact triples: [rid,iid,count,...])
+        if (Array.isArray(oldInventory)) {
+            for (let i = 0; i + 2 < oldInventory.length; i += 3) {
+                const rid = oldInventory[i];
+                const iid = oldInventory[i + 1];
+                const count = oldInventory[i + 2];
+                const rarity = inventoryCodec_1.ID_TO_RARITY.get(rid);
+                const itemKey = inventoryCodec_1.ID_TO_ITEM_KEY.get(iid);
+                if (!rarity || !itemKey)
+                    continue;
+                const k = `${rarity}|${itemKey}`;
+                reservoir[k] = (reservoir[k] || 0) + count;
+            }
+        }
+        // Add every item currently in oldLoadout
+        for (const it of oldLoadout || []) {
+            if (!it)
+                continue;
+            const k = keyOfItem(it);
+            if (!k)
+                continue;
+            reservoir[k] = (reservoir[k] || 0) + 1;
+        }
+        // Consume reservoir for each item in newLoadout
+        validatedLoadout.forEach((item, index) => {
+            if (!item)
+                return;
             if (!item.rarity) {
                 console.warn(`[SERVER] Item at slot ${index} missing rarity, unequipping`);
                 validatedLoadout[index] = null;
                 hasChanges = true;
                 return;
             }
-            // Check if this item was already in the old loadout
-            const oldItem = oldLoadout[index];
-            const wasAlreadyEquipped = itemsMatch(item, oldItem);
-            if (wasAlreadyEquipped) {
-                // Item was already equipped, allow it to stay (it's already removed from inventory)
-                return;
-            }
-            // Item is newly equipped or changed - check if it exists in the old inventory
-            // (before the client removed it for equipping)
-            if (!itemExistsInInventory(oldInventory, item)) {
-                console.warn(`[SERVER] Item ${item.type === 'petal' ? `petal_${item.petalType}` : item.type} (${item.rarity}) not found in inventory, unequipping`);
+            const k = keyOfItem(item);
+            if (!k || (reservoir[k] || 0) <= 0) {
+                console.warn(`[SERVER] Item ${item.type === 'petal' ? `petal_${item.petalType}` : item.type} (${item.rarity}) not available (reservoir exhausted), unequipping`);
                 validatedLoadout[index] = null;
                 hasChanges = true;
                 return;
             }
+            reservoir[k]--;
+            // If this slot didn't have this exact item before, mark a change for downstream diffing
+            const oldItem = oldLoadout[index];
+            if (!itemsMatch(item, oldItem))
+                hasChanges = true;
         });
         return validatedLoadout;
     }
@@ -1408,68 +1451,75 @@ io.on('connection', (socket) => {
             // Validate inventory and loadout - unequip items that don't exist in inventory
             const validatedLoadout = validateInventoryAndLoadout(serverInventory, data.loadout, oldLoadout, serverInventory);
             // Calculate inventory changes based on loadout changes
-            // Items that were unequipped should be added back to inventory
-            // Items that were newly equipped should be removed from inventory
-            oldLoadout.forEach((oldItem, index) => {
-                const newItem = validatedLoadout[index];
-                // Helper to get inventory key for an item
-                const getInventoryKey = (item) => {
-                    if (!item || !item.rarity)
+            // Split into two passes so swaps between slots net out correctly:
+            //   Pass 1: add every unequipped item back to inventory
+            //   Pass 2: remove every newly-equipped item from inventory
+            // (Doing both in a single pass can temporarily leave the inventory short
+            //  during swaps, causing the removal of the other swap-partner to fail.)
+            const loadoutIterationLength = Math.max(oldLoadout.length, validatedLoadout.length);
+            const getInventoryKey = (item) => {
+                if (!item || !item.rarity)
+                    return null;
+                if (item.type === 'petal') {
+                    if (!item.petalType)
                         return null;
-                    if (item.type === 'petal') {
-                        if (!item.petalType)
-                            return null;
-                        return `petal_${item.petalType}`;
-                    }
-                    return item.type;
-                };
-                // Helper to check if items match
-                const itemsMatch = (item1, item2) => {
-                    if (!item1 || !item2)
-                        return false;
-                    if (item1.type !== item2.type)
-                        return false;
-                    if (item1.rarity !== item2.rarity)
-                        return false;
-                    if (item1.type === 'petal') {
-                        return item1.petalType === item2.petalType;
-                    }
-                    return true;
-                };
+                    return `petal_${item.petalType}`;
+                }
+                return item.type;
+            };
+            const itemsMatch = (item1, item2) => {
+                if (!item1 || !item2)
+                    return false;
+                if (item1.type !== item2.type)
+                    return false;
+                if (item1.rarity !== item2.rarity)
+                    return false;
+                if (item1.type === 'petal')
+                    return item1.petalType === item2.petalType;
+                return true;
+            };
+            // Pass 1: add unequipped items back, despawn pets for removed petals
+            for (let index = 0; index < loadoutIterationLength; index++) {
+                const oldItem = oldLoadout[index] || null;
+                const newItem = validatedLoadout[index];
+                if (!oldItem)
+                    continue;
+                if (newItem && itemsMatch(oldItem, newItem))
+                    continue;
                 const oldKey = getInventoryKey(oldItem);
+                if (oldKey && oldItem.rarity) {
+                    (0, playerManager_1.addItem)(serverInventory, oldItem.rarity, oldKey, 1);
+                }
+                // If the unequipped item was a petal with petMobType, despawn the pet
+                if (oldItem.type === 'petal' && oldItem.petalType && oldItem.rarity) {
+                    const oldPetalStats = (0, petals_2.getPetalStats)(oldItem.petalType, oldItem.rarity);
+                    if (oldPetalStats?.petMobType) {
+                        const petToDespawn = constants_2.enemies.find(e => e.ownerId === player.id &&
+                            e.type === oldPetalStats.petMobType);
+                        if (petToDespawn) {
+                            (0, petal_actions_1.despawnPet)(petToDespawn, io);
+                        }
+                    }
+                }
+            }
+            // Pass 2: remove newly-equipped items from inventory
+            for (let index = 0; index < loadoutIterationLength; index++) {
+                const oldItem = oldLoadout[index] || null;
+                const newItem = validatedLoadout[index];
+                if (!newItem)
+                    continue;
+                if (oldItem && itemsMatch(oldItem, newItem))
+                    continue;
                 const newKey = getInventoryKey(newItem);
-                // If old item was unequipped (slot is now empty or different item)
-                if (oldItem && (!newItem || !itemsMatch(oldItem, newItem))) {
-                    if (oldKey && oldItem.rarity) {
-                        // Add item back to inventory
-                        (0, playerManager_1.addItem)(serverInventory, oldItem.rarity, oldKey, 1);
+                if (newKey && newItem.rarity) {
+                    if ((0, playerManager_1.hasItem)(serverInventory, newItem.rarity, newKey, 1)) {
+                        (0, playerManager_1.removeItem)(serverInventory, newItem.rarity, newKey, 1);
                     }
-                    // If the unequipped item was a petal with petMobType, despawn the pet
-                    if (oldItem.type === 'petal' && oldItem.petalType && oldItem.rarity) {
-                        const oldPetalStats = (0, petals_2.getPetalStats)(oldItem.petalType, oldItem.rarity);
-                        if (oldPetalStats?.petMobType) {
-                            const petToDespawn = constants_2.enemies.find(e => e.ownerId === player.id &&
-                                e.type === oldPetalStats.petMobType);
-                            if (petToDespawn) {
-                                // console.log(`[PET] Despawning pet ${oldPetalStats.petMobType} for player ${player.id} when petal unequipped`);
-                                (0, petal_actions_1.despawnPet)(petToDespawn, io);
-                            }
-                        }
+                    else {
+                        console.warn(`[SERVER] Attempted to equip ${newKey} (${newItem.rarity}) but it doesn't exist in inventory`);
                     }
                 }
-                // If new item was equipped (slot had different item or was empty)
-                if (newItem && (!oldItem || !itemsMatch(oldItem, newItem))) {
-                    if (newKey && newItem.rarity) {
-                        // Remove item from inventory (if it exists)
-                        if ((0, playerManager_1.hasItem)(serverInventory, newItem.rarity, newKey, 1)) {
-                            (0, playerManager_1.removeItem)(serverInventory, newItem.rarity, newKey, 1);
-                        }
-                        else {
-                            console.warn(`[SERVER] Attempted to equip ${newKey} (${newItem.rarity}) but it doesn't exist in inventory`);
-                        }
-                    }
-                }
-            });
+            }
             // Apply petal health bonuses to all petals in loadout
             validatedLoadout.forEach((petal, index) => {
                 if (petal && petal.type === 'petal') {
@@ -1490,9 +1540,21 @@ io.on('connection', (socket) => {
                             const cooldownTime = petalStats.cooldown || 10000;
                             // Capture targetPlayerId in closure for setTimeout
                             const targetId = targetPlayerId;
+                            // Snapshot the petal identity at scheduling time so a stale timer
+                            // cannot overwrite a slot that has since been swapped to a different petal.
+                            const snapshotPetalType = petal.petalType;
+                            const snapshotRarity = petal.rarity;
                             setTimeout(() => {
-                                if (constants_2.players[targetId] && constants_2.players[targetId].loadout[index] &&
-                                    constants_2.players[targetId].loadout[index].onCooldown) {
+                                const current = constants_2.players[targetId]?.loadout[index];
+                                if (!constants_2.players[targetId] || !current || !current.onCooldown)
+                                    return;
+                                // Only restore if the slot still holds the same petal identity
+                                if (current.type !== 'petal' ||
+                                    current.petalType !== snapshotPetalType ||
+                                    current.rarity !== snapshotRarity) {
+                                    return;
+                                }
+                                {
                                     // Restore petal after cooldown
                                     const restoredPetal = {
                                         type: petal.type,
@@ -3121,8 +3183,18 @@ function updateMobProjectiles(deltaTimeMs) {
                         };
                         // Add cooldown (similar to other items)
                         const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
+                        // Snapshot identity so a stale timer doesn't clobber a swapped slot
+                        const snapshotPetalType = originalPetal.petalType;
+                        const snapshotRarity = originalPetal.rarity;
                         setTimeout(() => {
-                            if (constants_2.players[player.id] && player.loadout[loadoutIndex] && player.loadout[loadoutIndex].onCooldown) {
+                            const current = constants_2.players[player.id]?.loadout?.[loadoutIndex];
+                            if (!constants_2.players[player.id] || !current || !current.onCooldown)
+                                return;
+                            if (current.type !== 'petal' ||
+                                current.petalType !== snapshotPetalType ||
+                                current.rarity !== snapshotRarity)
+                                return;
+                            {
                                 // Restore petal after cooldown
                                 const restoredPetal = {
                                     ...originalPetal,
