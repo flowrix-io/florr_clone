@@ -1939,6 +1939,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
             // Only the player needs their own loadout update
             socket.emit('playerUpdated', player);
+
+            // Persist to DB so title-screen edits survive re-authentication when the game starts
+            if (socket.userId) {
+                savePlayerProgressImmediate(player, socket.userId);
+            }
         }
     });
 

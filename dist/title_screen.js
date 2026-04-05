@@ -16,6 +16,7 @@ const skills_1 = require("./skills");
 const inventory_1 = require("./inventory");
 const shop_1 = require("./shop");
 const inventoryCodec_1 = require("./inventoryCodec");
+const loadout_bar_1 = require("./graphics/loadout-bar");
 class FloatingPetalManager {
     constructor(container) {
         this.petals = [];
@@ -502,8 +503,8 @@ class TitleScreen {
                 <br/>
                 <p>Press R to craft items</p>
             </div>
-            <div id="titleScreenLoadoutBar" style="margin-top: 20px; display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; max-width: 600px;">
-                <!-- Loadout slots will be added here -->
+            <div id="titleScreenLoadoutWrap" style="margin-top: 20px; display: flex; justify-content: center;">
+                <canvas id="titleScreenLoadoutBar" width="900" height="210" style="background: transparent; display: block; pointer-events: auto; width: 900px; height: 211px;"></canvas>
             </div>
         `;
         this.settingsMenu = this.createElement('div', 'settings-menu hidden');
@@ -1214,23 +1215,20 @@ class TitleScreen {
             const loadoutBar = document.getElementById('titleScreenLoadoutBar');
             if (loadoutBar) {
                 // Remove from centerText if it's a child and append to body
-                if (loadoutBar.parentNode === this.centerText || loadoutBar.parentNode === null) {
+                if (loadoutBar.parentNode === this.centerText || loadoutBar.parentNode === null
+                    || loadoutBar.parentNode?.id === 'titleScreenLoadoutWrap') {
                     document.body.appendChild(loadoutBar);
                 }
-                // Position it (above instructions)
+                // Position the canvas loadout bar (centered horizontally, above the instructions)
                 loadoutBar.style.position = 'absolute';
                 loadoutBar.style.top = '50%';
                 loadoutBar.style.left = '50%';
                 loadoutBar.style.transform = 'translate(-50%, 0)';
-                loadoutBar.style.marginTop = '50px'; // Position above instructions (controls text is at +150px)
-                loadoutBar.style.zIndex = '1001'; // Above canvas
+                loadoutBar.style.marginTop = '50px';
+                loadoutBar.style.zIndex = '1001';
                 loadoutBar.style.pointerEvents = 'auto';
-                loadoutBar.style.gap = '8px'; // Larger gap between slots
-                loadoutBar.style.justifyContent = 'center';
-                loadoutBar.style.flexWrap = 'wrap';
-                loadoutBar.style.maxWidth = '800px'; // Wider to accommodate larger slots
                 // Hide if auth form is shown
-                loadoutBar.style.display = this.showAuthForm ? 'none' : 'flex';
+                loadoutBar.style.display = this.showAuthForm ? 'none' : 'block';
             }
         }, 100);
         // Setup canvas UI event listeners
@@ -2215,8 +2213,8 @@ class TitleScreen {
             ctx.fillStyle = '#ffffff';
             ctx.fillText(buttonText, biomeTextX, biomeTextY);
         });
-        // Draw controls text (smaller, at bottom)
-        const controlsY = centerY + 150;
+        // Draw controls text (below the loadout bar, which sits at centerY+50 with ~158px height)
+        const controlsY = centerY + 225;
         ctx.font = 'bold 14px Ubuntu, sans-serif';
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#000000';
@@ -2514,7 +2512,7 @@ class TitleScreen {
         // Show loadout bar when auth form is hidden
         const loadoutBar = document.getElementById('titleScreenLoadoutBar');
         if (loadoutBar) {
-            loadoutBar.style.display = 'flex';
+            loadoutBar.style.display = 'block';
         }
     }
     showAuthContainer() {
@@ -2759,7 +2757,7 @@ class TitleScreen {
         // Show loadout bar
         const loadoutBar = document.getElementById('titleScreenLoadoutBar');
         if (loadoutBar) {
-            loadoutBar.style.display = 'flex';
+            loadoutBar.style.display = 'block';
         }
         this.startCanvasRendering();
     }
@@ -3578,12 +3576,21 @@ class TitleScreenInventoryManager {
         this.inventoryPanel = null;
         this.craftingPanel = null;
         this.loadoutBar = null;
+        this.loadoutCanvas = null;
+        this.canvasLoadoutBar = null;
+        this.loadoutRafId = null;
+        /** source slot of an in-progress canvas-to-canvas drag, -1 if none */
+        this.canvasDragSourceSlot = -1;
+        /** timestamp of last local loadout mutation for optimistic-update suppression */
+        this.lastLocalLoadoutChange = 0;
+        this.LOADOUT_SYNC_SUPPRESS_MS = 600;
         this.playerData = null;
         this.socket = null;
         this.craftingItems = [];
         this.isCraftingOpen = false;
         this.isAuthenticated = false;
-        this.LOADOUT_SLOTS = 10;
+        this.LOADOUT_SLOTS = 20;
+        this.LOADOUT_PRIMARY_COUNT = 10;
         this.LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
         this.ITEM_RARITY_COLORS = {
             common: '#7eef6d',
@@ -3658,59 +3665,196 @@ class TitleScreenInventoryManager {
         });
     }
     initializeLoadoutBar() {
-        // Create loadout bar for title screen
-        const loadoutContainer = document.getElementById('titleScreenLoadoutBar');
-        if (!loadoutContainer) {
-            // Retry after a short delay if container doesn't exist yet
+        // The title-screen loadout is now a <canvas> that uses the same CanvasLoadoutBar
+        // renderer as the in-game loadout.
+        const canvas = document.getElementById('titleScreenLoadoutBar');
+        if (!canvas) {
             setTimeout(() => this.initializeLoadoutBar(), 100);
             return;
         }
-        this.loadoutBar = loadoutContainer;
-        // Add drag-over style class support (only once)
-        if (!document.getElementById('titleScreenLoadoutStyles')) {
-            const style = document.createElement('style');
-            style.id = 'titleScreenLoadoutStyles';
-            style.textContent = `
-                #titleScreenLoadoutBar .loadout-slot.drag-over {
-                    border-color: #00ff00 !important;
-                    background-color: rgba(0, 255, 0, 0.2) !important;
-                    transform: scale(1.05);
+        this.loadoutCanvas = canvas;
+        // Hand CanvasLoadoutBar a minimal "game" adapter that exposes player data and sprites.
+        const adapter = {
+            canvas,
+            getLocalPlayer: () => ({
+                loadout: this.playerData?.loadout ?? new Array(this.LOADOUT_SLOTS).fill(null)
+            }),
+            getPetalCanvas: (petalType, rarity, _time) => {
+                const assets = window.preloadedAssets;
+                if (!assets || !assets.petalImages)
+                    return null;
+                const entry = assets.petalImages[`${petalType}_${rarity}`];
+                if (!entry)
+                    return null;
+                if (Array.isArray(entry)) {
+                    const frameIndex = Math.floor((Date.now() / 42) % entry.length);
+                    return entry[frameIndex];
                 }
-            `;
-            document.head.appendChild(style);
-        }
-        for (let i = 0; i < this.LOADOUT_SLOTS; i++) {
-            const slot = document.createElement('div');
-            slot.className = 'loadout-slot';
-            slot.dataset.slot = i.toString();
-            slot.style.width = '70px';
-            slot.style.height = '70px';
-            slot.style.backgroundColor = 'rgba(99, 255, 182, 1)';
-            slot.style.border = '3px solid #00ba3e';
-            slot.style.borderRadius = '5px';
-            slot.style.position = 'relative';
-            slot.style.display = 'flex';
-            slot.style.alignItems = 'center';
-            slot.style.justifyContent = 'center';
-            slot.style.transition = 'all 0.2s ease';
-            // Add key binding label
-            const keyText = document.createElement('div');
-            keyText.className = 'key-binding';
-            keyText.textContent = this.LOADOUT_KEY_BINDINGS[i];
-            keyText.style.cssText = `
-                position: absolute;
-                top: 5px;
-                left: 5px;
-                color: white;
-                font-size: 16px;
-                font-weight: bold;
-                pointer-events: none;
-            `;
-            slot.appendChild(keyText);
-            if (this.loadoutBar) {
-                this.loadoutBar.appendChild(slot);
+                return entry;
+            },
+            getItemSpriteDataUrl: (itemType) => {
+                const assets = window.preloadedAssets;
+                if (!assets || !assets.itemSprites)
+                    return null;
+                const img = assets.itemSprites[itemType];
+                if (!img)
+                    return null;
+                try {
+                    const c = document.createElement('canvas');
+                    c.width = img.naturalWidth || 32;
+                    c.height = img.naturalHeight || 32;
+                    c.getContext('2d')?.drawImage(img, 0, 0);
+                    return c.toDataURL('image/png');
+                }
+                catch {
+                    return null;
+                }
+            },
+            inventoryManager: this,
+        };
+        this.canvasLoadoutBar = new loadout_bar_1.CanvasLoadoutBar(adapter);
+        this.canvasLoadoutBar.show();
+        // RAF loop to keep the bar painted (cheap: returns early when hidden)
+        const ctx = canvas.getContext('2d');
+        console.log('[TitleScreen] initializeLoadoutBar: canvas found, ctx=', !!ctx, 'bar=', !!this.canvasLoadoutBar);
+        const frame = () => {
+            if (ctx && this.canvasLoadoutBar) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                this.canvasLoadoutBar.draw(ctx);
             }
-        }
+            this.loadoutRafId = requestAnimationFrame(frame);
+        };
+        if (this.loadoutRafId == null)
+            this.loadoutRafId = requestAnimationFrame(frame);
+        this.setupCanvasLoadoutInteractions(canvas);
+    }
+    setupCanvasLoadoutInteractions(canvas) {
+        const getLocalXY = (e) => {
+            const r = canvas.getBoundingClientRect();
+            // Map CSS pixels back to canvas internal resolution
+            const sx = (e.clientX - r.left) * (canvas.width / r.width);
+            const sy = (e.clientY - r.top) * (canvas.height / r.height);
+            return { x: sx, y: sy };
+        };
+        // Hover tracking
+        canvas.addEventListener('mousemove', (e) => {
+            if (!this.canvasLoadoutBar)
+                return;
+            const { x, y } = getLocalXY(e);
+            this.canvasLoadoutBar.setHover(x, y);
+            if (this.canvasLoadoutBar.draggingSlotIndex >= 0) {
+                this.canvasLoadoutBar.setDragPos(x, y);
+            }
+        });
+        canvas.addEventListener('mouseleave', () => {
+            if (this.canvasLoadoutBar)
+                this.canvasLoadoutBar.setHover(-1, -1);
+        });
+        // Start drag from a filled canvas slot — uses HTML5 DataTransfer so it can be
+        // dropped onto the existing DOM inventory grid.
+        canvas.draggable = true;
+        canvas.addEventListener('dragstart', (e) => {
+            if (!this.canvasLoadoutBar || !this.playerData) {
+                e.preventDefault();
+                return;
+            }
+            const { x, y } = getLocalXY(e);
+            const hit = this.canvasLoadoutBar.hitTest(x, y);
+            if (hit < 0 || hit >= this.LOADOUT_SLOTS) {
+                e.preventDefault();
+                return;
+            }
+            const item = this.playerData.loadout[hit];
+            if (!item) {
+                e.preventDefault();
+                return;
+            }
+            this.canvasDragSourceSlot = hit;
+            this.canvasLoadoutBar.beginDrag(hit, x, y);
+            e.dataTransfer?.setData('text/loadoutSlot', hit.toString());
+            if (e.dataTransfer)
+                e.dataTransfer.effectAllowed = 'move';
+            // Render the dragged petal onto a small offscreen canvas and use it as the drag image
+            // (some browsers render a URL icon for blank canvas drag images).
+            if (e.dataTransfer && item.type === 'petal' && item.petalType && item.rarity) {
+                const gs = 40;
+                const ghost = document.createElement('canvas');
+                ghost.width = gs;
+                ghost.height = gs;
+                // Force CSS size to match internal resolution so the browser doesn't scale it up
+                ghost.style.width = `${gs}px`;
+                ghost.style.height = `${gs}px`;
+                ghost.style.position = 'fixed';
+                ghost.style.top = '-1000px';
+                ghost.style.left = '-1000px';
+                document.body.appendChild(ghost);
+                const gctx = ghost.getContext('2d');
+                const assets = window.preloadedAssets;
+                const entry = assets?.petalImages?.[`${item.petalType}_${item.rarity}`];
+                const petalCanvas = Array.isArray(entry)
+                    ? entry[Math.floor(Date.now() / 42) % entry.length]
+                    : entry;
+                if (gctx && petalCanvas) {
+                    gctx.drawImage(petalCanvas, 0, 0, gs, gs);
+                }
+                e.dataTransfer.setDragImage(ghost, gs / 2, gs / 2);
+                requestAnimationFrame(() => ghost.remove());
+            }
+            else {
+                // Fallback: a 1x1 transparent image
+                const img = new Image();
+                img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                e.dataTransfer?.setDragImage(img, 0, 0);
+            }
+        });
+        canvas.addEventListener('dragend', () => {
+            this.canvasDragSourceSlot = -1;
+            this.canvasLoadoutBar?.endDrag();
+        });
+        // Accept drops from the inventory grid OR from other canvas slots
+        canvas.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer)
+                e.dataTransfer.dropEffect = 'move';
+            if (this.canvasLoadoutBar) {
+                const { x, y } = getLocalXY(e);
+                this.canvasLoadoutBar.setHover(x, y);
+                if (this.canvasLoadoutBar.draggingSlotIndex >= 0) {
+                    this.canvasLoadoutBar.setDragPos(x, y);
+                }
+            }
+        });
+        canvas.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (!this.canvasLoadoutBar)
+                return;
+            const { x, y } = getLocalXY(e);
+            const hit = this.canvasLoadoutBar.hitTest(x, y);
+            const itemData = e.dataTransfer?.getData('text/plain');
+            const fromLoadoutSlot = e.dataTransfer?.getData('text/loadoutSlot');
+            if (hit === loadout_bar_1.LOADOUT_SLOT_COUNT) {
+                // Dropped on trash
+                if (fromLoadoutSlot)
+                    this.moveItemToInventory(parseInt(fromLoadoutSlot));
+            }
+            else if (hit >= 0 && hit < loadout_bar_1.LOADOUT_SLOT_COUNT) {
+                if (itemData) {
+                    try {
+                        const { rarity, type } = JSON.parse(itemData);
+                        if (rarity && type)
+                            this.equipItemToLoadout(rarity, type, hit);
+                    }
+                    catch { }
+                }
+                else if (fromLoadoutSlot) {
+                    const from = parseInt(fromLoadoutSlot);
+                    if (from !== hit)
+                        this.swapLoadoutItems(from, hit);
+                }
+            }
+            this.canvasLoadoutBar.endDrag();
+            this.canvasDragSourceSlot = -1;
+        });
     }
     setupSocketListeners() {
         // Check for preconnected socket and authenticate early to get player data
@@ -3807,6 +3951,18 @@ class TitleScreenInventoryManager {
                     this.playerData.mobKills = updatedPlayer.mobKills;
             }
         });
+    }
+    /** Re-bind to the current preconnected socket and re-authenticate to fetch fresh data. */
+    reauthenticate() {
+        if (window.preconnectedSocket) {
+            this.socket = window.preconnectedSocket;
+            // Clear the one-shot flag so authenticate runs again
+            if (this.socket._titleScreenAuthenticated) {
+                this.socket._titleScreenAuthenticated = false;
+            }
+            this.isAuthenticated = false;
+            this.authenticateAndFetchData();
+        }
     }
     authenticateAndFetchData() {
         if (!this.socket || !this.socket.connected)
@@ -3914,6 +4070,11 @@ class TitleScreenInventoryManager {
     //     });
     // }
     updateLoadoutDisplay() {
+        // The title-screen loadout is now canvas-rendered and repaints every frame.
+        // This method is kept as a no-op for existing callers.
+        return;
+    }
+    _legacyUpdateLoadoutDisplay() {
         if (!this.loadoutBar || !this.playerData)
             return;
         const slots = this.loadoutBar.querySelectorAll('.loadout-slot');
@@ -3927,7 +4088,7 @@ class TitleScreenInventoryManager {
             // Add key binding back
             const keyText = document.createElement('div');
             keyText.className = 'key-binding';
-            keyText.textContent = this.LOADOUT_KEY_BINDINGS[index];
+            keyText.textContent = index < this.LOADOUT_PRIMARY_COUNT ? this.LOADOUT_KEY_BINDINGS[index] : '';
             keyText.style.cssText = `
                 position: absolute;
                 top: 5px;
@@ -4051,6 +4212,10 @@ class TitleScreenInventoryManager {
         return itemName;
     }
     setupLoadoutDragAndDrop() {
+        // No-op: the canvas loadout bar handles its own drag/drop in setupCanvasLoadoutInteractions.
+        return;
+    }
+    _legacySetupLoadoutDragAndDrop() {
         if (!this.loadoutBar)
             return;
         const slots = this.loadoutBar.querySelectorAll('.loadout-slot');
@@ -4147,7 +4312,11 @@ class TitleScreenInventoryManager {
                 item.onCooldown = true;
             }
         }
-        const newLoadout = [...this.playerData.loadout];
+        // Pad to full loadout length so secondary-row writes are preserved
+        const newLoadout = new Array(this.LOADOUT_SLOTS).fill(null);
+        for (let i = 0; i < Math.min(this.playerData.loadout.length, this.LOADOUT_SLOTS); i++) {
+            newLoadout[i] = this.playerData.loadout[i] || null;
+        }
         this.removeItem(rarity, type, 1);
         const existingItem = newLoadout[loadoutSlot];
         if (existingItem && existingItem.rarity) {
@@ -4156,6 +4325,7 @@ class TitleScreenInventoryManager {
         }
         newLoadout[loadoutSlot] = item;
         this.playerData.loadout = newLoadout;
+        this.lastLocalLoadoutChange = Date.now();
         // Emit to server - ensure socket is authenticated and player exists
         if (this.socket && this.socket.connected && this.isAuthenticated && this.socket.username) {
             console.log('[TitleScreen] Emitting updateLoadout (equipItemToLoadout):', {
@@ -4190,9 +4360,13 @@ class TitleScreenInventoryManager {
             return;
         const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
         this.addItem(item.rarity, itemKey, 1);
-        const newLoadout = [...this.playerData.loadout];
+        const newLoadout = new Array(this.LOADOUT_SLOTS).fill(null);
+        for (let i = 0; i < Math.min(this.playerData.loadout.length, this.LOADOUT_SLOTS); i++) {
+            newLoadout[i] = this.playerData.loadout[i] || null;
+        }
         newLoadout[loadoutSlot] = null;
         this.playerData.loadout = newLoadout;
+        this.lastLocalLoadoutChange = Date.now();
         // Emit to server - ensure socket is authenticated and player exists
         if (this.socket && this.socket.connected && this.isAuthenticated && this.socket.username) {
             console.log('[TitleScreen] Emitting updateLoadout (moveItemToInventory):', {
@@ -4222,9 +4396,13 @@ class TitleScreenInventoryManager {
     swapLoadoutItems(fromSlot, toSlot) {
         if (!this.playerData)
             return;
-        const newLoadout = [...this.playerData.loadout];
+        const newLoadout = new Array(this.LOADOUT_SLOTS).fill(null);
+        for (let i = 0; i < Math.min(this.playerData.loadout.length, this.LOADOUT_SLOTS); i++) {
+            newLoadout[i] = this.playerData.loadout[i] || null;
+        }
         [newLoadout[fromSlot], newLoadout[toSlot]] = [newLoadout[toSlot], newLoadout[fromSlot]];
         this.playerData.loadout = newLoadout;
+        this.lastLocalLoadoutChange = Date.now();
         // Emit to server - ensure socket is authenticated and player exists
         if (this.socket && this.socket.connected && this.isAuthenticated && this.socket.username) {
             console.log('[TitleScreen] Emitting updateLoadout (swapLoadoutItems):', {
@@ -4680,7 +4858,23 @@ class TitleScreenInventoryManager {
         }
     }
     updateFromPlayerData(playerData) {
-        this.playerData = playerData;
+        // Suppress stale server-pushed loadout data while an optimistic edit is in flight
+        if (this.playerData && Date.now() - this.lastLocalLoadoutChange < this.LOADOUT_SYNC_SUPPRESS_MS) {
+            // Keep local loadout, merge other fields
+            this.playerData = {
+                ...playerData,
+                loadout: this.playerData.loadout,
+                inventory: this.playerData.inventory,
+            };
+        }
+        else {
+            // Pad loadout to 20 slots so secondary row is always present
+            const padded = new Array(this.LOADOUT_SLOTS).fill(null);
+            const src = playerData.loadout || [];
+            for (let i = 0; i < Math.min(src.length, this.LOADOUT_SLOTS); i++)
+                padded[i] = src[i] || null;
+            this.playerData = { ...playerData, loadout: padded };
+        }
         this.updateLoadoutDisplay();
         if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
             this.updateInventoryDisplay();

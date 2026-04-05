@@ -454,6 +454,32 @@ function setupGameEventListeners() {
                     // Now fully show the title screen
                     titleScreen?.showTitleScreen();
 
+                    // The game disconnected the shared socket; reconnect so the title screen
+                    // can show the up-to-date loadout/inventory that was saved on exit.
+                    // NB: game.cleanup() calls socket.removeAllListeners() before disconnect(),
+                    // which strips the 'disconnect' handler that nulls preconnectedSocket, so
+                    // the variable still points to the dead socket. Clear it manually.
+                    if (!preconnectedSocket || !(preconnectedSocket as any).connected) {
+                        preconnectedSocket = null;
+                        window.preconnectedSocket = null;
+                        preconnectToServer();
+                        // After the socket connects, re-authenticate through the title screen
+                        // inventory manager so it refreshes player data via 'authenticated'.
+                        const waitForConnect = () => {
+                            if (preconnectedSocket && (preconnectedSocket as any).connected) {
+                                const inv = (titleScreen as any)?.titleScreenInventoryManager;
+                                inv?.reauthenticate();
+                            } else {
+                                setTimeout(waitForConnect, 100);
+                            }
+                        };
+                        setTimeout(waitForConnect, 100);
+                    } else {
+                        // Socket already connected — just trigger a refresh
+                        const inv = (titleScreen as any)?.titleScreenInventoryManager;
+                        inv?.reauthenticate();
+                    }
+
                     // Reset connecting flag so user can rejoin
                     isConnecting = false;
                 });
