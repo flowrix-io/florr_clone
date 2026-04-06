@@ -44,13 +44,13 @@ const DAMAGE_SCALING = {
     unique: 6561
 };
 exports.SIZE_SCALING = {
-    common: 1,
-    uncommon: 1.2,
-    rare: 1.6,
-    epic: 2.56,
-    legendary: 4.096,
-    mythic: 6.5536,
-    ultra: 10.48576,
+    common: 1.5,
+    uncommon: 1.65,
+    rare: 1.95,
+    epic: 2.58,
+    legendary: 4.5,
+    mythic: 7.5,
+    ultra: 10.5,
     super: 16.777216,
     unique: 26.8435456
 };
@@ -418,6 +418,7 @@ exports.BASE_MOB_CONFIGS = {
         size: 1.0,
         speed: 0.5,
         cooldown: 2000,
+        visual_scale: 1.3,
         description: "It hurts, don't touch it",
         color: "#ebe834",
         image: `<svg width="32" height="32" viewBox="-45 -30 95 60" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -477,7 +478,7 @@ exports.BASE_MOB_CONFIGS = {
         name: "Ladybug",
         damage: 10,
         health: 62.5,
-        size: 0.667,
+        size: 1.0,
         visual_scale: 1.2,
         speed: 0.5,
         cooldown: 2000,
@@ -2100,7 +2101,7 @@ exports.BASE_MOB_CONFIGS = {
         health: 100000000,
         damage: 10,
         size: 1.0,
-        visual_scale: 1.0,
+        visual_scale: 1.15,
         speed: 0.0,
         cooldown: 2000,
         description: "How did you kill this???",
