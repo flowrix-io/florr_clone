@@ -222,6 +222,12 @@ exports.CHANGELOG = [
             'Nerfed blood leaf',
             'Fixed some bugs',
         ]
+    },
+    {
+        date: 'April 5, 2026',
+        changes: [
+            'You now have a second row of loadout slots',
+        ]
     }
 ];
 class ChangelogManager {

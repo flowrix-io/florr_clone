@@ -1,10 +1,10 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244486312,
+      "totalXP": 244486357,
       "inventory": {
         "common": {
-          "shield": 251,
+          "shield": 252,
           "petal_light": 76,
           "petal_dandelion": 34,
           "petal_stinger": 58,
@@ -31,9 +31,9 @@
           "petal_golden_leaf": 19,
           "petal_yucca": 17,
           "petal_hornet_egg": 119,
-          "petal_dandelion_egg": 117,
+          "petal_dandelion_egg": 118,
           "petal_ladybug_egg": 107,
-          "petal_soldier_ant_egg": 146,
+          "petal_soldier_ant_egg": 147,
           "petal_dark_ladybug_egg": 103,
           "petal_bee_egg": 118,
           "petal_fly_egg": 80,
@@ -622,7 +622,7 @@
         "soldier_ant": {
           "epic": 123,
           "legendary": 324,
-          "common": 474,
+          "common": 477,
           "rare": 176,
           "mythic": 516,
           "ultra": 18,
@@ -633,7 +633,7 @@
         "rock": {
           "legendary": 159,
           "ultra": 9,
-          "common": 353,
+          "common": 354,
           "mythic": 180,
           "epic": 58,
           "rare": 66,
@@ -642,7 +642,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 457,
+          "common": 458,
           "legendary": 146,
           "mythic": 164,
           "uncommon": 131,
@@ -653,7 +653,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 508,
+          "common": 509,
           "legendary": 338,
           "mythic": 362,
           "uncommon": 181,
@@ -665,7 +665,7 @@
         },
         "dandelion": {
           "legendary": 204,
-          "common": 321,
+          "common": 322,
           "mythic": 185,
           "uncommon": 90,
           "unique": 3,
@@ -675,7 +675,7 @@
           "super": 5
         },
         "bee": {
-          "common": 411,
+          "common": 413,
           "epic": 100,
           "mythic": 217,
           "uncommon": 103,
