@@ -503,17 +503,6 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
         super: 1250000,
         unique: 5000000
     },
-    // osaka: {
-    //     common: 1,
-    //     uncommon: 2,
-    //     rare: 5,
-    //     epic: 35,
-    //     legendary: 980,
-    //     mythic: 8100,
-    //     ultra: 220000,
-    //     super: 1800000,
-    //     unique: 10000000
-    // },
     cube: {
         common: 1,
         uncommon: 1,
@@ -2974,29 +2963,6 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
             range: 1700
         }
     },
-    // osaka: {
-    //     uncommon: {
-    //         range: 700
-    //     },
-    //     rare: {
-    //         range: 1000
-    //     },
-    //     epic: {
-    //         range: 1400
-    //     },
-    //     legendary: {
-    //         range: 1800
-    //     },
-    //     mythic: {
-    //         range: 2200
-    //     },
-    //     super: {
-    //         range: 2600
-    //     },
-    //     unique: {
-    //         range: 3000
-    //     }
-    // }
 };
 
 // Rarity color mappings
@@ -3792,35 +3758,6 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
             }
         ]
     },
-    // osaka: {
-    //     guaranteed: true,
-    //     drops: [
-    //         {
-    //             type: 'petal',
-    //             itemType: 'glitch',
-    //             rarity: 'common',
-    //             probability: 1.0,
-    //             minQuantity: 1,
-    //             maxQuantity: 1
-    //         },
-    //         {
-    //             type: 'petal',
-    //             itemType: 'javascript',
-    //             rarity: 'common',
-    //             probability: 1.0,
-    //             minQuantity: 1,
-    //             maxQuantity: 1
-    //         },
-    //         {
-    //             type: 'petal',
-    //             itemType: 'osaka',
-    //             rarity: 'common',
-    //             probability: 0.5,
-    //             minQuantity: 1,
-    //             maxQuantity: 1
-    //         }
-    //     ]
-    // },
 };
 
 // Ensure every mob type drops its egg with 100% chance for common rarity

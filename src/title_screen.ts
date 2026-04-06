@@ -1170,22 +1170,6 @@ export class TitleScreen {
         }
 
 
-        // Form switching
-        const showRegister = this.loginForm.querySelector('#showRegister');
-        const showLogin = this.registerForm.querySelector('#showLogin');
-        
-        if (showRegister) {
-            showRegister.addEventListener('click', () => {
-                this.showRegisterForm();
-            });
-        }
-        
-        if (showLogin) {
-            showLogin.addEventListener('click', () => {
-                this.showLoginForm();
-            });
-        }
-
         // Setup name input persistence
         this.setupNameInputPersistence();
     }
@@ -2409,14 +2393,6 @@ export class TitleScreen {
         const buttonSpacing = 10;
         let currentY = formY + 30;
 
-        // Draw form background (purple theme)
-        // ctx.fillStyle = 'rgba(138, 43, 226, 1)'; // Purple background
-        // ctx.strokeStyle = 'rgba(186, 85, 211, 1)'; // Light purple border
-        // ctx.lineWidth = 2;
-        // this.drawRoundedRect(ctx, formX, formY, formWidth, formHeight, formRadius);
-        // ctx.fill();
-        // ctx.stroke();
-
         // Draw form title
         ctx.font = 'bold 28px Ubuntu, sans-serif';
         ctx.fillStyle = '#ffffff';
@@ -2622,19 +2598,6 @@ export class TitleScreen {
         }, 100); // 100ms delay to ensure DOM is ready
     }
 
-    public showLoginForm(): void {
-        // console.log('Showing login form');
-        // this.loginForm.classList.remove('hidden');
-        // this.registerForm.classList.add('hidden');
-        // handled in auth_ui.ts
-    }
-
-    public showRegisterForm(): void {
-        // console.log('Showing register form');
-        // this.loginForm.classList.add('hidden');
-        // this.registerForm.classList.remove('hidden');
-        // handled in auth_ui.ts
-    }
 
     public hideAuthContainer(): void {
         this.showAuthForm = false;
@@ -3108,46 +3071,6 @@ export class TitleScreen {
         this.loadingScreen.classList.add('hidden');
     }
 
-    // Getters for accessing form elements
-    public getLoginUsername(): HTMLInputElement | null {
-        return this.loginForm.querySelector('#loginUsername') as HTMLInputElement;
-    }
-
-    public getLoginPassword(): HTMLInputElement | null {
-        return this.loginForm.querySelector('#loginPassword') as HTMLInputElement;
-    }
-
-    public getServerIPConnect(): HTMLInputElement | null {
-        return this.loginForm.querySelector('#serverIP-connect') as HTMLInputElement;
-    }
-
-    public getLoginButton(): HTMLButtonElement | null {
-        return this.loginForm.querySelector('#loginButton') as HTMLButtonElement;
-    }
-
-    public getRegisterUsername(): HTMLInputElement | null {
-        return this.registerForm.querySelector('#registerUsername') as HTMLInputElement;
-    }
-
-    public getRegisterPassword(): HTMLInputElement | null {
-        return this.registerForm.querySelector('#registerPassword') as HTMLInputElement;
-    }
-
-    public getRegisterConfirmPassword(): HTMLInputElement | null {
-        return this.registerForm.querySelector('#registerConfirmPassword') as HTMLInputElement;
-    }
-
-    public getServerIPSingle(): HTMLInputElement | null {
-        return this.registerForm.querySelector('#serverIP-single') as HTMLInputElement;
-    }
-
-    public getRegisterButton(): HTMLButtonElement | null {
-        return this.registerForm.querySelector('#registerButton') as HTMLButtonElement;
-    }
-
-    public getRegisterOfflineButton(): HTMLButtonElement | null {
-        return this.registerForm.querySelector('#registerOfflineButton') as HTMLButtonElement;
-    }
 
     public getMultiPlayerButton(): HTMLButtonElement | null {
         // Return a dummy button that can be clicked programmatically
@@ -3205,17 +3128,6 @@ export class TitleScreen {
         return input;
     }
 
-    public getHueSlider(): HTMLInputElement | null {
-        return this.centerText.querySelector('#hueSlider') as HTMLInputElement;
-    }
-
-    public getColorPreview(): HTMLElement | null {
-        return this.centerText.querySelector('#colorPreview') as HTMLElement;
-    }
-
-    public getUpdateColorButton(): HTMLButtonElement | null {
-        return this.centerText.querySelector('#updateColorButton') as HTMLButtonElement;
-    }
 
     public getExitButtonContainer(): HTMLElement {
         return this.exitButtonContainer;
@@ -3338,25 +3250,6 @@ export class TitleScreen {
     }
 
 
-    private createFallbackBackground(): void {
-        console.log('Using fallback background for title screen');
-        // Create a programmatic SVG that matches land.svg
-        const svgContent = `
-            <svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
-                <rect width="400" height="400" fill="#00d885"/>
-                <polygon points="200,50 300,150 200,250 100,150" fill="#02c278"/>
-                <polygon points="200,100 250,200 200,300 150,200" fill="#02c278"/>
-                <polygon points="200,150 275,225 200,300 125,225" fill="#02c278"/>
-                <polygon points="200,200 300,250 200,300 100,250" fill="#02c278"/>
-                <polygon points="200,250 275,275 200,300 125,275" fill="#02c278"/>
-                <polygon points="200,300 250,325 200,350 150,325" fill="#02c278"/>
-                <polygon points="200,350 300,375 200,400 100,375" fill="#02c278"/>
-            </svg>
-        `;
-        const base64 = btoa(unescape(encodeURIComponent(svgContent)));
-        const dataUrl = `data:image/svg+xml;base64,${base64}`;
-        this.backgroundTexture.src = dataUrl;
-    }
 
     private drawScrollingBackground(): void {
         // Resize canvas to match window size
@@ -3790,7 +3683,6 @@ export class TitleScreen {
 class TitleScreenInventoryManager {
     private inventoryPanel: HTMLDivElement | null = null;
     private craftingPanel: HTMLDivElement | null = null;
-    private loadoutBar: HTMLDivElement | null = null;
     private loadoutCanvas: HTMLCanvasElement | null = null;
     private canvasLoadoutBar: CanvasLoadoutBar | null = null;
     private loadoutRafId: number | null = null;
@@ -3805,8 +3697,6 @@ class TitleScreenInventoryManager {
     private isCraftingOpen: boolean = false;
     private isAuthenticated: boolean = false;
     private readonly LOADOUT_SLOTS = 20;
-    private readonly LOADOUT_PRIMARY_COUNT = 10;
-    private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
     private readonly ITEM_RARITY_COLORS: Record<string, string> = {
         common: '#7eef6d',
         uncommon: '#ffe65d',
@@ -4258,189 +4148,12 @@ class TitleScreenInventoryManager {
         }
     }
 
-    // private authenticateAndFetchData(): void {
-    //     if (!this.socket || !this.socket.connected) return;
-
-    //     const username = localStorage.getItem('username');
-    //     const password = localStorage.getItem('password');
-    //     const playerName = (document.getElementById('nameInput') as HTMLInputElement)?.value || 'Unnamed';
-    //     const spawnBiome = localStorage.getItem('spawnBiome') || 'default';
-
-    //     if (!username || !password) return;
-
-    //     console.log('[TitleScreenInventory] Authenticating to fetch player data...');
-        
-    //     // Authenticate to get player data
-    //     this.socket.emit('authenticate', {
-    //         username,
-    //         password,
-    //         playerName,
-    //         spawnBiome
-    //     });
-
-    //     // Listen for authentication response
-    //     this.socket.once('authenticated', (response: { success: boolean; error?: string; player?: any }) => {
-    //         if (response.success && response.player) {
-    //             console.log('[TitleScreenInventory] Received player data:', response.player);
-    //             this.playerData = {
-    //                 inventory: response.player.inventory || {},
-    //                 loadout: response.player.loadout || Array(10).fill(null)
-    //             };
-    //             this.updateLoadoutDisplay();
-    //             this.updateInventoryDisplay();
-    //         }
-    //     });
-    // }
-
     private updateLoadoutDisplay(): void {
         // The title-screen loadout is now canvas-rendered and repaints every frame.
         // This method is kept as a no-op for existing callers.
         return;
     }
 
-    private _legacyUpdateLoadoutDisplay(): void {
-        if (!this.loadoutBar || !this.playerData) return;
-
-        const slots = this.loadoutBar.querySelectorAll('.loadout-slot');
-        slots.forEach((slot, index) => {
-            const slotElement = slot as HTMLElement;
-            slotElement.innerHTML = '';
-            slotElement.classList.remove('on-cooldown', 'petal-slot');
-            slotElement.style.backgroundColor = '';
-            slotElement.style.borderColor = '';
-            slotElement.dataset.slot = index.toString();
-            
-            // Add key binding back
-            const keyText = document.createElement('div');
-            keyText.className = 'key-binding';
-            keyText.textContent = index < this.LOADOUT_PRIMARY_COUNT ? this.LOADOUT_KEY_BINDINGS[index] : '';
-            keyText.style.cssText = `
-                position: absolute;
-                top: 5px;
-                left: 5px;
-                color: white;
-                font-size: 12px;
-                pointer-events: none;
-                z-index: 5;
-            `;
-            slotElement.appendChild(keyText);
-
-            const item = this.playerData?.loadout[index];
-            if (item) {
-                // Handle cooldown state
-                if (item.onCooldown) {
-                    slotElement.classList.add('on-cooldown');
-                }
-
-                // Handle different item types
-                if (item.type === 'petal' && item.petalType && item.rarity) {
-                    slotElement.classList.add('petal-slot');
-                    
-                    // Set background and border colors based on rarity
-                    if (this.ITEM_RARITY_COLORS[item.rarity]) {
-                        const rarityColor = this.ITEM_RARITY_COLORS[item.rarity];
-                        slotElement.style.backgroundColor = rarityColor;
-                        slotElement.style.borderColor = this.darkenColor(rarityColor);
-                    }
-                    
-                    const stats = getPetalStats(item.petalType, item.rarity);
-                    if (stats && stats.image) {
-                        // Create petal visual container
-                        const petalDiv = document.createElement('div');
-                        petalDiv.style.width = '60%';
-                        petalDiv.style.height = '60%';
-                        petalDiv.style.display = 'flex';
-                        petalDiv.style.alignItems = 'center';
-                        petalDiv.style.justifyContent = 'center';
-                        petalDiv.style.position = 'relative';
-                        
-                        // Use img element with SVG data URL
-                        const img = document.createElement('img');
-                        img.style.width = '100%';
-                        img.style.height = '100%';
-                        img.style.objectFit = 'contain';
-                        img.draggable = true;
-                        img.style.cursor = 'grab';
-                        
-                        // Convert SVG to data URL
-                        const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                        const url = URL.createObjectURL(svgBlob);
-                        img.src = url;
-                        
-                        petalDiv.appendChild(img);
-                        slotElement.appendChild(petalDiv);
-                        
-                        // Show health bar for petals
-                        if (item.health !== undefined && item.maxHealth !== undefined && item.maxHealth > 0) {
-                            const healthBar = document.createElement('div');
-                            healthBar.style.position = 'absolute';
-                            healthBar.style.bottom = '0';
-                            healthBar.style.left = '0';
-                            healthBar.style.width = '100%';
-                            healthBar.style.height = '3px';
-                            healthBar.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
-                            
-                            const healthFill = document.createElement('div');
-                            const clampedHealth = Math.max(0, item.health);
-                            const healthPercentage = clampedHealth / item.maxHealth;
-                            healthFill.style.width = `${healthPercentage * 100}%`;
-                            healthFill.style.height = '100%';
-                            healthFill.style.backgroundColor = 'rgba(0, 255, 0, 0.7)';
-                            
-                            healthBar.appendChild(healthFill);
-                            slotElement.appendChild(healthBar);
-                        }
-                        
-                        // Add petal name label
-                        const petalName = this.formatPetalName(item.petalType);
-                        if (petalName) {
-                            const nameLabel = document.createElement('div');
-                            nameLabel.className = 'petal-name';
-                            nameLabel.textContent = petalName;
-                            nameLabel.style.cssText = `
-                                position: absolute;
-                                bottom: 5px;
-                                left: 50%;
-                                transform: translateX(-50%);
-                                color: white;
-                                font-size: 10px;
-                                font-weight: bold;
-                                text-shadow: 
-                                    -1px -1px 0 #000,
-                                    1px -1px 0 #000,
-                                    -1px 1px 0 #000,
-                                    1px 1px 0 #000,
-                                    0 0 3px rgba(0,0,0,0.8);
-                                white-space: nowrap;
-                                pointer-events: none;
-                                z-index: 10;
-                            `;
-                            slotElement.appendChild(nameLabel);
-                        }
-
-                        // Setup tooltip for loadout petal
-                        if (item.rarity) {
-                            this.setupTooltip(slotElement, item.petalType, item.rarity);
-                        }
-                    }
-                } else if (item.type) {
-                    // Regular items (health potion, speed boost, shield)
-                    const img = document.createElement('img');
-                    img.src = `./assets/${item.type}.png`;
-                    img.alt = item.type;
-                    img.style.width = '60%';
-                    img.style.height = '60%';
-                    img.style.objectFit = 'contain';
-                    img.draggable = true;
-                    img.style.cursor = 'grab';
-                    slotElement.appendChild(img);
-                }
-            }
-        });
-        
-        // Re-setup drag and drop listeners after updating display
-        this.setupLoadoutDragAndDrop();
-    }
     
     private formatPetalName(petalType: string): string {
         if (!petalType) return "";
@@ -4449,93 +4162,7 @@ class TitleScreenInventoryManager {
         return itemName;
     }
     
-    private setupLoadoutDragAndDrop(): void {
-        // No-op: the canvas loadout bar handles its own drag/drop in setupCanvasLoadoutInteractions.
-        return;
-    }
 
-    private _legacySetupLoadoutDragAndDrop(): void {
-        if (!this.loadoutBar) return;
-
-        const slots = this.loadoutBar.querySelectorAll('.loadout-slot');
-        
-        // Setup draggable items in slots
-        slots.forEach((slot, slotIndex) => {
-            const slotElement = slot as HTMLElement;
-            
-            // Find draggable element (img or petal div)
-            const img = slotElement.querySelector('img');
-            const petalDiv = slotElement.querySelector('div[style*="display: flex"]');
-            let draggableElement: HTMLElement | null = img as HTMLElement || (petalDiv as HTMLElement) || slotElement;
-            
-            if (draggableElement && slotElement.querySelector('img, div[style*="display: flex"]')) {
-                draggableElement.draggable = true;
-                draggableElement.style.cursor = 'grab';
-                
-                // Remove old listeners by cloning
-                const newElement = draggableElement.cloneNode(true) as HTMLElement;
-                draggableElement.parentNode?.replaceChild(newElement, draggableElement);
-                draggableElement = newElement;
-                
-                draggableElement.addEventListener('dragstart', (e: Event) => {
-                    e.stopPropagation();
-                    const dragEvent = e as DragEvent;
-                    dragEvent.dataTransfer?.setData('text/loadoutSlot', slotIndex.toString());
-                    dragEvent.dataTransfer!.effectAllowed = 'move';
-                });
-            }
-        });
-        
-        // Setup drop listeners on slots
-        slots.forEach((slot, slotIndex) => {
-            const slotElement = slot as HTMLElement;
-            
-            // Remove old listeners by cloning
-            const newSlot = slotElement.cloneNode(true) as HTMLElement;
-            slotElement.parentNode?.replaceChild(newSlot, slotElement);
-            
-            newSlot.addEventListener('dragenter', (e: Event) => {
-                e.preventDefault();
-                newSlot.classList.add('drag-over');
-            });
-            
-            newSlot.addEventListener('dragover', (e: Event) => {
-                e.preventDefault();
-                const dragEvent = e as DragEvent;
-                dragEvent.dataTransfer!.dropEffect = 'move';
-                newSlot.classList.add('drag-over');
-            });
-            
-            newSlot.addEventListener('dragleave', (e: Event) => {
-                newSlot.classList.remove('drag-over');
-            });
-            
-            newSlot.addEventListener('drop', (e: Event) => {
-                e.preventDefault();
-                const dragEvent = e as DragEvent;
-                newSlot.classList.remove('drag-over');
-                
-                const itemData = dragEvent.dataTransfer?.getData('text/plain');
-                const fromLoadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
-                
-                if (itemData) {
-                    // Item from inventory
-                    const { rarity, type } = JSON.parse(itemData);
-                    const slot = parseInt(newSlot.dataset.slot || '-1');
-                    if (rarity && type && slot >= 0) {
-                        this.equipItemToLoadout(rarity, type, slot);
-                    }
-                } else if (fromLoadoutSlot) {
-                    // Item from another loadout slot
-                    const fromSlot = parseInt(fromLoadoutSlot);
-                    const toSlot = slotIndex;
-                    if (fromSlot !== toSlot) {
-                        this.swapLoadoutItems(fromSlot, toSlot);
-                    }
-                }
-            });
-        });
-    }
     
     private equipItemToLoadout(rarity: string, type: string, loadoutSlot: number): void {
         if (!this.playerData || loadoutSlot >= this.LOADOUT_SLOTS || this.getItemCount(rarity, type) === 0) return;
