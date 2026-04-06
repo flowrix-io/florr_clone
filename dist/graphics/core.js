@@ -156,6 +156,13 @@ class Graphics {
         this.irisOnComplete = null;
         this.IRIS_TRANSITION_DURATION = 800;
         this.IRIS_OUTLINE_WIDTH = 6;
+        // Canvas-based death screen
+        this.deathScreenVisible = false;
+        this.deathScreenKilledBy = '';
+        this.deathScreenButtonRect = { x: 0, y: 0, w: 0, h: 0 };
+        this.deathScreenCloseRect = { x: 0, y: 0, w: 0, h: 0 };
+        this.deathScreenButtonHovered = false;
+        this.deathScreenCloseHovered = false;
         // Console log overlay
         this.showConsoleLogs_ = false;
         this.consoleLogs = [];

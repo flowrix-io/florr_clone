@@ -10,6 +10,9 @@ declare module './core' {
         setShowConsoleLogs(enabled: boolean): void;
         addConsoleLog(args: any[], color: string): void;
         drawConsoleLogs(): void;
+        drawDeathScreen(): void;
+        showDeathScreen(killedBy?: { type: string; tier: string }): void;
+        hideDeathScreen(): void;
     }
 }
 
@@ -398,5 +401,119 @@ Graphics.prototype.drawConsoleLogs = function(this: Graphics): void {
 
         ctx.fillText(displayText, x + padding, y + padding + i * lineHeight);
     }
+    ctx.restore();
+};
+
+Graphics.prototype.showDeathScreen = function(this: Graphics, killedBy?: { type: string; tier: string }): void {
+    this.deathScreenVisible = true;
+    if (killedBy) {
+        const capType = killedBy.type.charAt(0).toUpperCase() + killedBy.type.slice(1);
+        const capTier = killedBy.tier.charAt(0).toUpperCase() + killedBy.tier.slice(1);
+        this.deathScreenKilledBy = `${capTier} ${capType}`;
+    } else {
+        this.deathScreenKilledBy = 'A mysterious entity';
+    }
+};
+
+Graphics.prototype.hideDeathScreen = function(this: Graphics): void {
+    this.deathScreenVisible = false;
+    this.deathScreenButtonHovered = false;
+    this.deathScreenCloseHovered = false;
+};
+
+Graphics.prototype.drawDeathScreen = function(this: Graphics): void {
+    if (!this.deathScreenVisible) return;
+
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    ctx.save();
+
+    // Semi-transparent dark overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.fillRect(0, 0, w, h);
+
+    const centerX = w / 2;
+    const centerY = h / 2;
+
+    // "You Died!" title
+    ctx.font = 'bold 48px Ubuntu, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 5;
+    ctx.strokeText('You Died!', centerX, centerY - 60);
+    ctx.fillStyle = '#ff4444';
+    ctx.fillText('You Died!', centerX, centerY - 60);
+
+    // Killed-by message
+    ctx.font = '22px Ubuntu, sans-serif';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    const killedText = `You were destroyed by: ${this.deathScreenKilledBy}`;
+    ctx.strokeText(killedText, centerX, centerY - 10);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(killedText, centerX, centerY - 10);
+
+    // "Continue" button
+    const btnW = 200;
+    const btnH = 50;
+    const btnX = centerX - btnW / 2;
+    const btnY = centerY + 30;
+    const btnRadius = 10;
+
+    // Store button rect for hit testing
+    this.deathScreenButtonRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+
+    // Button background
+    ctx.fillStyle = this.deathScreenButtonHovered ? '#5a9e4a' : '#4a8e3a';
+    ctx.beginPath();
+    ctx.roundRect(btnX, btnY, btnW, btnH, btnRadius);
+    ctx.fill();
+
+    // Button border
+    ctx.strokeStyle = '#2d5a22';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Button text
+    ctx.font = 'bold 22px Ubuntu, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeText('Continue', centerX, btnY + btnH / 2);
+    ctx.fillText('Continue', centerX, btnY + btnH / 2);
+
+    // "Close" button
+    const closeBtnW = 140;
+    const closeBtnH = 36;
+    const closeBtnX = centerX - closeBtnW / 2;
+    const closeBtnY = btnY + btnH + 15;
+
+    this.deathScreenCloseRect = { x: closeBtnX, y: closeBtnY, w: closeBtnW, h: closeBtnH };
+
+    ctx.fillStyle = this.deathScreenCloseHovered ? '#777777' : '#666666';
+    ctx.beginPath();
+    ctx.roundRect(closeBtnX, closeBtnY, closeBtnW, closeBtnH, btnRadius);
+    ctx.fill();
+
+    ctx.strokeStyle = '#444444';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.font = 'bold 16px Ubuntu, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeText('Close', centerX, closeBtnY + closeBtnH / 2);
+    ctx.fillText('Close', centerX, closeBtnY + closeBtnH / 2);
+
+    // Hint text
+    ctx.font = '14px Ubuntu, sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 0;
+    ctx.fillText('Press ENTER to continue', centerX, closeBtnY + closeBtnH + 25);
+
     ctx.restore();
 };

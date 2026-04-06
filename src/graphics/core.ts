@@ -147,6 +147,14 @@ export class Graphics {
     public readonly IRIS_TRANSITION_DURATION: number = 800;
     public readonly IRIS_OUTLINE_WIDTH: number = 6;
 
+    // Canvas-based death screen
+    public deathScreenVisible: boolean = false;
+    public deathScreenKilledBy: string = '';
+    public deathScreenButtonRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+    public deathScreenCloseRect: { x: number; y: number; w: number; h: number } = { x: 0, y: 0, w: 0, h: 0 };
+    public deathScreenButtonHovered: boolean = false;
+    public deathScreenCloseHovered: boolean = false;
+
     // Console log overlay
     public showConsoleLogs_: boolean = false;
     public consoleLogs: { text: string; color: string; timestamp: number }[] = [];

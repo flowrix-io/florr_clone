@@ -57,6 +57,8 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     }
     // Draw console logs overlay
     this.drawConsoleLogs();
+    // Draw canvas-based death screen overlay
+    this.drawDeathScreen();
     // Draw iris circle-reveal transition on top of everything
     if (this.irisTransitionActive) {
         this.drawIrisTransition();

@@ -413,14 +413,6 @@ export class Game {
             }
         });
 
-        // Add respawn button listener
-        const respawnButton = document.getElementById('respawnButton');
-        respawnButton?.addEventListener('click', () => {
-            if (this.isPlayerDead) {
-                this.socket.emit('requestRespawn');
-            }
-        }, { signal: this.abortController.signal });
-
         // Add mouse move listener - always track mouse position so it's available when toggling mouse controls
         this.canvas.addEventListener('mousemove', (event) => {
             // Loadout bar hover/drag tracking (screen-space)
@@ -459,8 +451,43 @@ export class Game {
             this.hasValidMouseTarget = true;
         }, { signal: this.abortController.signal });
 
+        // Track mouse for death screen button hover
+        this.canvas.addEventListener('mousemove', (event) => {
+            if (this.isPlayerDead && this.graphics.deathScreenVisible) {
+                const cRect = this.canvas.getBoundingClientRect();
+                const sx = event.clientX - cRect.left;
+                const sy = event.clientY - cRect.top;
+                const btn = this.graphics.deathScreenButtonRect;
+                this.graphics.deathScreenButtonHovered =
+                    sx >= btn.x && sx <= btn.x + btn.w &&
+                    sy >= btn.y && sy <= btn.y + btn.h;
+                const cls = this.graphics.deathScreenCloseRect;
+                this.graphics.deathScreenCloseHovered =
+                    sx >= cls.x && sx <= cls.x + cls.w &&
+                    sy >= cls.y && sy <= cls.y + cls.h;
+            }
+        }, { signal: this.abortController.signal });
+
         // Add mouse button listeners for petal extension/retraction
         this.canvas.addEventListener('mousedown', (event) => {
+            // Intercept clicks on the canvas death screen buttons
+            if (event.button === 0 && this.isPlayerDead && this.graphics.deathScreenVisible) {
+                const cRect = this.canvas.getBoundingClientRect();
+                const sx = event.clientX - cRect.left;
+                const sy = event.clientY - cRect.top;
+                const btn = this.graphics.deathScreenButtonRect;
+                if (sx >= btn.x && sx <= btn.x + btn.w && sy >= btn.y && sy <= btn.y + btn.h) {
+                    this.hideDeathScreen();
+                    const exitButton = document.getElementById('exitButton');
+                    exitButton?.click();
+                    return;
+                }
+                const cls = this.graphics.deathScreenCloseRect;
+                if (sx >= cls.x && sx <= cls.x + cls.w && sy >= cls.y && sy <= cls.y + cls.h) {
+                    this.hideDeathScreen();
+                    return;
+                }
+            }
             // Intercept left-clicks over the canvas loadout bar to start drag
             if (event.button === 0 && this.loadoutBar && this.loadoutBar.isVisible()) {
                 const cRect = this.canvas.getBoundingClientRect();
@@ -993,9 +1020,11 @@ export class Game {
                 return;
             }
 
-            // Handle respawn when dead
-            if (event.key === ' ' && this.isPlayerDead) {
-                this.socket.emit('requestRespawn');
+            // Handle exit when dead - Enter returns to title screen
+            if (event.key === 'Enter' && this.isPlayerDead) {
+                this.hideDeathScreen();
+                const exitButton = document.getElementById('exitButton');
+                exitButton?.click();
                 return;
             }
 
@@ -1336,8 +1365,7 @@ export class Game {
         // Draw canvas loadout bar on top of game UI
         if (this.loadoutBar) {
             const localPlayer = this.getLocalPlayer();
-            const alive = !this.isPlayerDead && !!localPlayer;
-            if (alive) this.loadoutBar.show(); else this.loadoutBar.hide();
+            if (localPlayer) this.loadoutBar.show(); else this.loadoutBar.hide();
             this.loadoutBar.draw(this.graphics.ctx);
         }
         requestAnimationFrame(() => this.gameLoop());
@@ -1785,7 +1813,6 @@ export class Game {
         document.getElementById('disconnect-message')?.remove();
         document.getElementById('transfer-message')?.remove();
         document.getElementById('teleporter-ui')?.remove();
-        document.getElementById('deathScreen')?.remove();
 
         // Reset camera position
         this.cameraX = 0;
@@ -2012,39 +2039,12 @@ export class Game {
     public savePlayerProgress() {}
     public hideTitleScreen() {}
     public showDeathScreen(killedBy?: { type: string; tier: string }) {
-        const deathScreen = document.getElementById('deathScreen');
-        if (deathScreen) {
-            deathScreen.classList.remove('hidden');
-            
-            // Update the death message with killer information
-            const deathMessage = deathScreen.querySelector('.death-screen-content p');
-            if (deathMessage && killedBy) {
-                const mobName = this.getMobDisplayName(killedBy.type, killedBy.tier);
-                deathMessage.textContent = `You were destroyed by: ${mobName}`;
-            } else if (deathMessage) {
-                deathMessage.textContent = 'You were destroyed by: A mysterious entity';
-            }
-        }
+        this.graphics.showDeathScreen(killedBy);
     }
     public hideDeathScreen() {
-        document.getElementById('deathScreen')?.classList.add('hidden');
+        this.graphics.hideDeathScreen();
     }
 
-    public requestRespawn() {
-        if (this.isPlayerDead) {
-            this.socket.emit('requestRespawn');
-        }
-    }
-
-    private getMobDisplayName(type: string, tier: string): string {
-        // Capitalize the first letter of the type
-        const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
-        
-        // Capitalize the first letter of the tier
-        const capitalizedTier = tier.charAt(0).toUpperCase() + tier.slice(1);
-        
-        return `${capitalizedTier} ${capitalizedType}`;
-    }
     public showTitleScreen() {
         document.getElementById('titleScreen')?.classList.remove('hidden');
     }

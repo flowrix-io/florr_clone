@@ -80,6 +80,9 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     // Draw console logs overlay
     this.drawConsoleLogs();
 
+    // Draw canvas-based death screen overlay
+    this.drawDeathScreen();
+
     // Draw iris circle-reveal transition on top of everything
     if (this.irisTransitionActive) {
         this.drawIrisTransition();
