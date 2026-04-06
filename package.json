@@ -1,6 +1,6 @@
 {
-  "name": "axolotl_2",
-  "version": "1.0.1",
+  "name": "florrclone",
+  "version": "0.5.0",
   "main": "index.js",
   "scripts": {
     "build:cpp": "cd cpp && make",
