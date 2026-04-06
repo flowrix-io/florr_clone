@@ -244,6 +244,8 @@ function preconnectToServer() {
     });
     window.preconnectedSocket = preconnectedSocket;
 }
+// Expose preconnectToServer so the title screen can trigger it after first login
+window.preconnectToServer = preconnectToServer;
 function setupGameEventListeners() {
     if (!titleScreen)
         return;

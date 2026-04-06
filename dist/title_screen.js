@@ -2448,6 +2448,13 @@ class TitleScreen {
                 localStorage.setItem('serverUrl', serverUrl);
                 sessionStorage.removeItem('isOffline');
                 this.hideAuthContainer();
+                // Connect socket if not already connected, then authenticate
+                if (!window.preconnectedSocket) {
+                    window.preconnectToServer?.();
+                }
+                else {
+                    this.titleScreenInventoryManager.reauthenticate();
+                }
             }
             else {
                 const offlineCredentials = JSON.parse(sessionStorage.getItem('offlineCredentials') || '{}');
@@ -2496,6 +2503,12 @@ class TitleScreen {
                 localStorage.setItem('serverUrl', serverUrl);
                 sessionStorage.removeItem('isOffline');
                 this.hideAuthContainer();
+                if (!window.preconnectedSocket) {
+                    window.preconnectToServer?.();
+                }
+                else {
+                    this.titleScreenInventoryManager.reauthenticate();
+                }
                 alert(`Guest account created!\nUsername: ${guestUsername}\nPassword: ${guestPassword}\n\nSave these credentials if you want to log in again!`);
             }
             else {

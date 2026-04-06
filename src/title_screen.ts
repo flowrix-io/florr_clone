@@ -2727,10 +2727,16 @@ export class TitleScreen {
                 localStorage.setItem('serverUrl', serverUrl);
                 sessionStorage.removeItem('isOffline');
                 this.hideAuthContainer();
+                // Connect socket if not already connected, then authenticate
+                if (!window.preconnectedSocket) {
+                    (window as any).preconnectToServer?.();
+                } else {
+                    this.titleScreenInventoryManager.reauthenticate();
+                }
             } else {
                 const offlineCredentials = JSON.parse(sessionStorage.getItem('offlineCredentials') || '{}');
-                if (offlineCredentials.username === username && 
-                    offlineCredentials.password === password && 
+                if (offlineCredentials.username === username &&
+                    offlineCredentials.password === password &&
                     offlineCredentials.isOffline) {
                     sessionStorage.setItem('currentUser', username);
                     sessionStorage.setItem('isOffline', 'true');
@@ -2774,6 +2780,11 @@ export class TitleScreen {
                 localStorage.setItem('serverUrl', serverUrl);
                 sessionStorage.removeItem('isOffline');
                 this.hideAuthContainer();
+                if (!window.preconnectedSocket) {
+                    (window as any).preconnectToServer?.();
+                } else {
+                    this.titleScreenInventoryManager.reauthenticate();
+                }
                 alert(`Guest account created!\nUsername: ${guestUsername}\nPassword: ${guestPassword}\n\nSave these credentials if you want to log in again!`);
             } else {
                 const errorData = await response.json();

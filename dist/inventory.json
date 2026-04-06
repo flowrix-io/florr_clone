@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244485669,
+      "totalXP": 244485679,
       "inventory": {
         "common": {
           "shield": 248,
@@ -636,7 +636,7 @@
         "rock": {
           "legendary": 159,
           "ultra": 9,
-          "common": 346,
+          "common": 347,
           "mythic": 180,
           "epic": 58,
           "rare": 66,
@@ -1184,6 +1184,117 @@
         }
       },
       "stars": 0
+    },
+    "bur8gdecq": {
+      "totalXP": 10,
+      "inventory": {
+        "common": {
+          "petal_basic": 5,
+          "shield": 1,
+          "petal_bone": 1
+        },
+        "uncommon": {
+          "petal_dark_ladybug_egg": 1
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "dark_ladybug": {
+          "common": 1
+        }
+      },
+      "stars": 0
+    },
+    "i61j647gv": {
+      "totalXP": 20,
+      "inventory": {},
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "uncommon",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "dark_ladybug": {
+          "common": 2
+        }
+      },
+      "stars": 0
     }
   },
   "users": {
@@ -1212,6 +1323,16 @@
       "id": "w2pg18xcp",
       "username": "User40141999",
       "password": "$2b$12$MbAvT3PF/uWfVwtn/cER.uH22foPHgjOcYw/lpuMgnyaYhIREfqhO"
+    },
+    "User62580": {
+      "id": "bur8gdecq",
+      "username": "User62580",
+      "password": "$2b$12$xGucxInAEc5ig3kL8fnf2.zja.5AsYN4BITP0yykp4tdbFURvj7IS"
+    },
+    "User18781520": {
+      "id": "i61j647gv",
+      "username": "User18781520",
+      "password": "$2b$12$/cN9IiQtPOeg/oGNpMb1wOvNZ79gss4MYbOythV6rrN.pQkAhEHJC"
     }
   },
   "codes": {},
