@@ -2918,6 +2918,58 @@ const WORLD_MAP_DATA = {
                     }
                 ]
             }
+        },
+        {
+            "type": "teleporter",
+            "x": 18089.453125,
+            "y": 18195.078125,
+            "width": 0,
+            "height": 0,
+            "properties": {
+                "teleportTo": {
+                    "x": 29479,
+                    "y": 38705
+                }
+            }
+        },
+        {
+            "type": "teleporter",
+            "x": 29509.453125,
+            "y": 38695.078125,
+            "width": 0,
+            "height": 0,
+            "properties": {
+                "teleportTo": {
+                    "x": 19000,
+                    "y": 19000
+                }
+            }
+        },
+        {
+            "type": "teleporter",
+            "x": 1519.453125,
+            "y": 59615.078125,
+            "width": 0,
+            "height": 0,
+            "properties": {
+                "teleportTo": {
+                    "x": 11000,
+                    "y": 10000
+                }
+            }
+        },
+        {
+            "type": "teleporter",
+            "x": 11629.453125,
+            "y": 9995.078125,
+            "width": 0,
+            "height": 0,
+            "properties": {
+                "teleportTo": {
+                    "x": 1500,
+                    "y": 59000
+                }
+            }
         }
     ],
     "wallGrid": [
