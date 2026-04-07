@@ -718,6 +718,11 @@ class Game {
     setupEventListeners() {
         const signal = this.abortController.signal;
         document.addEventListener('keydown', (event) => {
+            // Don't interfere if an input/textarea is focused
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                return;
+            }
             if (this.chat && this.chat.isFocused) {
                 if (event.key === 'Escape') {
                     this.chat.blur();

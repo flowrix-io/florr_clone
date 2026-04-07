@@ -702,11 +702,20 @@ class TitleScreen {
             // Don't interfere if game is running
             if (window.currentGame)
                 return;
+            // Don't interfere if an input/textarea is focused
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                return;
+            }
             // Don't interfere if chat is focused
             if (this.titleScreenChat && this.titleScreenChat.isFocused) {
                 if (event.key === 'Escape') {
                     this.titleScreenChat.blur();
                 }
+                return;
+            }
+            // Don't interfere if auth form field or name input is focused
+            if ((this.showAuthForm && this.authFocusedField) || this.isNameInputFocused) {
                 return;
             }
             const controls = this.getControls();
