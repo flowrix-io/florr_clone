@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244534903,
+      "totalXP": 244534914,
       "inventory": {
         "common": {
           "shield": 257,
@@ -652,7 +652,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 470,
+          "common": 471,
           "legendary": 146,
           "mythic": 164,
           "uncommon": 136,
@@ -685,7 +685,7 @@
           "super": 5
         },
         "bee": {
-          "common": 424,
+          "common": 425,
           "epic": 101,
           "mythic": 217,
           "uncommon": 110,

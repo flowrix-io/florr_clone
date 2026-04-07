@@ -836,6 +836,10 @@ export class TitleScreen {
         if (settingsButton) {
             settingsButton.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // Close other menus
+                this.changelogManager.hide();
+                this.notificationsManager.hide();
+                this.leaderboardManager.hide();
                 this.settingsMenu.classList.toggle('hidden');
             });
         }
@@ -844,6 +848,10 @@ export class TitleScreen {
             changelogButton.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                // Close other menus
+                this.settingsMenu.classList.add('hidden');
+                this.notificationsManager.hide();
+                this.leaderboardManager.hide();
                 console.log('[CHANGELOG] Button clicked, isOpen before:', this.changelogManager.isChangelogOpen());
                 this.changelogManager.toggle();
                 console.log('[CHANGELOG] Button clicked, isOpen after:', this.changelogManager.isChangelogOpen());
@@ -862,6 +870,10 @@ export class TitleScreen {
             notificationsButton.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                // Close other menus
+                this.settingsMenu.classList.add('hidden');
+                this.changelogManager.hide();
+                this.leaderboardManager.hide();
                 console.log('[NOTIFICATIONS] Button clicked, isOpen before:', this.notificationsManager.isNotificationsOpen());
                 this.notificationsManager.toggle();
                 console.log('[NOTIFICATIONS] Button clicked, isOpen after:', this.notificationsManager.isNotificationsOpen());
@@ -879,6 +891,10 @@ export class TitleScreen {
             leaderboardButton.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                // Close other menus
+                this.settingsMenu.classList.add('hidden');
+                this.changelogManager.hide();
+                this.notificationsManager.hide();
                 this.leaderboardManager.toggle();
             });
         }
