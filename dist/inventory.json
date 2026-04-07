@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244585312,
+      "totalXP": 244588587,
       "inventory": {
         "common": {
           "shield": 258,
@@ -33,7 +33,7 @@
           "petal_hornet_egg": 126,
           "petal_dandelion_egg": 121,
           "petal_ladybug_egg": 110,
-          "petal_soldier_ant_egg": 150,
+          "petal_soldier_ant_egg": 151,
           "petal_dark_ladybug_egg": 108,
           "petal_bee_egg": 119,
           "petal_fly_egg": 80,
@@ -68,7 +68,7 @@
           "petal_bulb": 8,
           "petal_third_eye": 4,
           "petal_gas": 8,
-          "petal_glass": 42,
+          "petal_glass": 43,
           "petal_cube_egg": 20,
           "petal_corn": 5,
           "petal_faster": 17,
@@ -187,7 +187,7 @@
           "petal_sand": 13,
           "speed_boost": 110,
           "petal_stinger": 46,
-          "shield": 114,
+          "shield": 115,
           "petal_clover": 70,
           "petal_light": 59,
           "health_potion": 29,
@@ -637,7 +637,7 @@
         "soldier_ant": {
           "epic": 125,
           "legendary": 324,
-          "common": 499,
+          "common": 504,
           "rare": 180,
           "mythic": 516,
           "ultra": 18,
@@ -657,7 +657,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 472,
+          "common": 475,
           "legendary": 146,
           "mythic": 164,
           "uncommon": 137,
@@ -669,7 +669,7 @@
         },
         "hornet": {
           "common": 526,
-          "legendary": 338,
+          "legendary": 339,
           "mythic": 362,
           "uncommon": 190,
           "rare": 123,
@@ -724,7 +724,7 @@
         "target_dummy": {
           "legendary": 3,
           "common": 14,
-          "mythic": 21,
+          "mythic": 22,
           "ultra": 62,
           "super": 121,
           "uncommon": 12,
@@ -973,7 +973,7 @@
           "uncommon": 5
         }
       },
-      "stars": 127979
+      "stars": 127980
     },
     "1g99g1gfk": {
       "totalXP": 104,

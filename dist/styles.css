@@ -260,7 +260,7 @@ label {
     height: 66.67vh; /* 2/3 of viewport height */
     background: #599fdc; /* Blue background color */
     transition: transform 0.3s ease-out;
-    z-index: 1000;
+    z-index: 3000;
     padding: 20px;
     box-sizing: border-box;
     color: white;
@@ -282,7 +282,7 @@ label {
     height: 66.67vh; /* 2/3 of viewport height */
     background: #d8a05d; /* Orange background color */
     transition: transform 0.3s ease-out;
-    z-index: 1000;
+    z-index: 3000;
     padding: 20px;
     box-sizing: border-box;
     color: white;

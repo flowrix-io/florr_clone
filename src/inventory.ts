@@ -2790,13 +2790,13 @@ export class InventoryManager {
                         img.style.width = '100%';
                         img.style.height = '100%';
                         img.style.objectFit = 'contain';
-                        // Use canvas image - no fallback to SVG data URL
                         const petalCanvas = this.game.getPetalCanvas?.(firstItem.petalType, firstItem.rarity, Date.now());
                         if (petalCanvas) {
                             img.src = petalCanvas.toDataURL('image/png');
                         } else {
-                            // No canvas available - skip rendering
-                            return; // Skip this petal if canvas not available
+                            // Fallback to SVG blob URL
+                            const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                            img.src = URL.createObjectURL(svgBlob);
                         }
                         slot.appendChild(img);
                     }
@@ -2884,9 +2884,13 @@ export class InventoryManager {
             const petalCanvas = this.game.getPetalCanvas?.(newItem.petalType, rarity, Date.now());
             if (petalCanvas) {
                 img.src = petalCanvas.toDataURL('image/png');
-                console.log('[INVENTORY] Using petal canvas for:', newItem.petalType, rarity);
             } else {
-                console.log('[INVENTORY] Petal canvas not available');
+                // Fallback to SVG blob URL
+                const stats = getPetalStats(newItem.petalType, rarity);
+                if (stats && stats.image) {
+                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                    img.src = URL.createObjectURL(svgBlob);
+                }
             }
         } else {
             const dataUrl = this.game.getItemSpriteDataUrl?.(newItem.type);
@@ -3047,14 +3051,14 @@ export class InventoryManager {
                                 img.style.height = '100%';
                                 img.style.objectFit = 'contain';
                                 
-                                // Use canvas image - no fallback to SVG data URL
                                 const petalType = itemType.replace('petal_', '');
                                 const petalCanvas = this.game.getPetalCanvas?.(petalType, rarity, Date.now());
                                 if (petalCanvas) {
                                     img.src = petalCanvas.toDataURL('image/png');
                                 } else {
-                                    // No canvas available - skip rendering
-                                    return; // Skip this petal if canvas not available
+                                    // Fallback to SVG blob URL
+                                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                                    img.src = URL.createObjectURL(svgBlob);
                                 }
                                 
                                 petalDiv.appendChild(img);

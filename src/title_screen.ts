@@ -3795,6 +3795,7 @@ class TitleScreenGameAdapter implements GameInterface {
     showFloatingText(_x: number, _y: number, text: string, _color: string, _fontSize: number): void {
         console.log(`[TitleScreen] ${text}`);
     }
+
 }
 
 /**
@@ -4245,6 +4246,8 @@ class TitleScreenInventoryManager {
                     mobKills: response.player.mobKills || {}
                 };
                 console.log('[TitleScreenInventory] Normalized inventory, len=', normalizedInv.length, 'rawType=', Array.isArray(rawInv) ? 'array' : typeof rawInv);
+                // Sync adapter so the real InventoryManager can access player data
+                this.gameAdapter.setPlayerData(this.playerData);
                 this.updateLoadoutDisplay();
                 // Always refresh the inventory display if the panel exists.
                 // The user may have already clicked the inventory button before
