@@ -3428,13 +3428,51 @@ class TitleScreen {
 }
 exports.TitleScreen = TitleScreen;
 /**
+ * Adapter that provides a GameInterface for using InventoryManager on the title screen.
+ * Wraps the title screen's player data and preconnected socket.
+ */
+class TitleScreenGameAdapter {
+    constructor() {
+        this._playerData = null;
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    }
+    setPlayerData(pd) {
+        this._playerData = pd;
+    }
+    getLocalPlayer() {
+        if (!this._playerData)
+            return undefined;
+        return {
+            id: window.preconnectedSocket?.id || '',
+            name: '',
+            x: 0, y: 0, angle: 0, score: 0,
+            imageLoaded: false,
+            image: new Image(),
+            velocityX: 0, velocityY: 0,
+            health: 100, maxHealth: 100, damage: 0,
+            inventory: this._playerData.inventory,
+            loadout: this._playerData.loadout,
+            level: 1, xp: 0, xpToNextLevel: 100,
+            targetX: 0, targetY: 0,
+        };
+    }
+    getSocket() {
+        return window.preconnectedSocket || undefined;
+    }
+    showFloatingText(_x, _y, text, _color, _fontSize) {
+        console.log(`[TitleScreen] ${text}`);
+    }
+}
+/**
  * Title Screen Inventory Manager
- * Handles inventory and loadout on the title screen using the preconnected socket
+ * Handles inventory and loadout on the title screen using the preconnected socket.
+ * Crafting is delegated to a real InventoryManager instance.
  */
 class TitleScreenInventoryManager {
     constructor() {
         this.inventoryPanel = null;
-        this.craftingPanel = null;
         this.loadoutCanvas = null;
         this.canvasLoadoutBar = null;
         this.loadoutRafId = null;
@@ -3445,8 +3483,6 @@ class TitleScreenInventoryManager {
         this.LOADOUT_SYNC_SUPPRESS_MS = 600;
         this.playerData = null;
         this.socket = null;
-        this.craftingItems = [];
-        this.isCraftingOpen = false;
         this.isAuthenticated = false;
         // Incremental inventory display caching
         this.renderedItems = new Map();
@@ -3468,8 +3504,9 @@ class TitleScreenInventoryManager {
         this.tooltipElement = null;
         this.tooltipTimeout = null;
         this.hoveredElement = null;
+        this.gameAdapter = new TitleScreenGameAdapter();
+        this.craftingInventoryManager = new inventory_1.InventoryManager(this.gameAdapter, null, { craftingOnly: true });
         this.initializeLoadoutBar();
-        this.initializeCraftingPanel();
         this.setupSocketListeners();
         this.setupGlobalDragAndDrop();
         // Setup ALT key tracking for tooltip value display (only once globally)
@@ -3756,15 +3793,15 @@ class TitleScreenInventoryManager {
     setupCraftingSocketListeners() {
         if (!this.socket)
             return;
-        // Listen for crafting finished event (server emits 'craftingFinished', not 'craftResult')
+        // Listen for crafting finished event
         this.socket.on('craftingFinished', (data) => {
             console.log('[TitleScreen] craftingFinished received:', data);
             // Update inventory
             if (this.playerData) {
                 this.playerData.inventory = data.inventory;
+                this.gameAdapter.setPlayerData(this.playerData);
             }
             if (data.successCount > 0) {
-                // Parse item type and petalType from itemKey
                 const itemKey = data.newItem.type;
                 let itemType = 'petal';
                 let petalType;
@@ -3780,14 +3817,14 @@ class TitleScreenInventoryManager {
                     rarity: data.newItem.rarity,
                     petalType: petalType
                 };
-                this.showCraftingSuccess(displayItem, data.successCount);
+                this.craftingInventoryManager.showCraftingSuccess(displayItem, data.successCount);
             }
             if (data.failCount > 0) {
                 console.log(`[TitleScreen] Failed to craft ${data.failCount}x. Items were lost.`);
             }
             // Update displays
-            if (this.isCraftingOpen) {
-                this.updateCraftingInventoryPreview();
+            if (this.craftingInventoryManager.isCraftingOpen) {
+                this.craftingInventoryManager.updateCraftingDisplay();
                 this.updateInventoryDisplay();
             }
         });
@@ -3800,9 +3837,10 @@ class TitleScreenInventoryManager {
             if (updatedPlayer.inventory) {
                 if (this.playerData) {
                     this.playerData.inventory = updatedPlayer.inventory;
+                    this.gameAdapter.setPlayerData(this.playerData);
                 }
-                if (this.isCraftingOpen) {
-                    this.updateCraftingInventoryPreview();
+                if (this.craftingInventoryManager.isCraftingOpen) {
+                    this.craftingInventoryManager.updateCraftingDisplay();
                     this.updateInventoryDisplay();
                 }
             }
@@ -3914,6 +3952,21 @@ class TitleScreenInventoryManager {
         let itemName = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
         itemName = itemName.replace('_', ' ');
         return itemName;
+    }
+    getItemCount(rarity, type) {
+        if (!this.playerData || !this.playerData.inventory)
+            return 0;
+        return (0, inventoryCodec_1.getItemCount)(this.playerData.inventory, rarity, type);
+    }
+    removeItem(rarity, type, count) {
+        if (!this.playerData || !this.playerData.inventory)
+            return;
+        (0, inventoryCodec_1.removeItem)(this.playerData.inventory, rarity, type, count);
+    }
+    addItem(rarity, type, count) {
+        if (!this.playerData || !this.playerData.inventory)
+            return;
+        (0, inventoryCodec_1.addItem)(this.playerData.inventory, rarity, type, count);
     }
     equipItemToLoadout(rarity, type, loadoutSlot) {
         if (!this.playerData || loadoutSlot >= this.LOADOUT_SLOTS || this.getItemCount(rarity, type) === 0)
@@ -4621,8 +4674,10 @@ class TitleScreenInventoryManager {
         if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
             this.updateInventoryDisplay();
         }
-        if (this.isCraftingOpen) {
-            this.updateCraftingInventoryPreview();
+        // Update the game adapter and crafting display
+        this.gameAdapter.setPlayerData(this.playerData);
+        if (this.craftingInventoryManager.isCraftingOpen) {
+            this.craftingInventoryManager.updateCraftingDisplay();
         }
         // Loadout has loaded, notify title screen to stop showing connecting
         if (window.titleScreen) {
@@ -4642,563 +4697,13 @@ class TitleScreenInventoryManager {
             window.currentGame.inventoryManager.toggleCrafting();
             return;
         }
-        // Toggle title screen crafting panel
-        if (!this.craftingPanel) {
-            this.initializeCraftingPanel();
-        }
-        if (this.craftingPanel) {
-            const isOpen = this.craftingPanel.style.display === 'block';
-            if (!isOpen) {
-                this.craftingPanel.style.display = 'block';
-                this.isCraftingOpen = true;
-                setTimeout(() => {
-                    this.craftingPanel?.classList.add('open');
-                }, 10);
-                this.updateCraftingDisplay();
-                this.updateCraftingInventoryPreview();
-            }
-            else {
-                this.craftingPanel.classList.remove('open');
-                this.isCraftingOpen = false;
-                setTimeout(() => {
-                    if (this.craftingPanel) {
-                        this.craftingPanel.style.display = 'none';
-                    }
-                }, 300);
-            }
-        }
+        // Update adapter with current player data before toggling
+        this.gameAdapter.setPlayerData(this.playerData);
+        this.craftingInventoryManager.toggleCrafting();
     }
     toggleSkills() {
         // This is now handled by TitleScreen.toggleSkillsOnTitleScreen()
         // This method is kept for compatibility but shouldn't be called directly
-    }
-    initializeCraftingPanel() {
-        // Check if crafting panel already exists (from game)
-        let existingPanel = document.getElementById('craftingPanel');
-        if (existingPanel) {
-            this.craftingPanel = existingPanel;
-            return;
-        }
-        this.craftingPanel = document.createElement('div');
-        this.craftingPanel.id = 'craftingPanel';
-        this.craftingPanel.className = 'crafting-panel';
-        this.craftingPanel.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 900px;
-            max-height: 700px;
-            background: #c4914a;
-            border: 2px solid #8b6f3a;
-            border-radius: 10px;
-            padding: 20px;
-            z-index: 4000;
-            display: none;
-            overflow-y: auto;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        `;
-        const craftingContent = document.createElement('div');
-        craftingContent.className = 'crafting-content';
-        const title = document.createElement('h2');
-        title.textContent = 'Crafting';
-        title.style.cssText = 'margin: 0 0 20px 0; text-align: center; color: white; font-size: 24px;';
-        craftingContent.appendChild(title);
-        const craftingMain = document.createElement('div');
-        craftingMain.className = 'crafting-main';
-        craftingMain.style.cssText = 'display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 15px;';
-        const craftingCircleContainer = document.createElement('div');
-        craftingCircleContainer.className = 'crafting-circle-container';
-        craftingCircleContainer.style.cssText = 'position: relative; width: 180px; height: 180px; flex-shrink: 0;';
-        for (let i = 0; i < 5; i++) {
-            const slot = document.createElement('div');
-            slot.className = 'crafting-slot';
-            slot.dataset.index = i.toString();
-            slot.style.cssText = `
-                width: 40px;
-                height: 40px;
-                position: absolute;
-                cursor: pointer;
-                user-select: none;
-                background: rgba(255, 255, 255, 0.1);
-                border: 2px solid #666;
-                border-radius: 5px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            `;
-            slot.addEventListener('click', () => this.removeCraftingBatch());
-            craftingCircleContainer.appendChild(slot);
-        }
-        const multiplierText = document.createElement('div');
-        multiplierText.className = 'crafting-multiplier';
-        multiplierText.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 24px;
-            font-weight: bold;
-            color: white;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-            display: none;
-        `;
-        craftingCircleContainer.appendChild(multiplierText);
-        const successDisplay = document.createElement('div');
-        successDisplay.className = 'crafting-success-display';
-        successDisplay.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 80px;
-            height: 80px;
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 10;
-            pointer-events: none;
-        `;
-        craftingCircleContainer.appendChild(successDisplay);
-        craftingMain.appendChild(craftingCircleContainer);
-        const craftingActions = document.createElement('div');
-        craftingActions.className = 'crafting-actions';
-        craftingActions.style.cssText = 'display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;';
-        const craftButton = document.createElement('button');
-        craftButton.className = 'craft-button';
-        craftButton.textContent = 'Craft';
-        craftButton.style.cssText = `
-            width: 100%;
-            padding: 10px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-        `;
-        craftButton.addEventListener('click', () => this.craftItems());
-        craftingActions.appendChild(craftButton);
-        const successChance = document.createElement('div');
-        successChance.className = 'success-chance';
-        successChance.textContent = 'Success Chance: 0%';
-        successChance.style.cssText = 'text-align: center; font-size: 16px; font-weight: bold; color: #fff;';
-        craftingActions.appendChild(successChance);
-        craftingMain.appendChild(craftingActions);
-        craftingContent.appendChild(craftingMain);
-        const inventoryPreview = document.createElement('div');
-        inventoryPreview.className = 'crafting-inventory-preview';
-        inventoryPreview.style.cssText = 'margin-top: 15px; border-top: 2px solid #444; padding-top: 10px;';
-        const previewTitle = document.createElement('h3');
-        previewTitle.textContent = 'Inventory';
-        previewTitle.style.cssText = 'margin: 0 0 10px 0; text-align: center; color: white; font-size: 18px;';
-        inventoryPreview.appendChild(previewTitle);
-        const inventoryGrid = document.createElement('div');
-        inventoryGrid.className = 'crafting-inventory-grid';
-        inventoryGrid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(50px, 1fr)); gap: 5px;';
-        inventoryPreview.appendChild(inventoryGrid);
-        craftingContent.appendChild(inventoryPreview);
-        this.craftingPanel.appendChild(craftingContent);
-        document.body.appendChild(this.craftingPanel);
-        // Setup drag and drop for crafting slots
-        this.setupCraftingDragAndDrop();
-    }
-    setupCraftingDragAndDrop() {
-        if (!this.craftingPanel)
-            return;
-        const slots = this.craftingPanel.querySelectorAll('.crafting-slot');
-        slots.forEach((slot, index) => {
-            slot.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                e.currentTarget.classList.add('drag-over');
-            });
-            slot.addEventListener('dragleave', (e) => {
-                e.currentTarget.classList.remove('drag-over');
-            });
-            slot.addEventListener('drop', (e) => {
-                e.preventDefault();
-                const dragEvent = e;
-                e.currentTarget.classList.remove('drag-over');
-                const itemData = dragEvent.dataTransfer?.getData('text/plain');
-                if (itemData) {
-                    const { rarity, type } = JSON.parse(itemData);
-                    this.addItemToCraftingSlot(rarity, type, index);
-                }
-            });
-        });
-    }
-    getItemCount(rarity, type) {
-        if (!this.playerData || !this.playerData.inventory)
-            return 0;
-        return (0, inventoryCodec_1.getItemCount)(this.playerData.inventory, rarity, type);
-    }
-    removeItem(rarity, type, count) {
-        if (!this.playerData || !this.playerData.inventory)
-            return;
-        (0, inventoryCodec_1.removeItem)(this.playerData.inventory, rarity, type, count);
-    }
-    addItem(rarity, type, count) {
-        if (!this.playerData || !this.playerData.inventory)
-            return;
-        (0, inventoryCodec_1.addItem)(this.playerData.inventory, rarity, type, count);
-    }
-    addItemToCraftingSlot(rarity, type, slotIndex) {
-        if (this.getItemCount(rarity, type) === 0)
-            return;
-        let itemType;
-        let petalType;
-        if (type.startsWith('petal_')) {
-            itemType = 'petal';
-            petalType = type.substring(6);
-        }
-        else {
-            itemType = type;
-        }
-        const item = {
-            type: itemType,
-            rarity: rarity,
-            petalType: petalType
-        };
-        if (this.craftingItems[slotIndex]) {
-            return;
-        }
-        const existingItems = this.craftingItems.filter(slot => slot !== null);
-        if (existingItems.length > 0) {
-            const firstItem = existingItems[0];
-            if (item.type !== firstItem.type || item.rarity !== firstItem.rarity || item.petalType !== firstItem.petalType) {
-                alert('Items must be of the same type and rarity!');
-                return;
-            }
-        }
-        this.craftingItems[slotIndex] = item;
-        this.removeItem(rarity, type, 1);
-        this.updateCraftingDisplay();
-        this.updateCraftingInventoryPreview();
-        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
-            this.updateInventoryDisplay();
-        }
-    }
-    removeCraftingBatch() {
-        if (this.craftingItems.length === 0)
-            return;
-        const itemsToRemove = this.craftingItems.splice(-5);
-        if (itemsToRemove.length > 0) {
-            const item = itemsToRemove[0];
-            const type = item.petalType ? `petal_${item.petalType}` : item.type;
-            if (item.rarity) {
-                this.addItem(item.rarity, type, itemsToRemove.length);
-            }
-        }
-        this.updateCraftingDisplay();
-        this.updateCraftingInventoryPreview();
-        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
-            this.updateInventoryDisplay();
-        }
-    }
-    craftItems() {
-        const itemsToCraftCount = this.craftingItems.length;
-        if (itemsToCraftCount < 5 || itemsToCraftCount % 5 !== 0) {
-            alert('You must add items in multiples of 5 to craft!');
-            return;
-        }
-        if (!this.socket || !this.socket.connected) {
-            alert('Not connected to server');
-            return;
-        }
-        // Check if player is authenticated (socket.username is set during authentication)
-        if (!this.socket.username) {
-            alert('Please wait for authentication to complete');
-            return;
-        }
-        console.log('[TitleScreen] Sending craftItems request:', { itemCount: this.craftingItems.length, socketId: this.socket.id });
-        this.socket.emit('craftItems', { items: this.craftingItems });
-        this.craftingItems = [];
-        this.updateCraftingDisplay();
-    }
-    updateCraftingDisplay() {
-        if (!this.craftingPanel)
-            return;
-        const slots = this.craftingPanel.querySelectorAll('.crafting-slot');
-        const container = this.craftingPanel.querySelector('.crafting-circle-container');
-        const multiplierEl = this.craftingPanel.querySelector('.crafting-multiplier');
-        const radius = 70;
-        const containerSize = 180;
-        if (this.craftingItems.length > 0) {
-            const firstItem = this.craftingItems[0];
-            const attempts = this.craftingItems.length / 5;
-            if (multiplierEl) {
-                multiplierEl.textContent = `x${attempts}`;
-                multiplierEl.style.display = 'block';
-            }
-            slots.forEach((slot, index) => {
-                if (container) {
-                    const angle = (index / slots.length) * 2 * Math.PI;
-                    const x = (containerSize / 2) + radius * Math.cos(angle) - 20;
-                    const y = (containerSize / 2) + radius * Math.sin(angle) - 20;
-                    slot.style.left = `${x}px`;
-                    slot.style.top = `${y}px`;
-                }
-                slot.innerHTML = '';
-                const rarityColor = this.ITEM_RARITY_COLORS[firstItem.rarity] || '#666';
-                slot.style.borderColor = rarityColor;
-                if (firstItem.type === 'petal' && firstItem.petalType && firstItem.rarity) {
-                    const stats = (0, petals_1.getPetalStats)(firstItem.petalType, firstItem.rarity);
-                    if (stats && stats.image) {
-                        const img = document.createElement('img');
-                        img.style.width = '100%';
-                        img.style.height = '100%';
-                        img.style.objectFit = 'contain';
-                        const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                        const url = URL.createObjectURL(svgBlob);
-                        img.src = url;
-                        slot.appendChild(img);
-                    }
-                }
-                else {
-                    const img = document.createElement('img');
-                    img.src = `./assets/${firstItem.type}.png`;
-                    img.alt = firstItem.type;
-                    img.style.width = '80%';
-                    img.style.height = '80%';
-                    img.style.objectFit = 'contain';
-                    slot.appendChild(img);
-                }
-            });
-        }
-        else {
-            if (multiplierEl) {
-                multiplierEl.style.display = 'none';
-            }
-            slots.forEach((slot, index) => {
-                if (container) {
-                    const angle = (index / slots.length) * 2 * Math.PI;
-                    const x = (containerSize / 2) + radius * Math.cos(angle) - 20;
-                    const y = (containerSize / 2) + radius * Math.sin(angle) - 20;
-                    slot.style.left = `${x}px`;
-                    slot.style.top = `${y}px`;
-                }
-                slot.innerHTML = '';
-                slot.style.borderColor = '#666';
-            });
-        }
-        const successChance = this.calculateSuccessChance();
-        const successElement = this.craftingPanel.querySelector('.success-chance');
-        if (successElement) {
-            successElement.textContent = `Success Chance: ${successChance}%`;
-        }
-    }
-    calculateSuccessChance() {
-        if (this.craftingItems.length < 5)
-            return 0;
-        if (this.craftingItems.length % 5 !== 0)
-            return 0;
-        const firstItem = this.craftingItems[0];
-        if (!firstItem.rarity)
-            return 0;
-        const rarityIndex = petals_1.RARITY_LEVELS.indexOf(firstItem.rarity);
-        if (rarityIndex === -1)
-            return 0;
-        // Base chance decreases as rarity increases
-        const baseChance = 100 - (rarityIndex * 10);
-        return Math.max(10, baseChance);
-    }
-    updateCraftingInventoryPreview() {
-        if (!this.craftingPanel || !this.playerData)
-            return;
-        const inventoryGrid = this.craftingPanel.querySelector('.crafting-inventory-grid');
-        if (!inventoryGrid)
-            return;
-        inventoryGrid.innerHTML = '';
-        const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
-        const craftInvDict = this.playerData?.inventory ? (0, inventoryCodec_1.inventoryToDict)(this.playerData.inventory) : {};
-        rarities.forEach(rarity => {
-            const items = craftInvDict[rarity];
-            if (items && Object.keys(items).length > 0) {
-                Object.entries(items).forEach(([itemType, count]) => {
-                    const itemCount = typeof count === 'number' ? count : 0;
-                    if (itemCount > 0) {
-                        const itemElement = document.createElement('div');
-                        itemElement.className = 'crafting-inventory-item';
-                        itemElement.draggable = true;
-                        itemElement.style.cssText = `
-                            position: relative;
-                            width: 50px;
-                            height: 50px;
-                            background-color: ${this.ITEM_RARITY_COLORS[rarity]};
-                            border: 3px solid ${this.darkenColor(this.ITEM_RARITY_COLORS[rarity])};
-                            border-radius: 5px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            cursor: grab;
-                        `;
-                        itemElement.addEventListener('dragstart', (e) => {
-                            e.dataTransfer?.setData('text/plain', JSON.stringify({ rarity, type: itemType }));
-                        });
-                        // Add click handler to add items to crafting slots
-                        itemElement.addEventListener('click', (e) => {
-                            const isShiftClick = e.shiftKey;
-                            this.handleCraftingItemClick(rarity, itemType, isShiftClick);
-                        });
-                        if (itemType.startsWith('petal_')) {
-                            const petalType = itemType.replace('petal_', '');
-                            const stats = (0, petals_1.getPetalStats)(petalType, rarity);
-                            if (stats && stats.image) {
-                                const imgDiv = document.createElement('div');
-                                imgDiv.innerHTML = stats.image;
-                                imgDiv.style.width = '60%';
-                                imgDiv.style.height = '60%';
-                                imgDiv.style.display = 'flex';
-                                imgDiv.style.alignItems = 'center';
-                                imgDiv.style.justifyContent = 'center';
-                                itemElement.appendChild(imgDiv);
-                            }
-                        }
-                        else {
-                            const img = document.createElement('img');
-                            img.src = `./assets/${itemType}.png`;
-                            img.style.width = '60%';
-                            img.style.height = '60%';
-                            img.style.objectFit = 'contain';
-                            itemElement.appendChild(img);
-                        }
-                        const countLabel = document.createElement('div');
-                        countLabel.textContent = itemCount.toString();
-                        countLabel.style.cssText = `
-                            position: absolute;
-                            top: 2px;
-                            right: 4px;
-                            color: white;
-                            font-size: 12px;
-                            font-weight: bold;
-                            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-                        `;
-                        itemElement.appendChild(countLabel);
-                        inventoryGrid.appendChild(itemElement);
-                    }
-                });
-            }
-        });
-    }
-    handleCraftingItemClick(rarity, type, isShiftClick) {
-        const itemsFromStack = this.getItemCount(rarity, type);
-        if (itemsFromStack === 0)
-            return;
-        const isPetal = type.startsWith('petal_');
-        const petalType = isPetal ? type.substring(6) : undefined;
-        const itemType = isPetal ? 'petal' : type;
-        if (this.craftingItems.length > 0) {
-            const firstItem = this.craftingItems[0];
-            if (firstItem.rarity !== rarity || firstItem.type !== itemType || firstItem.petalType !== petalType) {
-                const itemsToReturn = [...this.craftingItems];
-                this.craftingItems = [];
-                itemsToReturn.forEach(item => {
-                    const itemKey = item.petalType ? `petal_${item.petalType}` : item.type;
-                    this.addItem(item.rarity, itemKey, 1);
-                });
-            }
-        }
-        let amountToAdd;
-        if (isShiftClick) {
-            amountToAdd = itemsFromStack;
-        }
-        else {
-            amountToAdd = 5;
-        }
-        const actualAmountToAdd = Math.min(amountToAdd, this.getItemCount(rarity, type));
-        if (actualAmountToAdd < 5) {
-            alert('You need at least 5 items to add a batch.');
-            return;
-        }
-        const batchesToAdd = Math.floor(actualAmountToAdd / 5);
-        const totalItemsToAdd = batchesToAdd * 5;
-        const item = {
-            type: itemType,
-            rarity: rarity,
-            petalType: petalType
-        };
-        // Find empty slots and fill them
-        for (let i = 0; i < 5 && this.craftingItems.length < 5; i++) {
-            if (!this.craftingItems[i]) {
-                this.craftingItems[i] = item;
-            }
-        }
-        // If we have 5 items, add more batches
-        if (this.craftingItems.length === 5 && batchesToAdd > 1) {
-            for (let batch = 1; batch < batchesToAdd; batch++) {
-                for (let i = 0; i < 5; i++) {
-                    this.craftingItems.push(item);
-                }
-            }
-        }
-        this.removeItem(rarity, type, totalItemsToAdd);
-        this.updateCraftingDisplay();
-        this.updateCraftingInventoryPreview();
-        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
-            this.updateInventoryDisplay();
-        }
-    }
-    showCraftingSuccess(newItem, successCount) {
-        if (!this.craftingPanel)
-            return;
-        const successDisplay = this.craftingPanel.querySelector('.crafting-success-display');
-        if (!successDisplay)
-            return;
-        successDisplay.innerHTML = '';
-        successDisplay.style.display = 'flex';
-        const itemContainer = document.createElement('div');
-        itemContainer.className = 'success-item';
-        const rarity = newItem.rarity || 'common';
-        const rarityColor = this.ITEM_RARITY_COLORS[rarity] || '#7eef6d';
-        itemContainer.style.cssText = `
-            width: 60px;
-            height: 60px;
-            border: 3px solid ${rarityColor};
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: ${rarityColor};
-            position: relative;
-        `;
-        if (newItem.type === 'petal' && newItem.petalType && rarity) {
-            const stats = (0, petals_1.getPetalStats)(newItem.petalType, rarity);
-            if (stats && stats.image) {
-                const img = document.createElement('img');
-                img.style.width = '90%';
-                img.style.height = '90%';
-                img.style.objectFit = 'contain';
-                const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                const url = URL.createObjectURL(svgBlob);
-                img.src = url;
-                itemContainer.appendChild(img);
-            }
-        }
-        else {
-            const img = document.createElement('img');
-            img.src = `./assets/${newItem.type}.png`;
-            img.style.width = '90%';
-            img.style.height = '90%';
-            img.style.objectFit = 'contain';
-            itemContainer.appendChild(img);
-        }
-        const countLabel = document.createElement('div');
-        countLabel.className = 'success-count';
-        countLabel.textContent = `x${successCount}`;
-        countLabel.style.cssText = `
-            position: absolute;
-            bottom: -25px;
-            font-size: 18px;
-            font-weight: bold;
-            color: white;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-        `;
-        itemContainer.appendChild(countLabel);
-        successDisplay.appendChild(itemContainer);
-        setTimeout(() => {
-            successDisplay.style.display = 'none';
-        }, 3000);
     }
 }
 // CSS styles that were in the HTML

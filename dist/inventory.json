@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244578001,
+      "totalXP": 244585312,
       "inventory": {
         "common": {
           "shield": 258,
@@ -129,7 +129,7 @@
           "petal_bone": 32,
           "petal_iris": 4,
           "petal_stinger": 6,
-          "petal_dandelion": 18,
+          "petal_dandelion": 13,
           "petal_leaf": 10,
           "petal_missile": 22,
           "petal_poison_cactus": 2,
@@ -152,7 +152,7 @@
           "petal_bubble_egg": 5,
           "petal_fly_egg": 3,
           "petal_hel_beetle_egg": 1,
-          "petal_soldier_ant_egg": 15,
+          "petal_soldier_ant_egg": 16,
           "petal_moth_egg": 3,
           "petal_dandelion_egg": 12,
           "petal_rock_egg": 7,
@@ -280,7 +280,7 @@
           "petal_ladybug_egg": 52,
           "petal_bee_egg": 57,
           "petal_rock_egg": 55,
-          "petal_soldier_ant_egg": 151,
+          "petal_soldier_ant_egg": 1,
           "petal_bone": 38,
           "petal_spider_egg": 21,
           "petal_roach_egg": 16,
@@ -625,7 +625,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 393,
+          "common": 394,
           "legendary": 214,
           "uncommon": 110,
           "mythic": 183,
@@ -648,7 +648,7 @@
         "rock": {
           "legendary": 159,
           "ultra": 9,
-          "common": 364,
+          "common": 365,
           "mythic": 180,
           "epic": 59,
           "rare": 70,
@@ -668,7 +668,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 525,
+          "common": 526,
           "legendary": 338,
           "mythic": 362,
           "uncommon": 190,
@@ -725,7 +725,7 @@
           "legendary": 3,
           "common": 14,
           "mythic": 21,
-          "ultra": 61,
+          "ultra": 62,
           "super": 121,
           "uncommon": 12,
           "rare": 15,
@@ -973,7 +973,7 @@
           "uncommon": 5
         }
       },
-      "stars": 127974
+      "stars": 127979
     },
     "1g99g1gfk": {
       "totalXP": 104,

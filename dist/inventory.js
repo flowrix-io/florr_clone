@@ -337,6 +337,7 @@ class InventoryManager {
         this.chat = chat;
         this.allPetalTypes = (0, petals_1.getAllPetalTypes)();
         const mobGalleryOnly = options?.mobGalleryOnly === true;
+        const craftingOnly = options?.craftingOnly === true;
         // Setup ALT key tracking for tooltip value display
         window.altKeyPressed = false;
         document.addEventListener('keydown', (e) => {
@@ -351,7 +352,7 @@ class InventoryManager {
                 this.updateTooltipValues(false);
             }
         });
-        if (!mobGalleryOnly) {
+        if (!mobGalleryOnly && !craftingOnly) {
             // Loadout bar is now canvas-rendered (see graphics/loadout-bar.ts).
             // Ensure any legacy DOM loadout bar is removed.
             const legacy = document.getElementById('loadoutBar');
@@ -366,6 +367,8 @@ class InventoryManager {
             inventoryContent.className = 'inventory-content';
             this.inventoryPanel.appendChild(inventoryContent);
             document.body.appendChild(this.inventoryPanel);
+        } // end !mobGalleryOnly && !craftingOnly
+        if (!mobGalleryOnly || craftingOnly) {
             // Create crafting panel
             this.craftingPanel = document.createElement('div');
             this.craftingPanel.id = 'craftingPanel';
@@ -421,15 +424,16 @@ class InventoryManager {
             craftingContent.appendChild(inventoryPreview);
             this.craftingPanel.appendChild(craftingContent);
             document.body.appendChild(this.craftingPanel);
-        } // end !mobGalleryOnly
-        // Create mob gallery panel
-        this.mobGalleryPanel = document.createElement('div');
-        this.mobGalleryPanel.id = 'mobGalleryPanel';
-        this.mobGalleryPanel.className = 'mob-gallery-panel';
-        this.mobGalleryPanel.style.display = 'none';
-        const galleryContent = document.createElement('div');
-        galleryContent.className = 'mob-gallery-content';
-        galleryContent.style.cssText = `
+        } // end crafting panel creation
+        if (!craftingOnly) {
+            // Create mob gallery panel
+            this.mobGalleryPanel = document.createElement('div');
+            this.mobGalleryPanel.id = 'mobGalleryPanel';
+            this.mobGalleryPanel.className = 'mob-gallery-panel';
+            this.mobGalleryPanel.style.display = 'none';
+            const galleryContent = document.createElement('div');
+            galleryContent.className = 'mob-gallery-content';
+            galleryContent.style.cssText = `
             height: 100%;
             overflow-y: auto;
             padding: 10px;
@@ -438,14 +442,14 @@ class InventoryManager {
             display: flex;
             flex-direction: column;
         `;
-        const galleryTitle = document.createElement('h2');
-        galleryTitle.textContent = 'Mob Gallery';
-        galleryTitle.style.cssText = 'margin: 0 0 20px 0; text-align: center; color: white; font-size: 24px;';
-        galleryContent.appendChild(galleryTitle);
-        // Add notification banner for when mobs are killed while gallery is open
-        const notificationBanner = document.createElement('div');
-        notificationBanner.id = 'mobGalleryNotification';
-        notificationBanner.style.cssText = `
+            const galleryTitle = document.createElement('h2');
+            galleryTitle.textContent = 'Mob Gallery';
+            galleryTitle.style.cssText = 'margin: 0 0 20px 0; text-align: center; color: white; font-size: 24px;';
+            galleryContent.appendChild(galleryTitle);
+            // Add notification banner for when mobs are killed while gallery is open
+            const notificationBanner = document.createElement('div');
+            notificationBanner.id = 'mobGalleryNotification';
+            notificationBanner.style.cssText = `
             display: none;
             background: rgba(255, 200, 0, 0.9);
             color: #000;
@@ -457,13 +461,14 @@ class InventoryManager {
             font-size: 14px;
             border: 2px solid #ffd700;
         `;
-        notificationBanner.textContent = 'New mobs killed! Close and reopen the gallery to see updates.';
-        galleryContent.appendChild(notificationBanner);
-        const galleryGrid = document.createElement('div');
-        galleryGrid.className = 'mob-gallery-grid';
-        galleryContent.appendChild(galleryGrid);
-        this.mobGalleryPanel.appendChild(galleryContent);
-        document.body.appendChild(this.mobGalleryPanel);
+            notificationBanner.textContent = 'New mobs killed! Close and reopen the gallery to see updates.';
+            galleryContent.appendChild(notificationBanner);
+            const galleryGrid = document.createElement('div');
+            galleryGrid.className = 'mob-gallery-grid';
+            galleryContent.appendChild(galleryGrid);
+            this.mobGalleryPanel.appendChild(galleryContent);
+            document.body.appendChild(this.mobGalleryPanel);
+        } // end !craftingOnly
         // Add click handler to clear success display when clicking on crafting slots
         // (with minimum display time enforced in clearCraftingSuccessDisplay)
         this.craftingPanel?.addEventListener('click', (e) => {
@@ -680,7 +685,7 @@ class InventoryManager {
         `;
         document.head.appendChild(style);
         // Setup drag and drop
-        if (!mobGalleryOnly) {
+        if (!mobGalleryOnly || craftingOnly) {
             this.setupDragAndDrop();
         }
     }

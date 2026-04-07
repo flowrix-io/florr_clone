@@ -12,7 +12,7 @@ interface CraftingSlot {
     item: Item | null;
 }
 
-interface GameInterface {
+export interface GameInterface {
     getLocalPlayer(): Player | undefined;
     getSocket(): Socket | undefined;
     showFloatingText(x: number, y: number, text: string, color: string, fontSize: number): void;
@@ -31,7 +31,7 @@ export class InventoryManager {
     private mobGalleryPanel: HTMLDivElement | null = null;
     private craftingItems: Item[] = [];
     private isInventoryOpen: boolean = false;
-    private isCraftingOpen: boolean = false;
+    public isCraftingOpen: boolean = false;
     private isMobGalleryOpen: boolean = false;
     // Incremental inventory display: track rendered items to avoid full DOM rebuilds
     private renderedItems: Map<string, { element: HTMLElement; count: number }> = new Map();
@@ -392,12 +392,13 @@ export class InventoryManager {
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
-    constructor(game: GameInterface,  chat: Chat | null, options?: { mobGalleryOnly?: boolean }) {
+    constructor(game: GameInterface,  chat: Chat | null, options?: { mobGalleryOnly?: boolean; craftingOnly?: boolean }) {
         this.game = game;
         this.chat = chat;
         this.allPetalTypes = getAllPetalTypes();
         const mobGalleryOnly = options?.mobGalleryOnly === true;
-        
+        const craftingOnly = options?.craftingOnly === true;
+
         // Setup ALT key tracking for tooltip value display
         (window as any).altKeyPressed = false;
         document.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -413,7 +414,7 @@ export class InventoryManager {
             }
         });
 
-        if (!mobGalleryOnly) {
+        if (!mobGalleryOnly && !craftingOnly) {
         // Loadout bar is now canvas-rendered (see graphics/loadout-bar.ts).
         // Ensure any legacy DOM loadout bar is removed.
         const legacy = document.getElementById('loadoutBar');
@@ -429,7 +430,9 @@ export class InventoryManager {
         inventoryContent.className = 'inventory-content';
         this.inventoryPanel.appendChild(inventoryContent);
         document.body.appendChild(this.inventoryPanel);
+        } // end !mobGalleryOnly && !craftingOnly
 
+        if (!mobGalleryOnly || craftingOnly) {
         // Create crafting panel
         this.craftingPanel = document.createElement('div');
         this.craftingPanel.id = 'craftingPanel';
@@ -466,7 +469,7 @@ export class InventoryManager {
         successDisplay.className = 'crafting-success-display';
         successDisplay.style.display = 'none';
         craftingCircleContainer.appendChild(successDisplay);
-        
+
         craftingMain.appendChild(craftingCircleContainer);
 
         const craftingActions = document.createElement('div');
@@ -489,7 +492,7 @@ export class InventoryManager {
         // Create inventory preview section
         const inventoryPreview = document.createElement('div');
         inventoryPreview.className = 'crafting-inventory-preview';
-        
+
         const previewTitle = document.createElement('h3');
         previewTitle.textContent = 'Inventory';
         inventoryPreview.appendChild(previewTitle);
@@ -502,8 +505,9 @@ export class InventoryManager {
 
         this.craftingPanel.appendChild(craftingContent);
         document.body.appendChild(this.craftingPanel);
-        } // end !mobGalleryOnly
+        } // end crafting panel creation
 
+        if (!craftingOnly) {
         // Create mob gallery panel
         this.mobGalleryPanel = document.createElement('div');
         this.mobGalleryPanel.id = 'mobGalleryPanel';
@@ -551,6 +555,7 @@ export class InventoryManager {
 
         this.mobGalleryPanel.appendChild(galleryContent);
         document.body.appendChild(this.mobGalleryPanel);
+        } // end !craftingOnly
 
         // Add click handler to clear success display when clicking on crafting slots
         // (with minimum display time enforced in clearCraftingSuccessDisplay)
@@ -770,7 +775,7 @@ export class InventoryManager {
         document.head.appendChild(style);
 
         // Setup drag and drop
-        if (!mobGalleryOnly) {
+        if (!mobGalleryOnly || craftingOnly) {
             this.setupDragAndDrop();
         }
     }
