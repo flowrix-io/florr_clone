@@ -2124,7 +2124,7 @@ class TitleScreen {
         const startButtonX = centerX + 120;
         const startButtonWidth = 120;
         const startButtonHeight = 42;
-        this.drawGardnButton(ctx, startButtonX, startButtonY, startButtonWidth, startButtonHeight, '#1dd129', this.hoveredStartButton, this.pressedButton === 'start', 'Ready▶', 18, 5, 3);
+        this.drawGardnButton(ctx, startButtonX, startButtonY, startButtonWidth, startButtonHeight, '#1dd129', this.hoveredStartButton, this.pressedButton === 'start', 'Ready', 18, 5, 3);
         // Draw biome selector label
         ctx.font = 'bold 18px Ubuntu, sans-serif';
         ctx.fillStyle = '#ffffff';
