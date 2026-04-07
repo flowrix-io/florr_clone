@@ -37,6 +37,8 @@ export class InventoryManager {
     private renderedItems: Map<string, { element: HTMLElement; count: number }> = new Map();
     private renderedRarityRows: Map<string, { row: HTMLElement; grid: HTMLElement }> = new Map();
     private inventoryGridContainer: HTMLElement | null = null;
+    // Cache petal canvas → data URL conversions to avoid expensive toDataURL() on every render
+    private petalDataUrlCache: Map<string, string> = new Map();
     
     /** Timestamp of the most recent local loadout mutation; used to suppress
      *  stale server broadcasts that would overwrite in-flight optimistic state. */
@@ -2332,6 +2334,7 @@ export class InventoryManager {
         this.inventoryGridContainer = null;
         this.renderedItems.clear();
         this.renderedRarityRows.clear();
+        this.petalDataUrlCache.clear();
     }
 
     private createRarityRow(rarity: string): { row: HTMLElement; grid: HTMLElement } {
@@ -2423,11 +2426,19 @@ export class InventoryManager {
                   object-fit: contain;
               `;
 
-                const petalCanvas = this.game.getPetalCanvas?.(petalType, rarity, Date.now());
-                if (petalCanvas) {
-                    img.src = petalCanvas.toDataURL('image/png');
+                const cacheKey = `${petalType}_${rarity}`;
+                const cached = this.petalDataUrlCache.get(cacheKey);
+                if (cached) {
+                    img.src = cached;
                 } else {
-                    return null;
+                    const petalCanvas = this.game.getPetalCanvas?.(petalType, rarity, Date.now());
+                    if (petalCanvas) {
+                        const dataUrl = petalCanvas.toDataURL('image/png');
+                        this.petalDataUrlCache.set(cacheKey, dataUrl);
+                        img.src = dataUrl;
+                    } else {
+                        return null;
+                    }
                 }
 
                 itemElement.appendChild(img);

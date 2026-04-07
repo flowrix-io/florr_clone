@@ -3748,6 +3748,11 @@ class TitleScreenInventoryManager {
     private craftingItems: Item[] = [];
     private isCraftingOpen: boolean = false;
     private isAuthenticated: boolean = false;
+    // Incremental inventory display caching
+    private renderedItems: Map<string, { element: HTMLElement; count: number }> = new Map();
+    private renderedRarityRows: Map<string, { row: HTMLElement; grid: HTMLElement }> = new Map();
+    private inventoryGridContainer: HTMLElement | null = null;
+    private svgBlobUrlCache: Map<string, string> = new Map();
     private readonly LOADOUT_SLOTS = 20;
     private readonly ITEM_RARITY_COLORS: Record<string, string> = {
         common: '#7eef6d',
@@ -4370,28 +4375,287 @@ class TitleScreenInventoryManager {
         this.updateLoadoutDisplay();
     }
 
+    private createInventoryItemElement(rarity: string, type: string, count: number): HTMLElement | null {
+        // Skip eggs on title screen
+        if (type.startsWith('petal_') && type.replace('petal_', '').endsWith('_egg')) {
+            return null;
+        }
+        const itemCount = typeof count === 'number' ? count : 0;
+        if (itemCount <= 0) return null;
+
+        const itemElement = document.createElement('div');
+        itemElement.className = 'inventory-item';
+        itemElement.draggable = true;
+
+        const rarityColor = this.ITEM_RARITY_COLORS[rarity];
+        const darkenedColor = this.darkenColor(rarityColor);
+        itemElement.style.cssText = `
+            position: relative;
+            width: 50px;
+            height: 50px;
+            background-color: ${rarityColor};
+            border: 3px solid ${darkenedColor};
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        `;
+
+        itemElement.addEventListener('mouseover', () => {
+            itemElement.style.transform = 'scale(1.05)';
+            itemElement.style.boxShadow = `0 0 10px ${this.ITEM_RARITY_COLORS[rarity]}`;
+        });
+
+        itemElement.addEventListener('mouseout', () => {
+            itemElement.style.transform = 'scale(1)';
+            itemElement.style.boxShadow = 'none';
+        });
+
+        itemElement.addEventListener('dragstart', (e) => {
+            e.dataTransfer?.setData('text/plain', JSON.stringify({ rarity, type }));
+            itemElement.classList.add('dragging');
+        });
+
+        itemElement.addEventListener('dragend', () => {
+            itemElement.classList.remove('dragging');
+        });
+
+        itemElement.addEventListener('click', () => {
+            if (!this.playerData) return;
+            const loadout = this.playerData.loadout;
+            let emptySlot = -1;
+            for (let i = 0; i < CANVAS_LOADOUT_SLOT_COUNT; i++) {
+                if (!loadout[i]) { emptySlot = i; break; }
+            }
+            if (emptySlot >= 0) {
+                this.equipItemToLoadout(rarity, type, emptySlot);
+            }
+        });
+
+        if (type.startsWith('petal_')) {
+            const petalType = type.replace('petal_', '');
+            const stats = getPetalStats(petalType, rarity);
+            if (stats && stats.image) {
+                const img = document.createElement('img');
+                img.alt = type;
+                img.draggable = false;
+                img.style.cssText = `
+                    width: 30px;
+                    height: 30px;
+                    object-fit: contain;
+                `;
+
+                const cacheKey = `${petalType}_${rarity}`;
+                let url = this.svgBlobUrlCache.get(cacheKey);
+                if (!url) {
+                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
+                    url = URL.createObjectURL(svgBlob);
+                    this.svgBlobUrlCache.set(cacheKey, url);
+                }
+                img.src = url;
+                itemElement.appendChild(img);
+            }
+        } else {
+            const img = document.createElement('img');
+            img.src = `./assets/${type}.png`;
+            img.alt = type;
+            img.draggable = false;
+            img.style.cssText = `
+                width: 30px;
+                height: 30px;
+                object-fit: contain;
+            `;
+            itemElement.appendChild(img);
+        }
+
+        const countLabel = document.createElement('div');
+        countLabel.className = 'item-count';
+        countLabel.textContent = itemCount.toString();
+        countLabel.style.cssText = `
+            position: absolute;
+            top: 2px;
+            right: 4px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        `;
+        itemElement.appendChild(countLabel);
+
+        if (type.startsWith('petal_')) {
+            const petalType = type.replace('petal_', '');
+            const petalName = this.formatPetalName(petalType);
+            if (petalName) {
+                const nameLabel = document.createElement('div');
+                nameLabel.className = 'petal-name';
+                nameLabel.textContent = petalName;
+                nameLabel.style.cssText = `
+                    position: absolute;
+                    bottom: 5px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    color: white;
+                    font-size: 10px;
+                    font-weight: bold;
+                    text-shadow:
+                        -1px -1px 0 #000,
+                        1px -1px 0 #000,
+                        -1px 1px 0 #000,
+                        1px 1px 0 #000,
+                        0 0 3px rgba(0,0,0,0.8);
+                    white-space: nowrap;
+                    pointer-events: none;
+                    z-index: 10;
+                `;
+                itemElement.appendChild(nameLabel);
+            }
+
+            this.setupTooltip(itemElement, petalType, rarity);
+        }
+
+        return itemElement;
+    }
+
+    private createRarityRow(rarity: string): { row: HTMLElement; grid: HTMLElement } {
+        const rarityRow = document.createElement('div');
+        rarityRow.className = 'rarity-row';
+        rarityRow.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        `;
+
+        const rarityLabel = document.createElement('div');
+        rarityLabel.textContent = rarity.toUpperCase();
+        rarityLabel.style.cssText = `
+            color: ${this.ITEM_RARITY_COLORS[rarity]};
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+            padding-left: 5px;
+        `;
+        rarityRow.appendChild(rarityLabel);
+
+        const grid = document.createElement('div');
+        grid.className = 'inventory-grid';
+        grid.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            padding: 5px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            border: 1px solid ${this.ITEM_RARITY_COLORS[rarity]}40;
+        `;
+
+        rarityRow.appendChild(grid);
+        return { row: rarityRow, grid };
+    }
+
     private updateInventoryDisplay(): void {
-        console.log('[TitleScreenInventory] updateInventoryDisplay. panel:', !!this.inventoryPanel, 'panel.display:', this.inventoryPanel?.style.display, 'panel.parent:', this.inventoryPanel?.parentElement?.tagName, 'playerData:', !!this.playerData, 'inventoryItems:', this.playerData?.inventory?.length);
         if (!this.inventoryPanel) return;
 
         const content = this.inventoryPanel.querySelector('.inventory-content');
         if (!content) return;
 
-        content.innerHTML = '';
-
-        const title = document.createElement('h2');
-        title.textContent = 'Inventory';
-        content.appendChild(title);
-
         if (!this.playerData) {
+            content.innerHTML = '';
+            const title = document.createElement('h2');
+            title.textContent = 'Inventory';
+            content.appendChild(title);
             const loading = document.createElement('div');
             loading.textContent = 'Loading inventory...';
             loading.style.cssText = 'color: white; padding: 20px; text-align: center;';
             content.appendChild(loading);
+            this.inventoryGridContainer = null;
             return;
         }
 
         const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        const invDict = this.playerData?.inventory ? inventoryToDict(this.playerData.inventory) : {};
+
+        // Build set of current item keys for removal detection
+        const currentKeys = new Set<string>();
+        for (const rarity in invDict) {
+            for (const type in invDict[rarity]) {
+                if (invDict[rarity][type] > 0) {
+                    // Skip eggs
+                    if (type.startsWith('petal_') && type.replace('petal_', '').endsWith('_egg')) continue;
+                    currentKeys.add(`${rarity}:${type}`);
+                }
+            }
+        }
+
+        // Incremental update if grid container already exists
+        if (this.inventoryGridContainer && this.inventoryGridContainer.parentNode === content) {
+            // Remove items that no longer exist
+            for (const [key, entry] of this.renderedItems) {
+                if (!currentKeys.has(key)) {
+                    entry.element.remove();
+                    this.renderedItems.delete(key);
+                }
+            }
+
+            rarities.forEach(rarity => {
+                const items = invDict[rarity];
+                const hasItems = items && Object.keys(items).some(type => {
+                    if (type.startsWith('petal_') && type.replace('petal_', '').endsWith('_egg')) return false;
+                    return items[type] > 0;
+                });
+
+                if (hasItems) {
+                    let rarityEntry = this.renderedRarityRows.get(rarity);
+                    if (!rarityEntry) {
+                        rarityEntry = this.createRarityRow(rarity);
+                        this.renderedRarityRows.set(rarity, rarityEntry);
+                        const rarityIndex = rarities.indexOf(rarity);
+                        let insertBefore: HTMLElement | null = null;
+                        for (let i = rarityIndex + 1; i < rarities.length; i++) {
+                            const nextEntry = this.renderedRarityRows.get(rarities[i]);
+                            if (nextEntry) { insertBefore = nextEntry.row; break; }
+                        }
+                        this.inventoryGridContainer!.insertBefore(rarityEntry.row, insertBefore);
+                    }
+
+                    Object.entries(items).forEach(([type, count]) => {
+                        const key = `${rarity}:${type}`;
+                        if (!currentKeys.has(key)) return;
+                        const existing = this.renderedItems.get(key);
+                        if (existing) {
+                            if (existing.count !== count) {
+                                const countLabel = existing.element.querySelector('.item-count');
+                                if (countLabel) countLabel.textContent = count.toString();
+                                existing.count = count;
+                            }
+                        } else {
+                            const itemElement = this.createInventoryItemElement(rarity, type, count);
+                            if (itemElement) {
+                                rarityEntry!.grid.appendChild(itemElement);
+                                this.renderedItems.set(key, { element: itemElement, count });
+                            }
+                        }
+                    });
+                } else {
+                    const rarityEntry = this.renderedRarityRows.get(rarity);
+                    if (rarityEntry) {
+                        rarityEntry.row.remove();
+                        this.renderedRarityRows.delete(rarity);
+                    }
+                }
+            });
+
+            return;
+        }
+
+        // Full rebuild (first render)
+        content.innerHTML = '';
+        this.renderedItems.clear();
+        this.renderedRarityRows.clear();
+
+        const title = document.createElement('h2');
+        title.textContent = 'Inventory';
+        content.appendChild(title);
 
         const gridContainer = document.createElement('div');
         gridContainer.className = 'inventory-grid-container';
@@ -4400,187 +4664,24 @@ class TitleScreenInventoryManager {
           flex-direction: column;
           gap: 10px;
           padding: 10px;
-      `;
+        `;
+        this.inventoryGridContainer = gridContainer;
 
-        const invDict = this.playerData?.inventory ? inventoryToDict(this.playerData.inventory) : {};
         rarities.forEach(rarity => {
             const items = invDict[rarity];
             if (items && Object.keys(items).length > 0) {
-                const rarityRow = document.createElement('div');
-                rarityRow.className = 'rarity-row';
-                rarityRow.style.cssText = `
-                  display: flex;
-                  flex-direction: column;
-                  gap: 5px;
-              `;
-
-                const rarityLabel = document.createElement('div');
-                rarityLabel.textContent = rarity.toUpperCase();
-                rarityLabel.style.cssText = `
-                  color: ${this.ITEM_RARITY_COLORS[rarity]};
-                  font-weight: bold;
-                  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-                  padding-left: 5px;
-              `;
-                rarityRow.appendChild(rarityLabel);
-
-                const grid = document.createElement('div');
-                grid.className = 'inventory-grid';
-                grid.style.cssText = `
-                  display: flex;
-                  flex-wrap: wrap;
-                  gap: 5px;
-                  padding: 5px;
-                  background: rgba(0, 0, 0, 0.2);
-                  border-radius: 5px;
-                  border: 1px solid ${this.ITEM_RARITY_COLORS[rarity]}40;
-              `;
+                const rarityEntry = this.createRarityRow(rarity);
+                this.renderedRarityRows.set(rarity, rarityEntry);
 
                 Object.entries(items).forEach(([type, count]) => {
-                    // Skip eggs on title screen
-                    if (type.startsWith('petal_') && type.replace('petal_', '').endsWith('_egg')) {
-                        return;
-                    }
-                    const itemCount = typeof count === 'number' ? count : 0;
-                    if (itemCount > 0) {
-                        const itemElement = document.createElement('div');
-                        itemElement.className = 'inventory-item';
-                        itemElement.draggable = true;
-
-                        const rarityColor = this.ITEM_RARITY_COLORS[rarity];
-                        const darkenedColor = this.darkenColor(rarityColor);
-                        itemElement.style.cssText = `
-                      position: relative;
-                      width: 50px;
-                      height: 50px;
-                      background-color: ${rarityColor};
-                      border: 3px solid ${darkenedColor};
-                      border-radius: 5px;
-                      display: flex;
-                      align-items: center;
-                      justify-content: center;
-                      cursor: pointer;
-                      transition: all 0.2s ease;
-                  `;
-
-                        itemElement.addEventListener('mouseover', () => {
-                            itemElement.style.transform = 'scale(1.05)';
-                            itemElement.style.boxShadow = `0 0 10px ${this.ITEM_RARITY_COLORS[rarity]}`;
-                        });
-
-                        itemElement.addEventListener('mouseout', () => {
-                            itemElement.style.transform = 'scale(1)';
-                            itemElement.style.boxShadow = 'none';
-                        });
-
-                        itemElement.addEventListener('dragstart', (e) => {
-                            e.dataTransfer?.setData('text/plain', JSON.stringify({ rarity, type }));
-                            itemElement.classList.add('dragging');
-                        });
-
-                        itemElement.addEventListener('dragend', () => {
-                            itemElement.classList.remove('dragging');
-                        });
-
-                        // Click to equip to the next empty loadout slot
-                        itemElement.addEventListener('click', () => {
-                            if (!this.playerData) return;
-                            const loadout = this.playerData.loadout;
-                            let emptySlot = -1;
-                            for (let i = 0; i < CANVAS_LOADOUT_SLOT_COUNT; i++) {
-                                if (!loadout[i]) { emptySlot = i; break; }
-                            }
-                            if (emptySlot >= 0) {
-                                this.equipItemToLoadout(rarity, type, emptySlot);
-                            }
-                        });
-
-                        // Handle different item types for display
-                        if (type.startsWith('petal_')) {
-                            const petalType = type.replace('petal_', '');
-                            const stats = getPetalStats(petalType, rarity);
-                            if (stats && stats.image) {
-                                const img = document.createElement('img');
-                                img.alt = type;
-                                img.draggable = false;
-                                img.style.cssText = `
-                              width: 30px;
-                              height: 30px;
-                              object-fit: contain;
-                          `;
-                                
-                                // For title screen, use SVG directly since we don't have canvas
-                                const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                                const url = URL.createObjectURL(svgBlob);
-                                img.src = url;
-                                itemElement.appendChild(img);
-                            }
-                        } else {
-                            const img = document.createElement('img');
-                            img.src = `./assets/${type}.png`;
-                            img.alt = type;
-                            img.draggable = false;
-                            img.style.cssText = `
-                          width: 30px;
-                          height: 30px;
-                          object-fit: contain;
-                      `;
-                            itemElement.appendChild(img);
-                        }
-
-                        const countLabel = document.createElement('div');
-                        countLabel.className = 'item-count';
-                        countLabel.textContent = itemCount.toString();
-                        countLabel.style.cssText = `
-                        position: absolute;
-                        top: 2px;
-                        right: 4px;
-                        color: white;
-                        font-size: 12px;
-                        font-weight: bold;
-                        text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-                    `;
-                        itemElement.appendChild(countLabel);
-
-                        // Add petal name label for petals
-                        if (type.startsWith('petal_')) {
-                            const petalType = type.replace('petal_', '');
-                            const petalName = this.formatPetalName(petalType);
-                            if (petalName) {
-                                const nameLabel = document.createElement('div');
-                                nameLabel.className = 'petal-name';
-                                nameLabel.textContent = petalName;
-                                nameLabel.style.cssText = `
-                                position: absolute;
-                                bottom: 5px;
-                                left: 50%;
-                                transform: translateX(-50%);
-                                color: white;
-                                font-size: 10px;
-                                font-weight: bold;
-                                text-shadow: 
-                                    -1px -1px 0 #000,
-                                    1px -1px 0 #000,
-                                    -1px 1px 0 #000,
-                                    1px 1px 0 #000,
-                                    0 0 3px rgba(0,0,0,0.8);
-                                white-space: nowrap;
-                                pointer-events: none;
-                                z-index: 10;
-                            `;
-                                itemElement.appendChild(nameLabel);
-                            }
-
-                            // Setup tooltip for petal items
-                            this.setupTooltip(itemElement, petalType, rarity);
-                        }
-
-                        grid.appendChild(itemElement);
+                    const itemElement = this.createInventoryItemElement(rarity, type, count);
+                    if (itemElement) {
+                        rarityEntry.grid.appendChild(itemElement);
+                        this.renderedItems.set(`${rarity}:${type}`, { element: itemElement, count });
                     }
                 });
 
-                rarityRow.appendChild(grid);
-                gridContainer.appendChild(rarityRow);
+                gridContainer.appendChild(rarityEntry.row);
             }
         });
 
