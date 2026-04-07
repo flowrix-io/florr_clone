@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244534635,
+      "totalXP": 244534636,
       "inventory": {
         "common": {
           "shield": 254,
@@ -551,7 +551,7 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "rose"
+          "petalType": "blood_leaf"
         },
         {
           "type": "petal",
@@ -599,7 +599,7 @@
         {
           "type": "petal",
           "rarity": "unique",
-          "petalType": "blood_leaf"
+          "petalType": "rose"
         },
         {
           "type": "petal",
@@ -620,7 +620,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 382,
+          "common": 383,
           "legendary": 214,
           "uncommon": 110,
           "mythic": 183,

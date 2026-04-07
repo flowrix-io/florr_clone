@@ -474,6 +474,9 @@ function updatePlayerState(player, deltaTime, deps) {
         const petalInstances = [];
         try {
             for (let i = 0; i < player.loadout.length; i++) {
+                // Secondary loadout (slots 10+) is storage only — don't spawn petals
+                if (i >= 10)
+                    continue;
                 const petal = player.loadout[i];
                 if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
                     const petalStats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);

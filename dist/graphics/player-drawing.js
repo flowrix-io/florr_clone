@@ -98,6 +98,9 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
     const petalInstances = [];
     try {
         player.loadout.forEach((item, loadoutIndex) => {
+            // Secondary loadout (slots 10+) is storage only — don't render petals
+            if (loadoutIndex >= 10)
+                return;
             if (item && item.type === 'petal' && item.petalType && item.rarity) {
                 const stats = (0, core_1.getPetalStats)(item.petalType, item.rarity);
                 if (!stats)
