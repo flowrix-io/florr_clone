@@ -164,22 +164,7 @@ class AssetLoader {
     createFallbackBackground() {
         console.log('Using fallback background');
         try {
-            // Create a simple green background with grass triangles as fallback
-            const svg = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
-  <rect width="400" height="400" x="0" y="0" fill="#00d885"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(60, 60) rotate(45)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(180, 80) rotate(-20)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(300, 70) rotate(120)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(100, 200) rotate(180)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(250, 280) rotate(210)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(340, 230) rotate(-90)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#02c278" transform="translate(80, 300) rotate(75)" stroke-width="7" stroke="#02c278" stroke-linejoin="round"/>
-  <circle cx="150" cy="50" r="18" fill="#00f295"/>
-  <circle cx="280" cy="180" r="18" fill="#00f295"/>
-  <circle cx="50" cy="150" r="18" fill="#00f295"/>
-  <circle cx="200" cy="350" r="18" fill="#00f295"/>
-  <circle cx="360" cy="320" r="18" fill="#00f295"/>
-</svg>`;
+            const svg = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg"></svg>`;
             // Convert to persistent base64 data URL
             const base64 = btoa(unescape(encodeURIComponent(svg)));
             const dataUrl = `data:image/svg+xml;base64,${base64}`;

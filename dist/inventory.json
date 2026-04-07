@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244535243,
+      "totalXP": 244542694,
       "inventory": {
         "common": {
           "shield": 257,
@@ -384,7 +384,7 @@
           "petal_leafbug_egg": 1,
           "petal_third_eye": 1,
           "petal_glass": 19,
-          "petal_cube_egg": 5,
+          "petal_cube_egg": 7,
           "petal_faster": 2,
           "petal_shell_egg": 8
         },
@@ -632,7 +632,7 @@
         "soldier_ant": {
           "epic": 125,
           "legendary": 324,
-          "common": 496,
+          "common": 497,
           "rare": 180,
           "mythic": 516,
           "ultra": 18,
@@ -920,15 +920,15 @@
           "common": 90,
           "epic": 26,
           "rare": 24,
-          "uncommon": 52,
+          "uncommon": 53,
           "legendary": 33,
-          "mythic": 78,
+          "mythic": 79,
           "ultra": 19,
           "super": 5
         },
         "dust": {
           "common": 71,
-          "uncommon": 64,
+          "uncommon": 65,
           "rare": 25,
           "epic": 32,
           "legendary": 47,
@@ -946,13 +946,13 @@
           "ultra": 9
         },
         "cube": {
-          "common": 43,
+          "common": 44,
           "uncommon": 21,
-          "legendary": 19,
-          "mythic": 39,
+          "legendary": 22,
+          "mythic": 40,
           "ultra": 7,
           "epic": 4,
-          "rare": 7
+          "rare": 8
         },
         "shell": {
           "common": 23,
@@ -968,7 +968,7 @@
           "uncommon": 5
         }
       },
-      "stars": 127959
+      "stars": 127961
     },
     "1g99g1gfk": {
       "totalXP": 104,

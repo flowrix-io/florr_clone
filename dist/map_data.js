@@ -2813,23 +2813,6 @@ const WORLD_MAP_DATA = {
             }
         },
         {
-            "type": "biome",
-            "x": 36035.46875,
-            "y": 40100.078125,
-            "width": 2870,
-            "height": 5180,
-            "properties": {
-                "biomeName": "matrix",
-                "backgroundTexture": "matrix.svg",
-                "spawnTable": [
-                    {
-                        "tier": "common",
-                        "weight": 2
-                    }
-                ]
-            }
-        },
-        {
             "type": "spawn",
             "x": 26049.453125,
             "y": 50025.078125,
@@ -2920,55 +2903,20 @@ const WORLD_MAP_DATA = {
             }
         },
         {
-            "type": "teleporter",
-            "x": 18089.453125,
-            "y": 18195.078125,
-            "width": 0,
-            "height": 0,
+            "type": "biome",
+            "x": 37685.46875,
+            "y": 42255.078125,
+            "width": 240,
+            "height": 210,
             "properties": {
-                "teleportTo": {
-                    "x": 29479,
-                    "y": 38705
-                }
-            }
-        },
-        {
-            "type": "teleporter",
-            "x": 29509.453125,
-            "y": 38695.078125,
-            "width": 0,
-            "height": 0,
-            "properties": {
-                "teleportTo": {
-                    "x": 19000,
-                    "y": 19000
-                }
-            }
-        },
-        {
-            "type": "teleporter",
-            "x": 1519.453125,
-            "y": 59615.078125,
-            "width": 0,
-            "height": 0,
-            "properties": {
-                "teleportTo": {
-                    "x": 11000,
-                    "y": 10000
-                }
-            }
-        },
-        {
-            "type": "teleporter",
-            "x": 11629.453125,
-            "y": 9995.078125,
-            "width": 0,
-            "height": 0,
-            "properties": {
-                "teleportTo": {
-                    "x": 1500,
-                    "y": 59000
-                }
+                "biomeName": "computer",
+                "backgroundTexture": "blank.svg",
+                "spawnTable": [
+                    {
+                        "tier": "common",
+                        "weight": 1
+                    }
+                ]
             }
         }
     ],
