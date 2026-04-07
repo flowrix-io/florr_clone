@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 244486523,
+      "totalXP": 244486601,
       "inventory": {
         "common": {
           "shield": 253,
@@ -23,7 +23,7 @@
           "petal_leaf": 20,
           "petal_cutter": 2,
           "petal_wing": 304,
-          "petal_rose": 147,
+          "petal_rose": 148,
           "health_potion": 73,
           "petal_basic": 71,
           "petal_square": 26,
@@ -31,7 +31,7 @@
           "petal_golden_leaf": 19,
           "petal_yucca": 17,
           "petal_hornet_egg": 119,
-          "petal_dandelion_egg": 118,
+          "petal_dandelion_egg": 119,
           "petal_ladybug_egg": 108,
           "petal_soldier_ant_egg": 147,
           "petal_dark_ladybug_egg": 104,
@@ -68,7 +68,7 @@
           "petal_bulb": 8,
           "petal_third_eye": 4,
           "petal_gas": 8,
-          "petal_glass": 38,
+          "petal_glass": 39,
           "petal_cube_egg": 19,
           "petal_corn": 5,
           "petal_faster": 15,
@@ -610,7 +610,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 376,
+          "common": 379,
           "legendary": 214,
           "uncommon": 106,
           "mythic": 183,
@@ -622,7 +622,7 @@
         "soldier_ant": {
           "epic": 123,
           "legendary": 324,
-          "common": 479,
+          "common": 481,
           "rare": 176,
           "mythic": 516,
           "ultra": 18,
@@ -633,7 +633,7 @@
         "rock": {
           "legendary": 159,
           "ultra": 9,
-          "common": 354,
+          "common": 355,
           "mythic": 180,
           "epic": 58,
           "rare": 66,
@@ -642,7 +642,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 458,
+          "common": 460,
           "legendary": 146,
           "mythic": 164,
           "uncommon": 132,
@@ -653,7 +653,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 510,
+          "common": 511,
           "legendary": 338,
           "mythic": 362,
           "uncommon": 184,
@@ -665,7 +665,7 @@
         },
         "dandelion": {
           "legendary": 204,
-          "common": 322,
+          "common": 325,
           "mythic": 185,
           "uncommon": 90,
           "unique": 3,
@@ -675,7 +675,7 @@
           "super": 5
         },
         "bee": {
-          "common": 413,
+          "common": 416,
           "epic": 100,
           "mythic": 217,
           "uncommon": 103,
