@@ -743,22 +743,27 @@ class Game {
                 return;
             }
             if (event.key === this.controls.inventory) {
+                this.closeAllMenusExcept('inventory');
                 this.inventoryManager.toggleInventory();
                 return;
             }
             if (event.key === this.controls.crafting) {
+                this.closeAllMenusExcept('crafting');
                 this.inventoryManager.toggleCrafting();
                 return;
             }
             if (event.key === this.controls.skills) {
+                this.closeAllMenusExcept('skills');
                 this.skillsManager.toggle();
                 return;
             }
             if (event.key === 'g' || event.key === 'G') {
+                this.closeAllMenusExcept('mobGallery');
                 this.inventoryManager.toggleMobGallery();
                 return;
             }
             if (event.key === 'b' || event.key === 'B') {
+                this.closeAllMenusExcept('shop');
                 this.shopManager.toggleShop();
                 return;
             }
@@ -1417,6 +1422,18 @@ class Game {
             }
         }
         return false;
+    }
+    closeAllMenusExcept(except) {
+        if (except !== 'inventory')
+            this.inventoryManager?.closeInventory();
+        if (except !== 'crafting')
+            this.inventoryManager?.closeCrafting();
+        if (except !== 'mobGallery')
+            this.inventoryManager?.closeMobGallery();
+        if (except !== 'shop')
+            this.shopManager?.closeShop();
+        if (except !== 'skills')
+            this.skillsManager?.hide();
     }
     updatePlayerEye() {
         const player = this.getLocalPlayer();

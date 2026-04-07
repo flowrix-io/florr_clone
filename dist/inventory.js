@@ -701,6 +701,44 @@ class InventoryManager {
             this.chat.show();
         }
     }
+    closeInventory() {
+        if (!this.inventoryPanel || !this.isInventoryOpen)
+            return;
+        this.inventoryPanel.classList.remove('open');
+        this.showChat();
+        this.invalidateInventoryCache();
+        setTimeout(() => {
+            if (this.inventoryPanel) {
+                this.inventoryPanel.style.display = 'none';
+            }
+        }, 300);
+        this.isInventoryOpen = false;
+    }
+    closeCrafting() {
+        if (!this.craftingPanel || !this.isCraftingOpen)
+            return;
+        this.craftingPanel.classList.remove('open');
+        this.showChat();
+        this.clearCraftingSuccessDisplay();
+        setTimeout(() => {
+            if (this.craftingPanel) {
+                this.craftingPanel.style.display = 'none';
+            }
+        }, 300);
+        this.isCraftingOpen = false;
+    }
+    closeMobGallery() {
+        if (!this.mobGalleryPanel || !this.isMobGalleryOpen)
+            return;
+        this.mobGalleryPanel.classList.remove('open');
+        this.showChat();
+        setTimeout(() => {
+            if (this.mobGalleryPanel) {
+                this.mobGalleryPanel.style.display = 'none';
+            }
+        }, 300);
+        this.isMobGalleryOpen = false;
+    }
     toggleInventory() {
         if (!this.inventoryPanel)
             return;
