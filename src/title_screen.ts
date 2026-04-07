@@ -293,8 +293,8 @@ export class TitleScreen {
         const configs: { [key: string]: { color: string; title: string; displayName: string } } = {
             'default': {
                 color: 'rgb(0, 190, 79)',
-                title: 'Default (Common Spawn)',
-                displayName: 'Default'
+                title: 'Garden',
+                displayName: 'Garden'
             },
             'desert': {
                 color: '#ffff9c',
@@ -320,6 +320,16 @@ export class TitleScreen {
                 color: 'rgb(0, 255, 0)',
                 title: 'Jungle',
                 displayName: 'Jungle'
+            },
+            'sewers': {
+                color: 'rgb(128, 63, 2)',
+                title: 'Sewers',
+                displayName: 'Sewers'
+            },
+            'computer': {
+                color: 'rgb(96, 255, 149)',
+                title: 'Computer Lab',
+                displayName: 'Computer Lab'
             }
         };
         
