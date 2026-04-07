@@ -209,7 +209,7 @@ class TitleScreen {
         if (mapData && Array.isArray(mapData)) {
             console.log('Scanning map data for biomes, total elements:', mapData.length);
             mapData.forEach(element => {
-                if (element.type === 'biome' && element.properties?.biomeName && element.properties.biomeName !== 'garden') {
+                if (element.type === 'biome' && element.properties?.biomeName && element.properties.biomeName !== 'garden' && element.properties.biomeName !== 'unnamed_biome') {
                     console.log('Found biome:', element.properties.biomeName);
                     biomeNames.add(element.properties.biomeName);
                 }
