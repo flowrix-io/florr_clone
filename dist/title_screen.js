@@ -2148,21 +2148,10 @@ class TitleScreen {
             const isSelected = biome === selectedBiome;
             const isHovered = this.hoveredBiomeIndex === index;
             const isPressed = this.pressedButton === `biome_${index}`;
-            let buttonText = biomeConfig.displayName;
-            if (isSelected) {
-                buttonText += ' ✓';
-            }
+            const buttonText = biomeConfig.displayName;
+            const biomeColor = isSelected ? this.hsvAdjust(biomeConfig.color, 0.85) : biomeConfig.color;
             // Gardn-style button
-            this.drawGardnButton(ctx, biomeX, biomeStartY, biomeButtonWidth, biomeButtonHeight, biomeConfig.color, isHovered && !isSelected, isPressed, buttonText, 14, isSelected ? 5 : 4, 3);
-            // Draw white selection border on top if selected
-            if (isSelected) {
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                this.drawRoundedRect(ctx, biomeX, biomeStartY, biomeButtonWidth, biomeButtonHeight, 3);
-                ctx.stroke();
-            }
+            this.drawGardnButton(ctx, biomeX, biomeStartY, biomeButtonWidth, biomeButtonHeight, biomeColor, isHovered && !isSelected, isPressed, buttonText, 14, isSelected ? 5 : 4, 3);
         });
         // Draw controls text (below the loadout bar, which sits at centerY+50 with ~158px height)
         const controlsY = centerY + 225;
