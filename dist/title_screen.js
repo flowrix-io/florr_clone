@@ -2800,6 +2800,13 @@ class TitleScreen {
         if (this.titleScreenChat) {
             this.titleScreenChat.show();
         }
+        // Re-initialize shop and mob gallery (they were torn down in hideTitleScreenPanels)
+        if (!this.titleScreenShopManager) {
+            this.initializeTitleScreenShop();
+        }
+        if (!this.titleScreenMobGallery) {
+            this.initializeTitleScreenMobGallery();
+        }
         // Hide game canvas initially (it will be shown when menus are opened)
         const gameCanvas = document.getElementById('gameCanvas');
         if (gameCanvas) {
