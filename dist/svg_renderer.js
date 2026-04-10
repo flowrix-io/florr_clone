@@ -189,9 +189,13 @@ class SVGRendererWrapper {
                 console.warn('[SVGRenderer] createImageBitmap not available');
                 return null;
             }
+            // Set SVG width/height to target size so the browser rasterizes at
+            // full resolution (Firefox rasterizes at the SVG's intrinsic size,
+            // which is often only 32x32, causing blurriness when upscaled).
+            let resizedSVG = svgString.replace(/(<svg\b[^>]*?)(\s+width="[^"]*")/i, `$1 width="${width}"`).replace(/(<svg\b[^>]*?)(\s+height="[^"]*")/i, `$1 height="${height}"`);
             // Create data URL from SVG
             // NOTE: This should only happen during preloading phase
-            const base64 = btoa(unescape(encodeURIComponent(svgString)));
+            const base64 = btoa(unescape(encodeURIComponent(resizedSVG)));
             const dataUrl = `data:image/svg+xml;base64,${base64}`;
             // Create Image element and load from data URL
             const img = new Image();

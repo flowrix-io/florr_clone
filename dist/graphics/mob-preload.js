@@ -189,7 +189,8 @@ core_1.Graphics.prototype.preloadMobFrames = function (mobStats, cacheKey, prelo
     const promise = (async () => {
         try {
             const highQualityMobs = (0, core_1.getHighQualityMobs)();
-            const mobSize = highQualityMobs ? mobStats.size * 40 : 256;
+            const visualScale = mobStats.visual_scale ?? 1.0;
+            const mobSize = highQualityMobs ? mobStats.size * 40 * visualScale : 256;
             for (let frame = 0; frame < framesPerCycle; frame++) {
                 if (this.svgRenderer.isPreloadingComplete()) {
                     break;
@@ -314,7 +315,8 @@ core_1.Graphics.prototype.loadMobFrames = function (mobStats, cacheKey) {
     (async () => {
         try {
             const highQualityMobs = (0, core_1.getHighQualityMobs)();
-            const mobSize = highQualityMobs ? mobStats.size * 40 : 256;
+            const visualScale = mobStats.visual_scale ?? 1.0;
+            const mobSize = highQualityMobs ? mobStats.size * 40 * visualScale : 256;
             for (let frame = 0; frame < framesPerCycle; frame++) {
                 const time = frame * frameTime;
                 const animationCycleDuration = framesPerCycle * frameTime;

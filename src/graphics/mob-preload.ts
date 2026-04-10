@@ -227,7 +227,8 @@ Graphics.prototype.preloadMobFrames = function(
     const promise = (async () => {
         try {
             const highQualityMobs = getHighQualityMobs();
-            const mobSize = highQualityMobs ? mobStats.size * 40 : 256;
+            const visualScale = mobStats.visual_scale ?? 1.0;
+            const mobSize = highQualityMobs ? mobStats.size * 40 * visualScale : 256;
 
             for (let frame = 0; frame < framesPerCycle; frame++) {
                 if (this.svgRenderer.isPreloadingComplete()) {
@@ -372,7 +373,8 @@ Graphics.prototype.loadMobFrames = function(this: Graphics, mobStats: any, cache
     (async () => {
         try {
             const highQualityMobs = getHighQualityMobs();
-            const mobSize = highQualityMobs ? mobStats.size * 40 : 256;
+            const visualScale = mobStats.visual_scale ?? 1.0;
+            const mobSize = highQualityMobs ? mobStats.size * 40 * visualScale : 256;
 
             for (let frame = 0; frame < framesPerCycle; frame++) {
                 const time = frame * frameTime;
