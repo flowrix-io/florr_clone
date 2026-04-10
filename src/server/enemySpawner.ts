@@ -355,6 +355,34 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         return null as any;
     }
 
+    // Pick the player with the fewest enemies in their viewport to balance density
+    const playerIds = Object.keys(players);
+    let targetPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)];
+
+    if (playerIds.length > 1) {
+        let minCount = Infinity;
+        for (const pid of playerIds) {
+            const p = players[pid];
+            if (!p) continue;
+            const vpW = p.viewportWidth || VIEWPORT_WIDTH;
+            const vpH = p.viewportHeight || VIEWPORT_HEIGHT;
+            const minX = p.x - vpW/2 - VIEWPORT_BUFFER;
+            const maxX = p.x + vpW/2 + VIEWPORT_BUFFER;
+            const minY = p.y - vpH/2 - VIEWPORT_BUFFER;
+            const maxY = p.y + vpH/2 + VIEWPORT_BUFFER;
+            let count = 0;
+            for (const enemy of enemies) {
+                if (enemy.x >= minX && enemy.x <= maxX && enemy.y >= minY && enemy.y <= maxY) {
+                    count++;
+                }
+            }
+            if (count < minCount) {
+                minCount = count;
+                targetPlayerId = pid;
+            }
+        }
+    }
+
     let validPosition = false;
     let x = 0, y = 0;
     let attempts = 0;
@@ -362,10 +390,9 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
 
     while (!validPosition && attempts < MAX_ATTEMPTS) {
         attempts++;
-        
-        // Pick a random player and spawn near their viewport
-        const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
-        const player = players[randomPlayerId];
+
+        // Spawn near the player with the lowest mob density
+        const player = players[targetPlayerId] || players[playerIds[0]];
         
         // Generate position within player's viewport (with buffer)
         const vpW = player.viewportWidth || VIEWPORT_WIDTH;
@@ -425,8 +452,8 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
             newAttempts++;
 
-            const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
-            const player = players[randomPlayerId];
+            // Use same target player for phase 2 retries
+            const player = players[targetPlayerId] || players[playerIds[0]];
 
             const vpW = player.viewportWidth || VIEWPORT_WIDTH;
             const vpH = player.viewportHeight || VIEWPORT_HEIGHT;
@@ -486,8 +513,8 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         while (!newValidPosition && newAttempts < MAX_NEW_ATTEMPTS) {
             newAttempts++;
 
-            const randomPlayerId = Object.keys(players)[Math.floor(Math.random() * Object.keys(players).length)];
-            const player = players[randomPlayerId];
+            // Use same target player for mob spacing retries
+            const player = players[targetPlayerId] || players[playerIds[0]];
 
             const vpW = player.viewportWidth || VIEWPORT_WIDTH;
             const vpH = player.viewportHeight || VIEWPORT_HEIGHT;
