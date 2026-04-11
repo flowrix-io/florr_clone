@@ -63,8 +63,8 @@ export class SkillsManager {
             width: 700px;
             height: 66.67vh;
             background: #9d4edd;
-            border: 2px solid #7a3ba8;
-            border-radius: 10px;
+            border: 4px solid #7a3ba8;
+            border-radius: 3px;
             padding: 20px;
             z-index: 1000;
             display: none;

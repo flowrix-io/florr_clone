@@ -35,6 +35,12 @@ function formatPetalName(petalType) {
     return name.replace(/_/g, ' ');
 }
 class CanvasInventoryPanel {
+    setStackMode(stack) {
+        this.stackMode = stack;
+    }
+    setSearchFilter(text) {
+        this.searchFilter = (text || '').trim().toLowerCase();
+    }
     constructor(game) {
         this.itemRects = [];
         this.contentHeight = 0;
@@ -43,6 +49,11 @@ class CanvasInventoryPanel {
         this.rafHandle = 0;
         this.running = false;
         this.imgCache = new Map();
+        /** When true, items of the same rarity+type are stacked into one slot
+         *  with an `xN` count badge. When false, each item gets its own slot. */
+        this.stackMode = true;
+        /** Substring filter (lowercased) applied to formatted petal/item names. */
+        this.searchFilter = '';
         /** Callback fired when the user presses the left mouse button on an item. */
         this.onItemMouseDown = null;
         /** Callback fired when the hovered item changes (null when no item is hovered). */
@@ -183,26 +194,35 @@ class CanvasInventoryPanel {
             return;
         }
         const invDict = (0, inventoryCodec_1.inventoryToDict)(player.inventory);
-        const padding = 10;
-        const sectionGap = 10;
-        const labelHeight = 16;
-        const itemSize = 50;
-        const itemGap = 6;
+        const padding = 12;
+        const sectionGap = 14;
+        const labelHeight = 22;
+        const itemSize = 56;
+        const itemGap = 8;
         const innerWidth = Math.max(itemSize, cssW - padding * 2);
-        const cols = Math.max(1, Math.floor((innerWidth + itemGap) / (itemSize + itemGap)));
+        // Force exactly 5 columns (matches the reference design). The panel
+        // width in styles.css is sized to fit 5 of these slots side-by-side.
+        const cols = 5;
         this.itemRects = [];
         let y = padding;
         for (const rarity of RARITY_ORDER) {
             const items = invDict[rarity];
             if (!items)
                 continue;
-            const entries = Object.entries(items).filter(([, c]) => c > 0);
+            // Filter by search text (matches petal name or item type) and stack mode.
+            const rawEntries = Object.entries(items).filter(([, c]) => c > 0);
+            const entries = rawEntries.filter(([type]) => this.matchesSearch(type));
             if (entries.length === 0)
                 continue;
+            // In stack mode, each entry renders once with its count badge.
+            // In unstacked mode, expand each entry to `count` individual slots.
+            const expanded = this.stackMode
+                ? entries.map(([type, count]) => ({ type, count: count }))
+                : entries.flatMap(([type, count]) => Array.from({ length: count }, () => ({ type, count: 1 })));
             // Reserve space for the rarity label drawn above the row.
-            y += labelHeight + 2;
-            const totalRows = Math.ceil(entries.length / cols);
-            const lastRowItemCount = entries.length - (totalRows - 1) * cols;
+            y += labelHeight;
+            const totalRows = Math.ceil(expanded.length / cols);
+            const lastRowItemCount = expanded.length - (totalRows - 1) * cols;
             // Full rows are centered using all `cols` slots; the partial last
             // row is centered against just its own item count so it sits in the
             // middle of the panel rather than left-aligned.
@@ -210,8 +230,8 @@ class CanvasInventoryPanel {
             const fullRowStartX = padding + (innerWidth - fullRowWidth) / 2;
             const lastRowWidth = lastRowItemCount * itemSize + (lastRowItemCount - 1) * itemGap;
             const lastRowStartX = padding + (innerWidth - lastRowWidth) / 2;
-            for (let i = 0; i < entries.length; i++) {
-                const [itemType, count] = entries[i];
+            for (let i = 0; i < expanded.length; i++) {
+                const { type: itemType, count } = expanded[i];
                 const row = Math.floor(i / cols);
                 const col = i % cols;
                 const isLastRow = row === totalRows - 1;
@@ -225,19 +245,28 @@ class CanvasInventoryPanel {
                     h: itemSize,
                     rarity,
                     itemType,
-                    count: count
+                    count,
                 });
             }
             y += totalRows * itemSize + (totalRows - 1) * itemGap;
             y += sectionGap;
         }
         this.contentHeight = y + padding;
-        const visibleH = Math.max(0, cssH - CanvasInventoryPanel.CONTENT_TOP); // 30px reserved for title at top
+        const visibleH = Math.max(0, cssH - CanvasInventoryPanel.CONTENT_TOP);
         const maxScroll = Math.max(0, this.contentHeight - visibleH);
         if (this.scrollY > maxScroll)
             this.scrollY = maxScroll;
         if (this.scrollY < 0)
             this.scrollY = 0;
+    }
+    matchesSearch(itemType) {
+        if (!this.searchFilter)
+            return true;
+        const display = itemType.startsWith('petal_')
+            ? formatPetalName(itemType.replace('petal_', ''))
+            : formatPetalName(itemType);
+        return display.toLowerCase().includes(this.searchFilter)
+            || itemType.toLowerCase().includes(this.searchFilter);
     }
     draw() {
         const { dpr, cssW, cssH } = this.syncCanvasSize();
@@ -246,42 +275,34 @@ class CanvasInventoryPanel {
         ctx.save();
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, cssW, cssH);
-        // Title bar
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 22px Ubuntu, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText('Inventory', cssW / 2, 4);
-        // Scrollable content area
+        // Scrollable content area (the surrounding DOM owns the title/header).
         const contentTop = CanvasInventoryPanel.CONTENT_TOP;
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, contentTop, cssW, cssH - contentTop);
         ctx.clip();
         ctx.translate(0, contentTop - this.scrollY);
-        // Rarity labels — draw centered above the first rect of each rarity
-        // group, flanked by rounded separator lines colored like the panel border.
+        // Rarity labels — centered above the first rect of each group, with
+        // rounded separator lines on either side.
         const seenRarity = new Set();
         for (const r of this.itemRects) {
             if (!seenRarity.has(r.rarity)) {
                 seenRarity.add(r.rarity);
                 const color = ITEM_RARITY_COLORS[r.rarity] || '#fff';
                 const labelText = r.rarity.charAt(0).toUpperCase() + r.rarity.slice(1).toLowerCase();
-                const labelY = r.y - 3;
-                ctx.font = 'bold 13px Ubuntu, sans-serif';
+                const labelY = r.y - 4;
+                ctx.font = 'bold 14px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'bottom';
-                // Draw the label first so we know its measured width.
                 ctx.lineWidth = 3;
-                ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+                ctx.strokeStyle = 'rgba(0,0,0,0.6)';
                 ctx.strokeText(labelText, cssW / 2, labelY);
                 ctx.fillStyle = color;
                 ctx.fillText(labelText, cssW / 2, labelY);
-                // Rounded separator lines on each side, matching the panel border.
                 const textW = ctx.measureText(labelText).width;
-                const gap = 8;
-                const sidePad = 4;
-                const lineY = labelY - 5; // visually align with text middle
+                const gap = 10;
+                const sidePad = 6;
+                const lineY = labelY - 6;
                 const leftEnd = cssW / 2 - textW / 2 - gap;
                 const leftStart = sidePad;
                 const rightStart = cssW / 2 + textW / 2 + gap;
@@ -289,7 +310,7 @@ class CanvasInventoryPanel {
                 if (leftEnd > leftStart) {
                     ctx.save();
                     ctx.strokeStyle = CanvasInventoryPanel.SEPARATOR_COLOR;
-                    ctx.lineWidth = 2;
+                    ctx.lineWidth = 3;
                     ctx.lineCap = 'round';
                     ctx.beginPath();
                     ctx.moveTo(leftStart, lineY);
@@ -306,50 +327,7 @@ class CanvasInventoryPanel {
         const now = performance.now();
         for (let i = 0; i < this.itemRects.length; i++) {
             const r = this.itemRects[i];
-            const color = ITEM_RARITY_COLORS[r.rarity] || '#666';
-            const dark = darken(color, 30);
-            // Outer darker rounded rect + inner sharp fill (matches loadout-bar styling)
-            ctx.fillStyle = dark;
-            ctx.beginPath();
-            ctx.roundRect(r.x, r.y, r.w, r.h, 5);
-            ctx.fill();
-            ctx.fillStyle = color;
-            ctx.fillRect(r.x + 3, r.y + 3, r.w - 6, r.h - 6);
-            if (i === this.hoverIndex) {
-                ctx.save();
-                ctx.globalAlpha = 0.18;
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(r.x + 3, r.y + 3, r.w - 6, r.h - 6);
-                ctx.restore();
-            }
-            this.drawItemIcon(ctx, r, now);
-            // Count badge (top-right)
-            const cs = String(r.count);
-            ctx.font = 'bold 11px Ubuntu, sans-serif';
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'top';
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#000000';
-            ctx.strokeText(cs, r.x + r.w - 3, r.y + 2);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(cs, r.x + r.w - 3, r.y + 2);
-            // Petal name label (bottom)
-            if (r.itemType.startsWith('petal_')) {
-                const name = formatPetalName(r.itemType.replace('petal_', ''));
-                ctx.font = 'bold 9px Ubuntu, sans-serif';
-                const measured = ctx.measureText(name).width;
-                if (measured > r.w - 6) {
-                    const fs = Math.max(6, (9 * (r.w - 6)) / measured);
-                    ctx.font = `bold ${fs.toFixed(1)}px Ubuntu, sans-serif`;
-                }
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = '#000000';
-                ctx.strokeText(name, r.x + r.w / 2, r.y + r.h - 2);
-                ctx.fillStyle = '#ffffff';
-                ctx.fillText(name, r.x + r.w / 2, r.y + r.h - 2);
-            }
+            this.drawItemSlot(ctx, r, i === this.hoverIndex, now);
         }
         ctx.restore(); // unclip & untranslate
         // Scrollbar indicator
@@ -359,20 +337,95 @@ class CanvasInventoryPanel {
             const trackH = visibleH;
             const thumbH = Math.max(20, (trackH * visibleH) / this.contentHeight);
             const thumbY = trackTop + (this.scrollY / (this.contentHeight - visibleH)) * (trackH - thumbH);
-            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.fillStyle = 'rgba(0,0,0,0.25)';
             ctx.fillRect(cssW - 6, thumbY, 4, thumbH);
         }
         ctx.restore();
     }
+    /** Draws one item slot in the screenshot's style: per-rarity colored
+     *  rounded square with a darker border, centered icon, outlined white
+     *  name text at the bottom, and an outlined `xN` count in the top-right. */
+    drawItemSlot(ctx, r, hovered, time) {
+        const baseColor = ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
+        const borderColor = darken(baseColor, 25);
+        const radius = 6;
+        const borderW = 3;
+        // Outer rounded border + inner fill.
+        ctx.save();
+        ctx.fillStyle = borderColor;
+        ctx.beginPath();
+        ctx.roundRect(r.x, r.y, r.w, r.h, radius);
+        ctx.fill();
+        ctx.fillStyle = baseColor;
+        ctx.beginPath();
+        ctx.roundRect(r.x + borderW, r.y + borderW, r.w - borderW * 2, r.h - borderW * 2, Math.max(0, radius - 2));
+        ctx.fill();
+        if (hovered) {
+            ctx.globalAlpha = 0.18;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.roundRect(r.x + borderW, r.y + borderW, r.w - borderW * 2, r.h - borderW * 2, Math.max(0, radius - 2));
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+        ctx.restore();
+        // Item icon (slightly above center to leave room for the name text).
+        this.drawItemIcon(ctx, r, time);
+        // Item name — outlined white text at the bottom of the slot.
+        const displayName = r.itemType.startsWith('petal_')
+            ? formatPetalName(r.itemType.replace('petal_', ''))
+            : formatPetalName(r.itemType);
+        if (displayName) {
+            ctx.save();
+            let fontSize = 10;
+            ctx.font = `bold ${fontSize}px Ubuntu, sans-serif`;
+            const maxTextW = r.w - 8;
+            let measured = ctx.measureText(displayName).width;
+            if (measured > maxTextW) {
+                fontSize = Math.max(7, (fontSize * maxTextW) / measured);
+                ctx.font = `bold ${fontSize.toFixed(1)}px Ubuntu, sans-serif`;
+            }
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.lineWidth = 3;
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#000000';
+            const tx = r.x + r.w / 2;
+            const ty = r.y + r.h - 5;
+            ctx.strokeText(displayName, tx, ty);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(displayName, tx, ty);
+            ctx.restore();
+        }
+        // Count badge: outlined white "xN" in the top-right corner of the slot.
+        if (r.count > 1) {
+            const text = `x${r.count}`;
+            ctx.save();
+            ctx.font = 'bold 11px Ubuntu, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'top';
+            ctx.lineWidth = 3;
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#000000';
+            const tx = r.x + r.w - 4;
+            const ty = r.y + 3;
+            ctx.strokeText(text, tx, ty);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(text, tx, ty);
+            ctx.restore();
+        }
+    }
     drawItemIcon(ctx, r, time) {
         const cx = r.x + r.w / 2;
-        const cy = r.y + r.h / 2;
-        const iconSize = 30;
+        // Sit the icon in the upper portion of the slot to leave room for the
+        // outlined name text at the bottom.
+        const cy = r.y + r.h * 0.4;
+        const iconSize = 32;
         if (r.itemType.startsWith('petal_')) {
             const petalType = r.itemType.replace('petal_', '');
             const pc = this.game.getPetalCanvas?.(petalType, r.rarity, time);
             if (pc) {
-                ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2 - 4, iconSize, iconSize);
+                ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
             }
         }
         else {
@@ -399,11 +452,9 @@ class CanvasInventoryPanel {
     }
 }
 exports.CanvasInventoryPanel = CanvasInventoryPanel;
-/** Vertical pixel offset reserved at the top of the canvas for the title bar.
- *  draw() translates the scrollable content area down by this amount, so the
- *  hit test must apply the inverse offset to convert client coords back into
- *  layout space. */
-CanvasInventoryPanel.CONTENT_TOP = 30;
+/** Title bar is now drawn by the surrounding DOM, so the canvas content
+ *  starts at y=0. */
+CanvasInventoryPanel.CONTENT_TOP = 0;
 /** Color of the rounded separator lines flanking each rarity label.
  *  Matches the .inventory-panel CSS border color. */
 CanvasInventoryPanel.SEPARATOR_COLOR = '#4a8bc2';

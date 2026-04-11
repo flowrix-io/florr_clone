@@ -301,6 +301,8 @@ export class ShopManager {
                 width: 700px;
                 height: 66.67vh;
                 background: #42f563;
+                border: 4px solid #36d153;
+                border-radius: 3px;
                 transform: translateY(100vh);
                 transition: transform 0.3s ease-out;
                 z-index: 1000;
@@ -309,7 +311,6 @@ export class ShopManager {
                 color: white;
                 display: flex;
                 flex-direction: column;
-                border-right: 3px solid #36d153;
                 font-family: Ubuntu, sans-serif;
             }
             .shop-panel.open {

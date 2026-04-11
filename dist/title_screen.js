@@ -17,6 +17,7 @@ const inventory_1 = require("./inventory");
 const shop_1 = require("./shop");
 const inventoryCodec_1 = require("./inventoryCodec");
 const loadout_bar_1 = require("./graphics/loadout-bar");
+const inventory_panel_1 = require("./graphics/inventory-panel");
 class FloatingPetalManager {
     constructor(container) {
         this.petals = [];
@@ -3464,6 +3465,39 @@ class TitleScreenGameAdapter {
     showFloatingText(_x, _y, text, _color, _fontSize) {
         console.log(`[TitleScreen] ${text}`);
     }
+    /** Used by CanvasInventoryPanel — pulls petal frames from preloaded assets. */
+    getPetalCanvas(petalType, rarity, _time) {
+        const assets = window.preloadedAssets;
+        if (!assets || !assets.petalImages)
+            return null;
+        const entry = assets.petalImages[`${petalType}_${rarity}`];
+        if (!entry)
+            return null;
+        if (Array.isArray(entry)) {
+            const frameIndex = Math.floor((Date.now() / 42) % entry.length);
+            return entry[frameIndex];
+        }
+        return entry;
+    }
+    /** Used by CanvasInventoryPanel — converts a preloaded sprite into a data URL. */
+    getItemSpriteDataUrl(itemType) {
+        const assets = window.preloadedAssets;
+        if (!assets || !assets.itemSprites)
+            return null;
+        const img = assets.itemSprites[itemType];
+        if (!img)
+            return null;
+        try {
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth || 32;
+            c.height = img.naturalHeight || 32;
+            c.getContext('2d')?.drawImage(img, 0, 0);
+            return c.toDataURL('image/png');
+        }
+        catch {
+            return null;
+        }
+    }
 }
 /**
  * Title Screen Inventory Manager
@@ -3488,6 +3522,7 @@ class TitleScreenInventoryManager {
         this.renderedItems = new Map();
         this.renderedRarityRows = new Map();
         this.inventoryGridContainer = null;
+        this.canvasInventoryPanel = null;
         this.svgBlobUrlCache = new Map();
         this.LOADOUT_SLOTS = 20;
         this.ITEM_RARITY_COLORS = {
@@ -4280,6 +4315,9 @@ class TitleScreenInventoryManager {
     updateInventoryDisplay() {
         if (!this.inventoryPanel)
             return;
+        // Canvas inventory re-renders from playerData every frame; nothing to push.
+        if (this.canvasInventoryPanel)
+            return;
         const content = this.inventoryPanel.querySelector('.inventory-content');
         if (!content)
             return;
@@ -4614,45 +4652,202 @@ class TitleScreenInventoryManager {
     }
     toggleInventory() {
         console.log('[TitleScreenInventory] toggleInventory called. playerData:', !!this.playerData, 'isAuthenticated:', this.isAuthenticated);
+        // Reuse a stale panel from a previous game session if one exists, but
+        // always strip its old DOM children so the canvas mounts cleanly.
         let inventoryPanel = document.getElementById('inventoryPanel');
         if (!inventoryPanel) {
             inventoryPanel = document.createElement('div');
             inventoryPanel.id = 'inventoryPanel';
             inventoryPanel.className = 'inventory-panel';
             inventoryPanel.style.display = 'none';
-            const inventoryContent = document.createElement('div');
-            inventoryContent.className = 'inventory-content';
-            inventoryPanel.appendChild(inventoryContent);
             document.body.appendChild(inventoryPanel);
         }
-        // Always bind the field to the current element (an existing panel
-        // from a previous game session won't update `this.inventoryPanel`
-        // otherwise, causing updateInventoryDisplay to early-return).
         this.inventoryPanel = inventoryPanel;
-        // Ensure the content container exists (in case a stale panel was found
-        // whose content was torn down).
-        if (!inventoryPanel.querySelector('.inventory-content')) {
+        // First-time mount: build header + close button + canvas inventory.
+        if (!this.canvasInventoryPanel) {
+            inventoryPanel.innerHTML = '';
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'inventory-close-button';
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText = `
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                width: 28px;
+                height: 28px;
+                background: #dc7e92;
+                color: white;
+                border: 2px solid #b56476;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 16px;
+                font-weight: bold;
+                line-height: 1;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 2;
+            `;
+            closeBtn.addEventListener('click', () => this.toggleInventory());
+            inventoryPanel.appendChild(closeBtn);
+            const title = document.createElement('h2');
+            title.className = 'inventory-title';
+            title.textContent = 'Inventory';
+            inventoryPanel.appendChild(title);
+            const subtitle = document.createElement('div');
+            subtitle.className = 'inventory-subtitle';
+            subtitle.textContent = 'Drag a petal to equip it';
+            inventoryPanel.appendChild(subtitle);
+            const controls = document.createElement('div');
+            controls.className = 'inventory-controls';
+            const stackLabel = document.createElement('label');
+            stackLabel.className = 'inventory-stack-toggle';
+            const stackCheckbox = document.createElement('input');
+            stackCheckbox.type = 'checkbox';
+            stackCheckbox.checked = true;
+            const stackText = document.createElement('span');
+            stackText.textContent = 'Stack';
+            stackLabel.appendChild(stackCheckbox);
+            stackLabel.appendChild(stackText);
+            controls.appendChild(stackLabel);
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'inventory-search';
+            controls.appendChild(searchInput);
+            inventoryPanel.appendChild(controls);
             const inventoryContent = document.createElement('div');
             inventoryContent.className = 'inventory-content';
+            inventoryContent.style.cssText = `
+                flex: 1 1 auto;
+                min-height: 0;
+                min-width: 0;
+                overflow: hidden;
+                padding: 0;
+                margin: 0;
+                box-sizing: border-box;
+                position: relative;
+                display: block;
+            `;
             inventoryPanel.appendChild(inventoryContent);
+            this.canvasInventoryPanel = new inventory_panel_1.CanvasInventoryPanel(this.gameAdapter);
+            this.canvasInventoryPanel.attachTo(inventoryContent);
+            this.canvasInventoryPanel.onItemMouseDown = (rarity, itemType) => {
+                if (!this.playerData)
+                    return;
+                let emptySlot = -1;
+                for (let i = 0; i < loadout_bar_1.LOADOUT_SLOT_COUNT; i++) {
+                    if (!this.playerData.loadout[i]) {
+                        emptySlot = i;
+                        break;
+                    }
+                }
+                if (emptySlot >= 0) {
+                    this.equipItemToLoadout(rarity, itemType, emptySlot);
+                }
+            };
+            this.canvasInventoryPanel.onItemHoverChange = (hit) => {
+                this.handleCanvasInventoryHover(hit);
+            };
+            this.canvasInventoryPanel.setStackMode(stackCheckbox.checked);
+            stackCheckbox.addEventListener('change', () => {
+                this.canvasInventoryPanel?.setStackMode(stackCheckbox.checked);
+            });
+            searchInput.addEventListener('input', () => {
+                this.canvasInventoryPanel?.setSearchFilter(searchInput.value);
+            });
         }
-        const isOpen = inventoryPanel.style.display === 'block';
-        console.log('[TitleScreenInventory] toggleInventory: isOpen=', isOpen, 'inDOM=', !!inventoryPanel.parentElement);
+        const isOpen = inventoryPanel.style.display !== 'none' && inventoryPanel.style.display !== '';
         if (!isOpen) {
-            this.updateInventoryDisplay();
-            inventoryPanel.style.display = 'block';
-            setTimeout(() => {
-                inventoryPanel.classList.add('open');
-                const cs = getComputedStyle(inventoryPanel);
-                console.log('[TitleScreenInventory] .open added. classList=', inventoryPanel.className, 'transform=', cs.transform, 'left=', cs.left, 'position=', cs.position, 'rect=', inventoryPanel.getBoundingClientRect());
-            }, 10);
+            inventoryPanel.style.display = 'flex';
+            this.canvasInventoryPanel.start();
+            setTimeout(() => inventoryPanel.classList.add('open'), 10);
         }
         else {
             inventoryPanel.classList.remove('open');
-            setTimeout(() => {
-                inventoryPanel.style.display = 'none';
-            }, 300);
+            this.canvasInventoryPanel.stop();
+            setTimeout(() => { inventoryPanel.style.display = 'none'; }, 300);
         }
+    }
+    /** Tooltip hover bridge for the canvas inventory panel. */
+    handleCanvasInventoryHover(hit) {
+        if (this.tooltipTimeout !== null) {
+            clearTimeout(this.tooltipTimeout);
+            this.tooltipTimeout = null;
+        }
+        if (this.tooltipElement) {
+            this.tooltipElement.remove();
+            this.tooltipElement = null;
+        }
+        if (!hit || !hit.itemType.startsWith('petal_'))
+            return;
+        const petalType = hit.itemType.replace('petal_', '');
+        const rarity = hit.rarity;
+        const rect = hit.rect;
+        this.tooltipTimeout = window.setTimeout(() => {
+            this.showTooltipAtRect(rect, petalType, rarity);
+            this.updateTooltipValues(window.altKeyPressed || false);
+        }, 200);
+    }
+    /** Like showTooltip() but anchored to a client-space rect (canvas hit). */
+    showTooltipAtRect(rect, petalType, rarity) {
+        const stats = (0, petals_1.getPetalStats)(petalType, rarity);
+        if (!stats)
+            return;
+        if (this.tooltipElement) {
+            this.tooltipElement.remove();
+            this.tooltipElement = null;
+        }
+        const tooltip = document.createElement('div');
+        tooltip.className = 'petal-tooltip';
+        tooltip.style.cssText = `
+            position: fixed;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 10000;
+            pointer-events: none;
+            max-width: 250px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+        const finalDamage = this.calculateFinalPetalDamage(petalType, rarity);
+        const finalHealth = this.calculateFinalPetalHealth(petalType, rarity);
+        const nameDiv = document.createElement('div');
+        nameDiv.style.cssText = 'font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ' + (this.ITEM_RARITY_COLORS[rarity] || '#fff') + ';';
+        nameDiv.textContent = stats.name;
+        tooltip.appendChild(nameDiv);
+        if (stats.description) {
+            const descDiv = document.createElement('div');
+            descDiv.style.cssText = 'margin-bottom: 8px; color: #ccc; line-height: 1.4;';
+            descDiv.textContent = stats.description;
+            tooltip.appendChild(descDiv);
+        }
+        const hpDiv = document.createElement('div');
+        hpDiv.style.cssText = 'margin-bottom: 4px;';
+        hpDiv.setAttribute('data-full-value', finalHealth.toString());
+        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> <span class="tooltip-value">${this.abbreviateNumber(finalHealth)}</span>`;
+        tooltip.appendChild(hpDiv);
+        const damageDiv = document.createElement('div');
+        damageDiv.setAttribute('data-full-value', finalDamage.toString());
+        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> <span class="tooltip-value">${this.abbreviateNumber(finalDamage)}</span>`;
+        tooltip.appendChild(damageDiv);
+        document.body.appendChild(tooltip);
+        this.tooltipElement = tooltip;
+        const tooltipRect = tooltip.getBoundingClientRect();
+        let left = rect.right + 10;
+        let top = rect.top;
+        if (left + tooltipRect.width > window.innerWidth)
+            left = rect.left - tooltipRect.width - 10;
+        if (top + tooltipRect.height > window.innerHeight)
+            top = window.innerHeight - tooltipRect.height - 10;
+        if (top < 0)
+            top = 10;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
     }
     updateFromPlayerData(playerData) {
         // Suppress stale server-pushed loadout data while an optimistic edit is in flight
