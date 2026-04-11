@@ -48,7 +48,7 @@ class SkillsManager {
         this.skillsPanel.style.cssText = `
             position: fixed;
             top: 33.33vh;
-            left: -700px;
+            left: 100px;
             width: 700px;
             height: 66.67vh;
             background: #9d4edd;
@@ -61,8 +61,9 @@ class SkillsManager {
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             box-sizing: border-box;
             transition: transform 0.3s ease-out;
-            border-right: 3px solid #7a3ba8;
         `;
+        // Base closed-state transform must live in a CSS rule (not inline) so
+        // the .skills-panel.open rule below can override it.
         const content = document.createElement('div');
         content.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -99,8 +100,11 @@ class SkillsManager {
         // Add custom scrollbar styles
         const style = document.createElement('style');
         style.textContent = `
+            .skills-panel {
+                transform: translateY(100vh);
+            }
             .skills-panel.open {
-                transform: translateX(700px);
+                transform: translateY(0);
             }
             .skills-panel::-webkit-scrollbar {
                 width: 10px;

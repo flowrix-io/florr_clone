@@ -823,10 +823,11 @@ export class InventoryManager {
             .mob-gallery-panel {
                 position: fixed;
                 top: 33.33vh; /* Start at 1/3 from top, leaving top empty */
-                left: -600px; /* Off-screen; open position lands at left:100px to match chat */
+                left: 100px; /* Aligned with chat */
                 width: 700px;
                 height: 66.67vh; /* 2/3 of viewport height */
                 background: #e6d64c;
+                transform: translateY(100vh); /* Start off-screen below */
                 transition: transform 0.3s ease-out;
                 z-index: 1000;
                 padding: 20px;
@@ -837,7 +838,7 @@ export class InventoryManager {
                 border-right: 3px solid #a89d36; /* Add a subtle border */
             }
             .mob-gallery-panel.open {
-                transform: translateX(700px); /* Slide in from the left */
+                transform: translateY(0); /* Slide up from the bottom */
             }
             .mob-gallery-content {
                 color: white;

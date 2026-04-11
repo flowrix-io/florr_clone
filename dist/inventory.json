@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 245404177,
+      "totalXP": 245404517,
       "inventory": {
         "common": {
           "shield": 260,
@@ -38,7 +38,7 @@
           "petal_bee_egg": 123,
           "petal_fly_egg": 81,
           "petal_bubble_egg": 23,
-          "petal_rock_egg": 111,
+          "petal_rock_egg": 112,
           "petal_bush_egg": 8,
           "petal_roach_egg": 13,
           "petal_cactus_egg": 13,
@@ -642,9 +642,9 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 454,
+          "common": 460,
           "legendary": 214,
-          "uncommon": 116,
+          "uncommon": 117,
           "mythic": 183,
           "rare": 76,
           "ultra": 13,
@@ -654,7 +654,7 @@
         "soldier_ant": {
           "epic": 125,
           "legendary": 324,
-          "common": 556,
+          "common": 561,
           "rare": 182,
           "mythic": 516,
           "ultra": 18,
@@ -665,7 +665,7 @@
         "rock": {
           "legendary": 159,
           "ultra": 9,
-          "common": 399,
+          "common": 406,
           "mythic": 180,
           "epic": 59,
           "rare": 72,
@@ -674,7 +674,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 536,
+          "common": 545,
           "legendary": 146,
           "mythic": 164,
           "uncommon": 147,
@@ -685,10 +685,10 @@
           "unique": 2
         },
         "hornet": {
-          "common": 596,
+          "common": 607,
           "legendary": 339,
           "mythic": 362,
-          "uncommon": 200,
+          "uncommon": 201,
           "rare": 127,
           "epic": 92,
           "ultra": 18,
@@ -697,7 +697,7 @@
         },
         "dandelion": {
           "legendary": 204,
-          "common": 372,
+          "common": 374,
           "mythic": 185,
           "uncommon": 102,
           "unique": 3,
@@ -707,7 +707,7 @@
           "super": 5
         },
         "bee": {
-          "common": 470,
+          "common": 476,
           "epic": 101,
           "mythic": 217,
           "uncommon": 114,

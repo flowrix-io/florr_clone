@@ -297,10 +297,11 @@ export class ShopManager {
             .shop-panel {
                 position: fixed;
                 top: 33.33vh;
-                left: -700px;
+                left: 100px;
                 width: 700px;
                 height: 66.67vh;
                 background: #42f563;
+                transform: translateY(100vh);
                 transition: transform 0.3s ease-out;
                 z-index: 1000;
                 padding: 20px;
@@ -312,7 +313,7 @@ export class ShopManager {
                 font-family: Ubuntu, sans-serif;
             }
             .shop-panel.open {
-                transform: translateX(700px);
+                transform: translateY(0);
             }
             .shop-content {
                 color: white;
