@@ -4,6 +4,7 @@ exports.InventoryManager = void 0;
 const petals_1 = require("./petals");
 const mobs_1 = require("./mobs");
 const inventoryCodec_1 = require("./inventoryCodec");
+const inventory_panel_1 = require("./graphics/inventory-panel");
 class InventoryManager {
     getIsInventoryOpen() {
         return this.isInventoryOpen;
@@ -197,6 +198,101 @@ class InventoryManager {
         tooltip.style.top = `${top}px`;
     }
     /**
+     * Hover handler invoked by the canvas inventory panel. Manages the tooltip
+     * timeout for petals so it mirrors the prior DOM-based behavior.
+     */
+    handleCanvasInventoryHover(hit) {
+        if (this.tooltipTimeout !== null) {
+            clearTimeout(this.tooltipTimeout);
+            this.tooltipTimeout = null;
+        }
+        // Hide whatever tooltip is currently shown.
+        if (this.tooltipElement) {
+            this.tooltipElement.remove();
+            this.tooltipElement = null;
+        }
+        this.canvasHoverPetal = null;
+        if (!hit || this.isDragging)
+            return;
+        if (!hit.itemType.startsWith('petal_'))
+            return;
+        const petalType = hit.itemType.replace('petal_', '');
+        const rarity = hit.rarity;
+        this.canvasHoverPetal = { petalType, rarity, rect: hit.rect };
+        this.tooltipTimeout = window.setTimeout(() => {
+            if (!this.canvasHoverPetal || this.isDragging)
+                return;
+            const { petalType: pt, rarity: rr, rect } = this.canvasHoverPetal;
+            this.showTooltipAtRect(rect, pt, rr);
+            this.updateTooltipValues(window.altKeyPressed || false);
+        }, 200);
+    }
+    /**
+     * Show the petal tooltip positioned next to a client-space rect.
+     * Mirrors showTooltip() but anchored to a rect rather than an HTMLElement.
+     */
+    showTooltipAtRect(rect, petalType, rarity) {
+        const stats = (0, petals_1.getPetalStats)(petalType, rarity);
+        if (!stats)
+            return;
+        if (this.tooltipElement) {
+            this.tooltipElement.remove();
+            this.tooltipElement = null;
+        }
+        const tooltip = document.createElement('div');
+        tooltip.className = 'petal-tooltip';
+        tooltip.style.cssText = `
+            position: fixed;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 10000;
+            pointer-events: none;
+            max-width: 250px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+        const finalDamage = this.calculateFinalPetalDamage(petalType, rarity);
+        const finalHealth = this.calculateFinalPetalHealth(petalType, rarity);
+        const nameDiv = document.createElement('div');
+        nameDiv.style.cssText = 'font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ' + (this.ITEM_RARITY_COLORS[rarity] || '#fff') + ';';
+        nameDiv.textContent = stats.name;
+        tooltip.appendChild(nameDiv);
+        if (stats.description) {
+            const descDiv = document.createElement('div');
+            descDiv.style.cssText = 'margin-bottom: 8px; color: #ccc; line-height: 1.4;';
+            descDiv.textContent = stats.description;
+            tooltip.appendChild(descDiv);
+        }
+        const hpDiv = document.createElement('div');
+        hpDiv.style.cssText = 'margin-bottom: 4px;';
+        hpDiv.setAttribute('data-full-value', finalHealth.toString());
+        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> <span class="tooltip-value">${this.abbreviateNumber(finalHealth)}</span>`;
+        tooltip.appendChild(hpDiv);
+        const damageDiv = document.createElement('div');
+        damageDiv.setAttribute('data-full-value', finalDamage.toString());
+        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> <span class="tooltip-value">${this.abbreviateNumber(finalDamage)}</span>`;
+        tooltip.appendChild(damageDiv);
+        document.body.appendChild(tooltip);
+        this.tooltipElement = tooltip;
+        const tooltipRect = tooltip.getBoundingClientRect();
+        let left = rect.right + 10;
+        let top = rect.top;
+        if (left + tooltipRect.width > window.innerWidth) {
+            left = rect.left - tooltipRect.width - 10;
+        }
+        if (top + tooltipRect.height > window.innerHeight) {
+            top = window.innerHeight - tooltipRect.height - 10;
+        }
+        if (top < 0)
+            top = 10;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+    }
+    /**
      * Hide tooltip
      */
     hideTooltip() {
@@ -300,6 +396,8 @@ class InventoryManager {
         this.renderedItems = new Map();
         this.renderedRarityRows = new Map();
         this.inventoryGridContainer = null;
+        this.canvasInventoryPanel = null;
+        this.canvasHoverPetal = null;
         // Cache petal canvas → data URL conversions to avoid expensive toDataURL() on every render
         this.petalDataUrlCache = new Map();
         /** Timestamp of the most recent local loadout mutation; used to suppress
@@ -363,10 +461,40 @@ class InventoryManager {
             this.inventoryPanel.id = 'inventoryPanel';
             this.inventoryPanel.className = 'inventory-panel';
             this.inventoryPanel.style.display = 'none';
+            // Close button (top-right) — mirrors the skills panel close button.
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'inventory-close-button';
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText = `
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            z-index: 1;
+        `;
+            closeBtn.addEventListener('click', () => this.closeInventory());
+            this.inventoryPanel.appendChild(closeBtn);
+            // Wrapper that fills the panel and hosts the canvas-based inventory.
             const inventoryContent = document.createElement('div');
             inventoryContent.className = 'inventory-content';
             this.inventoryPanel.appendChild(inventoryContent);
             document.body.appendChild(this.inventoryPanel);
+            // Mount the canvas inventory panel inside the wrapper.
+            this.canvasInventoryPanel = new inventory_panel_1.CanvasInventoryPanel(this.game);
+            this.canvasInventoryPanel.attachTo(inventoryContent);
+            this.canvasInventoryPanel.onItemMouseDown = (rarity, itemType, e) => {
+                this.startDrag(e, { type: 'inventory', rarity, itemType }, null);
+            };
+            this.canvasInventoryPanel.onItemHoverChange = (hit) => {
+                this.handleCanvasInventoryHover(hit);
+            };
         } // end !mobGalleryOnly && !craftingOnly
         if (!mobGalleryOnly || craftingOnly) {
             // Create crafting panel
@@ -592,7 +720,7 @@ class InventoryManager {
             .mob-gallery-panel {
                 position: fixed;
                 top: 33.33vh; /* Start at 1/3 from top, leaving top empty */
-                left: -700px; /* Start off-screen to the left */
+                left: -600px; /* Off-screen; open position lands at left:100px to match chat */
                 width: 700px;
                 height: 66.67vh; /* 2/3 of viewport height */
                 background: #e6d64c;
@@ -712,6 +840,7 @@ class InventoryManager {
         this.inventoryPanel.classList.remove('open');
         this.showChat();
         this.invalidateInventoryCache();
+        this.canvasInventoryPanel?.stop();
         setTimeout(() => {
             if (this.inventoryPanel) {
                 this.inventoryPanel.style.display = 'none';
@@ -754,12 +883,14 @@ class InventoryManager {
             setTimeout(() => {
                 this.inventoryPanel?.classList.add('open');
             }, 10);
+            this.canvasInventoryPanel?.start();
             this.updateInventoryDisplay();
         }
         else {
             this.inventoryPanel.classList.remove('open');
             this.showChat();
             this.invalidateInventoryCache();
+            this.canvasInventoryPanel?.stop();
             setTimeout(() => {
                 if (this.inventoryPanel) {
                     this.inventoryPanel.style.display = 'none';
@@ -1938,9 +2069,10 @@ class InventoryManager {
             const sy = e.clientY - r.top;
             canvasHit = canvasBar.hitTest(sx, sy); // -1 | 0..19 slot | 20 trash
         }
-        // Determine drop target
-        const elemUnder = document.elementFromPoint(e.clientX, e.clientY);
-        const inventoryGrid = elemUnder ? elemUnder.closest('.inventory-grid') : null;
+        // Determine drop target. The inventory is now a single canvas, so
+        // we test containment against the canvas itself rather than walking
+        // up DOM ancestors looking for an .inventory-grid.
+        const droppedOnInventoryCanvas = !!this.canvasInventoryPanel?.containsClient(e.clientX, e.clientY);
         const TRASH_INDEX = 20; // matches LOADOUT_SLOT_COUNT in graphics/loadout-bar.ts
         if (canvasHit === TRASH_INDEX) {
             // Drop on trash: return loadout item to inventory
@@ -1959,7 +2091,7 @@ class InventoryManager {
                 }
             }
         }
-        else if (inventoryGrid && this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
+        else if (droppedOnInventoryCanvas && this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
             this.moveItemToInventory(this.dragSource.slotIndex);
         }
         else if (this.dragSource?.type === 'loadout' && this.dragSource.slotIndex !== undefined) {
@@ -2021,6 +2153,12 @@ class InventoryManager {
             player.inventory = [];
             return;
         }
+        // Inventory is now canvas-rendered; the canvas re-lays out from the
+        // current player.inventory each animation frame, so there is nothing
+        // to push here. We still keep this method for backwards compatibility
+        // with the many call sites that invoke it after an inventory mutation.
+        if (this.canvasInventoryPanel)
+            return;
         const content = this.inventoryPanel.querySelector('.inventory-content');
         if (!content)
             return;
