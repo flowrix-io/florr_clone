@@ -5054,83 +5054,18 @@ class TitleScreenInventoryManager {
         }
         this.inventoryPanel = inventoryPanel;
 
-        // First-time mount: build header + close button + canvas inventory.
+        // First-time mount: the canvas inventory paints the entire UI itself.
         if (!this.canvasInventoryPanel) {
             inventoryPanel.innerHTML = '';
-
-            const closeBtn = document.createElement('button');
-            closeBtn.className = 'inventory-close-button';
-            closeBtn.textContent = '✕';
-            closeBtn.style.cssText = `
-                position: absolute;
-                top: 10px;
-                right: 10px;
-                width: 28px;
-                height: 28px;
-                background: #dc7e92;
-                color: white;
-                border: 2px solid #b56476;
-                border-radius: 6px;
-                cursor: pointer;
-                font-size: 16px;
-                font-weight: bold;
-                line-height: 1;
-                padding: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 2;
-            `;
-            closeBtn.addEventListener('click', () => this.toggleInventory());
-            inventoryPanel.appendChild(closeBtn);
-
-            const title = document.createElement('h2');
-            title.className = 'inventory-title';
-            title.textContent = 'Inventory';
-            inventoryPanel.appendChild(title);
-
-            const subtitle = document.createElement('div');
-            subtitle.className = 'inventory-subtitle';
-            subtitle.textContent = 'Drag a petal to equip it';
-            inventoryPanel.appendChild(subtitle);
-
-            const controls = document.createElement('div');
-            controls.className = 'inventory-controls';
-
-            const stackLabel = document.createElement('label');
-            stackLabel.className = 'inventory-stack-toggle';
-            const stackCheckbox = document.createElement('input');
-            stackCheckbox.type = 'checkbox';
-            stackCheckbox.checked = false;
-            const stackText = document.createElement('span');
-            stackText.textContent = 'Stack';
-            stackLabel.appendChild(stackCheckbox);
-            stackLabel.appendChild(stackText);
-            controls.appendChild(stackLabel);
-
-            const searchInput = document.createElement('input');
-            searchInput.type = 'text';
-            searchInput.className = 'inventory-search';
-            controls.appendChild(searchInput);
-            inventoryPanel.appendChild(controls);
-
-            const inventoryContent = document.createElement('div');
-            inventoryContent.className = 'inventory-content';
-            inventoryContent.style.cssText = `
-                flex: 1 1 auto;
-                min-height: 0;
-                min-width: 0;
-                overflow: hidden;
-                padding: 0;
-                margin: 0;
-                box-sizing: border-box;
-                position: relative;
-                display: block;
-            `;
-            inventoryPanel.appendChild(inventoryContent);
+            inventoryPanel.style.padding = '0';
+            inventoryPanel.style.background = 'transparent';
+            inventoryPanel.style.border = 'none';
+            inventoryPanel.style.boxShadow = 'none';
+            inventoryPanel.style.width = '380px';
+            inventoryPanel.style.overflow = 'visible';
 
             this.canvasInventoryPanel = new CanvasInventoryPanel(this.gameAdapter as any);
-            this.canvasInventoryPanel.attachTo(inventoryContent);
+            this.canvasInventoryPanel.attachTo(inventoryPanel);
             this.canvasInventoryPanel.onItemMouseDown = (rarity, itemType) => {
                 if (!this.playerData) return;
                 let emptySlot = -1;
@@ -5144,13 +5079,7 @@ class TitleScreenInventoryManager {
             this.canvasInventoryPanel.onItemHoverChange = (hit: InventoryHitInfo | null) => {
                 this.handleCanvasInventoryHover(hit);
             };
-            this.canvasInventoryPanel.setStackMode(stackCheckbox.checked);
-            stackCheckbox.addEventListener('change', () => {
-                this.canvasInventoryPanel?.setStackMode(stackCheckbox.checked);
-            });
-            searchInput.addEventListener('input', () => {
-                this.canvasInventoryPanel?.setSearchFilter(searchInput.value);
-            });
+            this.canvasInventoryPanel.onClose = () => this.toggleInventory();
         }
 
         const isOpen = inventoryPanel.style.display !== 'none' && inventoryPanel.style.display !== '';

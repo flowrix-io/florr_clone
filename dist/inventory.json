@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 245495016,
+      "totalXP": 245583651,
       "inventory": {
         "common": {
           "shield": 260,
@@ -654,9 +654,9 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 532,
+          "common": 544,
           "legendary": 214,
-          "uncommon": 137,
+          "uncommon": 139,
           "mythic": 183,
           "rare": 76,
           "ultra": 13,
@@ -666,30 +666,30 @@
         "soldier_ant": {
           "epic": 125,
           "legendary": 324,
-          "common": 647,
+          "common": 662,
           "rare": 183,
           "mythic": 516,
           "ultra": 18,
-          "uncommon": 264,
+          "uncommon": 265,
           "super": 9,
           "unique": 3
         },
         "rock": {
           "legendary": 159,
           "ultra": 9,
-          "common": 470,
+          "common": 483,
           "mythic": 180,
           "epic": 59,
           "rare": 72,
-          "uncommon": 124,
+          "uncommon": 129,
           "super": 3,
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 625,
+          "common": 639,
           "legendary": 146,
           "mythic": 164,
-          "uncommon": 166,
+          "uncommon": 169,
           "rare": 85,
           "epic": 56,
           "ultra": 13,
@@ -697,7 +697,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 664,
+          "common": 673,
           "legendary": 339,
           "mythic": 362,
           "uncommon": 221,
@@ -709,9 +709,9 @@
         },
         "dandelion": {
           "legendary": 204,
-          "common": 428,
+          "common": 441,
           "mythic": 185,
-          "uncommon": 118,
+          "uncommon": 120,
           "unique": 3,
           "ultra": 13,
           "rare": 71,
@@ -719,10 +719,10 @@
           "super": 5
         },
         "bee": {
-          "common": 548,
+          "common": 555,
           "epic": 101,
           "mythic": 217,
-          "uncommon": 129,
+          "uncommon": 133,
           "legendary": 217,
           "rare": 101,
           "ultra": 26,
@@ -752,14 +752,14 @@
         },
         "target_dummy": {
           "legendary": 4,
-          "common": 23,
+          "common": 24,
           "mythic": 24,
-          "ultra": 68,
-          "super": 122,
-          "uncommon": 19,
+          "ultra": 71,
+          "super": 125,
+          "uncommon": 20,
           "rare": 67,
           "unique": 21,
-          "epic": 49
+          "epic": 50
         },
         "shiny_ladybug": {
           "super": 1,
@@ -1003,7 +1003,7 @@
           "uncommon": 5
         }
       },
-      "stars": 128425
+      "stars": 128515
     },
     "1g99g1gfk": {
       "totalXP": 104,

@@ -530,173 +530,32 @@ export class InventoryManager {
         const legacy = document.getElementById('loadoutBar');
         if (legacy) legacy.remove();
 
-        // Create inventory panel
+        // Create inventory panel — a thin DOM container that just hosts the
+        // fully canvas-rendered inventory UI. The canvas inside paints the
+        // background, border, header, controls, items, and close button.
         this.inventoryPanel = document.createElement('div');
         this.inventoryPanel.id = 'inventoryPanel';
         this.inventoryPanel.className = 'inventory-panel';
-        // Inline layout so we don't depend on styles.css being rebuilt; the
-        // class also still has the slide-in transform from the stylesheet.
         this.inventoryPanel.style.display = 'none';
-        this.inventoryPanel.style.flexDirection = 'column';
-        this.inventoryPanel.style.padding = '14px 16px 16px';
+        this.inventoryPanel.style.padding = '0';
+        this.inventoryPanel.style.background = 'transparent';
+        this.inventoryPanel.style.border = 'none';
+        this.inventoryPanel.style.boxShadow = 'none';
         this.inventoryPanel.style.boxSizing = 'border-box';
         this.inventoryPanel.style.width = '380px';
+        this.inventoryPanel.style.overflow = 'visible';
 
-        // Close button (top-right) — red rounded square with a white ✕.
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'inventory-close-button';
-        closeBtn.textContent = '✕';
-        closeBtn.style.cssText = `
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            width: 28px;
-            height: 28px;
-            background: #dc7e92;
-            color: white;
-            border: 2px solid #b56476;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            line-height: 1;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2;
-        `;
-        closeBtn.addEventListener('click', () => this.closeInventory());
-        this.inventoryPanel.appendChild(closeBtn);
-
-        // Title + subtitle header.
-        const title = document.createElement('h2');
-        title.className = 'inventory-title';
-        title.textContent = 'Inventory';
-        title.style.cssText = `
-            margin: 0 0 4px 0;
-            text-align: center;
-            color: white;
-            font-size: 24px;
-            font-weight: bold;
-            font-family: Ubuntu, sans-serif;
-            text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000;
-            flex: 0 0 auto;
-        `;
-        this.inventoryPanel.appendChild(title);
-
-        const subtitle = document.createElement('div');
-        subtitle.className = 'inventory-subtitle';
-        subtitle.textContent = 'Drag a petal to equip it';
-        subtitle.style.cssText = `
-            text-align: center;
-            color: white;
-            font-size: 13px;
-            font-weight: bold;
-            font-family: Ubuntu, sans-serif;
-            margin: 0 0 8px 0;
-            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-            flex: 0 0 auto;
-        `;
-        this.inventoryPanel.appendChild(subtitle);
-
-        // Controls row: stack toggle + search bar.
-        const controls = document.createElement('div');
-        controls.className = 'inventory-controls';
-        controls.style.cssText = `
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin: 0 0 8px 0;
-            flex: 0 0 auto;
-        `;
-
-        const stackLabel = document.createElement('label');
-        stackLabel.className = 'inventory-stack-toggle';
-        stackLabel.style.cssText = `
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            cursor: pointer;
-            user-select: none;
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
-            font-family: Ubuntu, sans-serif;
-            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-        `;
-        const stackCheckbox = document.createElement('input');
-        stackCheckbox.type = 'checkbox';
-        stackCheckbox.checked = false;
-        stackCheckbox.style.cssText = `
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-            margin: 0;
-        `;
-        const stackText = document.createElement('span');
-        stackText.textContent = 'Stack';
-        stackLabel.appendChild(stackCheckbox);
-        stackLabel.appendChild(stackText);
-        controls.appendChild(stackLabel);
-
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.className = 'inventory-search';
-        searchInput.placeholder = '';
-        searchInput.style.cssText = `
-            flex: 1 1 auto;
-            min-width: 0;
-            height: 24px;
-            border: 2px solid #000;
-            border-radius: 4px;
-            background: #ffffff;
-            color: #000;
-            padding: 0 8px;
-            font-family: Ubuntu, sans-serif;
-            font-size: 13px;
-            outline: none;
-        `;
-        controls.appendChild(searchInput);
-
-        this.inventoryPanel.appendChild(controls);
-
-        // Wrapper that fills the remaining panel space and hosts the canvas inventory.
-        // Inline styles override the legacy stylesheet so the canvas always sits
-        // below the header rather than overlapping it.
-        const inventoryContent = document.createElement('div');
-        inventoryContent.className = 'inventory-content';
-        inventoryContent.style.cssText = `
-            flex: 1 1 auto;
-            min-height: 0;
-            min-width: 0;
-            overflow: hidden;
-            padding: 0;
-            margin: 0;
-            box-sizing: border-box;
-            position: relative;
-            display: block;
-        `;
-        this.inventoryPanel.appendChild(inventoryContent);
+        // The canvas inventory paints the entire UI inside the panel div.
         document.body.appendChild(this.inventoryPanel);
-
-        // Mount the canvas inventory panel inside the wrapper.
         this.canvasInventoryPanel = new CanvasInventoryPanel(this.game as any);
-        this.canvasInventoryPanel.attachTo(inventoryContent);
+        this.canvasInventoryPanel.attachTo(this.inventoryPanel);
         this.canvasInventoryPanel.onItemMouseDown = (rarity, itemType, e) => {
             this.startDrag(e, { type: 'inventory', rarity, itemType }, null);
         };
         this.canvasInventoryPanel.onItemHoverChange = (hit) => {
             this.handleCanvasInventoryHover(hit);
         };
-        // Wire stack toggle + search filter into the canvas panel.
-        this.canvasInventoryPanel.setStackMode(stackCheckbox.checked);
-        stackCheckbox.addEventListener('change', () => {
-            this.canvasInventoryPanel?.setStackMode(stackCheckbox.checked);
-        });
-        searchInput.addEventListener('input', () => {
-            this.canvasInventoryPanel?.setSearchFilter(searchInput.value);
-        });
+        this.canvasInventoryPanel.onClose = () => this.closeInventory();
         } // end !mobGalleryOnly && !craftingOnly
 
         if (!mobGalleryOnly || craftingOnly) {

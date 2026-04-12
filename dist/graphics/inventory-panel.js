@@ -39,7 +39,9 @@ class CanvasInventoryPanel {
         this.stackMode = stack;
     }
     setSearchFilter(text) {
-        this.searchFilter = (text || '').trim().toLowerCase();
+        this.searchFilter = text || '';
+        if (this.searchInputEl)
+            this.searchInputEl.value = this.searchFilter;
     }
     constructor(game) {
         this.itemRects = [];
@@ -58,12 +60,36 @@ class CanvasInventoryPanel {
         this.stackMode = false;
         /** Substring filter (lowercased) applied to formatted petal/item names. */
         this.searchFilter = '';
+        // ===== Canvas-drawn header / chrome state =====
+        /** Computed each frame in layout(). The pixel offset where the items area
+         *  starts (after the title/subtitle/controls header). */
+        this.contentTop = 0;
+        /** Hit-test rects (canvas-local CSS pixels), recomputed each frame. */
+        this.closeBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+        this.stackToggleRect = { x: 0, y: 0, w: 0, h: 0 };
+        this.stackBoxRect = { x: 0, y: 0, w: 0, h: 0 };
+        this.searchBoxRect = { x: 0, y: 0, w: 0, h: 0 };
+        /** Hover index for the close button (drawn brighter when hovered). */
+        this.closeBtnHovered = false;
+        /** Lerp factor (0..1) used to animate the gardn-style toggle button. */
+        this.toggleLerp = 0;
+        /** Real DOM <input> overlaid on top of the canvas for the search field —
+         *  matches gardn's TextInput approach (canvas paints the background, the
+         *  HTML input handles all keyboard input, IME, copy/paste, etc.). */
+        this.searchInputEl = null;
+        this.parentEl = null;
         /** Callback fired when the user presses the left mouse button on an item. */
         this.onItemMouseDown = null;
         /** Callback fired when the hovered item changes (null when no item is hovered). */
         this.onItemHoverChange = null;
-        // ===== input handlers =====
+        /** Callback fired when the close button is clicked. */
+        this.onClose = null;
         this.handleMouseMove = (e) => {
+            const { x, y } = this.toLocal(e);
+            // Close button hover (used for visual brighten on next draw).
+            const hoverClose = this.pointInRect(x, y, this.closeBtnRect);
+            if (hoverClose !== this.closeBtnHovered)
+                this.closeBtnHovered = hoverClose;
             const hit = this.hitTestClient(e.clientX, e.clientY);
             const newIdx = hit ? this.findItemIndex(hit.rarity, hit.itemType) : -1;
             if (newIdx !== this.hoverIndex) {
@@ -78,10 +104,27 @@ class CanvasInventoryPanel {
                 if (this.onItemHoverChange)
                     this.onItemHoverChange(null);
             }
+            this.closeBtnHovered = false;
         };
         this.handleMouseDown = (e) => {
             if (e.button !== 0)
                 return;
+            const { x, y } = this.toLocal(e);
+            // Close button.
+            if (this.pointInRect(x, y, this.closeBtnRect)) {
+                e.preventDefault();
+                if (this.onClose)
+                    this.onClose();
+                return;
+            }
+            // Stack toggle (whole label area is clickable).
+            if (this.pointInRect(x, y, this.stackToggleRect)) {
+                e.preventDefault();
+                this.stackMode = !this.stackMode;
+                return;
+            }
+            // Search box clicks fall through to the real <input> overlay (which
+            // sits on top of the canvas), so we don't handle them here.
             const hit = this.hitTestClient(e.clientX, e.clientY);
             if (hit && this.onItemMouseDown) {
                 e.preventDefault();
@@ -92,7 +135,7 @@ class CanvasInventoryPanel {
             e.preventDefault();
             this.scrollY += e.deltaY;
             const rect = this.canvas.getBoundingClientRect();
-            const visibleH = Math.max(0, rect.height - CanvasInventoryPanel.CONTENT_TOP);
+            const visibleH = Math.max(0, rect.height - this.contentTop - 14);
             const maxScroll = Math.max(0, this.contentHeight - visibleH);
             if (this.scrollY < 0)
                 this.scrollY = 0;
@@ -118,12 +161,37 @@ class CanvasInventoryPanel {
         this.canvas.addEventListener('wheel', this.handleWheel, { passive: false });
     }
     attachTo(parent) {
+        this.parentEl = parent;
         parent.appendChild(this.canvas);
+        // Mount a real <input> for the search field, positioned absolutely on
+        // top of the canvas. The canvas paints the background; the input
+        // handles every keystroke (gardn's TextInput approach).
+        this.searchInputEl = document.createElement('input');
+        this.searchInputEl.type = 'text';
+        this.searchInputEl.style.cssText = `
+            position: absolute;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #000000;
+            font-family: Ubuntu, sans-serif;
+            font-size: 13px;
+            padding: 0 8px;
+            margin: 0;
+            box-sizing: border-box;
+            display: none;
+        `;
+        this.searchInputEl.addEventListener('input', () => {
+            this.searchFilter = this.searchInputEl?.value || '';
+        });
+        parent.appendChild(this.searchInputEl);
     }
     start() {
         if (this.running)
             return;
         this.running = true;
+        if (this.searchInputEl)
+            this.searchInputEl.style.display = 'block';
         const loop = () => {
             if (!this.running)
                 return;
@@ -138,9 +206,21 @@ class CanvasInventoryPanel {
             cancelAnimationFrame(this.rafHandle);
         this.rafHandle = 0;
         this.hoverIndex = -1;
+        if (this.searchInputEl) {
+            this.searchInputEl.blur();
+            this.searchInputEl.style.display = 'none';
+        }
     }
     isRunning() {
         return this.running;
+    }
+    /** Tear down DOM resources. Call when the panel is destroyed. */
+    destroy() {
+        this.stop();
+        if (this.searchInputEl) {
+            this.searchInputEl.remove();
+            this.searchInputEl = null;
+        }
     }
     /** Returns true if the given client coordinates are within the canvas bounds. */
     containsClient(clientX, clientY) {
@@ -153,16 +233,16 @@ class CanvasInventoryPanel {
         if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
             return null;
         }
-        // Reject hits in the title bar area above the scrollable content.
-        if (clientY - rect.top < CanvasInventoryPanel.CONTENT_TOP)
+        // Reject hits in the header area above the scrollable content.
+        if (clientY - rect.top < this.contentTop)
             return null;
         // Convert to layout (CSS-pixel) space, inverting draw()'s translate.
         const x = clientX - rect.left;
-        const y = (clientY - rect.top) - CanvasInventoryPanel.CONTENT_TOP + this.scrollY;
+        const y = (clientY - rect.top) - this.contentTop + this.scrollY;
         for (const r of this.itemRects) {
             if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
                 const screenX = rect.left + r.x;
-                const screenY = rect.top + r.y + CanvasInventoryPanel.CONTENT_TOP - this.scrollY;
+                const screenY = rect.top + r.y + this.contentTop - this.scrollY;
                 return {
                     rarity: r.rarity,
                     itemType: r.itemType,
@@ -190,7 +270,52 @@ class CanvasInventoryPanel {
         }
         return { dpr, cssW: rect.width, cssH: rect.height };
     }
+    layoutHeader(cssW) {
+        // The header area at the top of the canvas: title, subtitle, controls,
+        // close button. All measurements in canvas-local CSS pixels.
+        const panelPad = 14;
+        const titleH = 26;
+        const subtitleH = 16;
+        const controlsH = 26;
+        const gap = 6;
+        // Close button — top-right square.
+        const closeSize = 26;
+        this.closeBtnRect = {
+            x: cssW - panelPad - closeSize,
+            y: panelPad - 4,
+            w: closeSize,
+            h: closeSize,
+        };
+        // Controls row Y (after title + subtitle + gaps).
+        const controlsY = panelPad + titleH + 2 + subtitleH + gap;
+        // Stack toggle: small square checkbox + "Stack" label, left-aligned.
+        const boxSize = 18;
+        const stackLabelW = 48; // approximate width of "Stack" text + spacing
+        const stackToggleW = boxSize + 4 + stackLabelW;
+        this.stackBoxRect = {
+            x: panelPad,
+            y: controlsY + (controlsH - boxSize) / 2,
+            w: boxSize,
+            h: boxSize,
+        };
+        this.stackToggleRect = {
+            x: panelPad,
+            y: controlsY,
+            w: stackToggleW,
+            h: controlsH,
+        };
+        // Search box fills the rest of the controls row.
+        const searchX = panelPad + stackToggleW + 8;
+        this.searchBoxRect = {
+            x: searchX,
+            y: controlsY,
+            w: cssW - searchX - panelPad,
+            h: controlsH,
+        };
+        this.contentTop = controlsY + controlsH + gap;
+    }
     layout(cssW, cssH) {
+        this.layoutHeader(cssW);
         const player = this.game.getLocalPlayer();
         if (!player || !Array.isArray(player.inventory)) {
             this.itemRects = [];
@@ -293,7 +418,7 @@ class CanvasInventoryPanel {
             }
         }
         this.contentHeight = y + padding;
-        const visibleH = Math.max(0, cssH - CanvasInventoryPanel.CONTENT_TOP);
+        const visibleH = Math.max(0, cssH - this.contentTop - 14);
         const maxScroll = Math.max(0, this.contentHeight - visibleH);
         if (this.scrollY > maxScroll)
             this.scrollY = maxScroll;
@@ -301,13 +426,14 @@ class CanvasInventoryPanel {
             this.scrollY = 0;
     }
     matchesSearch(itemType) {
-        if (!this.searchFilter)
+        const filter = this.searchFilter.trim().toLowerCase();
+        if (!filter)
             return true;
         const display = itemType.startsWith('petal_')
             ? formatPetalName(itemType.replace('petal_', ''))
             : formatPetalName(itemType);
-        return display.toLowerCase().includes(this.searchFilter)
-            || itemType.toLowerCase().includes(this.searchFilter);
+        return display.toLowerCase().includes(filter)
+            || itemType.toLowerCase().includes(filter);
     }
     draw() {
         const { dpr, cssW, cssH } = this.syncCanvasSize();
@@ -316,11 +442,24 @@ class CanvasInventoryPanel {
         ctx.save();
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, cssW, cssH);
-        // Scrollable content area (the surrounding DOM owns the title/header).
-        const contentTop = CanvasInventoryPanel.CONTENT_TOP;
+        // ----- Panel background + border -----
+        const panelRadius = 3;
+        const borderW = 4;
+        ctx.fillStyle = CanvasInventoryPanel.PANEL_BORDER;
+        ctx.beginPath();
+        ctx.roundRect(0, 0, cssW, cssH, panelRadius);
+        ctx.fill();
+        ctx.fillStyle = CanvasInventoryPanel.PANEL_BG;
+        ctx.beginPath();
+        ctx.roundRect(borderW, borderW, cssW - borderW * 2, cssH - borderW * 2, Math.max(0, panelRadius - 2));
+        ctx.fill();
+        // ----- Header (title, subtitle, controls, close button) -----
+        this.drawHeader(ctx, cssW);
+        // ----- Scrollable items area -----
+        const contentTop = this.contentTop;
         ctx.save();
         ctx.beginPath();
-        ctx.rect(0, contentTop, cssW, cssH - contentTop);
+        ctx.rect(borderW, contentTop, cssW - borderW * 2, cssH - contentTop - borderW);
         ctx.clip();
         ctx.translate(0, contentTop - this.scrollY);
         // Rarity labels — centered above the first rect of each group, with
@@ -373,17 +512,129 @@ class CanvasInventoryPanel {
             this.drawItemSlot(ctx, r, i === this.hoverIndex, now);
         }
         ctx.restore(); // unclip & untranslate
-        // Scrollbar indicator
-        const visibleH = cssH - contentTop;
+        // Scrollbar indicator (vertical strip on the right side of the items area).
+        const visibleH = cssH - contentTop - 14;
         if (this.contentHeight > visibleH) {
             const trackTop = contentTop;
             const trackH = visibleH;
             const thumbH = Math.max(20, (trackH * visibleH) / this.contentHeight);
             const thumbY = trackTop + (this.scrollY / (this.contentHeight - visibleH)) * (trackH - thumbH);
             ctx.fillStyle = 'rgba(0,0,0,0.25)';
-            ctx.fillRect(cssW - 6, thumbY, 4, thumbH);
+            ctx.fillRect(cssW - 10, thumbY, 4, thumbH);
         }
         ctx.restore();
+    }
+    /** Draws the title, subtitle, stack toggle, search box, and close button. */
+    drawHeader(ctx, cssW) {
+        // ----- Title -----
+        ctx.save();
+        ctx.font = 'bold 22px Ubuntu, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.lineWidth = 4;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#000000';
+        ctx.strokeText('Inventory', cssW / 2, 14);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Inventory', cssW / 2, 14);
+        // ----- Subtitle -----
+        ctx.font = 'bold 13px Ubuntu, sans-serif';
+        ctx.lineWidth = 3;
+        ctx.strokeText('Drag a petal to equip it', cssW / 2, 14 + 26 + 2);
+        ctx.fillText('Drag a petal to equip it', cssW / 2, 14 + 26 + 2);
+        ctx.restore();
+        // ----- Stack toggle (gardn ToggleButton style) -----
+        // Outer dark gray rounded square with a darker border, inner rect
+        // that lerps between dark gray (off) and #cfcfcf (on).
+        const box = this.stackBoxRect;
+        const target = this.stackMode ? 1 : 0;
+        this.toggleLerp += (target - this.toggleLerp) * 0.25;
+        if (Math.abs(this.toggleLerp - target) < 0.01)
+            this.toggleLerp = target;
+        const lineW = 4;
+        const radius = 5;
+        const outerColor = '#3a3a3a';
+        const innerOff = '#666666';
+        const innerOn = '#cfcfcf';
+        // Mix innerOff → innerOn by toggleLerp
+        const mix = (a, b, t) => {
+            const ah = parseInt(a.slice(1), 16);
+            const bh = parseInt(b.slice(1), 16);
+            const ar = (ah >> 16) & 255, ag = (ah >> 8) & 255, ab = ah & 255;
+            const br = (bh >> 16) & 255, bg = (bh >> 8) & 255, bb = bh & 255;
+            const r = Math.round(ar + (br - ar) * t);
+            const g = Math.round(ag + (bg - ag) * t);
+            const bch = Math.round(ab + (bb - ab) * t);
+            return `#${((r << 16) | (g << 8) | bch).toString(16).padStart(6, '0')}`;
+        };
+        ctx.save();
+        ctx.fillStyle = outerColor;
+        ctx.beginPath();
+        ctx.roundRect(box.x, box.y, box.w, box.h, radius);
+        ctx.fill();
+        ctx.fillStyle = mix(innerOff, innerOn, this.toggleLerp);
+        ctx.fillRect(box.x + lineW, box.y + lineW, box.w - lineW * 2, box.h - lineW * 2);
+        ctx.restore();
+        // "Stack" label next to the toggle.
+        ctx.save();
+        ctx.font = 'bold 14px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 3;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#000000';
+        const labelX = box.x + box.w + 5;
+        const labelY = box.y + box.h / 2 + 1;
+        ctx.strokeText('Stack', labelX, labelY);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Stack', labelX, labelY);
+        ctx.restore();
+        // ----- Search box background (gardn TextInput fill) -----
+        // The actual editable text is rendered by a real <input> overlaid on
+        // top of this rect (positioned in draw() below).
+        const sb = this.searchBoxRect;
+        ctx.save();
+        ctx.fillStyle = '#3a3a3a';
+        ctx.beginPath();
+        ctx.roundRect(sb.x, sb.y, sb.w, sb.h, 5);
+        ctx.fill();
+        ctx.fillStyle = '#eeeeee';
+        ctx.fillRect(sb.x + 4, sb.y + 4, sb.w - 8, sb.h - 8);
+        ctx.restore();
+        // ----- Close button -----
+        const cb = this.closeBtnRect;
+        ctx.save();
+        ctx.fillStyle = CanvasInventoryPanel.CLOSE_BORDER;
+        ctx.beginPath();
+        ctx.roundRect(cb.x, cb.y, cb.w, cb.h, 4);
+        ctx.fill();
+        ctx.fillStyle = this.closeBtnHovered ? '#e8a0b0' : CanvasInventoryPanel.CLOSE_BG;
+        ctx.beginPath();
+        ctx.roundRect(cb.x + 2, cb.y + 2, cb.w - 4, cb.h - 4, 3);
+        ctx.fill();
+        // ✕ glyph
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        const pad = 7;
+        ctx.beginPath();
+        ctx.moveTo(cb.x + pad, cb.y + pad);
+        ctx.lineTo(cb.x + cb.w - pad, cb.y + cb.h - pad);
+        ctx.moveTo(cb.x + cb.w - pad, cb.y + pad);
+        ctx.lineTo(cb.x + pad, cb.y + cb.h - pad);
+        ctx.stroke();
+        ctx.restore();
+        // ----- Position the real <input> on top of the search box -----
+        if (this.searchInputEl) {
+            const inset = 4;
+            this.searchInputEl.style.left = `${sb.x + inset}px`;
+            this.searchInputEl.style.top = `${sb.y + inset}px`;
+            this.searchInputEl.style.width = `${sb.w - inset * 2}px`;
+            this.searchInputEl.style.height = `${sb.h - inset * 2}px`;
+        }
+    }
+    pointInRect(x, y, r) {
+        return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
     }
     /** Draws one item slot in the screenshot's style: per-rarity colored
      *  rounded square with a darker border, centered icon, outlined white
@@ -486,6 +737,11 @@ class CanvasInventoryPanel {
             }
         }
     }
+    // ===== input handlers =====
+    toLocal(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
     findItemIndex(rarity, itemType) {
         for (let i = 0; i < this.itemRects.length; i++) {
             if (this.itemRects[i].rarity === rarity && this.itemRects[i].itemType === itemType)
@@ -495,9 +751,11 @@ class CanvasInventoryPanel {
     }
 }
 exports.CanvasInventoryPanel = CanvasInventoryPanel;
-/** Title bar is now drawn by the surrounding DOM, so the canvas content
- *  starts at y=0. */
-CanvasInventoryPanel.CONTENT_TOP = 0;
 /** Color of the rounded separator lines flanking each rarity label.
  *  Matches the .inventory-panel CSS border color. */
 CanvasInventoryPanel.SEPARATOR_COLOR = '#4a8bc2';
+/** Panel background and border colors (drawn by the canvas itself). */
+CanvasInventoryPanel.PANEL_BG = '#599fdc';
+CanvasInventoryPanel.PANEL_BORDER = '#4a8bc2';
+CanvasInventoryPanel.CLOSE_BG = '#dc7e92';
+CanvasInventoryPanel.CLOSE_BORDER = '#b56476';
