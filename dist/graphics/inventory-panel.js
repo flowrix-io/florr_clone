@@ -49,8 +49,12 @@ class CanvasInventoryPanel {
         this.rafHandle = 0;
         this.running = false;
         this.imgCache = new Map();
-        /** When true, items of the same rarity+type are stacked into one slot
-         *  with an `xN` count badge. When false, each item gets its own slot. */
+        /** Display mode toggle.
+         *  - true  ("stacked"): only one slot per item *type*; the highest rarity
+         *    the player owns sits on top and hides the lower-rarity copies.
+         *  - false ("unstacked"): one slot per unique (rarity, type) pair, each
+         *    with its own count badge — items still appear under every rarity
+         *    section in which the player owns them. */
         this.stackMode = true;
         /** Substring filter (lowercased) applied to formatted petal/item names. */
         this.searchFilter = '';
@@ -205,51 +209,88 @@ class CanvasInventoryPanel {
         const cols = 5;
         this.itemRects = [];
         let y = padding;
-        for (const rarity of RARITY_ORDER) {
-            const items = invDict[rarity];
-            if (!items)
-                continue;
-            // Filter by search text (matches petal name or item type) and stack mode.
-            const rawEntries = Object.entries(items).filter(([, c]) => c > 0);
-            const entries = rawEntries.filter(([type]) => this.matchesSearch(type));
+        // Helper that lays out a flat list of entries as a centered 5-column
+        // grid starting at the current `y`, then advances `y` past the rows.
+        const layoutGrid = (entries, rarityForEntry) => {
             if (entries.length === 0)
-                continue;
-            // In stack mode, each entry renders once with its count badge.
-            // In unstacked mode, expand each entry to `count` individual slots.
-            const expanded = this.stackMode
-                ? entries.map(([type, count]) => ({ type, count: count }))
-                : entries.flatMap(([type, count]) => Array.from({ length: count }, () => ({ type, count: 1 })));
-            // Reserve space for the rarity label drawn above the row.
-            y += labelHeight;
-            const totalRows = Math.ceil(expanded.length / cols);
-            const lastRowItemCount = expanded.length - (totalRows - 1) * cols;
-            // Full rows are centered using all `cols` slots; the partial last
-            // row is centered against just its own item count so it sits in the
-            // middle of the panel rather than left-aligned.
+                return;
+            const totalRows = Math.ceil(entries.length / cols);
+            const lastRowItemCount = entries.length - (totalRows - 1) * cols;
             const fullRowWidth = cols * itemSize + (cols - 1) * itemGap;
             const fullRowStartX = padding + (innerWidth - fullRowWidth) / 2;
             const lastRowWidth = lastRowItemCount * itemSize + (lastRowItemCount - 1) * itemGap;
             const lastRowStartX = padding + (innerWidth - lastRowWidth) / 2;
-            for (let i = 0; i < expanded.length; i++) {
-                const { type: itemType, count } = expanded[i];
+            for (let i = 0; i < entries.length; i++) {
+                const [itemType, count] = entries[i];
                 const row = Math.floor(i / cols);
                 const col = i % cols;
                 const isLastRow = row === totalRows - 1;
                 const startX = isLastRow ? lastRowStartX : fullRowStartX;
-                const x = startX + col * (itemSize + itemGap);
-                const yPos = y + row * (itemSize + itemGap);
                 this.itemRects.push({
-                    x,
-                    y: yPos,
+                    x: startX + col * (itemSize + itemGap),
+                    y: y + row * (itemSize + itemGap),
                     w: itemSize,
                     h: itemSize,
-                    rarity,
+                    rarity: rarityForEntry(i),
                     itemType,
-                    count,
+                    count: count,
                 });
             }
             y += totalRows * itemSize + (totalRows - 1) * itemGap;
+        };
+        if (this.stackMode) {
+            // Stacked mode: one slot per item type, drawn at its highest rarity.
+            // No rarity sections — items are sorted by their numerical item ID
+            // (the canonical petal ordering) rather than by rarity.
+            const seen = new Map();
+            for (const rarity of RARITY_ORDER) {
+                const items = invDict[rarity];
+                if (!items)
+                    continue;
+                for (const [type, count] of Object.entries(items)) {
+                    if (count > 0 && !seen.has(type)) {
+                        seen.set(type, { rarity, count: count });
+                    }
+                }
+            }
+            const sortedTypes = [];
+            for (const [type] of seen) {
+                if (this.matchesSearch(type))
+                    sortedTypes.push(type);
+            }
+            sortedTypes.sort((a, b) => {
+                const ia = inventoryCodec_1.ITEM_KEY_TO_ID.get(a);
+                const ib = inventoryCodec_1.ITEM_KEY_TO_ID.get(b);
+                // Items without an ID sort to the end so the rest stay ordered.
+                if (ia === undefined && ib === undefined)
+                    return a.localeCompare(b);
+                if (ia === undefined)
+                    return 1;
+                if (ib === undefined)
+                    return -1;
+                return ia - ib;
+            });
+            const flat = sortedTypes.map(t => [t, seen.get(t).count]);
+            const rarities = sortedTypes.map(t => seen.get(t).rarity);
+            layoutGrid(flat, i => rarities[i]);
             y += sectionGap;
+        }
+        else {
+            // Unstacked mode: one slot per unique (rarity, type) pair, grouped
+            // under per-rarity section labels.
+            for (const rarity of RARITY_ORDER) {
+                const items = invDict[rarity];
+                if (!items)
+                    continue;
+                const entries = Object.entries(items)
+                    .filter(([, c]) => c > 0)
+                    .filter(([type]) => this.matchesSearch(type));
+                if (entries.length === 0)
+                    continue;
+                y += labelHeight;
+                layoutGrid(entries, () => rarity);
+                y += sectionGap;
+            }
         }
         this.contentHeight = y + padding;
         const visibleH = Math.max(0, cssH - CanvasInventoryPanel.CONTENT_TOP);
@@ -283,47 +324,49 @@ class CanvasInventoryPanel {
         ctx.clip();
         ctx.translate(0, contentTop - this.scrollY);
         // Rarity labels — centered above the first rect of each group, with
-        // rounded separator lines on either side.
+        // rounded separator lines on either side. Skipped in stacked mode,
+        // which deliberately renders one flat grid without per-rarity sections.
         const seenRarity = new Set();
-        for (const r of this.itemRects) {
-            if (!seenRarity.has(r.rarity)) {
-                seenRarity.add(r.rarity);
-                const color = ITEM_RARITY_COLORS[r.rarity] || '#fff';
-                const labelText = r.rarity.charAt(0).toUpperCase() + r.rarity.slice(1).toLowerCase();
-                const labelY = r.y - 4;
-                ctx.font = 'bold 14px Ubuntu, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-                ctx.strokeText(labelText, cssW / 2, labelY);
-                ctx.fillStyle = color;
-                ctx.fillText(labelText, cssW / 2, labelY);
-                const textW = ctx.measureText(labelText).width;
-                const gap = 10;
-                const sidePad = 6;
-                const lineY = labelY - 6;
-                const leftEnd = cssW / 2 - textW / 2 - gap;
-                const leftStart = sidePad;
-                const rightStart = cssW / 2 + textW / 2 + gap;
-                const rightEnd = cssW - sidePad;
-                if (leftEnd > leftStart) {
-                    ctx.save();
-                    ctx.strokeStyle = CanvasInventoryPanel.SEPARATOR_COLOR;
+        if (!this.stackMode)
+            for (const r of this.itemRects) {
+                if (!seenRarity.has(r.rarity)) {
+                    seenRarity.add(r.rarity);
+                    const color = ITEM_RARITY_COLORS[r.rarity] || '#fff';
+                    const labelText = r.rarity.charAt(0).toUpperCase() + r.rarity.slice(1).toLowerCase();
+                    const labelY = r.y - 4;
+                    ctx.font = 'bold 14px Ubuntu, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
                     ctx.lineWidth = 3;
-                    ctx.lineCap = 'round';
-                    ctx.beginPath();
-                    ctx.moveTo(leftStart, lineY);
-                    ctx.lineTo(leftEnd, lineY);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.moveTo(rightStart, lineY);
-                    ctx.lineTo(rightEnd, lineY);
-                    ctx.stroke();
-                    ctx.restore();
+                    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+                    ctx.strokeText(labelText, cssW / 2, labelY);
+                    ctx.fillStyle = color;
+                    ctx.fillText(labelText, cssW / 2, labelY);
+                    const textW = ctx.measureText(labelText).width;
+                    const gap = 10;
+                    const sidePad = 6;
+                    const lineY = labelY - 6;
+                    const leftEnd = cssW / 2 - textW / 2 - gap;
+                    const leftStart = sidePad;
+                    const rightStart = cssW / 2 + textW / 2 + gap;
+                    const rightEnd = cssW - sidePad;
+                    if (leftEnd > leftStart) {
+                        ctx.save();
+                        ctx.strokeStyle = CanvasInventoryPanel.SEPARATOR_COLOR;
+                        ctx.lineWidth = 3;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.moveTo(leftStart, lineY);
+                        ctx.lineTo(leftEnd, lineY);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(rightStart, lineY);
+                        ctx.lineTo(rightEnd, lineY);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
                 }
             }
-        }
         const now = performance.now();
         for (let i = 0; i < this.itemRects.length; i++) {
             const r = this.itemRects[i];

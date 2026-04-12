@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 245405927,
+      "totalXP": 245460590,
       "inventory": {
         "common": {
           "shield": 260,
@@ -83,7 +83,7 @@
           "petal_light": 1000,
           "petal_rock": 1000,
           "petal_yggdrasil": 1000,
-          "speed_boost": 1000,
+          "speed_boost": 1001,
           "health_potion": 1000,
           "petal_healing": 999,
           "petal_explosive": 1000,
@@ -109,7 +109,7 @@
           "petal_garbage_egg": 1,
           "petal_sand": 1,
           "petal_gas": 1,
-          "petal_splitter": 998,
+          "petal_splitter": 996,
           "petal_rock_egg": 1,
           "petal_glitch_egg": 1,
           "petal_faster": 1,
@@ -315,7 +315,6 @@
           "petal_cube_egg": 12,
           "petal_shell_egg": 11,
           "petal_faster": 4,
-          "petal_sun_egg": 1,
           "petal_lightning_cutter": 1,
           "petal_splitter": 1
         },
@@ -581,8 +580,9 @@
           "petalType": "leaf"
         },
         {
-          "type": "speed_boost",
-          "rarity": "unique"
+          "type": "petal",
+          "rarity": "legendary",
+          "petalType": "sun_egg"
         },
         {
           "type": "petal",
@@ -634,8 +634,16 @@
           "rarity": "unique",
           "petalType": "sparkle"
         },
-        null,
-        null
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "splitter"
+        },
+        {
+          "type": "petal",
+          "rarity": "unique",
+          "petalType": "splitter"
+        }
       ],
       "tp": 3,
       "skills": {
@@ -646,9 +654,9 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 480,
+          "common": 524,
           "legendary": 214,
-          "uncommon": 122,
+          "uncommon": 136,
           "mythic": 183,
           "rare": 76,
           "ultra": 13,
@@ -658,30 +666,30 @@
         "soldier_ant": {
           "epic": 125,
           "legendary": 324,
-          "common": 591,
+          "common": 641,
           "rare": 183,
           "mythic": 516,
           "ultra": 18,
-          "uncommon": 249,
+          "uncommon": 263,
           "super": 9,
           "unique": 3
         },
         "rock": {
           "legendary": 159,
           "ultra": 9,
-          "common": 423,
+          "common": 461,
           "mythic": 180,
           "epic": 59,
           "rare": 72,
-          "uncommon": 117,
+          "uncommon": 123,
           "super": 3,
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 573,
+          "common": 620,
           "legendary": 146,
           "mythic": 164,
-          "uncommon": 154,
+          "uncommon": 166,
           "rare": 85,
           "epic": 56,
           "ultra": 13,
@@ -689,10 +697,10 @@
           "unique": 2
         },
         "hornet": {
-          "common": 627,
+          "common": 660,
           "legendary": 339,
           "mythic": 362,
-          "uncommon": 206,
+          "uncommon": 221,
           "rare": 127,
           "epic": 92,
           "ultra": 18,
@@ -701,9 +709,9 @@
         },
         "dandelion": {
           "legendary": 204,
-          "common": 387,
+          "common": 420,
           "mythic": 185,
-          "uncommon": 103,
+          "uncommon": 118,
           "unique": 3,
           "ultra": 13,
           "rare": 71,
@@ -711,10 +719,10 @@
           "super": 5
         },
         "bee": {
-          "common": 499,
+          "common": 542,
           "epic": 101,
           "mythic": 217,
-          "uncommon": 115,
+          "uncommon": 129,
           "legendary": 217,
           "rare": 101,
           "ultra": 26,
@@ -743,15 +751,15 @@
           "super": 1
         },
         "target_dummy": {
-          "legendary": 3,
-          "common": 17,
+          "legendary": 4,
+          "common": 20,
           "mythic": 22,
-          "ultra": 62,
-          "super": 121,
-          "uncommon": 12,
-          "rare": 15,
+          "ultra": 64,
+          "super": 122,
+          "uncommon": 17,
+          "rare": 67,
           "unique": 21,
-          "epic": 15
+          "epic": 49
         },
         "shiny_ladybug": {
           "super": 1,
@@ -995,7 +1003,7 @@
           "uncommon": 5
         }
       },
-      "stars": 128368
+      "stars": 128403
     },
     "1g99g1gfk": {
       "totalXP": 104,
