@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 245794200,
+      "totalXP": 245794243,
       "inventory": {
         "common": {
           "shield": 262,
@@ -18,13 +18,13 @@
           "petal_iris": 11,
           "petal_poison_cactus": 16,
           "petal_lightning": 58,
-          "petal_missile": 190,
+          "petal_missile": 191,
           "petal_jelly": 34,
           "petal_leaf": 20,
           "petal_cutter": 2,
           "petal_wing": 305,
           "petal_rose": 152,
-          "health_potion": 75,
+          "health_potion": 55,
           "petal_basic": 71,
           "petal_square": 26,
           "petal_shield": 1,
@@ -33,7 +33,7 @@
           "petal_hornet_egg": 128,
           "petal_dandelion_egg": 122,
           "petal_ladybug_egg": 114,
-          "petal_soldier_ant_egg": 155,
+          "petal_soldier_ant_egg": 156,
           "petal_dark_ladybug_egg": 111,
           "petal_bee_egg": 125,
           "petal_fly_egg": 81,
@@ -68,7 +68,7 @@
           "petal_bulb": 8,
           "petal_third_eye": 4,
           "petal_gas": 8,
-          "petal_glass": 44,
+          "petal_glass": 45,
           "petal_cube_egg": 22,
           "petal_corn": 5,
           "petal_faster": 22,
@@ -190,7 +190,7 @@
           "shield": 116,
           "petal_clover": 72,
           "petal_light": 61,
-          "health_potion": 29,
+          "health_potion": 32,
           "petal_rock": 47,
           "petal_yggdrasil": 9,
           "petal_bone": 95,
@@ -212,7 +212,7 @@
           "petal_dark_ladybug_egg": 60,
           "petal_ladybug_egg": 42,
           "petal_bee_egg": 54,
-          "petal_hornet_egg": 64,
+          "petal_hornet_egg": 65,
           "petal_soldier_ant_egg": 82,
           "petal_fly_egg": 23,
           "petal_garbage_egg": 42,
@@ -255,7 +255,7 @@
           "speed_boost": 112,
           "petal_sand": 19,
           "petal_rose": 50,
-          "health_potion": 75,
+          "health_potion": 73,
           "petal_light": 22,
           "petal_rock": 116,
           "petal_yggdrasil": 12,
@@ -649,7 +649,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 644,
+          "common": 645,
           "legendary": 215,
           "uncommon": 161,
           "mythic": 183,
@@ -661,7 +661,7 @@
         "soldier_ant": {
           "epic": 125,
           "legendary": 324,
-          "common": 777,
+          "common": 779,
           "rare": 185,
           "mythic": 516,
           "ultra": 18,
@@ -681,7 +681,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 763,
+          "common": 764,
           "legendary": 146,
           "mythic": 164,
           "uncommon": 193,
@@ -695,7 +695,7 @@
           "common": 774,
           "legendary": 339,
           "mythic": 362,
-          "uncommon": 237,
+          "uncommon": 238,
           "rare": 128,
           "epic": 92,
           "ultra": 18,

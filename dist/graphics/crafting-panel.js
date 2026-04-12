@@ -281,10 +281,7 @@ class CanvasCraftingPanel {
             }
         }
         this.slotRects = [];
-        const numSlots = (this.animState === 'result' && !this.resultSuccess)
-            ? Math.min(5, this.failRemainingCount) // Show only remaining slots on failure
-            : 5;
-        for (let i = 0; i < numSlots; i++) {
+        for (let i = 0; i < 5; i++) {
             const angle = (i / 5) * 2 * Math.PI + this.spinAngle;
             const x = containerCx + radius * Math.cos(angle) - slotSize / 2;
             const y = containerCy + radius * Math.sin(angle) - slotSize / 2;
@@ -558,10 +555,12 @@ class CanvasCraftingPanel {
             const s = this.slotRects[i];
             const radius = 6;
             const bw = 3;
-            const bgColor = (hasItems && displayItem)
+            // On failure result, empty slots (beyond remaining count) use empty color
+            const slotHasItem = hasItems && displayItem && !(this.animState === 'result' && !this.resultSuccess && i >= this.failRemainingCount);
+            const bgColor = slotHasItem
                 ? (ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BG)
                 : CanvasCraftingPanel.SLOT_BG;
-            const borderColor = (hasItems && displayItem)
+            const borderColor = slotHasItem
                 ? darken(ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BORDER, 25)
                 : CanvasCraftingPanel.SLOT_BORDER;
             ctx.save();
@@ -574,7 +573,9 @@ class CanvasCraftingPanel {
             ctx.roundRect(s.x + bw, s.y + bw, s.w - bw * 2, s.h - bw * 2, Math.max(0, radius - 2));
             ctx.fill();
             ctx.restore();
-            if (hasItems && displayItem) {
+            // On failure result, only draw petals in the first N remaining slots
+            const showIcon = hasItems && displayItem && !(this.animState === 'result' && !this.resultSuccess && i >= this.failRemainingCount);
+            if (showIcon) {
                 this.drawCraftingSlotIcon(ctx, s, displayItem, now);
             }
         }
@@ -713,11 +714,11 @@ class CanvasCraftingPanel {
         const radius = 6;
         const bw = 3;
         ctx.save();
-        ctx.fillStyle = '#888888';
+        ctx.fillStyle = CanvasCraftingPanel.SLOT_BORDER;
         ctx.beginPath();
         ctx.roundRect(r.x, r.y, r.w, r.h, radius);
         ctx.fill();
-        ctx.fillStyle = '#aaaaaa';
+        ctx.fillStyle = CanvasCraftingPanel.SLOT_BG;
         ctx.beginPath();
         ctx.roundRect(r.x + bw, r.y + bw, r.w - bw * 2, r.h - bw * 2, Math.max(0, radius - 2));
         ctx.fill();
