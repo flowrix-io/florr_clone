@@ -497,6 +497,9 @@ class InventoryManager {
             this.canvasCraftingPanel.onItemClick = (rarity, itemType, shiftKey) => {
                 this.handleCraftingItemClick(rarity, itemType, shiftKey);
             };
+            this.canvasCraftingPanel.onSlotClick = () => {
+                this.removeCraftingBatch();
+            };
             document.body.appendChild(this.craftingPanel);
         } // end crafting panel creation
         if (!craftingOnly) {

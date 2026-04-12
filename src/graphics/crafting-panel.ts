@@ -127,6 +127,7 @@ export class CanvasCraftingPanel {
     public onClose: (() => void) | null = null;
     public onCraft: (() => void) | null = null;
     public onItemClick: ((rarity: string, itemType: string, shiftKey: boolean) => void) | null = null;
+    public onSlotClick: (() => void) | null = null;
 
     constructor(game: GameAPI) {
         this.game = game;
@@ -922,8 +923,16 @@ export class CanvasCraftingPanel {
             return;
         }
 
-        // Crafting slots — right-click removes a batch (handled via contextmenu)
-        // Left-click on crafting area could be used for removing items too
+        // Crafting slots — click to remove a batch
+        if (this.animState === 'idle') {
+            for (const s of this.slotRects) {
+                if (this.pointInRect(x, y, s)) {
+                    e.preventDefault();
+                    if (this.onSlotClick) this.onSlotClick();
+                    return;
+                }
+            }
+        }
 
         // Inventory items
         const hit = this.hitTestInventory(e.clientX, e.clientY);

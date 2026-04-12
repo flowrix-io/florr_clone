@@ -14479,6 +14479,7 @@ class CanvasCraftingPanel {
         this.onClose = null;
         this.onCraft = null;
         this.onItemClick = null;
+        this.onSlotClick = null;
         this.handleMouseMove = (e) => {
             const { x, y } = this.toLocal(e);
             this.closeBtnHovered = this.pointInRect(x, y, this.closeBtnRect);
@@ -14513,8 +14514,17 @@ class CanvasCraftingPanel {
                     this.onCraft();
                 return;
             }
-            // Crafting slots — right-click removes a batch (handled via contextmenu)
-            // Left-click on crafting area could be used for removing items too
+            // Crafting slots — click to remove a batch
+            if (this.animState === 'idle') {
+                for (const s of this.slotRects) {
+                    if (this.pointInRect(x, y, s)) {
+                        e.preventDefault();
+                        if (this.onSlotClick)
+                            this.onSlotClick();
+                        return;
+                    }
+                }
+            }
             // Inventory items
             const hit = this.hitTestInventory(e.clientX, e.clientY);
             if (hit && this.onItemClick) {
@@ -15760,6 +15770,9 @@ class InventoryManager {
             this.canvasCraftingPanel.onCraft = () => this.craftItems();
             this.canvasCraftingPanel.onItemClick = (rarity, itemType, shiftKey) => {
                 this.handleCraftingItemClick(rarity, itemType, shiftKey);
+            };
+            this.canvasCraftingPanel.onSlotClick = () => {
+                this.removeCraftingBatch();
             };
             document.body.appendChild(this.craftingPanel);
         } // end crafting panel creation
