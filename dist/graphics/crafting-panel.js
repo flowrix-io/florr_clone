@@ -699,12 +699,21 @@ class CanvasCraftingPanel {
         const b = this.craftBtnRect;
         const radius = 6;
         const bw = 3;
+        // Use next rarity color when items are present
+        const currentRarity = this.craftingItems.length > 0
+            ? this.craftingItems[0].rarity
+            : (this.animCraftItem?.rarity || '');
+        const nextRarity = CanvasCraftingPanel.RARITY_UPGRADES[currentRarity] || '';
+        const nextColor = ITEM_RARITY_COLORS[nextRarity] || '';
+        const btnBg = nextColor || CanvasCraftingPanel.CRAFT_BTN_BG;
+        const btnBorder = nextColor ? darken(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
+        const btnHover = nextColor ? darken(nextColor, 10) : '#9a8a7a';
         ctx.save();
-        ctx.fillStyle = CanvasCraftingPanel.CRAFT_BTN_BORDER;
+        ctx.fillStyle = btnBorder;
         ctx.beginPath();
         ctx.roundRect(b.x, b.y, b.w, b.h, radius);
         ctx.fill();
-        ctx.fillStyle = this.craftBtnHovered ? '#9a8a7a' : CanvasCraftingPanel.CRAFT_BTN_BG;
+        ctx.fillStyle = this.craftBtnHovered ? btnHover : btnBg;
         ctx.beginPath();
         ctx.roundRect(b.x + bw, b.y + bw, b.w - bw * 2, b.h - bw * 2, Math.max(0, radius - 2));
         ctx.fill();
@@ -876,3 +885,13 @@ CanvasCraftingPanel.CLOSE_BG = '#dc7e92';
 CanvasCraftingPanel.CLOSE_BORDER = '#b56476';
 CanvasCraftingPanel.CRAFT_BTN_BG = '#8a7a6a';
 CanvasCraftingPanel.CRAFT_BTN_BORDER = '#6a5a4a';
+CanvasCraftingPanel.RARITY_UPGRADES = {
+    common: 'uncommon',
+    uncommon: 'rare',
+    rare: 'epic',
+    epic: 'legendary',
+    legendary: 'mythic',
+    mythic: 'ultra',
+    ultra: 'super',
+    super: 'unique',
+};

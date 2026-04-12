@@ -513,7 +513,7 @@
           "petal_sponge": 2
         },
         "super": {
-          "petal_dandelion": 1,
+          "petal_dandelion": 10000,
           "speed_boost": 2,
           "petal_rose": 2,
           "petal_leaf": 4,
@@ -1415,6 +1415,36 @@
       "type": "super_craft",
       "message": "A Leaf  has been crafted by @sussy [sussy]",
       "timestamp": 1771474701049
+    },
+    {
+      "id": "1776028172990-bfkn5pf4y",
+      "type": "unique_craft",
+      "message": "A Dandelion  has been crafted by @sussy [test]",
+      "timestamp": 1776028172990
+    },
+    {
+      "id": "1776028178964-415cetuff",
+      "type": "unique_craft",
+      "message": "A Dandelion  has been crafted by @sussy [test]",
+      "timestamp": 1776028178964
+    },
+    {
+      "id": "1776028184288-c1iy11j4j",
+      "type": "unique_craft",
+      "message": "A Dandelion  has been crafted by @sussy [test]",
+      "timestamp": 1776028184288
+    },
+    {
+      "id": "1776028189889-906ebah50",
+      "type": "unique_craft",
+      "message": "A Dandelion  has been crafted by @sussy [test]",
+      "timestamp": 1776028189889
+    },
+    {
+      "id": "1776028198018-lqw2vul8f",
+      "type": "unique_craft",
+      "message": "A Dandelion  has been crafted by @sussy [test]",
+      "timestamp": 1776028198018
     }
   ]
 }
