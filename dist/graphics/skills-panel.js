@@ -272,10 +272,14 @@ class CanvasSkillsPanel {
             let curY = 0;
             let curAngle = baseAngle;
             for (let t = 0; t < tierCount; t++) {
-                // Theodorus turn: atan(1/√(t+1)) — first step turns ~45°,
-                // subsequent steps turn progressively less.
-                if (t > 0) {
-                    curAngle += Math.atan2(1, Math.sqrt(t));
+                // First 3 tiers go straight out. After that, curvature ramps
+                // up gradually, then eases off on the very last tier.
+                if (t >= 3) {
+                    const curveIdx = t - 3; // 0, 1, 2, 3, 4, 5
+                    const maxTurn = Math.PI * 0.37;
+                    const ramp = Math.min(1, (curveIdx + 1) / 4); // 0.25, 0.5, 0.75, 1, 1, ...
+                    const ease = t === tierCount - 1 ? 1.5 : 1; // last tier turns less
+                    curAngle += maxTurn * ramp * ease;
                 }
                 curX += Math.cos(curAngle) * segLen;
                 curY += Math.sin(curAngle) * segLen;
