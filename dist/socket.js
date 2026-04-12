@@ -1001,27 +1001,26 @@ function setupSocketListeners(game) {
         const player = game.players.get(game.socket?.id || '');
         if (player) {
             player.inventory = data.inventory;
-            if (data.successCount > 0) {
-                // Show success display in crafting panel
-                if (game.inventoryManager.isCraftingOpen) {
-                    // Parse item type and petalType from itemKey
-                    const itemKey = data.newItem.type;
-                    let itemType = 'petal';
-                    let petalType;
-                    if (itemKey.startsWith('petal_')) {
-                        itemType = 'petal';
-                        petalType = itemKey.substring(6);
-                    }
-                    else {
-                        itemType = itemKey;
-                    }
-                    const displayItem = {
-                        type: itemType,
-                        rarity: data.newItem.rarity,
-                        petalType: petalType
-                    };
-                    game.inventoryManager.showCraftingSuccess(displayItem, data.successCount);
+            if (game.inventoryManager.isCraftingOpen) {
+                // Parse item type and petalType from itemKey
+                const itemKey = data.newItem.type;
+                let itemType = 'petal';
+                let petalType;
+                if (itemKey.startsWith('petal_')) {
+                    itemType = 'petal';
+                    petalType = itemKey.substring(6);
                 }
+                else {
+                    itemType = itemKey;
+                }
+                const displayItem = {
+                    type: itemType,
+                    rarity: data.newItem.rarity,
+                    petalType: petalType
+                };
+                game.inventoryManager.showCraftingSuccess(displayItem, data.successCount, data.petalsReturned || 0);
+            }
+            if (data.successCount > 0) {
                 game.showFloatingText(game.canvas.width / 2, 50, `Successfully crafted ${data.successCount}x ${data.newItem.rarity} ${data.newItem.type}!`, game.ITEM_RARITY_COLORS[data.newItem.rarity || 'common'], 24);
             }
             if (data.failCount > 0) {

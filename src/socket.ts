@@ -1170,36 +1170,35 @@ function setupSocketListeners(game: any) {
         game.showSaveIndicator();
     });
 
-    game.socket.on('craftingFinished', (data: { successCount: number, failCount: number, newItem: Item, inventory: any }) => {
+    game.socket.on('craftingFinished', (data: { successCount: number, failCount: number, newItem: Item, inventory: any, petalsReturned?: number }) => {
         console.log('[CLIENT] craftingFinished received:', data);
         const player = game.players.get(game.socket?.id || '');
         if (player) {
             player.inventory = data.inventory;
 
-            if (data.successCount > 0) {
-                // Show success display in crafting panel
-                if (game.inventoryManager.isCraftingOpen) {
-                    // Parse item type and petalType from itemKey
-                    const itemKey = data.newItem.type;
-                    let itemType: Item['type'] = 'petal';
-                    let petalType: string | undefined;
-                    
-                    if (itemKey.startsWith('petal_')) {
-                        itemType = 'petal';
-                        petalType = itemKey.substring(6);
-                    } else {
-                        itemType = itemKey as Item['type'];
-                    }
-                    
-                    const displayItem: Item = {
-                        type: itemType,
-                        rarity: data.newItem.rarity,
-                        petalType: petalType
-                    };
-                    
-                    game.inventoryManager.showCraftingSuccess(displayItem, data.successCount);
+            if (game.inventoryManager.isCraftingOpen) {
+                // Parse item type and petalType from itemKey
+                const itemKey = data.newItem.type;
+                let itemType: Item['type'] = 'petal';
+                let petalType: string | undefined;
+
+                if (itemKey.startsWith('petal_')) {
+                    itemType = 'petal';
+                    petalType = itemKey.substring(6);
+                } else {
+                    itemType = itemKey as Item['type'];
                 }
-                
+
+                const displayItem: Item = {
+                    type: itemType,
+                    rarity: data.newItem.rarity,
+                    petalType: petalType
+                };
+
+                game.inventoryManager.showCraftingSuccess(displayItem, data.successCount, data.petalsReturned || 0);
+            }
+
+            if (data.successCount > 0) {
                 game.showFloatingText(
                     game.canvas.width / 2,
                     50,

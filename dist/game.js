@@ -691,6 +691,11 @@ class Game {
             console.log('[Game] Received authentication response:', response);
             if (response.success) {
                 console.log('[Game] Authentication successful');
+                // Mark socket as authenticated on the client side
+                const username = localStorage.getItem('username');
+                if (username) {
+                    this.socket.username = username;
+                }
                 if (response.player) {
                     if (this.socket.id) {
                         // Update player data with saved progress

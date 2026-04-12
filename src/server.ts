@@ -2648,11 +2648,23 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             }
 
             let successfulCrafts = 0;
+            let totalLost = 0;
             const numBatches = data.items.length / 5;
             for (let i = 0; i < numBatches; i++) {
                 if (Math.random() * 100 < successChance) {
                     successfulCrafts++;
+                    totalLost += 5; // All 5 consumed on success
+                } else {
+                    // On failure, lose 1-4 petals (return 1-4 back)
+                    const lost = 1 + Math.floor(Math.random() * 4); // 1 to 4
+                    totalLost += lost;
                 }
+            }
+
+            // Return the petals that weren't lost
+            const toReturn = data.items.length - totalLost;
+            if (toReturn > 0) {
+                addItem(player.inventory, rarity, itemKey, toReturn);
             }
 
             if (successfulCrafts > 0) {
@@ -2700,7 +2712,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 successCount: successfulCrafts,
                 failCount: numBatches - successfulCrafts,
                 newItem: successfulCrafts > 0 ? { type: itemKey, rarity: newRarity } : { type: itemKey, rarity: rarity },
-                inventory: player.inventory
+                inventory: player.inventory,
+                petalsReturned: data.items.length - totalLost
             });
             
             console.log('[CRAFT] craftingFinished event emitted');

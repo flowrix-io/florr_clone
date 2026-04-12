@@ -7,6 +7,7 @@ import { Game } from './game';
 import { getAllMobTypes, getMobStats, getMobRarities, MOB_DROP_TABLES, Rarity } from './mobs';
 import { inventoryToDict, addItem as codecAddItem, removeItem as codecRemoveItem, getItemCount as codecGetItemCount } from './inventoryCodec';
 import { CanvasInventoryPanel, InventoryHitInfo } from './graphics/inventory-panel';
+import { CanvasCraftingPanel, CraftingItem } from './graphics/crafting-panel';
 
 interface CraftingSlot {
     index: number;
@@ -39,6 +40,7 @@ export class InventoryManager {
     private renderedRarityRows: Map<string, { row: HTMLElement; grid: HTMLElement }> = new Map();
     private inventoryGridContainer: HTMLElement | null = null;
     private canvasInventoryPanel: CanvasInventoryPanel | null = null;
+    private canvasCraftingPanel: CanvasCraftingPanel | null = null;
     private canvasHoverPetal: { petalType: string; rarity: string; rect: InventoryHitInfo['rect'] } | null = null;
     // Cache petal canvas → data URL conversions to avoid expensive toDataURL() on every render
     private petalDataUrlCache: Map<string, string> = new Map();
@@ -559,77 +561,20 @@ export class InventoryManager {
         } // end !mobGalleryOnly && !craftingOnly
 
         if (!mobGalleryOnly || craftingOnly) {
-        // Create crafting panel
+        // Create crafting panel (canvas-based)
         this.craftingPanel = document.createElement('div');
         this.craftingPanel.id = 'craftingPanel';
         this.craftingPanel.className = 'crafting-panel';
         this.craftingPanel.style.display = 'none';
 
-        const craftingContent = document.createElement('div');
-        craftingContent.className = 'crafting-content';
+        this.canvasCraftingPanel = new CanvasCraftingPanel(this.game as any);
+        this.canvasCraftingPanel.attachTo(this.craftingPanel);
+        this.canvasCraftingPanel.onClose = () => this.closeCrafting();
+        this.canvasCraftingPanel.onCraft = () => this.craftItems();
+        this.canvasCraftingPanel.onItemClick = (rarity, itemType, shiftKey) => {
+            this.handleCraftingItemClick(rarity, itemType, shiftKey);
+        };
 
-        const title = document.createElement('h2');
-        title.textContent = 'Crafting';
-        craftingContent.appendChild(title);
-
-        const craftingMain = document.createElement('div');
-        craftingMain.className = 'crafting-main';
-        craftingMain.style.flex = '0 0 50%';
-
-        const craftingCircleContainer = document.createElement('div');
-        craftingCircleContainer.className = 'crafting-circle-container';
-
-        for (let i = 0; i < 5; i++) {
-            const slot = document.createElement('div');
-            slot.className = 'crafting-slot';
-            slot.dataset.index = i.toString();
-            craftingCircleContainer.appendChild(slot);
-        }
-
-        const multiplierText = document.createElement('div');
-        multiplierText.className = 'crafting-multiplier';
-        craftingCircleContainer.appendChild(multiplierText);
-
-        // Success display in the center
-        const successDisplay = document.createElement('div');
-        successDisplay.className = 'crafting-success-display';
-        successDisplay.style.display = 'none';
-        craftingCircleContainer.appendChild(successDisplay);
-
-        craftingMain.appendChild(craftingCircleContainer);
-
-        const craftingActions = document.createElement('div');
-        craftingActions.className = 'crafting-actions';
-
-        const craftButton = document.createElement('button');
-        craftButton.className = 'craft-button';
-        craftButton.textContent = 'Craft';
-        craftButton.addEventListener('click', () => this.craftItems());
-        craftingActions.appendChild(craftButton);
-
-        const successChance = document.createElement('div');
-        successChance.className = 'success-chance';
-        successChance.textContent = 'Success Chance: 0%';
-        craftingActions.appendChild(successChance);
-
-        craftingMain.appendChild(craftingActions);
-        craftingContent.appendChild(craftingMain);
-
-        // Create inventory preview section
-        const inventoryPreview = document.createElement('div');
-        inventoryPreview.className = 'crafting-inventory-preview';
-
-        const previewTitle = document.createElement('h3');
-        previewTitle.textContent = 'Inventory';
-        inventoryPreview.appendChild(previewTitle);
-
-        const inventoryGrid = document.createElement('div');
-        inventoryGrid.className = 'crafting-inventory-grid';
-        inventoryPreview.appendChild(inventoryGrid);
-
-        craftingContent.appendChild(inventoryPreview);
-
-        this.craftingPanel.appendChild(craftingContent);
         document.body.appendChild(this.craftingPanel);
         } // end crafting panel creation
 
@@ -683,109 +628,9 @@ export class InventoryManager {
         document.body.appendChild(this.mobGalleryPanel);
         } // end !craftingOnly
 
-        // Add click handler to clear success display when clicking on crafting slots
-        // (with minimum display time enforced in clearCraftingSuccessDisplay)
-        this.craftingPanel?.addEventListener('click', (e) => {
-            // Clear success display when clicking on crafting slots or circle container
-            const target = e.target as HTMLElement;
-            if (target.closest('.crafting-slot') || target.closest('.crafting-circle-container')) {
-                this.clearCraftingSuccessDisplay();
-            }
-        });
-
         // Add styles
         const style = document.createElement('style');
         style.textContent = `
-            .crafting-main {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 15px;
-                margin-bottom: 15px;
-                max-height: none;
-            }
-            .crafting-circle-container {
-                position: relative;
-                width: 180px;
-                height: 180px;
-                flex-shrink: 0;
-            }
-            .crafting-slot {
-                width: 40px;
-                height: 40px;
-                position: absolute;
-                cursor: pointer !important;
-                user-select: none;
-            }
-            .crafting-multiplier {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                font-size: 24px;
-                font-weight: bold;
-                color: white;
-                text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-                display: none;
-            }
-            .crafting-success-display {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                width: 80px;
-                height: 80px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                z-index: 10;
-                pointer-events: none;
-            }
-            .crafting-success-display .success-item {
-                width: 60px;
-                height: 60px;
-                border: 3px solid;
-                border-radius: 8px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background: rgba(0, 0, 0, 0.9);
-                position: relative;
-            }
-            .crafting-success-display .success-item img {
-                width: 90%;
-                height: 90%;
-                object-fit: contain;
-            }
-            .crafting-success-display .success-count {
-                position: absolute;
-                bottom: -25px;
-                font-size: 18px;
-                font-weight: bold;
-                color: white;
-                text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-            }
-            .crafting-actions {
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-                flex-shrink: 0;
-            }
-            .crafting-inventory-preview {
-                margin-top: 15px;
-                border-top: 2px solid #444;
-                padding-top: 10px;
-                flex: 1 1 auto;
-                overflow-y: auto;
-            }
-            .crafting-slot {
-                cursor: pointer !important;
-                user-select: none;
-            }
-            .crafting-slot img {
-                pointer-events: none;
-            }
             .loadout-slot.on-cooldown {
                 position: relative;
                 overflow: hidden;
@@ -947,6 +792,7 @@ export class InventoryManager {
         this.craftingPanel.classList.remove('open');
         this.showChat();
         this.clearCraftingSuccessDisplay();
+        this.canvasCraftingPanel?.stop();
         setTimeout(() => {
             if (this.craftingPanel) {
                 this.craftingPanel.style.display = 'none';
@@ -1005,12 +851,14 @@ export class InventoryManager {
             setTimeout(() => {
                 this.craftingPanel?.classList.add('open');
             }, 10);
+            this.canvasCraftingPanel?.start();
             this.updateCraftingDisplay();
         } else {
             this.craftingPanel.classList.remove('open');
             this.showChat();
             // Clear success display when closing
             this.clearCraftingSuccessDisplay();
+            this.canvasCraftingPanel?.stop();
             setTimeout(() => {
                 if (this.craftingPanel) {
                     this.craftingPanel.style.display = 'none';
@@ -2340,11 +2188,10 @@ export class InventoryManager {
             }
         });
 
-        const craftingSlots = this.craftingPanel?.querySelectorAll('.crafting-slot');
-        craftingSlots?.forEach(slot => {
-            slot.addEventListener('click', () => {
-                this.removeCraftingBatch();
-            });
+        // Right-click on the crafting canvas removes a batch of 5
+        this.craftingPanel?.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.removeCraftingBatch();
         });
     }
 
@@ -2864,6 +2711,9 @@ export class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player) return;
 
+        // Don't allow crafting while animation is playing
+        if (this.canvasCraftingPanel?.isAnimating()) return;
+
         const itemsToCraftCount = this.craftingItems.length;
 
         if (itemsToCraftCount < 5 || itemsToCraftCount % 5 !== 0) {
@@ -2878,8 +2728,17 @@ export class InventoryManager {
         }
 
         console.log('[CLIENT] Sending craftItems request:', { itemCount: this.craftingItems.length });
-        // Clear any previous success display when starting new craft
-        this.clearCraftingSuccessDisplay();
+
+        // Start the spin animation with the first item info
+        const firstItem = this.craftingItems[0];
+        const animItem: CraftingItem = {
+            type: firstItem.type,
+            rarity: firstItem.rarity || 'common',
+            petalType: firstItem.petalType,
+        };
+        this.canvasCraftingPanel?.startCraftAnimation(animItem);
+
+        // Send to server
         this.game.getSocket()?.emit('craftItems', { items: this.craftingItems });
 
         this.craftingItems = [];
@@ -2887,200 +2746,64 @@ export class InventoryManager {
     }
 
     public updateCraftingDisplay() {
-        if (!this.craftingPanel) return;
+        if (!this.canvasCraftingPanel) return;
 
         const player = this.game.getLocalPlayer();
         if (!player) return;
 
         // Clear success display when updating (e.g., when items change)
-        // Only clear if there are no items in crafting (user cleared the slots)
         if (this.craftingItems.length === 0) {
             this.clearCraftingSuccessDisplay();
         }
 
-        const slots = this.craftingPanel.querySelectorAll('.crafting-slot');
-        const container = this.craftingPanel.querySelector('.crafting-circle-container') as HTMLElement;
-        const multiplierEl = this.craftingPanel.querySelector('.crafting-multiplier') as HTMLElement;
-        const radius = 70; 
-        const containerSize = 180;
-
-        if (this.craftingItems.length > 0) {
-            const firstItem = this.craftingItems[0];
-            const attempts = this.craftingItems.length / 5;
-            multiplierEl.textContent = `x${attempts}`;
-            multiplierEl.style.display = 'block';
-
-            slots.forEach((slot, index) => {
-                if (container) {
-                    const angle = (index / slots.length) * 2 * Math.PI;
-                    const x = (containerSize / 2) + radius * Math.cos(angle) - 20;
-                    const y = (containerSize / 2) + radius * Math.sin(angle) - 20;
-                    (slot as HTMLElement).style.left = `${x}px`;
-                    (slot as HTMLElement).style.top = `${y}px`;
-                }
-    
-                slot.innerHTML = '';
-                (slot as HTMLElement).style.borderColor = this.ITEM_RARITY_COLORS[firstItem.rarity!]!;
-
-                if (firstItem.type === 'petal' && firstItem.petalType && firstItem.rarity) {
-                    const stats = getPetalStats(firstItem.petalType, firstItem.rarity);
-                    if (stats && stats.image) {
-                        const img = document.createElement('img');
-                        img.style.width = '100%';
-                        img.style.height = '100%';
-                        img.style.objectFit = 'contain';
-                        const petalCanvas = this.game.getPetalCanvas?.(firstItem.petalType, firstItem.rarity, Date.now());
-                        if (petalCanvas) {
-                            img.src = petalCanvas.toDataURL('image/png');
-                        } else {
-                            // Fallback to SVG blob URL
-                            const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                            img.src = URL.createObjectURL(svgBlob);
-                        }
-                        slot.appendChild(img);
-                    }
-                } else {
-                    const img = document.createElement('img');
-                    // Use cached data URL if available, otherwise fallback to direct path
-                    const dataUrl = this.game.getItemSpriteDataUrl?.(firstItem.type);
-                    if (dataUrl) {
-                        img.src = dataUrl; // Use cached data URL (in-memory)
-                    } else {
-                        img.src = `./assets/${firstItem.type}.png`; // Fallback
-                    }
-                    img.alt = firstItem.type;
-                    img.style.width = '80%';
-                    img.style.height = '80%';
-                    img.style.objectFit = 'contain';
-                    slot.appendChild(img);
-                }
-            });
-        } else {
-            multiplierEl.style.display = 'none';
-            slots.forEach((slot, index) => {
-                if (container) {
-                    const angle = (index / slots.length) * 2 * Math.PI;
-                    const x = (containerSize / 2) + radius * Math.cos(angle) - 20;
-                    const y = (containerSize / 2) + radius * Math.sin(angle) - 20;
-                    (slot as HTMLElement).style.left = `${x}px`;
-                    (slot as HTMLElement).style.top = `${y}px`;
-                }
-                slot.innerHTML = '';
-                (slot as HTMLElement).style.borderColor = '#666';
-            });
-        }
-
-        // Calculate and update success chance
-        const successChance = this.calculateSuccessChance();
-        const successElement = this.craftingPanel.querySelector('.success-chance');
-        if (successElement) {
-            successElement.textContent = `Success Chance: ${successChance}%`;
-        }
-
-        // Update inventory preview
-        this.updateCraftingInventoryPreview();
+        // Convert craftingItems to CraftingItem[] for the canvas panel
+        const craftingItemsForCanvas: CraftingItem[] = this.craftingItems.map(item => ({
+            type: item.type,
+            rarity: item.rarity || 'common',
+            petalType: item.petalType,
+        }));
+        this.canvasCraftingPanel.setCraftingItems(craftingItemsForCanvas);
+        this.canvasCraftingPanel.setSuccessChance(this.calculateSuccessChance());
     }
 
-    public showCraftingSuccess(newItem: Item, successCount: number) {
-        console.log('[INVENTORY] showCraftingSuccess called:', { newItem, successCount });
-        if (!this.craftingPanel) {
+    public showCraftingSuccess(newItem: Item, successCount: number, petalsReturned: number = 0) {
+        console.log('[INVENTORY] showCraftingSuccess called:', { newItem, successCount, petalsReturned });
+        if (!this.canvasCraftingPanel) {
             console.log('[INVENTORY] No crafting panel found');
             return;
         }
 
-        const successDisplay = this.craftingPanel.querySelector('.crafting-success-display') as HTMLElement;
-        if (!successDisplay) {
-            console.log('[INVENTORY] No success display element found');
-            return;
-        }
-
-        // Clear previous content
-        successDisplay.innerHTML = '';
-        successDisplay.style.display = 'flex';
-        
-        // Record when the success display was shown
         this.successDisplayShownAt = Date.now();
 
-        // Create item container
-        const itemContainer = document.createElement('div');
-        itemContainer.className = 'success-item';
-        
-        // Set border and background color based on rarity
         const rarity = newItem.rarity || 'common';
-        const rarityColor = this.ITEM_RARITY_COLORS[rarity] || '#7eef6d';
-        itemContainer.style.borderColor = rarityColor;
-        // Set solid background with rarity color (more opaque for visibility)
-        const bgColor = this.hexToRgba(rarityColor, 0.7);
-        itemContainer.style.backgroundColor = bgColor;
-
-        // Create item image
-        const img = document.createElement('img');
-        img.style.width = '90%';
-        img.style.height = '90%';
-        img.style.objectFit = 'contain';
-        
-        if (newItem.type === 'petal' && newItem.petalType && rarity) {
-            const petalCanvas = this.game.getPetalCanvas?.(newItem.petalType, rarity, Date.now());
-            if (petalCanvas) {
-                img.src = petalCanvas.toDataURL('image/png');
-            } else {
-                // Fallback to SVG blob URL
-                const stats = getPetalStats(newItem.petalType, rarity);
-                if (stats && stats.image) {
-                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                    img.src = URL.createObjectURL(svgBlob);
-                }
-            }
+        if (successCount > 0) {
+            this.canvasCraftingPanel.showCraftResult(true, {
+                type: newItem.type,
+                rarity,
+                petalType: newItem.petalType,
+                count: successCount,
+            }, petalsReturned);
         } else {
-            const dataUrl = this.game.getItemSpriteDataUrl?.(newItem.type);
-            if (dataUrl) {
-                img.src = dataUrl;
-                console.log('[INVENTORY] Using item sprite data URL for:', newItem.type);
-            } else {
-                img.src = `./assets/${newItem.type}.png`;
-                console.log('[INVENTORY] Using fallback image path for:', newItem.type);
-            }
+            // All batches failed
+            this.canvasCraftingPanel.showCraftResult(false, null, petalsReturned);
         }
-        
-        // Handle image load errors
-        img.onerror = () => {
-            console.error('[INVENTORY] Failed to load image for:', newItem);
-            // Still show the container even if image fails
-        };
-        
-        itemContainer.appendChild(img);
-        successDisplay.appendChild(itemContainer);
-
-        // Create success count text
-        const countText = document.createElement('div');
-        countText.className = 'success-count';
-        countText.textContent = `x${successCount}`;
-        countText.style.color = this.ITEM_RARITY_COLORS[rarity] || '#7eef6d';
-        successDisplay.appendChild(countText);
-        
-        console.log('[INVENTORY] Success display created and shown');
     }
 
     public clearCraftingSuccessDisplay() {
-        if (!this.craftingPanel) return;
-        
+        if (!this.canvasCraftingPanel) return;
+
         // Don't clear if it hasn't been shown for at least 0.5 seconds
         const now = Date.now();
         if (this.successDisplayShownAt > 0 && (now - this.successDisplayShownAt) < 500) {
-            // Schedule to clear after the minimum display time
             const remainingTime = 500 - (now - this.successDisplayShownAt);
             setTimeout(() => {
                 this.clearCraftingSuccessDisplay();
             }, remainingTime);
             return;
         }
-        
-        const successDisplay = this.craftingPanel.querySelector('.crafting-success-display') as HTMLElement;
-        if (successDisplay) {
-            successDisplay.style.display = 'none';
-            successDisplay.innerHTML = '';
-            this.successDisplayShownAt = 0; // Reset timestamp
-        }
+
+        this.canvasCraftingPanel.setSuccessResult(null);
+        this.successDisplayShownAt = 0;
     }
 
     private calculateSuccessChance(): number {
@@ -3130,145 +2853,9 @@ export class InventoryManager {
         return totalPetals;
     }
 
-    private updateCraftingInventoryPreview() {
-        const inventoryGrid = this.craftingPanel?.querySelector('.crafting-inventory-grid');
-        if (!inventoryGrid) return;
-
-        const player = this.game.getLocalPlayer();
-        if (!player) return;
-
-        inventoryGrid.innerHTML = '';
-
-        const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
-        const craftDict = inventoryToDict(player.inventory);
-        rarities.forEach(rarity => {
-            const rarityItems = craftDict[rarity];
-            if (rarityItems) {
-                Object.entries(rarityItems).forEach(([itemType, count]) => {
-                    if (count > 0) {
-                        const itemElement = document.createElement('div');
-                        itemElement.className = 'crafting-inventory-item';
-                        itemElement.dataset.rarity = rarity;
-                        itemElement.dataset.type = itemType;
-                        itemElement.dataset.count = count.toString();
-
-                        // Set background and border colors based on rarity
-                        const rarityColor = this.ITEM_RARITY_COLORS[rarity];
-                        const darkenedColor = this.darkenColor(rarityColor);
-                        if (rarityColor) {
-                            itemElement.style.backgroundColor = rarityColor;
-                            itemElement.style.border = `3px solid ${darkenedColor}`;
-                        }
-
-                        // Create container for item display
-                        const itemContainer = document.createElement('div');
-                        itemContainer.style.position = 'relative';
-                        itemContainer.style.width = '100%';
-                        itemContainer.style.height = '100%';
-                        itemContainer.style.display = 'flex';
-                        itemContainer.style.flexDirection = 'column';
-                        itemContainer.style.alignItems = 'center';
-                        itemContainer.style.justifyContent = 'center';
-
-                        // Handle different item types
-                        if (itemType.includes('petal_')) {
-                            // Create petal visual using SVG image
-                            const petalDiv = document.createElement('div');
-                            petalDiv.style.width = '60%';
-                            petalDiv.style.height = '60%';
-                            petalDiv.style.display = 'flex';
-                            petalDiv.style.alignItems = 'center';
-                            petalDiv.style.justifyContent = 'center';
-                            
-                            // Get petal SVG from stats
-                            const stats = getPetalStats(itemType.replace('petal_', ''), rarity);
-                            
-                            if (stats && stats.image) {
-                                // Create an image element with the SVG data
-                                const img = document.createElement('img');
-                                img.style.width = '100%';
-                                img.style.height = '100%';
-                                img.style.objectFit = 'contain';
-                                
-                                const petalType = itemType.replace('petal_', '');
-                                const petalCanvas = this.game.getPetalCanvas?.(petalType, rarity, Date.now());
-                                if (petalCanvas) {
-                                    img.src = petalCanvas.toDataURL('image/png');
-                                } else {
-                                    // Fallback to SVG blob URL
-                                    const svgBlob = new Blob([stats.image], { type: 'image/svg+xml' });
-                                    img.src = URL.createObjectURL(svgBlob);
-                                }
-                                
-                                petalDiv.appendChild(img);
-                            } else {
-                                // Fallback to colored circle
-                                petalDiv.style.borderRadius = '50%';
-                                petalDiv.style.border = '2px solid #000';
-                                petalDiv.style.backgroundColor = '#90EE90'; // Default green
-                            }
-                            
-                            itemContainer.appendChild(petalDiv);
-                        } else {
-                            // Handle other item types with PNG images
-                            const img = document.createElement('img');
-                            // Use cached data URL if available, otherwise fallback to direct path
-                            const dataUrl = this.game.getItemSpriteDataUrl?.(itemType);
-                            if (dataUrl) {
-                                img.src = dataUrl; // Use cached data URL (in-memory)
-                            } else {
-                                img.src = `./assets/${itemType}.png`; // Fallback
-                            }
-                            img.alt = itemType;
-                            img.style.width = '60%';
-                            img.style.height = '60%';
-                            img.style.objectFit = 'contain';
-                            itemContainer.appendChild(img);
-                        }
-
-                        // Add count display
-                        const countDisplay = document.createElement('div');
-                        countDisplay.style.position = 'absolute';
-                        countDisplay.style.top = '2px';
-                        countDisplay.style.right = '2px';
-                        countDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-                        countDisplay.style.color = 'white';
-                        countDisplay.style.fontSize = '10px';
-                        countDisplay.style.padding = '1px 3px';
-                        countDisplay.style.borderRadius = '3px';
-                        countDisplay.style.fontWeight = 'bold';
-                        countDisplay.textContent = count.toString();
-                        itemContainer.appendChild(countDisplay);
-
-                        // Add rarity indicator
-                        const rarityDisplay = document.createElement('div');
-                        rarityDisplay.style.position = 'absolute';
-                        rarityDisplay.style.bottom = '2px';
-                        rarityDisplay.style.left = '2px';
-                        rarityDisplay.style.backgroundColor = this.ITEM_RARITY_COLORS[rarity] || '#666';
-                        rarityDisplay.style.color = 'white';
-                        rarityDisplay.style.fontSize = '8px';
-                        rarityDisplay.style.padding = '1px 2px';
-                        rarityDisplay.style.borderRadius = '2px';
-                        rarityDisplay.style.fontWeight = 'bold';
-                        rarityDisplay.textContent = rarity.charAt(0).toUpperCase();
-                        itemContainer.appendChild(rarityDisplay);
-
-                        itemElement.appendChild(itemContainer);
-
-                        itemElement.addEventListener('click', (e) => {
-                            this.handleCraftingItemClick(rarity, itemType, e.shiftKey);
-                        });
-
-                        inventoryGrid.appendChild(itemElement);
-                    }
-                });
-            }
-        });
-    }
-
     public cleanup() {
         this.inventoryPanel?.remove();
+        this.canvasCraftingPanel?.destroy();
         this.craftingPanel?.remove();
         this.mobGalleryPanel?.remove();
         this.dragCanvas?.remove();

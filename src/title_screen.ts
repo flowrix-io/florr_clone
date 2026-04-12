@@ -4148,7 +4148,7 @@ class TitleScreenInventoryManager {
         if (!this.socket) return;
 
         // Listen for crafting finished event
-        this.socket.on('craftingFinished', (data: { successCount: number; failCount: number; newItem: { type: string; rarity: string }; inventory: any }) => {
+        this.socket.on('craftingFinished', (data: { successCount: number; failCount: number; newItem: { type: string; rarity: string }; inventory: any; petalsReturned?: number }) => {
             console.log('[TitleScreen] craftingFinished received:', data);
 
             // Update inventory
@@ -4157,26 +4157,24 @@ class TitleScreenInventoryManager {
                 this.gameAdapter.setPlayerData(this.playerData);
             }
 
-            if (data.successCount > 0) {
-                const itemKey = data.newItem.type;
-                let itemType: Item['type'] = 'petal';
-                let petalType: string | undefined;
+            const itemKey = data.newItem.type;
+            let itemType: Item['type'] = 'petal';
+            let petalType: string | undefined;
 
-                if (itemKey.startsWith('petal_')) {
-                    itemType = 'petal';
-                    petalType = itemKey.substring(6);
-                } else {
-                    itemType = itemKey as Item['type'];
-                }
-
-                const displayItem: Item = {
-                    type: itemType,
-                    rarity: data.newItem.rarity as Item['rarity'],
-                    petalType: petalType
-                };
-
-                this.craftingInventoryManager.showCraftingSuccess(displayItem, data.successCount);
+            if (itemKey.startsWith('petal_')) {
+                itemType = 'petal';
+                petalType = itemKey.substring(6);
+            } else {
+                itemType = itemKey as Item['type'];
             }
+
+            const displayItem: Item = {
+                type: itemType,
+                rarity: data.newItem.rarity as Item['rarity'],
+                petalType: petalType
+            };
+
+            this.craftingInventoryManager.showCraftingSuccess(displayItem, data.successCount, data.petalsReturned || 0);
 
             if (data.failCount > 0) {
                 console.log(`[TitleScreen] Failed to craft ${data.failCount}x. Items were lost.`);

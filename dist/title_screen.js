@@ -3836,24 +3836,22 @@ class TitleScreenInventoryManager {
                 this.playerData.inventory = data.inventory;
                 this.gameAdapter.setPlayerData(this.playerData);
             }
-            if (data.successCount > 0) {
-                const itemKey = data.newItem.type;
-                let itemType = 'petal';
-                let petalType;
-                if (itemKey.startsWith('petal_')) {
-                    itemType = 'petal';
-                    petalType = itemKey.substring(6);
-                }
-                else {
-                    itemType = itemKey;
-                }
-                const displayItem = {
-                    type: itemType,
-                    rarity: data.newItem.rarity,
-                    petalType: petalType
-                };
-                this.craftingInventoryManager.showCraftingSuccess(displayItem, data.successCount);
+            const itemKey = data.newItem.type;
+            let itemType = 'petal';
+            let petalType;
+            if (itemKey.startsWith('petal_')) {
+                itemType = 'petal';
+                petalType = itemKey.substring(6);
             }
+            else {
+                itemType = itemKey;
+            }
+            const displayItem = {
+                type: itemType,
+                rarity: data.newItem.rarity,
+                petalType: petalType
+            };
+            this.craftingInventoryManager.showCraftingSuccess(displayItem, data.successCount, data.petalsReturned || 0);
             if (data.failCount > 0) {
                 console.log(`[TitleScreen] Failed to craft ${data.failCount}x. Items were lost.`);
             }
