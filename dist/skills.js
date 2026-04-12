@@ -40,7 +40,7 @@ class SkillsManager {
             position: fixed;
             top: 33.33vh;
             left: 100px;
-            width: 450px;
+            width: 600px;
             height: 66.67vh;
             transform: translateY(100vh);
             transition: transform 0.3s ease-out;

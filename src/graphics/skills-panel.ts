@@ -281,8 +281,8 @@ export class CanvasSkillsPanel {
         const branchCount = mainSkills.length;
         const fullTierCount = RARITY_LEVELS.length;   // 9
 
-        const nodeRadius = 22;
-        const radiusStep = 65;
+        const nodeRadius = 30;
+        const radiusStep = 80;
 
         const arcSpan = Math.PI * 2;
         const angleStep = arcSpan / branchCount;
@@ -737,11 +737,11 @@ export class CanvasSkillsPanel {
             ctx.save();
             ctx.fillStyle = '#000000';
             ctx.beginPath();
-            ctx.arc(cx, cy, 41, 0, Math.PI * 2);
+            ctx.arc(cx, cy, 53, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = '#ffe763';
             ctx.beginPath();
-            ctx.arc(cx, cy, 38, 0, Math.PI * 2);
+            ctx.arc(cx, cy, 50, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
             return;
@@ -757,7 +757,7 @@ export class CanvasSkillsPanel {
         graphics.ctx = ctx;
         try {
             graphics.drawFlower({
-                radius: 38,
+                radius: 50,
                 color: player?.color ?? '#FFE763',
                 faceFlags: 0,
                 equipFlags: 0,
