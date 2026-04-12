@@ -548,7 +548,7 @@ class InventoryManager {
         `;
             const stackCheckbox = document.createElement('input');
             stackCheckbox.type = 'checkbox';
-            stackCheckbox.checked = true;
+            stackCheckbox.checked = false;
             stackCheckbox.style.cssText = `
             width: 18px;
             height: 18px;

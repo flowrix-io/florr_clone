@@ -4705,7 +4705,7 @@ class TitleScreenInventoryManager {
             stackLabel.className = 'inventory-stack-toggle';
             const stackCheckbox = document.createElement('input');
             stackCheckbox.type = 'checkbox';
-            stackCheckbox.checked = true;
+            stackCheckbox.checked = false;
             const stackText = document.createElement('span');
             stackText.textContent = 'Stack';
             stackLabel.appendChild(stackCheckbox);

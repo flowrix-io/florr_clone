@@ -78,7 +78,7 @@ export class CanvasInventoryPanel {
      *  - false ("unstacked"): one slot per unique (rarity, type) pair, each
      *    with its own count badge — items still appear under every rarity
      *    section in which the player owns them. */
-    private stackMode: boolean = true;
+    private stackMode: boolean = false;
     /** Substring filter (lowercased) applied to formatted petal/item names. */
     private searchFilter: string = '';
 
