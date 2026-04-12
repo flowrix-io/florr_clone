@@ -205,6 +205,56 @@ function validatePlayerPositions(io) {
         }
     }
 }
+/** Second Chance invulnerability durations per tier (seconds). */
+const SECOND_CHANCE_DURATIONS = {
+    common: 0.3,
+    uncommon: 1.5,
+};
+/** Second Chance cooldown per tier (seconds). */
+const SECOND_CHANCE_COOLDOWNS = {
+    common: 60,
+    uncommon: 30,
+};
+/**
+ * Check if Second Chance should activate after taking damage. If the player
+ * has the secondChance skill, it's off cooldown, and health has dropped to 0
+ * or below, set health to 1 and grant invulnerability.
+ * Returns true if second chance was triggered.
+ */
+function trySecondChance(player, io) {
+    if (player.health > 0)
+        return false;
+    const tier = player.skills?.secondChance;
+    if (!tier)
+        return false;
+    const duration = SECOND_CHANCE_DURATIONS[tier];
+    if (!duration)
+        return false;
+    // Check cooldown
+    const now = Date.now();
+    if (player.secondChanceCooldownUntil && now < player.secondChanceCooldownUntil)
+        return false;
+    player.health = 1;
+    player.isInvulnerable = true;
+    // Set cooldown
+    const cooldownSec = SECOND_CHANCE_COOLDOWNS[tier] ?? 60;
+    player.secondChanceCooldownUntil = now + cooldownSec * 1000;
+    // Grant invulnerability for the skill's duration
+    const durationMs = duration * 1000;
+    setTimeout(() => {
+        if (constants_1.players[player.id]) {
+            constants_1.players[player.id].isInvulnerable = false;
+            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+        }
+    }, durationMs);
+    io.emit('playerDamaged', {
+        playerId: player.id,
+        health: player.health,
+        maxHealth: player.maxHealth,
+        isInvulnerable: true,
+    });
+    return true;
+}
 /**
  * Update player state (movement, collisions, etc.)
  * This is the main function that handles all player state updates
@@ -319,7 +369,7 @@ function updatePlayerState(player, deltaTime, deps) {
         const collisionInfo = (0, physics_1.checkPlayerEnemyCollision)(newX, newY, constants_1.PLAYER_SIZE, enemy);
         if (collisionInfo.collided) {
             collision = true;
-            // Don't damage dead players (corpses)
+            // Don't interact with dead players (corpses)
             if (!player.isDead) {
                 // Calculate knockback direction
                 const dx = enemy.x - newX;
@@ -330,48 +380,42 @@ function updatePlayerState(player, deltaTime, deps) {
                 const knockbackDistance = 25;
                 const knockbackX = -normalizedDx * knockbackDistance;
                 const knockbackY = -normalizedDy * knockbackDistance;
-                // Apply knockback to player position
+                // Apply knockback to player position (always, even when invulnerable)
                 newX -= normalizedDx * knockbackDistance;
                 newY -= normalizedDy * knockbackDistance;
-                // Item spawner doesn't deal damage to players, but still applies knockback
-                if (enemy.type !== 'item_spawner') {
+                // Only apply damage when not invulnerable
+                if (!player.isInvulnerable && enemy.type !== 'item_spawner') {
                     const shieldAmount = (0, petal_actions_1.getShieldAmount)(player);
                     const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
                     player.health -= damageToPlayer;
                     player.lastDamageTime = Date.now();
-                    player.isInvulnerable = true;
-                    // Track which enemy dealt the killing blow
-                    if (player.health <= 0) {
-                        player.killedBy = { type: enemy.type, tier: enemy.tier };
-                    }
-                    // Set invulnerability timer (1 second after taking damage)
-                    setTimeout(() => {
-                        if (constants_1.players[player.id]) {
-                            constants_1.players[player.id].isInvulnerable = false;
-                            // Notify client that invulnerability has ended
-                            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                    // Second Chance: if health dropped to 0 or below, try to save the player
+                    const secondChanceTriggered = player.health <= 0 && trySecondChance(player, io);
+                    if (!secondChanceTriggered) {
+                        // Track which enemy dealt the killing blow
+                        if (player.health <= 0) {
+                            player.killedBy = { type: enemy.type, tier: enemy.tier };
                         }
-                    }, 1000);
-                    io.emit('playerDamaged', {
-                        playerId: player.id,
-                        health: player.health,
-                        maxHealth: player.maxHealth,
-                        isInvulnerable: player.isInvulnerable,
-                        knockbackX: knockbackX,
-                        knockbackY: knockbackY
-                    });
+                        player.isInvulnerable = true;
+                        // Set invulnerability timer (50ms after taking damage)
+                        setTimeout(() => {
+                            if (constants_1.players[player.id]) {
+                                constants_1.players[player.id].isInvulnerable = false;
+                                // Notify client that invulnerability has ended
+                                io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                            }
+                        }, 50);
+                    }
                 }
-                else {
-                    // Emit knockback event for item spawner (without damage)
-                    io.emit('playerDamaged', {
-                        playerId: player.id,
-                        health: player.health,
-                        maxHealth: player.maxHealth,
-                        isInvulnerable: player.isInvulnerable,
-                        knockbackX: knockbackX,
-                        knockbackY: knockbackY
-                    });
-                }
+                // Always emit knockback (and current health state)
+                io.emit('playerDamaged', {
+                    playerId: player.id,
+                    health: player.health,
+                    maxHealth: player.maxHealth,
+                    isInvulnerable: player.isInvulnerable,
+                    knockbackX: knockbackX,
+                    knockbackY: knockbackY
+                });
                 // Track damage dealt by this player (always track, even if enemy is dead)
                 (0, utils_1.trackDamage)(enemy, player.id, player.damage);
                 // if (enemy.health - player.damage <= 0) {

@@ -2408,7 +2408,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
 
         // Validate skill ID
-        const validSkills = ['damage', 'petalHealth', 'playerHealth', 'healingMultiplier'];
+        const validSkills = ['damage', 'petalHealth', 'playerHealth', 'healingMultiplier', 'secondChance'];
         if (!validSkills.includes(data.skillId)) {
             socket.emit('skillUpgradeError', { message: 'Invalid skill ID' });
             return;
@@ -2439,6 +2439,17 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         if (targetIndex !== currentIndex + 1) {
             socket.emit('skillUpgradeError', { message: 'Must upgrade tiers in order' });
             return;
+        }
+
+        // Second Chance requires rare Flower Health (playerHealth) as prerequisite
+        if (data.skillId === 'secondChance') {
+            const playerHealthTier = player.skills.playerHealth;
+            const playerHealthIdx = playerHealthTier ? RARITY_LEVELS.indexOf(playerHealthTier as Rarity) : -1;
+            const rareIdx = RARITY_LEVELS.indexOf('rare' as Rarity);
+            if (playerHealthIdx < rareIdx) {
+                socket.emit('skillUpgradeError', { message: 'Requires rare Flower Health' });
+                return;
+            }
         }
 
         // Upgrade the skill to the new tier
@@ -2506,10 +2517,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             return total;
         };
 
-        const spentTP = countSpentTP(player.skills?.damage) + 
-                       countSpentTP(player.skills?.petalHealth) + 
-                       countSpentTP(player.skills?.playerHealth) + 
-                       countSpentTP(player.skills?.healingMultiplier);
+        const spentTP = countSpentTP(player.skills?.damage) +
+                       countSpentTP(player.skills?.petalHealth) +
+                       countSpentTP(player.skills?.playerHealth) +
+                       countSpentTP(player.skills?.healingMultiplier) +
+                       countSpentTP(player.skills?.secondChance);
 
         // Reset all skills
         player.skills = {};

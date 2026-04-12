@@ -17395,11 +17395,29 @@ const RARITY_TP_COSTS = {
     super: 25,
     unique: 26
 };
+/** Second Chance invulnerability durations per tier (seconds). */
+const SECOND_CHANCE_DURATIONS = {
+    common: 0.3,
+    uncommon: 1.5,
+};
 const SKILLS = [
     { id: 'damage', name: 'Damage', icon: 'swirl', spiral: true },
     { id: 'petalHealth', name: 'Petal Health', icon: 'curve', spiral: true },
     { id: 'playerHealth', name: 'Flower Health', icon: 'cross', spiral: true },
     { id: 'healingMultiplier', name: 'Healing', icon: 'heart', maxTiers: 4 },
+    {
+        id: 'secondChance',
+        name: 'Second Chance',
+        icon: 'shield',
+        maxTiers: 2,
+        branchFrom: { skillId: 'playerHealth', tierIndex: 2 }, // branches from rare Flower Health
+        branchAngleOffset: -Math.PI / 3, // left of branch direction
+        tierDescriptions: {
+            common: '0.3s invulnerability at 1 HP (60s cd)',
+            uncommon: '1.5s invulnerability at 1 HP (30s cd)',
+        },
+        prerequisiteRarity: 'rare',
+    },
 ];
 function skills_panel_darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
@@ -17605,7 +17623,10 @@ class CanvasSkillsPanel {
         // is its own branch radiating outward. Branches curve in the same
         // direction; skills with `spiral` curl into a tight inward spiral at
         // their end, and skills with `maxTiers` stop early.
-        const branchCount = SKILLS.length;
+        // Skills with `branchFrom` fork off an existing branch node instead of
+        // originating from the flower center.
+        const mainSkills = SKILLS.filter(s => !s.branchFrom);
+        const branchCount = mainSkills.length;
         const fullTierCount = petals.RARITY_LEVELS.length; // 9
         const nodeRadius = 22;
         const radiusStep = 65;
@@ -17618,14 +17639,18 @@ class CanvasSkillsPanel {
         // non-overlapping curve with uniform node spacing.
         const segLen = radiusStep;
         this.nodes = [];
+        // Track the position and direction at each tier of each main branch
+        // so sub-branches can fork off them.
+        const branchEndpoints = {};
         for (let s = 0; s < branchCount; s++) {
-            const skill = SKILLS[s];
+            const skill = mainSkills[s];
             const tierCount = Math.min(skill.maxTiers ?? fullTierCount, fullTierCount);
             const baseAngle = startAngle + s * angleStep;
             // Walk position and heading, starting at the flower center.
             let curX = 0;
             let curY = 0;
             let curAngle = baseAngle;
+            branchEndpoints[skill.id] = [];
             for (let t = 0; t < tierCount; t++) {
                 // First 3 tiers go straight out. After that, curvature ramps
                 // up gradually, then eases off on the very last tier.
@@ -17636,6 +17661,35 @@ class CanvasSkillsPanel {
                     const ease = t === tierCount - 1 ? 1.5 : 1; // last tier turns less
                     curAngle += maxTurn * ramp * ease;
                 }
+                curX += Math.cos(curAngle) * segLen;
+                curY += Math.sin(curAngle) * segLen;
+                branchEndpoints[skill.id].push({ x: curX, y: curY, angle: curAngle });
+                this.nodes.push({
+                    skillId: skill.id,
+                    rarity: petals.RARITY_LEVELS[t],
+                    tier: t,
+                    px: curX,
+                    py: curY,
+                    r: nodeRadius,
+                    icon: skill.icon,
+                    sx: 0, sy: 0, scale: 1, rz: 0,
+                });
+            }
+        }
+        // Lay out sub-branches that fork from existing nodes.
+        const subBranches = SKILLS.filter(s => s.branchFrom);
+        for (const skill of subBranches) {
+            const parent = skill.branchFrom;
+            const endpoints = branchEndpoints[parent.skillId];
+            if (!endpoints || !endpoints[parent.tierIndex])
+                continue;
+            const fork = endpoints[parent.tierIndex];
+            const tierCount = Math.min(skill.maxTiers ?? fullTierCount, fullTierCount);
+            const branchAngle = fork.angle + (skill.branchAngleOffset ?? 0);
+            let curX = fork.x;
+            let curY = fork.y;
+            let curAngle = branchAngle;
+            for (let t = 0; t < tierCount; t++) {
                 curX += Math.cos(curAngle) * segLen;
                 curY += Math.sin(curAngle) * segLen;
                 this.nodes.push({
@@ -17789,8 +17843,9 @@ class CanvasSkillsPanel {
     }
     /** Draws dashed connector lines from the center to the first node of each
      *  branch, then between consecutive tiers within each branch, using the
-     *  current 3D projection. Connectors upgrade to a brighter green tint once
-     *  both endpoints are unlocked. */
+     *  current 3D projection. Sub-branches connect their first node to the
+     *  parent branch node they fork from. Connectors upgrade to a brighter
+     *  green tint once both endpoints are unlocked. */
     drawConnectors(ctx, cx, cy) {
         const fullTierCount = petals.RARITY_LEVELS.length;
         ctx.save();
@@ -17802,8 +17857,29 @@ class CanvasSkillsPanel {
             const tierCount = Math.min(skill.maxTiers ?? fullTierCount, fullTierCount);
             for (let t = 0; t < tierCount; t++) {
                 const node = this.nodes[branchStart + t];
-                const prev = t === 0 ? { sx: cx, sy: cy } : this.nodes[branchStart + t - 1];
-                const unlocked = t <= currentIdx;
+                let prev;
+                if (t === 0) {
+                    if (skill.branchFrom) {
+                        // Connect first sub-branch node to its parent branch node.
+                        const parentNode = this.nodes.find(n => n.skillId === skill.branchFrom.skillId && n.tier === skill.branchFrom.tierIndex);
+                        prev = parentNode ?? { sx: cx, sy: cy };
+                    }
+                    else {
+                        prev = { sx: cx, sy: cy };
+                    }
+                }
+                else {
+                    prev = this.nodes[branchStart + t - 1];
+                }
+                // For sub-branches, check if the prerequisite is met for the
+                // connector color (parent skill must be at the required rarity).
+                let unlocked = t <= currentIdx;
+                if (skill.branchFrom && skill.prerequisiteRarity) {
+                    const parentIdx = this.getCurrentTierIndex(skill.branchFrom.skillId);
+                    const reqIdx = petals.RARITY_LEVELS.indexOf(skill.prerequisiteRarity);
+                    if (parentIdx < reqIdx)
+                        unlocked = false;
+                }
                 ctx.strokeStyle = unlocked ? 'rgba(126, 239, 109, 0.85)' : 'rgba(0, 0, 0, 0.35)';
                 ctx.lineWidth = (unlocked ? 4 : 3) * Math.max(0.4, node.scale);
                 ctx.setLineDash(unlocked ? [] : [6 * node.scale, 6 * node.scale]);
@@ -17817,10 +17893,21 @@ class CanvasSkillsPanel {
         ctx.setLineDash([]);
         ctx.restore();
     }
+    /** Check whether a sub-branch skill's prerequisite is met (parent skill at
+     *  the required rarity or higher). Returns true for non-branching skills. */
+    isPrerequisiteMet(skillId) {
+        const skill = SKILLS.find(s => s.id === skillId);
+        if (!skill?.branchFrom || !skill.prerequisiteRarity)
+            return true;
+        const parentIdx = this.getCurrentTierIndex(skill.branchFrom.skillId);
+        const reqIdx = petals.RARITY_LEVELS.indexOf(skill.prerequisiteRarity);
+        return parentIdx >= reqIdx;
+    }
     drawNode(ctx, node, hovered) {
         const currentIdx = this.getCurrentTierIndex(node.skillId);
-        const isUnlocked = node.tier <= currentIdx;
-        const isAvailable = node.tier === currentIdx + 1 && this.playerTp >= RARITY_TP_COSTS[node.rarity];
+        const prereqMet = this.isPrerequisiteMet(node.skillId);
+        const isUnlocked = node.tier <= currentIdx && prereqMet;
+        const isAvailable = prereqMet && node.tier === currentIdx + 1 && this.playerTp >= RARITY_TP_COSTS[node.rarity];
         let fill;
         let border;
         if (isUnlocked) {
@@ -17928,6 +18015,19 @@ class CanvasSkillsPanel {
                 ctx.fill();
                 break;
             }
+            case 'shield': {
+                // Shield shape — pointed bottom, curved top.
+                const s = size * 0.38;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy + s * 1.1); // bottom point
+                ctx.lineTo(cx - s * 0.8, cy + s * 0.1); // lower-left
+                ctx.lineTo(cx - s * 0.8, cy - s * 0.4); // upper-left
+                ctx.quadraticCurveTo(cx, cy - s * 1.0, cx + s * 0.8, cy - s * 0.4); // curved top
+                ctx.lineTo(cx + s * 0.8, cy + s * 0.1); // upper-right
+                ctx.closePath();
+                ctx.fill();
+                break;
+            }
         }
         ctx.restore();
     }
@@ -18022,14 +18122,20 @@ class CanvasSkillsPanel {
     drawTooltip(ctx, node, cssW, _cssH) {
         const skill = SKILLS.find(s => s.id === node.skillId);
         const rarityName = node.rarity.charAt(0).toUpperCase() + node.rarity.slice(1);
-        const multiplier = (RARITY_MULTIPLIERS[node.rarity] * 100).toFixed(0);
         const cost = RARITY_TP_COSTS[node.rarity];
         const currentIdx = this.getCurrentTierIndex(node.skillId);
-        const isUnlocked = node.tier <= currentIdx;
-        const isAvailable = node.tier === currentIdx + 1 && this.playerTp >= cost;
+        const prereqMet = this.isPrerequisiteMet(node.skillId);
+        const isUnlocked = node.tier <= currentIdx && prereqMet;
+        const isAvailable = prereqMet && node.tier === currentIdx + 1 && this.playerTp >= cost;
         let status;
         let statusColor;
-        if (isUnlocked) {
+        if (!prereqMet) {
+            const reqRarity = skill.prerequisiteRarity;
+            const parentSkill = SKILLS.find(s => s.id === skill.branchFrom.skillId);
+            status = `Requires ${reqRarity} ${parentSkill.name}`;
+            statusColor = '#ff5050';
+        }
+        else if (isUnlocked) {
             status = 'Unlocked';
             statusColor = '#7eef6d';
         }
@@ -18045,9 +18151,12 @@ class CanvasSkillsPanel {
             status = 'Locked';
             statusColor = '#aaaaaa';
         }
+        // Use custom tier description if available, otherwise show multiplier.
+        const effectLine = skill.tierDescriptions?.[node.rarity]
+            ?? `${(RARITY_MULTIPLIERS[node.rarity] * 100).toFixed(0)}% multiplier`;
         const lines = [
             { text: `${skill.name} — ${rarityName}`, color: RARITY_COLORS[node.rarity] },
-            { text: `${multiplier}% multiplier`, color: '#ffffff' },
+            { text: effectLine, color: '#ffffff' },
             { text: `Cost: ${cost} TP`, color: '#ffffff' },
             { text: status, color: statusColor },
         ];

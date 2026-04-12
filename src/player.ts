@@ -64,6 +64,7 @@ export interface Player {
     petalHealth?: string;
     playerHealth?: string;
     healingMultiplier?: string;
+    secondChance?: string; // Invulnerability when reaching 1 HP
   };
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
@@ -87,6 +88,7 @@ export interface PlayerProgress {
     petalHealth?: string;
     playerHealth?: string;
     healingMultiplier?: string;
+    secondChance?: string; // Invulnerability when reaching 1 HP
   };
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
@@ -143,7 +145,9 @@ export interface ServerPlayer {
     petalHealth?: string;
     playerHealth?: string;
     healingMultiplier?: string;
+    secondChance?: string; // Invulnerability when reaching 1 HP
   };
+  secondChanceCooldownUntil?: number; // Timestamp when second chance cooldown expires
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
   petalPositions?: Array<{ loadoutIndex: number; instanceIndex: number; x: number; y: number; noPhysics?: boolean }>; // Petal positions calculated on server

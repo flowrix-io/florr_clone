@@ -264,6 +264,7 @@ export function respawnPlayer(player: ServerPlayer, io: SocketIOServer) {
     player.isInvulnerable = true;
     player.lastDamageTime = 0;
     player.isDead = false;
+    player.secondChanceCooldownUntil = undefined; // Reset second chance cooldown on respawn
 
     setTimeout(() => {
         player.isInvulnerable = false;

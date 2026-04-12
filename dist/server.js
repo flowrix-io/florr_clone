@@ -2089,7 +2089,7 @@ io.on('connection', (socket) => {
             return;
         }
         // Validate skill ID
-        const validSkills = ['damage', 'petalHealth', 'playerHealth', 'healingMultiplier'];
+        const validSkills = ['damage', 'petalHealth', 'playerHealth', 'healingMultiplier', 'secondChance'];
         if (!validSkills.includes(data.skillId)) {
             socket.emit('skillUpgradeError', { message: 'Invalid skill ID' });
             return;
@@ -2115,6 +2115,16 @@ io.on('connection', (socket) => {
         if (targetIndex !== currentIndex + 1) {
             socket.emit('skillUpgradeError', { message: 'Must upgrade tiers in order' });
             return;
+        }
+        // Second Chance requires rare Flower Health (playerHealth) as prerequisite
+        if (data.skillId === 'secondChance') {
+            const playerHealthTier = player.skills.playerHealth;
+            const playerHealthIdx = playerHealthTier ? petals_1.RARITY_LEVELS.indexOf(playerHealthTier) : -1;
+            const rareIdx = petals_1.RARITY_LEVELS.indexOf('rare');
+            if (playerHealthIdx < rareIdx) {
+                socket.emit('skillUpgradeError', { message: 'Requires rare Flower Health' });
+                return;
+            }
         }
         // Upgrade the skill to the new tier
         player.skills[skillKey] = data.rarity;
@@ -2177,7 +2187,8 @@ io.on('connection', (socket) => {
         const spentTP = countSpentTP(player.skills?.damage) +
             countSpentTP(player.skills?.petalHealth) +
             countSpentTP(player.skills?.playerHealth) +
-            countSpentTP(player.skills?.healingMultiplier);
+            countSpentTP(player.skills?.healingMultiplier) +
+            countSpentTP(player.skills?.secondChance);
         // Reset all skills
         player.skills = {};
         // Refund all TP (player's level gives TP, so refund = level - current TP)
