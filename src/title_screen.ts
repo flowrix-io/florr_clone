@@ -17,6 +17,7 @@ import { ShopManager } from './shop';
 import { inventoryToDict, addItem as codecAddItem, removeItem as codecRemoveItem, getItemCount as codecGetItemCount, dictToInventory } from './inventoryCodec';
 import { CanvasLoadoutBar, LOADOUT_SLOT_COUNT as CANVAS_LOADOUT_SLOT_COUNT } from './graphics/loadout-bar';
 import { CanvasInventoryPanel, InventoryHitInfo } from './graphics/inventory-panel';
+import { applyZoomCompensation, canvasCoords } from './zoom-compensation';
 
 interface FloatingPetal {
     element: HTMLElement;
@@ -224,8 +225,7 @@ export class TitleScreen {
         const setupCanvas = (canvas: HTMLCanvasElement) => {
             // Ensure canvas has proper dimensions (not just CSS sizing)
             if (canvas.width === 0 || canvas.height === 0) {
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
+                applyZoomCompensation(canvas);
             }
             // Ensure canvas is visible on title screen
             canvas.style.zIndex = '1';
@@ -739,28 +739,24 @@ export class TitleScreen {
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
             pointer-events: none;
             z-index: 1;
         `;
+        applyZoomCompensation(this.backgroundCanvas);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d')!;
         this.backgroundTexture = new Image();
 
         // Create UI canvas for title screen elements
         this.uiCanvas = document.createElement('canvas');
         this.uiCanvas.id = 'title-ui-canvas';
-        this.uiCanvas.width = window.innerWidth;
-        this.uiCanvas.height = window.innerHeight;
         this.uiCanvas.style.cssText = `
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
             pointer-events: auto;
             z-index: 1000;
         `;
+        applyZoomCompensation(this.uiCanvas);
         this.uiCtx = this.uiCanvas.getContext('2d')!;
         
         // Load saved player name
@@ -1585,19 +1581,13 @@ export class TitleScreen {
     private setupCanvasUIListeners(): void {
         // Mouse click handling
         this.uiCanvas.addEventListener('click', (e) => {
-            const rect = this.uiCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
+            const { x, y } = canvasCoords(this.uiCanvas, e);
             this.handleCanvasClick(x, y);
         });
 
         // Mouse move for hover effects
         this.uiCanvas.addEventListener('mousemove', (e) => {
-            const rect = this.uiCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
+            const { x, y } = canvasCoords(this.uiCanvas, e);
             this.handleCanvasHover(x, y);
         });
 
@@ -1721,8 +1711,7 @@ export class TitleScreen {
 
         // Handle window resize
         window.addEventListener('resize', () => {
-            this.uiCanvas.width = window.innerWidth;
-            this.uiCanvas.height = window.innerHeight;
+            applyZoomCompensation(this.uiCanvas);
         });
     }
 
@@ -2977,18 +2966,14 @@ export class TitleScreen {
         const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
         if (gameCanvas) {
             // Resize canvas to full screen dimensions
-            gameCanvas.width = window.innerWidth;
-            gameCanvas.height = window.innerHeight;
-            
             // Reset canvas positioning to full screen
             gameCanvas.style.position = 'absolute';
             gameCanvas.style.left = '0px';
             gameCanvas.style.top = '0px';
-            gameCanvas.style.width = '100%';
-            gameCanvas.style.height = '100%';
             gameCanvas.style.zIndex = '0';
             gameCanvas.style.pointerEvents = 'auto';
             gameCanvas.style.display = 'block';
+            applyZoomCompensation(gameCanvas);
             
             // Re-setup canvas on managers with full screen dimensions
             this.changelogManager.setCanvas(gameCanvas);
@@ -3330,9 +3315,8 @@ export class TitleScreen {
 
 
     private drawScrollingBackground(): void {
-        // Resize canvas to match window size
-        this.backgroundCanvas.width = window.innerWidth;
-        this.backgroundCanvas.height = window.innerHeight;
+        // Resize canvas to match window size (zoom-compensated)
+        applyZoomCompensation(this.backgroundCanvas);
 
         // If background texture is not loaded or is broken, just fill with a color
         if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
@@ -3627,8 +3611,7 @@ export class TitleScreen {
 
     private buildTitleScreenGameInterface() {
         const offscreenCanvas = document.createElement('canvas');
-        offscreenCanvas.width = window.innerWidth;
-        offscreenCanvas.height = window.innerHeight;
+        applyZoomCompensation(offscreenCanvas);
         return {
             getLocalPlayer: () => {
                 const playerData = (this.titleScreenInventoryManager as any).playerData;
@@ -3764,8 +3747,7 @@ class TitleScreenGameAdapter implements GameInterface {
 
     constructor() {
         this.canvas = document.createElement('canvas');
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        applyZoomCompensation(this.canvas);
     }
 
     setPlayerData(pd: { inventory: PlayerInventory; loadout: (Item | null)[] } | null): void {

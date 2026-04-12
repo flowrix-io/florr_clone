@@ -6869,6 +6869,48 @@ function getSVGRenderer() {
 /************************************************************************/
 var __webpack_exports__ = {};
 
+;// ./src/zoom-compensation.ts
+/**
+ * Compensates for browser zoom so the game renders at consistent dimensions
+ * regardless of the user's browser zoom level.
+ *
+ * Uses outerWidth/innerWidth ratio to detect zoom — outerWidth is unaffected
+ * by browser zoom, so this works even if the page loads while already zoomed.
+ */
+function getBrowserZoom() {
+    if (window.outerWidth && window.innerWidth) {
+        return window.outerWidth / window.innerWidth;
+    }
+    return 1;
+}
+/**
+ * Resizes a canvas to fill the viewport, compensating for browser zoom.
+ * Sets canvas buffer size, CSS size, and transform so the canvas always
+ * appears at the "100% zoom" dimensions.
+ */
+function applyZoomCompensation(canvas) {
+    const zoom = getBrowserZoom();
+    const width = Math.round(window.innerWidth * zoom);
+    const height = Math.round(window.innerHeight * zoom);
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    canvas.style.transform = `scale(${1 / zoom})`;
+    canvas.style.transformOrigin = '0 0';
+}
+/**
+ * Converts mouse event CSS coordinates to canvas-space coordinates.
+ * Accounts for the CSS transform applied by applyZoomCompensation.
+ */
+function canvasCoords(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: (e.clientX - rect.left) * (canvas.width / rect.width),
+        y: (e.clientY - rect.top) * (canvas.height / rect.height),
+    };
+}
+
 ;// ./src/SVGLoader.ts
 class SVGLoader {
     constructor() {
@@ -20913,6 +20955,7 @@ class CanvasLoadoutBar {
 
 
 
+
 class Game {
     get isInventoryOpen() {
         return this.inventoryManager?.getIsInventoryOpen() ?? false;
@@ -21087,7 +21130,7 @@ class Game {
         }
         // Set initial canvas size
         this.resizeCanvas();
-        // Add resize listener
+        // Add resize listener (also fires on browser zoom changes)
         window.addEventListener('resize', () => this.resizeCanvas(), { signal: this.abortController.signal });
         // Create and set up preview canvas BEFORE using it
         this.colorPreviewCanvas = document.createElement('canvas');
@@ -21196,21 +21239,18 @@ class Game {
         // Add mouse move listener - always track mouse position so it's available when toggling mouse controls
         this.canvas.addEventListener('mousemove', (event) => {
             // Loadout bar hover/drag tracking (screen-space)
-            const cRect = this.canvas.getBoundingClientRect();
-            const sx = event.clientX - cRect.left;
-            const sy = event.clientY - cRect.top;
+            const { x: sx, y: sy } = canvasCoords(this.canvas, event);
             if (this.loadoutBar) {
                 this.loadoutBar.setHover(sx, sy);
                 if (this.loadoutBar.draggingSlotIndex >= 0) {
                     this.loadoutBar.setDragPos(sx, sy);
                 }
             }
-            const rect = this.canvas.getBoundingClientRect();
             // Convert screen coordinates to world coordinates accounting for zoom
             // Formula: worldX = (screenX / zoom) + cameraX
             // This gives the absolute world position of the mouse cursor
-            const screenX = event.clientX - rect.left;
-            const screenY = event.clientY - rect.top;
+            const screenX = sx;
+            const screenY = sy;
             const worldX = screenX / this.zoomLevel + this.cameraX;
             const worldY = screenY / this.zoomLevel + this.cameraY;
             // Calculate normalized screen coordinates (-1 to 1, where 0,0 is center of screen)
@@ -21230,9 +21270,7 @@ class Game {
         // Track mouse for death screen button hover
         this.canvas.addEventListener('mousemove', (event) => {
             if (this.isPlayerDead && this.graphics.deathScreenVisible) {
-                const cRect = this.canvas.getBoundingClientRect();
-                const sx = event.clientX - cRect.left;
-                const sy = event.clientY - cRect.top;
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
                 const btn = this.graphics.deathScreenButtonRect;
                 this.graphics.deathScreenButtonHovered =
                     sx >= btn.x && sx <= btn.x + btn.w &&
@@ -21247,9 +21285,7 @@ class Game {
         this.canvas.addEventListener('mousedown', (event) => {
             // Intercept clicks on the canvas death screen buttons
             if (event.button === 0 && this.isPlayerDead && this.graphics.deathScreenVisible) {
-                const cRect = this.canvas.getBoundingClientRect();
-                const sx = event.clientX - cRect.left;
-                const sy = event.clientY - cRect.top;
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
                 const btn = this.graphics.deathScreenButtonRect;
                 if (sx >= btn.x && sx <= btn.x + btn.w && sy >= btn.y && sy <= btn.y + btn.h) {
                     this.hideDeathScreen();
@@ -21265,9 +21301,7 @@ class Game {
             }
             // Intercept left-clicks over the canvas loadout bar to start drag
             if (event.button === 0 && this.loadoutBar && this.loadoutBar.isVisible()) {
-                const cRect = this.canvas.getBoundingClientRect();
-                const sx = event.clientX - cRect.left;
-                const sy = event.clientY - cRect.top;
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
                 const hit = this.loadoutBar.hitTest(sx, sy);
                 if (hit >= 0 && hit < LOADOUT_SLOT_COUNT) {
                     const player = this.getLocalPlayer();
@@ -22384,11 +22418,7 @@ class Game {
         this.graphics.drawMap(mapData);
     }
     resizeCanvas() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
-        // Update any viewport-dependent calculations here
-        // For example, you might want to adjust the camera bounds
-        // console.log('Canvas resized to:', this.canvas.width, 'x', this.canvas.height);
+        applyZoomCompensation(this.canvas);
     }
     // Change from private to public
     cleanup() {
@@ -24654,6 +24684,7 @@ class LeaderboardManager {
 
 
 
+
 class FloatingPetalManager {
     constructor(container) {
         this.petals = [];
@@ -24801,8 +24832,7 @@ class TitleScreen {
         const setupCanvas = (canvas) => {
             // Ensure canvas has proper dimensions (not just CSS sizing)
             if (canvas.width === 0 || canvas.height === 0) {
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
+                applyZoomCompensation(canvas);
             }
             // Ensure canvas is visible on title screen
             canvas.style.zIndex = '1';
@@ -25292,27 +25322,23 @@ class TitleScreen {
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
             pointer-events: none;
             z-index: 1;
         `;
+        applyZoomCompensation(this.backgroundCanvas);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d');
         this.backgroundTexture = new Image();
         // Create UI canvas for title screen elements
         this.uiCanvas = document.createElement('canvas');
         this.uiCanvas.id = 'title-ui-canvas';
-        this.uiCanvas.width = window.innerWidth;
-        this.uiCanvas.height = window.innerHeight;
         this.uiCanvas.style.cssText = `
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
             pointer-events: auto;
             z-index: 1000;
         `;
+        applyZoomCompensation(this.uiCanvas);
         this.uiCtx = this.uiCanvas.getContext('2d');
         // Load saved player name
         const savedName = localStorage.getItem('playerName') || '';
@@ -26056,16 +26082,12 @@ class TitleScreen {
     setupCanvasUIListeners() {
         // Mouse click handling
         this.uiCanvas.addEventListener('click', (e) => {
-            const rect = this.uiCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const { x, y } = canvasCoords(this.uiCanvas, e);
             this.handleCanvasClick(x, y);
         });
         // Mouse move for hover effects
         this.uiCanvas.addEventListener('mousemove', (e) => {
-            const rect = this.uiCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const { x, y } = canvasCoords(this.uiCanvas, e);
             this.handleCanvasHover(x, y);
         });
         // Mouse down for pressed state
@@ -26204,8 +26226,7 @@ class TitleScreen {
         });
         // Handle window resize
         window.addEventListener('resize', () => {
-            this.uiCanvas.width = window.innerWidth;
-            this.uiCanvas.height = window.innerHeight;
+            applyZoomCompensation(this.uiCanvas);
         });
     }
     /**
@@ -27351,17 +27372,14 @@ class TitleScreen {
         const gameCanvas = document.getElementById('gameCanvas');
         if (gameCanvas) {
             // Resize canvas to full screen dimensions
-            gameCanvas.width = window.innerWidth;
-            gameCanvas.height = window.innerHeight;
             // Reset canvas positioning to full screen
             gameCanvas.style.position = 'absolute';
             gameCanvas.style.left = '0px';
             gameCanvas.style.top = '0px';
-            gameCanvas.style.width = '100%';
-            gameCanvas.style.height = '100%';
             gameCanvas.style.zIndex = '0';
             gameCanvas.style.pointerEvents = 'auto';
             gameCanvas.style.display = 'block';
+            applyZoomCompensation(gameCanvas);
             // Re-setup canvas on managers with full screen dimensions
             this.changelogManager.setCanvas(gameCanvas);
             this.notificationsManager.setCanvas(gameCanvas);
@@ -27664,9 +27682,8 @@ class TitleScreen {
         this.backgroundTexture.src = canvas.toDataURL();
     }
     drawScrollingBackground() {
-        // Resize canvas to match window size
-        this.backgroundCanvas.width = window.innerWidth;
-        this.backgroundCanvas.height = window.innerHeight;
+        // Resize canvas to match window size (zoom-compensated)
+        applyZoomCompensation(this.backgroundCanvas);
         // If background texture is not loaded or is broken, just fill with a color
         if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
             this.backgroundCtx.fillStyle = '#00d885'; // Default green color from the SVG
@@ -27927,8 +27944,7 @@ class TitleScreen {
     }
     buildTitleScreenGameInterface() {
         const offscreenCanvas = document.createElement('canvas');
-        offscreenCanvas.width = window.innerWidth;
-        offscreenCanvas.height = window.innerHeight;
+        applyZoomCompensation(offscreenCanvas);
         return {
             getLocalPlayer: () => {
                 const playerData = this.titleScreenInventoryManager.playerData;
@@ -28071,8 +28087,7 @@ class TitleScreenGameAdapter {
     constructor() {
         this._playerData = null;
         this.canvas = document.createElement('canvas');
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        applyZoomCompensation(this.canvas);
     }
     setPlayerData(pd) {
         this._playerData = pd;

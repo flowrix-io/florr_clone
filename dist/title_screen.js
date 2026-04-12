@@ -18,6 +18,7 @@ const shop_1 = require("./shop");
 const inventoryCodec_1 = require("./inventoryCodec");
 const loadout_bar_1 = require("./graphics/loadout-bar");
 const inventory_panel_1 = require("./graphics/inventory-panel");
+const zoom_compensation_1 = require("./zoom-compensation");
 class FloatingPetalManager {
     constructor(container) {
         this.petals = [];
@@ -165,8 +166,7 @@ class TitleScreen {
         const setupCanvas = (canvas) => {
             // Ensure canvas has proper dimensions (not just CSS sizing)
             if (canvas.width === 0 || canvas.height === 0) {
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
+                (0, zoom_compensation_1.applyZoomCompensation)(canvas);
             }
             // Ensure canvas is visible on title screen
             canvas.style.zIndex = '1';
@@ -656,27 +656,23 @@ class TitleScreen {
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
             pointer-events: none;
             z-index: 1;
         `;
+        (0, zoom_compensation_1.applyZoomCompensation)(this.backgroundCanvas);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d');
         this.backgroundTexture = new Image();
         // Create UI canvas for title screen elements
         this.uiCanvas = document.createElement('canvas');
         this.uiCanvas.id = 'title-ui-canvas';
-        this.uiCanvas.width = window.innerWidth;
-        this.uiCanvas.height = window.innerHeight;
         this.uiCanvas.style.cssText = `
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
             pointer-events: auto;
             z-index: 1000;
         `;
+        (0, zoom_compensation_1.applyZoomCompensation)(this.uiCanvas);
         this.uiCtx = this.uiCanvas.getContext('2d');
         // Load saved player name
         const savedName = localStorage.getItem('playerName') || '';
@@ -1420,16 +1416,12 @@ class TitleScreen {
     setupCanvasUIListeners() {
         // Mouse click handling
         this.uiCanvas.addEventListener('click', (e) => {
-            const rect = this.uiCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e);
             this.handleCanvasClick(x, y);
         });
         // Mouse move for hover effects
         this.uiCanvas.addEventListener('mousemove', (e) => {
-            const rect = this.uiCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e);
             this.handleCanvasHover(x, y);
         });
         // Mouse down for pressed state
@@ -1568,8 +1560,7 @@ class TitleScreen {
         });
         // Handle window resize
         window.addEventListener('resize', () => {
-            this.uiCanvas.width = window.innerWidth;
-            this.uiCanvas.height = window.innerHeight;
+            (0, zoom_compensation_1.applyZoomCompensation)(this.uiCanvas);
         });
     }
     /**
@@ -2715,17 +2706,14 @@ class TitleScreen {
         const gameCanvas = document.getElementById('gameCanvas');
         if (gameCanvas) {
             // Resize canvas to full screen dimensions
-            gameCanvas.width = window.innerWidth;
-            gameCanvas.height = window.innerHeight;
             // Reset canvas positioning to full screen
             gameCanvas.style.position = 'absolute';
             gameCanvas.style.left = '0px';
             gameCanvas.style.top = '0px';
-            gameCanvas.style.width = '100%';
-            gameCanvas.style.height = '100%';
             gameCanvas.style.zIndex = '0';
             gameCanvas.style.pointerEvents = 'auto';
             gameCanvas.style.display = 'block';
+            (0, zoom_compensation_1.applyZoomCompensation)(gameCanvas);
             // Re-setup canvas on managers with full screen dimensions
             this.changelogManager.setCanvas(gameCanvas);
             this.notificationsManager.setCanvas(gameCanvas);
@@ -3028,9 +3016,8 @@ class TitleScreen {
         this.backgroundTexture.src = canvas.toDataURL();
     }
     drawScrollingBackground() {
-        // Resize canvas to match window size
-        this.backgroundCanvas.width = window.innerWidth;
-        this.backgroundCanvas.height = window.innerHeight;
+        // Resize canvas to match window size (zoom-compensated)
+        (0, zoom_compensation_1.applyZoomCompensation)(this.backgroundCanvas);
         // If background texture is not loaded or is broken, just fill with a color
         if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
             this.backgroundCtx.fillStyle = '#00d885'; // Default green color from the SVG
@@ -3291,8 +3278,7 @@ class TitleScreen {
     }
     buildTitleScreenGameInterface() {
         const offscreenCanvas = document.createElement('canvas');
-        offscreenCanvas.width = window.innerWidth;
-        offscreenCanvas.height = window.innerHeight;
+        (0, zoom_compensation_1.applyZoomCompensation)(offscreenCanvas);
         return {
             getLocalPlayer: () => {
                 const playerData = this.titleScreenInventoryManager.playerData;
@@ -3436,8 +3422,7 @@ class TitleScreenGameAdapter {
     constructor() {
         this._playerData = null;
         this.canvas = document.createElement('canvas');
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        (0, zoom_compensation_1.applyZoomCompensation)(this.canvas);
     }
     setPlayerData(pd) {
         this._playerData = pd;

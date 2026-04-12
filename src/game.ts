@@ -1,3 +1,4 @@
+import { applyZoomCompensation, canvasCoords } from './zoom-compensation';
 import { Player, PlayerProgress, ServerPlayer, PlayerInventory } from './player';
 import { Dot, Enemy, Obstacle } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
@@ -286,7 +287,7 @@ export class Game {
         // Set initial canvas size
         this.resizeCanvas();
 
-        // Add resize listener
+        // Add resize listener (also fires on browser zoom changes)
         window.addEventListener('resize', () => this.resizeCanvas(), { signal: this.abortController.signal });
 
         // Create and set up preview canvas BEFORE using it
@@ -416,21 +417,18 @@ export class Game {
         // Add mouse move listener - always track mouse position so it's available when toggling mouse controls
         this.canvas.addEventListener('mousemove', (event) => {
             // Loadout bar hover/drag tracking (screen-space)
-            const cRect = this.canvas.getBoundingClientRect();
-            const sx = event.clientX - cRect.left;
-            const sy = event.clientY - cRect.top;
+            const { x: sx, y: sy } = canvasCoords(this.canvas, event);
             if (this.loadoutBar) {
                 this.loadoutBar.setHover(sx, sy);
                 if (this.loadoutBar.draggingSlotIndex >= 0) {
                     this.loadoutBar.setDragPos(sx, sy);
                 }
             }
-            const rect = this.canvas.getBoundingClientRect();
             // Convert screen coordinates to world coordinates accounting for zoom
             // Formula: worldX = (screenX / zoom) + cameraX
             // This gives the absolute world position of the mouse cursor
-            const screenX = event.clientX - rect.left;
-            const screenY = event.clientY - rect.top;
+            const screenX = sx;
+            const screenY = sy;
             const worldX = screenX / this.zoomLevel + this.cameraX;
             const worldY = screenY / this.zoomLevel + this.cameraY;
 
@@ -454,9 +452,7 @@ export class Game {
         // Track mouse for death screen button hover
         this.canvas.addEventListener('mousemove', (event) => {
             if (this.isPlayerDead && this.graphics.deathScreenVisible) {
-                const cRect = this.canvas.getBoundingClientRect();
-                const sx = event.clientX - cRect.left;
-                const sy = event.clientY - cRect.top;
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
                 const btn = this.graphics.deathScreenButtonRect;
                 this.graphics.deathScreenButtonHovered =
                     sx >= btn.x && sx <= btn.x + btn.w &&
@@ -472,9 +468,7 @@ export class Game {
         this.canvas.addEventListener('mousedown', (event) => {
             // Intercept clicks on the canvas death screen buttons
             if (event.button === 0 && this.isPlayerDead && this.graphics.deathScreenVisible) {
-                const cRect = this.canvas.getBoundingClientRect();
-                const sx = event.clientX - cRect.left;
-                const sy = event.clientY - cRect.top;
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
                 const btn = this.graphics.deathScreenButtonRect;
                 if (sx >= btn.x && sx <= btn.x + btn.w && sy >= btn.y && sy <= btn.y + btn.h) {
                     this.hideDeathScreen();
@@ -490,9 +484,7 @@ export class Game {
             }
             // Intercept left-clicks over the canvas loadout bar to start drag
             if (event.button === 0 && this.loadoutBar && this.loadoutBar.isVisible()) {
-                const cRect = this.canvas.getBoundingClientRect();
-                const sx = event.clientX - cRect.left;
-                const sy = event.clientY - cRect.top;
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
                 const hit = this.loadoutBar.hitTest(sx, sy);
                 if (hit >= 0 && hit < LOADOUT_SLOT_COUNT) {
                     const player = this.getLocalPlayer();
@@ -1773,12 +1765,7 @@ export class Game {
 
 
     private resizeCanvas() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
-
-        // Update any viewport-dependent calculations here
-        // For example, you might want to adjust the camera bounds
-        // console.log('Canvas resized to:', this.canvas.width, 'x', this.canvas.height);
+        applyZoomCompensation(this.canvas);
     }
 
     // Change from private to public
