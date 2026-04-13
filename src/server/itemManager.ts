@@ -21,10 +21,10 @@ import { checkItemWallCollisions } from './physics';
 import { getAllPetalTypes, getPetalStats } from '../petals';
 
 // Rarity type
-type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
 
 // Rarity order from lowest to highest
-const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 
 // Calculate crafting chance for upgrading from one rarity to the next
 function getCraftingChance(rarityIndex: number): number {

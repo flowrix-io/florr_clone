@@ -26,7 +26,7 @@ export interface MobStats {
         count: number; // Number of projectiles to shoot
         distance: number; // Maximum distance projectiles travel
         petalType: string; // Type of petal to use as projectile (e.g., 'basic', 'stinger', 'rose')
-        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique'; // Rarity of the petal projectile
+        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex'; // Rarity of the petal projectile
         speed?: number; // Projectile speed (default: 200 pixels per second)
         spreadAngle?: number; // Spread angle in radians for multiple projectiles (default: 0.2)
     };
@@ -42,7 +42,7 @@ export interface MobConfig {
 export interface DropItem {
     type: 'petal' | 'consumable';
     itemType: string; // For petals: 'basic', 'rose', 'stinger', etc. For consumables: 'health_potion', etc.
-    rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+    rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
     probability: number; // Drop probability (0-1)
     minQuantity?: number; // Minimum quantity to drop
     maxQuantity?: number; // Maximum quantity to drop
@@ -63,7 +63,8 @@ export const RARITY_LEVELS = [
     'mythic',
     'ultra',
     'super',
-    'unique'
+    'unique',
+    'apex'
 ] as const;
 
 export type Rarity = typeof RARITY_LEVELS[number];
@@ -95,7 +96,7 @@ interface BaseMobConfig {
         count: number;
         distance: number;
         petalType: string;
-        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
         speed?: number;
         spreadAngle?: number;
     };
@@ -128,7 +129,7 @@ interface RarityOverride {
         count: number;
         distance: number;
         petalType: string;
-        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
         speed?: number;
         spreadAngle?: number;
     };
@@ -144,7 +145,8 @@ const HEALTH_SCALING = {
     mythic: 3159,
     ultra: 126830,
     super: 2374000,
-    unique: 10000000
+    unique: 10000000,
+    apex: 30000000
 };
 
 const DAMAGE_SCALING = {
@@ -156,7 +158,8 @@ const DAMAGE_SCALING = {
     mythic: 243,
     ultra: 729,
     super: 2187,
-    unique: 6561
+    unique: 6561,
+    apex: 19683
 };
 
 export const SIZE_SCALING: { [key: string]: number } = {
@@ -168,7 +171,8 @@ export const SIZE_SCALING: { [key: string]: number } = {
     mythic: 7.5,
     ultra: 10.5,
     super: 16.777216,
-    unique: 26.8435456
+    unique: 26.8435456,
+    apex: 42.9496730
 };
 
 // Separate XP tables for each mob type (maintaining original values)
@@ -2975,20 +2979,22 @@ const RARITY_COLORS: { [key in Rarity]: string } = {
     mythic: "#4B0082",
     ultra: "#de1f65",
     super: "#2bffa4",
-    unique: "#bf00ff"
+    unique: "#ffffff",
+    apex: "#ff00ff"
 };
 
 // Rarity name prefixes
 const RARITY_PREFIXES: { [key in Rarity]: string } = {
     common: "",
     uncommon: "",
-    rare: "", 
+    rare: "",
     epic: "",
     legendary: "",
     mythic: "",
     ultra: "",
     super: "",
-    unique: ""
+    unique: "",
+    apex: ""
 };
 
 // Function to generate mob stats for a specific rarity

@@ -16,7 +16,7 @@ export interface PoisonEffect {
 export interface Enemy {
   id: string;
   type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage';
-  tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+  tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   x: number;
   y: number;
   angle: number;
@@ -310,7 +310,8 @@ export function getXPFromEnemy(enemy: Enemy): number {
     mythic: 2430,
     ultra: 7290,
     super: 21870,
-    unique: 65610
+    unique: 65610,
+    apex: 196830
   };
   return tierXP[enemy.tier] || 10;
 }

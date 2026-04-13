@@ -28,12 +28,13 @@ const ITEM_RARITY_COLORS: Record<string, string> = {
     mythic: '#1fdbde',
     ultra: '#de1f65',
     super: '#2bffa4',
-    unique: '#bf00ff'
+    unique: '#ffffff',
+    apex: '#ff00ff'
 };
 
-const RARITY_ORDER = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
-/** Column order for the crafting inventory grid: common on left, no unique. */
-const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super'];
+const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+/** Column order for the crafting inventory grid: common on left, no apex. */
+const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
 
 function darken(hex: string, percent: number = 30): string {
     const num = parseInt(hex.replace('#', ''), 16);
@@ -740,6 +741,7 @@ export class CanvasCraftingPanel {
         mythic: 'ultra',
         ultra: 'super',
         super: 'unique',
+        unique: 'apex',
     };
 
     private drawCraftButton(ctx: CanvasRenderingContext2D) {

@@ -21,7 +21,8 @@ exports.RARITY_LEVELS = [
     'mythic',
     'ultra',
     'super',
-    'unique'
+    'unique',
+    'apex'
 ];
 // Rarity-specific overrides for special cases
 const RARITY_OVERRIDES = {
@@ -1495,7 +1496,8 @@ const RARITY_COLORS = {
     mythic: "#4B0082",
     ultra: "#de1f65",
     super: "#2bffa4",
-    unique: "#bf00ff"
+    unique: "#ffffff",
+    apex: "#ff00ff"
 };
 // Rarity name prefixes
 const RARITY_PREFIXES = {
@@ -1507,7 +1509,8 @@ const RARITY_PREFIXES = {
     mythic: "",
     ultra: "",
     super: "",
-    unique: ""
+    unique: "",
+    apex: ""
 };
 // Lightning damage scaling table by rarity
 // Shows how lightning damage scales with the 3x multiplier per rarity level
@@ -1533,7 +1536,8 @@ const LIGHTNING_SCALING_TABLE = {
     mythic: { multiplier: 243, damageAt10Base: 2430, damageAt25Base: 6075, damageAt50Base: 12150 },
     ultra: { multiplier: 729, damageAt10Base: 7290, damageAt25Base: 18225, damageAt50Base: 36450 },
     super: { multiplier: 2187, damageAt10Base: 21870, damageAt25Base: 54675, damageAt50Base: 109350 },
-    unique: { multiplier: 6561, damageAt10Base: 65610, damageAt25Base: 164025, damageAt50Base: 328050 }
+    unique: { multiplier: 6561, damageAt10Base: 65610, damageAt25Base: 164025, damageAt50Base: 328050 },
+    apex: { multiplier: 19683, damageAt10Base: 196830, damageAt25Base: 492075, damageAt50Base: 984150 }
 };
 // Helper function to get lightning damage for a given base damage and rarity
 function getLightningDamage(baseDamage, rarity) {

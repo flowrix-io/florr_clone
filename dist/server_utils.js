@@ -190,7 +190,8 @@ function getXPFromEnemy(enemy) {
         mythic: 2430,
         ultra: 7290,
         super: 21870,
-        unique: 65610
+        unique: 65610,
+        apex: 196830
     };
     return tierXP[enemy.tier] || 10;
 }

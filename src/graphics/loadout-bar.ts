@@ -20,7 +20,8 @@ const ITEM_RARITY_COLORS: Record<string, string> = {
     mythic: '#1fdbde',
     ultra: '#de1f65',
     super: '#2bffa4',
-    unique: '#bf00ff'
+    unique: '#ffffff',
+    apex: '#ff00ff'
 };
 
 function darken(hex: string, percent: number = 30): string {

@@ -18,7 +18,8 @@ exports.RARITY_LEVELS = [
     'mythic',
     'ultra',
     'super',
-    'unique'
+    'unique',
+    'apex'
 ];
 // Scaling multipliers for mob stats
 const HEALTH_SCALING = {
@@ -30,7 +31,8 @@ const HEALTH_SCALING = {
     mythic: 3159,
     ultra: 126830,
     super: 2374000,
-    unique: 10000000
+    unique: 10000000,
+    apex: 30000000
 };
 const DAMAGE_SCALING = {
     common: 1,
@@ -41,7 +43,8 @@ const DAMAGE_SCALING = {
     mythic: 243,
     ultra: 729,
     super: 2187,
-    unique: 6561
+    unique: 6561,
+    apex: 19683
 };
 exports.SIZE_SCALING = {
     common: 1.5,
@@ -52,7 +55,8 @@ exports.SIZE_SCALING = {
     mythic: 7.5,
     ultra: 10.5,
     super: 16.777216,
-    unique: 26.8435456
+    unique: 26.8435456,
+    apex: 42.9496730
 };
 // Separate XP tables for each mob type (maintaining original values)
 const MOB_XP_TABLES = {
@@ -2855,7 +2859,8 @@ const RARITY_COLORS = {
     mythic: "#4B0082",
     ultra: "#de1f65",
     super: "#2bffa4",
-    unique: "#bf00ff"
+    unique: "#ffffff",
+    apex: "#ff00ff"
 };
 // Rarity name prefixes
 const RARITY_PREFIXES = {
@@ -2867,7 +2872,8 @@ const RARITY_PREFIXES = {
     mythic: "",
     ultra: "",
     super: "",
-    unique: ""
+    unique: "",
+    apex: ""
 };
 // Function to generate mob stats for a specific rarity
 function generateMobStats(baseConfig, rarity, mobType) {

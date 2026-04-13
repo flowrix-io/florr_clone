@@ -2624,17 +2624,18 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 legendary: 'mythic',
                 mythic: 'ultra',
                 ultra: 'super',
-                super: 'unique'
+                super: 'unique',
+                unique: 'apex'
             };
 
             const newRarity = rarityUpgrades[rarity];
             if (!newRarity) {
-                console.log('[CRAFT] Cannot upgrade unique items');
-                socket.emit('craftingFailed', 'Cannot upgrade unique items');
+                console.log('[CRAFT] Cannot upgrade apex items');
+                socket.emit('craftingFailed', 'Cannot upgrade apex items');
                 return;
             }
 
-            const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+            const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
             const rarityIndex = rarities.indexOf(rarity);
             const baseChance = 64;
             const successChance = baseChance / Math.pow(2, rarityIndex);

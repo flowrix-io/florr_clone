@@ -21,7 +21,7 @@ export interface MobProjectile {
   distance: number;
   maxDistance: number;
   petalType: string;
-  petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+  petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   damage: number;
   size: number;
   health: number; // Health of the projectile (can be destroyed by player petals)
@@ -40,7 +40,7 @@ export interface PlayerProjectile {
   distance: number;
   maxDistance: number;
   petalType: string;
-  petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+  petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   damage: number;
   size: number;
   health: number; // Health of the projectile (can be destroyed by enemy petals)
@@ -50,7 +50,7 @@ export interface PlayerProjectile {
 export interface Enemy {
   id: string;
   type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage';
-  tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+  tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   x: number;
   y: number;
   angle: number;

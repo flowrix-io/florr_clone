@@ -329,7 +329,7 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
     });
 };
 core_1.Graphics.prototype.drawPlayerHealthBar = function (player) {
-    const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
     // Reset any effects that might interfere with text rendering
     this.ctx.globalAlpha = 1.0;
     this.ctx.shadowBlur = 0;

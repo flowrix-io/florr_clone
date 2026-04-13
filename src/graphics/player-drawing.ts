@@ -383,7 +383,7 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
 };
 
 Graphics.prototype.drawPlayerHealthBar = function(this: Graphics, player: Player) {
-    const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 
     // Reset any effects that might interfere with text rendering
     this.ctx.globalAlpha = 1.0;

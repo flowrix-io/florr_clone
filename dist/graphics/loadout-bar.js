@@ -10,7 +10,8 @@ const ITEM_RARITY_COLORS = {
     mythic: '#1fdbde',
     ultra: '#de1f65',
     super: '#2bffa4',
-    unique: '#bf00ff'
+    unique: '#ffffff',
+    apex: '#ff00ff'
 };
 function darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);

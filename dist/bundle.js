@@ -116,7 +116,8 @@ const ENEMY_TIERS = {
     mythic: { health: 150, speed: 2, damage: 30, probability: 0.01, color: '#de1f65' },
     ultra: { health: 450, speed: 2, damage: 90, probability: 0.0, color: '#de1f65' },
     super: { health: 1350, speed: 3, damage: 270, probability: 0.0, color: '#2bffa4' },
-    unique: { health: 4050, speed: 4, damage: 810, probability: 0.0, color: '#bf00ff' }
+    unique: { health: 4050, speed: 4, damage: 810, probability: 0.0, color: '#ffffff' },
+    apex: { health: 12150, speed: 5, damage: 2430, probability: 0.0, color: '#ff00ff' }
 };
 const MAX_INVENTORY_SIZE = 5;
 const RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
@@ -608,7 +609,8 @@ const RARITY_LEVELS = [
     'mythic',
     'ultra',
     'super',
-    'unique'
+    'unique',
+    'apex'
 ];
 // Scaling multipliers for mob stats
 const HEALTH_SCALING = {
@@ -620,7 +622,8 @@ const HEALTH_SCALING = {
     mythic: 3159,
     ultra: 126830,
     super: 2374000,
-    unique: 10000000
+    unique: 10000000,
+    apex: 30000000
 };
 const DAMAGE_SCALING = {
     common: 1,
@@ -631,7 +634,8 @@ const DAMAGE_SCALING = {
     mythic: 243,
     ultra: 729,
     super: 2187,
-    unique: 6561
+    unique: 6561,
+    apex: 19683
 };
 const SIZE_SCALING = {
     common: 1.5,
@@ -642,7 +646,8 @@ const SIZE_SCALING = {
     mythic: 7.5,
     ultra: 10.5,
     super: 16.777216,
-    unique: 26.8435456
+    unique: 26.8435456,
+    apex: 42.9496730
 };
 // Separate XP tables for each mob type (maintaining original values)
 const MOB_XP_TABLES = {
@@ -3445,7 +3450,8 @@ const RARITY_COLORS = {
     mythic: "#4B0082",
     ultra: "#de1f65",
     super: "#2bffa4",
-    unique: "#bf00ff"
+    unique: "#ffffff",
+    apex: "#ff00ff"
 };
 // Rarity name prefixes
 const RARITY_PREFIXES = {
@@ -3457,7 +3463,8 @@ const RARITY_PREFIXES = {
     mythic: "",
     ultra: "",
     super: "",
-    unique: ""
+    unique: "",
+    apex: ""
 };
 // Function to generate mob stats for a specific rarity
 function generateMobStats(baseConfig, rarity, mobType) {
@@ -4465,7 +4472,8 @@ const RARITY_LEVELS = [
     'mythic',
     'ultra',
     'super',
-    'unique'
+    'unique',
+    'apex'
 ];
 // Rarity-specific overrides for special cases
 const RARITY_OVERRIDES = {
@@ -5939,7 +5947,8 @@ const RARITY_COLORS = {
     mythic: "#4B0082",
     ultra: "#de1f65",
     super: "#2bffa4",
-    unique: "#bf00ff"
+    unique: "#ffffff",
+    apex: "#ff00ff"
 };
 // Rarity name prefixes
 const RARITY_PREFIXES = {
@@ -5951,7 +5960,8 @@ const RARITY_PREFIXES = {
     mythic: "",
     ultra: "",
     super: "",
-    unique: ""
+    unique: "",
+    apex: ""
 };
 // Lightning damage scaling table by rarity
 // Shows how lightning damage scales with the 3x multiplier per rarity level
@@ -5977,7 +5987,8 @@ const LIGHTNING_SCALING_TABLE = {
     mythic: { multiplier: 243, damageAt10Base: 2430, damageAt25Base: 6075, damageAt50Base: 12150 },
     ultra: { multiplier: 729, damageAt10Base: 7290, damageAt25Base: 18225, damageAt50Base: 36450 },
     super: { multiplier: 2187, damageAt10Base: 21870, damageAt25Base: 54675, damageAt50Base: 109350 },
-    unique: { multiplier: 6561, damageAt10Base: 65610, damageAt25Base: 164025, damageAt50Base: 328050 }
+    unique: { multiplier: 6561, damageAt10Base: 65610, damageAt25Base: 164025, damageAt50Base: 328050 },
+    apex: { multiplier: 19683, damageAt10Base: 196830, damageAt25Base: 492075, damageAt50Base: 984150 }
 };
 // Helper function to get lightning damage for a given base damage and rarity
 function getLightningDamage(baseDamage, rarity) {
@@ -7115,7 +7126,8 @@ class Graphics {
             mythic: '#1fdbde',
             ultra: '#de1f65',
             super: '#2bffa4',
-            unique: '#bf00ff'
+            unique: '#ffffff',
+            apex: '#ff00ff'
         };
         this.ENEMY_SIZE_MULTIPLIERS = {
             common: 1.0,
@@ -7126,7 +7138,8 @@ class Graphics {
             mythic: 2.0,
             ultra: 2.5,
             super: 3.0,
-            unique: 3.5
+            unique: 3.5,
+            apex: 4.0
         };
         this.ENEMY_MAX_HEALTH = {
             common: 20,
@@ -7137,7 +7150,8 @@ class Graphics {
             mythic: 150,
             ultra: 450,
             super: 1350,
-            unique: 4050
+            unique: 4050,
+            apex: 12150
         };
         this.ITEM_RARITY_COLORS = {
             common: '#7eef6d',
@@ -7148,7 +7162,8 @@ class Graphics {
             mythic: '#1fdbde',
             ultra: '#de1f65',
             super: '#2bffa4',
-            unique: '#bf00ff'
+            unique: '#ffffff',
+            apex: '#ff00ff'
         };
         // Track invulnerability fade-out per player: maps playerId -> timestamp when invulnerability ended
         this.invulFadeStates = new Map();
@@ -9356,7 +9371,7 @@ Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 1.0, en
     });
 };
 Graphics.prototype.drawPlayerHealthBar = function (player) {
-    const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
     // Reset any effects that might interfere with text rendering
     this.ctx.globalAlpha = 1.0;
     this.ctx.shadowBlur = 0;
@@ -10362,7 +10377,8 @@ Graphics.prototype.drawMinimap = function (players, socket) {
             mythic: 'rgba(31, 219, 222, 0.4)',
             ultra: 'rgba(222, 31, 101, 0.4)',
             super: 'rgba(43, 255, 164, 0.4)',
-            unique: 'rgba(191, 0, 255, 0.4)'
+            unique: 'rgba(191, 0, 255, 0.4)',
+            apex: 'rgba(0, 255, 255, 0.4)'
         };
         this.mapData.forEach(element => {
             if (element.type !== 'spawn')
@@ -13763,9 +13779,10 @@ const ITEM_RARITY_COLORS = {
     mythic: '#1fdbde',
     ultra: '#de1f65',
     super: '#2bffa4',
-    unique: '#bf00ff'
+    unique: '#ffffff',
+    apex: '#ff00ff'
 };
-const RARITY_ORDER = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
 function darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
     const r = (num >> 16) & 255;
@@ -14522,11 +14539,12 @@ const crafting_panel_ITEM_RARITY_COLORS = {
     mythic: '#1fdbde',
     ultra: '#de1f65',
     super: '#2bffa4',
-    unique: '#bf00ff'
+    unique: '#ffffff',
+    apex: '#ff00ff'
 };
-const crafting_panel_RARITY_ORDER = (/* unused pure expression or super */ null && (['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common']));
-/** Column order for the crafting inventory grid: common on left, no unique. */
-const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super'];
+const crafting_panel_RARITY_ORDER = (/* unused pure expression or super */ null && (['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common']));
+/** Column order for the crafting inventory grid: common on left, no apex. */
+const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
 function crafting_panel_darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
     const r = (num >> 16) & 255;
@@ -15401,6 +15419,7 @@ CanvasCraftingPanel.RARITY_UPGRADES = {
     mythic: 'ultra',
     ultra: 'super',
     super: 'unique',
+    unique: 'apex',
 };
 
 ;// ./src/inventory.ts
@@ -20571,7 +20590,8 @@ const loadout_bar_ITEM_RARITY_COLORS = {
     mythic: '#1fdbde',
     ultra: '#de1f65',
     super: '#2bffa4',
-    unique: '#bf00ff'
+    unique: '#ffffff',
+    apex: '#ff00ff'
 };
 function loadout_bar_darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
@@ -21149,7 +21169,11 @@ class Game {
             rare: '#0000FF', // Blue
             epic: '#800080', // Purple
             legendary: '#FFA500', // Orange
-            mythic: '#FF0000' // Red
+            mythic: '#FF0000', // Red
+            ultra: '#de1f65', // Pink
+            super: '#2bffa4', // Turquoise
+            unique: '#ffffff', // Magenta
+            apex: '#ff00ff' // Cyan
         };
         // Add to Game class properties
         this.craftingPanel = null;

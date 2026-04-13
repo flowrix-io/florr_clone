@@ -95,7 +95,8 @@ class Graphics {
             mythic: '#1fdbde',
             ultra: '#de1f65',
             super: '#2bffa4',
-            unique: '#bf00ff'
+            unique: '#ffffff',
+            apex: '#ff00ff'
         };
         this.ENEMY_SIZE_MULTIPLIERS = {
             common: 1.0,
@@ -106,7 +107,8 @@ class Graphics {
             mythic: 2.0,
             ultra: 2.5,
             super: 3.0,
-            unique: 3.5
+            unique: 3.5,
+            apex: 4.0
         };
         this.ENEMY_MAX_HEALTH = {
             common: 20,
@@ -117,7 +119,8 @@ class Graphics {
             mythic: 150,
             ultra: 450,
             super: 1350,
-            unique: 4050
+            unique: 4050,
+            apex: 12150
         };
         this.ITEM_RARITY_COLORS = {
             common: '#7eef6d',
@@ -128,7 +131,8 @@ class Graphics {
             mythic: '#1fdbde',
             ultra: '#de1f65',
             super: '#2bffa4',
-            unique: '#bf00ff'
+            unique: '#ffffff',
+            apex: '#ff00ff'
         };
         // Track invulnerability fade-out per player: maps playerId -> timestamp when invulnerability ended
         this.invulFadeStates = new Map();

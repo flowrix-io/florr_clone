@@ -19,7 +19,7 @@ function getEligiblePetalTypes() {
 const physics_1 = require("./physics");
 const petals_1 = require("../petals");
 // Rarity order from lowest to highest
-const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 // Calculate crafting chance for upgrading from one rarity to the next
 function getCraftingChance(rarityIndex) {
     const baseChance = 64;

@@ -204,7 +204,11 @@ export class Game {
         rare: '#0000FF',       // Blue
         epic: '#800080',       // Purple
         legendary: '#FFA500',   // Orange
-        mythic: '#FF0000'      // Red
+        mythic: '#FF0000',     // Red
+        ultra: '#de1f65',      // Pink
+        super: '#2bffa4',      // Turquoise
+        unique: '#ffffff',     // Magenta
+        apex: '#ff00ff'        // Cyan
     };
     // Add to Game class properties
     private craftingPanel: HTMLDivElement | null = null;

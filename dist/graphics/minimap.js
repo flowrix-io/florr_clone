@@ -74,7 +74,8 @@ core_1.Graphics.prototype.drawMinimap = function (players, socket) {
             mythic: 'rgba(31, 219, 222, 0.4)',
             ultra: 'rgba(222, 31, 101, 0.4)',
             super: 'rgba(43, 255, 164, 0.4)',
-            unique: 'rgba(191, 0, 255, 0.4)'
+            unique: 'rgba(191, 0, 255, 0.4)',
+            apex: 'rgba(0, 255, 255, 0.4)'
         };
         this.mapData.forEach(element => {
             if (element.type !== 'spawn')

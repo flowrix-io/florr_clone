@@ -110,7 +110,8 @@ export const ENEMY_TIERS = {
   mythic: { health: 150, speed: 2, damage: 30, probability: 0.01, color: '#de1f65' },
   ultra: { health: 450, speed: 2, damage: 90, probability: 0.0, color: '#de1f65' },
   super: { health: 1350, speed: 3, damage: 270, probability: 0.0, color: '#2bffa4' },
-  unique: { health: 4050, speed: 4, damage: 810, probability: 0.0, color: '#bf00ff' }
+  unique: { health: 4050, speed: 4, damage: 810, probability: 0.0, color: '#ffffff' },
+  apex: { health: 12150, speed: 5, damage: 2430, probability: 0.0, color: '#ff00ff' }
 };
 
 export const MAX_INVENTORY_SIZE = 5;
@@ -204,7 +205,7 @@ export const MAZE_WALL_THICKNESS = 100;  // Thickness of maze walls
 // Define spawn table entry for biomes
 export interface BiomeSpawnEntry {
     mobType?: string;  // If not specified, uses any mob type
-    tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique';
+    tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
     weight: number;  // Relative probability (higher = more common)
     reversed?: boolean;  // Whether the mob image should be flipped horizontally
 }
