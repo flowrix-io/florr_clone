@@ -1060,35 +1060,35 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 
     <g id="blades" stroke="#ffffff" stroke-width="16.67" fill="none" opacity="0.5">
       <path transform="rotate(45)">
-        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-0.392s"
+        <animate attributeName="d" dur="3s" repeatCount="indefinite" begin="-0.375s"
           values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
       </path>
       <path transform="rotate(90)">
-        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-0.785s"
+        <animate attributeName="d" dur="3s" repeatCount="indefinite" begin="-0.750s"
           values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
       </path>
       <path transform="rotate(135)">
-        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-1.177s"
+        <animate attributeName="d" dur="3s" repeatCount="indefinite" begin="-1.125s"
           values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
       </path>
       <path transform="rotate(180)">
-        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-1.570s"
+        <animate attributeName="d" dur="3s" repeatCount="indefinite" begin="-1.500s"
           values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
       </path>
       <path transform="rotate(225)">
-        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-1.963s"
+        <animate attributeName="d" dur="3s" repeatCount="indefinite" begin="-1.875s"
           values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
       </path>
       <path transform="rotate(270)">
-        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-2.356s"
+        <animate attributeName="d" dur="3s" repeatCount="indefinite" begin="-2.250s"
           values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
       </path>
       <path transform="rotate(315)">
-        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-2.748s"
+        <animate attributeName="d" dur="3s" repeatCount="indefinite" begin="-2.625s"
           values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
       </path>
       <path transform="rotate(360)">
-        <animate attributeName="d" dur="3.141s" repeatCount="indefinite" begin="-3.141s"
+        <animate attributeName="d" dur="3s" repeatCount="indefinite" begin="-3.000s"
           values="M 80 0 Q 90 0 150 20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 -20; M 80 0 Q 90 0 150 0; M 80 0 Q 90 0 150 20;" />
       </path>
     </g>

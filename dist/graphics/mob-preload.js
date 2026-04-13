@@ -122,7 +122,7 @@ core_1.Graphics.prototype.parseSVGAnimationDurations = function (svg) {
  * Caps at MAX_FRAMES_PER_CYCLE to limit memory usage.
  */
 core_1.Graphics.prototype.calculateFramesPerCycle = function (svg, frameTime) {
-    const MAX_FRAMES_PER_CYCLE = 60;
+    const MAX_FRAMES_PER_CYCLE = 180;
     const MIN_FRAMES_PER_CYCLE = 6;
     const DEFAULT_FRAMES = 30;
     const durations = this.parseSVGAnimationDurations(svg);
@@ -140,7 +140,7 @@ core_1.Graphics.prototype.calculateFramesPerCycle = function (svg, frameTime) {
             break;
         }
     }
-    let framesPerCycle = Math.ceil(cycleDuration / frameTime);
+    let framesPerCycle = Math.round(cycleDuration / frameTime);
     if (framesPerCycle > MAX_FRAMES_PER_CYCLE) {
         // LCM is too large. Find the largest cycle ≤ MAX that is a multiple
         // of the shortest animation duration (most visually critical).
@@ -150,7 +150,7 @@ core_1.Graphics.prototype.calculateFramesPerCycle = function (svg, frameTime) {
         const reps = Math.floor(maxCycleDuration / shortestDuration);
         if (reps >= 1) {
             cycleDuration = reps * shortestDuration;
-            framesPerCycle = Math.ceil(cycleDuration / frameTime);
+            framesPerCycle = Math.round(cycleDuration / frameTime);
         }
         else {
             // Shortest duration itself exceeds max - use max frames

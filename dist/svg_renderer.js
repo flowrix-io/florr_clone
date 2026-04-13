@@ -113,6 +113,70 @@ class SVGRendererWrapper {
         });
         return result;
     }
+    applyPathAnimations(svgString, time) {
+        // Handle <animate> elements that animate the 'd' attribute on <path> elements
+        // Neither the WASM renderer nor the rotation handler processes these
+        const pathWithAnimateRegex = /<path\b([^>]*)>\s*<animate\s+([^>]*)\/?>\s*<\/path>/g;
+        return svgString.replace(pathWithAnimateRegex, (match, pathAttrs, animateAttrs) => {
+            // Only handle d attribute animations
+            const attrNameMatch = animateAttrs.match(/attributeName="([^"]*)"/);
+            if (!attrNameMatch || attrNameMatch[1] !== 'd')
+                return match;
+            const durMatch = animateAttrs.match(/dur="([^"]*)"/);
+            const valuesMatch = animateAttrs.match(/values="([^"]*)"/);
+            if (!durMatch || !valuesMatch)
+                return match;
+            // Parse duration
+            const durStr = durMatch[1];
+            let duration;
+            if (durStr.endsWith('ms')) {
+                duration = parseFloat(durStr);
+            }
+            else {
+                duration = parseFloat(durStr) * 1000;
+            }
+            // Parse begin offset (e.g., begin="-0.375s" means animation started 0.375s before time 0)
+            let beginOffset = 0;
+            const beginMatch = animateAttrs.match(/begin="([^"]*)"/);
+            if (beginMatch) {
+                const beginStr = beginMatch[1];
+                if (beginStr.endsWith('ms')) {
+                    beginOffset = parseFloat(beginStr);
+                }
+                else {
+                    beginOffset = parseFloat(beginStr) * 1000;
+                }
+            }
+            // Effective time accounts for begin offset (negative begin = started earlier)
+            const effectiveTime = time - beginOffset;
+            const progress = (((effectiveTime % duration) + duration) % duration) / duration;
+            // Parse semicolon-separated keyframe path values
+            const keyframes = valuesMatch[1].split(';').map(s => s.trim()).filter(s => s.length > 0);
+            if (keyframes.length < 2)
+                return match;
+            // Determine which two keyframes to interpolate between
+            const keyframeProgress = progress * (keyframes.length - 1);
+            let idx = Math.floor(keyframeProgress);
+            if (idx >= keyframes.length - 1)
+                idx = keyframes.length - 2;
+            const localProgress = keyframeProgress - idx;
+            // Extract numeric values from both keyframes
+            const numRegex = /-?[\d.]+/g;
+            const nums1 = (keyframes[idx].match(numRegex) || []).map(Number);
+            const nums2 = (keyframes[idx + 1].match(numRegex) || []).map(Number);
+            if (nums1.length !== nums2.length || nums1.length === 0)
+                return match;
+            // Linearly interpolate all numeric values
+            const interpolated = nums1.map((v, i) => v + (nums2[i] - v) * localProgress);
+            // Reconstruct the path string by replacing numbers in the template
+            let numIdx = 0;
+            const dValue = keyframes[idx].replace(numRegex, () => {
+                const val = interpolated[numIdx++];
+                return val % 1 === 0 ? val.toString() : val.toFixed(2);
+            });
+            return `<path${pathAttrs} d="${dValue}"></path>`;
+        });
+    }
     async loadSVGAsImageBitmap(svgString, cacheKey) {
         // Check cache first - reuse existing image bitmap if available
         if (this.imageCache.has(cacheKey)) {
@@ -449,18 +513,22 @@ class SVGRendererWrapper {
      * Used for preloading animation frames
      */
     getAnimatedSVGString(svgString, time) {
+        let result;
         if (this.fallbackMode || !this.renderer) {
-            return this.applyAnimationsToSVG(svgString, time);
+            result = this.applyAnimationsToSVG(svgString, time);
         }
         else {
             try {
-                return this.renderer.renderSVG(svgString, time);
+                result = this.renderer.renderSVG(svgString, time);
             }
             catch (error) {
                 console.error('[SVGRenderer] Error getting animated SVG, using fallback:', error);
-                return this.applyAnimationsToSVG(svgString, time);
+                result = this.applyAnimationsToSVG(svgString, time);
             }
         }
+        // Apply <animate> path animations (not handled by WASM or JS rotation handler)
+        result = this.applyPathAnimations(result, time);
+        return result;
     }
 }
 exports.SVGRendererWrapper = SVGRendererWrapper;
