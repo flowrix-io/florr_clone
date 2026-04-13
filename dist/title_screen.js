@@ -3921,8 +3921,12 @@ class TitleScreenInventoryManager {
                     : (rawInv ? (0, inventoryCodec_1.dictToInventory)(rawInv) : []);
                 this.playerData = {
                     inventory: normalizedInv,
-                    loadout: (() => { const a = response.player.loadout || []; const o = new Array(20).fill(null); for (let i = 0; i < Math.min(a.length, 20); i++)
-                        o[i] = a[i] || null; return o; })(),
+                    loadout: (() => { const a = response.player.loadout || []; const o = new Array(20).fill(null); for (let i = 0; i < Math.min(a.length, 20); i++) {
+                        if (a[i]) {
+                            a[i].onCooldown = false;
+                        }
+                        o[i] = a[i] || null;
+                    } return o; })(),
                     tp: response.player.tp,
                     skills: response.player.skills,
                     stars: response.player.stars || 0,
@@ -4012,7 +4016,7 @@ class TitleScreenInventoryManager {
             if (stats) {
                 item.health = stats.health;
                 item.maxHealth = stats.health;
-                item.onCooldown = true;
+                item.onCooldown = false;
             }
         }
         // Pad to full loadout length so secondary-row writes are preserved
