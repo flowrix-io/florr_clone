@@ -17,6 +17,8 @@ import { ShopManager } from './shop';
 import { inventoryToDict, addItem as codecAddItem, removeItem as codecRemoveItem, getItemCount as codecGetItemCount, dictToInventory } from './inventoryCodec';
 import { CanvasLoadoutBar, LOADOUT_SLOT_COUNT as CANVAS_LOADOUT_SLOT_COUNT } from './graphics/loadout-bar';
 import { CanvasInventoryPanel, InventoryHitInfo } from './graphics/inventory-panel';
+import { Graphics } from './graphics/core';
+import './graphics/flower';
 import { applyZoomCompensation, canvasCoords } from './zoom-compensation';
 
 interface FloatingPetal {
@@ -3569,7 +3571,12 @@ export class TitleScreen {
             },
             getSocket: () => window.preconnectedSocket,
             showFloatingText: () => {}, // No-op for title screen
-            canvas: document.createElement('canvas')
+            canvas: document.createElement('canvas'),
+            graphics: (() => {
+                const c = document.createElement('canvas');
+                const dummy = new Image();
+                return new Graphics(c, dummy, dummy, dummy, dummy, dummy, dummy);
+            })()
         });
 
         // Wait for socket to be available

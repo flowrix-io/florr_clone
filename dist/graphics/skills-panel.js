@@ -710,7 +710,7 @@ class CanvasSkillsPanel {
                 color: player?.color ?? '#FFE763',
                 faceFlags: 0,
                 equipFlags: 0,
-                eyeX: graphics.playerEye?.x ?? 0,
+                eyeX: graphics.playerEye?.x || 2,
                 eyeY: graphics.playerEye?.y ?? 0,
                 mouth: 14.5,
             });

@@ -18625,7 +18625,7 @@ class CanvasSkillsPanel {
                 color: player?.color ?? '#FFE763',
                 faceFlags: 0,
                 equipFlags: 0,
-                eyeX: graphics.playerEye?.x ?? 0,
+                eyeX: graphics.playerEye?.x || 2,
                 eyeY: graphics.playerEye?.y ?? 0,
                 mouth: 14.5,
             });
@@ -24685,6 +24685,8 @@ class LeaderboardManager {
 
 
 
+
+
 class FloatingPetalManager {
     constructor(container) {
         this.petals = [];
@@ -27906,7 +27908,12 @@ class TitleScreen {
             },
             getSocket: () => window.preconnectedSocket,
             showFloatingText: () => { }, // No-op for title screen
-            canvas: document.createElement('canvas')
+            canvas: document.createElement('canvas'),
+            graphics: (() => {
+                const c = document.createElement('canvas');
+                const dummy = new Image();
+                return new Graphics(c, dummy, dummy, dummy, dummy, dummy, dummy);
+            })()
         });
         // Wait for socket to be available
         const checkSocket = setInterval(() => {

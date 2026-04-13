@@ -18,6 +18,8 @@ const shop_1 = require("./shop");
 const inventoryCodec_1 = require("./inventoryCodec");
 const loadout_bar_1 = require("./graphics/loadout-bar");
 const inventory_panel_1 = require("./graphics/inventory-panel");
+const core_1 = require("./graphics/core");
+require("./graphics/flower");
 const zoom_compensation_1 = require("./zoom-compensation");
 class FloatingPetalManager {
     constructor(container) {
@@ -3240,7 +3242,12 @@ class TitleScreen {
             },
             getSocket: () => window.preconnectedSocket,
             showFloatingText: () => { }, // No-op for title screen
-            canvas: document.createElement('canvas')
+            canvas: document.createElement('canvas'),
+            graphics: (() => {
+                const c = document.createElement('canvas');
+                const dummy = new Image();
+                return new core_1.Graphics(c, dummy, dummy, dummy, dummy, dummy, dummy);
+            })()
         });
         // Wait for socket to be available
         const checkSocket = setInterval(() => {

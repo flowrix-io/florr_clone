@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 245797141,
+      "totalXP": 245797271,
       "inventory": {
         "common": {
           "shield": 257,
@@ -730,18 +730,18 @@
           "legendary": 130,
           "uncommon": 59,
           "rare": 47,
-          "common": 41,
+          "common": 42,
           "epic": 21,
           "super": 3
         },
         "jellyfish": {
-          "uncommon": 65,
+          "uncommon": 66,
           "ultra": 4,
           "legendary": 123,
           "mythic": 118,
           "unique": 1,
           "epic": 43,
-          "common": 37,
+          "common": 38,
           "rare": 50,
           "super": 1
         },
@@ -905,10 +905,10 @@
           "epic": 1
         },
         "starfish": {
-          "uncommon": 98,
+          "uncommon": 99,
           "rare": 83,
           "legendary": 143,
-          "common": 41,
+          "common": 42,
           "epic": 40,
           "mythic": 112,
           "super": 3,
@@ -985,7 +985,7 @@
           "rare": 17
         },
         "shell": {
-          "common": 33,
+          "common": 37,
           "uncommon": 16,
           "mythic": 34,
           "legendary": 37,
