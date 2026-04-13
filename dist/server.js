@@ -408,7 +408,7 @@ function spawnMob(mobType, rarity, x, y) {
         return;
     }
     // Validate rarity
-    const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
     if (!validRarities.includes(rarity.toLowerCase())) {
         console.log(`Invalid rarity: ${rarity}`);
         console.log(`Valid rarities: ${validRarities.join(', ')}`);
