@@ -2202,24 +2202,27 @@ class TitleScreen {
         if (!showStats)
             return;
         ctx.save();
-        ctx.font = 'bold 14px Ubuntu, sans-serif';
+        const lineHeight = 15;
+        ctx.font = 'bold 11px Ubuntu, sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 2;
         ctx.strokeStyle = '#000000';
-        // FPS & Memory
-        ctx.fillStyle = '#00ff00';
-        const fpsText = `FPS: ${this.titleFpsCounter} | Memory: 0.00 MB`;
-        ctx.strokeText(fpsText, width - 10, height - 10);
-        ctx.fillText(fpsText, width - 10, height - 10);
-        // Mobs
-        ctx.fillStyle = '#ff6b6b';
-        ctx.strokeText('Mobs: 0', width - 10, height - 30);
-        ctx.fillText('Mobs: 0', width - 10, height - 30);
-        // Players
-        ctx.fillStyle = '#4ecdc4';
-        ctx.strokeText('Players: 0', width - 10, height - 50);
-        ctx.fillText('Players: 0', width - 10, height - 50);
+        const x = width - 8;
+        const lines = [
+            { text: 'Pos: --, --', color: '#ffd700' },
+            { text: 'Ping: -- | In: 0 B/s | Out: 0 B/s', color: '#a78bfa' },
+            { text: 'Players: 0', color: '#4ecdc4' },
+            { text: 'Mobs: 0', color: '#ff6b6b' },
+            { text: `FPS: ${this.titleFpsCounter} | Memory: 0.00 MB`, color: '#00ff00' },
+        ];
+        let y = height - 8;
+        for (const line of lines) {
+            ctx.strokeText(line.text, x, y);
+            ctx.fillStyle = line.color;
+            ctx.fillText(line.text, x, y);
+            y -= lineHeight;
+        }
         ctx.restore();
     }
     /**

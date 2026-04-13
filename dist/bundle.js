@@ -21137,10 +21137,6 @@ class Game {
         this.MIN_INPUT_INTERVAL = 33; // ~30 TPS (match server tick rate)
         this.connectionQuality = 'good';
         this.frameCount = 0;
-        this.fpsDisplayElement = null;
-        this.mobCounterElement = null;
-        this.playerCounterElement = null;
-        this.networkStatsElement = null;
         this.bytesReceived = 0;
         this.bytesSent = 0;
         this.lastBytesReceived = 0;
@@ -21449,96 +21445,6 @@ class Game {
         this.saveIndicator.style.display = 'none';
         document.body.appendChild(this.saveIndicator);
         this.createdElements.push(this.saveIndicator);
-        // Create FPS display element
-        this.fpsDisplayElement = document.createElement('div');
-        this.fpsDisplayElement.id = 'fpsDisplay';
-        this.fpsDisplayElement.style.cssText = `
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            color: #00ff00;
-            font-family: Ubuntu, sans-serif;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 10000;
-            display: none;
-            pointer-events: none;
-            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-        `;
-        this.fpsDisplayElement.textContent = 'FPS: 0';
-        document.body.appendChild(this.fpsDisplayElement);
-        this.createdElements.push(this.fpsDisplayElement);
-        // Set initial stats display visibility
-        if (this.fpsDisplayElement) {
-            this.fpsDisplayElement.style.display = this.showStats ? 'block' : 'none';
-        }
-        // Create mob counter element
-        this.mobCounterElement = document.createElement('div');
-        this.mobCounterElement.id = 'mobCounter';
-        this.mobCounterElement.style.cssText = `
-            position: fixed;
-            bottom: 30px;
-            right: 10px;
-            color: #ff6b6b;
-            font-family: Ubuntu, sans-serif;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 10000;
-            display: block;
-            pointer-events: none;
-            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-        `;
-        this.mobCounterElement.textContent = 'Mobs: 0';
-        document.body.appendChild(this.mobCounterElement);
-        this.createdElements.push(this.mobCounterElement);
-        // Create player counter element
-        this.playerCounterElement = document.createElement('div');
-        this.playerCounterElement.id = 'playerCounter';
-        this.playerCounterElement.style.cssText = `
-            position: fixed;
-            bottom: 50px;
-            right: 10px;
-            color: #4ecdc4;
-            font-family: Ubuntu, sans-serif;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 10000;
-            display: block;
-            pointer-events: none;
-            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-        `;
-        this.playerCounterElement.textContent = 'Players: 0';
-        document.body.appendChild(this.playerCounterElement);
-        this.createdElements.push(this.playerCounterElement);
-        // Create network stats element
-        this.networkStatsElement = document.createElement('div');
-        this.networkStatsElement.id = 'networkStats';
-        this.networkStatsElement.style.cssText = `
-            position: fixed;
-            bottom: 70px;
-            right: 10px;
-            color: #a78bfa;
-            font-family: Ubuntu, sans-serif;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 10000;
-            display: block;
-            pointer-events: none;
-            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-        `;
-        this.networkStatsElement.textContent = 'Ping: -- | In: 0 B/s | Out: 0 B/s';
-        document.body.appendChild(this.networkStatsElement);
-        this.createdElements.push(this.networkStatsElement);
-        // Set initial counter visibility
-        if (this.mobCounterElement) {
-            this.mobCounterElement.style.display = this.showStats ? 'block' : 'none';
-        }
-        if (this.playerCounterElement) {
-            this.playerCounterElement.style.display = this.showStats ? 'block' : 'none';
-        }
-        if (this.networkStatsElement) {
-            this.networkStatsElement.style.display = this.showStats ? 'block' : 'none';
-        }
         // Add this to the constructor after creating the loadout bar
         const style = document.createElement('style');
         style.textContent = `
@@ -21938,36 +21844,9 @@ class Game {
             if (statsCheckbox) {
                 statsCheckbox.addEventListener('change', () => {
                     this.showStats = statsCheckbox.checked;
-                    // Reset FPS counter when toggling
                     if (this.showStats) {
                         this.frameCount = 0;
                         this.fpsUpdateTime = performance.now();
-                        if (this.fpsDisplayElement) {
-                            this.fpsDisplayElement.style.display = 'block';
-                        }
-                        if (this.mobCounterElement) {
-                            this.mobCounterElement.style.display = 'block';
-                        }
-                        if (this.playerCounterElement) {
-                            this.playerCounterElement.style.display = 'block';
-                        }
-                        if (this.networkStatsElement) {
-                            this.networkStatsElement.style.display = 'block';
-                        }
-                    }
-                    else {
-                        if (this.fpsDisplayElement) {
-                            this.fpsDisplayElement.style.display = 'none';
-                        }
-                        if (this.mobCounterElement) {
-                            this.mobCounterElement.style.display = 'none';
-                        }
-                        if (this.playerCounterElement) {
-                            this.playerCounterElement.style.display = 'none';
-                        }
-                        if (this.networkStatsElement) {
-                            this.networkStatsElement.style.display = 'none';
-                        }
                     }
                 }, { signal });
             }
@@ -22094,34 +21973,14 @@ class Game {
         if (this.showStats) {
             this.frameCount++;
             const currentTime = performance.now();
-            if (currentTime - this.fpsUpdateTime >= 1000) { // Update every second
+            if (currentTime - this.fpsUpdateTime >= 1000) {
                 this.fpsCounter = this.frameCount;
                 this.frameCount = 0;
                 this.fpsUpdateTime = currentTime;
-                // Update DOM elements
-                if (this.fpsDisplayElement) {
-                    // Calculate memory usage
-                    const memoryMB = this.getOffscreenCanvasMemoryMB();
-                    this.fpsDisplayElement.textContent = `FPS: ${this.fpsCounter} | Memory: ${memoryMB.toFixed(2)} MB`;
-                }
-                // Calculate throughput (bytes per second)
                 this.incomingThroughput = this.bytesReceived - this.lastBytesReceived;
                 this.outgoingThroughput = this.bytesSent - this.lastBytesSent;
                 this.lastBytesReceived = this.bytesReceived;
                 this.lastBytesSent = this.bytesSent;
-                if (this.networkStatsElement) {
-                    const pingStr = this.averagePing > 0 ? `${Math.round(this.averagePing)}ms` : '--';
-                    this.networkStatsElement.textContent = `Ping: ${pingStr} | In: ${this.formatBytes(this.incomingThroughput)}/s | Out: ${this.formatBytes(this.outgoingThroughput)}/s`;
-                }
-            }
-        }
-        // Update counters
-        if (this.showStats) {
-            if (this.mobCounterElement) {
-                this.mobCounterElement.textContent = `Mobs: ${this.enemies.size}`;
-            }
-            if (this.playerCounterElement) {
-                this.playerCounterElement.textContent = `Players: ${this.players.size}`;
             }
         }
         this.update();
@@ -22143,6 +22002,9 @@ class Game {
             else
                 this.loadoutBar.hide();
             this.loadoutBar.draw(this.graphics.ctx);
+        }
+        if (this.showStats) {
+            this.renderStatsOverlay();
         }
         requestAnimationFrame(() => this.gameLoop());
     }
@@ -22371,6 +22233,44 @@ class Game {
         if (bytes < 1024 * 1024)
             return `${(bytes / 1024).toFixed(1)} KB`;
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    renderStatsOverlay() {
+        const ctx = this.graphics.ctx;
+        const canvas = this.graphics.canvas;
+        if (!ctx || !canvas)
+            return;
+        ctx.save();
+        const lineHeight = 15;
+        ctx.font = 'bold 11px Ubuntu, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000000';
+        const x = canvas.width - 8;
+        const player = this.socket?.id ? this.players.get(this.socket.id) : undefined;
+        const lines = [];
+        // Player position
+        if (player) {
+            lines.push({ text: `Pos: ${Math.round(player.x)}, ${Math.round(player.y)}`, color: '#ffd700' });
+        }
+        // Network
+        const pingStr = this.averagePing > 0 ? `${Math.round(this.averagePing)}ms` : '--';
+        lines.push({ text: `Ping: ${pingStr} | In: ${this.formatBytes(this.incomingThroughput)}/s | Out: ${this.formatBytes(this.outgoingThroughput)}/s`, color: '#a78bfa' });
+        // Counters
+        lines.push({ text: `Players: ${this.players.size}`, color: '#4ecdc4' });
+        lines.push({ text: `Mobs: ${this.enemies.size}`, color: '#ff6b6b' });
+        // FPS & memory
+        const memoryMB = this.getOffscreenCanvasMemoryMB();
+        lines.push({ text: `FPS: ${this.fpsCounter} | Memory: ${memoryMB.toFixed(2)} MB`, color: '#00ff00' });
+        // Draw from bottom up
+        let y = canvas.height - 8;
+        for (const line of lines) {
+            ctx.strokeText(line.text, x, y);
+            ctx.fillStyle = line.color;
+            ctx.fillText(line.text, x, y);
+            y -= lineHeight;
+        }
+        ctx.restore();
     }
     trackSocketBytes(bytes, direction) {
         if (direction === 'in') {
@@ -26970,24 +26870,27 @@ class TitleScreen {
         if (!showStats)
             return;
         ctx.save();
-        ctx.font = 'bold 14px Ubuntu, sans-serif';
+        const lineHeight = 15;
+        ctx.font = 'bold 11px Ubuntu, sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 2;
         ctx.strokeStyle = '#000000';
-        // FPS & Memory
-        ctx.fillStyle = '#00ff00';
-        const fpsText = `FPS: ${this.titleFpsCounter} | Memory: 0.00 MB`;
-        ctx.strokeText(fpsText, width - 10, height - 10);
-        ctx.fillText(fpsText, width - 10, height - 10);
-        // Mobs
-        ctx.fillStyle = '#ff6b6b';
-        ctx.strokeText('Mobs: 0', width - 10, height - 30);
-        ctx.fillText('Mobs: 0', width - 10, height - 30);
-        // Players
-        ctx.fillStyle = '#4ecdc4';
-        ctx.strokeText('Players: 0', width - 10, height - 50);
-        ctx.fillText('Players: 0', width - 10, height - 50);
+        const x = width - 8;
+        const lines = [
+            { text: 'Pos: --, --', color: '#ffd700' },
+            { text: 'Ping: -- | In: 0 B/s | Out: 0 B/s', color: '#a78bfa' },
+            { text: 'Players: 0', color: '#4ecdc4' },
+            { text: 'Mobs: 0', color: '#ff6b6b' },
+            { text: `FPS: ${this.titleFpsCounter} | Memory: 0.00 MB`, color: '#00ff00' },
+        ];
+        let y = height - 8;
+        for (const line of lines) {
+            ctx.strokeText(line.text, x, y);
+            ctx.fillStyle = line.color;
+            ctx.fillText(line.text, x, y);
+            y -= lineHeight;
+        }
         ctx.restore();
     }
     /**
