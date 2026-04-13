@@ -23361,6 +23361,16 @@ const CHANGELOG = [
         changes: [
             'You now have a second row of loadout slots',
         ]
+    },
+    {
+        date: 'April 12, 2026',
+        changes: [
+            'Changed the UI of the skills panel',
+            'Changed the UI of the inventory',
+            'Changed the UI of the crafting panel',
+            'Added second chance skill',
+            'Fixed players getting damaged during invulnerability'
+        ]
     }
 ];
 class ChangelogManager {
