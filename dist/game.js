@@ -4,6 +4,7 @@ exports.Game = void 0;
 const zoom_compensation_1 = require("./zoom-compensation");
 const SVGLoader_1 = require("./SVGLoader");
 const constants_1 = require("./constants");
+const petals_1 = require("./petals");
 const graphics_1 = require("./graphics");
 const chat_1 = require("./chat");
 const socket_1 = require("./socket");
@@ -128,18 +129,7 @@ class Game {
         // Add to Game class properties
         this.pendingScripts = new Map();
         // Add to Game class properties
-        this.ITEM_RARITY_COLORS = {
-            common: '#808080', // Gray
-            uncommon: '#008000', // Green
-            rare: '#0000FF', // Blue
-            epic: '#800080', // Purple
-            legendary: '#FFA500', // Orange
-            mythic: '#FF0000', // Red
-            ultra: '#de1f65', // Pink
-            super: '#2bffa4', // Turquoise
-            unique: '#ffffff', // Magenta
-            apex: '#ff00ff' // Cyan
-        };
+        this.ITEM_RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
         // Add to Game class properties
         this.craftingPanel = null;
         this.craftingSlots = Array(4).fill(null).map((_, i) => ({ index: i, item: null }));

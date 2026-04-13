@@ -4,6 +4,7 @@ import { Dot, Enemy, Obstacle } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { SVGLoader } from './SVGLoader';
 import { MapElement, MapData, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, WALL_GRID } from './constants';
+import { ITEM_RARITY_COLORS } from './petals';
 import { Graphics } from './graphics';
 import { Chat } from './chat';
 import { initMultiPlayerMode, Socket } from './socket';
@@ -194,18 +195,7 @@ export class Game {
     // Add to Game class properties
     private pendingScripts: Map<string, SandboxedScript> = new Map();
     // Add to Game class properties
-    private readonly ITEM_RARITY_COLORS: Record<string, string> = {
-        common: '#808080',      // Gray
-        uncommon: '#008000',    // Green
-        rare: '#0000FF',       // Blue
-        epic: '#800080',       // Purple
-        legendary: '#FFA500',   // Orange
-        mythic: '#FF0000',     // Red
-        ultra: '#de1f65',      // Pink
-        super: '#2bffa4',      // Turquoise
-        unique: '#ffffff',     // Magenta
-        apex: '#ff00ff'        // Cyan
-    };
+    public readonly ITEM_RARITY_COLORS = ITEM_RARITY_COLORS;
     // Add to Game class properties
     private craftingPanel: HTMLDivElement | null = null;
     private craftingSlots: CraftingSlot[] = Array(4).fill(null).map((_, i) => ({ index: i, item: null }));

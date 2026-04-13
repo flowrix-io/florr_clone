@@ -1,7 +1,7 @@
 import { Item, ItemWithRarity } from './item';
 import { Player, PlayerInventory } from './player';
 import { Socket } from './socket';
-import { getPetalStats, getAllPetalTypes, RARITY_LEVELS } from './petals';
+import { getPetalStats, getAllPetalTypes, RARITY_LEVELS, ITEM_RARITY_COLORS } from './petals';
 import { Chat } from './chat';
 import { Game } from './game';
 import { getAllMobTypes, getMobStats, getMobRarities, MOB_DROP_TABLES, Rarity } from './mobs';
@@ -75,17 +75,7 @@ export class InventoryManager {
     private dragStartX: number = 0;
     private dragStartY: number = 0;
     private readonly CLICK_DRAG_THRESHOLD: number = 5;
-    private readonly ITEM_RARITY_COLORS: Record<string, string> = {
-        common: '#7eef6d',
-        uncommon: '#ffe65d',
-        rare: '#4d52e3',
-        epic: '#861fde',
-        legendary: '#de1f1f',
-        mythic: '#1fdbde',
-        ultra: '#de1f65',
-        super: '#2bffa4',
-        unique: '#bf00ff'
-    };
+    private readonly ITEM_RARITY_COLORS = ITEM_RARITY_COLORS;
 
     /**
      * Darken a hex color by a specified percentage
@@ -945,18 +935,21 @@ export class InventoryManager {
         // Get all mob types and rarities
         const allMobTypes = getAllMobTypes();
         
+        // Filter out apex from gallery display
+        const galleryRarities = RARITY_LEVELS.filter(r => r !== 'apex');
+
         // Create rows for each mob type
         for (const mobType of allMobTypes) {
             const row = document.createElement('div');
             row.className = 'mob-gallery-row';
             row.style.display = 'grid';
-            row.style.gridTemplateColumns = `repeat(${RARITY_LEVELS.length}, 1fr)`;
+            row.style.gridTemplateColumns = `repeat(${galleryRarities.length}, 1fr)`;
             row.style.gap = '0';
             row.style.marginBottom = '5px';
 
-            // Create cells for each rarity
+            // Create cells for each rarity (excluding apex)
             const mobRarities = getMobRarities(mobType);
-            for (const rarity of RARITY_LEVELS) {
+            for (const rarity of galleryRarities) {
                 const cell = document.createElement('div');
                 cell.className = 'mob-gallery-cell';
                 cell.style.width = '60px';

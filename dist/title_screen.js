@@ -3520,17 +3520,7 @@ class TitleScreenInventoryManager {
         this.canvasInventoryPanel = null;
         this.svgBlobUrlCache = new Map();
         this.LOADOUT_SLOTS = 20;
-        this.ITEM_RARITY_COLORS = {
-            common: '#7eef6d',
-            uncommon: '#ffe65d',
-            rare: '#4d52e3',
-            epic: '#861fde',
-            legendary: '#de1f1f',
-            mythic: '#1fdbde',
-            ultra: '#de1f65',
-            super: '#2bffa4',
-            unique: '#bf00ff'
-        };
+        this.ITEM_RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
         this.tooltipElement = null;
         this.tooltipTimeout = null;
         this.hoveredElement = null;

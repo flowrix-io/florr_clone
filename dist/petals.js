@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PETAL_CONFIG = exports.RARITY_LEVELS = void 0;
+exports.PETAL_CONFIG = exports.ITEM_RARITY_COLORS = exports.RARITY_LEVELS = void 0;
 exports.getLightningDamage = getLightningDamage;
 exports.getLightningScalingInfo = getLightningScalingInfo;
 exports.getPetalStats = getPetalStats;
@@ -24,6 +24,19 @@ exports.RARITY_LEVELS = [
     'unique',
     'apex'
 ];
+// Canonical UI rarity colors — single source of truth for all panels/UI
+exports.ITEM_RARITY_COLORS = {
+    common: '#7eef6d',
+    uncommon: '#ffe65d',
+    rare: '#4d52e3',
+    epic: '#861fde',
+    legendary: '#de1f1f',
+    mythic: '#1fdbde',
+    ultra: '#de1f65',
+    super: '#2bffa4',
+    unique: '#ffffff',
+    apex: '#ff00ff'
+};
 // Rarity-specific overrides for special cases
 const RARITY_OVERRIDES = {
     stinger: {

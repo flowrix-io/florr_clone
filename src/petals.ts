@@ -81,6 +81,20 @@ export const RARITY_LEVELS = [
 
 export type Rarity = typeof RARITY_LEVELS[number];
 
+// Canonical UI rarity colors — single source of truth for all panels/UI
+export const ITEM_RARITY_COLORS: Record<string, string> = {
+    common: '#7eef6d',
+    uncommon: '#ffe65d',
+    rare: '#4d52e3',
+    epic: '#861fde',
+    legendary: '#de1f1f',
+    mythic: '#1fdbde',
+    ultra: '#de1f65',
+    super: '#2bffa4',
+    unique: '#ffffff',
+    apex: '#ff00ff'
+};
+
 // Petal action types
 export interface PetalAction {
     type: 'heal' | 'break' | 'damage_boost' | 'speed_boost' | 'shield' | 'explode' | 'delay' | 'restart' | 'wait_until_collision' | 'lightning' | 

@@ -1,7 +1,7 @@
 import { Item, ItemWithRarity } from './item';
 import { Player, PlayerInventory } from './player';
 import { Socket } from './socket';
-import { getPetalStats, getAllPetalTypes, RARITY_LEVELS, Rarity } from './petals';
+import { getPetalStats, getAllPetalTypes, RARITY_LEVELS, Rarity, ITEM_RARITY_COLORS } from './petals';
 import { Game } from './game';
 import { GAME_ICONS_NET_ICONS } from './game-icons-net-icons';
 
@@ -69,17 +69,7 @@ export class ShopManager {
     private shopPanel: HTMLDivElement | null = null;
     private isShopOpen: boolean = false;
     private readonly allPetalTypes: string[];
-    private readonly ITEM_RARITY_COLORS: Record<string, string> = {
-        common: '#7eef6d',
-        uncommon: '#ffe65d',
-        rare: '#4d52e3',
-        epic: '#861fde',
-        legendary: '#de1f1f',
-        mythic: '#1fdbde',
-        ultra: '#de1f65',
-        super: '#2bffa4',
-        unique: '#bf00ff'
-    };
+    private readonly ITEM_RARITY_COLORS = ITEM_RARITY_COLORS;
 
     constructor(game: GameInterface) {
         this.game = game;

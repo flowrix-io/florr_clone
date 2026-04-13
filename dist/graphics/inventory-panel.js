@@ -5,18 +5,7 @@ exports.CanvasInventoryPanel = void 0;
 // Renders rarity-grouped item slots into a single <canvas> and exposes hit
 // testing / hover callbacks so InventoryManager can drive drag/drop & tooltips.
 const inventoryCodec_1 = require("../inventoryCodec");
-const ITEM_RARITY_COLORS = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#ffffff',
-    apex: '#ff00ff'
-};
+const petals_1 = require("../petals");
 const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
 function darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
@@ -471,7 +460,7 @@ class CanvasInventoryPanel {
             for (const r of this.itemRects) {
                 if (!seenRarity.has(r.rarity)) {
                     seenRarity.add(r.rarity);
-                    const color = ITEM_RARITY_COLORS[r.rarity] || '#fff';
+                    const color = petals_1.ITEM_RARITY_COLORS[r.rarity] || '#fff';
                     const labelText = r.rarity.charAt(0).toUpperCase() + r.rarity.slice(1).toLowerCase();
                     const labelY = r.y - 4;
                     ctx.font = 'bold 14px Ubuntu, sans-serif';
@@ -641,7 +630,7 @@ class CanvasInventoryPanel {
      *  rounded square with a darker border, centered icon, outlined white
      *  name text at the bottom, and an outlined `xN` count in the top-right. */
     drawItemSlot(ctx, r, hovered, time) {
-        const baseColor = ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
+        const baseColor = petals_1.ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
         const borderColor = darken(baseColor, 25);
         const radius = 6;
         const borderW = 3;

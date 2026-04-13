@@ -2672,12 +2672,13 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 addItem(player.inventory, newRarity, itemKey, successfulCrafts);
                 
                 // Send global notification for super or unique petal crafts
-                if ((newRarity === 'super' || newRarity === 'unique') && type === 'petal' && petalType) {
+                if ((newRarity === 'super' || newRarity === 'unique' || newRarity === 'apex') && type === 'petal' && petalType) {
                     const petalStats = getPetalStats(petalType, newRarity);
                     if (petalStats) {
                         const rarityColors: Record<string, string> = {
                             super: '#2bffa4',
-                            unique: '#bf00ff'
+                            unique: '#ffffff',
+                            apex: '#ff00ff'
                         };
                         const rarityColor = rarityColors[newRarity] || '#ffffff';
                         const petalName = petalStats.name.slice(0, -5);

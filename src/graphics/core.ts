@@ -2,7 +2,7 @@ import { Player, FaceFlags, EquipmentFlags } from '../player';
 import { Enemy } from '../enemy';
 import { Item, WorldItem } from '../item';
 import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE, getMobAnimationFrameTime, getHighQualityMobs, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState, WallTileState, SECTION_CONFIGS, seededRandom, getTileJaggedEdges, JaggedPoint } from '../constants';
-import { getPetalStats, getAllPetalTypes } from '../petals';
+import { getPetalStats, getAllPetalTypes, ITEM_RARITY_COLORS } from '../petals';
 import { getMobStats, getAllMobTypes, getMobTypesBySection, MOB_CONFIG } from '../mobs';
 import { getSVGRenderer } from '../svg_renderer';
 import { FloatingText, ExplosionEffect, ExplosionParticle, PetalBreakEffect, LightningEffect, PetalParticleEffect, PetalParticle, FallingStar, FlowerRenderAttributes } from './types';
@@ -109,18 +109,7 @@ export class Graphics {
         unique: 4050,
         apex: 12150
     };
-    public readonly ITEM_RARITY_COLORS = {
-        common: '#7eef6d',
-        uncommon: '#ffe65d',
-        rare: '#4d52e3',
-        epic: '#861fde',
-        legendary: '#de1f1f',
-        mythic: '#1fdbde',
-        ultra: '#de1f65',
-        super: '#2bffa4',
-        unique: '#ffffff',
-        apex: '#ff00ff'
-    };
+    public readonly ITEM_RARITY_COLORS = ITEM_RARITY_COLORS;
     // Track invulnerability fade-out per player: maps playerId -> timestamp when invulnerability ended
     public invulFadeStates: Map<string, { endTime: number, wasInvulnerable: boolean }> = new Map();
     public readonly INVUL_FADE_DURATION = 500; // ms to fade from yellow back to green
@@ -361,7 +350,7 @@ export class Graphics {
     }
 
     public showPetalParticleEffect(x: number, y: number, rarity: string) {
-        if (!['ultra', 'super', 'unique'].includes(rarity)) {
+        if (!['ultra', 'super', 'unique', 'apex'].includes(rarity)) {
             return;
         }
 

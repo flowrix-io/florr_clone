@@ -3,7 +3,7 @@
  * Handles all menu-related DOM elements and interactions
  */
 
-import { PETAL_CONFIG, RARITY_LEVELS, PetalStats, getPetalStats, getAllPetalTypes } from './petals';
+import { PETAL_CONFIG, RARITY_LEVELS, PetalStats, getPetalStats, getAllPetalTypes, ITEM_RARITY_COLORS } from './petals';
 import { ChangelogManager, CHANGELOG } from './changelog';
 import { NotificationsManager } from './notifications';
 import { LeaderboardManager } from './leaderboard';
@@ -3844,17 +3844,7 @@ class TitleScreenInventoryManager {
     private canvasInventoryPanel: CanvasInventoryPanel | null = null;
     private svgBlobUrlCache: Map<string, string> = new Map();
     private readonly LOADOUT_SLOTS = 20;
-    private readonly ITEM_RARITY_COLORS: Record<string, string> = {
-        common: '#7eef6d',
-        uncommon: '#ffe65d',
-        rare: '#4d52e3',
-        epic: '#861fde',
-        legendary: '#de1f1f',
-        mythic: '#1fdbde',
-        ultra: '#de1f65',
-        super: '#2bffa4',
-        unique: '#bf00ff'
-    };
+    private readonly ITEM_RARITY_COLORS = ITEM_RARITY_COLORS;
     private tooltipElement: HTMLDivElement | null = null;
     private tooltipTimeout: number | null = null;
     private hoveredElement: HTMLElement | null = null;

@@ -7,17 +7,7 @@ exports.CanvasSkillsPanel = void 0;
 // connected by dashed lines. The center of the panel hosts a small flower-face
 // avatar representing the player; the bottom-right shows derived stat lines.
 const petals_1 = require("../petals");
-const RARITY_COLORS = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#bf00ff'
-};
+const RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
 const RARITY_MULTIPLIERS = {
     common: 1.0,
     uncommon: 1.1,

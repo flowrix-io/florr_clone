@@ -168,9 +168,17 @@ Graphics.prototype.drawPetalParticleEffects = function(this: Graphics): void {
             particle.y += particle.vy;
             particle.life -= 16; // Assuming 60fps, reduce by ~16ms per frame
 
-            // Draw particle with white base color
+            // Draw particle blending rarity color with white
+            const hex = particle.color.replace('#', '');
+            const cr = parseInt(hex.substring(0, 2), 16);
+            const cg = parseInt(hex.substring(2, 4), 16);
+            const cb = parseInt(hex.substring(4, 6), 16);
+            const blend = 0.5; // 50% white mix
+            const br = Math.round(cr + (255 - cr) * blend);
+            const bg = Math.round(cg + (255 - cg) * blend);
+            const bb = Math.round(cb + (255 - cb) * blend);
             this.ctx.globalAlpha = particleProgress * 0.6;
-            this.ctx.fillStyle = particle.baseColor;
+            this.ctx.fillStyle = `rgb(${br},${bg},${bb})`;
             this.ctx.beginPath();
             this.ctx.arc(particle.x, particle.y, particle.size * particleProgress, 0, Math.PI * 2);
             this.ctx.fill();

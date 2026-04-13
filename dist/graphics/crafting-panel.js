@@ -5,18 +5,7 @@ exports.CanvasCraftingPanel = void 0;
 // Renders the crafting UI (5 slots, craft button, success chance, inventory grid)
 // into a single <canvas>, following the same pattern as CanvasInventoryPanel.
 const inventoryCodec_1 = require("../inventoryCodec");
-const ITEM_RARITY_COLORS = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#ffffff',
-    apex: '#ff00ff'
-};
+const petals_1 = require("../petals");
 const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
 /** Column order for the crafting inventory grid: common on left, no apex. */
 const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
@@ -569,10 +558,10 @@ class CanvasCraftingPanel {
             // On failure result, empty slots (beyond remaining count) use empty color
             const slotHasItem = hasItems && displayItem && !(this.animState === 'result' && !this.resultSuccess && i >= this.failRemainingCount);
             const bgColor = slotHasItem
-                ? (ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BG)
+                ? (petals_1.ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BG)
                 : CanvasCraftingPanel.SLOT_BG;
             const borderColor = slotHasItem
-                ? darken(ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BORDER, 25)
+                ? darken(petals_1.ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BORDER, 25)
                 : CanvasCraftingPanel.SLOT_BORDER;
             ctx.save();
             ctx.fillStyle = borderColor;
@@ -610,7 +599,7 @@ class CanvasCraftingPanel {
         }
         // Draw success result in center
         if (this.animState === 'result' && this.resultSuccess && this.successResult) {
-            const rColor = ITEM_RARITY_COLORS[this.successResult.rarity] || '#7eef6d';
+            const rColor = petals_1.ITEM_RARITY_COLORS[this.successResult.rarity] || '#7eef6d';
             const resultSize = 60;
             const cx = center.cx;
             const cy = center.cy;
@@ -705,7 +694,7 @@ class CanvasCraftingPanel {
             ? this.craftingItems[0].rarity
             : (this.animCraftItem?.rarity || '');
         const nextRarity = CanvasCraftingPanel.RARITY_UPGRADES[currentRarity] || '';
-        const nextColor = ITEM_RARITY_COLORS[nextRarity] || '';
+        const nextColor = petals_1.ITEM_RARITY_COLORS[nextRarity] || '';
         const btnBg = nextColor || CanvasCraftingPanel.CRAFT_BTN_BG;
         const btnBorder = nextColor ? darken(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
         const btnHover = nextColor ? darken(nextColor, 10) : '#9a8a7a';
@@ -745,7 +734,7 @@ class CanvasCraftingPanel {
         ctx.restore();
     }
     drawItemSlot(ctx, r, hovered, time) {
-        const baseColor = ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
+        const baseColor = petals_1.ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
         const borderColor = darken(baseColor, 25);
         const radius = 6;
         const borderW = 3;

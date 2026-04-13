@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Graphics = exports.getSVGRenderer = exports.MOB_CONFIG = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
+const petals_1 = require("../petals");
 const svg_renderer_1 = require("../svg_renderer");
 var player_1 = require("../player");
 Object.defineProperty(exports, "FaceFlags", { enumerable: true, get: function () { return player_1.FaceFlags; } });
@@ -23,9 +24,9 @@ Object.defineProperty(exports, "getTileState", { enumerable: true, get: function
 Object.defineProperty(exports, "SECTION_CONFIGS", { enumerable: true, get: function () { return constants_1.SECTION_CONFIGS; } });
 Object.defineProperty(exports, "seededRandom", { enumerable: true, get: function () { return constants_1.seededRandom; } });
 Object.defineProperty(exports, "getTileJaggedEdges", { enumerable: true, get: function () { return constants_1.getTileJaggedEdges; } });
-var petals_1 = require("../petals");
-Object.defineProperty(exports, "getPetalStats", { enumerable: true, get: function () { return petals_1.getPetalStats; } });
-Object.defineProperty(exports, "getAllPetalTypes", { enumerable: true, get: function () { return petals_1.getAllPetalTypes; } });
+var petals_2 = require("../petals");
+Object.defineProperty(exports, "getPetalStats", { enumerable: true, get: function () { return petals_2.getPetalStats; } });
+Object.defineProperty(exports, "getAllPetalTypes", { enumerable: true, get: function () { return petals_2.getAllPetalTypes; } });
 var mobs_1 = require("../mobs");
 Object.defineProperty(exports, "getMobStats", { enumerable: true, get: function () { return mobs_1.getMobStats; } });
 Object.defineProperty(exports, "getAllMobTypes", { enumerable: true, get: function () { return mobs_1.getAllMobTypes; } });
@@ -122,18 +123,7 @@ class Graphics {
             unique: 4050,
             apex: 12150
         };
-        this.ITEM_RARITY_COLORS = {
-            common: '#7eef6d',
-            uncommon: '#ffe65d',
-            rare: '#4d52e3',
-            epic: '#861fde',
-            legendary: '#de1f1f',
-            mythic: '#1fdbde',
-            ultra: '#de1f65',
-            super: '#2bffa4',
-            unique: '#ffffff',
-            apex: '#ff00ff'
-        };
+        this.ITEM_RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
         // Track invulnerability fade-out per player: maps playerId -> timestamp when invulnerability ended
         this.invulFadeStates = new Map();
         this.INVUL_FADE_DURATION = 500; // ms to fade from yellow back to green
@@ -334,7 +324,7 @@ class Graphics {
         });
     }
     showPetalParticleEffect(x, y, rarity) {
-        if (!['ultra', 'super', 'unique'].includes(rarity)) {
+        if (!['ultra', 'super', 'unique', 'apex'].includes(rarity)) {
             return;
         }
         const particles = [];

@@ -422,17 +422,7 @@ class InventoryManager {
         this.dragStartX = 0;
         this.dragStartY = 0;
         this.CLICK_DRAG_THRESHOLD = 5;
-        this.ITEM_RARITY_COLORS = {
-            common: '#7eef6d',
-            uncommon: '#ffe65d',
-            rare: '#4d52e3',
-            epic: '#861fde',
-            legendary: '#de1f1f',
-            mythic: '#1fdbde',
-            ultra: '#de1f65',
-            super: '#2bffa4',
-            unique: '#bf00ff'
-        };
+        this.ITEM_RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
         this.game = game;
         this.chat = chat;
         this.allPetalTypes = (0, petals_1.getAllPetalTypes)();
@@ -852,17 +842,19 @@ class InventoryManager {
         const mobKills = player?.mobKills || {};
         // Get all mob types and rarities
         const allMobTypes = (0, mobs_1.getAllMobTypes)();
+        // Filter out apex from gallery display
+        const galleryRarities = petals_1.RARITY_LEVELS.filter(r => r !== 'apex');
         // Create rows for each mob type
         for (const mobType of allMobTypes) {
             const row = document.createElement('div');
             row.className = 'mob-gallery-row';
             row.style.display = 'grid';
-            row.style.gridTemplateColumns = `repeat(${petals_1.RARITY_LEVELS.length}, 1fr)`;
+            row.style.gridTemplateColumns = `repeat(${galleryRarities.length}, 1fr)`;
             row.style.gap = '0';
             row.style.marginBottom = '5px';
-            // Create cells for each rarity
+            // Create cells for each rarity (excluding apex)
             const mobRarities = (0, mobs_1.getMobRarities)(mobType);
-            for (const rarity of petals_1.RARITY_LEVELS) {
+            for (const rarity of galleryRarities) {
                 const cell = document.createElement('div');
                 cell.className = 'mob-gallery-cell';
                 cell.style.width = '60px';

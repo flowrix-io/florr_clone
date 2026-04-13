@@ -2,6 +2,7 @@
 // Renders rarity-grouped item slots into a single <canvas> and exposes hit
 // testing / hover callbacks so InventoryManager can drive drag/drop & tooltips.
 import { inventoryToDict, ITEM_KEY_TO_ID } from '../inventoryCodec';
+import { ITEM_RARITY_COLORS } from '../petals';
 
 interface ItemRect {
     x: number;
@@ -19,18 +20,6 @@ interface GameAPI {
     getItemSpriteDataUrl?(itemType: string): string | null;
 }
 
-const ITEM_RARITY_COLORS: Record<string, string> = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#ffffff',
-    apex: '#ff00ff'
-};
 
 const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
 

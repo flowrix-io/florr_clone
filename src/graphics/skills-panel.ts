@@ -3,7 +3,7 @@
 // playerHealth, healingMultiplier), each branch a chain of nine rarity tiers
 // connected by dashed lines. The center of the panel hosts a small flower-face
 // avatar representing the player; the bottom-right shows derived stat lines.
-import { RARITY_LEVELS, Rarity } from '../petals';
+import { RARITY_LEVELS, Rarity, ITEM_RARITY_COLORS } from '../petals';
 
 interface GameAPI {
     getLocalPlayer(): any;
@@ -13,17 +13,7 @@ interface GameAPI {
     graphics?: any;
 }
 
-const RARITY_COLORS: Record<string, string> = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#bf00ff'
-};
+const RARITY_COLORS = ITEM_RARITY_COLORS;
 
 const RARITY_MULTIPLIERS: Record<string, number> = {
     common: 1.0,

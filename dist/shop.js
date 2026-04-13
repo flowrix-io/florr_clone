@@ -45,17 +45,7 @@ class ShopManager {
     constructor(game) {
         this.shopPanel = null;
         this.isShopOpen = false;
-        this.ITEM_RARITY_COLORS = {
-            common: '#7eef6d',
-            uncommon: '#ffe65d',
-            rare: '#4d52e3',
-            epic: '#861fde',
-            legendary: '#de1f1f',
-            mythic: '#1fdbde',
-            ultra: '#de1f65',
-            super: '#2bffa4',
-            unique: '#bf00ff'
-        };
+        this.ITEM_RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
         this.game = game;
         this.allPetalTypes = (0, petals_1.getAllPetalTypes)();
         this.initializeShop();

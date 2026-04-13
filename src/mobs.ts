@@ -2972,7 +2972,7 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
 // Rarity color mappings
 const RARITY_COLORS: { [key in Rarity]: string } = {
     common: "#87CEEB",
-    uncommon: "#32CD32", 
+    uncommon: "#32CD32",
     rare: "#228B22",
     epic: "#006400",
     legendary: "#8B4513",

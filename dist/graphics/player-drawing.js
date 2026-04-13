@@ -316,7 +316,7 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
         this.ctx.restore();
         // Create particle effects for ultra, super, and unique petals
         // IMPORTANT: These effects should NOT modify the context state, as the next petal needs the same starting state
-        if (['ultra', 'super', 'unique'].includes(petal.rarity)) {
+        if (['ultra', 'super', 'unique', 'apex'].includes(petal.rarity)) {
             // Only create particles occasionally to avoid performance issues
             if (Math.random() < 0.1) { // 10% chance per frame
                 // Convert relative petal coordinates to absolute world coordinates

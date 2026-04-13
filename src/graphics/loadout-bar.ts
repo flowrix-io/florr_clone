@@ -1,5 +1,6 @@
 // Canvas-based loadout bar inspired by gardn/Client/Ui/InGame/Loadout
 import { Item } from '../item';
+import { ITEM_RARITY_COLORS } from '../petals';
 
 interface SlotRect { x: number; y: number; w: number; h: number }
 
@@ -11,18 +12,6 @@ interface GameAPI {
     inventoryManager: any;
 }
 
-const ITEM_RARITY_COLORS: Record<string, string> = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#ffffff',
-    apex: '#ff00ff'
-};
 
 function darken(hex: string, percent: number = 30): string {
     const num = parseInt(hex.replace('#', ''), 16);

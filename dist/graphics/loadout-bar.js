@@ -1,18 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CanvasLoadoutBar = exports.LOADOUT_SLOT_COUNT = exports.LOADOUT_SECONDARY_COUNT = exports.LOADOUT_PRIMARY_COUNT = void 0;
-const ITEM_RARITY_COLORS = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#ffffff',
-    apex: '#ff00ff'
-};
+const petals_1 = require("../petals");
 function darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
     const r = (num >> 16) & 255;
@@ -334,8 +323,8 @@ class CanvasLoadoutBar {
         var _a;
         // Gardn's draw_loadout_background is designed at 60x60. The petal element's width is
         // animated toward the parent slot's width, and scaled by width/60 at render. Mirror that.
-        const rarity = item.rarity && ITEM_RARITY_COLORS[item.rarity] ? item.rarity : 'common';
-        const c = ITEM_RARITY_COLORS[rarity];
+        const rarity = item.rarity && petals_1.ITEM_RARITY_COLORS[item.rarity] ? item.rarity : 'common';
+        const c = petals_1.ITEM_RARITY_COLORS[rarity];
         const cDark = darken(c, 30);
         const scale = rect.w / 60;
         const cx = rect.x + rect.w / 2;

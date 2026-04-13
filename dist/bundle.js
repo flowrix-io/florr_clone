@@ -4336,6 +4336,7 @@ __webpack_require__.r(__webpack_exports__);
 
 // EXPORTS
 __webpack_require__.d(__webpack_exports__, {
+  ITEM_RARITY_COLORS: () => (/* binding */ ITEM_RARITY_COLORS),
   PETAL_CONFIG: () => (/* binding */ PETAL_CONFIG),
   RARITY_LEVELS: () => (/* binding */ RARITY_LEVELS),
   getAllPetalTypes: () => (/* binding */ getAllPetalTypes),
@@ -4475,6 +4476,19 @@ const RARITY_LEVELS = [
     'unique',
     'apex'
 ];
+// Canonical UI rarity colors — single source of truth for all panels/UI
+const ITEM_RARITY_COLORS = {
+    common: '#7eef6d',
+    uncommon: '#ffe65d',
+    rare: '#4d52e3',
+    epic: '#861fde',
+    legendary: '#de1f1f',
+    mythic: '#1fdbde',
+    ultra: '#de1f65',
+    super: '#2bffa4',
+    unique: '#ffffff',
+    apex: '#ff00ff'
+};
 // Rarity-specific overrides for special cases
 const RARITY_OVERRIDES = {
     stinger: {
@@ -7049,15 +7063,16 @@ class SVGLoader {
 
 // EXTERNAL MODULE: ./src/constants.ts
 var constants = __webpack_require__(921);
+// EXTERNAL MODULE: ./src/petals.ts + 2 modules
+var petals = __webpack_require__(702);
 // EXTERNAL MODULE: ./src/svg_renderer.ts
 var svg_renderer = __webpack_require__(170);
 // EXTERNAL MODULE: ./src/player.ts
 var src_player = __webpack_require__(463);
-// EXTERNAL MODULE: ./src/petals.ts + 2 modules
-var petals = __webpack_require__(702);
 // EXTERNAL MODULE: ./src/mobs.ts
 var mobs = __webpack_require__(689);
 ;// ./src/graphics/core.ts
+
 
 
 
@@ -7153,18 +7168,7 @@ class Graphics {
             unique: 4050,
             apex: 12150
         };
-        this.ITEM_RARITY_COLORS = {
-            common: '#7eef6d',
-            uncommon: '#ffe65d',
-            rare: '#4d52e3',
-            epic: '#861fde',
-            legendary: '#de1f1f',
-            mythic: '#1fdbde',
-            ultra: '#de1f65',
-            super: '#2bffa4',
-            unique: '#ffffff',
-            apex: '#ff00ff'
-        };
+        this.ITEM_RARITY_COLORS = petals.ITEM_RARITY_COLORS;
         // Track invulnerability fade-out per player: maps playerId -> timestamp when invulnerability ended
         this.invulFadeStates = new Map();
         this.INVUL_FADE_DURATION = 500; // ms to fade from yellow back to green
@@ -7365,7 +7369,7 @@ class Graphics {
         });
     }
     showPetalParticleEffect(x, y, rarity) {
-        if (!['ultra', 'super', 'unique'].includes(rarity)) {
+        if (!['ultra', 'super', 'unique', 'apex'].includes(rarity)) {
             return;
         }
         const particles = [];
@@ -9358,7 +9362,7 @@ Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 1.0, en
         this.ctx.restore();
         // Create particle effects for ultra, super, and unique petals
         // IMPORTANT: These effects should NOT modify the context state, as the next petal needs the same starting state
-        if (['ultra', 'super', 'unique'].includes(petal.rarity)) {
+        if (['ultra', 'super', 'unique', 'apex'].includes(petal.rarity)) {
             // Only create particles occasionally to avoid performance issues
             if (Math.random() < 0.1) { // 10% chance per frame
                 // Convert relative petal coordinates to absolute world coordinates
@@ -10245,9 +10249,17 @@ Graphics.prototype.drawPetalParticleEffects = function () {
             particle.x += particle.vx;
             particle.y += particle.vy;
             particle.life -= 16; // Assuming 60fps, reduce by ~16ms per frame
-            // Draw particle with white base color
+            // Draw particle blending rarity color with white
+            const hex = particle.color.replace('#', '');
+            const cr = parseInt(hex.substring(0, 2), 16);
+            const cg = parseInt(hex.substring(2, 4), 16);
+            const cb = parseInt(hex.substring(4, 6), 16);
+            const blend = 0.5; // 50% white mix
+            const br = Math.round(cr + (255 - cr) * blend);
+            const bg = Math.round(cg + (255 - cg) * blend);
+            const bb = Math.round(cb + (255 - cb) * blend);
             this.ctx.globalAlpha = particleProgress * 0.6;
-            this.ctx.fillStyle = particle.baseColor;
+            this.ctx.fillStyle = `rgb(${br},${bg},${bb})`;
             this.ctx.beginPath();
             this.ctx.arc(particle.x, particle.y, particle.size * particleProgress, 0, Math.PI * 2);
             this.ctx.fill();
@@ -13770,18 +13782,7 @@ var inventoryCodec = __webpack_require__(536);
 // Renders rarity-grouped item slots into a single <canvas> and exposes hit
 // testing / hover callbacks so InventoryManager can drive drag/drop & tooltips.
 
-const ITEM_RARITY_COLORS = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#ffffff',
-    apex: '#ff00ff'
-};
+
 const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
 function darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
@@ -14236,7 +14237,7 @@ class CanvasInventoryPanel {
             for (const r of this.itemRects) {
                 if (!seenRarity.has(r.rarity)) {
                     seenRarity.add(r.rarity);
-                    const color = ITEM_RARITY_COLORS[r.rarity] || '#fff';
+                    const color = petals.ITEM_RARITY_COLORS[r.rarity] || '#fff';
                     const labelText = r.rarity.charAt(0).toUpperCase() + r.rarity.slice(1).toLowerCase();
                     const labelY = r.y - 4;
                     ctx.font = 'bold 14px Ubuntu, sans-serif';
@@ -14406,7 +14407,7 @@ class CanvasInventoryPanel {
      *  rounded square with a darker border, centered icon, outlined white
      *  name text at the bottom, and an outlined `xN` count in the top-right. */
     drawItemSlot(ctx, r, hovered, time) {
-        const baseColor = ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
+        const baseColor = petals.ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
         const borderColor = darken(baseColor, 25);
         const radius = 6;
         const borderW = 3;
@@ -14530,18 +14531,7 @@ CanvasInventoryPanel.CLOSE_BORDER = '#b56476';
 // Renders the crafting UI (5 slots, craft button, success chance, inventory grid)
 // into a single <canvas>, following the same pattern as CanvasInventoryPanel.
 
-const crafting_panel_ITEM_RARITY_COLORS = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#ffffff',
-    apex: '#ff00ff'
-};
+
 const crafting_panel_RARITY_ORDER = (/* unused pure expression or super */ null && (['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common']));
 /** Column order for the crafting inventory grid: common on left, no apex. */
 const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
@@ -15094,10 +15084,10 @@ class CanvasCraftingPanel {
             // On failure result, empty slots (beyond remaining count) use empty color
             const slotHasItem = hasItems && displayItem && !(this.animState === 'result' && !this.resultSuccess && i >= this.failRemainingCount);
             const bgColor = slotHasItem
-                ? (crafting_panel_ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BG)
+                ? (petals.ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BG)
                 : CanvasCraftingPanel.SLOT_BG;
             const borderColor = slotHasItem
-                ? crafting_panel_darken(crafting_panel_ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BORDER, 25)
+                ? crafting_panel_darken(petals.ITEM_RARITY_COLORS[displayItem.rarity] || CanvasCraftingPanel.SLOT_BORDER, 25)
                 : CanvasCraftingPanel.SLOT_BORDER;
             ctx.save();
             ctx.fillStyle = borderColor;
@@ -15135,7 +15125,7 @@ class CanvasCraftingPanel {
         }
         // Draw success result in center
         if (this.animState === 'result' && this.resultSuccess && this.successResult) {
-            const rColor = crafting_panel_ITEM_RARITY_COLORS[this.successResult.rarity] || '#7eef6d';
+            const rColor = petals.ITEM_RARITY_COLORS[this.successResult.rarity] || '#7eef6d';
             const resultSize = 60;
             const cx = center.cx;
             const cy = center.cy;
@@ -15230,7 +15220,7 @@ class CanvasCraftingPanel {
             ? this.craftingItems[0].rarity
             : (this.animCraftItem?.rarity || '');
         const nextRarity = CanvasCraftingPanel.RARITY_UPGRADES[currentRarity] || '';
-        const nextColor = crafting_panel_ITEM_RARITY_COLORS[nextRarity] || '';
+        const nextColor = petals.ITEM_RARITY_COLORS[nextRarity] || '';
         const btnBg = nextColor || CanvasCraftingPanel.CRAFT_BTN_BG;
         const btnBorder = nextColor ? crafting_panel_darken(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
         const btnHover = nextColor ? crafting_panel_darken(nextColor, 10) : '#9a8a7a';
@@ -15270,7 +15260,7 @@ class CanvasCraftingPanel {
         ctx.restore();
     }
     drawItemSlot(ctx, r, hovered, time) {
-        const baseColor = crafting_panel_ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
+        const baseColor = petals.ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
         const borderColor = crafting_panel_darken(baseColor, 25);
         const radius = 6;
         const borderW = 3;
@@ -15844,17 +15834,7 @@ class InventoryManager {
         this.dragStartX = 0;
         this.dragStartY = 0;
         this.CLICK_DRAG_THRESHOLD = 5;
-        this.ITEM_RARITY_COLORS = {
-            common: '#7eef6d',
-            uncommon: '#ffe65d',
-            rare: '#4d52e3',
-            epic: '#861fde',
-            legendary: '#de1f1f',
-            mythic: '#1fdbde',
-            ultra: '#de1f65',
-            super: '#2bffa4',
-            unique: '#bf00ff'
-        };
+        this.ITEM_RARITY_COLORS = petals.ITEM_RARITY_COLORS;
         this.game = game;
         this.chat = chat;
         this.allPetalTypes = (0,petals.getAllPetalTypes)();
@@ -16274,17 +16254,19 @@ class InventoryManager {
         const mobKills = player?.mobKills || {};
         // Get all mob types and rarities
         const allMobTypes = (0,mobs/* getAllMobTypes */.V4)();
+        // Filter out apex from gallery display
+        const galleryRarities = petals.RARITY_LEVELS.filter(r => r !== 'apex');
         // Create rows for each mob type
         for (const mobType of allMobTypes) {
             const row = document.createElement('div');
             row.className = 'mob-gallery-row';
             row.style.display = 'grid';
-            row.style.gridTemplateColumns = `repeat(${petals.RARITY_LEVELS.length}, 1fr)`;
+            row.style.gridTemplateColumns = `repeat(${galleryRarities.length}, 1fr)`;
             row.style.gap = '0';
             row.style.marginBottom = '5px';
-            // Create cells for each rarity
+            // Create cells for each rarity (excluding apex)
             const mobRarities = (0,mobs/* getMobRarities */.Q3)(mobType);
-            for (const rarity of petals.RARITY_LEVELS) {
+            for (const rarity of galleryRarities) {
                 const cell = document.createElement('div');
                 cell.className = 'mob-gallery-cell';
                 cell.style.width = '60px';
@@ -18009,17 +17991,7 @@ class InventoryManager {
 // connected by dashed lines. The center of the panel hosts a small flower-face
 // avatar representing the player; the bottom-right shows derived stat lines.
 
-const RARITY_COLORS = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#bf00ff'
-};
+const RARITY_COLORS = petals.ITEM_RARITY_COLORS;
 const RARITY_MULTIPLIERS = {
     common: 1.0,
     uncommon: 1.1,
@@ -19088,17 +19060,7 @@ class ShopManager {
     constructor(game) {
         this.shopPanel = null;
         this.isShopOpen = false;
-        this.ITEM_RARITY_COLORS = {
-            common: '#7eef6d',
-            uncommon: '#ffe65d',
-            rare: '#4d52e3',
-            epic: '#861fde',
-            legendary: '#de1f1f',
-            mythic: '#1fdbde',
-            ultra: '#de1f65',
-            super: '#2bffa4',
-            unique: '#bf00ff'
-        };
+        this.ITEM_RARITY_COLORS = petals.ITEM_RARITY_COLORS;
         this.game = game;
         this.allPetalTypes = (0,petals.getAllPetalTypes)();
         this.initializeShop();
@@ -20581,18 +20543,7 @@ class AssetLoader {
 }
 
 ;// ./src/graphics/loadout-bar.ts
-const loadout_bar_ITEM_RARITY_COLORS = {
-    common: '#7eef6d',
-    uncommon: '#ffe65d',
-    rare: '#4d52e3',
-    epic: '#861fde',
-    legendary: '#de1f1f',
-    mythic: '#1fdbde',
-    ultra: '#de1f65',
-    super: '#2bffa4',
-    unique: '#ffffff',
-    apex: '#ff00ff'
-};
+
 function loadout_bar_darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
     const r = (num >> 16) & 255;
@@ -20914,8 +20865,8 @@ class CanvasLoadoutBar {
         var _a;
         // Gardn's draw_loadout_background is designed at 60x60. The petal element's width is
         // animated toward the parent slot's width, and scaled by width/60 at render. Mirror that.
-        const rarity = item.rarity && loadout_bar_ITEM_RARITY_COLORS[item.rarity] ? item.rarity : 'common';
-        const c = loadout_bar_ITEM_RARITY_COLORS[rarity];
+        const rarity = item.rarity && petals.ITEM_RARITY_COLORS[item.rarity] ? item.rarity : 'common';
+        const c = petals.ITEM_RARITY_COLORS[rarity];
         const cDark = loadout_bar_darken(c, 30);
         const scale = rect.w / 60;
         const cx = rect.x + rect.w / 2;
@@ -21044,6 +20995,7 @@ class CanvasLoadoutBar {
 
 
 
+
 class Game {
     get isInventoryOpen() {
         return this.inventoryManager?.getIsInventoryOpen() ?? false;
@@ -21159,18 +21111,7 @@ class Game {
         // Add to Game class properties
         this.pendingScripts = new Map();
         // Add to Game class properties
-        this.ITEM_RARITY_COLORS = {
-            common: '#808080', // Gray
-            uncommon: '#008000', // Green
-            rare: '#0000FF', // Blue
-            epic: '#800080', // Purple
-            legendary: '#FFA500', // Orange
-            mythic: '#FF0000', // Red
-            ultra: '#de1f65', // Pink
-            super: '#2bffa4', // Turquoise
-            unique: '#ffffff', // Magenta
-            apex: '#ff00ff' // Cyan
-        };
+        this.ITEM_RARITY_COLORS = petals.ITEM_RARITY_COLORS;
         // Add to Game class properties
         this.craftingPanel = null;
         this.craftingSlots = Array(4).fill(null).map((_, i) => ({ index: i, item: null }));
@@ -28187,17 +28128,7 @@ class TitleScreenInventoryManager {
         this.canvasInventoryPanel = null;
         this.svgBlobUrlCache = new Map();
         this.LOADOUT_SLOTS = 20;
-        this.ITEM_RARITY_COLORS = {
-            common: '#7eef6d',
-            uncommon: '#ffe65d',
-            rare: '#4d52e3',
-            epic: '#861fde',
-            legendary: '#de1f1f',
-            mythic: '#1fdbde',
-            ultra: '#de1f65',
-            super: '#2bffa4',
-            unique: '#bf00ff'
-        };
+        this.ITEM_RARITY_COLORS = petals.ITEM_RARITY_COLORS;
         this.tooltipElement = null;
         this.tooltipTimeout = null;
         this.hoveredElement = null;
