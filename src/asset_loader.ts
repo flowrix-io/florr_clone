@@ -4,6 +4,7 @@
 
 import { PreloadedAssets } from './preloader';
 import { MapElement, SECTION_CONFIGS } from './constants';
+import { getBiomeSvgContent } from './biome_svgs';
 
 export interface GameAssets {
     sprites: {
@@ -161,13 +162,12 @@ export class AssetLoader {
         this.backgroundLoadAttempted = true;
 
         try {
-            // Load the land.svg file
-            const response = await fetch('./land.svg');
-            if (!response.ok) {
-                throw new Error(`Failed to fetch land.svg: ${response.status}`);
+            // Load the land.svg from bundled content
+            const svgText = getBiomeSvgContent('land.svg');
+            if (!svgText) {
+                throw new Error('land.svg not found in bundled SVGs');
             }
-            const svgText = await response.text();
-            
+
             // Convert SVG to data URL (base64) so it's persistent
             const base64 = btoa(unescape(encodeURIComponent(svgText)));
             const dataUrl = `data:image/svg+xml;base64,${base64}`;
@@ -251,17 +251,14 @@ export class AssetLoader {
             loadedTextures.add(biomeName);
             
             try {
-                // Load the texture file (could be SVG or image)
-                const response = await fetch(`./${textureFile}`);
-                if (!response.ok) {
-                    console.error(`Failed to fetch biome texture ${textureFile}: ${response.status}`);
-                    continue;
-                }
-                
                 // Check if it's an SVG file
                 if (textureFile.endsWith('.svg')) {
-                    const svgText = await response.text();
-                    
+                    const svgText = getBiomeSvgContent(textureFile);
+                    if (!svgText) {
+                        console.error(`Biome texture ${textureFile} not found in bundled SVGs`);
+                        continue;
+                    }
+
                     // Convert SVG to data URL (base64)
                     const base64 = btoa(unescape(encodeURIComponent(svgText)));
                     const dataUrl = `data:image/svg+xml;base64,${base64}`;
@@ -320,15 +317,13 @@ export class AssetLoader {
             const textureFile = background;
 
             try {
-                const response = await fetch(`./${textureFile}`);
-                if (!response.ok) {
-                    console.error(`Failed to fetch section texture ${textureFile}: ${response.status}`);
-                    continue;
-                }
-
                 // Check if it's an SVG file
                 if (textureFile.endsWith('.svg')) {
-                    const svgText = await response.text();
+                    const svgText = getBiomeSvgContent(textureFile);
+                    if (!svgText) {
+                        console.error(`Section texture ${textureFile} not found in bundled SVGs`);
+                        continue;
+                    }
 
                     // Convert SVG to data URL (base64)
                     const base64 = btoa(unescape(encodeURIComponent(svgText)));

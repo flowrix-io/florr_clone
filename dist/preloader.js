@@ -1,7 +1,4 @@
 "use strict";
-/**
- * Preloader - Handles loading all game assets and systems before showing the title screen
- */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -27,6 +24,10 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Preloader = void 0;
+/**
+ * Preloader - Handles loading all game assets and systems before showing the title screen
+ */
+const biome_svgs_1 = require("./biome_svgs");
 class Preloader {
     constructor(onProgress) {
         this.progress = 0;
@@ -115,11 +116,10 @@ class Preloader {
      */
     async loadBackground(backgroundTexture) {
         try {
-            const response = await fetch('./land.svg');
-            if (!response.ok) {
-                throw new Error(`Failed to fetch land.svg: ${response.status}`);
+            const svgText = (0, biome_svgs_1.getBiomeSvgContent)('land.svg');
+            if (!svgText) {
+                throw new Error('land.svg not found in bundled SVGs');
             }
-            const svgText = await response.text();
             // Convert SVG to data URL
             const base64 = btoa(unescape(encodeURIComponent(svgText)));
             const dataUrl = `data:image/svg+xml;base64,${base64}`;

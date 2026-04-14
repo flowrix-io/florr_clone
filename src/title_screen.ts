@@ -20,6 +20,7 @@ import { CanvasInventoryPanel, InventoryHitInfo } from './graphics/inventory-pan
 import { Graphics } from './graphics/core';
 import './graphics/flower';
 import { applyZoomCompensation, canvasCoords } from './zoom-compensation';
+import { getBiomeSvgContent } from './biome_svgs';
 
 interface FloatingPetal {
     element: HTMLElement;
@@ -3219,28 +3220,28 @@ export class TitleScreen {
     }
 
     /**
-     * Gets the SVG file path for a given biome
+     * Gets the SVG file name for a given biome
      */
-    private getBiomeSvgPath(biomeName: string): string {
+    private getBiomeSvgFile(biomeName: string): string {
         const biomeSvgMap: { [key: string]: string } = {
-            'default': './land.svg',
-            'land': './land.svg',
-            'desert': './desert.svg',
-            'ocean': './ocean.svg',
-            'ant_hell': './ant_hell.svg',
-            'hel': './hel.svg',
-            'sewers': './sewers.svg',
-            'jungle': './jungle.svg'
+            'default': 'land.svg',
+            'land': 'land.svg',
+            'desert': 'desert.svg',
+            'ocean': 'ocean.svg',
+            'ant_hell': 'ant_hell.svg',
+            'hel': 'hel.svg',
+            'sewers': 'sewers.svg',
+            'jungle': 'jungle.svg'
         };
-        
+
         return biomeSvgMap[biomeName] || biomeSvgMap['default'];
     }
 
     private async loadBackgroundTexture(biomeName?: string): Promise<void> {
         // Get biome from parameter or localStorage, default to 'default'
         const biome = biomeName || localStorage.getItem('spawnBiome') || 'default';
-        const svgPath = this.getBiomeSvgPath(biome);
-        
+        const svgFile = this.getBiomeSvgFile(biome);
+
         return new Promise((resolve) => {
             this.backgroundTexture.onload = () => {
                 console.log(`Title screen background loaded successfully for biome: ${biome}`);
@@ -3248,60 +3249,26 @@ export class TitleScreen {
             };
             this.backgroundTexture.onerror = (error) => {
                 console.error(`Failed to load title screen background for biome ${biome}:`, error);
-                // Create a fallback image to prevent broken state
                 this.createFallbackImage();
                 resolve();
             };
-            
-            // Load SVG file using fetch
-            fetch(svgPath)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Failed to fetch SVG: ${response.statusText}`);
-                    }
-                    return response.text();
-                })
-                .then(svgText => {
-                    try {
-                        const base64 = btoa(unescape(encodeURIComponent(svgText)));
-                        const dataUrl = `data:image/svg+xml;base64,${base64}`;
-                        this.backgroundTexture.src = dataUrl;
-                    } catch (error) {
-                        console.error('Error encoding SVG:', error);
-                        this.createFallbackImage();
-                        resolve();
-                    }
-                })
-                .catch(error => {
-                    console.error(`Error loading SVG from ${svgPath}:`, error);
-                    // Fallback to hardcoded default SVG
-                    const svgText = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
-  <rect width="400" height="400" x="0" y="0" fill="#1ea761"/>
 
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#1c9959" transform="translate(60, 60) rotate(45)" stroke-width="7" stroke="#1c9959" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#2fb571" transform="translate(180, 80) rotate(-20)" stroke-width="7" stroke="#2fb571" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#1ca35e" transform="translate(300, 70) rotate(120)" stroke-width="7" stroke="#1ca35e" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#1c9959" transform="translate(100, 200) rotate(180)" stroke-width="7" stroke="#1c9959" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#1ca35e" transform="translate(250, 280) rotate(210)" stroke-width="7" stroke="#1ca35e" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#2fb571" transform="translate(340, 230) rotate(-90)" stroke-width="7" stroke="#2fb571" stroke-linejoin="round"/>
-  <polygon points="0,-23.1 -20,11.55 20,11.55" fill="#1c9959" transform="translate(80, 300) rotate(75)" stroke-width="7" stroke="#1c9959" stroke-linejoin="round"/>
+            let svgText = getBiomeSvgContent(svgFile);
+            if (!svgText) {
+                this.createFallbackImage();
+                resolve();
+                return;
+            }
 
-  <circle cx="150" cy="50" r="18" fill="#1c9959"/>
-  <circle cx="280" cy="180" r="18" fill="#2fb571"/>
-  <circle cx="50" cy="150" r="18" fill="#1ca35e"/>
-  <circle cx="200" cy="350" r="18" fill="#1c9959"/>
-  <circle cx="360" cy="320" r="18" fill="#2fb571"/>
-</svg>`;
-                    try {
-                        const base64 = btoa(unescape(encodeURIComponent(svgText)));
-                        const dataUrl = `data:image/svg+xml;base64,${base64}`;
-                        this.backgroundTexture.src = dataUrl;
-                    } catch (error) {
-                        console.error('Error encoding fallback SVG:', error);
-                        this.createFallbackImage();
-                        resolve();
-                    }
-                });
+            try {
+                const base64 = btoa(unescape(encodeURIComponent(svgText)));
+                const dataUrl = `data:image/svg+xml;base64,${base64}`;
+                this.backgroundTexture.src = dataUrl;
+            } catch (error) {
+                console.error('Error encoding SVG:', error);
+                this.createFallbackImage();
+                resolve();
+            }
         });
     }
 

@@ -1,6 +1,7 @@
 /**
  * Preloader - Handles loading all game assets and systems before showing the title screen
  */
+import { getBiomeSvgContent } from './biome_svgs';
 
 export interface PreloadedAssets {
     sprites: {
@@ -116,12 +117,11 @@ export class Preloader {
      */
     private async loadBackground(backgroundTexture: HTMLImageElement): Promise<void> {
         try {
-            const response = await fetch('./land.svg');
-            if (!response.ok) {
-                throw new Error(`Failed to fetch land.svg: ${response.status}`);
+            const svgText = getBiomeSvgContent('land.svg');
+            if (!svgText) {
+                throw new Error('land.svg not found in bundled SVGs');
             }
-            const svgText = await response.text();
-            
+
             // Convert SVG to data URL
             const base64 = btoa(unescape(encodeURIComponent(svgText)));
             const dataUrl = `data:image/svg+xml;base64,${base64}`;
