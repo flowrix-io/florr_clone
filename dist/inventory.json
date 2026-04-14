@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 246597343,
+      "totalXP": 246597883,
       "inventory": {
         "common": {
           "shield": 261,
@@ -699,7 +699,7 @@
           "mythic": 363,
           "uncommon": 251,
           "rare": 136,
-          "epic": 96,
+          "epic": 98,
           "ultra": 18,
           "super": 4,
           "unique": 1

@@ -238,6 +238,13 @@ exports.CHANGELOG = [
             'Added second chance skill',
             'Fixed players getting damaged during invulnerability'
         ]
+    },
+    {
+        date: 'April 13, 2026',
+        changes: [
+            'Added apex rarity',
+            'Recolored unique and apex petals'
+        ]
     }
 ];
 class ChangelogManager {
