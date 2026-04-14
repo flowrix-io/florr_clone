@@ -287,6 +287,11 @@ class Game {
         this.canvas.addEventListener('mousemove', (event) => {
             // Loadout bar hover/drag tracking (screen-space)
             const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event);
+            // Settings panel hover/slider drag
+            if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
+                window.titleScreen.handleSettingsMouseMoveExternal(sx);
+                window.titleScreen.handleSettingsHoverExternal(sx, sy);
+            }
             if (this.loadoutBar) {
                 this.loadoutBar.setHover(sx, sy);
                 if (this.loadoutBar.draggingSlotIndex >= 0) {
@@ -330,6 +335,15 @@ class Game {
         }, { signal: this.abortController.signal });
         // Add mouse button listeners for petal extension/retraction
         this.canvas.addEventListener('mousedown', (event) => {
+            // Intercept clicks for canvas settings panel
+            if (event.button === 0 && window.titleScreen && window.titleScreen.isSettingsOpen()) {
+                const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event);
+                if (window.titleScreen.handleSettingsMouseDownExternal(sx, sy)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+            }
             // Intercept clicks on the canvas death screen buttons
             if (event.button === 0 && this.isPlayerDead && this.graphics.deathScreenVisible) {
                 const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event);
@@ -370,11 +384,30 @@ class Game {
         }, { signal: this.abortController.signal });
         this.canvas.addEventListener('mouseup', (event) => {
             this.mouseButtonsPressed.delete(event.button);
+            if (window.titleScreen) {
+                window.titleScreen.handleSettingsMouseUpExternal();
+            }
+        }, { signal: this.abortController.signal });
+        // Canvas click handler for settings panel
+        this.canvas.addEventListener('click', (event) => {
+            if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
+                const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event);
+                if (window.titleScreen.handleSettingsClickExternal(sx, sy)) {
+                    event.stopPropagation();
+                }
+            }
         }, { signal: this.abortController.signal });
         // Prevent context menu on right click
         this.canvas.addEventListener('contextmenu', (event) => {
             event.preventDefault();
         }, { signal: this.abortController.signal });
+        // Scroll wheel for settings panel
+        this.canvas.addEventListener('wheel', (event) => {
+            if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
+                window.titleScreen.handleSettingsWheelExternal(event.deltaY);
+                event.preventDefault();
+            }
+        }, { passive: false, signal: this.abortController.signal });
         // Initialize exit button
         this.exitButton = document.getElementById('exitButton');
         this.exitButtonContainer = document.getElementById('exitButtonContainer');
@@ -788,36 +821,33 @@ class Game {
         this.setupSettingsListeners();
     }
     setupSettingsListeners() {
-        // Listen for settings changes from the title screen
-        const signal = this.abortController.signal;
-        const settingsMenu = document.getElementById('settingsMenu');
-        if (settingsMenu) {
-            const hitboxesCheckbox = settingsMenu.querySelector('#showHitboxesCheckbox');
-            const statsCheckbox = settingsMenu.querySelector('#showStats');
-            if (hitboxesCheckbox) {
-                hitboxesCheckbox.addEventListener('change', () => {
-                    this.showHitboxes = hitboxesCheckbox.checked;
-                    this.graphics.showHitboxes = this.showHitboxes;
-                }, { signal });
+        // Settings are now canvas-based and write directly to localStorage.
+        // Poll localStorage periodically to pick up changes made from the settings panel.
+        const pollSettings = () => {
+            if (window.currentGame !== this)
+                return;
+            const hitboxes = localStorage.getItem('showHitboxes') === 'true';
+            if (this.showHitboxes !== hitboxes) {
+                this.showHitboxes = hitboxes;
+                this.graphics.showHitboxes = hitboxes;
             }
-            if (statsCheckbox) {
-                statsCheckbox.addEventListener('change', () => {
-                    this.showStats = statsCheckbox.checked;
-                    if (this.showStats) {
-                        this.frameCount = 0;
-                        this.fpsUpdateTime = performance.now();
-                    }
-                }, { signal });
+            const stats = localStorage.getItem('showStats') === 'true';
+            if (this.showStats !== stats) {
+                this.showStats = stats;
+                if (stats) {
+                    this.frameCount = 0;
+                    this.fpsUpdateTime = performance.now();
+                }
             }
-            const mobDeathAnimationCheckbox = settingsMenu.querySelector('#mobDeathAnimationCheckbox');
-            if (mobDeathAnimationCheckbox) {
-                mobDeathAnimationCheckbox.addEventListener('change', () => {
-                    this.mobDeathAnimation = mobDeathAnimationCheckbox.checked;
-                    this.graphics.mobDeathAnimation = mobDeathAnimationCheckbox.checked;
-                    localStorage.setItem('mobDeathAnimation', mobDeathAnimationCheckbox.checked.toString());
-                }, { signal });
+            const mobDeath = localStorage.getItem('mobDeathAnimation') !== 'false';
+            if (this.mobDeathAnimation !== mobDeath) {
+                this.mobDeathAnimation = mobDeath;
+                this.graphics.mobDeathAnimation = mobDeath;
             }
-        }
+        };
+        // Check every 500ms
+        const intervalId = setInterval(pollSettings, 500);
+        this.abortController.signal.addEventListener('abort', () => clearInterval(intervalId));
     }
     /**
      * Calculate the total memory used by offscreen canvases in MB
@@ -964,6 +994,10 @@ class Game {
         }
         if (this.showStats) {
             this.renderStatsOverlay();
+        }
+        // Render canvas-based settings overlay if open
+        if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
+            window.titleScreen.renderSettingsOverlay(this.graphics.ctx);
         }
         requestAnimationFrame(() => this.gameLoop());
     }
@@ -1304,9 +1338,8 @@ class Game {
                 return true;
             }
         }
-        // Check settings menu (if it doesn't have 'hidden' class, it's open)
-        const settingsMenu = document.getElementById('settingsMenu');
-        if (settingsMenu && !settingsMenu.classList.contains('hidden')) {
+        // Settings menu is now canvas-based - check via titleScreen
+        if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
             return true;
         }
         // Check changelog (check if changelog panel exists and is visible)

@@ -155,6 +155,25 @@ class TitleScreen {
         this.authAdvancedSettingsVisible = false;
         this.hoveredAuthButton = null; // 'login', 'register', 'guest', 'offline', 'toggleAdvanced', 'showRegister', 'showLogin'
         this.pressedButton = null; // tracks which button is currently pressed (mousedown)
+        // Canvas-based settings menu state
+        this.settingsOpen = false;
+        this.settingsTab = 'controls';
+        this.settingsScrollY = 0;
+        this.settingsHoveredItem = null;
+        this.settingsEditingControl = null; // which control key is being edited
+        // Settings values (synced with localStorage)
+        this.settingsShowHitboxes = false;
+        this.settingsShadersEnabled = false;
+        this.settingsShowStats = false;
+        this.settingsMobFramerate = 15;
+        this.settingsHighQualityMobs = false;
+        this.settingsDynamicSkybox = false;
+        this.settingsMobDeathAnimation = true;
+        this.settingsInterpolation = 0.15;
+        this.settingsShowConsoleLogs = false;
+        this.settingsServerIP = '';
+        this.settingsServerIPFocused = false;
+        this.settingsSliderDragging = null; // 'mobFramerate' or 'interpolation'
         // FPS/stats tracking for title screen
         this.titleFrameCount = 0;
         this.titleFpsCounter = 0;
@@ -413,98 +432,15 @@ class TitleScreen {
             border-radius: 10px;
             background: transparent;
             box-shadow: none;
+            pointer-events: none;
         `;
         this.centerText.innerHTML = `
             <div id="titleScreenLoadoutWrap" style="margin-top: 20px; display: flex; justify-content: center;">
                 <canvas id="titleScreenLoadoutBar" width="900" height="210" style="background: transparent; display: block; pointer-events: auto; width: 900px; height: 211px;"></canvas>
             </div>
         `;
-        this.settingsMenu = this.createElement('div', 'settings-menu hidden');
-        this.settingsMenu.id = 'settingsMenu';
-        this.settingsMenu.style.position = 'absolute';
-        this.settingsMenu.style.top = '52px';
-        this.settingsMenu.style.left = '0';
-        this.settingsMenu.innerHTML = `
-            <div class="settings-menu-content">
-                <div class="settings-menu-header">
-                    <h2>Settings</h2>
-                    <button id="closeSettingsButton">&times;</button>
-                </div>
-                <div class="settings-menu-tabs">
-                    <button class="tab-button active" data-tab="controls">Controls</button>
-                    <button class="tab-button" data-tab="graphics">Graphics</button>
-                    <button class="tab-button" data-tab="advanced">Advanced</button>
-                </div>
-                <div class="settings-menu-body">
-                    <div id="controls-tab" class="tab-content active">
-                        <h3>Controls</h3>
-                        <div class="controls-grid">
-                            <!-- Controls will be dynamically added here -->
-                        </div>
-                        <button id="saveControlsButton" class="tab-button">Save Controls</button>
-                        <button id="resetControlsButton" class="tab-button">Reset to Default</button>
-                    </div>
-                    <div id="graphics-tab" class="tab-content">
-                        <h3>Graphics</h3>
-                        <label>
-                            <input type="checkbox" id="showHitboxesCheckbox">
-                            Show Hitboxes
-                        </label>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" id="enableShadersCheckbox">
-                            Enable Shaders
-                        </label>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" id="showStats">
-                            Show Performance Stats (FPS, Counters, Memory)
-                        </label>
-                        <br/><br/>
-                        <label>
-                            Mob Animation Framerate: <span id="mobFramerateValue">15</span> FPS
-                            <input type="range" id="mobFramerateSlider" min="5" max="60" value="15" step="1">
-                        </label>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" id="highQualityMobs">
-                            High Quality Mobs (Pre-render frames per rarity - uses more memory)
-                        </label>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" id="dynamicSkyboxCheckbox">
-                            Dynamic Skybox (Tile wall/biome textures for out of bounds areas)
-                        </label>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" id="mobDeathAnimationCheckbox">
-                            Mob Death Animation
-                        </label>
-                        <br/><br/>
-                        <label>
-                            Interpolation: <span id="interpolationValue">0.15</span>
-                            <br/>
-                            <input type="range" id="interpolationSlider" min="0.05" max="0.5" step="0.05" value="0.15" style="width: 200px;">
-                        </label>
-                        <br/><br/>
-                        <h3>Tutorial</h3>
-                        <button id="resetTutorialButton" class="tab-button">Reset Tutorial</button>
-                    </div>
-                    <div id="advanced-tab" class="tab-content">
-                        <h3>Advanced Settings</h3>
-                        <div class="server-input">
-                            <label for="serverIP-settings">Server IP:</label>
-                            <input type="text" class="tab-button" id="serverIP-settings" placeholder="Server IP">
-                        </div>
-                        <br/><br/>
-                        <label>
-                            <input type="checkbox" class="tab-button" id="showConsoleLogs">
-                            Show Console Logs on Screen
-                        </label>
-                    </div>
-                </div>
-            </div>
-        `;
+        // Settings menu is now rendered on canvas - load initial values
+        this.loadSettingsValues();
         // Create exit button container (now contains settings and exit buttons)
         this.exitButtonContainer = this.createElement('div', '');
         this.exitButtonContainer.id = 'exitButtonContainer';
@@ -515,6 +451,7 @@ class TitleScreen {
             z-index: 3000;
             display: flex;
             gap: 10px;
+            pointer-events: none;
         `;
         // Import game icons
         const { GAME_ICONS_NET_ICONS } = require('./game-icons-net-icons');
@@ -537,6 +474,12 @@ class TitleScreen {
                     justify-content: center; box-sizing: border-box;
                     border-style: solid; border-width: 4px;
                     transition: filter 0.05s;
+                    pointer-events: auto;
+                    overflow: hidden;
+                }
+                .gardn-icon-btn svg {
+                    width: 32px !important; height: 32px !important;
+                    pointer-events: none;
                 }
                 .gardn-icon-btn:hover { filter: brightness(1.1); }
                 .gardn-icon-btn:active { filter: brightness(0.9); }
@@ -583,7 +526,7 @@ class TitleScreen {
             display: flex;
             flex-direction: column;
             gap: 10px;
-            pointer-events: auto;
+            pointer-events: none;
         `;
         const craftIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'craft')?.value || '';
         const inventoryIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'inventory')?.value || '';
@@ -752,7 +695,6 @@ class TitleScreen {
         const notificationsButton = this.exitButtonContainer.querySelector('#notificationsButton');
         const leaderboardButton = this.exitButtonContainer.querySelector('#leaderboardButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
-        const closeSettingsButton = this.settingsMenu.querySelector('#closeSettingsButton');
         console.log('Setting up buttons - changelogButton:', !!changelogButton, 'notificationsButton:', !!notificationsButton);
         if (settingsButton) {
             settingsButton.addEventListener('click', (e) => {
@@ -761,7 +703,7 @@ class TitleScreen {
                 this.changelogManager.hide();
                 this.notificationsManager.hide();
                 this.leaderboardManager.hide();
-                this.settingsMenu.classList.toggle('hidden');
+                this.toggleSettings();
             });
         }
         if (changelogButton) {
@@ -769,7 +711,7 @@ class TitleScreen {
                 e.stopPropagation();
                 e.preventDefault();
                 // Close other menus
-                this.settingsMenu.classList.add('hidden');
+                this.settingsOpen = false;
                 this.notificationsManager.hide();
                 this.leaderboardManager.hide();
                 console.log('[CHANGELOG] Button clicked, isOpen before:', this.changelogManager.isChangelogOpen());
@@ -791,7 +733,7 @@ class TitleScreen {
                 e.stopPropagation();
                 e.preventDefault();
                 // Close other menus
-                this.settingsMenu.classList.add('hidden');
+                this.settingsOpen = false;
                 this.changelogManager.hide();
                 this.leaderboardManager.hide();
                 console.log('[NOTIFICATIONS] Button clicked, isOpen before:', this.notificationsManager.isNotificationsOpen());
@@ -812,7 +754,7 @@ class TitleScreen {
                 e.stopPropagation();
                 e.preventDefault();
                 // Close other menus
-                this.settingsMenu.classList.add('hidden');
+                this.settingsOpen = false;
                 this.changelogManager.hide();
                 this.notificationsManager.hide();
                 this.leaderboardManager.toggle();
@@ -946,150 +888,6 @@ class TitleScreen {
                 }, true);
             }
         }, 100);
-        if (closeSettingsButton) {
-            closeSettingsButton.addEventListener('click', () => {
-                this.settingsMenu.classList.add('hidden');
-            });
-        }
-        // Click outside to close settings menu
-        document.addEventListener('click', (e) => {
-            if (!this.settingsMenu.classList.contains('hidden') &&
-                !this.settingsMenu.contains(e.target) &&
-                !this.exitButtonContainer.querySelector('#settingsButton')?.contains(e.target)) {
-                this.settingsMenu.classList.add('hidden');
-            }
-        });
-        this.settingsMenu.querySelectorAll('.tab-button[data-tab]').forEach(button => {
-            button.addEventListener('click', () => {
-                const tab = button.getAttribute('data-tab');
-                this.settingsMenu.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
-                this.settingsMenu.querySelectorAll('.tab-content').forEach(content => {
-                    if (content.id === `${tab}-tab`) {
-                        content.classList.add('active');
-                    }
-                    else {
-                        content.classList.remove('active');
-                    }
-                });
-            });
-        });
-        // Controls settings
-        this.populateControlsTab();
-        const saveControlsButton = this.settingsMenu.querySelector('#saveControlsButton');
-        if (saveControlsButton) {
-            saveControlsButton.addEventListener('click', () => this.saveControls());
-        }
-        const resetControlsButton = this.settingsMenu.querySelector('#resetControlsButton');
-        if (resetControlsButton) {
-            resetControlsButton.addEventListener('click', () => this.resetControls());
-        }
-        // Settings change listeners
-        const showHitboxesCheckbox = this.settingsMenu.querySelector('#showHitboxesCheckbox');
-        if (showHitboxesCheckbox) {
-            showHitboxesCheckbox.addEventListener('change', () => {
-                localStorage.setItem('showHitboxes', showHitboxesCheckbox.checked.toString());
-            });
-        }
-        const enableShadersCheckbox = this.settingsMenu.querySelector('#enableShadersCheckbox');
-        if (enableShadersCheckbox) {
-            enableShadersCheckbox.addEventListener('change', () => {
-                localStorage.setItem('shadersEnabled', enableShadersCheckbox.checked.toString());
-                // Update shader manager if available
-                if (window.shaderManager) {
-                    window.shaderManager.setShadersEnabled(enableShadersCheckbox.checked);
-                }
-            });
-        }
-        const showStatsCheckbox = this.settingsMenu.querySelector('#showStats');
-        if (showStatsCheckbox) {
-            showStatsCheckbox.addEventListener('change', () => {
-                localStorage.setItem('showStats', showStatsCheckbox.checked.toString());
-            });
-        }
-        const mobFramerateSlider = this.settingsMenu.querySelector('#mobFramerateSlider');
-        const mobFramerateValue = this.settingsMenu.querySelector('#mobFramerateValue');
-        if (mobFramerateSlider && mobFramerateValue) {
-            mobFramerateSlider.addEventListener('input', () => {
-                const framerate = parseInt(mobFramerateSlider.value, 10);
-                mobFramerateValue.textContent = framerate.toString();
-                localStorage.setItem('mobAnimationFramerate', framerate.toString());
-                (0, constants_1.invalidateSettingsCache)();
-            });
-        }
-        const highQualityMobsCheckbox = this.settingsMenu.querySelector('#highQualityMobs');
-        if (highQualityMobsCheckbox) {
-            highQualityMobsCheckbox.addEventListener('change', () => {
-                localStorage.setItem('highQualityMobs', highQualityMobsCheckbox.checked.toString());
-                (0, constants_1.invalidateSettingsCache)();
-            });
-        }
-        const dynamicSkyboxCheckbox = this.settingsMenu.querySelector('#dynamicSkyboxCheckbox');
-        if (dynamicSkyboxCheckbox) {
-            dynamicSkyboxCheckbox.addEventListener('change', () => {
-                localStorage.setItem('dynamicSkybox', dynamicSkyboxCheckbox.checked.toString());
-                // Update graphics if game is running
-                if (window.currentGame && window.currentGame.graphics) {
-                    window.currentGame.graphics.dynamicSkybox = dynamicSkyboxCheckbox.checked;
-                }
-            });
-        }
-        const mobDeathAnimationCheckbox = this.settingsMenu.querySelector('#mobDeathAnimationCheckbox');
-        if (mobDeathAnimationCheckbox) {
-            mobDeathAnimationCheckbox.addEventListener('change', () => {
-                localStorage.setItem('mobDeathAnimation', mobDeathAnimationCheckbox.checked.toString());
-                // Update game if running
-                if (window.currentGame) {
-                    window.currentGame.mobDeathAnimation = mobDeathAnimationCheckbox.checked;
-                }
-            });
-        }
-        const interpolationSlider = this.settingsMenu.querySelector('#interpolationSlider');
-        const interpolationValue = this.settingsMenu.querySelector('#interpolationValue');
-        if (interpolationSlider) {
-            const saved = localStorage.getItem('interpolationAmount');
-            if (saved) {
-                interpolationSlider.value = saved;
-                if (interpolationValue)
-                    interpolationValue.textContent = saved;
-            }
-            interpolationSlider.addEventListener('input', () => {
-                const val = interpolationSlider.value;
-                if (interpolationValue)
-                    interpolationValue.textContent = val;
-                localStorage.setItem('interpolationAmount', val);
-                if (window.currentGame) {
-                    window.currentGame.interpolationAmount = parseFloat(val);
-                }
-            });
-        }
-        const showConsoleLogsCheckbox = this.settingsMenu.querySelector('#showConsoleLogs');
-        if (showConsoleLogsCheckbox) {
-            showConsoleLogsCheckbox.addEventListener('change', () => {
-                localStorage.setItem('showConsoleLogs', showConsoleLogsCheckbox.checked.toString());
-                if (window.currentGame && window.currentGame.graphics) {
-                    window.currentGame.graphics.setShowConsoleLogs(showConsoleLogsCheckbox.checked);
-                }
-            });
-        }
-        // Reset tutorial button
-        const resetTutorialButton = this.settingsMenu.querySelector('#resetTutorialButton');
-        if (resetTutorialButton) {
-            resetTutorialButton.addEventListener('click', () => {
-                if (confirm('This will restart the tutorial on your next game. Continue?')) {
-                    localStorage.removeItem('tutorial_completed');
-                    localStorage.removeItem('tutorial_step');
-                    alert('Tutorial will restart on your next game!');
-                }
-            });
-        }
-        const serverIPInput = this.settingsMenu.querySelector('#serverIP-settings');
-        if (serverIPInput) {
-            serverIPInput.addEventListener('input', () => {
-                localStorage.setItem('serverIP', serverIPInput.value);
-            });
-            serverIPInput.value = localStorage.getItem('serverIP') || window.location.origin;
-        }
         // Setup name input persistence
         this.setupNameInputPersistence();
     }
@@ -1108,8 +906,6 @@ class TitleScreen {
         document.body.appendChild(this.landContainer);
         document.body.appendChild(this.axolotlContainer);
         document.body.appendChild(this.floatingPetalsContainer);
-        // Append settings menu to exitButtonContainer for proper positioning
-        this.exitButtonContainer.appendChild(this.settingsMenu);
         // Initialize floating petals manager
         this.floatingPetalManager = new FloatingPetalManager(this.floatingPetalsContainer);
         // Load and start background animation
@@ -1165,29 +961,7 @@ class TitleScreen {
         console.log('Login form innerHTML:', this.loginForm.innerHTML);
         // Setup advanced settings toggle functionality
         this.setupAdvancedSettingsToggle();
-        this.loadSettings();
-    }
-    populateControlsTab() {
-        const controlsGrid = this.settingsMenu.querySelector('.controls-grid');
-        if (!controlsGrid)
-            return;
-        const controls = this.getControls();
-        controlsGrid.innerHTML = '';
-        for (const action in controls) {
-            const controlRow = document.createElement('div');
-            controlRow.className = 'control-row';
-            controlRow.innerHTML = `
-                <label>${action.replace(/_/g, ' ')}</label>
-                <input type="text" class="control-input" data-action="${action}" value="${controls[action]}">
-            `;
-            controlsGrid.appendChild(controlRow);
-        }
-        controlsGrid.querySelectorAll('.control-input').forEach(input => {
-            input.addEventListener('keydown', (e) => {
-                e.preventDefault();
-                input.value = e.key;
-            });
-        });
+        this.loadSettingsValues();
     }
     getControls() {
         const savedControls = localStorage.getItem('controls');
@@ -1215,72 +989,12 @@ class TitleScreen {
         };
     }
     saveControls() {
-        const controls = {};
-        this.settingsMenu.querySelectorAll('.control-input').forEach(input => {
-            const action = input.getAttribute('data-action');
-            if (action) {
-                controls[action] = input.value;
-            }
-        });
-        localStorage.setItem('controls', JSON.stringify(controls));
+        // Controls are already saved to localStorage as they are edited via canvas
         alert('Controls saved!');
     }
     resetControls() {
         localStorage.removeItem('controls');
-        this.populateControlsTab();
         alert('Controls have been reset to default.');
-    }
-    loadSettings() {
-        const showHitboxes = localStorage.getItem('showHitboxes') === 'true';
-        const showHitboxesCheckbox = this.settingsMenu.querySelector('#showHitboxesCheckbox');
-        if (showHitboxesCheckbox) {
-            showHitboxesCheckbox.checked = showHitboxes;
-        }
-        const shadersEnabled = localStorage.getItem('shadersEnabled') === 'true';
-        const enableShadersCheckbox = this.settingsMenu.querySelector('#enableShadersCheckbox');
-        if (enableShadersCheckbox) {
-            enableShadersCheckbox.checked = shadersEnabled;
-        }
-        const showStats = localStorage.getItem('showStats') === 'true';
-        const showStatsCheckbox = this.settingsMenu.querySelector('#showStats');
-        if (showStatsCheckbox) {
-            showStatsCheckbox.checked = showStats;
-        }
-        const serverIP = localStorage.getItem('serverIP') || window.location.origin;
-        const serverIPInput = this.settingsMenu.querySelector('#serverIP-settings');
-        if (serverIPInput) {
-            serverIPInput.value = serverIP;
-        }
-        const mobFramerate = parseInt(localStorage.getItem('mobAnimationFramerate') || '15', 10);
-        const mobFramerateSlider = this.settingsMenu.querySelector('#mobFramerateSlider');
-        const mobFramerateValue = this.settingsMenu.querySelector('#mobFramerateValue');
-        if (mobFramerateSlider) {
-            mobFramerateSlider.value = mobFramerate.toString();
-        }
-        if (mobFramerateValue) {
-            mobFramerateValue.textContent = mobFramerate.toString();
-        }
-        const highQualityMobs = localStorage.getItem('highQualityMobs') === 'true';
-        const highQualityMobsCheckbox = this.settingsMenu.querySelector('#highQualityMobs');
-        if (highQualityMobsCheckbox) {
-            highQualityMobsCheckbox.checked = highQualityMobs;
-        }
-        const dynamicSkybox = localStorage.getItem('dynamicSkybox') === 'true';
-        const dynamicSkyboxCheckbox = this.settingsMenu.querySelector('#dynamicSkyboxCheckbox');
-        if (dynamicSkyboxCheckbox) {
-            dynamicSkyboxCheckbox.checked = dynamicSkybox;
-        }
-        // Load mob death animation setting (default to true if not set)
-        const mobDeathAnimation = localStorage.getItem('mobDeathAnimation') !== 'false'; // Default true
-        const mobDeathAnimationCheckbox = this.settingsMenu.querySelector('#mobDeathAnimationCheckbox');
-        if (mobDeathAnimationCheckbox) {
-            mobDeathAnimationCheckbox.checked = mobDeathAnimation;
-        }
-        const showConsoleLogs = localStorage.getItem('showConsoleLogs') === 'true';
-        const showConsoleLogsCheckbox = this.settingsMenu.querySelector('#showConsoleLogs');
-        if (showConsoleLogsCheckbox) {
-            showConsoleLogsCheckbox.checked = showConsoleLogs;
-        }
     }
     addAdvancedSettingsStyles() {
         const style = document.createElement('style');
@@ -1425,11 +1139,23 @@ class TitleScreen {
         // Mouse move for hover effects
         this.uiCanvas.addEventListener('mousemove', (e) => {
             const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e);
+            if (this.settingsSliderDragging) {
+                this.handleSliderDrag(x);
+            }
             this.handleCanvasHover(x, y);
         });
         // Mouse down for pressed state
-        this.uiCanvas.addEventListener('mousedown', () => {
-            if (this.hoveredStartButton)
+        this.uiCanvas.addEventListener('mousedown', (e) => {
+            if (this.settingsOpen && this.settingsHoveredItem) {
+                this.pressedButton = `settings_${this.settingsHoveredItem}`;
+                // Start slider dragging
+                if (this.settingsHoveredItem === 'slider_mobFramerate' || this.settingsHoveredItem === 'slider_interpolation') {
+                    this.settingsSliderDragging = this.settingsHoveredItem.replace('slider_', '');
+                    const { x } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e);
+                    this.handleSliderDrag(x);
+                }
+            }
+            else if (this.hoveredStartButton)
                 this.pressedButton = 'start';
             else if (this.hoveredBiomeIndex >= 0)
                 this.pressedButton = `biome_${this.hoveredBiomeIndex}`;
@@ -1441,6 +1167,7 @@ class TitleScreen {
         // Mouse up to clear pressed state
         document.addEventListener('mouseup', () => {
             this.pressedButton = null;
+            this.settingsSliderDragging = null;
         });
         // Mouse leave to clear hover
         this.uiCanvas.addEventListener('mouseleave', () => {
@@ -1448,17 +1175,61 @@ class TitleScreen {
             this.hoveredStartButton = false;
             this.hoveredAuthButton = null;
             this.pressedButton = null;
+            this.settingsHoveredItem = null;
+            this.settingsSliderDragging = null;
         });
+        // Scroll wheel for settings panel
+        this.uiCanvas.addEventListener('wheel', (e) => {
+            if (this.settingsOpen) {
+                this.settingsScrollY -= e.deltaY;
+                this.settingsScrollY = Math.min(0, this.settingsScrollY);
+                e.preventDefault();
+            }
+        }, { passive: false });
         // Keyboard input for name field and auth form
         document.addEventListener('keydown', (e) => {
-            // Don't interfere if game is running
-            if (window.currentGame)
-                return;
             // Don't interfere if a real HTML input/textarea is focused
             const activeEl = document.activeElement;
             if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
                 return;
             }
+            // Handle settings keyboard input (works both in-game and on title screen)
+            if (this.settingsOpen) {
+                if (this.settingsEditingControl) {
+                    // Capture key for control binding
+                    e.preventDefault();
+                    const controls = this.getControls();
+                    controls[this.settingsEditingControl] = e.key;
+                    localStorage.setItem('controls', JSON.stringify(controls));
+                    this.settingsEditingControl = null;
+                    return;
+                }
+                if (this.settingsServerIPFocused) {
+                    if (e.key === 'Backspace') {
+                        this.settingsServerIP = this.settingsServerIP.slice(0, -1);
+                        localStorage.setItem('serverIP', this.settingsServerIP);
+                        e.preventDefault();
+                    }
+                    else if (e.key === 'Escape' || e.key === 'Enter') {
+                        this.settingsServerIPFocused = false;
+                        e.preventDefault();
+                    }
+                    else if (e.key.length === 1) {
+                        this.settingsServerIP += e.key;
+                        localStorage.setItem('serverIP', this.settingsServerIP);
+                        e.preventDefault();
+                    }
+                    return;
+                }
+                if (e.key === 'Escape') {
+                    this.settingsOpen = false;
+                    e.preventDefault();
+                    return;
+                }
+            }
+            // Don't interfere with game controls for non-settings input
+            if (window.currentGame)
+                return;
             // Handle auth form input
             if (this.showAuthForm && this.authFocusedField) {
                 if (e.key === 'Backspace') {
@@ -1574,6 +1345,11 @@ class TitleScreen {
         const centerY = this.uiCanvas.height / 2;
         // Ignore clicks while connecting animation is playing
         if (this.isConnecting) {
+            return;
+        }
+        // Handle settings menu clicks
+        if (this.settingsOpen) {
+            this.handleSettingsClick(x, y);
             return;
         }
         // Handle auth form clicks
@@ -1725,6 +1501,11 @@ class TitleScreen {
     handleCanvasHover(x, y) {
         const centerX = this.uiCanvas.width / 2;
         const centerY = this.uiCanvas.height / 2;
+        // Handle settings menu hover
+        if (this.settingsOpen) {
+            this.handleSettingsHover(x, y);
+            return;
+        }
         // Handle auth form hover
         if (this.showAuthForm) {
             this.handleAuthFormHover(x, y, centerX, centerY);
@@ -2194,6 +1975,10 @@ class TitleScreen {
         });
         // Draw stats counters
         this.renderStatsCounters(ctx, width, height);
+        // Draw settings menu overlay
+        if (this.settingsOpen) {
+            this.renderSettingsMenu(ctx);
+        }
     }
     /**
      * Renders stats counters (FPS, memory, mobs, players) in the bottom-right corner
@@ -2225,6 +2010,558 @@ class TitleScreen {
             y -= lineHeight;
         }
         ctx.restore();
+    }
+    /** Returns the layout geometry for the settings panel */
+    getSettingsLayout() {
+        const panelW = 420;
+        const panelH = 500;
+        const panelX = 20;
+        const panelY = 70;
+        const pad = 15;
+        const tabH = 32;
+        const headerH = 30;
+        const contentX = panelX + pad;
+        const contentW = panelW - 2 * pad;
+        const contentTop = panelY + headerH + pad + tabH + 10;
+        const contentBottom = panelY + panelH - pad;
+        return { panelW, panelH, panelX, panelY, pad, tabH, headerH, contentX, contentW, contentTop, contentBottom };
+    }
+    /** Renders the canvas-based settings menu (gardn style) */
+    renderSettingsMenu(ctx) {
+        const { panelW, panelH, panelX, panelY, pad, tabH, headerH, contentX, contentW, contentTop, contentBottom } = this.getSettingsLayout();
+        ctx.save();
+        // Panel background (gardn style: darker stroke border, lighter fill)
+        ctx.fillStyle = this.hsvAdjust('#aaaaaa', 0.8);
+        ctx.beginPath();
+        this.drawRoundedRect(ctx, panelX, panelY, panelW, panelH, 5);
+        ctx.fill();
+        // Inner fill
+        ctx.fillStyle = '#aaaaaa';
+        ctx.beginPath();
+        ctx.rect(panelX + 4, panelY + 4, panelW - 8, panelH - 8);
+        ctx.fill();
+        // Header: "Settings" title
+        ctx.font = 'bold 20px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.strokeText('Settings', panelX + pad, panelY + pad + headerH / 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Settings', panelX + pad, panelY + pad + headerH / 2);
+        // Close button (X)
+        const closeBtnX = panelX + panelW - pad - 28;
+        const closeBtnY = panelY + pad;
+        const closeBtnSize = 28;
+        const closeHovered = this.settingsHoveredItem === 'close';
+        this.drawGardnButton(ctx, closeBtnX, closeBtnY, closeBtnSize, closeBtnSize, '#cc4444', closeHovered, this.pressedButton === 'settings_close', 'X', 16, 3, 3);
+        // Tabs
+        const tabs = [
+            { id: 'controls', label: 'Controls' },
+            { id: 'graphics', label: 'Graphics' },
+            { id: 'advanced', label: 'Advanced' },
+        ];
+        const tabW = (contentW - (tabs.length - 1) * 5) / tabs.length;
+        const tabY = panelY + headerH + pad + 5;
+        tabs.forEach((tab, i) => {
+            const tx = contentX + i * (tabW + 5);
+            const isActive = this.settingsTab === tab.id;
+            const hovered = this.settingsHoveredItem === `tab_${tab.id}`;
+            const baseColor = isActive ? '#8888bb' : '#a3a3a3';
+            this.drawGardnButton(ctx, tx, tabY, tabW, tabH, baseColor, hovered && !isActive, this.pressedButton === `settings_tab_${tab.id}`, tab.label, 13, 3, 3);
+        });
+        // Content area - clip to prevent overflow
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(panelX, contentTop, panelW, contentBottom - contentTop);
+        ctx.clip();
+        const rowH = 32;
+        const checkboxSize = 22;
+        const sliderH = 8;
+        let cy = contentTop + this.settingsScrollY;
+        if (this.settingsTab === 'graphics') {
+            // Checkboxes
+            const checkboxes = [
+                { id: 'showHitboxes', label: 'Show Hitboxes', value: this.settingsShowHitboxes },
+                { id: 'enableShaders', label: 'Enable Shaders', value: this.settingsShadersEnabled },
+                { id: 'showStats', label: 'Show Performance Stats', value: this.settingsShowStats },
+                { id: 'highQualityMobs', label: 'High Quality Mobs', value: this.settingsHighQualityMobs },
+                { id: 'dynamicSkybox', label: 'Dynamic Skybox', value: this.settingsDynamicSkybox },
+                { id: 'mobDeathAnimation', label: 'Mob Death Animation', value: this.settingsMobDeathAnimation },
+                { id: 'showConsoleLogs', label: 'Show Console Logs', value: this.settingsShowConsoleLogs },
+            ];
+            for (const cb of checkboxes) {
+                this.drawSettingsCheckbox(ctx, contentX, cy, checkboxSize, cb.value, cb.label, this.settingsHoveredItem === `cb_${cb.id}`);
+                cy += rowH;
+            }
+            // Mob Framerate slider
+            cy += 5;
+            ctx.font = 'bold 13px Ubuntu, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.strokeText(`Mob Animation FPS: ${this.settingsMobFramerate}`, contentX, cy + 8);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`Mob Animation FPS: ${this.settingsMobFramerate}`, contentX, cy + 8);
+            cy += 22;
+            this.drawSettingsSlider(ctx, contentX, cy, contentW, sliderH, (this.settingsMobFramerate - 5) / 55, 'mobFramerate');
+            cy += 25;
+            // Interpolation slider
+            ctx.strokeText(`Interpolation: ${this.settingsInterpolation.toFixed(2)}`, contentX, cy + 8);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`Interpolation: ${this.settingsInterpolation.toFixed(2)}`, contentX, cy + 8);
+            cy += 22;
+            this.drawSettingsSlider(ctx, contentX, cy, contentW, sliderH, (this.settingsInterpolation - 0.05) / 0.45, 'interpolation');
+            cy += 30;
+            // Reset tutorial button
+            const resetBtnW = 160;
+            const resetBtnH = 30;
+            const resetHovered = this.settingsHoveredItem === 'resetTutorial';
+            this.drawGardnButton(ctx, contentX, cy, resetBtnW, resetBtnH, '#a3a3a3', resetHovered, this.pressedButton === 'settings_resetTutorial', 'Reset Tutorial', 13, 3, 3);
+            cy += resetBtnH + 10;
+        }
+        else if (this.settingsTab === 'controls') {
+            // Controls heading
+            ctx.font = 'bold 15px Ubuntu, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.strokeText('Controls', contentX, cy + 10);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText('Controls', contentX, cy + 10);
+            cy += 28;
+            const controls = this.getControls();
+            const controlKeys = Object.keys(controls);
+            const labelW = contentW * 0.55;
+            const inputW = contentW * 0.4;
+            const inputH = 26;
+            for (const action of controlKeys) {
+                const displayName = action.replace(/_/g, ' ');
+                // Label
+                ctx.font = 'bold 12px Ubuntu, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 2;
+                const labelText = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+                ctx.strokeText(labelText, contentX, cy + inputH / 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(labelText, contentX, cy + inputH / 2);
+                // Key input box
+                const inputX = contentX + labelW;
+                const isEditing = this.settingsEditingControl === action;
+                const hovered = this.settingsHoveredItem === `ctrl_${action}`;
+                const boxColor = isEditing ? '#ffffff' : (hovered ? '#f0f0f0' : '#e6e6e6');
+                ctx.fillStyle = this.hsvAdjust('#a3a3a3', 0.8);
+                this.drawRoundedRect(ctx, inputX, cy, inputW, inputH, 3);
+                ctx.fill();
+                ctx.fillStyle = boxColor;
+                ctx.fillRect(inputX + 3, cy + 3, inputW - 6, inputH - 6);
+                // Key text
+                ctx.font = 'bold 12px Ubuntu, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#000000';
+                const keyText = isEditing ? '...' : (controls[action] === ' ' ? 'Space' : controls[action]);
+                ctx.fillText(keyText, inputX + inputW / 2, cy + inputH / 2);
+                cy += inputH + 6;
+            }
+            cy += 10;
+            // Save & Reset buttons
+            const btnW = (contentW - 10) / 2;
+            const btnH = 30;
+            const saveHovered = this.settingsHoveredItem === 'saveControls';
+            const resetHovered = this.settingsHoveredItem === 'resetControls';
+            this.drawGardnButton(ctx, contentX, cy, btnW, btnH, '#5a9fdb', saveHovered, this.pressedButton === 'settings_saveControls', 'Save Controls', 13, 3, 3);
+            this.drawGardnButton(ctx, contentX + btnW + 10, cy, btnW, btnH, '#a3a3a3', resetHovered, this.pressedButton === 'settings_resetControls', 'Reset to Default', 13, 3, 3);
+            cy += btnH + 10;
+        }
+        else if (this.settingsTab === 'advanced') {
+            // Server IP
+            ctx.font = 'bold 13px Ubuntu, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.strokeText('Server IP:', contentX, cy + 10);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText('Server IP:', contentX, cy + 10);
+            cy += 25;
+            // Server IP input box
+            const ipInputW = contentW;
+            const ipInputH = 32;
+            const ipFocused = this.settingsServerIPFocused;
+            const ipHovered = this.settingsHoveredItem === 'serverIP';
+            ctx.fillStyle = this.hsvAdjust('#a3a3a3', 0.8);
+            this.drawRoundedRect(ctx, contentX, cy, ipInputW, ipInputH, 3);
+            ctx.fill();
+            ctx.fillStyle = ipFocused ? '#ffffff' : (ipHovered ? '#f0f0f0' : '#e6e6e6');
+            ctx.fillRect(contentX + 3, cy + 3, ipInputW - 6, ipInputH - 6);
+            ctx.font = '13px Ubuntu, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#000000';
+            const ipText = this.settingsServerIP || window.location.origin;
+            // Truncate if too wide
+            let displayIP = ipText;
+            while (ctx.measureText(displayIP).width > ipInputW - 20 && displayIP.length > 0) {
+                displayIP = displayIP.slice(1);
+            }
+            ctx.fillText(displayIP, contentX + 8, cy + ipInputH / 2);
+            // Cursor if focused
+            if (ipFocused && Math.floor(Date.now() / 500) % 2 === 0) {
+                const cursorX = contentX + 8 + ctx.measureText(displayIP).width;
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(cursorX, cy + 8, 2, ipInputH - 16);
+            }
+            cy += ipInputH + 15;
+            // Show Console Logs checkbox
+            this.drawSettingsCheckbox(ctx, contentX, cy, 22, this.settingsShowConsoleLogs, 'Show Console Logs on Screen', this.settingsHoveredItem === 'cb_showConsoleLogs_adv');
+            cy += rowH;
+        }
+        ctx.restore(); // restore clip
+        ctx.restore(); // restore initial save
+    }
+    /** Draws a gardn-style checkbox (toggle square) */
+    drawSettingsCheckbox(ctx, x, y, size, checked, label, hovered) {
+        // Outer box (dark border)
+        ctx.fillStyle = this.hsvAdjust('#666666', 0.4);
+        this.drawRoundedRect(ctx, x, y + 2, size, size, 4);
+        ctx.fill();
+        // Inner fill
+        const innerColor = checked ? '#cfcfcf' : '#666666';
+        ctx.fillStyle = hovered ? this.hsvAdjust(innerColor, 1.1) : innerColor;
+        ctx.fillRect(x + 3, y + 5, size - 6, size - 6);
+        // Label text
+        ctx.font = 'bold 13px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.strokeText(label, x + size + 8, y + 2 + size / 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, x + size + 8, y + 2 + size / 2);
+    }
+    /** Draws a gardn-style slider */
+    drawSettingsSlider(ctx, x, y, width, height, ratio, id) {
+        const r = Math.max(0, Math.min(1, ratio));
+        // Track background
+        ctx.fillStyle = '#888888';
+        this.drawRoundedRect(ctx, x, y, width, height, height / 2);
+        ctx.fill();
+        // Filled portion
+        const fillW = Math.max(height, width * r);
+        ctx.fillStyle = '#5a9fdb';
+        this.drawRoundedRect(ctx, x, y, fillW, height, height / 2);
+        ctx.fill();
+        // Thumb
+        const thumbR = 10;
+        const thumbX = x + width * r;
+        const thumbY = y + height / 2;
+        const thumbHovered = this.settingsHoveredItem === `slider_${id}` || this.settingsSliderDragging === id;
+        ctx.fillStyle = thumbHovered ? '#ffffff' : '#dddddd';
+        ctx.strokeStyle = '#888888';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(thumbX, thumbY, thumbR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    }
+    /** Loads settings values from localStorage into canvas state */
+    loadSettingsValues() {
+        this.settingsShowHitboxes = localStorage.getItem('showHitboxes') === 'true';
+        this.settingsShadersEnabled = localStorage.getItem('shadersEnabled') === 'true';
+        this.settingsShowStats = localStorage.getItem('showStats') === 'true';
+        this.settingsMobFramerate = parseInt(localStorage.getItem('mobAnimationFramerate') || '15', 10);
+        this.settingsHighQualityMobs = localStorage.getItem('highQualityMobs') === 'true';
+        this.settingsDynamicSkybox = localStorage.getItem('dynamicSkybox') === 'true';
+        this.settingsMobDeathAnimation = localStorage.getItem('mobDeathAnimation') !== 'false';
+        this.settingsInterpolation = parseFloat(localStorage.getItem('interpolationAmount') || '0.15');
+        this.settingsShowConsoleLogs = localStorage.getItem('showConsoleLogs') === 'true';
+        this.settingsServerIP = localStorage.getItem('serverIP') || window.location.origin;
+    }
+    /** Handles click events within the settings panel */
+    handleSettingsClick(x, y) {
+        const { panelW, panelH, panelX, panelY, pad, tabH, headerH, contentX, contentW, contentTop, contentBottom } = this.getSettingsLayout();
+        // Check if click is outside panel
+        if (x < panelX || x > panelX + panelW || y < panelY || y > panelY + panelH) {
+            this.settingsOpen = false;
+            return;
+        }
+        // Close button
+        const closeBtnX = panelX + panelW - pad - 28;
+        const closeBtnY = panelY + pad;
+        if (x >= closeBtnX && x <= closeBtnX + 28 && y >= closeBtnY && y <= closeBtnY + 28) {
+            this.settingsOpen = false;
+            return;
+        }
+        // Tabs
+        const tabs = ['controls', 'graphics', 'advanced'];
+        const tabW = (contentW - (tabs.length - 1) * 5) / tabs.length;
+        const tabY = panelY + headerH + pad + 5;
+        for (let i = 0; i < tabs.length; i++) {
+            const tx = contentX + i * (tabW + 5);
+            if (x >= tx && x <= tx + tabW && y >= tabY && y <= tabY + tabH) {
+                this.settingsTab = tabs[i];
+                this.settingsScrollY = 0;
+                this.settingsEditingControl = null;
+                this.settingsServerIPFocused = false;
+                return;
+            }
+        }
+        // Content area clicks
+        if (y < contentTop || y > contentBottom)
+            return;
+        const rowH = 32;
+        const checkboxSize = 22;
+        let cy = contentTop + this.settingsScrollY;
+        if (this.settingsTab === 'graphics') {
+            const checkboxIds = ['showHitboxes', 'enableShaders', 'showStats', 'highQualityMobs', 'dynamicSkybox', 'mobDeathAnimation', 'showConsoleLogs'];
+            for (const id of checkboxIds) {
+                if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                    this.toggleSettingsCheckbox(id);
+                    return;
+                }
+                cy += rowH;
+            }
+            // Skip mob framerate label + slider
+            cy += 5 + 22;
+            // Slider area for mob framerate
+            if (y >= cy - 10 && y <= cy + 20 && x >= contentX && x <= contentX + contentW) {
+                this.settingsSliderDragging = 'mobFramerate';
+                this.handleSliderDrag(x);
+                return;
+            }
+            cy += 25;
+            // Skip interpolation label + slider
+            cy += 22;
+            if (y >= cy - 10 && y <= cy + 20 && x >= contentX && x <= contentX + contentW) {
+                this.settingsSliderDragging = 'interpolation';
+                this.handleSliderDrag(x);
+                return;
+            }
+            cy += 30;
+            // Reset tutorial
+            if (y >= cy && y <= cy + 30 && x >= contentX && x <= contentX + 160) {
+                if (confirm('This will restart the tutorial on your next game. Continue?')) {
+                    localStorage.removeItem('tutorial_completed');
+                    localStorage.removeItem('tutorial_step');
+                    alert('Tutorial will restart on your next game!');
+                }
+                return;
+            }
+        }
+        else if (this.settingsTab === 'controls') {
+            // Skip heading
+            cy += 28;
+            const controls = this.getControls();
+            const controlKeys = Object.keys(controls);
+            const labelW = contentW * 0.55;
+            const inputW = contentW * 0.4;
+            const inputH = 26;
+            for (const action of controlKeys) {
+                const inputX = contentX + labelW;
+                if (x >= inputX && x <= inputX + inputW && y >= cy && y <= cy + inputH) {
+                    this.settingsEditingControl = action;
+                    return;
+                }
+                cy += inputH + 6;
+            }
+            // Save/Reset buttons
+            cy += 10;
+            const btnW = (contentW - 10) / 2;
+            const btnH = 30;
+            if (y >= cy && y <= cy + btnH) {
+                if (x >= contentX && x <= contentX + btnW) {
+                    this.saveControls();
+                    return;
+                }
+                if (x >= contentX + btnW + 10 && x <= contentX + contentW) {
+                    this.resetControls();
+                    return;
+                }
+            }
+        }
+        else if (this.settingsTab === 'advanced') {
+            // Server IP label
+            cy += 25;
+            // Server IP input
+            const ipInputH = 32;
+            if (x >= contentX && x <= contentX + contentW && y >= cy && y <= cy + ipInputH) {
+                this.settingsServerIPFocused = true;
+                return;
+            }
+            cy += ipInputH + 15;
+            // Console logs checkbox
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleSettingsCheckbox('showConsoleLogs');
+                return;
+            }
+        }
+        // Unfocus server IP if clicking elsewhere
+        this.settingsServerIPFocused = false;
+        this.settingsEditingControl = null;
+    }
+    /** Handles hover events within the settings panel */
+    handleSettingsHover(x, y) {
+        this.settingsHoveredItem = null;
+        const { panelW, panelH, panelX, panelY, pad, tabH, headerH, contentX, contentW, contentTop, contentBottom } = this.getSettingsLayout();
+        // Outside panel
+        if (x < panelX || x > panelX + panelW || y < panelY || y > panelY + panelH)
+            return;
+        // Close button
+        const closeBtnX = panelX + panelW - pad - 28;
+        const closeBtnY = panelY + pad;
+        if (x >= closeBtnX && x <= closeBtnX + 28 && y >= closeBtnY && y <= closeBtnY + 28) {
+            this.settingsHoveredItem = 'close';
+            return;
+        }
+        // Tabs
+        const tabs = ['controls', 'graphics', 'advanced'];
+        const tabW = (contentW - (tabs.length - 1) * 5) / tabs.length;
+        const tabY = panelY + headerH + pad + 5;
+        for (let i = 0; i < tabs.length; i++) {
+            const tx = contentX + i * (tabW + 5);
+            if (x >= tx && x <= tx + tabW && y >= tabY && y <= tabY + tabH) {
+                this.settingsHoveredItem = `tab_${tabs[i]}`;
+                return;
+            }
+        }
+        if (y < contentTop || y > contentBottom)
+            return;
+        const rowH = 32;
+        let cy = contentTop + this.settingsScrollY;
+        if (this.settingsTab === 'graphics') {
+            const checkboxIds = ['showHitboxes', 'enableShaders', 'showStats', 'highQualityMobs', 'dynamicSkybox', 'mobDeathAnimation', 'showConsoleLogs'];
+            for (const id of checkboxIds) {
+                if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                    this.settingsHoveredItem = `cb_${id}`;
+                    return;
+                }
+                cy += rowH;
+            }
+            cy += 5 + 22;
+            if (y >= cy - 10 && y <= cy + 20 && x >= contentX && x <= contentX + contentW) {
+                this.settingsHoveredItem = 'slider_mobFramerate';
+                return;
+            }
+            cy += 25 + 22;
+            if (y >= cy - 10 && y <= cy + 20 && x >= contentX && x <= contentX + contentW) {
+                this.settingsHoveredItem = 'slider_interpolation';
+                return;
+            }
+            cy += 30;
+            if (y >= cy && y <= cy + 30 && x >= contentX && x <= contentX + 160) {
+                this.settingsHoveredItem = 'resetTutorial';
+                return;
+            }
+        }
+        else if (this.settingsTab === 'controls') {
+            cy += 28;
+            const controls = this.getControls();
+            const controlKeys = Object.keys(controls);
+            const labelW = contentW * 0.55;
+            const inputW = contentW * 0.4;
+            const inputH = 26;
+            for (const action of controlKeys) {
+                const inputX = contentX + labelW;
+                if (x >= inputX && x <= inputX + inputW && y >= cy && y <= cy + inputH) {
+                    this.settingsHoveredItem = `ctrl_${action}`;
+                    return;
+                }
+                cy += inputH + 6;
+            }
+            cy += 10;
+            const btnW = (contentW - 10) / 2;
+            const btnH = 30;
+            if (y >= cy && y <= cy + btnH) {
+                if (x >= contentX && x <= contentX + btnW) {
+                    this.settingsHoveredItem = 'saveControls';
+                    return;
+                }
+                if (x >= contentX + btnW + 10 && x <= contentX + contentW) {
+                    this.settingsHoveredItem = 'resetControls';
+                    return;
+                }
+            }
+        }
+        else if (this.settingsTab === 'advanced') {
+            cy += 25;
+            if (y >= cy && y <= cy + 32 && x >= contentX && x <= contentX + contentW) {
+                this.settingsHoveredItem = 'serverIP';
+                return;
+            }
+            cy += 32 + 15;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.settingsHoveredItem = 'cb_showConsoleLogs_adv';
+                return;
+            }
+        }
+    }
+    /** Toggles a settings checkbox and persists to localStorage */
+    toggleSettingsCheckbox(id) {
+        switch (id) {
+            case 'showHitboxes':
+                this.settingsShowHitboxes = !this.settingsShowHitboxes;
+                localStorage.setItem('showHitboxes', this.settingsShowHitboxes.toString());
+                break;
+            case 'enableShaders':
+                this.settingsShadersEnabled = !this.settingsShadersEnabled;
+                localStorage.setItem('shadersEnabled', this.settingsShadersEnabled.toString());
+                if (window.shaderManager) {
+                    window.shaderManager.setShadersEnabled(this.settingsShadersEnabled);
+                }
+                break;
+            case 'showStats':
+                this.settingsShowStats = !this.settingsShowStats;
+                localStorage.setItem('showStats', this.settingsShowStats.toString());
+                break;
+            case 'highQualityMobs':
+                this.settingsHighQualityMobs = !this.settingsHighQualityMobs;
+                localStorage.setItem('highQualityMobs', this.settingsHighQualityMobs.toString());
+                (0, constants_1.invalidateSettingsCache)();
+                break;
+            case 'dynamicSkybox':
+                this.settingsDynamicSkybox = !this.settingsDynamicSkybox;
+                localStorage.setItem('dynamicSkybox', this.settingsDynamicSkybox.toString());
+                if (window.currentGame && window.currentGame.graphics) {
+                    window.currentGame.graphics.dynamicSkybox = this.settingsDynamicSkybox;
+                }
+                break;
+            case 'mobDeathAnimation':
+                this.settingsMobDeathAnimation = !this.settingsMobDeathAnimation;
+                localStorage.setItem('mobDeathAnimation', this.settingsMobDeathAnimation.toString());
+                if (window.currentGame) {
+                    window.currentGame.mobDeathAnimation = this.settingsMobDeathAnimation;
+                }
+                break;
+            case 'showConsoleLogs':
+                this.settingsShowConsoleLogs = !this.settingsShowConsoleLogs;
+                localStorage.setItem('showConsoleLogs', this.settingsShowConsoleLogs.toString());
+                if (window.currentGame && window.currentGame.graphics) {
+                    window.currentGame.graphics.setShowConsoleLogs(this.settingsShowConsoleLogs);
+                }
+                break;
+        }
+    }
+    /** Handles slider drag interaction */
+    handleSliderDrag(mouseX) {
+        const { contentX, contentW } = this.getSettingsLayout();
+        const ratio = Math.max(0, Math.min(1, (mouseX - contentX) / contentW));
+        if (this.settingsSliderDragging === 'mobFramerate') {
+            this.settingsMobFramerate = Math.round(5 + ratio * 55);
+            localStorage.setItem('mobAnimationFramerate', this.settingsMobFramerate.toString());
+            (0, constants_1.invalidateSettingsCache)();
+        }
+        else if (this.settingsSliderDragging === 'interpolation') {
+            this.settingsInterpolation = Math.round((0.05 + ratio * 0.45) * 100) / 100;
+            localStorage.setItem('interpolationAmount', this.settingsInterpolation.toString());
+            if (window.currentGame) {
+                window.currentGame.interpolationAmount = this.settingsInterpolation;
+            }
+        }
     }
     /**
      * Renders the connecting state on canvas
@@ -2876,25 +3213,85 @@ class TitleScreen {
     getSettingsButton() {
         return this.exitButtonContainer.querySelector('#settingsButton');
     }
+    isSettingsOpen() {
+        return this.settingsOpen;
+    }
+    toggleSettings() {
+        this.settingsOpen = !this.settingsOpen;
+        if (this.settingsOpen) {
+            this.loadSettingsValues();
+        }
+    }
+    /** Render settings overlay onto an external canvas context (for in-game use) */
+    renderSettingsOverlay(ctx) {
+        if (this.settingsOpen) {
+            this.renderSettingsMenu(ctx);
+        }
+    }
+    /** Forward a click to the settings panel (for in-game canvas). Returns true if consumed. */
+    handleSettingsClickExternal(x, y) {
+        if (!this.settingsOpen)
+            return false;
+        this.handleSettingsClick(x, y);
+        return true;
+    }
+    /** Forward hover to the settings panel (for in-game canvas) */
+    handleSettingsHoverExternal(x, y) {
+        if (!this.settingsOpen)
+            return;
+        this.handleSettingsHover(x, y);
+    }
+    /** Forward mousedown for settings slider dragging (for in-game canvas). Returns true if consumed. */
+    handleSettingsMouseDownExternal(x, y) {
+        if (!this.settingsOpen)
+            return false;
+        if (this.settingsHoveredItem) {
+            this.pressedButton = `settings_${this.settingsHoveredItem}`;
+            if (this.settingsHoveredItem === 'slider_mobFramerate' || this.settingsHoveredItem === 'slider_interpolation') {
+                this.settingsSliderDragging = this.settingsHoveredItem.replace('slider_', '');
+                this.handleSliderDrag(x);
+            }
+            return true;
+        }
+        // Check if click is inside panel bounds
+        const { panelW, panelH, panelX, panelY } = this.getSettingsLayout();
+        if (x >= panelX && x <= panelX + panelW && y >= panelY && y <= panelY + panelH) {
+            return true;
+        }
+        return false;
+    }
+    /** Forward mousemove for settings slider dragging (for in-game canvas) */
+    handleSettingsMouseMoveExternal(x) {
+        if (this.settingsSliderDragging) {
+            this.handleSliderDrag(x);
+        }
+    }
+    /** Forward mouseup for settings (for in-game canvas) */
+    handleSettingsMouseUpExternal() {
+        this.pressedButton = null;
+        this.settingsSliderDragging = null;
+    }
+    /** Forward wheel event for settings scroll (for in-game canvas) */
+    handleSettingsWheelExternal(deltaY) {
+        if (this.settingsOpen) {
+            this.settingsScrollY -= deltaY;
+            this.settingsScrollY = Math.min(0, this.settingsScrollY);
+        }
+    }
     getShowHitboxes() {
-        const checkbox = this.settingsMenu.querySelector('#showHitboxesCheckbox');
-        return checkbox ? checkbox.checked : false;
+        return this.settingsShowHitboxes;
     }
     getShadersEnabled() {
-        const checkbox = this.settingsMenu.querySelector('#enableShadersCheckbox');
-        return checkbox ? checkbox.checked : false;
+        return this.settingsShadersEnabled;
     }
     getShowStats() {
-        const checkbox = this.settingsMenu.querySelector('#showStats');
-        return checkbox ? checkbox.checked : false;
+        return this.settingsShowStats;
     }
     getDynamicSkybox() {
-        const checkbox = this.settingsMenu.querySelector('#dynamicSkyboxCheckbox');
-        return checkbox ? checkbox.checked : false;
+        return this.settingsDynamicSkybox;
     }
     getServerIP() {
-        const input = this.settingsMenu.querySelector('#serverIP-settings');
-        return input ? input.value : window.location.origin;
+        return this.settingsServerIP || window.location.origin;
     }
     getNameInput() {
         // Return a dummy input that can be accessed programmatically
@@ -4974,113 +5371,6 @@ exports.titleScreenStyles = `
 
     button:hover {
         transform: scale(1.05);
-    }
-
-    .settings-menu {
-        position: absolute;
-        top: 52px;
-        left: 0;
-        background: #aaaaaa;
-        border-radius: 8px;
-        color: white;
-        width: 400px;
-        max-width: 90vw;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        z-index: 4000;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .settings-menu-content {
-        padding: 15px;
-        max-height: 70vh;
-        overflow-y: auto;
-    }
-
-    .settings-menu-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 1px solid #444;
-        padding-bottom: 10px;
-        margin-bottom: 10px;
-    }
-
-    #closeSettingsButton {
-        background: transparent;
-        border: none;
-        color: white;
-        font-size: 24px;
-        cursor: pointer;
-    }
-
-    .settings-menu-tabs {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 10px;
-    }
-
-    .tab-button {
-        padding: 10px;
-        background: #a3a3a3;
-        border: 3px solid #858585;
-        color: white;
-        cursor: pointer;
-        border-radius: 5px;
-    }
-
-    .tab-button.active {
-        background: #a3a3a3;
-        border-bottom: 3px solid #858585;
-    }
-
-    .tab-content {
-        display: none;
-    }
-
-    .tab-content.active {
-        display: block;
-    }
-
-    .controls-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-bottom: 10px;
-    }
-
-    .control-row {
-        display: contents;
-    }
-
-    .control-row label {
-        text-transform: capitalize;
-    }
-
-    .control-input {
-        background: #e6e6e6;
-        border: 3px solid #a3a3a3;
-        color: #000000;
-        padding: 5px;
-        border-radius: 3px;
-        text-align: center;
-    }
-
-    #mobFramerateSlider {
-        width: 100%;
-        margin: 10px 0;
-        cursor: pointer;
-    }
-
-    #mobFramerateValue {
-        font-weight: bold;
-        color: #4CAF50;
-        margin-left: 10px;
-    }
-
-    .tab-content label {
-        display: block;
-        margin: 10px 0;
-        color: white;
     }
 
     .register-warning {
