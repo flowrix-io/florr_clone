@@ -2957,10 +2957,10 @@ const WORLD_MAP_DATA: MapData = {
     },
     {
       "type": "teleporter",
-      "x": 1079.453125,
-      "y": 8920.078125,
-      "width": 190,
-      "height": 51035,
+      "x": 11629.453125,
+      "y": 9995.078125,
+      "width": 0,
+      "height": 0,
       "properties": {
         "teleportTo": {
           "x": 1500,
