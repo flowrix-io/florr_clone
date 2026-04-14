@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 246570859,
+      "totalXP": 246570871,
       "inventory": {
         "common": {
           "shield": 261,
@@ -665,7 +665,7 @@
         "soldier_ant": {
           "epic": 130,
           "legendary": 326,
-          "common": 800,
+          "common": 801,
           "rare": 191,
           "mythic": 516,
           "ultra": 19,
@@ -686,7 +686,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 798,
+          "common": 799,
           "legendary": 147,
           "mythic": 165,
           "uncommon": 202,
@@ -719,7 +719,7 @@
           "super": 5
         },
         "bee": {
-          "common": 664,
+          "common": 665,
           "epic": 102,
           "mythic": 219,
           "uncommon": 161,

@@ -3,18 +3,18 @@
  * Compensates for browser zoom so the game renders at consistent dimensions
  * regardless of the user's browser zoom level.
  *
- * Uses outerWidth/innerWidth ratio to detect zoom — outerWidth is unaffected
- * by browser zoom, so this works even if the page loads while already zoomed.
+ * Uses devicePixelRatio to detect browser zoom. We capture the base DPR at
+ * load time (e.g. 2.0 on Retina) so we can distinguish browser zoom changes
+ * from the display's native scaling. Unlike outerWidth/innerWidth, DPR does
+ * not fluctuate during normal window resizes.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getBrowserZoom = getBrowserZoom;
 exports.applyZoomCompensation = applyZoomCompensation;
 exports.canvasCoords = canvasCoords;
+const baseDPR = window.devicePixelRatio || 1;
 function getBrowserZoom() {
-    if (window.outerWidth && window.innerWidth) {
-        return window.outerWidth / window.innerWidth;
-    }
-    return 1;
+    return (window.devicePixelRatio || 1) / baseDPR;
 }
 /**
  * Resizes a canvas to fill the viewport, compensating for browser zoom.
