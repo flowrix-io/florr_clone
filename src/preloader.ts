@@ -2,6 +2,7 @@
  * Preloader - Handles loading all game assets and systems before showing the title screen
  */
 import { getBiomeSvgContent } from './biome_svgs';
+import { SVGCanvasCompiler, renderCompiledSVGToCanvas } from './svg_canvas_renderer';
 
 export interface PreloadedAssets {
     sprites: {
@@ -113,7 +114,7 @@ export class Preloader {
     }
 
     /**
-     * Load background texture from SVG
+     * Load background texture from SVG using canvas commands
      */
     private async loadBackground(backgroundTexture: HTMLImageElement): Promise<void> {
         try {
@@ -122,18 +123,18 @@ export class Preloader {
                 throw new Error('land.svg not found in bundled SVGs');
             }
 
-            // Convert SVG to data URL
-            const base64 = btoa(unescape(encodeURIComponent(svgText)));
-            const dataUrl = `data:image/svg+xml;base64,${base64}`;
-            
-            return new Promise((resolve, reject) => {
+            // Render SVG to canvas using canvas commands, then convert to image
+            const canvas = await this.renderSVGToCanvas(svgText, 400, 400);
+            const dataUrl = canvas.toDataURL('image/png');
+
+            return new Promise((resolve, _reject) => {
                 backgroundTexture.onload = () => {
                     this.loadedAssets++;
                     this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
                     console.log('[Preloader] Background loaded');
                     resolve();
                 };
-                backgroundTexture.onerror = (error) => {
+                backgroundTexture.onerror = () => {
                     console.error('[Preloader] Failed to load background, using fallback');
                     this.createFallbackBackground(backgroundTexture);
                     this.loadedAssets++;
@@ -169,58 +170,22 @@ export class Preloader {
             <circle cx="200" cy="350" r="18" fill="#00f295"/>
             <circle cx="360" cy="320" r="18" fill="#00f295"/>
         </svg>`;
-        
-        const base64 = btoa(unescape(encodeURIComponent(svg)));
-        const dataUrl = `data:image/svg+xml;base64,${base64}`;
-        backgroundTexture.src = dataUrl;
+
+        // Use canvas commands to render fallback SVG
+        const compiled = this.svgCompiler.compile(svg);
+        const canvas = renderCompiledSVGToCanvas(compiled, 400, 400);
+        backgroundTexture.src = canvas.toDataURL('image/png');
     }
 
+    private svgCompiler = new SVGCanvasCompiler();
+
     /**
-     * Render SVG string to offscreen canvas using createImageBitmap (no data URLs, no requests)
+     * Render SVG string to offscreen canvas using compiled canvas commands.
+     * No data URLs, no Image elements — direct canvas drawing.
      */
-    private async renderSVGToCanvas(svgString: string, width: number = 100, height: number = 100): Promise<HTMLCanvasElement> {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to get canvas context');
-        }
-        
-        // createImageBitmap doesn't support raw SVG directly
-        // We need to use an Image element with a data URL
-        // createImageBitmap is available in modern browsers
-        if (typeof createImageBitmap === 'undefined') {
-            throw new Error('createImageBitmap not available');
-        }
-        
-        // Create data URL from SVG
-        const base64 = btoa(unescape(encodeURIComponent(svgString)));
-        const dataUrl = `data:image/svg+xml;base64,${base64}`;
-        
-        // Create Image element and load from data URL
-        const img = new Image();
-        const imageBitmap = await new Promise<ImageBitmap>((resolve, reject) => {
-            img.onload = async () => {
-                try {
-                    // Use createImageBitmap on the loaded image with resize options
-                    const bitmap = await createImageBitmap(img, { resizeWidth: width, resizeHeight: height });
-                    resolve(bitmap);
-                } catch (error) {
-                    reject(error);
-                }
-            };
-            img.onerror = () => {
-                reject(new Error('Failed to load SVG image'));
-            };
-            img.src = dataUrl;
-        });
-        
-        ctx.clearRect(0, 0, width, height);
-        ctx.drawImage(imageBitmap, 0, 0, width, height);
-        imageBitmap.close(); // Free memory
-        
-        return canvas;
+    private async renderSVGToCanvas(svgString: string, width: number = 100, height: number = 100, time: number = 0): Promise<HTMLCanvasElement> {
+        const compiled = this.svgCompiler.compile(svgString);
+        return renderCompiledSVGToCanvas(compiled, width, height, time);
     }
 
     /**
@@ -253,10 +218,7 @@ export class Preloader {
     private async loadPetalImages(assets: PreloadedAssets): Promise<void> {
         try {
             const { PETAL_CONFIG } = await import('./petals');
-            const { getSVGRenderer } = await import('./svg_renderer');
-            const svgRenderer = getSVGRenderer();
-            await svgRenderer.waitForInit();
-            
+
             // Count total petal images to load
             let petalCount = 0;
             Object.entries(PETAL_CONFIG).forEach(([petalType, rarities]) => {
@@ -267,42 +229,41 @@ export class Preloader {
             this.totalAssets += petalCount * 2; // Estimate: some will be animated
             
             const loadPromises: Promise<void>[] = [];
-            
+
             Object.entries(PETAL_CONFIG).forEach(([petalType, rarities]) => {
                 Object.entries(rarities as Record<string, any>).forEach(([rarity, stats]) => {
                     const key = `${petalType}_${rarity}`;
                     const svgString = stats.image ?? '';
-                    
+
                     if (!svgString) {
                         this.loadedAssets++;
                         this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
                         return;
                     }
-                    
+
                     const promise = (async () => {
                         try {
                             const hasAnim = this.hasAnimations(svgString);
-                            
+
                             if (hasAnim) {
                                 // Render all animation frames (24fps = 42ms per frame)
                                 const duration = this.getAnimationDuration(svgString);
                                 const frameCount = Math.ceil(duration / 42); // 24fps
                                 const canvases: HTMLCanvasElement[] = [];
-                                
+
                                 for (let frame = 0; frame < frameCount; frame++) {
-                                    const time = frame * 42; // Time in ms for this frame
-                                    // Get animated SVG string from renderer
-                                    const animatedSVG = svgRenderer.getAnimatedSVGString(svgString, time);
-                                    const canvas = await this.renderSVGToCanvas(animatedSVG, 100, 100);
+                                    const time = frame * 42;
+                                    // Render SVG with canvas commands at this time
+                                    const canvas = await this.renderSVGToCanvas(svgString, 100, 100, time);
                                     canvases.push(canvas);
                                 }
-                                
+
                                 assets.petalImages[key] = canvases;
                                 this.loadedAssets += frameCount;
                                 this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
                                 console.log(`[Preloader] Loaded animated petal: ${key} (${frameCount} frames)`);
                             } else {
-                                // Static SVG - render once
+                                // Static SVG - render once using canvas commands
                                 const canvas = await this.renderSVGToCanvas(svgString, 100, 100);
                                 assets.petalImages[key] = canvas;
                                 this.loadedAssets++;
@@ -315,7 +276,7 @@ export class Preloader {
                             this.updateProgress((this.loadedAssets / this.totalAssets) * 100);
                         }
                     })();
-                    
+
                     loadPromises.push(promise);
                 });
             });
