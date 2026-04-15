@@ -1,4 +1,4 @@
-import { Graphics, Enemy, getPetalStats, getAllPetalTypes, getMobStats, MOB_CONFIG, getMobAnimationFrameTime } from './core';
+import { Graphics, Enemy, getPetalStats, getAllPetalTypes, getMobStats, MOB_CONFIG } from './core';
 
 declare module './core' {
     interface Graphics {
@@ -209,17 +209,13 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
     const cacheKey = `${enemy.type}_${enemy.tier}`;
     const mobSVG = this.mobSVGCache[cacheKey];
 
-    // Use relative time for animation (wraps within animation cycle)
-    // Per-mob cycle duration ensures animations loop seamlessly
-    const frameTime = getMobAnimationFrameTime();
-    const framesPerCycle = this.svgRenderer.getFramesPerCycleForSVG(mobSVG);
-    const animationCycleDuration = framesPerCycle * frameTime;
-    let currentTime = this.frameTimestamp % animationCycleDuration;
+    // Pass raw time to the canvas-command renderer — it handles animation
+    // timing internally using each animation's own dur/repeatCount.
+    let currentTime = this.frameTimestamp;
 
     // If enemy is chasing, play animation 2x faster
     if (enemy.isChasing && (enemy.aiType === 'hostile' || enemy.aiType === 'neutral')) {
-        // Multiply time by 2 to make animation play 2x faster
-        currentTime = (currentTime * 2) % animationCycleDuration;
+        currentTime = this.frameTimestamp * 2;
     }
 
     // Try to use WASM SVG renderer with animations first

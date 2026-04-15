@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 247327872,
+      "totalXP": 247327985,
       "inventory": {
         "common": {
           "shield": 263,
@@ -31,7 +31,7 @@
           "petal_golden_leaf": 21,
           "petal_yucca": 18,
           "petal_hornet_egg": 137,
-          "petal_dandelion_egg": 130,
+          "petal_dandelion_egg": 131,
           "petal_ladybug_egg": 125,
           "petal_soldier_ant_egg": 161,
           "petal_dark_ladybug_egg": 120,
@@ -650,7 +650,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 677,
+          "common": 678,
           "legendary": 228,
           "uncommon": 170,
           "mythic": 191,
@@ -662,7 +662,7 @@
         "soldier_ant": {
           "epic": 132,
           "legendary": 343,
-          "common": 804,
+          "common": 805,
           "rare": 193,
           "mythic": 523,
           "ultra": 19,
@@ -683,7 +683,7 @@
           "unique": 1
         },
         "dark_ladybug": {
-          "common": 803,
+          "common": 804,
           "legendary": 154,
           "mythic": 168,
           "uncommon": 205,
@@ -706,7 +706,7 @@
         },
         "dandelion": {
           "legendary": 222,
-          "common": 557,
+          "common": 558,
           "mythic": 190,
           "uncommon": 153,
           "unique": 3,
@@ -716,7 +716,7 @@
           "super": 5
         },
         "bee": {
-          "common": 667,
+          "common": 668,
           "epic": 102,
           "mythic": 223,
           "uncommon": 163,
@@ -842,7 +842,7 @@
         "soldier_fire_ant": {
           "uncommon": 182,
           "common": 15,
-          "rare": 57,
+          "rare": 58,
           "epic": 93,
           "mythic": 49,
           "legendary": 109,

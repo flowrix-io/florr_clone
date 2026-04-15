@@ -169,16 +169,12 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
     // This ensures we can see enemies even if images/sprites fail
     const cacheKey = `${enemy.type}_${enemy.tier}`;
     const mobSVG = this.mobSVGCache[cacheKey];
-    // Use relative time for animation (wraps within animation cycle)
-    // Per-mob cycle duration ensures animations loop seamlessly
-    const frameTime = (0, core_1.getMobAnimationFrameTime)();
-    const framesPerCycle = this.svgRenderer.getFramesPerCycleForSVG(mobSVG);
-    const animationCycleDuration = framesPerCycle * frameTime;
-    let currentTime = this.frameTimestamp % animationCycleDuration;
+    // Pass raw time to the canvas-command renderer — it handles animation
+    // timing internally using each animation's own dur/repeatCount.
+    let currentTime = this.frameTimestamp;
     // If enemy is chasing, play animation 2x faster
     if (enemy.isChasing && (enemy.aiType === 'hostile' || enemy.aiType === 'neutral')) {
-        // Multiply time by 2 to make animation play 2x faster
-        currentTime = (currentTime * 2) % animationCycleDuration;
+        currentTime = this.frameTimestamp * 2;
     }
     // Try to use WASM SVG renderer with animations first
     let rendered = false;
