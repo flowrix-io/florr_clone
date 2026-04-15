@@ -28,6 +28,7 @@ const ROOT_INHERITED_STYLE = {
     strokeWidth: 1,
     strokeLinecap: 'butt',
     strokeLinejoin: 'miter',
+    strokeOpacity: 1,
     opacity: 1,
 };
 /**
@@ -60,6 +61,9 @@ function parseStyleWithInheritance(el, inherited) {
         strokeLinejoin: el.hasAttribute('stroke-linejoin')
             ? el.getAttribute('stroke-linejoin') || 'miter'
             : inherited.strokeLinejoin,
+        strokeOpacity: el.hasAttribute('stroke-opacity')
+            ? num(el.getAttribute('stroke-opacity'), 1)
+            : inherited.strokeOpacity,
         // opacity does NOT inherit in SVG — each element's opacity applies only to itself
         opacity: el.hasAttribute('opacity')
             ? num(el.getAttribute('opacity'), 1)
@@ -220,9 +224,18 @@ function buildClipPath2D(clipEl) {
     return combined;
 }
 // === Compiler ===
+function parseTransformOrigin(el) {
+    const styleAttr = el.getAttribute('style');
+    if (!styleAttr)
+        return null;
+    const m = styleAttr.match(/transform-origin\s*:\s*([-\d.]+)(?:px)?\s+([-\d.]+)(?:px)?/);
+    if (!m)
+        return null;
+    return [parseFloat(m[1]), parseFloat(m[2])];
+}
 function makeEmptyNode(tag, style) {
     return {
-        tag, style, transform: null, clipPathId: null,
+        tag, style, transform: null, transformOrigin: null, clipPathId: null,
         transformAnimations: [], pathAnimations: [], children: [],
         cx: 0, cy: 0, r: 0, rx: 0, ry: 0,
         x: 0, y: 0, width: 0, height: 0,
@@ -230,7 +243,7 @@ function makeEmptyNode(tag, style) {
         d: '', path2d: null,
     };
 }
-const SKIP_TAGS = new Set(['defs', 'animatetransform', 'animate', 'desc', 'title', 'metadata']);
+const SKIP_TAGS = new Set(['defs', 'clippath', 'animatetransform', 'animate', 'desc', 'title', 'metadata']);
 /**
  * Compile a single DOM element into a CompiledNode.
  * @param el - The DOM element to compile
@@ -244,6 +257,7 @@ function compileElement(el, doc, inherited) {
     const style = parseStyleWithInheritance(el, inherited);
     const node = makeEmptyNode(tag, style);
     node.transform = el.getAttribute('transform');
+    node.transformOrigin = parseTransformOrigin(el);
     node.clipPathId = parseClipPathRef(el.getAttribute('clip-path'));
     node.transformAnimations = parseTransformAnimations(el);
     switch (tag) {
@@ -386,16 +400,13 @@ class SVGCanvasCompiler {
             const h = num(svgEl.getAttribute('height'), 32);
             viewBox = { x: 0, y: 0, w, h };
         }
-        // Compile clip paths from <defs>
+        // Compile clip paths from anywhere in the SVG (not just <defs>)
         const clipPaths = new Map();
-        const defsEl = svgEl.querySelector('defs');
-        if (defsEl) {
-            const cpList = defsEl.querySelectorAll('clipPath');
-            for (let i = 0; i < cpList.length; i++) {
-                const id = cpList[i].getAttribute('id');
-                if (id) {
-                    clipPaths.set(id, buildClipPath2D(cpList[i]));
-                }
+        const cpList = svgEl.querySelectorAll('clipPath');
+        for (let i = 0; i < cpList.length; i++) {
+            const id = cpList[i].getAttribute('id');
+            if (id) {
+                clipPaths.set(id, buildClipPath2D(cpList[i]));
             }
         }
         // Compile children with SVG default inherited style
@@ -596,7 +607,15 @@ function fillStrokePath(ctx, path, style) {
         ctx.lineWidth = style.strokeWidth;
         ctx.lineCap = style.strokeLinecap;
         ctx.lineJoin = style.strokeLinejoin;
-        ctx.stroke(path);
+        if (style.strokeOpacity < 1) {
+            const prev = ctx.globalAlpha;
+            ctx.globalAlpha *= style.strokeOpacity;
+            ctx.stroke(path);
+            ctx.globalAlpha = prev;
+        }
+        else {
+            ctx.stroke(path);
+        }
     }
 }
 function drawNode(ctx, node, time, clipPaths) {
@@ -605,6 +624,11 @@ function drawNode(ctx, node, time, clipPaths) {
     if (node.style.opacity < 1) {
         ctx.globalAlpha *= node.style.opacity;
     }
+    // Apply transform-origin: translate to origin, apply transforms, translate back
+    const to = node.transformOrigin;
+    if (to) {
+        ctx.translate(to[0], to[1]);
+    }
     // Apply static transform
     if (node.transform) {
         applyTransform(ctx, node.transform);
@@ -612,6 +636,9 @@ function drawNode(ctx, node, time, clipPaths) {
     // Apply animated transforms
     if (node.transformAnimations.length > 0) {
         applyAnimatedTransforms(ctx, node.transformAnimations, time);
+    }
+    if (to) {
+        ctx.translate(-to[0], -to[1]);
     }
     // Apply clip path
     if (node.clipPathId) {

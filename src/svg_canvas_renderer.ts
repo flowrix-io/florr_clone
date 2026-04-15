@@ -25,6 +25,7 @@ export interface StyleAttrs {
     strokeWidth: number;
     strokeLinecap: CanvasLineCap;
     strokeLinejoin: CanvasLineJoin;
+    strokeOpacity: number;
     opacity: number;
 }
 
@@ -54,6 +55,7 @@ export interface CompiledNode {
     tag: string;
     style: StyleAttrs;
     transform: string | null;
+    transformOrigin: [number, number] | null; // from style="transform-origin: Xpx Ypx"
     clipPathId: string | null;
     transformAnimations: TransformAnimation[];
     pathAnimations: PathAnimation[];
@@ -90,6 +92,7 @@ const ROOT_INHERITED_STYLE: StyleAttrs = {
     strokeWidth: 1,
     strokeLinecap: 'butt',
     strokeLinejoin: 'miter',
+    strokeOpacity: 1,
     opacity: 1,
 };
 
@@ -124,6 +127,9 @@ function parseStyleWithInheritance(el: Element, inherited: StyleAttrs): StyleAtt
         strokeLinejoin: el.hasAttribute('stroke-linejoin')
             ? (el.getAttribute('stroke-linejoin') as CanvasLineJoin) || 'miter'
             : inherited.strokeLinejoin,
+        strokeOpacity: el.hasAttribute('stroke-opacity')
+            ? num(el.getAttribute('stroke-opacity'), 1)
+            : inherited.strokeOpacity,
         // opacity does NOT inherit in SVG — each element's opacity applies only to itself
         opacity: el.hasAttribute('opacity')
             ? num(el.getAttribute('opacity'), 1)
@@ -296,9 +302,17 @@ function buildClipPath2D(clipEl: Element): Path2D {
 
 // === Compiler ===
 
+function parseTransformOrigin(el: Element): [number, number] | null {
+    const styleAttr = el.getAttribute('style');
+    if (!styleAttr) return null;
+    const m = styleAttr.match(/transform-origin\s*:\s*([-\d.]+)(?:px)?\s+([-\d.]+)(?:px)?/);
+    if (!m) return null;
+    return [parseFloat(m[1]), parseFloat(m[2])];
+}
+
 function makeEmptyNode(tag: string, style: StyleAttrs): CompiledNode {
     return {
-        tag, style, transform: null, clipPathId: null,
+        tag, style, transform: null, transformOrigin: null, clipPathId: null,
         transformAnimations: [], pathAnimations: [], children: [],
         cx: 0, cy: 0, r: 0, rx: 0, ry: 0,
         x: 0, y: 0, width: 0, height: 0,
@@ -307,7 +321,7 @@ function makeEmptyNode(tag: string, style: StyleAttrs): CompiledNode {
     };
 }
 
-const SKIP_TAGS = new Set(['defs', 'animatetransform', 'animate', 'desc', 'title', 'metadata']);
+const SKIP_TAGS = new Set(['defs', 'clippath', 'animatetransform', 'animate', 'desc', 'title', 'metadata']);
 
 /**
  * Compile a single DOM element into a CompiledNode.
@@ -322,6 +336,7 @@ function compileElement(el: Element, doc: Document, inherited: StyleAttrs): Comp
     const style = parseStyleWithInheritance(el, inherited);
     const node = makeEmptyNode(tag, style);
     node.transform = el.getAttribute('transform');
+    node.transformOrigin = parseTransformOrigin(el);
     node.clipPathId = parseClipPathRef(el.getAttribute('clip-path'));
     node.transformAnimations = parseTransformAnimations(el);
 
@@ -463,16 +478,13 @@ export class SVGCanvasCompiler {
             viewBox = { x: 0, y: 0, w, h };
         }
 
-        // Compile clip paths from <defs>
+        // Compile clip paths from anywhere in the SVG (not just <defs>)
         const clipPaths = new Map<string, Path2D>();
-        const defsEl = svgEl.querySelector('defs');
-        if (defsEl) {
-            const cpList = defsEl.querySelectorAll('clipPath');
-            for (let i = 0; i < cpList.length; i++) {
-                const id = cpList[i].getAttribute('id');
-                if (id) {
-                    clipPaths.set(id, buildClipPath2D(cpList[i]));
-                }
+        const cpList = svgEl.querySelectorAll('clipPath');
+        for (let i = 0; i < cpList.length; i++) {
+            const id = cpList[i].getAttribute('id');
+            if (id) {
+                clipPaths.set(id, buildClipPath2D(cpList[i]));
             }
         }
 
@@ -673,7 +685,14 @@ function fillStrokePath(ctx: CanvasRenderingContext2D, path: Path2D, style: Styl
         ctx.lineWidth = style.strokeWidth;
         ctx.lineCap = style.strokeLinecap;
         ctx.lineJoin = style.strokeLinejoin;
-        ctx.stroke(path);
+        if (style.strokeOpacity < 1) {
+            const prev = ctx.globalAlpha;
+            ctx.globalAlpha *= style.strokeOpacity;
+            ctx.stroke(path);
+            ctx.globalAlpha = prev;
+        } else {
+            ctx.stroke(path);
+        }
     }
 }
 
@@ -685,6 +704,12 @@ function drawNode(ctx: CanvasRenderingContext2D, node: CompiledNode, time: numbe
         ctx.globalAlpha *= node.style.opacity;
     }
 
+    // Apply transform-origin: translate to origin, apply transforms, translate back
+    const to = node.transformOrigin;
+    if (to) {
+        ctx.translate(to[0], to[1]);
+    }
+
     // Apply static transform
     if (node.transform) {
         applyTransform(ctx, node.transform);
@@ -693,6 +718,10 @@ function drawNode(ctx: CanvasRenderingContext2D, node: CompiledNode, time: numbe
     // Apply animated transforms
     if (node.transformAnimations.length > 0) {
         applyAnimatedTransforms(ctx, node.transformAnimations, time);
+    }
+
+    if (to) {
+        ctx.translate(-to[0], -to[1]);
     }
 
     // Apply clip path
