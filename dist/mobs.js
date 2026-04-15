@@ -530,7 +530,7 @@ exports.BASE_MOB_CONFIGS = {
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
                         dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
@@ -539,7 +539,7 @@ exports.BASE_MOB_CONFIGS = {
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
                         dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
@@ -616,7 +616,7 @@ exports.BASE_MOB_CONFIGS = {
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
                         dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
@@ -625,7 +625,7 @@ exports.BASE_MOB_CONFIGS = {
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
                         dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
@@ -2343,7 +2343,7 @@ exports.BASE_MOB_CONFIGS = {
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
                         dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
@@ -2352,7 +2352,7 @@ exports.BASE_MOB_CONFIGS = {
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
                         dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
@@ -2395,7 +2395,7 @@ exports.BASE_MOB_CONFIGS = {
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
+                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
                         dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
@@ -2404,7 +2404,7 @@ exports.BASE_MOB_CONFIGS = {
       <animateTransform attributeName="transform"
                         type="rotate"
                         additive="sum"
-                        values="0; 28.4; 0" keyTimes="0; 0.5; 1"
+                        values="0; -28.4; 0" keyTimes="0; 0.5; 1"
                         dur="1s"
                         repeatCount="indefinite"
                         calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
