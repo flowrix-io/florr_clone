@@ -636,7 +636,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         health: 100,
         size: 1.0,
         visual_scale: 1.5,
-        speed: 1.0,
+        speed: 2.4,
         cooldown: 2000,
         description: "It's hostile towards flowers",
         color: "#808080",
@@ -679,7 +679,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 
 </svg>`,
         ai_type: 'hostile',
-        range: 100
+        range: 300
     },
     rock: {
         name: "Rock",
@@ -722,7 +722,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         health: 100,
         size: 1.0,
         visual_scale: 1.5,
-        speed: 1.0,
+        speed: 2.4,
         cooldown: 2000,
         description: "It hurts, hostile towards flowers",
         color: "#ff8800",
@@ -765,7 +765,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 
 </svg>`,
         ai_type: 'hostile',
-        range: 300,
+        range: 600,
         section: 1
     },
     shiny_ladybug: {
@@ -802,6 +802,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 </svg>`,
         ai_type: 'neutral',
         range: 200,
+        spawn_weight: 0.05,
         section: 1
     },
     dark_ladybug: {
@@ -836,8 +837,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   <path d="M 27.65 18.92 Q 19.81 30.37 6.18 32.93 Q -7.46 35.48 -18.92 27.65 Q -30.37 19.81 -32.93 6.18 Q -35.48 -7.46 -27.65 -18.92 Q -19.81 -30.37 -6.18 -32.93 Q 7.46 -35.48 18.92 -27.65 Q 24.1 -24.1 27.65 -18.92 Q 28.32 -17.93 28.25 -16.74 Q 28.18 -15.54 27.4 -14.64 Q 14.64 0 27.4 14.64 Q 28.18 15.54 28.25 16.74 Q 28.32 17.93 27.65 18.92 Z M 21.87 14.96 L 24.76 16.94 L 22.12 19.24 Q 5.36 0 22.12 -19.24 L 24.76 -16.94 L 21.87 -14.96 Q 19.07 -19.07 14.96 -21.87 Q 5.9 -28.07 -4.88 -26.05 Q -15.67 -24.02 -21.87 -14.96 Q -28.07 -5.9 -26.05 4.88 Q -24.02 15.67 -14.96 21.87 Q -5.9 28.07 4.88 26.05 Q 15.67 24.02 21.87 14.96 Z" fill="#7a201a" />
 
 </svg>`,
-        ai_type: 'passive',
-        range: 100
+        ai_type: 'neutral',
+        range: 400
     },
     sandstorm: {
         name: "Sandstorm",
@@ -936,7 +937,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         health: 40,
         damage: 35,
         size: 1.0,
-        speed: 1.5,
+        speed: 2.6,
         cooldown: 2000,
         description: "Fast, and has lots of health",
         color: "#6302b3",
@@ -983,7 +984,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   </g>
 </svg>`,
         ai_type: 'hostile',
-        range: 100,
+        range: 300,
         section: 1
     },
     hel_beetle: {
@@ -991,7 +992,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         health: 40,
         damage: 50,
         size: 1.0,
-        speed: 2,
+        speed: 2.6,
         cooldown: 2000,
         description: "A beetle from the other plane",
         color: "#6e0d0d",
@@ -1038,7 +1039,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   </g>
 </svg>`,
         ai_type: 'hostile',
-        range: 100,
+        range: 300,
         section: 2
     },
     jellyfish: {
@@ -1104,7 +1105,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   </g>
 </svg>`,
         ai_type: 'hostile',
-        range: 200,
+        range: 400,
         section: 3,
         hideRotation: true,
     },
@@ -1129,7 +1130,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         damage: 10,
         size: 1.2,
         visual_scale: 1.5,
-        speed: 1.5,
+        speed: 2.4,
         cooldown: 2000,
         description: "It spins around",
         color: "#ffd700",
@@ -1188,7 +1189,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   </g>
 </svg>`,
         ai_type: 'hostile',
-        range: 100,
+        range: 300,
         section: 3,
         hideRotation: true,
     },
@@ -1843,7 +1844,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         damage: 10,
         size: 1.0,
         visual_scale: 1.5,
-        speed: 1.0,
+        speed: 2.0,
         cooldown: 2000,
         description: "It can shoot its missiles",
         color: "#b5b200",
@@ -1885,7 +1886,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   </g>
 </svg>`,
         ai_type: 'hostile',
-        range: 100,
+        range: 300,
         section: 0,
         projectile: {
             count: 1,
@@ -2246,7 +2247,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         damage: 10,
         size: 1.0,
         visual_scale: 1.0,
-        speed: 1.0,
+        speed: 2.4,
         cooldown: 2000,
         description: "Buzzzzzzzz",
         color: "#919191",
@@ -2273,8 +2274,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     </ellipse>
   </g>
 </svg>`,
-        ai_type: 'passive',
-        range: 100,
+        ai_type: 'hostile',
+        range: 300,
         section: 6,
         reversed: true,
     },
@@ -2284,7 +2285,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         damage: 13,
         size: 2.0,
         visual_scale: 1.0,
-        speed: 2.0,
+        speed: 5.0,
         cooldown: 2000,
         description: "It's a roach",
         color: "#914911",
@@ -2294,8 +2295,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 <path d="M 9 14 A 12 12 0 0 1 5 10" stroke="#333333" stroke-linecap="round"/>
 <path d="M 9 18 A 12 12 0 0 0 5 22" stroke="#333333" stroke-linecap="round"/>
 </svg>`,
-        ai_type: 'passive',
-        range: 100,
+        ai_type: 'neutral',
+        range: 300,
         section: 6,
         reversed: true,
     },
@@ -2322,7 +2323,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         damage: 10,
         size: 1.0,
         visual_scale: 1.0,
-        speed: 1.0,
+        speed: -2.4,
         cooldown: 2000,
         description: "A moth",
         color: "#bcc286",
@@ -2351,8 +2352,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   <path d="M -6 -3 Q -11 -6 -13 -11" stroke="#000000" stroke-linecap="round" fill="none"/>
   <path d="M -6 3 Q -11 6 -13 11" stroke="#000000" stroke-linecap="round" fill="none"/>
 </svg>`,
-        ai_type: 'passive',
-        range: 100,
+        ai_type: 'neutral',
+        range: 400,
         section: 6,
         reversed: true,
     },
@@ -2386,7 +2387,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         damage: 10,
         size: 1.0,
         visual_scale: 2.2,
-        speed: 2.0,
+        speed: 3.0,
         cooldown: 2000,
         description: "It's fast, but not very strong",
         color: "#542000",
@@ -2442,7 +2443,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   </g>
 </svg>`,
         ai_type: 'hostile',
-        range: 100,
+        range: 600,
         section: 6,
     },
     soldier_ant_pet: {
@@ -2451,7 +2452,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         damage: 10,
         size: 1.0,
         visual_scale: 1.5,
-        speed: 1.0,
+        speed: 2.4,
         cooldown: 2000,
         description: "How did you kill this???",
         color: "#ffffff",
@@ -2494,7 +2495,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 
 </svg>`,
         ai_type: 'passive',
-        range: 100,
+        range: 300,
         section: 8,
     },
     soldier_fire_ant_pet: {
@@ -2503,7 +2504,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         damage: 20,
         size: 1.0,
         visual_scale: 1.5,
-        speed: 1.0,
+        speed: 2.4,
         cooldown: 2000,
         description: "How did you kill this???",
         color: "#ffffff",
@@ -2546,7 +2547,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 
 </svg>`,
         ai_type: 'passive',
-        range: 100,
+        range: 300,
         section: 8,
     },
     javascript: {
@@ -2595,12 +2596,12 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 <image href="data:image/png;base64,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" height="32" width="32"/>
 </svg>`,
         ai_type: 'hostile',
-        range: 100,
+        range: 300,
         section: 7,
         color: "#ffffff",
         projectile: {
             count: 1,
-            distance: 100,
+            distance: 1500,
             petalType: "javascript",
             petalRarity: "common",
             speed: 200,
@@ -2713,28 +2714,28 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
 const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride } } = {
     soldier_ant: {
         uncommon: {
-            range: 200
-        },
-        rare: {
-            range: 350
-        },
-        epic: {
             range: 500
         },
-        legendary: {
+        rare: {
             range: 600
         },
-        mythic: {
+        epic: {
             range: 750
         },
+        legendary: {
+            range: 900
+        },
+        mythic: {
+            range: 1100
+        },
         ultra: {
-            range: 750,
+            range: 1300,
         },
         super: {
-            range: 750,
+            range: 1500,
         },
         unique: {
-            range: 750,
+            range: 1700,
         }
     },
     ladybug: {
@@ -2769,54 +2770,54 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
     },
     soldier_fire_ant: {
         uncommon: {
-            range: 500
-        },
-        rare: {
             range: 700
         },
-        epic: {
+        rare: {
             range: 900
         },
-        legendary: {
+        epic: {
             range: 1100
         },
-        mythic: {
+        legendary: {
             range: 1300
         },
-        ultra: {
+        mythic: {
             range: 1500
         },
-        super: {
+        ultra: {
             range: 1700
         },
-        unique: {
+        super: {
             range: 1900
+        },
+        unique: {
+            range: 2100
         }
     },
     shiny_ladybug: {
         uncommon: {
-            range: 200
+            range: 500
         },
         rare: {
-            range: 350
+            range: 600
         },
         epic: {
-            range: 1500
+            range: 750
         },
         legendary: {
-            range: 1700
+            range: 900
         },
         mythic: {
-            range: 1900
+            range: 1100
         },
         ultra: {
-            range: 2100
+            range: 1300,
         },
         super: {
-            range: 2300
+            range: 1500,
         },
         unique: {
-            range: 2500
+            range: 1700,
         }
     },
     hel_beetle: {
@@ -2824,59 +2825,62 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
             range: 500
         },
         rare: {
-            range: 700
+            range: 600
         },
         epic: {
-            range: 900
+            range: 750
         },
         legendary: {
-            range: 1100
+            range: 900
         },
         mythic: {
-            range: 1300
+            range: 1100
+        },
+        ultra: {
+            range: 1300,
         },
         super: {
-            range: 1500
+            range: 1500,
         },
         unique: {
-            range: 1700
+            range: 1700,
         }
     },
     beetle: {
         uncommon: {
-            range: 200
-        },
-        rare: {
-            range: 350
-        },
-        epic: {
             range: 500
         },
-        legendary: {
-            range: 700
+        rare: {
+            range: 600
         },
-        mythic: {
+        epic: {
+            range: 750
+        },
+        legendary: {
             range: 900
         },
-        ultra: {
+        mythic: {
             range: 1100
         },
+        ultra: {
+            range: 1300,
+        },
         super: {
-            range: 1300
+            range: 1500,
         },
         unique: {
-            range: 1500
+            range: 1700,
         }
     },
     jellyfish: {
         uncommon: {
-            range: 500
-        },
-        rare: {
             range: 700
         },
+        rare: {
+            range: 800
+        },
         epic: {
-            range: 900
+            range: 950
         },
         legendary: {
             range: 1100
@@ -2885,13 +2889,13 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
             range: 1300
         },
         ultra: {
-            range: 1500
+            range: 1500,
         },
         super: {
-            range: 1700
+            range: 1700,
         },
         unique: {
-            range: 1900
+            range: 1900,
         }
     },
     starfish: {
@@ -2899,25 +2903,25 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
             range: 500
         },
         rare: {
-            range: 700
+            range: 600
         },
         epic: {
-            range: 900
+            range: 750
         },
         legendary: {
-            range: 1100
+            range: 900
         },
         mythic: {
-            range: 1300
+            range: 1100
         },
         ultra: {
-            range: 1500
+            range: 1300,
         },
         super: {
-            range: 1700
+            range: 1500,
         },
         unique: {
-            range: 1900
+            range: 1700,
         }
     },
     hornet: {
@@ -2925,25 +2929,25 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
             range: 500
         },
         rare: {
-            range: 700
+            range: 600
         },
         epic: {
-            range: 900
+            range: 750
         },
         legendary: {
-            range: 1100
+            range: 900
         },
         mythic: {
-            range: 1300
+            range: 1100
         },
         ultra: {
-            range: 1500
+            range: 1300,
         },
         super: {
-            range: 1700
+            range: 1500,
         },
         unique: {
-            range: 1900
+            range: 1700,
         }
     },
     mantis: {
@@ -2951,24 +2955,79 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
             range: 500
         },
         rare: {
-            range: 700
+            range: 600
         },
         epic: {
-            range: 900
+            range: 750
         },
         legendary: {
-            range: 1100
+            range: 900
         },
         mythic: {
-            range: 1300
+            range: 1100
+        },
+        ultra: {
+            range: 1300,
         },
         super: {
-            range: 1500
+            range: 1500,
         },
         unique: {
-            range: 1700
+            range: 1700,
         }
     },
+    glitch: {
+        uncommon: {
+            range: 500
+        },
+        rare: {
+            range: 600
+        },
+        epic: {
+            range: 750
+        },
+        legendary: {
+            range: 900
+        },
+        mythic: {
+            range: 1100
+        },
+        ultra: {
+            range: 1300,
+        },
+        super: {
+            range: 1500,
+        },
+        unique: {
+            range: 1700,
+        }
+    },
+    spider: {
+        uncommon: {
+            range: 800
+        },
+        rare: {
+            range: 1000
+        },
+        epic: {
+            range: 1200
+        },
+        legendary: {
+            range: 1400
+        },
+        mythic: {
+            range: 1600
+        },
+        ultra: {
+            range: 1800,
+        },
+        super: {
+            range: 2000,
+        },
+        unique: {
+            range: 2200,
+        }
+    }
 };
 
 // Rarity color mappings
