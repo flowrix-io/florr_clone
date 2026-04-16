@@ -2532,7 +2532,7 @@ export class TitleScreen {
         let cy = contentTop + this.settingsScrollY;
 
         if (this.settingsTab === 'graphics') {
-            const checkboxIds = ['showHitboxes', 'enableShaders', 'showStats', 'highQualityMobs', 'dynamicSkybox', 'mobDeathAnimation', 'showConsoleLogs'];
+            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'showConsoleLogs'];
             for (const id of checkboxIds) {
                 if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                     this.toggleSettingsCheckbox(id);
@@ -2661,7 +2661,7 @@ export class TitleScreen {
         let cy = contentTop + this.settingsScrollY;
 
         if (this.settingsTab === 'graphics') {
-            const checkboxIds = ['showHitboxes', 'enableShaders', 'showStats', 'highQualityMobs', 'dynamicSkybox', 'mobDeathAnimation', 'showConsoleLogs'];
+            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'showConsoleLogs'];
             for (const id of checkboxIds) {
                 if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                     this.settingsHoveredItem = `cb_${id}`;
