@@ -1876,10 +1876,12 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
              stroke="#ccc04f" 
              stroke-width="5" />
     
-    <path d="M 25 5 Q 40 10, 50 15 Q 40 5, 25 5 M 25 -5 Q 40 -10, 50 -15 Q 40 -5, 25 -5" 
-          fill="#ffe763" 
-          stroke="#333333" 
-          stroke-width="3" />
+    <path d="M 25 5 Q 40 10, 50 15 Q 40 5, 25 5 M 25 -5 Q 40 -10, 50 -15 Q 40 -5, 25 -5"
+          fill="#ffe763"
+          stroke="#333333"
+          stroke-width="3"
+          stroke-linecap="round"
+          stroke-linejoin="round" />
   </g>
 </svg>`,
         ai_type: 'hostile',
