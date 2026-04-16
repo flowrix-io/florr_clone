@@ -67,6 +67,9 @@ export interface CompiledNode {
     x1: number; y1: number; x2: number; y2: number;
     d: string;
     path2d: Path2D | null;
+    // For <image> elements
+    imageEl: HTMLImageElement | null;
+    imageX: number; imageY: number; imageW: number; imageH: number;
 }
 
 export interface CompiledSVG {
@@ -318,6 +321,7 @@ function makeEmptyNode(tag: string, style: StyleAttrs): CompiledNode {
         x: 0, y: 0, width: 0, height: 0,
         x1: 0, y1: 0, x2: 0, y2: 0,
         d: '', path2d: null,
+        imageEl: null, imageX: 0, imageY: 0, imageW: 0, imageH: 0,
     };
 }
 
@@ -407,6 +411,20 @@ function compileElement(el: Element, doc: Document, inherited: StyleAttrs): Comp
             node.x2 = num(el.getAttribute('x2'));
             node.y2 = num(el.getAttribute('y2'));
             break;
+
+        case 'image': {
+            const imgHref = el.getAttribute('href') || el.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+            if (imgHref) {
+                const img = new Image();
+                img.src = imgHref;
+                node.imageEl = img;
+                node.imageX = num(el.getAttribute('x'));
+                node.imageY = num(el.getAttribute('y'));
+                node.imageW = num(el.getAttribute('width'));
+                node.imageH = num(el.getAttribute('height'));
+            }
+            break;
+        }
 
         case 'use': {
             // Resolve <use href="#id"> references
@@ -749,6 +767,10 @@ function drawNode(ctx: CanvasRenderingContext2D, node: CompiledNode, time: numbe
     } else if (tag === 'circle' || tag === 'ellipse' || tag === 'rect' || tag === 'polygon') {
         if (node.path2d) {
             fillStrokePath(ctx, node.path2d, node.style);
+        }
+    } else if (tag === 'image') {
+        if (node.imageEl && node.imageEl.complete && node.imageEl.naturalWidth > 0) {
+            ctx.drawImage(node.imageEl, node.imageX, node.imageY, node.imageW, node.imageH);
         }
     } else if (tag === 'line') {
         if (node.style.stroke) {
