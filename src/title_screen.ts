@@ -2271,9 +2271,9 @@ export class TitleScreen {
             // Checkboxes
             const checkboxes: Array<{ id: string; label: string; value: boolean }> = [
                 { id: 'showHitboxes', label: 'Show Hitboxes', value: this.settingsShowHitboxes },
-                { id: 'enableShaders', label: 'Enable Shaders', value: this.settingsShadersEnabled },
+                // { id: 'enableShaders', label: 'Enable Shaders', value: this.settingsShadersEnabled },
                 { id: 'showStats', label: 'Show Performance Stats', value: this.settingsShowStats },
-                { id: 'highQualityMobs', label: 'High Quality Mobs', value: this.settingsHighQualityMobs },
+                // { id: 'highQualityMobs', label: 'High Quality Mobs', value: this.settingsHighQualityMobs },
                 { id: 'dynamicSkybox', label: 'Dynamic Skybox', value: this.settingsDynamicSkybox },
                 { id: 'mobDeathAnimation', label: 'Mob Death Animation', value: this.settingsMobDeathAnimation },
                 { id: 'showConsoleLogs', label: 'Show Console Logs', value: this.settingsShowConsoleLogs },
