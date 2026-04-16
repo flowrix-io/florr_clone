@@ -595,7 +595,8 @@ function setupSocketListeners(game: any) {
         maxHealth: number,
         isInvulnerable?: boolean,
         knockbackX?: number,
-        knockbackY?: number
+        knockbackY?: number,
+        damageDealt?: number
     }) => {
         const player = game.players.get(data.playerId);
         if (player) {
@@ -625,12 +626,13 @@ function setupSocketListeners(game: any) {
             }
 
             // Add visual feedback for damage taken
-            const damageTaken = oldHealth - data.health;
+            // Use explicit damageDealt if provided, otherwise compute from health delta
+            const damageTaken = data.damageDealt ?? (oldHealth - data.health);
             if (damageTaken > 0) {
                 game.showFloatingText(
                     player.x,
                     player.y - 20,
-                    `-${damageTaken}`,
+                    `-${Math.round(damageTaken)}`,
                     '#FF0000',
                     20
                 );

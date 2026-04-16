@@ -33,6 +33,17 @@ Graphics.prototype.drawMobProjectile = function(this: Graphics, projectile: any,
         this.ctx.beginPath();
         this.ctx.arc(projectile.x, projectile.y, radius, 0, Math.PI * 2);
         this.ctx.fill();
+
+        // Draw hitbox for gas projectiles
+        if (this.showHitboxes) {
+            this.ctx.strokeStyle = 'cyan';
+            this.ctx.lineWidth = 2;
+            this.ctx.globalAlpha = 1.0;
+            this.ctx.shadowBlur = 0;
+            this.ctx.beginPath();
+            this.ctx.arc(projectile.x, projectile.y, radius, 0, Math.PI * 2);
+            this.ctx.stroke();
+        }
         return;
     }
 
@@ -89,6 +100,17 @@ Graphics.prototype.drawMobProjectile = function(this: Graphics, projectile: any,
         // Add a border for visibility
         this.ctx.strokeStyle = '#ffffff';
         this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+    }
+
+    // Draw hitbox circle
+    if (this.showHitboxes) {
+        this.ctx.strokeStyle = 'cyan';
+        this.ctx.lineWidth = 2;
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.shadowBlur = 0;
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, petalSize / 2, 0, Math.PI * 2);
         this.ctx.stroke();
     }
 

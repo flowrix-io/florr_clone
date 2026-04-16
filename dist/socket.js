@@ -559,9 +559,10 @@ function setupSocketListeners(game) {
                 player.knockbackY = data.knockbackY;
             }
             // Add visual feedback for damage taken
-            const damageTaken = oldHealth - data.health;
+            // Use explicit damageDealt if provided, otherwise compute from health delta
+            const damageTaken = data.damageDealt ?? (oldHealth - data.health);
             if (damageTaken > 0) {
-                game.showFloatingText(player.x, player.y - 20, `-${damageTaken}`, '#FF0000', 20);
+                game.showFloatingText(player.x, player.y - 20, `-${Math.round(damageTaken)}`, '#FF0000', 20);
             }
         }
     });

@@ -21,6 +21,16 @@ core_1.Graphics.prototype.drawMobProjectile = function (projectile, currentTime,
         this.ctx.beginPath();
         this.ctx.arc(projectile.x, projectile.y, radius, 0, Math.PI * 2);
         this.ctx.fill();
+        // Draw hitbox for gas projectiles
+        if (this.showHitboxes) {
+            this.ctx.strokeStyle = 'cyan';
+            this.ctx.lineWidth = 2;
+            this.ctx.globalAlpha = 1.0;
+            this.ctx.shadowBlur = 0;
+            this.ctx.beginPath();
+            this.ctx.arc(projectile.x, projectile.y, radius, 0, Math.PI * 2);
+            this.ctx.stroke();
+        }
         return;
     }
     const petalSize = projectile.size * 20; // Use projectile's scaled size
@@ -67,6 +77,16 @@ core_1.Graphics.prototype.drawMobProjectile = function (projectile, currentTime,
         // Add a border for visibility
         this.ctx.strokeStyle = '#ffffff';
         this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+    }
+    // Draw hitbox circle
+    if (this.showHitboxes) {
+        this.ctx.strokeStyle = 'cyan';
+        this.ctx.lineWidth = 2;
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.shadowBlur = 0;
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, petalSize / 2, 0, Math.PI * 2);
         this.ctx.stroke();
     }
     this.ctx.restore();

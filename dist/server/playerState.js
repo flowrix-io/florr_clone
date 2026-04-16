@@ -270,10 +270,10 @@ function updatePlayerState(player, deltaTime, deps) {
     const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, createEnemy, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database, trackMobKill } = deps;
     // Update player effects
     (0, petal_actions_1.updatePlayerEffects)(player, deltaTime);
-    // Apply passive healing from petals
-    if (player.loadout && !player.isDead) {
-        let totalPassiveHeal = 0;
-        for (const petal of player.loadout) {
+    // Apply passive healing (base 1 HP/sec + petal bonuses)
+    if (!player.isDead) {
+        let totalPassiveHeal = 1.0 * deltaTime; // Base passive heal: 1 HP/sec
+        for (const petal of (player.loadout || [])) {
             if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
                 const petalStats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
                 if (petalStats && petalStats.passiveHeal) {
@@ -301,15 +301,7 @@ function updatePlayerState(player, deltaTime, deps) {
             }
         }
         if (totalPassiveHeal > 0) {
-            const oldHealth = player.health;
             player.health = Math.min(player.maxHealth, player.health + totalPassiveHeal);
-            if (player.health !== oldHealth) {
-                io.emit('playerHealed', {
-                    playerId: player.id,
-                    health: player.health,
-                    healAmount: player.health - oldHealth
-                });
-            }
         }
     }
     let targetVelocityX = 0;
