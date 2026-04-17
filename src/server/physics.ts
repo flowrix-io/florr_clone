@@ -1,4 +1,4 @@
-import { Enemy } from '../server_utils';
+import { Enemy, isCentipedeHeadType } from '../server_utils';
 import { ServerPlayer } from '../player';
 import { WorldItem } from '../item';
 import {
@@ -427,8 +427,8 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
             // the chain-follow pass keeps them in formation, so physical push-apart
             // creates tangling/spin artifacts. The head's AI steers around its own
             // segments instead (see centipede avoidance in moveEnemies).
-            const thisHeadId = enemy.headId ?? (enemy.type === 'centipede' ? enemy.id : undefined);
-            const otherHeadId = otherEnemy.headId ?? (otherEnemy.type === 'centipede' ? otherEnemy.id : undefined);
+            const thisHeadId = enemy.headId ?? (isCentipedeHeadType(enemy.type) ? enemy.id : undefined);
+            const otherHeadId = otherEnemy.headId ?? (isCentipedeHeadType(otherEnemy.type) ? otherEnemy.id : undefined);
             if (thisHeadId && otherHeadId && thisHeadId === otherHeadId) {
                 continue;
             }

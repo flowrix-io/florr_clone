@@ -1,5 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isCentipedeHeadType = isCentipedeHeadType;
+exports.isCentipedeBodyType = isCentipedeBodyType;
+exports.getCentipedeBodyType = getCentipedeBodyType;
 exports.getRandomPositionInZone = getRandomPositionInZone;
 exports.createDecoration = createDecoration;
 exports.createSand = createSand;
@@ -7,6 +10,17 @@ exports.initializeObstacles = initializeObstacles;
 exports.getXPFromEnemy = getXPFromEnemy;
 const constants_1 = require("./constants");
 const sands = [];
+function isCentipedeHeadType(type) {
+    return type === 'centipede' || type === 'desert_centipede';
+}
+function isCentipedeBodyType(type) {
+    return type === 'centipede_body' || type === 'desert_centipede_body';
+}
+function getCentipedeBodyType(headType) {
+    if (headType === 'desert_centipede')
+        return 'desert_centipede_body';
+    return 'centipede_body';
+}
 function getRandomPositionInZone(zoneIndex) {
     const zoneWidth = constants_1.WORLD_WIDTH / 6; // 6 zones
     const startX = zoneIndex * zoneWidth;

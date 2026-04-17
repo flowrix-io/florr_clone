@@ -1,5 +1,5 @@
 import { Server as SocketIOServer } from '../ws_server';
-import { Enemy } from '../server_utils';
+import { Enemy, isCentipedeHeadType, isCentipedeBodyType, getCentipedeBodyType } from '../server_utils';
 import { 
     players,
     enemies
@@ -610,7 +610,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             const currentSection = getSectionAtPosition(x, y);
             const eligibleMobTypes = allMobTypes.filter(type => {
                 if (type === 'target_dummy') return false;
-                if (type === 'centipede_body') return false;
+                if (isCentipedeBodyType(type)) return false;
                 const stats = getMobStats(type, 'common');
                 return stats && stats.section === currentSection;
             });
@@ -675,7 +675,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         const currentSection = getSectionAtPosition(x, y);
         const eligibleMobTypes = allMobTypes.filter(type => {
             if (type === 'target_dummy') return false;
-            if (type === 'centipede_body') return false;
+            if (isCentipedeBodyType(type)) return false;
             const stats = getMobStats(type, tier);
             return stats && stats.section === currentSection;
         });
@@ -738,7 +738,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
     }
 
     // Spawn centipede body segments as a chain trailing the head
-    if (mobType === 'centipede') {
+    if (isCentipedeHeadType(mobType)) {
         spawnCentipedeBodySegments(enemy);
     }
 
@@ -753,7 +753,8 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
 export function spawnCentipedeBodySegments(head: Enemy): void {
     head.headId = head.id;
     head.segmentIndex = 0;
-    const bodyStats = getMobStats('centipede_body', head.tier);
+    const bodyType = getCentipedeBodyType(head.type);
+    const bodyStats = getMobStats(bodyType, head.tier);
     if (!bodyStats) return;
 
     const segmentCount = 9; // head + 9 body = 10 total
@@ -772,7 +773,7 @@ export function spawnCentipedeBodySegments(head: Enemy): void {
         const segY = prevY + dirY * spacing;
         const segment: Enemy = {
             id: Math.random().toString(36).substr(2, 9),
-            type: 'centipede_body',
+            type: bodyType as Enemy['type'],
             tier: head.tier,
             x: segX,
             y: segY,

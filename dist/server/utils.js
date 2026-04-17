@@ -7,6 +7,7 @@ exports.getEligiblePlayers = getEligiblePlayers;
 exports.sendBossMobDefeatedMessage = sendBossMobDefeatedMessage;
 exports.trackMobKill = trackMobKill;
 exports.cleanupEnemy = cleanupEnemy;
+const server_utils_1 = require("../server_utils");
 const constants_1 = require("../constants");
 const petal_actions_1 = require("../petal_actions");
 const squadManager_1 = require("./squadManager");
@@ -23,8 +24,8 @@ function trackDamage(enemy, playerId, damage) {
     }
     // Centipede chain: damaging any segment provokes the head and the whole chain.
     // Only applies when the chain's head is neutral (above rare).
-    if (enemy.type === 'centipede' || enemy.type === 'centipede_body') {
-        const headId = enemy.headId ?? (enemy.type === 'centipede' ? enemy.id : undefined);
+    if ((0, server_utils_1.isCentipedeHeadType)(enemy.type) || (0, server_utils_1.isCentipedeBodyType)(enemy.type)) {
+        const headId = enemy.headId ?? ((0, server_utils_1.isCentipedeHeadType)(enemy.type) ? enemy.id : undefined);
         if (headId) {
             const head = constants_1.enemies.find(e => e.id === headId);
             if (head && head.aiType === 'neutral' && !head.targetPlayerId) {

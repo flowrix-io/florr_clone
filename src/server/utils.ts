@@ -1,4 +1,4 @@
-import { Enemy } from '../server_utils';
+import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
 import { ServerPlayer } from '../player';
 import { ENEMY_TIERS, enemies } from '../constants';
 import { splitPlayers } from '../petal_actions';
@@ -19,8 +19,8 @@ export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
 
     // Centipede chain: damaging any segment provokes the head and the whole chain.
     // Only applies when the chain's head is neutral (above rare).
-    if (enemy.type === 'centipede' || enemy.type === 'centipede_body') {
-        const headId = enemy.headId ?? (enemy.type === 'centipede' ? enemy.id : undefined);
+    if (isCentipedeHeadType(enemy.type) || isCentipedeBodyType(enemy.type)) {
+        const headId = enemy.headId ?? (isCentipedeHeadType(enemy.type) ? enemy.id : undefined);
         if (headId) {
             const head = enemies.find(e => e.id === headId);
             if (head && head.aiType === 'neutral' && !head.targetPlayerId) {

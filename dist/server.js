@@ -575,7 +575,7 @@ function spawnMob(mobType, rarity, x, y) {
     // Centipedes need their trailing body chain; without it the head behaves
     // like any other mob and the chain-specific features (severing, avoidance)
     // have nothing to act on.
-    if (mobType === 'centipede') {
+    if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
         const beforeCount = constants_2.enemies.length;
         (0, enemySpawner_1.spawnCentipedeBodySegments)(enemy);
         for (let i = beforeCount; i < constants_2.enemies.length; i++) {
@@ -2577,7 +2577,7 @@ function updatePoisonEffects(deltaTime) {
 // running into its own body. Direct followers are excluded since the chain-follow pass
 // positions them right behind the head and avoiding them would paralyze the head.
 function computeOwnSegmentAvoidance(enemy) {
-    const isCentipedeHead = (enemy.type === 'centipede' || enemy.type === 'centipede_body') && !enemy.leaderId;
+    const isCentipedeHead = ((0, server_utils_1.isCentipedeHeadType)(enemy.type) || (0, server_utils_1.isCentipedeBodyType)(enemy.type)) && !enemy.leaderId;
     if (!isCentipedeHead)
         return null;
     const AVOID_RADIUS = 140;
@@ -2587,7 +2587,7 @@ function computeOwnSegmentAvoidance(enemy) {
     for (const seg of constants_2.enemies) {
         if (seg === enemy)
             continue;
-        if (seg.type !== 'centipede_body')
+        if (!(0, server_utils_1.isCentipedeBodyType)(seg.type))
             continue;
         if (seg.headId !== enemy.id)
             continue;
@@ -2615,7 +2615,7 @@ function moveEnemies() {
     for (const e of constants_2.enemies)
         enemyById.set(e.id, e);
     for (const enemy of constants_2.enemies) {
-        if (enemy.type !== 'centipede_body' || !enemy.leaderId)
+        if (!(0, server_utils_1.isCentipedeBodyType)(enemy.type) || !enemy.leaderId)
             continue;
         if (enemyById.has(enemy.leaderId))
             continue;
@@ -2650,7 +2650,7 @@ function moveEnemies() {
         // Centipede body segments skip normal AI unless they've been promoted
         // to a chain head (leaderId cleared after the previous segment died).
         // Promoted heads run AI so each half of a severed centipede keeps moving.
-        if (enemy.type === 'centipede_body' && enemy.leaderId) {
+        if ((0, server_utils_1.isCentipedeBodyType)(enemy.type) && enemy.leaderId) {
             return;
         }
         // Check if this is a pet (has ownerId)
@@ -3151,10 +3151,10 @@ function moveEnemies() {
     // Second pass: propagate centipede chain positions from each head down to its body segments
     // Process each head's chain in order so segments always see their leader's freshly-updated position.
     // A "head" is either an original centipede or a body segment promoted after a chain was severed.
-    const centipedeHeads = constants_2.enemies.filter(e => (e.type === 'centipede' || e.type === 'centipede_body') && !e.leaderId);
+    const centipedeHeads = constants_2.enemies.filter(e => ((0, server_utils_1.isCentipedeHeadType)(e.type) || (0, server_utils_1.isCentipedeBodyType)(e.type)) && !e.leaderId);
     for (const head of centipedeHeads) {
         const chain = constants_2.enemies
-            .filter(e => e.type === 'centipede_body' && e.headId === head.id)
+            .filter(e => (0, server_utils_1.isCentipedeBodyType)(e.type) && e.headId === head.id)
             .sort((a, b) => (a.segmentIndex ?? 0) - (b.segmentIndex ?? 0));
         for (const segment of chain) {
             const leader = constants_2.enemies.find(e => e.id === segment.leaderId);

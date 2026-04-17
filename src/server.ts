@@ -46,7 +46,7 @@ import { updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShield
 import { RARITY_LEVELS, Rarity } from './petals';
 import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
-import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect } from './server_utils';
+import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { MobProjectile, PlayerProjectile } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getAllPetalTypes, getPetalStats } from './petals';
@@ -754,7 +754,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
     // Centipedes need their trailing body chain; without it the head behaves
     // like any other mob and the chain-specific features (severing, avoidance)
     // have nothing to act on.
-    if (mobType === 'centipede') {
+    if (isCentipedeHeadType(mobType)) {
         const beforeCount = enemies.length;
         spawnCentipedeBodySegments(enemy);
         for (let i = beforeCount; i < enemies.length; i++) {
@@ -2980,7 +2980,7 @@ function updatePoisonEffects(deltaTime: number) {
 // positions them right behind the head and avoiding them would paralyze the head.
 function computeOwnSegmentAvoidance(enemy: Enemy): { x: number; y: number } | null {
     const isCentipedeHead =
-        (enemy.type === 'centipede' || enemy.type === 'centipede_body') && !enemy.leaderId;
+        (isCentipedeHeadType(enemy.type) || isCentipedeBodyType(enemy.type)) && !enemy.leaderId;
     if (!isCentipedeHead) return null;
 
     const AVOID_RADIUS = 140;
@@ -2989,7 +2989,7 @@ function computeOwnSegmentAvoidance(enemy: Enemy): { x: number; y: number } | nu
     let ay = 0;
     for (const seg of enemies) {
         if (seg === enemy) continue;
-        if (seg.type !== 'centipede_body') continue;
+        if (!isCentipedeBodyType(seg.type)) continue;
         if (seg.headId !== enemy.id) continue;
         if (seg.leaderId === enemy.id) continue;
         const sdx = enemy.x - seg.x;
@@ -3014,7 +3014,7 @@ function moveEnemies() {
     const enemyById = new Map<string, Enemy>();
     for (const e of enemies) enemyById.set(e.id, e);
     for (const enemy of enemies) {
-        if (enemy.type !== 'centipede_body' || !enemy.leaderId) continue;
+        if (!isCentipedeBodyType(enemy.type) || !enemy.leaderId) continue;
         if (enemyById.has(enemy.leaderId)) continue;
         enemy.leaderId = undefined;
         enemy.headId = enemy.id;
@@ -3046,7 +3046,7 @@ function moveEnemies() {
         // Centipede body segments skip normal AI unless they've been promoted
         // to a chain head (leaderId cleared after the previous segment died).
         // Promoted heads run AI so each half of a severed centipede keeps moving.
-        if (enemy.type === 'centipede_body' && enemy.leaderId) {
+        if (isCentipedeBodyType(enemy.type) && enemy.leaderId) {
             return;
         }
 
@@ -3597,10 +3597,10 @@ function moveEnemies() {
     // Second pass: propagate centipede chain positions from each head down to its body segments
     // Process each head's chain in order so segments always see their leader's freshly-updated position.
     // A "head" is either an original centipede or a body segment promoted after a chain was severed.
-    const centipedeHeads = enemies.filter(e => (e.type === 'centipede' || e.type === 'centipede_body') && !e.leaderId);
+    const centipedeHeads = enemies.filter(e => (isCentipedeHeadType(e.type) || isCentipedeBodyType(e.type)) && !e.leaderId);
     for (const head of centipedeHeads) {
         const chain = enemies
-            .filter(e => e.type === 'centipede_body' && e.headId === head.id)
+            .filter(e => isCentipedeBodyType(e.type) && e.headId === head.id)
             .sort((a, b) => (a.segmentIndex ?? 0) - (b.segmentIndex ?? 0));
         for (const segment of chain) {
             const leader = enemies.find(e => e.id === segment.leaderId);

@@ -13,9 +13,22 @@ export interface PoisonEffect {
   playerId: string;  // ID of the player who applied the poison
 }
 
+export function isCentipedeHeadType(type: string): boolean {
+  return type === 'centipede' || type === 'desert_centipede';
+}
+
+export function isCentipedeBodyType(type: string): boolean {
+  return type === 'centipede_body' || type === 'desert_centipede_body';
+}
+
+export function getCentipedeBodyType(headType: string): string {
+  if (headType === 'desert_centipede') return 'desert_centipede_body';
+  return 'centipede_body';
+}
+
 export interface Enemy {
   id: string;
-  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body';
+  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   x: number;
   y: number;

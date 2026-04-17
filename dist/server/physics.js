@@ -8,6 +8,7 @@ exports.checkProjectileWallCollision = checkProjectileWallCollision;
 exports.hasLineOfSight = hasLineOfSight;
 exports.checkEnemyEnemyCollisions = checkEnemyEnemyCollisions;
 exports.checkPlayerEnemyCollision = checkPlayerEnemyCollision;
+const server_utils_1 = require("../server_utils");
 const constants_1 = require("../constants");
 const map_data_1 = require("../map_data");
 const mobs_1 = require("../mobs");
@@ -340,8 +341,8 @@ function checkEnemyEnemyCollisions(enemies, io) {
             // the chain-follow pass keeps them in formation, so physical push-apart
             // creates tangling/spin artifacts. The head's AI steers around its own
             // segments instead (see centipede avoidance in moveEnemies).
-            const thisHeadId = enemy.headId ?? (enemy.type === 'centipede' ? enemy.id : undefined);
-            const otherHeadId = otherEnemy.headId ?? (otherEnemy.type === 'centipede' ? otherEnemy.id : undefined);
+            const thisHeadId = enemy.headId ?? ((0, server_utils_1.isCentipedeHeadType)(enemy.type) ? enemy.id : undefined);
+            const otherHeadId = otherEnemy.headId ?? ((0, server_utils_1.isCentipedeHeadType)(otherEnemy.type) ? otherEnemy.id : undefined);
             if (thisHeadId && otherHeadId && thisHeadId === otherHeadId) {
                 continue;
             }

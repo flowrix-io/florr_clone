@@ -379,10 +379,10 @@ function findPlayerPetByMobType(ownerId, mobType) {
 function despawnPet(pet, io) {
     // For centipede pets, drop the whole chain — otherwise the first orphaned
     // body segment would auto-promote into a new free-roaming head.
-    if (pet.type === 'centipede') {
+    if ((0, server_utils_1.isCentipedeHeadType)(pet.type)) {
         for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
             const e = constants_1.enemies[i];
-            if (e.id === pet.id || (e.type === 'centipede_body' && e.headId === pet.id)) {
+            if (e.id === pet.id || ((0, server_utils_1.isCentipedeBodyType)(e.type) && e.headId === pet.id)) {
                 constants_1.enemies.splice(i, 1);
                 io.emit('enemyDestroyed', e.id);
             }
@@ -465,7 +465,7 @@ function spawnPet(mobType, rarity, x, y, ownerId, io) {
     io.emit('enemySpawned', pet);
     // Centipede pets need their trailing body chain too, with ownerId propagated
     // to each segment so they follow the owner alongside the head.
-    if (mobType === 'centipede') {
+    if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
         const beforeCount = constants_1.enemies.length;
         (0, enemySpawner_1.spawnCentipedeBodySegments)(pet);
         for (let i = beforeCount; i < constants_1.enemies.length; i++) {

@@ -422,6 +422,28 @@ const MOB_XP_TABLES = {
         ultra: 45000,
         super: 350000,
         unique: 1950000
+    },
+    desert_centipede: {
+        common: 2,
+        uncommon: 6,
+        rare: 40,
+        epic: 320,
+        legendary: 1600,
+        mythic: 36000,
+        ultra: 180000,
+        super: 1400000,
+        unique: 7800000
+    },
+    desert_centipede_body: {
+        common: 1,
+        uncommon: 2,
+        rare: 10,
+        epic: 80,
+        legendary: 400,
+        mythic: 9000,
+        ultra: 45000,
+        super: 350000,
+        unique: 1950000
     }
 };
 // Base mob configurations - only common rarity stats
@@ -2656,6 +2678,51 @@ exports.BASE_MOB_CONFIGS = {
         section: 0,
         spawn_weight: 0,
         noEggDrop: true,
+    },
+    desert_centipede: {
+        name: "Desert Centipede",
+        damage: 10,
+        health: 50,
+        size: 1.0,
+        visual_scale: 1.2,
+        speed: 4.8,
+        cooldown: 2000,
+        description: "A swift desert crawler leading a chain of body segments",
+        color: "#d4c66e",
+        image: `<svg width="32" height="32" viewBox="-45 -45 90 90" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="-30" r="15" fill="#333333" />
+  <circle cx="0" cy="30" r="15" fill="#333333" />
+  <circle cx="0" cy="0" r="35" fill="#d4c66e" stroke="#a89c4f" stroke-width="7" />
+  <path d="M 25 -10 Q 45 -10 55 -30" fill="none" stroke="#333333" stroke-width="3" />
+  <circle cx="55" cy="-30" r="5" fill="#333333" />
+  <path d="M 25 10 Q 45 10 55 30" fill="none" stroke="#333333" stroke-width="3" />
+  <circle cx="55" cy="30" r="5" fill="#333333" />
+</svg>`,
+        ai_type: 'passive',
+        range: 500,
+        section: 1,
+        spawn_weight: 0.4,
+    },
+    desert_centipede_body: {
+        name: "Desert Centipede",
+        damage: 10,
+        health: 50,
+        size: 1.0,
+        visual_scale: 1.2,
+        speed: 4.8,
+        cooldown: 2000,
+        description: "A segment of a desert centipede",
+        color: "#d4c66e",
+        image: `<svg width="32" height="32" viewBox="-45 -45 90 90" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="-30" r="15" fill="#333333" />
+  <circle cx="0" cy="30" r="15" fill="#333333" />
+  <circle cx="0" cy="0" r="35" fill="#d4c66e" stroke="#a89c4f" stroke-width="7" />
+</svg>`,
+        ai_type: 'passive',
+        range: 0,
+        section: 1,
+        spawn_weight: 0,
+        noEggDrop: true,
     }
 };
 // Rarity-specific overrides for special cases
@@ -2987,6 +3054,24 @@ const RARITY_OVERRIDES = {
         apex: { ai_type: 'neutral' }
     },
     centipede_body: {
+        epic: { ai_type: 'neutral' },
+        legendary: { ai_type: 'neutral' },
+        mythic: { ai_type: 'neutral' },
+        ultra: { ai_type: 'neutral' },
+        super: { ai_type: 'neutral' },
+        unique: { ai_type: 'neutral' },
+        apex: { ai_type: 'neutral' }
+    },
+    desert_centipede: {
+        epic: { ai_type: 'neutral' },
+        legendary: { ai_type: 'neutral' },
+        mythic: { ai_type: 'neutral' },
+        ultra: { ai_type: 'neutral' },
+        super: { ai_type: 'neutral' },
+        unique: { ai_type: 'neutral' },
+        apex: { ai_type: 'neutral' }
+    },
+    desert_centipede_body: {
         epic: { ai_type: 'neutral' },
         legendary: { ai_type: 'neutral' },
         mythic: { ai_type: 'neutral' },
