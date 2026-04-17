@@ -6,6 +6,7 @@ import { Enemy, getXPFromEnemy } from './server_utils';
 import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
 import { players, enemies } from './constants';
 import { getMobStats, getAllMobTypes } from './mobs';
+import { spawnCentipedeBodySegments } from './server/enemySpawner';
 
 // Action execution context
 export interface ActionContext {
@@ -488,6 +489,19 @@ function findPlayerPetByMobType(ownerId: string, mobType: string): Enemy | undef
 
 // Helper function to despawn a pet
 export function despawnPet(pet: Enemy, io: any): void {
+    // For centipede pets, drop the whole chain — otherwise the first orphaned
+    // body segment would auto-promote into a new free-roaming head.
+    if (pet.type === 'centipede') {
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            const e = enemies[i];
+            if (e.id === pet.id || (e.type === 'centipede_body' && e.headId === pet.id)) {
+                enemies.splice(i, 1);
+                io.emit('enemyDestroyed', e.id);
+            }
+        }
+        return;
+    }
+
     const index = enemies.findIndex(e => e.id === pet.id);
     if (index !== -1) {
         enemies.splice(index, 1);
@@ -569,10 +583,20 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
 
     // Add to enemies array
     enemies.push(pet);
-    
+
     // Notify all clients
     io.emit('enemySpawned', pet);
-    
+
+    // Centipede pets need their trailing body chain too, with ownerId propagated
+    // to each segment so they follow the owner alongside the head.
+    if (mobType === 'centipede') {
+        const beforeCount = enemies.length;
+        spawnCentipedeBodySegments(pet);
+        for (let i = beforeCount; i < enemies.length; i++) {
+            io.emit('enemySpawned', enemies[i]);
+        }
+    }
+
     // console.log(`Spawned pet ${tier} ${mobType} for player ${ownerId} at (${Math.round(x)}, ${Math.round(y)})`);
 }
 

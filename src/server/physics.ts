@@ -425,7 +425,8 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
 
             // Skip collision resolution between segments of the same centipede chain:
             // the chain-follow pass keeps them in formation, so physical push-apart
-            // creates tangling/spin artifacts, especially at higher rarities.
+            // creates tangling/spin artifacts. The head's AI steers around its own
+            // segments instead (see centipede avoidance in moveEnemies).
             const thisHeadId = enemy.headId ?? (enemy.type === 'centipede' ? enemy.id : undefined);
             const otherHeadId = otherEnemy.headId ?? (otherEnemy.type === 'centipede' ? otherEnemy.id : undefined);
             if (thisHeadId && otherHeadId && thisHeadId === otherHeadId) {

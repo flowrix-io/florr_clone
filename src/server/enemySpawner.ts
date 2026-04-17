@@ -739,53 +739,65 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
 
     // Spawn centipede body segments as a chain trailing the head
     if (mobType === 'centipede') {
-        enemy.headId = enemy.id;
-        enemy.segmentIndex = 0;
-        const bodyStats = getMobStats('centipede_body', tier);
-        if (bodyStats) {
-            const segmentCount = 9; // head + 9 body = 10 total
-            const segmentSize = bodyStats.size * 40;
-            const spacing = segmentSize * 0.9;
-            // Trail behind the head along the negative of its angle
-            let prevId = enemy.id;
-            let prevX = enemy.x;
-            let prevY = enemy.y;
-            const dirX = -Math.cos(enemy.angle);
-            const dirY = -Math.sin(enemy.angle);
-            for (let i = 1; i <= segmentCount; i++) {
-                const segX = prevX + dirX * spacing;
-                const segY = prevY + dirY * spacing;
-                const segment: Enemy = {
-                    id: Math.random().toString(36).substr(2, 9),
-                    type: 'centipede_body',
-                    tier,
-                    x: segX,
-                    y: segY,
-                    angle: enemy.angle,
-                    health: bodyStats.health,
-                    maxHealth: bodyStats.health,
-                    speed: bodyStats.speed,
-                    damage: bodyStats.damage,
-                    knockbackX: 0,
-                    knockbackY: 0,
-                    aiType: bodyStats.ai_type,
-                    range: bodyStats.range,
-                    reversed: bodyStats.reversed ?? false,
-                    spawnTime: currentTime,
-                    lastViewportCheck: currentTime,
-                    leaderId: prevId,
-                    headId: enemy.id,
-                    segmentIndex: i,
-                };
-                enemies.push(segment);
-                prevId = segment.id;
-                prevX = segX;
-                prevY = segY;
-            }
-        }
+        spawnCentipedeBodySegments(enemy);
     }
 
     return enemy;
+}
+
+/**
+ * Attach the body-segment chain to a centipede head. Used by every centipede
+ * spawn path (natural spawn, admin command, egg/pet spawn) so the head never
+ * appears alone.
+ */
+export function spawnCentipedeBodySegments(head: Enemy): void {
+    head.headId = head.id;
+    head.segmentIndex = 0;
+    const bodyStats = getMobStats('centipede_body', head.tier);
+    if (!bodyStats) return;
+
+    const segmentCount = 9; // head + 9 body = 10 total
+    const segmentSize = bodyStats.size * 40;
+    const spacing = segmentSize * 0.9;
+    const dirX = -Math.cos(head.angle);
+    const dirY = -Math.sin(head.angle);
+
+    let prevId = head.id;
+    let prevX = head.x;
+    let prevY = head.y;
+    const currentTime = Date.now();
+
+    for (let i = 1; i <= segmentCount; i++) {
+        const segX = prevX + dirX * spacing;
+        const segY = prevY + dirY * spacing;
+        const segment: Enemy = {
+            id: Math.random().toString(36).substr(2, 9),
+            type: 'centipede_body',
+            tier: head.tier,
+            x: segX,
+            y: segY,
+            angle: head.angle,
+            health: bodyStats.health,
+            maxHealth: bodyStats.health,
+            speed: bodyStats.speed,
+            damage: bodyStats.damage,
+            knockbackX: 0,
+            knockbackY: 0,
+            aiType: bodyStats.ai_type,
+            range: bodyStats.range,
+            reversed: bodyStats.reversed ?? false,
+            spawnTime: currentTime,
+            lastViewportCheck: currentTime,
+            leaderId: prevId,
+            headId: head.id,
+            segmentIndex: i,
+        };
+        if (head.ownerId) segment.ownerId = head.ownerId;
+        enemies.push(segment);
+        prevId = segment.id;
+        prevX = segX;
+        prevY = segY;
+    }
 }
 
 /**

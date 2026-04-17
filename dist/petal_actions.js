@@ -21,6 +21,7 @@ const server_utils_1 = require("./server_utils");
 const server_1 = require("./server");
 const constants_1 = require("./constants");
 const mobs_1 = require("./mobs");
+const enemySpawner_1 = require("./server/enemySpawner");
 // Global state for tracking petal actions
 const petalActionStates = new Map();
 // Global memory for petal actions (shared across all petals)
@@ -376,6 +377,18 @@ function findPlayerPetByMobType(ownerId, mobType) {
 }
 // Helper function to despawn a pet
 function despawnPet(pet, io) {
+    // For centipede pets, drop the whole chain — otherwise the first orphaned
+    // body segment would auto-promote into a new free-roaming head.
+    if (pet.type === 'centipede') {
+        for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
+            const e = constants_1.enemies[i];
+            if (e.id === pet.id || (e.type === 'centipede_body' && e.headId === pet.id)) {
+                constants_1.enemies.splice(i, 1);
+                io.emit('enemyDestroyed', e.id);
+            }
+        }
+        return;
+    }
     const index = constants_1.enemies.findIndex(e => e.id === pet.id);
     if (index !== -1) {
         constants_1.enemies.splice(index, 1);
@@ -450,6 +463,15 @@ function spawnPet(mobType, rarity, x, y, ownerId, io) {
     constants_1.enemies.push(pet);
     // Notify all clients
     io.emit('enemySpawned', pet);
+    // Centipede pets need their trailing body chain too, with ownerId propagated
+    // to each segment so they follow the owner alongside the head.
+    if (mobType === 'centipede') {
+        const beforeCount = constants_1.enemies.length;
+        (0, enemySpawner_1.spawnCentipedeBodySegments)(pet);
+        for (let i = beforeCount; i < constants_1.enemies.length; i++) {
+            io.emit('enemySpawned', constants_1.enemies[i]);
+        }
+    }
     // console.log(`Spawned pet ${tier} ${mobType} for player ${ownerId} at (${Math.round(x)}, ${Math.round(y)})`);
 }
 // Mark petal for breaking

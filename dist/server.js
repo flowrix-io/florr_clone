@@ -572,6 +572,16 @@ function spawnMob(mobType, rarity, x, y) {
     constants_2.enemies.push(enemy);
     // Notify all clients
     io.emit('enemySpawned', enemy);
+    // Centipedes need their trailing body chain; without it the head behaves
+    // like any other mob and the chain-specific features (severing, avoidance)
+    // have nothing to act on.
+    if (mobType === 'centipede') {
+        const beforeCount = constants_2.enemies.length;
+        (0, enemySpawner_1.spawnCentipedeBodySegments)(enemy);
+        for (let i = beforeCount; i < constants_2.enemies.length; i++) {
+            io.emit('enemySpawned', constants_2.enemies[i]);
+        }
+    }
     console.log(`Spawned ${tier} ${mobType} at (${Math.round(spawnX)}, ${Math.round(spawnY)})`);
 }
 // respawnPlayer moved to playerManager module - using wrapper function defined earlier
@@ -2563,8 +2573,66 @@ function updatePoisonEffects(deltaTime) {
         }
     });
 }
+// Steering vector that keeps a centipede head (or promoted severed-chain head) from
+// running into its own body. Direct followers are excluded since the chain-follow pass
+// positions them right behind the head and avoiding them would paralyze the head.
+function computeOwnSegmentAvoidance(enemy) {
+    const isCentipedeHead = (enemy.type === 'centipede' || enemy.type === 'centipede_body') && !enemy.leaderId;
+    if (!isCentipedeHead)
+        return null;
+    const AVOID_RADIUS = 140;
+    const AVOID_WEIGHT = 2.5;
+    let ax = 0;
+    let ay = 0;
+    for (const seg of constants_2.enemies) {
+        if (seg === enemy)
+            continue;
+        if (seg.type !== 'centipede_body')
+            continue;
+        if (seg.headId !== enemy.id)
+            continue;
+        if (seg.leaderId === enemy.id)
+            continue;
+        const sdx = enemy.x - seg.x;
+        const sdy = enemy.y - seg.y;
+        const sd = Math.sqrt(sdx * sdx + sdy * sdy);
+        if (sd > 0 && sd < AVOID_RADIUS) {
+            const strength = (AVOID_RADIUS - sd) / AVOID_RADIUS;
+            ax += (sdx / sd) * strength * AVOID_WEIGHT;
+            ay += (sdy / sd) * strength * AVOID_WEIGHT;
+        }
+    }
+    if (ax === 0 && ay === 0)
+        return null;
+    return { x: ax, y: ay };
+}
 function moveEnemies() {
     const currentTime = Date.now();
+    // Detect severed centipede chains: any body segment whose leader no longer
+    // exists is promoted to a new chain head. Subsequent segments are re-chained
+    // under the new head so they continue following it.
+    const enemyById = new Map();
+    for (const e of constants_2.enemies)
+        enemyById.set(e.id, e);
+    for (const enemy of constants_2.enemies) {
+        if (enemy.type !== 'centipede_body' || !enemy.leaderId)
+            continue;
+        if (enemyById.has(enemy.leaderId))
+            continue;
+        enemy.leaderId = undefined;
+        enemy.headId = enemy.id;
+        enemy.segmentIndex = 0;
+        let leader = enemy;
+        let nextIndex = 1;
+        while (true) {
+            const follower = constants_2.enemies.find(e => e.leaderId === leader.id);
+            if (!follower)
+                break;
+            follower.headId = enemy.id;
+            follower.segmentIndex = nextIndex++;
+            leader = follower;
+        }
+    }
     constants_2.enemies.forEach(enemy => {
         // Apply knockback if it exists
         if (enemy.knockbackX) {
@@ -2579,9 +2647,10 @@ function moveEnemies() {
             if (Math.abs(enemy.knockbackY) < 0.1)
                 enemy.knockbackY = 0;
         }
-        // Centipede body segments skip normal AI; their positions are propagated
-        // from the head in a second pass after all heads have moved.
-        if (enemy.type === 'centipede_body') {
+        // Centipede body segments skip normal AI unless they've been promoted
+        // to a chain head (leaderId cleared after the previous segment died).
+        // Promoted heads run AI so each half of a severed centipede keeps moving.
+        if (enemy.type === 'centipede_body' && enemy.leaderId) {
             return;
         }
         // Check if this is a pet (has ownerId)
@@ -2876,11 +2945,23 @@ function moveEnemies() {
                 }
                 if (distance > 0) {
                     const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
-                    enemy.x += (dx / distance) * speed;
-                    enemy.y += (dy / distance) * speed;
+                    let moveX = dx / distance;
+                    let moveY = dy / distance;
+                    const avoid = computeOwnSegmentAvoidance(enemy);
+                    if (avoid) {
+                        moveX += avoid.x;
+                        moveY += avoid.y;
+                        const mag = Math.sqrt(moveX * moveX + moveY * moveY);
+                        if (mag > 0) {
+                            moveX /= mag;
+                            moveY /= mag;
+                        }
+                    }
+                    enemy.x += moveX * speed;
+                    enemy.y += moveY * speed;
                     // Only update angle if mob has speed > 0
                     if (enemy.speed > 0) {
-                        enemy.angle = Math.atan2(dy, dx);
+                        enemy.angle = Math.atan2(moveY, moveX);
                     }
                 }
                 // Check if mob can shoot projectiles
@@ -3020,11 +3101,23 @@ function moveEnemies() {
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     if (distance > 5) {
                         const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5; // Slower wandering
-                        enemy.x += (dx / distance) * speed;
-                        enemy.y += (dy / distance) * speed;
+                        let moveX = dx / distance;
+                        let moveY = dy / distance;
+                        const avoid = computeOwnSegmentAvoidance(enemy);
+                        if (avoid) {
+                            moveX += avoid.x;
+                            moveY += avoid.y;
+                            const mag = Math.sqrt(moveX * moveX + moveY * moveY);
+                            if (mag > 0) {
+                                moveX /= mag;
+                                moveY /= mag;
+                            }
+                        }
+                        enemy.x += moveX * speed;
+                        enemy.y += moveY * speed;
                         // Only update angle if mob has speed > 0
                         if (enemy.speed > 0) {
-                            enemy.angle = Math.atan2(dy, dx);
+                            enemy.angle = Math.atan2(moveY, moveX);
                         }
                     }
                 }
@@ -3057,7 +3150,8 @@ function moveEnemies() {
     });
     // Second pass: propagate centipede chain positions from each head down to its body segments
     // Process each head's chain in order so segments always see their leader's freshly-updated position.
-    const centipedeHeads = constants_2.enemies.filter(e => e.type === 'centipede' && !e.leaderId);
+    // A "head" is either an original centipede or a body segment promoted after a chain was severed.
+    const centipedeHeads = constants_2.enemies.filter(e => (e.type === 'centipede' || e.type === 'centipede_body') && !e.leaderId);
     for (const head of centipedeHeads) {
         const chain = constants_2.enemies
             .filter(e => e.type === 'centipede_body' && e.headId === head.id)
