@@ -96,6 +96,7 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
     // - So we should use relative coordinates (0, 0 is player center) or translate from player position
     // Get all petals from player loadout and expand based on count property
     const petalInstances = [];
+    let nextSlotIndex = 0;
     try {
         player.loadout.forEach((item, loadoutIndex) => {
             // Secondary loadout (slots 10+) is storage only — don't render petals
@@ -111,10 +112,18 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
                     console.warn('Invalid petal count:', count, 'for', item.petalType, item.rarity);
                     return;
                 }
+                // Clumped petals share a single orbit slot across all their instances
+                const clumped = !!stats.clumped;
+                const sharedSlot = nextSlotIndex;
                 // Create multiple instances based on count
                 for (let i = 0; i < count; i++) {
-                    petalInstances.push({ petal: item, instanceIndex: i, loadoutIndex });
+                    const slotIndex = clumped ? sharedSlot : nextSlotIndex;
+                    if (!clumped)
+                        nextSlotIndex++;
+                    petalInstances.push({ petal: item, instanceIndex: i, loadoutIndex, slotIndex });
                 }
+                if (clumped)
+                    nextSlotIndex++;
             }
         });
     }
@@ -147,7 +156,8 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
     });
     keysToDelete.forEach(key => this.petalPhysicsStates.delete(key));
     const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
-    const angleStep = (Math.PI * 2) / petalInstances.length; // Evenly space petals
+    const totalSlots = nextSlotIndex;
+    const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0; // Evenly space petals across slots (clumped petals share a slot)
     // Calculate player range and rotation speed modifiers from equipped petals
     let playerRangeModifier = 1.0;
     let playerRotationSpeedModifier = 1.0;
@@ -167,7 +177,7 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
     const lastFrameTime = this.lastFrameTime || currentTime;
     const deltaTime = Math.min((currentTime - lastFrameTime) / 1000, 1 / 30); // Cap at 30 FPS minimum
     this.lastFrameTime = currentTime;
-    petalInstances.forEach(({ petal, instanceIndex, loadoutIndex }, index) => {
+    petalInstances.forEach(({ petal, instanceIndex, loadoutIndex, slotIndex }) => {
         if (!petal || !petal.petalType || !petal.rarity) {
             return;
         }
@@ -181,13 +191,21 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
         }
         // Calculate rotation angle
         const rotationSpeed = (stats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002; // Convert to radians per ms
-        const baseAngle = index * angleStep;
+        const baseAngle = slotIndex * angleStep;
         const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
         // Fixed-direction petals don't orbit - they stay at a fixed relative position
         const totalAngle = stats.fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
         // Apply petal range multiplier and player range modifier to base radius
         const petalRange = (stats.range ?? 1.0) * playerRangeModifier;
         const petalRadius = baseRadius * petalRange;
+        // Clumped petals arrange instances in a small cluster around the slot center
+        const clumpCount = stats.count || 1;
+        const clumpSize = petal.customSize !== undefined ? petal.customSize : stats.size;
+        const useClump = stats.clumped && clumpCount > 1;
+        const clumpSpacing = clumpSize * 40 * 0.5;
+        const clumpSubAngle = useClump ? (instanceIndex / clumpCount) * Math.PI * 2 + totalAngle : 0;
+        const clumpOffsetX = useClump ? Math.cos(clumpSubAngle) * clumpSpacing : 0;
+        const clumpOffsetY = useClump ? Math.sin(clumpSubAngle) * clumpSpacing : 0;
         // Use server-provided petal positions if available (for all players)
         let petalX;
         let petalY;
@@ -200,8 +218,8 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
         }
         else if (stats.noPhysics) {
             // noPhysics petals compute orbit position locally each frame — no server interpolation lag
-            petalX = Math.cos(totalAngle) * petalRadius;
-            petalY = Math.sin(totalAngle) * petalRadius;
+            petalX = Math.cos(totalAngle) * petalRadius + clumpOffsetX;
+            petalY = Math.sin(totalAngle) * petalRadius + clumpOffsetY;
         }
         else if (serverPetalPos) {
             // Use server-provided position (already interpolated on client)
@@ -212,8 +230,8 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
         else {
             // Fallback: Calculate target orbit position if server positions not available yet
             // This can happen during initial load or if server hasn't sent positions yet
-            const targetX = player.x + Math.cos(totalAngle) * petalRadius;
-            const targetY = player.y + Math.sin(totalAngle) * petalRadius;
+            const targetX = player.x + Math.cos(totalAngle) * petalRadius + clumpOffsetX;
+            const targetY = player.y + Math.sin(totalAngle) * petalRadius + clumpOffsetY;
             petalX = targetX - player.x;
             petalY = targetY - player.y;
         }
@@ -296,12 +314,12 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
                 }
             }
             catch (error) {
-                console.error(`[Graphics] Error drawing petal image for ${index}:`, error);
+                console.error(`[Graphics] Error drawing petal image for ${slotIndex}:`, error);
             }
         }
         else {
             // Fallback to colored circle if image not loaded
-            const hue = (index * 40) % 360;
+            const hue = (slotIndex * 40) % 360;
             const fallbackColor = `hsl(${hue}, 70%, 50%)`;
             this.ctx.fillStyle = fallbackColor;
             this.ctx.strokeStyle = '#000000';

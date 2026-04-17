@@ -53,6 +53,7 @@ export interface PetalStats {
     faceFlags?: number; // Bitmask of FaceFlags to apply (e.g., FaceFlags.SquareEyes)
     equipFlags?: number; // Bitmask of EquipmentFlags to apply (e.g., EquipmentFlags.ThirdEye)
     noPhysics?: boolean; // When true, petal snaps to orbit position without spring/damping physics (no lag behind player)
+    clumped?: boolean; // When true, all instances of this petal share a single orbit slot instead of being spread evenly
     // Emissive light properties
     emissive?: boolean; // Whether this petal emits light
     lightRadius?: number; // Radius of the emissive light glow (in pixels, default: petal size * 3)
@@ -158,6 +159,7 @@ interface BasePetalConfig {
     faceFlags?: number; // Bitmask of FaceFlags to apply (e.g., FaceFlags.SquareEyes)
     equipFlags?: number; // Bitmask of EquipmentFlags to apply (e.g., EquipmentFlags.ThirdEye)
     noPhysics?: boolean; // When true, petal snaps to orbit position without spring/damping physics (no lag behind player)
+    clumped?: boolean; // When true, all instances of this petal share a single orbit slot instead of being spread evenly
     // Emissive light properties
     emissive?: boolean; // Whether this petal emits light
     lightRadius?: number; // Radius of the emissive light glow (in pixels, default: petal size * 3)
@@ -192,6 +194,7 @@ interface RarityOverride {
     visualOffsetX?: number;
     visualOffsetY?: number;
     damageCooldown?: number;
+    clumped?: boolean;
     // Emissive light properties
     emissive?: boolean;
     lightRadius?: number;
@@ -501,6 +504,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
             description: "Don't get this in your eyes",
             color: "#8B0000",
             count: 4,
+            clumped: true,
             image: `<svg width="20" height="20" viewBox="-10 -10 20 20" xmlns="http://www.w3.org/2000/svg">
   <path
     d="M 7 0 L 3.5 6.062 L -3.5 6.062 L -7 0 L -3.5 -6.062 L 3.5 -6.062 Z"
@@ -1870,6 +1874,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         faceFlags: baseConfig.faceFlags,
         equipFlags: baseConfig.equipFlags,
         noPhysics: baseConfig.noPhysics,
+        clumped: overrides.clumped ?? baseConfig.clumped,
         emissive: overrides.emissive ?? baseConfig.emissive,
         lightRadius: overrides.lightRadius ?? baseConfig.lightRadius,
         lightColor: overrides.lightColor ?? baseConfig.lightColor,

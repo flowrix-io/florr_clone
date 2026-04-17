@@ -73,6 +73,51 @@ const petalPhysicsStates = new Map<string, PetalPhysicsState>();
 // Map to track last damage time for petals with damageCooldown (keyed by petalId)
 const petalLastDamageTime = new Map<string, number>();
 
+// --- Clumped-petal per-instance health/cooldown helpers ---
+// Clumped petals (e.g. sand) spawn multiple instances that share one orbit slot.
+// Each instance needs its own health and cooldown so a single hit can't kill them all at once.
+
+function isClumpedMulti(petalStats: any): boolean {
+    return !!(petalStats?.clumped && (petalStats.count ?? 1) > 1);
+}
+
+function ensureInstanceArrays(petal: any, petalStats: any): void {
+    if (!isClumpedMulti(petalStats)) return;
+    const count = petalStats.count ?? 1;
+    const defaultHealth = petal.maxHealth ?? petalStats.health;
+    if (!Array.isArray(petal.instanceHealth) || petal.instanceHealth.length !== count) {
+        petal.instanceHealth = new Array(count).fill(defaultHealth);
+    }
+    if (!Array.isArray(petal.instanceOnCooldown) || petal.instanceOnCooldown.length !== count) {
+        petal.instanceOnCooldown = new Array(count).fill(false);
+    }
+}
+
+function getInstanceHealth(petal: any, instanceIndex: number, petalStats: any): number {
+    if (isClumpedMulti(petalStats) && Array.isArray(petal.instanceHealth)) {
+        return petal.instanceHealth[instanceIndex] ?? 0;
+    }
+    return petal.health ?? 0;
+}
+
+function setInstanceHealth(petal: any, instanceIndex: number, petalStats: any, value: number): void {
+    if (isClumpedMulti(petalStats) && Array.isArray(petal.instanceHealth)) {
+        petal.instanceHealth[instanceIndex] = value;
+        // Keep petal.health reflecting the max across live instances so legacy UI/health bars
+        // render a sensible value for the slot overall.
+        petal.health = Math.max(0, ...petal.instanceHealth);
+    } else {
+        petal.health = value;
+    }
+}
+
+function isInstanceOnCooldown(petal: any, instanceIndex: number, petalStats: any): boolean {
+    if (isClumpedMulti(petalStats) && Array.isArray(petal.instanceOnCooldown)) {
+        return !!petal.instanceOnCooldown[instanceIndex];
+    }
+    return !!petal.onCooldown;
+}
+
 // Physics constants
 const ATTRACTION_FORCE = 200; // Attraction force towards mobs (pixels per second^2) - increased from 150
 const SPRING_FORCE = 400; // Spring force back to orbit position (pixels per second^2) - reduced from 300
@@ -645,7 +690,8 @@ export function updatePlayerState(
     // Check for petal-enemy collisions
     if (player.loadout) {
         // Build array of petal instances considering count property
-        const petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number}> = [];
+        const petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number, slotIndex: number}> = [];
+        let nextSlotIndex = 0;
         try {
             for (let i = 0; i < player.loadout.length; i++) {
                 // Secondary loadout (slots 10+) is storage only — don't spawn petals
@@ -654,18 +700,25 @@ export function updatePlayerState(
                 if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
                     const petalStats = getPetalStats(petal.petalType, petal.rarity);
                     if (!petalStats) continue;
-                    
+
                     const count = petalStats.count || 1; // Use count from stats, default to 1
-                    
+
                     // Validate count is a valid number
                     if (typeof count !== 'number' || count < 1 || !isFinite(count)) {
                         console.warn('Invalid petal count:', count, 'for', petal.petalType, petal.rarity);
                         continue;
                     }
-                    
+
+                    // Clumped petals share a single orbit slot across all their instances
+                    const clumped = !!petalStats.clumped;
+                    const sharedSlot = nextSlotIndex;
+                    // Ensure per-instance health/cooldown arrays are sized to count
+                    ensureInstanceArrays(petal, petalStats);
                     // Create multiple instances based on count
                     for (let j = 0; j < count; j++) {
-                        petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i });
+                        const slotIndex = clumped ? sharedSlot : nextSlotIndex;
+                        if (!clumped) nextSlotIndex++;
+                        petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i, slotIndex });
                         
                         // Execute petal actions immediately when spawned
                         if (petalStats.actions) {
@@ -686,6 +739,7 @@ export function updatePlayerState(
                             executePetalActionsOnSpawn(petalStats.actions, actionContext);
                         }
                     }
+                    if (clumped) nextSlotIndex++;
                 }
             }
         } catch (error) {
@@ -695,7 +749,8 @@ export function updatePlayerState(
         const currentTime = Date.now();
         const petalExtension = player.inputs.petalExtension || 1.0;
         const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
-        const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
+        const totalSlots = nextSlotIndex;
+        const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
         const playerModifiers = calculatePlayerModifiers(player);
         const playerRangeModifier = playerModifiers.range ?? 1.0;
         const playerRotationSpeedModifier = playerModifiers.rotationSpeed ?? 1.0;
@@ -704,27 +759,30 @@ export function updatePlayerState(
         player.petalPositions = [];
 
         for (let idx = 0; idx < petalInstances.length; idx++) {
-            const {petal, instanceIndex, loadoutIndex} = petalInstances[idx];
-            
+            const {petal, instanceIndex, loadoutIndex, slotIndex} = petalInstances[idx];
+
             if (!petal) {
                 continue;
             }
-            
-            // Skip petals that are on cooldown
-            if (petal.onCooldown) {
+
+            const instancePetalStats = getPetalStats(petal.petalType, petal.rarity);
+
+            // Skip petals that are on cooldown (per-instance for clumped, slot-wide otherwise)
+            if (isInstanceOnCooldown(petal, instanceIndex, instancePetalStats)) {
                 continue;
             }
-            
-            // If petal has 0 health but isn't on cooldown, break it immediately
-            if (!petal.health || petal.health <= 0) {
-                const petalStats = getPetalStats(petal.petalType, petal.rarity);
+
+            // If this instance has 0 health but isn't on cooldown, break it immediately
+            const currentInstanceHealth = getInstanceHealth(petal, instanceIndex, instancePetalStats);
+            if (!currentInstanceHealth || currentInstanceHealth <= 0) {
+                const petalStats = instancePetalStats;
                 if (petalStats) {
                     // Execute petal actions before breaking
                     if (petalStats.actions) {
                         const baseRadius = 60 + (player.level * 2);
-                        const angleStep = petalInstances.length > 0 ? (Math.PI * 2) / petalInstances.length : 0;
+                        const breakAngleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
                         const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002;
-                        const baseAngle = idx * angleStep;
+                        const baseAngle = slotIndex * breakAngleStep;
                         const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
                         const totalAngle = baseAngle + rotationAngle;
                         const petalRange = (petalStats.range ?? 1.0) * playerRangeModifier;
@@ -746,65 +804,88 @@ export function updatePlayerState(
                         executePetalActions(petalStats.actions, actionContext, 'on_break');
                     }
 
-                    // Petal breaks - set on cooldown instead of removing
-                    petal.onCooldown = true;
-                    
-                    // Store original petal data for restoration
-                    const originalPetal = {
-                        type: petal.type,
-                        petalType: petal.petalType,
-                        rarity: petal.rarity,
-                        maxHealth: petal.maxHealth
-                    };
-                    
-                    // Add cooldown (similar to other items)
-                    const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
-                    // Snapshot identity so a stale timer doesn't clobber a swapped slot
-                    const snapshotPetalType = originalPetal.petalType;
-                    const snapshotRarity = originalPetal.rarity;
-                    setTimeout(() => {
-                        const current = players[player.id]?.loadout?.[loadoutIndex];
-                        if (!players[player.id] || !current || !current.onCooldown) return;
-                        if (current.type !== 'petal' ||
-                            current.petalType !== snapshotPetalType ||
-                            current.rarity !== snapshotRarity) return;
-                        {
-                            // Restore petal after cooldown
-                            const restoredPetal = {
-                                ...originalPetal,
-                                health: originalPetal.maxHealth, // Restore full health
-                                onCooldown: false
-                            };
-                            // Apply petal health bonus
-                            applyPetalHealthBonus(restoredPetal, player);
-                            player.loadout[loadoutIndex] = restoredPetal;
+                    const cooldownTime = petalStats.cooldown || 10000;
 
-                            io.emit('petalRestored', {
-                                playerId: player.id,
-                                slotIndex: loadoutIndex,
-                                petal: player.loadout[loadoutIndex]
-                            });
+                    if (isClumpedMulti(petalStats)) {
+                        // Clumped: only this instance breaks; other instances keep working
+                        ensureInstanceArrays(petal, petalStats);
+                        petal.instanceOnCooldown![instanceIndex] = true;
+                        const snapshotPetalType = petal.petalType;
+                        const snapshotRarity = petal.rarity;
+                        const snapshotMaxHealth = petal.maxHealth;
+                        setTimeout(() => {
+                            const current = players[player.id]?.loadout?.[loadoutIndex];
+                            if (!current || current.type !== 'petal') return;
+                            if (current.petalType !== snapshotPetalType ||
+                                current.rarity !== snapshotRarity) return;
+                            if (Array.isArray(current.instanceOnCooldown) &&
+                                Array.isArray(current.instanceHealth)) {
+                                current.instanceOnCooldown[instanceIndex] = false;
+                                current.instanceHealth[instanceIndex] = snapshotMaxHealth ?? current.instanceHealth[instanceIndex];
+                                // If any instance is alive, the slot is no longer fully on cooldown
+                                if (current.instanceOnCooldown.every((c: boolean) => !c)) {
+                                    current.onCooldown = false;
+                                }
+                            }
+                        }, cooldownTime);
+
+                        // Slot shows cooldown only when every instance is on cooldown
+                        if (petal.instanceOnCooldown!.every((c: boolean) => c)) {
+                            petal.onCooldown = true;
                         }
-                    }, cooldownTime);
+                    } else {
+                        // Non-clumped: whole slot breaks (legacy behavior)
+                        petal.onCooldown = true;
+                        const originalPetal = {
+                            type: petal.type,
+                            petalType: petal.petalType,
+                            rarity: petal.rarity,
+                            maxHealth: petal.maxHealth
+                        };
+                        const snapshotPetalType = originalPetal.petalType;
+                        const snapshotRarity = originalPetal.rarity;
+                        setTimeout(() => {
+                            const current = players[player.id]?.loadout?.[loadoutIndex];
+                            if (!players[player.id] || !current || !current.onCooldown) return;
+                            if (current.type !== 'petal' ||
+                                current.petalType !== snapshotPetalType ||
+                                current.rarity !== snapshotRarity) return;
+                            {
+                                const restoredPetal = {
+                                    ...originalPetal,
+                                    health: originalPetal.maxHealth,
+                                    onCooldown: false
+                                };
+                                applyPetalHealthBonus(restoredPetal, player);
+                                player.loadout[loadoutIndex] = restoredPetal;
 
-                    io.emit('petalBroken', {
-                        playerId: player.id,
-                        slotIndex: loadoutIndex,
-                        petalType: petal.petalType,
-                        rarity: petal.rarity
-                    });
+                                io.emit('petalRestored', {
+                                    playerId: player.id,
+                                    slotIndex: loadoutIndex,
+                                    petal: player.loadout[loadoutIndex]
+                                });
+                            }
+                        }, cooldownTime);
+
+                        io.emit('petalBroken', {
+                            playerId: player.id,
+                            slotIndex: loadoutIndex,
+                            petalType: petal.petalType,
+                            rarity: petal.rarity
+                        });
+                    }
                 }
                 continue;
             }
 
-            const petalStats = getPetalStats(petal.petalType, petal.rarity);
+            const petalStats = instancePetalStats;
             if (!petalStats) continue;
             
             // Get effective size (custom size if set, otherwise base stats)
             const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
             
             const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002; // Convert to radians per ms
-            const baseAngle = idx * angleStep;
+            const baseAngle = slotIndex * angleStep;
             const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
             // Fixed-direction petals don't orbit - they stay at a fixed relative position
             const totalAngle = petalStats.fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
@@ -814,8 +895,17 @@ export function updatePlayerState(
             const petalRadius = baseRadius * petalRange;
 
             // Calculate target orbit position (where petal should be without physics)
-            const targetX = player.x + Math.cos(totalAngle) * petalRadius;
-            const targetY = player.y + Math.sin(totalAngle) * petalRadius;
+            let targetX = player.x + Math.cos(totalAngle) * petalRadius;
+            let targetY = player.y + Math.sin(totalAngle) * petalRadius;
+
+            // Clumped petals arrange instances in a small cluster around the slot center
+            const clumpCount = petalStats.count || 1;
+            if (petalStats.clumped && clumpCount > 1) {
+                const clumpSpacing = effectiveSize * 40 * 0.5;
+                const subAngle = (instanceIndex / clumpCount) * Math.PI * 2 + totalAngle;
+                targetX += Math.cos(subAngle) * clumpSpacing;
+                targetY += Math.sin(subAngle) * clumpSpacing;
+            }
             
             // Petal ID is needed for actions, projectiles, and collisions regardless of physics
             const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
@@ -1058,7 +1148,8 @@ export function updatePlayerState(
                         petalLastDamageTime.set(damageCooldownKey, currentTime);
                     } else {
                         const mobDamage = mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
-                        petal.health = Math.max(0, petal.health - mobDamage);
+                        const prevInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
+                        setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevInstanceHealth - mobDamage));
                     }
 
                     // Apply poison effect if the petal has poison
@@ -1265,7 +1356,8 @@ export function updatePlayerState(
                     // Damage the player petal (mob projectile acts as enemy petal)
                     const projectilePetalStats = getPetalStats(mobProjectile.petalType, mobProjectile.petalRarity);
                     const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : mobProjectile.damage;
-                    petal.health = Math.max(0, petal.health - projectileDamage);
+                    const prevProjInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
+                    setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevProjInstanceHealth - projectileDamage));
                     
                     // Remove projectile if destroyed
                     if (mobProjectile.health <= 0) {
@@ -1290,8 +1382,8 @@ export function updatePlayerState(
                     };
                     handlePetalCollision(petalId, collisionContext);
 
-                    // Check if petal breaks
-                    if (petal.health <= 0) {
+                    // Check if petal breaks (per-instance for clumped)
+                    if (getInstanceHealth(petal, instanceIndex, petalStats) <= 0) {
                         // Execute petal actions before breaking
                         if (petalStats.actions) {
                             const actionContext = {
@@ -1306,53 +1398,74 @@ export function updatePlayerState(
                             executePetalActions(petalStats.actions, actionContext, 'on_break');
                         }
 
-                        // Petal breaks - set on cooldown instead of removing
-                        petal.onCooldown = true;
-                        
-                        // Store original petal data for restoration
-                        const originalPetal = {
-                            type: petal.type,
-                            petalType: petal.petalType,
-                            rarity: petal.rarity,
-                            maxHealth: petal.maxHealth
-                        };
-                        
-                        // Add cooldown (similar to other items)
-                        const cooldownTime = petalStats.cooldown || 10000; // Use petal-specific cooldown or default to 10 seconds
-                        // Snapshot identity so a stale timer doesn't clobber a swapped slot
-                        const snapshotPetalType = originalPetal.petalType;
-                        const snapshotRarity = originalPetal.rarity;
-                        setTimeout(() => {
-                            const current = players[player.id]?.loadout?.[loadoutIndex];
-                            if (!players[player.id] || !current || !current.onCooldown) return;
-                            if (current.type !== 'petal' ||
-                                current.petalType !== snapshotPetalType ||
-                                current.rarity !== snapshotRarity) return;
-                            {
-                                // Restore petal after cooldown
-                                const restoredPetal = {
-                                    ...originalPetal,
-                                    health: originalPetal.maxHealth, // Restore full health
-                                    onCooldown: false
-                                };
-                                // Apply petal health bonus
-                                applyPetalHealthBonus(restoredPetal, player);
-                                player.loadout[loadoutIndex] = restoredPetal;
+                        const cooldownTime = petalStats.cooldown || 10000;
 
-                                io.emit('petalRestored', {
-                                    playerId: player.id,
-                                    slotIndex: loadoutIndex,
-                                    petal: player.loadout[loadoutIndex]
-                                });
+                        if (isClumpedMulti(petalStats)) {
+                            // Clumped: only this instance breaks
+                            ensureInstanceArrays(petal, petalStats);
+                            petal.instanceOnCooldown![instanceIndex] = true;
+                            const snapshotPetalType = petal.petalType;
+                            const snapshotRarity = petal.rarity;
+                            const snapshotMaxHealth = petal.maxHealth;
+                            setTimeout(() => {
+                                const current = players[player.id]?.loadout?.[loadoutIndex];
+                                if (!current || current.type !== 'petal') return;
+                                if (current.petalType !== snapshotPetalType ||
+                                    current.rarity !== snapshotRarity) return;
+                                if (Array.isArray(current.instanceOnCooldown) &&
+                                    Array.isArray(current.instanceHealth)) {
+                                    current.instanceOnCooldown[instanceIndex] = false;
+                                    current.instanceHealth[instanceIndex] = snapshotMaxHealth ?? current.instanceHealth[instanceIndex];
+                                    if (current.instanceOnCooldown.every((c: boolean) => !c)) {
+                                        current.onCooldown = false;
+                                    }
+                                }
+                            }, cooldownTime);
+
+                            if (petal.instanceOnCooldown!.every((c: boolean) => c)) {
+                                petal.onCooldown = true;
                             }
-                        }, cooldownTime);
+                        } else {
+                            // Non-clumped: whole slot breaks (legacy behavior)
+                            petal.onCooldown = true;
+                            const originalPetal = {
+                                type: petal.type,
+                                petalType: petal.petalType,
+                                rarity: petal.rarity,
+                                maxHealth: petal.maxHealth
+                            };
+                            const snapshotPetalType = originalPetal.petalType;
+                            const snapshotRarity = originalPetal.rarity;
+                            setTimeout(() => {
+                                const current = players[player.id]?.loadout?.[loadoutIndex];
+                                if (!players[player.id] || !current || !current.onCooldown) return;
+                                if (current.type !== 'petal' ||
+                                    current.petalType !== snapshotPetalType ||
+                                    current.rarity !== snapshotRarity) return;
+                                {
+                                    const restoredPetal = {
+                                        ...originalPetal,
+                                        health: originalPetal.maxHealth,
+                                        onCooldown: false
+                                    };
+                                    applyPetalHealthBonus(restoredPetal, player);
+                                    player.loadout[loadoutIndex] = restoredPetal;
 
-                        io.emit('petalBroken', {
-                            playerId: player.id,
-                            slotIndex: loadoutIndex,
-                            petalType: petal.petalType,
-                            rarity: petal.rarity
-                        });
+                                    io.emit('petalRestored', {
+                                        playerId: player.id,
+                                        slotIndex: loadoutIndex,
+                                        petal: player.loadout[loadoutIndex]
+                                    });
+                                }
+                            }, cooldownTime);
+
+                            io.emit('petalBroken', {
+                                playerId: player.id,
+                                slotIndex: loadoutIndex,
+                                petalType: petal.petalType,
+                                rarity: petal.rarity
+                            });
+                        }
                     }
 
                     // Check if enemy dies (only process once per enemy)
