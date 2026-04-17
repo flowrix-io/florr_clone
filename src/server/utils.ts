@@ -1,6 +1,6 @@
 import { Enemy } from '../server_utils';
 import { ServerPlayer } from '../player';
-import { ENEMY_TIERS } from '../constants';
+import { ENEMY_TIERS, enemies } from '../constants';
 import { splitPlayers } from '../petal_actions';
 import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadManager';
 
@@ -15,6 +15,18 @@ export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
     // Provoke neutral mobs when they take damage from a player
     if (enemy.aiType === 'neutral' && !enemy.targetPlayerId) {
         enemy.targetPlayerId = playerId;
+    }
+
+    // Centipede chain: damaging any segment provokes the head and the whole chain.
+    // Only applies when the chain's head is neutral (above rare).
+    if (enemy.type === 'centipede' || enemy.type === 'centipede_body') {
+        const headId = enemy.headId ?? (enemy.type === 'centipede' ? enemy.id : undefined);
+        if (headId) {
+            const head = enemies.find(e => e.id === headId);
+            if (head && head.aiType === 'neutral' && !head.targetPlayerId) {
+                head.targetPlayerId = playerId;
+            }
+        }
     }
 
     // Track DPS for target dummies

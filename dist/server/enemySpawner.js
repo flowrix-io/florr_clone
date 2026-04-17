@@ -499,6 +499,8 @@ function createEnemy(helpers) {
             const eligibleMobTypes = allMobTypes.filter(type => {
                 if (type === 'target_dummy')
                     return false;
+                if (type === 'centipede_body')
+                    return false;
                 const stats = (0, mobs_1.getMobStats)(type, 'common');
                 return stats && stats.section === currentSection;
             });
@@ -562,6 +564,8 @@ function createEnemy(helpers) {
         const eligibleMobTypes = allMobTypes.filter(type => {
             if (type === 'target_dummy')
                 return false;
+            if (type === 'centipede_body')
+                return false;
             const stats = (0, mobs_1.getMobStats)(type, tier);
             return stats && stats.section === currentSection;
         });
@@ -615,6 +619,53 @@ function createEnemy(helpers) {
         enemy.dpsStartTime = currentTime;
         enemy.dpsHistory = [];
         enemy.currentDPS = 0;
+    }
+    // Spawn centipede body segments as a chain trailing the head
+    if (mobType === 'centipede') {
+        enemy.headId = enemy.id;
+        enemy.segmentIndex = 0;
+        const bodyStats = (0, mobs_1.getMobStats)('centipede_body', tier);
+        if (bodyStats) {
+            const segmentCount = 9; // head + 9 body = 10 total
+            const segmentSize = bodyStats.size * 40;
+            const spacing = segmentSize * 0.9;
+            // Trail behind the head along the negative of its angle
+            let prevId = enemy.id;
+            let prevX = enemy.x;
+            let prevY = enemy.y;
+            const dirX = -Math.cos(enemy.angle);
+            const dirY = -Math.sin(enemy.angle);
+            for (let i = 1; i <= segmentCount; i++) {
+                const segX = prevX + dirX * spacing;
+                const segY = prevY + dirY * spacing;
+                const segment = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    type: 'centipede_body',
+                    tier,
+                    x: segX,
+                    y: segY,
+                    angle: enemy.angle,
+                    health: bodyStats.health,
+                    maxHealth: bodyStats.health,
+                    speed: bodyStats.speed,
+                    damage: bodyStats.damage,
+                    knockbackX: 0,
+                    knockbackY: 0,
+                    aiType: bodyStats.ai_type,
+                    range: bodyStats.range,
+                    reversed: bodyStats.reversed ?? false,
+                    spawnTime: currentTime,
+                    lastViewportCheck: currentTime,
+                    leaderId: prevId,
+                    headId: enemy.id,
+                    segmentIndex: i,
+                };
+                constants_1.enemies.push(segment);
+                prevId = segment.id;
+                prevX = segX;
+                prevY = segY;
+            }
+        }
     }
     return enemy;
 }

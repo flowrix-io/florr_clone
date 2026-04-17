@@ -21,6 +21,17 @@ function trackDamage(enemy, playerId, damage) {
     if (enemy.aiType === 'neutral' && !enemy.targetPlayerId) {
         enemy.targetPlayerId = playerId;
     }
+    // Centipede chain: damaging any segment provokes the head and the whole chain.
+    // Only applies when the chain's head is neutral (above rare).
+    if (enemy.type === 'centipede' || enemy.type === 'centipede_body') {
+        const headId = enemy.headId ?? (enemy.type === 'centipede' ? enemy.id : undefined);
+        if (headId) {
+            const head = constants_1.enemies.find(e => e.id === headId);
+            if (head && head.aiType === 'neutral' && !head.targetPlayerId) {
+                head.targetPlayerId = playerId;
+            }
+        }
+    }
     // Track DPS for target dummies
     if (enemy.type === 'target_dummy') {
         const now = Date.now();

@@ -2979,9 +2979,15 @@ function moveEnemies() {
             if (Math.abs(enemy.knockbackY) < 0.1) enemy.knockbackY = 0;
         }
 
+        // Centipede body segments skip normal AI; their positions are propagated
+        // from the head in a second pass after all heads have moved.
+        if (enemy.type === 'centipede_body') {
+            return;
+        }
+
         // Check if this is a pet (has ownerId)
         const isPet = !!enemy.ownerId;
-        
+
         if (isPet) {
             // Pet behavior: follow owner and attack wild mobs
             const owner = players[enemy.ownerId!];
@@ -3498,6 +3504,30 @@ function moveEnemies() {
         checkEnemyWallCollisions(enemy);
         }
     });
+
+    // Second pass: propagate centipede chain positions from each head down to its body segments
+    // Process each head's chain in order so segments always see their leader's freshly-updated position.
+    const centipedeHeads = enemies.filter(e => e.type === 'centipede' && !e.leaderId);
+    for (const head of centipedeHeads) {
+        const chain = enemies
+            .filter(e => e.type === 'centipede_body' && e.headId === head.id)
+            .sort((a, b) => (a.segmentIndex ?? 0) - (b.segmentIndex ?? 0));
+        for (const segment of chain) {
+            const leader = enemies.find(e => e.id === segment.leaderId);
+            if (!leader) continue;
+            const segStats = getMobStats(segment.type, segment.tier);
+            const segmentSize = segStats ? segStats.size * 40 : 40;
+            const spacing = segmentSize * 0.9;
+            const dx = segment.x - leader.x;
+            const dy = segment.y - leader.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            segment.x = leader.x + (dx / dist) * spacing;
+            segment.y = leader.y + (dy / dist) * spacing;
+            segment.angle = Math.atan2(leader.y - segment.y, leader.x - segment.x);
+            segment.isChasing = head.isChasing;
+            checkEnemyWallCollisions(segment);
+        }
+    }
 
     // Check for mob-to-mob collisions and melee combat
     checkEnemyEnemyCollisions(enemies, io);

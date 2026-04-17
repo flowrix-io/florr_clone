@@ -49,7 +49,7 @@ export interface PlayerProjectile {
 
 export interface Enemy {
   id: string;
-  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage';
+  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   x: number;
   y: number;
@@ -80,6 +80,10 @@ export interface Enemy {
   targetX?: number;
   targetY?: number;
   targetAngle?: number;
+  // Centipede chain tracking
+  leaderId?: string;
+  headId?: string;
+  segmentIndex?: number;
 }
 
 export interface Obstacle {

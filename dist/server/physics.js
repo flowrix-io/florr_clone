@@ -336,6 +336,14 @@ function checkEnemyEnemyCollisions(enemies, io) {
         // Only check enemies that come after this one to avoid double-processing
         for (let j = i + 1; j < enemies.length; j++) {
             const otherEnemy = enemies[j];
+            // Skip collision resolution between segments of the same centipede chain:
+            // the chain-follow pass keeps them in formation, so physical push-apart
+            // creates tangling/spin artifacts, especially at higher rarities.
+            const thisHeadId = enemy.headId ?? (enemy.type === 'centipede' ? enemy.id : undefined);
+            const otherHeadId = otherEnemy.headId ?? (otherEnemy.type === 'centipede' ? otherEnemy.id : undefined);
+            if (thisHeadId && otherHeadId && thisHeadId === otherHeadId) {
+                continue;
+            }
             // Skip collision resolution if both mobs are passive and not chasing
             // BUT allow pets (enemies with ownerId) to collide with each other
             const thisMobIsPassive = (enemy.aiType === 'passive' || enemy.aiType === 'sandstorm') && !enemy.isChasing;

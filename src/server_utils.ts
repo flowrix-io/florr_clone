@@ -15,7 +15,7 @@ export interface PoisonEffect {
 
 export interface Enemy {
   id: string;
-  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage';
+  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   x: number;
   y: number;
@@ -48,6 +48,10 @@ export interface Enemy {
   // Challenge mob tracking
   challengeOwnerId?: string;  // ID of the player who purchased this challenge
   challengeStarsReward?: number;  // Stars to award when this challenge mob is killed
+  // Centipede chain tracking
+  leaderId?: string;  // ID of the segment this one follows (undefined for the head)
+  headId?: string;  // ID of the centipede head for the whole chain
+  segmentIndex?: number;  // 0 = head, 1..N = body segments
 }
 
 export interface Obstacle {
