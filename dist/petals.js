@@ -334,13 +334,13 @@ const BASE_PETAL_CONFIGS = {
         name: "Sand Petal",
         damage: 10,
         health: 3,
-        size: 0.8,
+        size: 1.0,
         cooldown: 800,
         description: "Don't get this in your eyes",
         color: "#8B0000",
         count: 4,
         clumped: true,
-        image: `<svg width="20" height="20" viewBox="-10 -10 20 20" xmlns="http://www.w3.org/2000/svg">
+        image: `<svg width="32" height="32" viewBox="-10 -10 20 20" xmlns="http://www.w3.org/2000/svg">
   <path
     d="M 7 0 L 3.5 6.062 L -3.5 6.062 L -7 0 L -3.5 -6.062 L 3.5 -6.062 Z"
     fill="#e0c85c"
