@@ -18,6 +18,7 @@ const petals_1 = require("../petals");
 const mobs_1 = require("../mobs");
 const playerManager_1 = require("./playerManager");
 const gameState_1 = require("./gameState");
+const squadManager_1 = require("./squadManager");
 const BOT_ID_PREFIX = 'bot_';
 const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
@@ -642,6 +643,23 @@ function removeBot(id, io) {
         return;
     if (!constants_1.players[id])
         return;
+    // If bot was in a squad, remove it and notify remaining members.
+    if (squadManager_1.playerSquadMap.has(id)) {
+        const squad = (0, squadManager_1.getSquadForPlayer)(id);
+        const botName = constants_1.players[id].name;
+        (0, squadManager_1.leaveSquad)(id, io);
+        if (squad) {
+            const remaining = squad.memberIds;
+            if (remaining.length > 0) {
+                (0, squadManager_1.sendSquadSystemMessage)(squad, io, `${botName} has left the squad.`);
+                for (const memberId of remaining) {
+                    if (memberId.startsWith('bot_'))
+                        continue;
+                    io.to(memberId).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+                }
+            }
+        }
+    }
     delete constants_1.players[id];
     botAIState.delete(id);
     io.emit('playerDisconnected', id);
@@ -1509,8 +1527,55 @@ function driveMove(bot, dirX, dirY, speedMult, petalExtension) {
  *
  * Priority: flee at low HP > attack boss/mob target > collect eligible drops > wander.
  */
+// How often (ms) to consider a bot squad action. Staggered per-bot.
+const BOT_SQUAD_TICK_MS = 8000;
+// Chance per tick of this bot creating a public squad (if not in one).
+const BOT_SQUAD_CREATE_CHANCE = 0.03;
+// Chance per tick of this bot joining an available public squad.
+const BOT_SQUAD_JOIN_CHANCE = 0.5;
+const botSquadNextTick = new Map();
+function updateBotSquadMembership(io, now) {
+    for (const id in constants_1.players) {
+        if (!isBot(id))
+            continue;
+        const bot = constants_1.players[id];
+        if (!bot || bot.isDead)
+            continue;
+        const next = botSquadNextTick.get(id) || 0;
+        if (now < next)
+            continue;
+        // Jitter the next tick so bots don't all evaluate simultaneously.
+        botSquadNextTick.set(id, now + BOT_SQUAD_TICK_MS + Math.floor(Math.random() * 4000));
+        if (squadManager_1.playerSquadMap.has(id))
+            continue;
+        // Prefer joining an existing public squad with room.
+        const publicSquads = (0, squadManager_1.listPublicSquads)();
+        if (publicSquads.length > 0 && Math.random() < BOT_SQUAD_JOIN_CHANCE) {
+            const squad = publicSquads[Math.floor(Math.random() * publicSquads.length)];
+            const { squad: joined, error } = (0, squadManager_1.joinPublicSquad)(squad.id, id);
+            if (!error && joined) {
+                bot.squadId = joined.id;
+                (0, squadManager_1.sendSquadSystemMessage)(joined, io, `${bot.name} has joined the squad.`);
+                for (const memberId of joined.memberIds) {
+                    if (memberId.startsWith('bot_'))
+                        continue;
+                    io.to(memberId).emit('squadUpdate', { squadId: joined.id, memberIds: joined.memberIds, leaderId: joined.leaderId });
+                }
+            }
+            continue;
+        }
+        // Occasionally host a new public squad.
+        if (Math.random() < BOT_SQUAD_CREATE_CHANCE) {
+            const squad = (0, squadManager_1.createSquad)(id, true);
+            if (squad) {
+                bot.squadId = squad.id;
+            }
+        }
+    }
+}
 function updateBotAI(io) {
     const now = Date.now();
+    updateBotSquadMembership(io, now);
     // Reset the per-tick A* budget so a single tick can't be dominated by
     // simultaneous recomputes (e.g., a whole raid repathing at once).
     pathBudgetThisTick = PATH_MAX_PER_TICK;

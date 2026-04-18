@@ -6,9 +6,14 @@ export const MAX_SQUAD_SIZE = 4;
 
 export interface Squad {
     id: string;
-    leaderId: string; // socket ID of the squad leader
-    memberIds: string[]; // socket IDs of all members (including leader)
+    leaderId: string; // socket ID (or bot ID) of the squad leader
+    memberIds: string[]; // socket/bot IDs of all members (including leader)
+    isPublic: boolean;
     chatHistory: Array<{ sender: string; content: string; timestamp: number }>;
+}
+
+function isBotId(id: string): boolean {
+    return id.startsWith('bot_');
 }
 
 // Active squads keyed by squad ID
@@ -26,19 +31,66 @@ function generateSquadId(): string {
     return 'squad_' + Math.random().toString(36).substr(2, 9);
 }
 
-export function createSquad(leaderSocketId: string): Squad | null {
+export function createSquad(leaderSocketId: string, isPublic: boolean = false): Squad | null {
     if (playerSquadMap.has(leaderSocketId)) return null; // already in a squad
 
     const squad: Squad = {
         id: generateSquadId(),
         leaderId: leaderSocketId,
         memberIds: [leaderSocketId],
+        isPublic,
         chatHistory: [],
     };
 
     squads.set(squad.id, squad);
     playerSquadMap.set(leaderSocketId, squad.id);
     return squad;
+}
+
+// Directly add a member to a squad (used for public-join and auto-join bots). No invite required.
+export function joinPublicSquad(squadId: string, memberId: string): { squad: Squad | null; error: string | null } {
+    const squad = squads.get(squadId);
+    if (!squad) return { squad: null, error: 'Squad not found.' };
+    if (!squad.isPublic) return { squad: null, error: 'That squad is private.' };
+    if (squad.memberIds.length >= MAX_SQUAD_SIZE) return { squad: null, error: 'Squad is full.' };
+    if (playerSquadMap.has(memberId)) return { squad: null, error: 'You are already in a squad.' };
+
+    squad.memberIds.push(memberId);
+    playerSquadMap.set(memberId, squad.id);
+    return { squad, error: null };
+}
+
+// Leader-only: toggle visibility.
+export function setSquadVisibility(socketId: string, isPublic: boolean): { squad: Squad | null; error: string | null } {
+    const squadId = playerSquadMap.get(socketId);
+    if (!squadId) return { squad: null, error: 'You are not in a squad.' };
+    const squad = squads.get(squadId);
+    if (!squad) return { squad: null, error: 'Squad not found.' };
+    if (squad.leaderId !== socketId) return { squad: null, error: 'Only the squad leader can change visibility.' };
+    squad.isPublic = isPublic;
+    return { squad, error: null };
+}
+
+// Returns public squads with room remaining.
+export function listPublicSquads(): Squad[] {
+    const out: Squad[] = [];
+    for (const squad of squads.values()) {
+        if (squad.isPublic && squad.memberIds.length < MAX_SQUAD_SIZE) {
+            out.push(squad);
+        }
+    }
+    return out;
+}
+
+// Directly add a bot to a squad bypassing the invite flow (used when a human invites a bot).
+export function addBotToSquad(squadId: string, botId: string): { squad: Squad | null; error: string | null } {
+    const squad = squads.get(squadId);
+    if (!squad) return { squad: null, error: 'Squad not found.' };
+    if (squad.memberIds.length >= MAX_SQUAD_SIZE) return { squad: null, error: 'Squad is full.' };
+    if (playerSquadMap.has(botId)) return { squad: null, error: 'That bot is already in a squad.' };
+    squad.memberIds.push(botId);
+    playerSquadMap.set(botId, squad.id);
+    return { squad, error: null };
 }
 
 export function inviteToSquad(inviterSocketId: string, targetSocketId: string, inviterUsername: string): string | null {
@@ -179,6 +231,7 @@ export function sendSquadChatMessage(
     }
 
     for (const memberId of squad.memberIds) {
+        if (isBotId(memberId)) continue;
         io.to(memberId).emit('chatMessage', message);
     }
 }
@@ -196,6 +249,7 @@ export function sendSquadSystemMessage(squad: Squad, io: SocketIOServer, content
     }
 
     for (const memberId of squad.memberIds) {
+        if (isBotId(memberId)) continue;
         io.to(memberId).emit('chatMessage', message);
     }
 }
@@ -205,6 +259,19 @@ export function findPlayerByUsername(username: string, io: SocketIOServer): stri
     for (const [socketId, socket] of io.sockets.sockets) {
         if ((socket as any).username && (socket as any).username.toLowerCase() === username.toLowerCase()) {
             return socketId;
+        }
+    }
+    return null;
+}
+
+// Find a bot by in-game name (bots have no username — they match by display name).
+export function findBotByName(name: string): string | null {
+    const lower = name.toLowerCase();
+    for (const id in players) {
+        if (!isBotId(id)) continue;
+        const p = players[id];
+        if (p && p.name && p.name.toLowerCase() === lower) {
+            return id;
         }
     }
     return null;

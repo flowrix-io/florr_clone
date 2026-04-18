@@ -30,6 +30,15 @@ import {
     findSafeSpawnPosition
 } from './playerManager';
 import { items } from './gameState';
+import {
+    createSquad as createSquadFn,
+    joinPublicSquad as joinPublicSquadFn,
+    listPublicSquads as listPublicSquadsFn,
+    leaveSquad as leaveSquadFn,
+    getSquadForPlayer as getSquadForPlayerFn,
+    sendSquadSystemMessage,
+    playerSquadMap
+} from './squadManager';
 
 const BOT_ID_PREFIX = 'bot_';
 const TARGET_TOTAL_PLAYERS = 23;
@@ -733,6 +742,22 @@ function createBot(io: SocketIOServer): ServerPlayer {
 function removeBot(id: string, io: SocketIOServer): void {
     if (!isBot(id)) return;
     if (!players[id]) return;
+    // If bot was in a squad, remove it and notify remaining members.
+    if (playerSquadMap.has(id)) {
+        const squad = getSquadForPlayerFn(id);
+        const botName = players[id].name;
+        leaveSquadFn(id, io);
+        if (squad) {
+            const remaining = squad.memberIds;
+            if (remaining.length > 0) {
+                sendSquadSystemMessage(squad, io, `${botName} has left the squad.`);
+                for (const memberId of remaining) {
+                    if (memberId.startsWith('bot_')) continue;
+                    io.to(memberId).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+                }
+            }
+        }
+    }
     delete players[id];
     botAIState.delete(id);
     io.emit('playerDisconnected', id);
@@ -1636,8 +1661,56 @@ function driveMove(
  *
  * Priority: flee at low HP > attack boss/mob target > collect eligible drops > wander.
  */
+// How often (ms) to consider a bot squad action. Staggered per-bot.
+const BOT_SQUAD_TICK_MS = 8000;
+// Chance per tick of this bot creating a public squad (if not in one).
+const BOT_SQUAD_CREATE_CHANCE = 0.03;
+// Chance per tick of this bot joining an available public squad.
+const BOT_SQUAD_JOIN_CHANCE = 0.5;
+const botSquadNextTick: Map<string, number> = new Map();
+
+function updateBotSquadMembership(io: SocketIOServer, now: number): void {
+    for (const id in players) {
+        if (!isBot(id)) continue;
+        const bot = players[id];
+        if (!bot || bot.isDead) continue;
+
+        const next = botSquadNextTick.get(id) || 0;
+        if (now < next) continue;
+        // Jitter the next tick so bots don't all evaluate simultaneously.
+        botSquadNextTick.set(id, now + BOT_SQUAD_TICK_MS + Math.floor(Math.random() * 4000));
+
+        if (playerSquadMap.has(id)) continue;
+
+        // Prefer joining an existing public squad with room.
+        const publicSquads = listPublicSquadsFn();
+        if (publicSquads.length > 0 && Math.random() < BOT_SQUAD_JOIN_CHANCE) {
+            const squad = publicSquads[Math.floor(Math.random() * publicSquads.length)];
+            const { squad: joined, error } = joinPublicSquadFn(squad.id, id);
+            if (!error && joined) {
+                bot.squadId = joined.id;
+                sendSquadSystemMessage(joined, io, `${bot.name} has joined the squad.`);
+                for (const memberId of joined.memberIds) {
+                    if (memberId.startsWith('bot_')) continue;
+                    io.to(memberId).emit('squadUpdate', { squadId: joined.id, memberIds: joined.memberIds, leaderId: joined.leaderId });
+                }
+            }
+            continue;
+        }
+
+        // Occasionally host a new public squad.
+        if (Math.random() < BOT_SQUAD_CREATE_CHANCE) {
+            const squad = createSquadFn(id, true);
+            if (squad) {
+                bot.squadId = squad.id;
+            }
+        }
+    }
+}
+
 export function updateBotAI(io: SocketIOServer): void {
     const now = Date.now();
+    updateBotSquadMembership(io, now);
 
     // Reset the per-tick A* budget so a single tick can't be dominated by
     // simultaneous recomputes (e.g., a whole raid repathing at once).

@@ -2,6 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pendingInvites = exports.playerSquadMap = exports.squads = exports.MAX_SQUAD_SIZE = void 0;
 exports.createSquad = createSquad;
+exports.joinPublicSquad = joinPublicSquad;
+exports.setSquadVisibility = setSquadVisibility;
+exports.listPublicSquads = listPublicSquads;
+exports.addBotToSquad = addBotToSquad;
 exports.inviteToSquad = inviteToSquad;
 exports.acceptInvite = acceptInvite;
 exports.declineInvite = declineInvite;
@@ -12,11 +16,15 @@ exports.getSquadMemberIds = getSquadMemberIds;
 exports.sendSquadChatMessage = sendSquadChatMessage;
 exports.sendSquadSystemMessage = sendSquadSystemMessage;
 exports.findPlayerByUsername = findPlayerByUsername;
+exports.findBotByName = findBotByName;
 exports.handlePlayerDisconnect = handlePlayerDisconnect;
 exports.getPooledDamageContributors = getPooledDamageContributors;
 exports.expandEligibleToPlayerIds = expandEligibleToPlayerIds;
 const constants_1 = require("../constants");
 exports.MAX_SQUAD_SIZE = 4;
+function isBotId(id) {
+    return id.startsWith('bot_');
+}
 // Active squads keyed by squad ID
 exports.squads = new Map();
 // Maps player socket ID -> squad ID for quick lookup
@@ -27,18 +35,70 @@ const INVITE_EXPIRY_MS = 30000; // 30 seconds
 function generateSquadId() {
     return 'squad_' + Math.random().toString(36).substr(2, 9);
 }
-function createSquad(leaderSocketId) {
+function createSquad(leaderSocketId, isPublic = false) {
     if (exports.playerSquadMap.has(leaderSocketId))
         return null; // already in a squad
     const squad = {
         id: generateSquadId(),
         leaderId: leaderSocketId,
         memberIds: [leaderSocketId],
+        isPublic,
         chatHistory: [],
     };
     exports.squads.set(squad.id, squad);
     exports.playerSquadMap.set(leaderSocketId, squad.id);
     return squad;
+}
+// Directly add a member to a squad (used for public-join and auto-join bots). No invite required.
+function joinPublicSquad(squadId, memberId) {
+    const squad = exports.squads.get(squadId);
+    if (!squad)
+        return { squad: null, error: 'Squad not found.' };
+    if (!squad.isPublic)
+        return { squad: null, error: 'That squad is private.' };
+    if (squad.memberIds.length >= exports.MAX_SQUAD_SIZE)
+        return { squad: null, error: 'Squad is full.' };
+    if (exports.playerSquadMap.has(memberId))
+        return { squad: null, error: 'You are already in a squad.' };
+    squad.memberIds.push(memberId);
+    exports.playerSquadMap.set(memberId, squad.id);
+    return { squad, error: null };
+}
+// Leader-only: toggle visibility.
+function setSquadVisibility(socketId, isPublic) {
+    const squadId = exports.playerSquadMap.get(socketId);
+    if (!squadId)
+        return { squad: null, error: 'You are not in a squad.' };
+    const squad = exports.squads.get(squadId);
+    if (!squad)
+        return { squad: null, error: 'Squad not found.' };
+    if (squad.leaderId !== socketId)
+        return { squad: null, error: 'Only the squad leader can change visibility.' };
+    squad.isPublic = isPublic;
+    return { squad, error: null };
+}
+// Returns public squads with room remaining.
+function listPublicSquads() {
+    const out = [];
+    for (const squad of exports.squads.values()) {
+        if (squad.isPublic && squad.memberIds.length < exports.MAX_SQUAD_SIZE) {
+            out.push(squad);
+        }
+    }
+    return out;
+}
+// Directly add a bot to a squad bypassing the invite flow (used when a human invites a bot).
+function addBotToSquad(squadId, botId) {
+    const squad = exports.squads.get(squadId);
+    if (!squad)
+        return { squad: null, error: 'Squad not found.' };
+    if (squad.memberIds.length >= exports.MAX_SQUAD_SIZE)
+        return { squad: null, error: 'Squad is full.' };
+    if (exports.playerSquadMap.has(botId))
+        return { squad: null, error: 'That bot is already in a squad.' };
+    squad.memberIds.push(botId);
+    exports.playerSquadMap.set(botId, squad.id);
+    return { squad, error: null };
 }
 function inviteToSquad(inviterSocketId, targetSocketId, inviterUsername) {
     const squadId = exports.playerSquadMap.get(inviterSocketId);
@@ -157,6 +217,8 @@ function sendSquadChatMessage(squad, io, senderUsername, senderPlayerName, conte
         squad.chatHistory.shift();
     }
     for (const memberId of squad.memberIds) {
+        if (isBotId(memberId))
+            continue;
         io.to(memberId).emit('chatMessage', message);
     }
 }
@@ -171,6 +233,8 @@ function sendSquadSystemMessage(squad, io, content) {
         squad.chatHistory.shift();
     }
     for (const memberId of squad.memberIds) {
+        if (isBotId(memberId))
+            continue;
         io.to(memberId).emit('chatMessage', message);
     }
 }
@@ -179,6 +243,19 @@ function findPlayerByUsername(username, io) {
     for (const [socketId, socket] of io.sockets.sockets) {
         if (socket.username && socket.username.toLowerCase() === username.toLowerCase()) {
             return socketId;
+        }
+    }
+    return null;
+}
+// Find a bot by in-game name (bots have no username — they match by display name).
+function findBotByName(name) {
+    const lower = name.toLowerCase();
+    for (const id in constants_1.players) {
+        if (!isBotId(id))
+            continue;
+        const p = constants_1.players[id];
+        if (p && p.name && p.name.toLowerCase() === lower) {
+            return id;
         }
     }
     return null;
