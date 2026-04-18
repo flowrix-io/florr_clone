@@ -11,6 +11,7 @@ const server_utils_1 = require("../server_utils");
 const constants_1 = require("../constants");
 const petal_actions_1 = require("../petal_actions");
 const squadManager_1 = require("./squadManager");
+const botManager_1 = require("./botManager");
 // Helper function to track damage dealt to an enemy
 function trackDamage(enemy, playerId, damage) {
     if (!enemy.damageContributors) {
@@ -33,8 +34,9 @@ function trackDamage(enemy, playerId, damage) {
             }
         }
     }
-    // Track DPS for target dummies
-    if (enemy.type === 'target_dummy') {
+    // Track DPS for target dummies — exclude bot damage so the reading
+    // reflects the real player's actual DPS.
+    if (enemy.type === 'target_dummy' && !(0, botManager_1.isBot)(playerId)) {
         const now = Date.now();
         if (!enemy.dpsStartTime) {
             enemy.dpsStartTime = now;

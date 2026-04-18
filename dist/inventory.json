@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 304875214,
+      "totalXP": 304876193,
       "inventory": {
         "common": {
           "shield": 281,
@@ -11,7 +11,7 @@
           "petal_yggdrasil": 15,
           "speed_boost": 188,
           "petal_sand": 53,
-          "petal_rock": 211,
+          "petal_rock": 212,
           "petal_clover": 62,
           "petal_bone": 154,
           "petal_cactus": 20,
@@ -38,7 +38,7 @@
           "petal_bee_egg": 138,
           "petal_fly_egg": 86,
           "petal_bubble_egg": 37,
-          "petal_rock_egg": 129,
+          "petal_rock_egg": 130,
           "petal_bush_egg": 9,
           "petal_roach_egg": 20,
           "petal_cactus_egg": 17,
@@ -254,7 +254,7 @@
           "petal_corn": 1,
           "petal_mantis_egg": 5,
           "petal_third_eye": 4,
-          "petal_glass": 28,
+          "petal_glass": 29,
           "petal_cube_egg": 11,
           "petal_splitter": 4,
           "petal_faster": 11,
@@ -697,7 +697,7 @@
         "ladybug": {
           "common": 717,
           "legendary": 434,
-          "uncommon": 187,
+          "uncommon": 188,
           "mythic": 344,
           "rare": 102,
           "ultra": 16,
@@ -709,10 +709,10 @@
           "epic": 178,
           "legendary": 713,
           "common": 929,
-          "rare": 224,
+          "rare": 225,
           "mythic": 778,
           "ultra": 24,
-          "uncommon": 327,
+          "uncommon": 328,
           "super": 11,
           "unique": 3,
           "apex": 2
@@ -724,7 +724,7 @@
           "mythic": 310,
           "epic": 78,
           "rare": 92,
-          "uncommon": 167,
+          "uncommon": 168,
           "super": 3,
           "unique": 2
         },
@@ -732,18 +732,18 @@
           "common": 871,
           "legendary": 314,
           "mythic": 314,
-          "uncommon": 228,
-          "rare": 108,
+          "uncommon": 229,
+          "rare": 109,
           "epic": 82,
           "ultra": 16,
           "super": 8,
           "unique": 2
         },
         "hornet": {
-          "common": 912,
+          "common": 913,
           "legendary": 666,
           "mythic": 584,
-          "uncommon": 287,
+          "uncommon": 288,
           "rare": 172,
           "epic": 140,
           "ultra": 23,
@@ -765,9 +765,9 @@
           "common": 732,
           "epic": 131,
           "mythic": 364,
-          "uncommon": 175,
+          "uncommon": 176,
           "legendary": 385,
-          "rare": 117,
+          "rare": 118,
           "ultra": 31,
           "super": 4,
           "unique": 1
@@ -1066,7 +1066,7 @@
           "legendary": 684,
           "mythic": 407,
           "epic": 150,
-          "rare": 108,
+          "rare": 116,
           "ultra": 9
         },
         "desert_centipede_body": {
@@ -1505,7 +1505,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1776544270091
+      "lastActiveAt": 1776544736616
     },
     "dev": {
       "id": "1g99g1gfk",

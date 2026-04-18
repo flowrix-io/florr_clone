@@ -1344,6 +1344,7 @@ function announceNewBosses(io: SocketIOServer, now: number): void {
         if (enemy.ownerId) continue;
         if ((enemy as any).isDead) continue;
         if (!BOSS_TIERS.has(enemy.tier)) continue;
+        if (enemy.type === 'target_dummy') continue;
         if (announcedBosses.has(enemy.id)) continue;
 
         let announcerId: string | null = null;

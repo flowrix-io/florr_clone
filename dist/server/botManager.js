@@ -1223,6 +1223,8 @@ function announceNewBosses(io, now) {
             continue;
         if (!BOSS_TIERS.has(enemy.tier))
             continue;
+        if (enemy.type === 'target_dummy')
+            continue;
         if (announcedBosses.has(enemy.id))
             continue;
         let announcerId = null;

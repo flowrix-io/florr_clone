@@ -3,6 +3,7 @@ import { ServerPlayer } from '../player';
 import { ENEMY_TIERS, enemies } from '../constants';
 import { splitPlayers } from '../petal_actions';
 import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadManager';
+import { isBot } from './botManager';
 
 // Helper function to track damage dealt to an enemy
 export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
@@ -29,8 +30,9 @@ export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
         }
     }
 
-    // Track DPS for target dummies
-    if (enemy.type === 'target_dummy') {
+    // Track DPS for target dummies — exclude bot damage so the reading
+    // reflects the real player's actual DPS.
+    if (enemy.type === 'target_dummy' && !isBot(playerId)) {
         const now = Date.now();
         if (!enemy.dpsStartTime) {
             enemy.dpsStartTime = now;
