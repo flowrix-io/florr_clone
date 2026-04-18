@@ -293,6 +293,9 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
         },
         unique: {
             count: 5
+        },
+        apex: {
+            count: 5
         }
     },
     yggdrasil: {
@@ -322,6 +325,9 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
         },
         unique: {
             cooldown: 2000
+        },
+        apex: {
+            cooldown: 1000
         }
     },
     lightning: {
@@ -347,6 +353,9 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
             health: 10
         },
         unique: {
+            health: 10
+        },
+        apex: {
             health: 10
         }
     },
@@ -374,6 +383,9 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
         },
         unique: {
             knockback: 50000.0
+        },
+        apex: {
+            knockback: 100000.0
         }
     },
     faster: {
@@ -415,6 +427,11 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
         unique: {
             playerModifiers: {
                 rotationSpeed: 3.5
+            }
+        },
+        apex: {
+            playerModifiers: {
+                rotationSpeed: 4.5
             }
         },
     },
