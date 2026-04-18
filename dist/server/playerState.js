@@ -391,12 +391,25 @@ function updatePlayerState(player, deltaTime, deps) {
     // Smoothly interpolate from current velocity to target velocity
     player.velocityX = player.velocityX + (targetVelocityX - player.velocityX) * smoothingFactor;
     player.velocityY = player.velocityY + (targetVelocityY - player.velocityY) * smoothingFactor;
-    let newX = player.x + player.velocityX * deltaTime;
-    let newY = player.y + player.velocityY * deltaTime;
-    // Check for wall collisions
-    const wallCollision = (0, physics_1.checkPlayerWallCollisions)(newX, newY, constants_1.PLAYER_SIZE);
-    newX = wallCollision.x;
-    newY = wallCollision.y;
+    const deltaX = player.velocityX * deltaTime;
+    const deltaY = player.velocityY * deltaTime;
+    // Substep movement so a single fast tick can't skip past a wall.
+    // Step size is bounded by half the player hitbox so collision checks
+    // always sample an overlapping position against any tile in the path.
+    const MAX_STEP = constants_1.PLAYER_SIZE / 2;
+    const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    const steps = Math.max(1, Math.ceil(moveDistance / MAX_STEP));
+    const stepX = deltaX / steps;
+    const stepY = deltaY / steps;
+    let newX = player.x;
+    let newY = player.y;
+    for (let i = 0; i < steps; i++) {
+        newX += stepX;
+        newY += stepY;
+        const wallCollision = (0, physics_1.checkPlayerWallCollisions)(newX, newY, constants_1.PLAYER_SIZE);
+        newX = wallCollision.x;
+        newY = wallCollision.y;
+    }
     let collision = false;
     for (const enemy of constants_1.enemies) {
         // Skip pets (enemies with ownerId) - they don't damage players
