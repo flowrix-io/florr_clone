@@ -217,7 +217,7 @@ function healPlayer(player: ServerPlayer, healAmount: number, io: any, context?:
     
     // Apply healing multiplier skill bonus
     const healingMultiplier = getSkillMultiplier(player.skills?.healingMultiplier);
-    const modifiedHealAmount = healAmount * rarityMultiplier * healingMultiplier;
+    const modifiedHealAmount = healAmount * rarityMultiplier * healingMultiplier * 3;
     player.health = Math.min(player.maxHealth, player.health + modifiedHealAmount);
     
     if (player.health !== oldHealth) {

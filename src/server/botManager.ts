@@ -14,6 +14,7 @@ import {
     SCALE_FACTOR,
     MapElement,
     WALL_TILE_SIZE,
+    TELEPORTER_RADIUS,
     getTileState,
     worldToTileX,
     worldToTileY
@@ -101,6 +102,14 @@ const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic
 // Powder has no common tier, so we clamp the floor at uncommon.
 const POWDER_MIN_RARITY_IDX = 1;
 
+// Long-haul raid routing — activated when the bot is this far from the boss.
+// Under this threshold, bots just walk (with powder) using the normal raid
+// navigation.
+const RAID_SHORTCUT_MIN_DIST = 4000;
+// A teleporter is only worth taking if its destination is closer to the boss
+// than this fraction of the bot's current distance to the boss.
+const RAID_TELE_PAYOFF_RATIO = 0.55;
+
 function tierPriority(tier: string | undefined): number {
     if (!tier) return 0;
     // Unique ranks above super so raids always commit to uniques when both exist.
@@ -121,7 +130,8 @@ function aggroRangeForTier(tier: string | undefined): number {
 const BOT_NAMES = [
     'm28', 'M28', 'uwu', '67', 'Play Zorr.pro', '', '', 'petal',
      'super hunter', 'mark m28', 'Play florr.io', 'dev', 'fake dev', 'admin', 'pytorch', 'urmom', 'skibidi', 'florrio'
-     , 'CraftApexPetal', 'developer'
+     , 'CraftApexPetal', 'developer', 'hi', 'mr beast', 'hello', '4167', 'florrrrr', 'bro', 'Missile', 'bruh', 'You suck',
+      'pls loot super', 'powder', 'skibidi ohio rizz', 'rizzler', 'pro', 'noob', 'nub', '[YT]', 'killer', 'flower', 'ur mom'
 ];
 
 const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder'];
@@ -325,6 +335,85 @@ function unequipRaidPowder(bot: ServerPlayer, state: BotAIState): void {
         bot.loadout[slot] = original;
     }
     state.raidPowderSlot = undefined;
+}
+
+// Pick the single-hop teleporter whose destination minimises total travel to
+// the boss. Returns the teleporter source position (where the bot needs to
+// walk to) or null if no teleporter is worth using. Cross-server teleporters
+// are skipped — bots stay on their own server.
+function findRaidTeleporterSrc(
+    botX: number, botY: number,
+    bossX: number, bossY: number
+): { x: number; y: number } | null {
+    const directDist = Math.sqrt((bossX - botX) ** 2 + (bossY - botY) ** 2);
+    let bestTotal = directDist;
+    let bestX = 0, bestY = 0;
+    let found = false;
+
+    for (const el of WORLD_MAP) {
+        if (el.type !== 'teleporter') continue;
+        const dest = el.properties?.teleportTo;
+        if (!dest) continue;
+        if (dest.serverPort) continue;
+
+        const srcX = el.x + el.width / 2;
+        const srcY = el.y + el.height / 2;
+        const srcToBot = Math.sqrt((srcX - botX) ** 2 + (srcY - botY) ** 2);
+        const destToBoss = Math.sqrt((dest.x - bossX) ** 2 + (dest.y - bossY) ** 2);
+
+        // Only worth it if the teleport destination is actually close to the boss
+        if (destToBoss > directDist * RAID_TELE_PAYOFF_RATIO) continue;
+
+        const total = srcToBot + destToBoss;
+        if (total < bestTotal) {
+            bestTotal = total;
+            bestX = srcX;
+            bestY = srcY;
+            found = true;
+        }
+    }
+
+    return found ? { x: bestX, y: bestY } : null;
+}
+
+// Handles long-haul raid navigation: either route via teleporter or warp the
+// bot to a spawn zone near the boss. Returns true when this tick was handled
+// (caller should `continue`), false to fall through to normal raid movement.
+function handleRaidShortcut(
+    bot: ServerPlayer,
+    state: BotAIState,
+    now: number,
+    anchor: { x: number; y: number },
+    distToAnchor: number
+): boolean {
+    if (distToAnchor < RAID_SHORTCUT_MIN_DIST) return false;
+
+    // Preferred: a teleporter that gets the bot meaningfully closer.
+    const teleSrc = findRaidTeleporterSrc(bot.x, bot.y, anchor.x, anchor.y);
+    if (teleSrc) {
+        const dx = teleSrc.x - bot.x;
+        const dy = teleSrc.y - bot.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        // Inside the teleporter's activation radius — hold still so the 1s
+        // timer fires. The teleporter logic in playerState runs for all
+        // players including bots.
+        if (d < TELEPORTER_RADIUS * 0.6) {
+            bot.inputs.useMouse = false;
+            bot.inputs.keys = [];
+            bot.inputs.petalExtension = 1.0;
+            return true;
+        }
+        // Navigate to the teleporter source. A* first, cheap steer as fallback.
+        if (followPath(bot, state, now, teleSrc.x, teleSrc.y, 1.0, 1.0)) return true;
+        const nd = d || 1;
+        const steered = steerAroundWalls(bot.x, bot.y, dx / nd, dy / nd);
+        driveMove(bot, steered.x, steered.y, 1.0, 1.0);
+        return true;
+    }
+
+    // No teleporter helps — bot walks the rest of the way. Respawn-near-boss
+    // is handled on death via respawnBot, not by warping a live bot.
+    return false;
 }
 
 function nearestRealPlayer(x: number, y: number): ServerPlayer | null {
@@ -1120,6 +1209,50 @@ function hasHighRarityMobNearby(bot: ServerPlayer, range: number): boolean {
     return false;
 }
 
+// Assign each raiding bot a fixed angular slot around its raid anchor so
+// bots spread evenly around the boss rather than clumping on one side.
+// Recomputed each tick — if N raiders share an anchor, slot i gets angle
+// (i / N) * 2π. Stable sort by id so slots don't shuffle tick to tick.
+function computeRaidSlots(): Map<string, number> {
+    const byAnchor = new Map<string, { ids: string[] }>();
+    const forced = getActiveForcedRaidAnchor();
+
+    for (const id in players) {
+        if (!isBot(id)) continue;
+        const b = players[id];
+        if (!b || b.isDead) continue;
+
+        let anchor: { x: number; y: number } | null = null;
+        if (forced) {
+            anchor = forced;
+        } else {
+            const boss = findNearestBossForBot(b);
+            if (boss) anchor = { x: boss.x, y: boss.y };
+        }
+        if (!anchor) continue;
+
+        // Round anchor coords so bots raiding the same boss share a bucket
+        // even as the boss drifts by a pixel or two.
+        const key = `${Math.round(anchor.x / 8)}:${Math.round(anchor.y / 8)}`;
+        let bucket = byAnchor.get(key);
+        if (!bucket) {
+            bucket = { ids: [] };
+            byAnchor.set(key, bucket);
+        }
+        bucket.ids.push(id);
+    }
+
+    const slots = new Map<string, number>();
+    for (const { ids } of byAnchor.values()) {
+        ids.sort();
+        const n = ids.length;
+        for (let i = 0; i < n; i++) {
+            slots.set(ids[i], (i / n) * Math.PI * 2);
+        }
+    }
+    return slots;
+}
+
 // Deterministic bot grouping for high-rarity mode. Recomputed each tick so
 // centroids follow the group as it moves.
 interface GroupInfo { center: { x: number; y: number }; size: number }
@@ -1247,6 +1380,8 @@ export function updateBotAI(io: SocketIOServer): void {
     // Bot groupings are only needed for highRarity mode but it's cheaper to
     // build once and reuse than recompute per-bot.
     const groups = computeBotGroups();
+    // Angular slot assignments so raiding bots spread evenly around the boss.
+    const raidSlots = computeRaidSlots();
 
     for (const id in players) {
         if (!isBot(id)) continue;
@@ -1283,6 +1418,13 @@ export function updateBotAI(io: SocketIOServer): void {
             equipRaidPowder(bot, state);
         } else {
             unequipRaidPowder(bot, state);
+        }
+
+        // Long-haul raid routing: hop through a teleporter when one puts the
+        // bot meaningfully closer to the boss, or warp the bot to a spawn zone
+        // in the boss's section if no teleporter helps.
+        if (mode.kind === 'raid' && anchor && handleRaidShortcut(bot, state, now, anchor, anchorDist)) {
+            continue;
         }
 
         const target = pickBestEnemyTarget(bot, anchor, mode.tetherRadius);
@@ -1331,8 +1473,12 @@ export function updateBotAI(io: SocketIOServer): void {
             const extendedPetalExt = 2.0;
             const petalReach = computePetalReach(bot, extendedPetalExt);
             const mobRadius = getMobRadius(target.enemy);
-            // Stay a notch inside max reach so small position jitter still lands hits
-            const standoff = petalReach + mobRadius - 10;
+            // True max hit distance (bot centre → mob centre) where a petal's
+            // far edge just touches the mob edge is petalReach - the safety
+            // buffer + mobRadius. Stand ~10 px inside that so position jitter
+            // still lands hits. Without this subtraction the safety buffer
+            // gets double-counted and bots park just outside actual reach.
+            const standoff = petalReach - STANDOFF_SAFETY_BUFFER + mobRadius - 10;
             const dangerDist = PLAYER_SIZE / 2 + mobRadius + 6; // body-touch threshold
 
             let moveX: number;
@@ -1340,12 +1486,38 @@ export function updateBotAI(io: SocketIOServer): void {
             let speedMult: number;
             let petalExt: number;
 
+            // Boss raiders: each bot owns an angular slot around the boss so
+            // they spread out instead of stacking. Kicks in once inside the
+            // engagement band (d < standoff + 80); approach from farther away
+            // still uses the direct-path logic below.
+            const slotAngle = isBossTarget ? raidSlots.get(bot.id) : undefined;
+
             if (d < dangerDist) {
                 // Too close — shove off at full speed but stay in attack state
                 // so petals remain extended while killing the mob.
                 moveX = -dirX;
                 moveY = -dirY;
                 speedMult = 1.0;
+                petalExt = extendedPetalExt;
+            } else if (slotAngle !== undefined && d < standoff + 80) {
+                // Steer to the slot position around the boss. When the bot is
+                // already at its slot, fall through to a small tangential
+                // strafe so it isn't a sitting duck for AoE.
+                const slotX = target.enemy.x + Math.cos(slotAngle) * standoff;
+                const slotY = target.enemy.y + Math.sin(slotAngle) * standoff;
+                const sx = slotX - bot.x;
+                const sy = slotY - bot.y;
+                const sd = Math.sqrt(sx * sx + sy * sy);
+                if (sd > 40) {
+                    moveX = sx / (sd || 1);
+                    moveY = sy / (sd || 1);
+                    speedMult = Math.min(0.8, 0.3 + sd / 400);
+                } else {
+                    const dir = tangentDirection(bot.id);
+                    moveX = -dirY * dir;
+                    moveY = dirX * dir;
+                    speedMult = 0.2;
+                }
                 petalExt = extendedPetalExt;
             } else if (d < standoff - 8) {
                 // Inside standoff but past the body-collision threshold — back
