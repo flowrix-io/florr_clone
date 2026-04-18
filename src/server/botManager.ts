@@ -35,6 +35,9 @@ const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
 const SPAWN_BURST_CAP = 4;
 export const MAX_BOT_COUNT = 50;
+// How long to keep bots running after the last human disconnects, so the
+// world isn't immediately empty if someone reconnects quickly.
+const BOT_IDLE_TIMEOUT_MS = 45_000;
 
 // When set, maintainBotCount targets exactly this many bots regardless of how
 // many real players are connected. null = default behavior (fill up to
@@ -91,6 +94,13 @@ const GROUP_MIN_FOR_MODE = 4;          // don't enter group mode unless this man
 const BOSS_TIERS = new Set(['super', 'unique']);
 const HIGH_TIERS = new Set(['epic', 'legendary', 'mythic', 'ultra']);
 
+// Raid traversal: when the bot is farther than this from the raid anchor,
+// swap slot 0 for powder to close distance faster. Beyond combat range.
+const RAID_POWDER_MIN_DIST = 600;
+const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
+// Powder has no common tier, so we clamp the floor at uncommon.
+const POWDER_MIN_RARITY_IDX = 1;
+
 function tierPriority(tier: string | undefined): number {
     if (!tier) return 0;
     // Unique ranks above super so raids always commit to uniques when both exist.
@@ -114,7 +124,7 @@ const BOT_NAMES = [
      , 'CraftApexPetal', 'developer'
 ];
 
-const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose'];
+const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder'];
 
 interface BotAIState {
     wanderTargetX: number;
@@ -127,12 +137,19 @@ interface BotAIState {
     pathGoalTileX?: number;
     pathGoalTileY?: number;
     pathCreatedAt?: number;
+    // Raid powder swap: when traversing to a raid target, slot 0 is replaced
+    // with a powder petal so the bot closes the gap faster. Original contents
+    // are restored once the bot arrives / raid ends.
+    raidPowderSlot?: { slot: number; original: any };
 }
 
 interface Waypoint { x: number; y: number }
 
 const botAIState = new Map<string, BotAIState>();
 let lastMaintainTime = 0;
+// Timestamp of the last tick that saw at least one real player. Used to keep
+// bots alive for BOT_IDLE_TIMEOUT_MS after the server goes empty.
+let lastActivePlayerTime = Date.now();
 
 // Force-raid state set by an external trigger (e.g., chat mentions of
 // "super" / "unique"). While active and a qualifying boss still exists, every
@@ -263,6 +280,51 @@ function buildBotLoadout(level: number): any[] {
     }
 
     return loadout;
+}
+
+function pickPowderRarity(loadout: any[]): string {
+    let maxIdx = 0;
+    if (loadout) {
+        for (const item of loadout) {
+            if (!item || item.type !== 'petal' || !item.rarity) continue;
+            const idx = RARITY_ORDER.indexOf(item.rarity);
+            if (idx > maxIdx) maxIdx = idx;
+        }
+    }
+    return RARITY_ORDER[Math.max(POWDER_MIN_RARITY_IDX, maxIdx)];
+}
+
+function equipRaidPowder(bot: ServerPlayer, state: BotAIState): void {
+    if (state.raidPowderSlot !== undefined) return;
+    if (!bot.loadout || bot.loadout.length === 0) return;
+
+    const slot = 0;
+    const current = bot.loadout[slot];
+    // Already a powder here — nothing to swap, nothing to track.
+    if (current && current.type === 'petal' && current.petalType === 'powder') return;
+
+    const rarity = pickPowderRarity(bot.loadout);
+    const stats = getPetalStats('powder', rarity);
+    if (!stats) return;
+
+    state.raidPowderSlot = { slot, original: current };
+    bot.loadout[slot] = {
+        type: 'petal',
+        rarity: rarity as any,
+        petalType: 'powder',
+        health: stats.health,
+        maxHealth: stats.health,
+        onCooldown: false
+    };
+}
+
+function unequipRaidPowder(bot: ServerPlayer, state: BotAIState): void {
+    if (state.raidPowderSlot === undefined) return;
+    const { slot, original } = state.raidPowderSlot;
+    if (bot.loadout && slot < bot.loadout.length) {
+        bot.loadout[slot] = original;
+    }
+    state.raidPowderSlot = undefined;
 }
 
 function nearestRealPlayer(x: number, y: number): ServerPlayer | null {
@@ -440,9 +502,16 @@ function listBotIds(): string[] {
 export function maintainBotCount(io: SocketIOServer, realPlayerCount: number): void {
     const now = Date.now();
 
-    if (realPlayerCount === 0) {
-        if (countBots() > 0) removeAllBots(io);
-        return;
+    if (realPlayerCount > 0) {
+        lastActivePlayerTime = now;
+    } else {
+        // Keep bots running for BOT_IDLE_TIMEOUT_MS after the last human leaves
+        // so reconnecting quickly doesn't hit an empty world. Past the timeout,
+        // despawn everything to avoid wasted simulation.
+        if (now - lastActivePlayerTime >= BOT_IDLE_TIMEOUT_MS) {
+            if (countBots() > 0) removeAllBots(io);
+            return;
+        }
     }
 
     if (now - lastMaintainTime < MAINTAIN_INTERVAL_MS) return;
@@ -1098,6 +1167,20 @@ interface ModeContext {
 }
 
 function computeBotMode(bot: ServerPlayer, groups: Map<string, GroupInfo>): ModeContext {
+    // Forced raid (chat-triggered): every bot rallies on the target regardless
+    // of distance or whether any human is in that biome. Without this, bots
+    // stay tethered to the nearest human and never cross into an empty biome
+    // to engage a super/unique that spawned there.
+    const forced = getActiveForcedRaidAnchor();
+    if (forced) {
+        return {
+            kind: 'raid',
+            anchor: forced,
+            tetherRadius: RAID_CLUSTER_RADIUS,
+            returnRadius: RAID_CLUSTER_RETURN
+        };
+    }
+
     // Raid: any boss within BOSS_RAID_RANGE. Rally on the boss position,
     // clump tight enough to share ~90% viewport.
     const boss = findNearestBossForBot(bot);
@@ -1177,6 +1260,9 @@ export function updateBotAI(io: SocketIOServer): void {
         }
 
         if (bot.isDead) {
+            // Restore the combat loadout before respawn so the bot isn't stuck
+            // with powder in slot 0 if it died mid-traversal.
+            unequipRaidPowder(bot, state);
             if (state.respawnAt === undefined) {
                 state.respawnAt = now + BOT_RESPAWN_DELAY_MS;
             } else if (now >= state.respawnAt) {
@@ -1190,6 +1276,14 @@ export function updateBotAI(io: SocketIOServer): void {
         const anchorDist = anchor
             ? Math.sqrt((anchor.x - bot.x) ** 2 + (anchor.y - bot.y) ** 2)
             : 0;
+
+        // Swap in a powder petal during raid traversal; restore combat loadout
+        // once in engagement range (or when no longer raiding).
+        if (mode.kind === 'raid' && anchorDist > RAID_POWDER_MIN_DIST) {
+            equipRaidPowder(bot, state);
+        } else {
+            unequipRaidPowder(bot, state);
+        }
 
         const target = pickBestEnemyTarget(bot, anchor, mode.tetherRadius);
         const isBossTarget = !!(target && BOSS_TIERS.has(target.enemy.tier));
