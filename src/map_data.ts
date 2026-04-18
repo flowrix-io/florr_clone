@@ -1500,8 +1500,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "common",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "common",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "common",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1518,8 +1528,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "uncommon",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1536,8 +1556,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "uncommon",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1554,8 +1584,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "uncommon",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1572,8 +1612,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "rare",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1590,8 +1640,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "rare",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1608,8 +1668,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1626,8 +1696,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "legendary",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1644,8 +1724,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "legendary",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1662,8 +1752,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "mythic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1680,8 +1780,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "mythic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1698,8 +1808,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "mythic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1716,8 +1836,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "mythic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1734,8 +1864,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "mythic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1752,8 +1892,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "mythic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 30,
+            "mobType": "worker_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 10,
+            "mobType": "baby_ant"
           }
         ]
       }
@@ -1770,8 +1920,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1788,8 +1948,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1806,8 +1976,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1824,8 +2004,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1842,8 +2032,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "rare",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1860,8 +2060,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "rare",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1878,8 +2088,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "rare",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "rare",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1896,8 +2116,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "uncommon",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1914,8 +2144,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "uncommon",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1932,8 +2172,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "uncommon",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1950,8 +2200,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "uncommon",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1968,8 +2228,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "uncommon",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -1986,8 +2256,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "uncommon",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "uncommon",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2004,8 +2284,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2022,8 +2312,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2040,8 +2340,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2058,8 +2368,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2076,8 +2396,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2094,8 +2424,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2112,8 +2452,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "epic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "epic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2130,8 +2480,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "legendary",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2148,8 +2508,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "legendary",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2166,8 +2536,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "legendary",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2184,8 +2564,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "legendary",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "legendary",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2202,8 +2592,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "mythic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }
@@ -2220,8 +2620,18 @@ const WORLD_MAP_DATA: MapData = {
         "spawnTable": [
           {
             "tier": "mythic",
-            "weight": 10,
+            "weight": 60,
             "mobType": "soldier_fire_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 30,
+            "mobType": "worker_fire_ant"
+          },
+          {
+            "tier": "mythic",
+            "weight": 10,
+            "mobType": "baby_fire_ant"
           }
         ]
       }

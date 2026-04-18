@@ -607,6 +607,128 @@ exports.BASE_MOB_CONFIGS = {
         ai_type: 'hostile',
         range: 300
     },
+    worker_ant: {
+        name: "Worker Ant",
+        damage: 10,
+        health: 100,
+        size: 1.0,
+        visual_scale: 1.5,
+        speed: 2.4,
+        cooldown: 2000,
+        description: "It's neutral towards flowers",
+        color: "#808080",
+        image: `<svg id="worker-ant-svg" width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#555555" stroke="#444444" stroke-width="7" />
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="1s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+             </path>
+
+  <circle cx="4" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
+</svg>`,
+        ai_type: 'neutral',
+        section: 4,
+        range: 300
+    },
+    baby_ant: {
+        name: "Baby Ant",
+        damage: 10,
+        health: 100,
+        size: 1.0,
+        visual_scale: 1.2,
+        speed: 2.4,
+        cooldown: 2000,
+        description: "A baby ant",
+        color: "#808080",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-20 -20 50 40">
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round" d="M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5">
+    <animate attributeName="d"
+             values="M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5;
+                     M 0 -7 Q 11 -9 22 -4 M 0 7 Q 11 9 22 4;
+                     M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5;
+                     M 0 -7 Q 11 -11 22 -6 M 0 7 Q 11 11 22 6;
+                     M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5"
+             keyTimes="0; 0.25; 0.5; 0.75; 1"
+             calcMode="spline"
+             keySplines="0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1"
+             dur="2s"
+             repeatCount="indefinite" />
+  </path>
+
+  <circle cx="0" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
+</svg>
+`,
+        ai_type: 'passive',
+        section: 4,
+        range: 300
+    },
+    worker_fire_ant: {
+        name: "Worker Fire Ant",
+        damage: 20,
+        health: 100,
+        size: 1.0,
+        visual_scale: 1.5,
+        speed: 2.4,
+        cooldown: 2000,
+        description: "It's neutral towards flowers",
+        color: "#ff8800",
+        image: `<svg id="worker-fire-ant-svg" width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-12" cy="0" r="10" fill="#b02a22" stroke="#8c221b" stroke-width="7" />
+  <path fill="none" stroke="#3d1512" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="1s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;
+                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;
+                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5" />
+             </path>
+
+  <circle cx="4" cy="0" r="14" fill="#b02a22" stroke="#8c221b" stroke-width="7" />
+</svg>`,
+        ai_type: 'neutral',
+        section: 4,
+        range: 300
+    },
+    baby_fire_ant: {
+        name: "Baby Fire Ant",
+        damage: 20,
+        health: 100,
+        size: 1.0,
+        visual_scale: 1.2,
+        speed: 2.4,
+        cooldown: 2000,
+        description: "A baby fire ant",
+        color: "#ff8800",
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-20 -20 50 40">
+  <path fill="none" stroke="#3d1512" stroke-width="7" stroke-linecap="round" d="M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5">
+    <animate attributeName="d"
+             values="M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5;
+                     M 0 -7 Q 11 -9 22 -4 M 0 7 Q 11 9 22 4;
+                     M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5;
+                     M 0 -7 Q 11 -11 22 -6 M 0 7 Q 11 11 22 6;
+                     M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5"
+             keyTimes="0; 0.25; 0.5; 0.75; 1"
+             calcMode="spline"
+             keySplines="0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1"
+             dur="2s"
+             repeatCount="indefinite" />
+  </path>
+
+  <circle cx="0" cy="0" r="14" fill="#b02a22" stroke="#8c221b" stroke-width="7" />
+</svg>
+`,
+        ai_type: 'passive',
+        section: 4,
+        range: 300
+    },
     rock: {
         name: "Rock",
         damage: 10,
@@ -2723,11 +2845,37 @@ exports.BASE_MOB_CONFIGS = {
         section: 1,
         spawn_weight: 0,
         noEggDrop: true,
-    }
+    },
 };
 // Rarity-specific overrides for special cases
 const RARITY_OVERRIDES = {
     soldier_ant: {
+        uncommon: {
+            range: 500
+        },
+        rare: {
+            range: 600
+        },
+        epic: {
+            range: 750
+        },
+        legendary: {
+            range: 900
+        },
+        mythic: {
+            range: 1100
+        },
+        ultra: {
+            range: 1300,
+        },
+        super: {
+            range: 1500,
+        },
+        unique: {
+            range: 1700,
+        }
+    },
+    worker_ant: {
         uncommon: {
             range: 500
         },
@@ -3294,6 +3442,48 @@ exports.MOB_DROP_TABLES = {
                 minQuantity: 1,
                 maxQuantity: 1
             },
+        ]
+    },
+    worker_ant: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'corn',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'leaf',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+        ]
+    },
+    baby_ant: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'light',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'leaf',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
         ]
     },
     rock: {
