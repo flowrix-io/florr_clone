@@ -44,7 +44,7 @@ import { ServerPlayer, PlayerProgress, PlayerInventory, FaceFlags, EquipmentFlag
 import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
 import { updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet, despawnAllPlayerPets } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
-import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState } from './constants';
+import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState, SECTION_CONFIGS } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { MobProjectile, PlayerProjectile } from './enemy';
@@ -2100,6 +2100,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 helpText += '/list_ultra - List all ultra mobs <br/>';
                 helpText += '/list_super - List all super mobs <br/>';
                 helpText += '/list_unique - List all unique mobs <br/>';
+                helpText += '/biome - Show the most populated biome <br/>';
                 helpText += '<br/><b>Squad commands:</b><br/>';
                 helpText += '/squad create - Create a new squad<br/>';
                 helpText += '/squad invite &lt;username&gt; - Invite a player<br/>';
@@ -2220,10 +2221,47 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 return;
             }
             
+            if (command === 'biome') {
+                // Count players/bots per section (3x3 grid, 20000px each).
+                // Mirrors getSectionAtPosition in src/graphics/sections.ts.
+                const SECTION_SIZE = 20000;
+                const counts = new Map<number, number>();
+                for (const pid in players) {
+                    const p = players[pid];
+                    if (!p || p.isDead) continue;
+                    const sx = Math.max(0, Math.min(2, Math.floor(p.x / SECTION_SIZE)));
+                    const sy = Math.max(0, Math.min(2, Math.floor(p.y / SECTION_SIZE)));
+                    const idx = sy * 3 + sx;
+                    counts.set(idx, (counts.get(idx) ?? 0) + 1);
+                }
+
+                if (counts.size === 0) {
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: 'No players are currently in any section.',
+                        timestamp: Date.now()
+                    });
+                } else {
+                    const sectionLabel = (idx: number) =>
+                        SECTION_CONFIGS[idx]?.name || `Section ${idx + 1}`;
+                    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+                    const [topIdx, topCount] = sorted[0];
+                    const breakdown = sorted
+                        .map(([idx, count]) => `${sectionLabel(idx)}: ${count}`)
+                        .join('<br/>');
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: `<span style="color: #4fc3f7;">Most populated biome: <b>${sectionLabel(topIdx)}</b> (${topCount} player${topCount === 1 ? '' : 's'})</span><br/>${breakdown}`,
+                        timestamp: Date.now()
+                    });
+                }
+                return;
+            }
+
             // Unknown command
             io.to(socket.id).emit('chatMessage', {
                 sender: 'System',
-                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique',
+                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique, /biome',
                 timestamp: Date.now()
             });
             return;

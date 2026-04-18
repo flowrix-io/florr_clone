@@ -31,9 +31,27 @@ import {
 import { items } from './gameState';
 
 const BOT_ID_PREFIX = 'bot_';
-const TARGET_TOTAL_PLAYERS = 20;
+const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
 const SPAWN_BURST_CAP = 4;
+export const MAX_BOT_COUNT = 50;
+
+// When set, maintainBotCount targets exactly this many bots regardless of how
+// many real players are connected. null = default behavior (fill up to
+// TARGET_TOTAL_PLAYERS minus real players).
+let targetBotCountOverride: number | null = null;
+
+export function setTargetBotCount(count: number | null): void {
+    if (count === null) {
+        targetBotCountOverride = null;
+        return;
+    }
+    targetBotCountOverride = Math.max(0, Math.min(MAX_BOT_COUNT, Math.floor(count)));
+}
+
+export function getTargetBotCount(): number | null {
+    return targetBotCountOverride;
+}
 
 // Combat tuning
 const REGULAR_AGGRO_RANGE = 500;       // common/uncommon/rare
@@ -431,7 +449,9 @@ export function maintainBotCount(io: SocketIOServer, realPlayerCount: number): v
     lastMaintainTime = now;
 
     const currentBots = countBots();
-    const desiredBots = Math.max(0, TARGET_TOTAL_PLAYERS - realPlayerCount);
+    const desiredBots = targetBotCountOverride !== null
+        ? targetBotCountOverride
+        : Math.max(0, TARGET_TOTAL_PLAYERS - realPlayerCount);
 
     if (currentBots < desiredBots) {
         const deficit = desiredBots - currentBots;
@@ -1213,7 +1233,8 @@ export function updateBotAI(io: SocketIOServer): void {
             // Compute the actual standoff distance: petal orbit reach + mob
             // radius + buffer. This is how far petals can hit from and keeps
             // the bot's body out of the mob's collision circle.
-            const extendedPetalExt = 1.3;
+            // 2.0 matches the player's max attack-state extension (space/LMB).
+            const extendedPetalExt = 2.0;
             const petalReach = computePetalReach(bot, extendedPetalExt);
             const mobRadius = getMobRadius(target.enemy);
             // Stay a notch inside max reach so small position jitter still lands hits
@@ -1226,11 +1247,12 @@ export function updateBotAI(io: SocketIOServer): void {
             let petalExt: number;
 
             if (d < dangerDist) {
-                // Too close — shove off at full speed and contract petals defensively
+                // Too close — shove off at full speed but stay in attack state
+                // so petals remain extended while killing the mob.
                 moveX = -dirX;
                 moveY = -dirY;
                 speedMult = 1.0;
-                petalExt = 0.8;
+                petalExt = extendedPetalExt;
             } else if (d < standoff - 8) {
                 // Inside standoff but past the body-collision threshold — back
                 // out while keeping petals trained on the mob.

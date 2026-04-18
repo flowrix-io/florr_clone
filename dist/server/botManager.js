@@ -4,6 +4,9 @@
 // so the existing tick, rendering, combat, and petal systems handle them with no
 // special-casing beyond skipping save/save-game paths (no socket/userId).
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.MAX_BOT_COUNT = void 0;
+exports.setTargetBotCount = setTargetBotCount;
+exports.getTargetBotCount = getTargetBotCount;
 exports.isBot = isBot;
 exports.removeAllBots = removeAllBots;
 exports.maintainBotCount = maintainBotCount;
@@ -16,9 +19,24 @@ const mobs_1 = require("../mobs");
 const playerManager_1 = require("./playerManager");
 const gameState_1 = require("./gameState");
 const BOT_ID_PREFIX = 'bot_';
-const TARGET_TOTAL_PLAYERS = 20;
+const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
 const SPAWN_BURST_CAP = 4;
+exports.MAX_BOT_COUNT = 50;
+// When set, maintainBotCount targets exactly this many bots regardless of how
+// many real players are connected. null = default behavior (fill up to
+// TARGET_TOTAL_PLAYERS minus real players).
+let targetBotCountOverride = null;
+function setTargetBotCount(count) {
+    if (count === null) {
+        targetBotCountOverride = null;
+        return;
+    }
+    targetBotCountOverride = Math.max(0, Math.min(exports.MAX_BOT_COUNT, Math.floor(count)));
+}
+function getTargetBotCount() {
+    return targetBotCountOverride;
+}
 // Combat tuning
 const REGULAR_AGGRO_RANGE = 500; // common/uncommon/rare
 const HIGH_TIER_AGGRO_RANGE = 900; // epic/legendary/mythic
@@ -358,7 +376,9 @@ function maintainBotCount(io, realPlayerCount) {
         return;
     lastMaintainTime = now;
     const currentBots = countBots();
-    const desiredBots = Math.max(0, TARGET_TOTAL_PLAYERS - realPlayerCount);
+    const desiredBots = targetBotCountOverride !== null
+        ? targetBotCountOverride
+        : Math.max(0, TARGET_TOTAL_PLAYERS - realPlayerCount);
     if (currentBots < desiredBots) {
         const deficit = desiredBots - currentBots;
         const toSpawn = Math.min(deficit, SPAWN_BURST_CAP);
@@ -1088,7 +1108,8 @@ function updateBotAI(io) {
             // Compute the actual standoff distance: petal orbit reach + mob
             // radius + buffer. This is how far petals can hit from and keeps
             // the bot's body out of the mob's collision circle.
-            const extendedPetalExt = 1.3;
+            // 2.0 matches the player's max attack-state extension (space/LMB).
+            const extendedPetalExt = 2.0;
             const petalReach = computePetalReach(bot, extendedPetalExt);
             const mobRadius = getMobRadius(target.enemy);
             // Stay a notch inside max reach so small position jitter still lands hits
@@ -1099,11 +1120,12 @@ function updateBotAI(io) {
             let speedMult;
             let petalExt;
             if (d < dangerDist) {
-                // Too close — shove off at full speed and contract petals defensively
+                // Too close — shove off at full speed but stay in attack state
+                // so petals remain extended while killing the mob.
                 moveX = -dirX;
                 moveY = -dirY;
                 speedMult = 1.0;
-                petalExt = 0.8;
+                petalExt = extendedPetalExt;
             }
             else if (d < standoff - 8) {
                 // Inside standoff but past the body-collision threshold — back

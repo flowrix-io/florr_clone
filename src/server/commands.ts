@@ -8,6 +8,7 @@ import { ENEMY_COUNT } from './gameState';
 import { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase } from '../server';
 import { getAllPetalTypes, getPetalStats, RARITY_LEVELS } from '../petals';
 import { addItem } from './playerManager';
+import { setTargetBotCount, getTargetBotCount, MAX_BOT_COUNT } from './botManager';
 
 // AuthenticatedSocket interface (matches definition in server.ts)
 interface AuthenticatedSocket extends Socket {
@@ -111,6 +112,26 @@ export function executeServerCommand(
             adjustEnemyCount();
         } else {
             sendOutput('Invalid enemy count. Please provide a valid number.', socketId, io);
+        }
+    } else if (trimmedCommand.startsWith('set_bot_count')) {
+        const parts = trimmedCommand.split(' ');
+        if (parts.length === 2 && parts[1].toLowerCase() === 'default') {
+            setTargetBotCount(null);
+            sendOutput('Bot count override cleared (using default formula).', socketId, io);
+        } else {
+            const newCount = parseInt(parts[1]);
+            if (isNaN(newCount) || newCount < 0) {
+                const current = getTargetBotCount();
+                sendOutput(
+                    `Usage: set_bot_count <0-${MAX_BOT_COUNT}|default> — current override: ${current === null ? 'default' : current}`,
+                    socketId, io
+                );
+            } else if (newCount > MAX_BOT_COUNT) {
+                sendOutput(`Bot count capped at ${MAX_BOT_COUNT}.`, socketId, io);
+            } else {
+                setTargetBotCount(newCount);
+                sendOutput(`Bot count target set to ${newCount}.`, socketId, io);
+            }
         }
     } else if (trimmedCommand === 'spawn_special_mobs') {
         spawnSpecialMobs();
@@ -484,6 +505,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests';
 }
 

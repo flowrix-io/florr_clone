@@ -154,7 +154,7 @@ exports.SECTION_CONFIGS = [
     { name: 'Ant Hell', background: 'ant_hell.svg' }, // Section 5 (center)
     { name: 'Jungle', background: 'jungle.svg' }, // Section 6 (middle-right)
     { name: 'Sewers', background: 'sewers.svg' }, // Section 7 (bottom-left)
-    { name: 'Unknown', background: '#000000' }, // Section 8 (bottom-center)
+    { name: 'Computer', background: '#000000' }, // Section 8 (bottom-center)
     { name: 'Unknown', background: '#000000' }, // Section 9 (bottom-right)
 ];
 // Add enemy size multipliers like in singleplayer

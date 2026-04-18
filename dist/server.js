@@ -1804,6 +1804,7 @@ io.on('connection', (socket) => {
                 helpText += '/list_ultra - List all ultra mobs <br/>';
                 helpText += '/list_super - List all super mobs <br/>';
                 helpText += '/list_unique - List all unique mobs <br/>';
+                helpText += '/biome - Show the most populated biome <br/>';
                 helpText += '<br/><b>Squad commands:</b><br/>';
                 helpText += '/squad create - Create a new squad<br/>';
                 helpText += '/squad invite &lt;username&gt; - Invite a player<br/>';
@@ -1918,10 +1919,46 @@ io.on('connection', (socket) => {
                 }
                 return;
             }
+            if (command === 'biome') {
+                // Count players/bots per section (3x3 grid, 20000px each).
+                // Mirrors getSectionAtPosition in src/graphics/sections.ts.
+                const SECTION_SIZE = 20000;
+                const counts = new Map();
+                for (const pid in constants_2.players) {
+                    const p = constants_2.players[pid];
+                    if (!p || p.isDead)
+                        continue;
+                    const sx = Math.max(0, Math.min(2, Math.floor(p.x / SECTION_SIZE)));
+                    const sy = Math.max(0, Math.min(2, Math.floor(p.y / SECTION_SIZE)));
+                    const idx = sy * 3 + sx;
+                    counts.set(idx, (counts.get(idx) ?? 0) + 1);
+                }
+                if (counts.size === 0) {
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: 'No players are currently in any section.',
+                        timestamp: Date.now()
+                    });
+                }
+                else {
+                    const sectionLabel = (idx) => constants_2.SECTION_CONFIGS[idx]?.name || `Section ${idx + 1}`;
+                    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+                    const [topIdx, topCount] = sorted[0];
+                    const breakdown = sorted
+                        .map(([idx, count]) => `${sectionLabel(idx)}: ${count}`)
+                        .join('<br/>');
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: `<span style="color: #4fc3f7;">Most populated biome: <b>${sectionLabel(topIdx)}</b> (${topCount} player${topCount === 1 ? '' : 's'})</span><br/>${breakdown}`,
+                        timestamp: Date.now()
+                    });
+                }
+                return;
+            }
             // Unknown command
             io.to(socket.id).emit('chatMessage', {
                 sender: 'System',
-                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique',
+                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique, /biome',
                 timestamp: Date.now()
             });
             return;
