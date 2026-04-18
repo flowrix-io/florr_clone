@@ -210,36 +210,48 @@ Graphics.prototype.drawSpawnPoint = function(this: Graphics, x: number, y: numbe
     // Spawn points are invisible - rendering handled by spawn zones
 };
 
+const SPAWN_ZONE_COLORS: Record<string, string> = {
+    common: 'rgba(126, 239, 109, 0.25)',
+    uncommon: 'rgba(255, 230, 93, 0.25)',
+    rare: 'rgba(77, 82, 227, 0.25)',
+    epic: 'rgba(134, 31, 222, 0.25)',
+    legendary: 'rgba(222, 31, 31, 0.25)',
+    mythic: 'rgba(31, 219, 222, 0.25)',
+    ultra: 'rgba(222, 31, 101, 0.25)',
+    super: 'rgba(43, 255, 164, 0.25)',
+    unique: 'rgba(191, 0, 255, 0.25)'
+};
+
 Graphics.prototype.drawSpawnZones = function(this: Graphics, mapData: MapElement[]) {
     const scaledWidth = this.canvas.width / this.zoomLevel;
     const scaledHeight = this.canvas.height / this.zoomLevel;
-    const viewport = {
-        left: this.cameraX,
-        top: this.cameraY,
-        right: this.cameraX + scaledWidth,
-        bottom: this.cameraY + scaledHeight
-    };
+    const viewLeft = this.cameraX;
+    const viewTop = this.cameraY;
+    const viewRight = viewLeft + scaledWidth;
+    const viewBottom = viewTop + scaledHeight;
 
-    const spawnColors: Record<string, string> = {
-        common: 'rgba(126, 239, 109, 0.25)',
-        uncommon: 'rgba(255, 230, 93, 0.25)',
-        rare: 'rgba(77, 82, 227, 0.25)',
-        epic: 'rgba(134, 31, 222, 0.25)',
-        legendary: 'rgba(222, 31, 31, 0.25)',
-        mythic: 'rgba(31, 219, 222, 0.25)',
-        ultra: 'rgba(222, 31, 101, 0.25)',
-        super: 'rgba(43, 255, 164, 0.25)',
-        unique: 'rgba(191, 0, 255, 0.25)'
-    };
+    // Prefer cached pre-filtered list; fall back to scanning mapData for external callers.
+    const elements = (mapData === this.mapData && this.spawnZoneElements.length > 0)
+        ? this.spawnZoneElements
+        : mapData;
 
-    mapData.forEach(element => {
-        if (element.type !== 'spawn') return;
-        const { x, y, width, height } = element;
-        if (x + width < viewport.left || x > viewport.right ||
-            y + height < viewport.top || y > viewport.bottom) return;
+    const ctx = this.ctx;
+    let lastFill = '';
+    for (let i = 0; i < elements.length; i++) {
+        const element = elements[i];
+        if (element.type !== 'spawn') continue;
+        const x = element.x;
+        const y = element.y;
+        const w = element.width;
+        const h = element.height;
+        if (x + w < viewLeft || x > viewRight || y + h < viewTop || y > viewBottom) continue;
 
         const spawnType = element.properties?.spawnType || 'common';
-        this.ctx.fillStyle = spawnColors[spawnType] || spawnColors.common;
-        this.ctx.fillRect(x, y, width, height);
-    });
+        const fill = SPAWN_ZONE_COLORS[spawnType] || SPAWN_ZONE_COLORS.common;
+        if (fill !== lastFill) {
+            ctx.fillStyle = fill;
+            lastFill = fill;
+        }
+        ctx.fillRect(x, y, w, h);
+    }
 };

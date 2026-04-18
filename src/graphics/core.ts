@@ -121,6 +121,8 @@ export class Graphics {
     public mobDeathAnimation: boolean = true;
     public itemSprites: Record<string, HTMLImageElement> = {};
     public petalImageCache: Record<string, HTMLCanvasElement | HTMLCanvasElement[]> = {};
+    public petalGlowCache: Record<string, HTMLCanvasElement | HTMLCanvasElement[]> = {};
+    public spawnZoneElements: MapElement[] = [];
     public mobSVGCache: Record<string, string> = {};
     public svgRenderer = getSVGRenderer();
 
@@ -201,6 +203,42 @@ export class Graphics {
         }
     }
 
+    public static readonly PETAL_GLOW_PAD = 16;
+
+    private bakePetalGlow(src: HTMLCanvasElement, glowColor: string): HTMLCanvasElement {
+        const PAD = Graphics.PETAL_GLOW_PAD;
+        const out = document.createElement('canvas');
+        out.width = src.width + PAD * 2;
+        out.height = src.height + PAD * 2;
+        const octx = out.getContext('2d');
+        if (!octx) return src;
+        octx.drawImage(src, PAD, PAD);
+        octx.shadowColor = glowColor;
+        octx.shadowBlur = 8;
+        for (let g = 0; g < 6; g++) {
+            octx.drawImage(src, PAD, PAD);
+        }
+        return out;
+    }
+
+    public getPetalGlowCanvas(petalKey: string, rarity: string, time: number = Date.now()): HTMLCanvasElement | null {
+        let cached = this.petalGlowCache[petalKey];
+        if (!cached) {
+            const src = this.petalImageCache[petalKey];
+            if (!src) return null;
+            const glowColor = this.ITEM_RARITY_COLORS[rarity as keyof typeof this.ITEM_RARITY_COLORS] || '#ffffff';
+            cached = Array.isArray(src)
+                ? src.map(frame => this.bakePetalGlow(frame, glowColor))
+                : this.bakePetalGlow(src, glowColor);
+            this.petalGlowCache[petalKey] = cached;
+        }
+        if (Array.isArray(cached)) {
+            const frameIndex = Math.floor((time / 42) % cached.length);
+            return cached[frameIndex];
+        }
+        return cached;
+    }
+
     public clear() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
@@ -213,6 +251,7 @@ export class Graphics {
 
     public setMap(mapData: MapElement[]) {
         this.mapData = mapData;
+        this.spawnZoneElements = mapData.filter(e => e.type === 'spawn');
     }
 
     public showFloatingText(x: number, y: number, text: string, color: string, fontSize: number) {
@@ -456,6 +495,7 @@ export class Graphics {
 
     public setPetalImagesFromPreloaded(imageCache: Record<string, HTMLCanvasElement | HTMLCanvasElement[]>) {
         this.petalImageCache = imageCache;
+        this.petalGlowCache = {};
     }
 
     public async preloadPetalImages() {

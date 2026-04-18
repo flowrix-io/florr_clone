@@ -56,6 +56,10 @@ const BOT_SPAWN_INVULNERABILITY_MS = 3000;
 const TETHER_RADIUS = 1400; // bot stays within this of its anchor
 const TETHER_RETURN_RADIUS = 2200; // past this, drop whatever it's doing and regroup
 const SPAWN_JITTER = 500; // jitter radius around spawn anchor
+// Ultra+ bots roam mythic zones looking for boss spawns — wider tether so
+// they can patrol the full zone and engage mobs across it.
+const ULTRA_ROAM_RADIUS = 2400;
+const ULTRA_ROAM_RETURN = 3200;
 // Boss raiding: bosses ignore the tether so bots can converge across the map.
 const BOSS_RAID_RANGE = 4000; // bots within this distance of a boss will raid
 // Tight clump around the boss — sized so every raiding bot shares ~90% of
@@ -111,10 +115,11 @@ function aggroRangeForTier(tier) {
 const BOT_NAMES = [
     'm28', 'M28', 'uwu', '67', 'Play Zorr.pro', '', '', 'petal',
     'super hunter', 'mark m28', 'Play florr.io', 'dev', 'fake dev', 'admin', 'pytorch', 'urmom', 'skibidi', 'florrio',
-    'CraftApexPetal', 'developer', 'hi', 'mr beast', 'hello', '4167', 'florrrrr', 'bro', 'Missile', 'bruh', 'You suck',
-    'pls loot super', 'powder', 'skibidi ohio rizz', 'rizzler', 'pro', 'noob', 'nub', '[YT]', 'killer', 'flower', 'ur mom'
+    'CraftApexPetal', 'developer', 'hi', 'mr beast', 'hello', '4167', 'florrrrr', 'bro', 'bruh', 'You suck',
+    'pls loot super', 'powder', 'skibidi ohio rizz', 'rizzler', 'pro', 'noob', 'nub', '[YT]', 'killer', 'flower', 'ur mom', 'random flower',
+    'centi', 'petall', 'ygg pls', 'SUPER BASIC', 'carry pls'
 ];
-const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder'];
+const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder', 'javascript'];
 const botAIState = new Map();
 let lastMaintainTime = 0;
 // Timestamp of the last tick that saw at least one real player. Used to keep
@@ -122,6 +127,47 @@ let lastMaintainTime = 0;
 let lastActivePlayerTime = Date.now();
 let forcedRaid = null;
 const FORCED_RAID_DURATION_MS = 45000; // 45s — enough for bots to traverse the map and engage
+// Boss announcements: when a super/unique boss first appears, the nearest bot
+// shouts it in chat, which also triggers the raid. Tracked by enemy id so we
+// don't re-announce the same boss every tick.
+const announcedBosses = new Set();
+let lastBossAnnounceAt = 0;
+const BOSS_ANNOUNCE_COOLDOWN_MS = 2500;
+// Casual phrasings for boss sightings. Kept lower-case / inconsistently
+// punctuated on purpose so bot chatter blends in with the usual player chat.
+// Every template must include "super" or "unique" as a bare word so human-
+// typed versions of these messages still trigger the chat-handler raid.
+// {tier} = "super" | "unique", {mob} = e.g. "beetle".
+const BOSS_SHOUT_TEMPLATES_SUPER = [
+    '{tier} {mob}',
+    '{tier} {mob} here',
+    'theres a {tier} {mob}',
+    '{tier} {mob}!!',
+    '{tier} {mob} come',
+    'raid {tier} {mob}',
+    '{tier} {mob} lets go',
+    'who wants {tier} {mob}',
+    'need help {tier} {mob}',
+    'pls raid {tier} {mob}',
+    '{tier} {mob} anyone',
+    '{mob} {tier} here',
+    'oh {tier} {mob}',
+    '{tier} {mob} spawn',
+    'help {tier} {mob}'
+];
+const BOSS_SHOUT_TEMPLATES_UNIQUE = [
+    '{tier} {mob}',
+    'omg {tier} {mob}',
+    '{tier} {mob}!!!',
+    '{tier} {mob} raid',
+    'bruh {tier} {mob}',
+    'no way {tier} {mob}',
+    '{tier} {mob} come now',
+    'raid {tier} {mob} !!!',
+    '{tier} {mob} here',
+    'wtf {tier} {mob}',
+    '{tier} {mob}. raid'
+];
 function isBot(id) {
     return id.startsWith(BOT_ID_PREFIX);
 }
@@ -156,8 +202,15 @@ const RARITY_WEIGHTS_BY_BAND = {
     11: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 11], ['ultra', 1]], // levels 111-120
     12: [['common', 40], ['uncommon', 40], ['rare', 40], ['epic', 40], ['legendary', 40], ['mythic', 40], ['ultra', 21], ['super', 1]], // levels 121-130
     13: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 20], ['ultra', 20], ['super', 20]], // levels 131-140
-    14: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 20], ['ultra', 20], ['super', 20], ['unique', 5]] // levels 141+
+    14: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 20], ['ultra', 20], ['super', 20], ['unique', 5]], // levels 141-199
+    // Apex band — level 200+. Loadout skews heavily toward end-game rarities,
+    // with apex as the headliner. Routed by explicit level check below, not
+    // the normal rawBand / LEVEL_BAND_SIZE math.
+    20: [['mythic', 10], ['ultra', 20], ['super', 20], ['unique', 20], ['apex', 30]]
 };
+const APEX_BAND = 20;
+const APEX_LEVEL_THRESHOLD = 200;
+const MAX_PRE_APEX_BAND = 14;
 const CUMULATIVE_BY_BAND = {};
 for (const bandKey of Object.keys(RARITY_WEIGHTS_BY_BAND)) {
     const band = Number(bandKey);
@@ -172,35 +225,58 @@ for (const bandKey of Object.keys(RARITY_WEIGHTS_BY_BAND)) {
     }
     CUMULATIVE_BY_BAND[band] = { cumulative, rarities, total: acc };
 }
-const MAX_BAND = Math.max(...Object.keys(CUMULATIVE_BY_BAND).map(Number));
-function pickRarityForLevel(level) {
-    const rawBand = Math.floor(Math.max(1, level - 1) / LEVEL_BAND_SIZE);
-    const band = Math.min(rawBand, MAX_BAND);
+// djb2-style string hash → 32-bit unsigned int. Stable across runs, so a bot
+// with the same name always hashes to the same seed.
+function hashString(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) {
+        h = (Math.imul(h, 33) ^ s.charCodeAt(i)) | 0;
+    }
+    return h >>> 0;
+}
+// mulberry32 — fast deterministic PRNG. Same seed → same stream, so name-
+// seeded bots reproduce the same level + loadout every spawn.
+function seededRng(seed) {
+    let s = seed >>> 0;
+    return () => {
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+function pickRarityForLevel(level, rng) {
+    // Apex is a separate band, not a linear extension of the level→band map:
+    // levels 200+ always roll from the apex pool.
+    let band;
+    if (level >= APEX_LEVEL_THRESHOLD) {
+        band = APEX_BAND;
+    }
+    else {
+        const rawBand = Math.floor(Math.max(1, level - 1) / LEVEL_BAND_SIZE);
+        band = Math.min(rawBand, MAX_PRE_APEX_BAND);
+    }
     const entry = CUMULATIVE_BY_BAND[band] || CUMULATIVE_BY_BAND[0];
-    const roll = (Math.random() * 2) + entry.total - 2;
+    const roll = (rng() * 2) + entry.total - 2;
     for (let i = 0; i < entry.cumulative.length; i++) {
         if (roll < entry.cumulative[i])
             return entry.rarities[i];
     }
     return entry.rarities[entry.rarities.length - 1];
 }
-function rollBotLevel() {
-    // Mix of low / mid / high tier levels so the bot population reflects a
-    // realistic spread rather than clustering at the floor.
-    // const r = Math.random();
-    // if (r < 0.45) return Math.floor(Math.random() * 12) + 1;    // 1-12
-    // if (r < 0.75) return Math.floor(Math.random() * 20) + 12;   // 12-31
-    // if (r < 0.92) return Math.floor(Math.random() * 30) + 30;   // 30-59
-    // return Math.floor(Math.random() * 50) + 60;                  // 60-109
-    return Math.floor(Math.random() * 200 + 1);
+function rollBotLevel(rng) {
+    // Uniform 1-225. Roughly 11% of bots land at apex tier (level >= 200).
+    // Derived from the name-seeded rng so same-name bots share a level.
+    return Math.floor(rng() * 225) + 1;
 }
-function buildBotLoadout(level) {
+function buildBotLoadout(level, rng) {
     const loadout = [];
     // Fill all 10 slots so bots have a full active loadout (matches max real-
     // player capacity) rather than 5 equipped + 5 empty slots.
     for (let i = 0; i < 10; i++) {
-        const petalType = BOT_PETAL_POOL[Math.floor(Math.random() * BOT_PETAL_POOL.length)];
-        const rarity = pickRarityForLevel(level);
+        const petalType = BOT_PETAL_POOL[Math.floor(rng() * BOT_PETAL_POOL.length)];
+        const rarity = pickRarityForLevel(level, rng);
         const stats = (0, petals_1.getPetalStats)(petalType, rarity);
         if (stats) {
             loadout.push({
@@ -238,6 +314,77 @@ function pickPowderRarity(loadout) {
         }
     }
     return RARITY_ORDER[Math.max(POWDER_MIN_RARITY_IDX, maxIdx)];
+}
+// Bot's "power rarity" — the max petal rarity across their loadout. Drives
+// target selection: a common-loadout bot hunts uncommon mobs, a mythic bot
+// hunts mythic, ultra+ bots go boss hunting.
+function getBotMaxRarityIdx(bot) {
+    let maxIdx = 0;
+    if (bot.loadout) {
+        for (const item of bot.loadout) {
+            if (!item || item.type !== 'petal' || !item.rarity)
+                continue;
+            const idx = RARITY_ORDER.indexOf(item.rarity);
+            if (idx > maxIdx)
+                maxIdx = idx;
+        }
+    }
+    return maxIdx;
+}
+// Which mob tier(s) this bot prefers to engage. Mirrors the progression rule
+// "one tier above your gear, except mythic stays on mythic and ultra+ hunts
+// bosses". Empty set = no preference (fall through to standard priority).
+const MYTHIC_IDX = 5;
+const ULTRA_IDX = 6;
+function preferredMobTiersForBot(botIdx) {
+    if (botIdx >= ULTRA_IDX)
+        return new Set(['super', 'unique']);
+    if (botIdx === MYTHIC_IDX)
+        return new Set(['mythic']);
+    if (botIdx >= 0 && botIdx < RARITY_ORDER.length - 1) {
+        return new Set([RARITY_ORDER[botIdx + 1]]);
+    }
+    return new Set();
+}
+let mythicZonesCache = null;
+function getMythicZones() {
+    if (mythicZonesCache)
+        return mythicZonesCache;
+    const out = [];
+    for (const el of map_data_1.WORLD_MAP) {
+        if (el.type !== 'spawn')
+            continue;
+        if (el.properties?.spawnType !== 'mythic')
+            continue;
+        if (el.width <= 0 || el.height <= 0)
+            continue;
+        out.push({
+            cx: (el.x + el.width / 2) * constants_1.SCALE_FACTOR,
+            cy: (el.y + el.height / 2) * constants_1.SCALE_FACTOR
+        });
+    }
+    mythicZonesCache = out;
+    return out;
+}
+// Pick a mythic-zone anchor for an ultra+ bot. Uses the bot id as a stable
+// hash so different bots gravitate toward different zones instead of all
+// piling onto the nearest one.
+function pickMythicZoneAnchor(bot) {
+    const zones = getMythicZones();
+    if (zones.length === 0)
+        return null;
+    // Score = distance, with a deterministic per-bot offset so they spread.
+    let h = 0;
+    for (let i = 0; i < bot.id.length; i++)
+        h = ((h * 31) + bot.id.charCodeAt(i)) | 0;
+    const offset = Math.abs(h) % Math.max(1, zones.length);
+    // Sort by distance, then pick the `offset`-th nearest (modulo count) so
+    // bots cluster across zones rather than all on the nearest one.
+    const scored = zones
+        .map(z => ({ z, d: (z.cx - bot.x) ** 2 + (z.cy - bot.y) ** 2 }))
+        .sort((a, b) => a.d - b.d);
+    const pick = scored[Math.min(offset, scored.length - 1)].z;
+    return { x: pick.cx, y: pick.cy };
 }
 function equipRaidPowder(bot, state) {
     if (state.raidPowderSlot !== undefined)
@@ -423,13 +570,18 @@ function pickBotName() {
 }
 function createBot(io) {
     const id = generateBotId();
-    const level = rollBotLevel();
+    // Name-derived rng: bot level + full loadout are deterministic from the
+    // name. Two bots that happen to roll the same name will have the same
+    // build, which is the whole point — "a bot named X plays like X".
+    const name = pickBotName();
+    const rng = seededRng(hashString(name));
+    const level = rollBotLevel(rng);
     const maxHealth = (0, playerManager_1.calculateMaxHealthFromLevel)(level);
     const damage = (0, playerManager_1.calculateDamageFromLevel)(level);
     const pos = pickBotSpawnPosition();
     const bot = {
         id,
-        name: pickBotName(),
+        name,
         x: pos.x,
         y: pos.y,
         angle: 0,
@@ -440,7 +592,7 @@ function createBot(io) {
         maxHealth,
         damage,
         inventory: (0, playerManager_1.createInitialInventory)(),
-        loadout: buildBotLoadout(level),
+        loadout: buildBotLoadout(level, rng),
         isInvulnerable: true,
         level,
         xp: 0,
@@ -887,6 +1039,16 @@ function followPath(bot, state, now, goalX, goalY, speedMult, petalExt) {
     }
     if (state.pathIndex >= state.pathNodes.length)
         return false;
+    // Greedy LOS smoothing: skip ahead to the farthest waypoint with clear
+    // line of sight. Without this, bots steer tile-center to tile-center,
+    // producing a visible zigzag that turns into fast left-right snapping
+    // under powder's 2×+ speed boost.
+    while (state.pathIndex + 1 < state.pathNodes.length) {
+        const next = state.pathNodes[state.pathIndex + 1];
+        if (rayHitsWall(bot.x, bot.y, next.x, next.y))
+            break;
+        state.pathIndex++;
+    }
     const wp = state.pathNodes[state.pathIndex];
     const dx = wp.x - bot.x;
     const dy = wp.y - bot.y;
@@ -910,9 +1072,11 @@ function withinAnchor(anchor, x, y, radius) {
     const dy = anchor.y - y;
     return dx * dx + dy * dy <= radius * radius;
 }
-function pickBestEnemyTarget(bot, anchor, tetherRadius) {
+function pickBestEnemyTarget(bot, anchor, tetherRadius, preferredTiers) {
     // Score = priority * 10000 - distance, so bosses within their aggro range
     // beat every regular mob and the closer target wins among same tier.
+    // Preferred-tier (matches bot's rarity progression) gets a +0.5 priority
+    // bump so it beats same-tier-class unpreferred mobs, but never bosses.
     let best = null;
     let bestScore = -Infinity;
     let bestDist = 0;
@@ -935,7 +1099,8 @@ function pickBestEnemyTarget(bot, anchor, tetherRadius) {
         if (d > range)
             continue;
         const priority = tierPriority(enemy.tier);
-        const score = priority * 10000 - d;
+        const prefBonus = preferredTiers.has(enemy.tier) ? 0.5 : 0;
+        const score = (priority + prefBonus) * 10000 - d;
         if (score > bestScore) {
             bestScore = score;
             best = enemy;
@@ -1039,6 +1204,72 @@ function getActiveForcedRaidAnchor() {
     forcedRaid.y = refreshed.y;
     forcedRaid.tier = refreshed.tier;
     return { x: forcedRaid.x, y: forcedRaid.y };
+}
+// Scan for new super/unique bosses and have the nearest live bot shout them
+// out in chat. Emitting through io.emit (not the socket handler) means we
+// bypass the built-in chat-triggered raid — so we also call triggerBotRaid()
+// directly. Rate-limited globally to avoid spam when multiple bosses spawn
+// at once.
+function announceNewBosses(io, now) {
+    if (now - lastBossAnnounceAt < BOSS_ANNOUNCE_COOLDOWN_MS)
+        return;
+    for (const enemy of constants_1.enemies) {
+        if (enemy.ownerId)
+            continue;
+        if (enemy.isDead)
+            continue;
+        if (!BOSS_TIERS.has(enemy.tier))
+            continue;
+        if (announcedBosses.has(enemy.id))
+            continue;
+        let announcerId = null;
+        let bestD = Infinity;
+        for (const pid in constants_1.players) {
+            if (!isBot(pid))
+                continue;
+            const b = constants_1.players[pid];
+            if (!b || b.isDead)
+                continue;
+            const dx = b.x - enemy.x;
+            const dy = b.y - enemy.y;
+            const d = dx * dx + dy * dy;
+            if (d < bestD) {
+                bestD = d;
+                announcerId = pid;
+            }
+        }
+        if (!announcerId)
+            return;
+        const bot = constants_1.players[announcerId];
+        const tierWord = enemy.tier === 'unique' ? 'unique' : 'super';
+        const pool = tierWord === 'unique' ? BOSS_SHOUT_TEMPLATES_UNIQUE : BOSS_SHOUT_TEMPLATES_SUPER;
+        const shout = pool[Math.floor(Math.random() * pool.length)]
+            .replace('{tier}', tierWord)
+            .replace('{mob}', enemy.type.replace(/_/g, ' '));
+        io.emit('chatMessage', {
+            sender: bot.name,
+            content: `[<span style="color: yellow;">${bot.name}</span>] ${shout}`,
+            timestamp: now
+        });
+        announcedBosses.add(enemy.id);
+        lastBossAnnounceAt = now;
+        // Rally every bot — the chat handler's regex trigger won't fire for
+        // messages we emit directly, so invoke it explicitly.
+        triggerBotRaid();
+        return; // One announcement per tick batch
+    }
+    // GC: drop ids of bosses that no longer exist so the set doesn't grow.
+    if (announcedBosses.size > 32) {
+        const live = new Set();
+        for (const e of constants_1.enemies) {
+            if (BOSS_TIERS.has(e.tier) && !e.isDead)
+                live.add(e.id);
+        }
+        for (const id of announcedBosses) {
+            if (!live.has(id))
+                announcedBosses.delete(id);
+        }
+    }
 }
 function findNearestBossForBot(bot) {
     // Pass 1: look for uniques within raid range. Uniques always beat supers.
@@ -1214,6 +1445,21 @@ function computeBotMode(bot, groups) {
             };
         }
     }
+    // Ultra+ bots roam mythic zones to hunt bosses. They ignore the normal
+    // human tether because their "job" is to patrol where super/unique bosses
+    // spawn, not to babysit humans farming lower-tier sections.
+    const botRarityIdx = getBotMaxRarityIdx(bot);
+    if (botRarityIdx >= ULTRA_IDX) {
+        const zone = pickMythicZoneAnchor(bot);
+        if (zone) {
+            return {
+                kind: 'normal',
+                anchor: zone,
+                tetherRadius: ULTRA_ROAM_RADIUS,
+                returnRadius: ULTRA_ROAM_RETURN
+            };
+        }
+    }
     // Normal: tether to nearest human player.
     const human = nearestRealPlayer(bot.x, bot.y);
     return {
@@ -1241,6 +1487,9 @@ function updateBotAI(io) {
     // Reset the per-tick A* budget so a single tick can't be dominated by
     // simultaneous recomputes (e.g., a whole raid repathing at once).
     pathBudgetThisTick = PATH_MAX_PER_TICK;
+    // Bots call out fresh super/unique boss sightings in chat — this also
+    // triggers the global raid rally via triggerBotRaid().
+    announceNewBosses(io, now);
     // Bot groupings are only needed for highRarity mode but it's cheaper to
     // build once and reuse than recompute per-bot.
     const groups = computeBotGroups();
@@ -1274,6 +1523,7 @@ function updateBotAI(io) {
         const anchorDist = anchor
             ? Math.sqrt((anchor.x - bot.x) ** 2 + (anchor.y - bot.y) ** 2)
             : 0;
+        const preferredTiers = preferredMobTiersForBot(getBotMaxRarityIdx(bot));
         // Swap in a powder petal during raid traversal; restore combat loadout
         // once in engagement range (or when no longer raiding).
         if (mode.kind === 'raid' && anchorDist > RAID_POWDER_MIN_DIST) {
@@ -1288,7 +1538,7 @@ function updateBotAI(io) {
         if (mode.kind === 'raid' && anchor && handleRaidShortcut(bot, state, now, anchor, anchorDist)) {
             continue;
         }
-        const target = pickBestEnemyTarget(bot, anchor, mode.tetherRadius);
+        const target = pickBestEnemyTarget(bot, anchor, mode.tetherRadius, preferredTiers);
         const isBossTarget = !!(target && BOSS_TIERS.has(target.enemy.tier));
         // If bot has drifted outside its cluster (boss raid / group / tether),
         // abandon the current task and regroup. Skipped when raiding a boss

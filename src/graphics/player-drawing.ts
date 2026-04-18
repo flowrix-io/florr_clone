@@ -344,26 +344,17 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
 
         if (petalCanvas && petalCanvas.width > 0 && petalCanvas.height > 0) {
             try {
-                // Use cached canvas image
-                // Draw centered at origin (which is now the petal position after translate)
-                this.ctx.drawImage(
-                    petalCanvas,
-                    -petalSize / 2,
-                    -petalSize / 2,
-                    petalSize,
-                    petalSize
-                );
-
-                // Add rarity glow effect (only when ALT key is held)
                 if (this.showRarityGlow) {
-                    const glowColor = this.ITEM_RARITY_COLORS[petal.rarity as keyof typeof this.ITEM_RARITY_COLORS] || stats.color;
-                    this.ctx.save();
-                    this.ctx.shadowColor = glowColor;
-                    this.ctx.shadowBlur = 8;
-                    for (let g = 0; g < 6; g++) {
+                    const glowCanvas = this.getPetalGlowCanvas(petalKey, petal.rarity, this.frameTimestamp);
+                    if (glowCanvas) {
+                        const scale = glowCanvas.width / petalCanvas.width;
+                        const drawSize = petalSize * scale;
+                        this.ctx.drawImage(glowCanvas, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+                    } else {
                         this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                     }
-                    this.ctx.restore();
+                } else {
+                    this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
                 }
             } catch (error) {
                 console.error(`[Graphics] Error drawing petal image for ${slotIndex}:`, error);

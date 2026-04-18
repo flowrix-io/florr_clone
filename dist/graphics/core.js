@@ -134,6 +134,8 @@ class Graphics {
         this.mobDeathAnimation = true;
         this.itemSprites = {};
         this.petalImageCache = {};
+        this.petalGlowCache = {};
+        this.spawnZoneElements = [];
         this.mobSVGCache = {};
         this.svgRenderer = (0, svg_renderer_1.getSVGRenderer)();
         // Section-based texture loading state
@@ -195,6 +197,40 @@ class Graphics {
             return petalImage;
         }
     }
+    bakePetalGlow(src, glowColor) {
+        const PAD = Graphics.PETAL_GLOW_PAD;
+        const out = document.createElement('canvas');
+        out.width = src.width + PAD * 2;
+        out.height = src.height + PAD * 2;
+        const octx = out.getContext('2d');
+        if (!octx)
+            return src;
+        octx.drawImage(src, PAD, PAD);
+        octx.shadowColor = glowColor;
+        octx.shadowBlur = 8;
+        for (let g = 0; g < 6; g++) {
+            octx.drawImage(src, PAD, PAD);
+        }
+        return out;
+    }
+    getPetalGlowCanvas(petalKey, rarity, time = Date.now()) {
+        let cached = this.petalGlowCache[petalKey];
+        if (!cached) {
+            const src = this.petalImageCache[petalKey];
+            if (!src)
+                return null;
+            const glowColor = this.ITEM_RARITY_COLORS[rarity] || '#ffffff';
+            cached = Array.isArray(src)
+                ? src.map(frame => this.bakePetalGlow(frame, glowColor))
+                : this.bakePetalGlow(src, glowColor);
+            this.petalGlowCache[petalKey] = cached;
+        }
+        if (Array.isArray(cached)) {
+            const frameIndex = Math.floor((time / 42) % cached.length);
+            return cached[frameIndex];
+        }
+        return cached;
+    }
     clear() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
@@ -205,6 +241,7 @@ class Graphics {
     }
     setMap(mapData) {
         this.mapData = mapData;
+        this.spawnZoneElements = mapData.filter(e => e.type === 'spawn');
     }
     showFloatingText(x, y, text, color, fontSize) {
         if (this.floatingTexts.length >= this.MAX_FLOATING_TEXTS) {
@@ -413,6 +450,7 @@ class Graphics {
     }
     setPetalImagesFromPreloaded(imageCache) {
         this.petalImageCache = imageCache;
+        this.petalGlowCache = {};
     }
     async preloadPetalImages() {
         console.warn('[Graphics] preloadPetalImages called - this should be handled by Preloader');
@@ -453,3 +491,4 @@ class Graphics {
     }
 }
 exports.Graphics = Graphics;
+Graphics.PETAL_GLOW_PAD = 16;

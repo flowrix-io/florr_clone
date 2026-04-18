@@ -1,6 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+const MINIMAP_SPAWN_COLORS = {
+    common: 'rgba(126, 239, 109, 0.4)',
+    uncommon: 'rgba(255, 230, 93, 0.4)',
+    rare: 'rgba(77, 82, 227, 0.4)',
+    epic: 'rgba(134, 31, 222, 0.4)',
+    legendary: 'rgba(222, 31, 31, 0.4)',
+    mythic: 'rgba(31, 219, 222, 0.4)',
+    ultra: 'rgba(222, 31, 101, 0.4)',
+    super: 'rgba(43, 255, 164, 0.4)',
+    unique: 'rgba(191, 0, 255, 0.4)',
+    apex: 'rgba(0, 255, 255, 0.4)'
+};
 core_1.Graphics.prototype.scrollMinimap = function (deltaX, deltaY) {
     // Minimap scrolling is disabled - it automatically shows the current 9th section
     // This method is kept for backward compatibility but does nothing
@@ -65,32 +77,31 @@ core_1.Graphics.prototype.drawMinimap = function (players, socket) {
     this.ctx.clip();
     // Draw spawn zones on minimap when ALT is held (below walls/water)
     if (this.showRarityGlow) {
-        const minimapSpawnColors = {
-            common: 'rgba(126, 239, 109, 0.4)',
-            uncommon: 'rgba(255, 230, 93, 0.4)',
-            rare: 'rgba(77, 82, 227, 0.4)',
-            epic: 'rgba(134, 31, 222, 0.4)',
-            legendary: 'rgba(222, 31, 31, 0.4)',
-            mythic: 'rgba(31, 219, 222, 0.4)',
-            ultra: 'rgba(222, 31, 101, 0.4)',
-            super: 'rgba(43, 255, 164, 0.4)',
-            unique: 'rgba(191, 0, 255, 0.4)',
-            apex: 'rgba(0, 255, 255, 0.4)'
-        };
-        this.mapData.forEach(element => {
+        const spawnElements = this.spawnZoneElements.length > 0 ? this.spawnZoneElements : this.mapData;
+        const mapRight = minimapX + this.MINIMAP_WIDTH;
+        const mapBottom = minimapY + this.MINIMAP_HEIGHT;
+        const sx = minimapScale.x;
+        const sy = minimapScale.y;
+        let lastFill = '';
+        for (let i = 0; i < spawnElements.length; i++) {
+            const element = spawnElements[i];
             if (element.type !== 'spawn')
-                return;
-            const scaledX = minimapX + ((element.x - this.minimapScrollX) * minimapScale.x);
-            const scaledY = minimapY + ((element.y - this.minimapScrollY) * minimapScale.y);
-            const scaledWidth = element.width * minimapScale.x;
-            const scaledHeight = element.height * minimapScale.y;
-            if (scaledX + scaledWidth > minimapX && scaledX < minimapX + this.MINIMAP_WIDTH &&
-                scaledY + scaledHeight > minimapY && scaledY < minimapY + this.MINIMAP_HEIGHT) {
-                const spawnType = element.properties?.spawnType || 'common';
-                this.ctx.fillStyle = minimapSpawnColors[spawnType] || minimapSpawnColors.common;
-                this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+                continue;
+            const scaledX = minimapX + ((element.x - this.minimapScrollX) * sx);
+            const scaledY = minimapY + ((element.y - this.minimapScrollY) * sy);
+            const scaledWidth = element.width * sx;
+            const scaledHeight = element.height * sy;
+            if (scaledX + scaledWidth <= minimapX || scaledX >= mapRight ||
+                scaledY + scaledHeight <= minimapY || scaledY >= mapBottom)
+                continue;
+            const spawnType = element.properties?.spawnType || 'common';
+            const fill = MINIMAP_SPAWN_COLORS[spawnType] || MINIMAP_SPAWN_COLORS.common;
+            if (fill !== lastFill) {
+                this.ctx.fillStyle = fill;
+                lastFill = fill;
             }
-        });
+            this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+        }
     }
     // Draw wall grid tiles on minimap
     const SECTION_SIZE = 20000;
