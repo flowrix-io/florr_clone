@@ -218,8 +218,8 @@ app.post('/api/notifications', (req, res) => {
 // Leaderboard endpoint
 app.get('/api/leaderboard', (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
-    const { entries, totalAccounts } = database_1.database.getLeaderboard(limit);
-    res.json({ leaderboard: entries, totalAccounts });
+    const { entries, totalAccounts, dailyActiveUsers } = database_1.database.getLeaderboard(limit);
+    res.json({ leaderboard: entries, totalAccounts, dailyActiveUsers });
 });
 // Create server based on protocol configuration
 let server;

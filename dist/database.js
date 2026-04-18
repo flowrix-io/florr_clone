@@ -120,6 +120,7 @@ exports.database = {
                 const hashedPassword = bcrypt.hashSync(password, SALT_ROUNDS);
                 user.password = hashedPassword;
                 user.isPlainText = false;
+                user.lastActiveAt = Date.now();
                 db.users[username] = user;
                 writeDatabase();
                 return user;
@@ -128,6 +129,8 @@ exports.database = {
         }
         // This is a hashed password - use bcrypt to compare
         if (bcrypt.compareSync(password, user.password)) {
+            user.lastActiveAt = Date.now();
+            writeDatabase();
             return user;
         }
         return null;
@@ -323,16 +326,21 @@ exports.database = {
     // Get leaderboard data: all accounts sorted by totalXP descending
     getLeaderboard: (limit = 50) => {
         const entries = [];
+        const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+        let dailyActiveUsers = 0;
         for (const username in db.users) {
             const user = db.users[username];
             const progress = db.players[user.id];
             const totalXP = progress?.totalXP || 0;
             entries.push({ username, totalXP });
+            if (user.lastActiveAt && user.lastActiveAt >= dayAgo) {
+                dailyActiveUsers++;
+            }
         }
         const totalAccounts = entries.length;
         // Sort by totalXP descending
         entries.sort((a, b) => b.totalXP - a.totalXP);
-        return { entries: entries.slice(0, limit), totalAccounts };
+        return { entries: entries.slice(0, limit), totalAccounts, dailyActiveUsers };
     },
     // Delete guest accounts that still have the default initial inventory/loadout
     deleteGuestAccounts: () => {

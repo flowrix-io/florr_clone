@@ -9,6 +9,7 @@ class LeaderboardManager {
         this.isOpen = false;
         this.entries = [];
         this.totalAccounts = 0;
+        this.dailyActiveUsers = 0;
         this.isLoading = false;
         this.serverBaseUrl = '';
         this.scrollY = 0;
@@ -64,6 +65,7 @@ class LeaderboardManager {
             const data = await response.json();
             const rawEntries = data.leaderboard || [];
             this.totalAccounts = data.totalAccounts || 0;
+            this.dailyActiveUsers = data.dailyActiveUsers || 0;
             this.entries = rawEntries.map((entry) => ({
                 username: entry.username,
                 totalXP: entry.totalXP,
@@ -203,12 +205,12 @@ class LeaderboardManager {
         ctx.lineWidth = 2;
         ctx.strokeText('Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING);
         ctx.fillText('Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING);
-        // Total accounts count
+        // Total accounts count and daily active users
         if (this.totalAccounts > 0) {
             ctx.font = '13px Ubuntu, sans-serif';
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.lineWidth = 0;
-            ctx.fillText(`${this.totalAccounts} accounts`, offsetX + this.PADDING + 140, offsetY + this.PADDING + 5);
+            ctx.fillText(`${this.totalAccounts} accounts \u00B7 ${this.dailyActiveUsers} active today`, offsetX + this.PADDING + 140, offsetY + this.PADDING + 5);
         }
         // Refresh button
         const refreshButtonX = offsetX + this.PANEL_WIDTH - 140;
