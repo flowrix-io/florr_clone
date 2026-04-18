@@ -342,6 +342,19 @@ exports.database = {
         entries.sort((a, b) => b.totalXP - a.totalXP);
         return { entries: entries.slice(0, limit), totalAccounts, dailyActiveUsers };
     },
+    // Get users who have authenticated within the last 24 hours
+    getTodayLogins: () => {
+        const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+        const active = [];
+        for (const username in db.users) {
+            const user = db.users[username];
+            if (user.lastActiveAt && user.lastActiveAt >= dayAgo) {
+                active.push({ username, lastActiveAt: user.lastActiveAt });
+            }
+        }
+        active.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+        return active;
+    },
     // Delete guest accounts that still have the default initial inventory/loadout
     deleteGuestAccounts: () => {
         const guestPattern = /^User\d{8}$/;

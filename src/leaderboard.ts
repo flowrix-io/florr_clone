@@ -12,7 +12,7 @@ export class LeaderboardManager {
     private isOpen: boolean = false;
     private entries: LeaderboardEntry[] = [];
     private totalAccounts: number = 0;
-    private dailyActiveUsers: number = 0;
+    private dailyActiveUsers: number | null = null;
     private isLoading: boolean = false;
     private serverBaseUrl: string = '';
     private scrollY: number = 0;
@@ -68,14 +68,21 @@ export class LeaderboardManager {
         this.isLoading = true;
 
         try {
-            const response = await fetch(`${this.serverBaseUrl}/api/leaderboard?limit=50`);
+            const params = new URLSearchParams({ limit: '50' });
+            const username = typeof localStorage !== 'undefined' ? localStorage.getItem('username') : null;
+            const password = typeof localStorage !== 'undefined' ? localStorage.getItem('password') : null;
+            if (username && password) {
+                params.set('username', username);
+                params.set('password', password);
+            }
+            const response = await fetch(`${this.serverBaseUrl}/api/leaderboard?${params.toString()}`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const data = await response.json();
             const rawEntries = data.leaderboard || [];
             this.totalAccounts = data.totalAccounts || 0;
-            this.dailyActiveUsers = data.dailyActiveUsers || 0;
+            this.dailyActiveUsers = typeof data.dailyActiveUsers === 'number' ? data.dailyActiveUsers : null;
 
             this.entries = rawEntries.map((entry: { username: string; totalXP: number }) => ({
                 username: entry.username,
@@ -227,12 +234,15 @@ export class LeaderboardManager {
         ctx.strokeText('Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING);
         ctx.fillText('Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING);
 
-        // Total accounts count and daily active users
+        // Total accounts count and daily active users (DAU only shown to admins)
         if (this.totalAccounts > 0) {
             ctx.font = '13px Ubuntu, sans-serif';
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.lineWidth = 0;
-            ctx.fillText(`${this.totalAccounts} accounts \u00B7 ${this.dailyActiveUsers} active today`, offsetX + this.PADDING + 140, offsetY + this.PADDING + 5);
+            const statsText = this.dailyActiveUsers !== null
+                ? `${this.totalAccounts} accounts \u00B7 ${this.dailyActiveUsers} active today`
+                : `${this.totalAccounts} accounts`;
+            ctx.fillText(statsText, offsetX + this.PADDING + 140, offsetY + this.PADDING + 5);
         }
 
         // Refresh button

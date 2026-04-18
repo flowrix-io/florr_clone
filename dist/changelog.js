@@ -250,6 +250,7 @@ exports.CHANGELOG = [
         date: 'April 17, 2026',
         changes: [
             'New petal: Powder',
+            'New petal: Peas',
             'New mob: Desert Centipede',
             'New mob: Centipede',
         ]

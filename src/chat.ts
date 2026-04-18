@@ -51,6 +51,8 @@ const COMMANDS: CommandDefinition[] = [
     { command: '/admin clear_notifs', description: 'Clear notifications (shorthand)', isAdmin: true },
     { command: '/admin give', description: 'Give item to a player', isAdmin: true },
     { command: '/admin delete_guests', description: 'Delete default guest accounts', isAdmin: true },
+    { command: '/admin list_today_logins', description: 'List accounts active in last 24h', isAdmin: true },
+    { command: '/admin list_active', description: 'List accounts active in last 24h (shorthand)', isAdmin: true },
     { command: '/cmd', description: 'Execute server command (alias)', isAdmin: true },
     { command: '/forcelocalplayerflags', description: 'Set local player face/equip flags (client-only)', isAdmin: false },
     { command: '/squad create', description: 'Create a new squad', isAdmin: false },

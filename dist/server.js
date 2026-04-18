@@ -219,7 +219,21 @@ app.post('/api/notifications', (req, res) => {
 app.get('/api/leaderboard', (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const { entries, totalAccounts, dailyActiveUsers } = database_1.database.getLeaderboard(limit);
-    res.json({ leaderboard: entries, totalAccounts, dailyActiveUsers });
+    const authUsername = typeof req.query.username === 'string' ? req.query.username : undefined;
+    const authPassword = typeof req.query.password === 'string' ? req.query.password : undefined;
+    let isAdmin = false;
+    if (authUsername && authPassword) {
+        const user = database_1.database.getUser(authUsername, authPassword);
+        isAdmin = !!user && database_1.database.isUserAdmin(authUsername);
+    }
+    const payload = {
+        leaderboard: entries,
+        totalAccounts
+    };
+    if (isAdmin) {
+        payload.dailyActiveUsers = dailyActiveUsers;
+    }
+    res.json(payload);
 });
 // Create server based on protocol configuration
 let server;

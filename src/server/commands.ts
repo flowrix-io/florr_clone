@@ -441,6 +441,23 @@ export function executeServerCommand(
     } else if (trimmedCommand === 'delete_guests') {
         const count = database.deleteGuestAccounts();
         sendOutput(`Deleted ${count} guest account(s) and their player data.`, socketId, io);
+    } else if (trimmedCommand === 'list_today_logins' || trimmedCommand === 'list_active') {
+        const active = database.getTodayLogins();
+        if (active.length === 0) {
+            sendOutput('No accounts active in the last 24 hours.', socketId, io);
+        } else {
+            sendOutput(`Accounts active in last 24 hours (${active.length}):`, socketId, io);
+            const now = Date.now();
+            active.forEach(({ username, lastActiveAt }) => {
+                const minutesAgo = Math.floor((now - lastActiveAt) / 60000);
+                const when = minutesAgo < 1
+                    ? 'just now'
+                    : minutesAgo < 60
+                        ? `${minutesAgo}m ago`
+                        : `${Math.floor(minutesAgo / 60)}h ${minutesAgo % 60}m ago`;
+                sendOutput(`  ${username} — ${when}`, socketId, io);
+            });
+        }
     }
 }
 
@@ -505,6 +522,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins';
 }
 
