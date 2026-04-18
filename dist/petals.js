@@ -1291,7 +1291,7 @@ const BASE_PETAL_CONFIGS = {
         playerModifiers: { rotationSpeed: 1.1 }
     },
     pollen: {
-        name: "Pollen Petal",
+        name: "Pollen",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -1306,7 +1306,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     powder: {
-        name: "Powder Petal",
+        name: "Powder",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -1319,6 +1319,26 @@ const BASE_PETAL_CONFIGS = {
 </svg>`,
         playerModifiers: { speed: 1.1 },
         isAdminPetal: false
+    },
+    peas: {
+        name: "Peas",
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 1000,
+        description: "Makes you faster",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#8ac255" stroke-width="4" stroke="#709d45"/>
+</svg>`,
+        isAdminPetal: false,
+        projectile: {
+            count: 4,
+            spreadAngle: 1.5708,
+            speed: 800,
+            distance: 1000
+        }
     },
     sparkle: {
         name: "Sparkle Petal",

@@ -249,6 +249,15 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Added apex rarity',
             'Recolored unique and apex petals'
         ]
+    },
+    {
+        date: 'April 17, 2026',
+        changes: [
+            'New petal: Powder',
+            'New petal: Peas',
+            'New mob: Desert Centipede',
+            'New mob: Centipede',
+        ]
     }
 ];
 

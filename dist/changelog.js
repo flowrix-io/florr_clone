@@ -245,6 +245,14 @@ exports.CHANGELOG = [
             'Added apex rarity',
             'Recolored unique and apex petals'
         ]
+    },
+    {
+        date: 'April 17, 2026',
+        changes: [
+            'New petal: Powder',
+            'New mob: Desert Centipede',
+            'New mob: Centipede',
+        ]
     }
 ];
 class ChangelogManager {

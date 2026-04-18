@@ -3886,6 +3886,32 @@ exports.MOB_DROP_TABLES = {
             }
         ]
     },
+    centipede: {
+        guaranteed: false,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'peas',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 0
+            }
+        ]
+    },
+    centipede_body: {
+        guaranteed: false,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'peas',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 0
+            }
+        ]
+    },
 };
 // Ensure every mob type drops its egg with 100% chance for common rarity
 for (const mobType in exports.BASE_MOB_CONFIGS) {
