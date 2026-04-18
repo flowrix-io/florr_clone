@@ -126,6 +126,13 @@ let lastMaintainTime = 0;
 // Timestamp of the last tick that saw at least one real player. Used to keep
 // bots alive for BOT_IDLE_TIMEOUT_MS after the server goes empty.
 let lastActivePlayerTime = Date.now();
+// Natural drift around the base bot target so the population doesn't look
+// pinned to a fixed number. Random-walked each maintain tick and clamped to
+// a small band around zero. Not used when targetBotCountOverride is set.
+const BOT_COUNT_JITTER_MIN = -3;
+const BOT_COUNT_JITTER_MAX = 2;
+const BOT_COUNT_JITTER_STEP_CHANCE = 0.35;
+let botCountJitter = 0;
 let forcedRaid = null;
 const FORCED_RAID_DURATION_MS = 45000; // 45s — enough for bots to traverse the map and engage
 // Boss announcements: when a super/unique boss first appears, the nearest bot
@@ -141,12 +148,10 @@ const BOSS_ANNOUNCE_COOLDOWN_MS = 2500;
 // {tier} = "super" | "unique", {mob} = e.g. "beetle".
 const BOSS_SHOUT_TEMPLATES_SUPER = [
     '{tier} {mob}',
-    '/guild{tier} {mob} here',
     '{tier} {mob} come',
     '{tier} {mob} lets go',
     'who wants {tier} {mob}',
     'need help {tier} {mob}',
-    '/guildpls raid {tier} {mob}',
     '{tier} {mob} anyone',
     '{mob} {tier} here',
     '{tier} {mob} spawn',
@@ -157,20 +162,27 @@ const BOSS_SHOUT_TEMPLATES_SUPER = [
     'free {tier} {mob}',
     '{tier} {mob} deep',
     '{tier} {mob} lured',
+    's{mob}',
+    's{mob} unfree',
+    'less than 20 ppl at {tier} {mob}',
+    '{tier} {mob} free carry',
 ];
 const BOSS_SHOUT_TEMPLATES_UNIQUE = [
     'q{mob}',
     'how {tier} {mob}',
-    '/guild{tier} {mob} here',
     '{tier} {mob} come',
     '{tier} {mob} lets go',
     'who wants {tier} {mob}',
-    'need help {tier} {mob}',
-    '/guildpls raid {tier} {mob}',
     '{tier} {mob} anyone',
     '{mob} {tier} here',
     '{tier} {mob} so free',
     'WHAT {tier} {mob}',
+    'q{mob} pls loot',
+    'q{mob} pls carry',
+    '{tier} {mob} pls carry',
+    '{tier} {mob} pls loot',
+    'q{mob} so free',
+    'less than 20 ppl at {tier} {mob}'
 ];
 function isBot(id) {
     return id.startsWith(BOT_ID_PREFIX);
@@ -673,9 +685,18 @@ function maintainBotCount(io, realPlayerCount) {
         return;
     lastMaintainTime = now;
     const currentBots = countBots();
+    // Drift the jitter by ±1 each tick so the population wanders slowly instead
+    // of sitting at a fixed target. Bounded so it can't collapse the server.
+    if (Math.random() < BOT_COUNT_JITTER_STEP_CHANCE) {
+        botCountJitter += Math.random() < 0.5 ? -1 : 1;
+        if (botCountJitter < BOT_COUNT_JITTER_MIN)
+            botCountJitter = BOT_COUNT_JITTER_MIN;
+        if (botCountJitter > BOT_COUNT_JITTER_MAX)
+            botCountJitter = BOT_COUNT_JITTER_MAX;
+    }
     const desiredBots = targetBotCountOverride !== null
         ? targetBotCountOverride
-        : Math.max(0, TARGET_TOTAL_PLAYERS - realPlayerCount);
+        : Math.max(0, TARGET_TOTAL_PLAYERS - realPlayerCount + botCountJitter);
     if (currentBots < desiredBots) {
         const deficit = desiredBots - currentBots;
         const toSpawn = Math.min(deficit, SPAWN_BURST_CAP);
