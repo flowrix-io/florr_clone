@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 304876193,
+      "totalXP": 304876734,
       "inventory": {
         "common": {
           "shield": 281,
@@ -695,7 +695,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 717,
+          "common": 718,
           "legendary": 434,
           "uncommon": 188,
           "mythic": 344,
@@ -706,10 +706,10 @@
           "unique": 3
         },
         "soldier_ant": {
-          "epic": 178,
+          "epic": 179,
           "legendary": 713,
           "common": 929,
-          "rare": 225,
+          "rare": 228,
           "mythic": 778,
           "ultra": 24,
           "uncommon": 328,
@@ -733,7 +733,7 @@
           "legendary": 314,
           "mythic": 314,
           "uncommon": 229,
-          "rare": 109,
+          "rare": 110,
           "epic": 82,
           "ultra": 16,
           "super": 8,
@@ -744,7 +744,7 @@
           "legendary": 666,
           "mythic": 584,
           "uncommon": 288,
-          "rare": 172,
+          "rare": 173,
           "epic": 140,
           "ultra": 23,
           "super": 10,
@@ -1505,7 +1505,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1776544736616
+      "lastActiveAt": 1776545106278
     },
     "dev": {
       "id": "1g99g1gfk",

@@ -134,10 +134,11 @@ function aggroRangeForTier(tier: string | undefined): number {
 
 const BOT_NAMES = [
     'm28', 'M28', 'uwu', '67', 'Play Zorr.pro', '', '', 'petal',
-     'super hunter', 'mark m28', 'Play florr.io', 'dev', 'fake dev', 'admin', 'pytorch', 'urmom', 'skibidi', 'florrio'
-     , 'CraftApexPetal', 'developer', 'hi', 'mr beast', 'hello', '4167', 'florrrrr', 'bro', 'bruh', 'You suck',
+     'super hunter', 'mark m28', 'dev', 'fake dev', 'admin', 'pytorch', 'urmom', 'skibidi', 'florrio'
+     , 'CraftApexPetal', 'developer', 'hi', 'hello', '4167', 'florrrrr', 'bro', 'bruh', 'You suck',
       'pls loot super', 'powder', 'skibidi ohio rizz', 'rizzler', 'pro', 'noob', 'nub', '[YT]', 'killer', 'flower', 'ur mom', 'random flower',
-      'centi', 'petall', 'ygg pls', 'SUPER BASIC', 'carry pls'
+      'centi', 'petall', 'ygg pls', 'SUPER BASIC', 'carry pls', 'lol', 'floor', 'ded', 'noooo', 'nl super', 'nah', 'm29', 'm56', 'florr67', 'get good', 'super raider', 'real admin'
+      , 'not bot', 'bot', 'scripts', 'ban dupers', 'absorbed super'
 ];
 
 const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder', 'javascript'];
