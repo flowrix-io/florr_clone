@@ -82,6 +82,8 @@ class Chat {
         });
         this.socket.on('squadUpdate', (data) => {
             this.currentSquad = data;
+            // Expose member IDs so the minimap can render squadmates as pink dots without ALT.
+            window.squadMemberIds = data ? data.memberIds : [];
         });
         this.socket.on('squadInviteReceived', (data) => {
             // Visual notification is already handled via chatMessage from server

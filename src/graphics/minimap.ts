@@ -196,10 +196,13 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
     });
 
     // Draw all players on minimap with solid colors (with scroll offset)
+    const squadMemberIds: string[] = (window as any).squadMemberIds || [];
+    const squadMemberSet = new Set<string>(squadMemberIds);
     players.forEach(player => {
         const isCurrentPlayer = player.id === socket;
-        // Only show other players when ALT is pressed, always show current player
-        if (!isCurrentPlayer && !this.altKeyPressed) {
+        const isSquadMember = !isCurrentPlayer && squadMemberSet.has(player.id);
+        // Only show other non-squad players when ALT is pressed. Always show current player and squadmates.
+        if (!isCurrentPlayer && !isSquadMember && !this.altKeyPressed) {
             return;
         }
 
@@ -211,15 +214,23 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
             playerMinimapY > minimapY && playerMinimapY < minimapY + this.MINIMAP_HEIGHT) {
             if (isCurrentPlayer) {
                 // Current player: blue dot with black outline, same size as portals
-                this.ctx.fillStyle = '#0000FF'; // Blue for current player
+                this.ctx.fillStyle = '#0000FF';
                 this.ctx.strokeStyle = '#000000';
                 this.ctx.lineWidth = 1;
                 this.ctx.beginPath();
                 this.ctx.arc(playerMinimapX, playerMinimapY, 3, 0, Math.PI * 2);
                 this.ctx.fill();
                 this.ctx.stroke();
+            } else if (isSquadMember) {
+                // Squad members: pink dot with black outline so they stand out from ALT-revealed players.
+                this.ctx.fillStyle = '#FF69B4';
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 1;
+                this.ctx.beginPath();
+                this.ctx.arc(playerMinimapX, playerMinimapY, 4, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
             } else {
-                // Other players: black dot
                 this.ctx.fillStyle = '#000000';
                 this.ctx.beginPath();
                 this.ctx.arc(playerMinimapX, playerMinimapY, 4, 0, Math.PI * 2);

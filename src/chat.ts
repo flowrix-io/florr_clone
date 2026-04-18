@@ -117,6 +117,8 @@ export class Chat {
 
         this.socket.on('squadUpdate', (data: { squadId: string; memberIds: string[]; leaderId: string } | null) => {
             this.currentSquad = data;
+            // Expose member IDs so the minimap can render squadmates as pink dots without ALT.
+            (window as any).squadMemberIds = data ? data.memberIds : [];
         });
 
         this.socket.on('squadInviteReceived', (data: { fromUsername: string }) => {

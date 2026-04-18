@@ -34,11 +34,14 @@ function generateSquadId(): string {
 export function createSquad(leaderSocketId: string, isPublic: boolean = false): Squad | null {
     if (playerSquadMap.has(leaderSocketId)) return null; // already in a squad
 
+    // Bot-led squads are always public so humans can discover and join them.
+    const effectiveIsPublic = isBotId(leaderSocketId) ? true : isPublic;
+
     const squad: Squad = {
         id: generateSquadId(),
         leaderId: leaderSocketId,
         memberIds: [leaderSocketId],
-        isPublic,
+        isPublic: effectiveIsPublic,
         chatHistory: [],
     };
 
@@ -87,7 +90,7 @@ export function addBotToSquad(squadId: string, botId: string): { squad: Squad | 
     const squad = squads.get(squadId);
     if (!squad) return { squad: null, error: 'Squad not found.' };
     if (squad.memberIds.length >= MAX_SQUAD_SIZE) return { squad: null, error: 'Squad is full.' };
-    if (playerSquadMap.has(botId)) return { squad: null, error: 'That bot is already in a squad.' };
+    if (playerSquadMap.has(botId)) return { squad: null, error: 'Player already has a squad.' };
     squad.memberIds.push(botId);
     playerSquadMap.set(botId, squad.id);
     return { squad, error: null };
@@ -181,6 +184,10 @@ export function leaveSquad(socketId: string, io: SocketIOServer): string | null 
     // If the leader left, promote the next member
     if (squad.leaderId === socketId) {
         squad.leaderId = squad.memberIds[0];
+        // Bot leaders keep the squad public so humans can still join.
+        if (isBotId(squad.leaderId)) {
+            squad.isPublic = true;
+        }
         // Notify new leader
         const newLeader = players[squad.leaderId];
         const newLeaderName = newLeader ? newLeader.name : 'Unknown';
