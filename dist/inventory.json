@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 315112561,
+      "totalXP": 315114309,
       "inventory": {
         "common": {
           "shield": 284,
@@ -9,11 +9,11 @@
           "petal_dandelion": 35,
           "petal_stinger": 74,
           "petal_yggdrasil": 15,
-          "speed_boost": 193,
+          "speed_boost": 194,
           "petal_sand": 53,
           "petal_rock": 212,
           "petal_clover": 63,
-          "petal_bone": 156,
+          "petal_bone": 157,
           "petal_cactus": 20,
           "petal_iris": 13,
           "petal_poison_cactus": 18,
@@ -46,7 +46,7 @@
           "petal_moth_egg": 23,
           "petal_garbage_egg": 310,
           "petal_hel_beetle_egg": 20,
-          "petal_soldier_fire_ant_egg": 45,
+          "petal_soldier_fire_ant_egg": 47,
           "petal_mantis_egg": 10,
           "petal_splitter": 6,
           "petal_beetle_egg": 9,
@@ -81,7 +81,7 @@
           "petal_peas": 12,
           "petal_baby_ant_egg": 2,
           "petal_worker_ant_egg": 1,
-          "petal_worker_fire_ant_egg": 2,
+          "petal_worker_fire_ant_egg": 3,
           "petal_baby_fire_ant_egg": 2
         },
         "unique": {
@@ -273,7 +273,7 @@
           "petal_peas": 4,
           "petal_baby_ant_egg": 6,
           "petal_worker_ant_egg": 7,
-          "petal_worker_fire_ant_egg": 3
+          "petal_worker_fire_ant_egg": 5
         },
         "legendary": {
           "speed_boost": 134,
@@ -714,11 +714,11 @@
         "soldier_ant": {
           "epic": 191,
           "legendary": 724,
-          "common": 932,
-          "rare": 308,
+          "common": 951,
+          "rare": 309,
           "mythic": 785,
           "ultra": 24,
-          "uncommon": 360,
+          "uncommon": 363,
           "super": 11,
           "unique": 4,
           "apex": 2
@@ -894,9 +894,9 @@
           "epic": 16
         },
         "soldier_fire_ant": {
-          "uncommon": 366,
+          "uncommon": 386,
           "common": 17,
-          "rare": 112,
+          "rare": 117,
           "epic": 246,
           "mythic": 123,
           "legendary": 218,
@@ -1093,18 +1093,20 @@
           "uncommon": 5,
           "rare": 22,
           "epic": 31,
-          "legendary": 1
+          "legendary": 1,
+          "common": 6
         },
         "baby_ant": {
           "uncommon": 8,
           "rare": 16,
           "epic": 32,
-          "legendary": 2
+          "legendary": 2,
+          "common": 4
         },
         "worker_fire_ant": {
-          "uncommon": 7,
+          "uncommon": 16,
           "common": 1,
-          "rare": 5,
+          "rare": 8,
           "epic": 4
         },
         "baby_fire_ant": {
@@ -1535,7 +1537,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1776547954218
+      "lastActiveAt": 1776549704209
     },
     "dev": {
       "id": "1g99g1gfk",
