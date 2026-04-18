@@ -3996,6 +3996,32 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
             }
         ]
     },
+    desert_centipede: {
+        guaranteed: false,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'powder',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 0
+            }
+        ]
+    },
+    desert_centipede_body: {
+        guaranteed: false,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'powder',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 0
+            }
+        ]
+    },
 };
 
 // Ensure every mob type drops its egg with 100% chance for common rarity
