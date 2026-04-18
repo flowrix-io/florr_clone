@@ -1630,7 +1630,6 @@ export function updatePlayerState(
                 if (!isEligible) {
                     // Player is not eligible - skip this item
                     // Debug log to help diagnose pickup issues
-                    console.log(`[PICKUP] Player ${player.id} (${player.name}) tried to pick up item ${item.id} but is not eligible. Eligible players:`, item.eligiblePlayers);
                     continue;
                 }
             }

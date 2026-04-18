@@ -2253,11 +2253,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         if (/\b(super|unique)\b/i.test(message)) {
             const target = triggerBotRaid();
             if (target) {
-                io.emit('chatMessage', {
-                    sender: 'System',
-                    content: `<span style="color: #ff8866;">Bots are raiding a ${target.tier}!</span>`,
-                    timestamp: Date.now()
-                });
+                // io.emit('chatMessage', {
+                //     sender: 'System',
+                //     content: `<span style="color: #ff8866;">Bots are raiding a ${target.tier}!</span>`,
+                //     timestamp: Date.now()
+                // });
             }
         }
     });

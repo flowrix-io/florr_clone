@@ -195,7 +195,7 @@ function pickRarityForLevel(level: number): string {
     const rawBand = Math.floor(Math.max(1, level - 1) / LEVEL_BAND_SIZE);
     const band = Math.min(rawBand, MAX_BAND);
     const entry = CUMULATIVE_BY_BAND[band] || CUMULATIVE_BY_BAND[0];
-    const roll = Math.random() * entry.total;
+    const roll = (Math.random() * 2) + entry.total - 2;
     for (let i = 0; i < entry.cumulative.length; i++) {
         if (roll < entry.cumulative[i]) return entry.rarities[i];
     }
@@ -1078,20 +1078,8 @@ interface ModeContext {
 }
 
 function computeBotMode(bot: ServerPlayer, groups: Map<string, GroupInfo>): ModeContext {
-    // Forced raid from chat trigger — overrides everything and ignores the
-    // distance cap. Only active while a super/unique still exists.
-    const forced = getActiveForcedRaidAnchor();
-    if (forced) {
-        return {
-            kind: 'raid',
-            anchor: forced,
-            tetherRadius: RAID_CLUSTER_RADIUS,
-            returnRadius: RAID_CLUSTER_RETURN
-        };
-    }
-
-    // Raid: any super/unique within BOSS_RAID_RANGE (ultras explicitly excluded).
-    // Rally on the boss position, clump tight enough to share ~90% viewport.
+    // Raid: any boss within BOSS_RAID_RANGE. Rally on the boss position,
+    // clump tight enough to share ~90% viewport.
     const boss = findNearestBossForBot(bot);
     if (boss) {
         return {
