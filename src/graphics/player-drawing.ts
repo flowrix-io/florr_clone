@@ -66,10 +66,12 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
             player.targetEye = { x: 0, y: 0 };
         }
 
-        // Calculate target eye position for this player
+        // Target eye position — same formula as the local player so remote
+        // players' (and bots') eyes look in their facing direction rather than
+        // 90° off.
         player.targetEye = {
-            x: Math.sin(player.angle) * 2,
-            y: Math.cos(player.angle) * -4.4
+            x: Math.cos(player.angle) * 2,
+            y: Math.sin(player.angle) * 4.4
         };
 
         // Smooth interpolation

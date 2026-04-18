@@ -123,6 +123,7 @@ import {
     getEnemyCount
 } from './server/gameState';
 import { handleMobDrops as handleMobDropsModule } from './server/itemManager';
+import { updateBotAI, maintainBotCount, triggerBotRaid } from './server/botManager';
 import {
     createInitialBasicPetals,
     createInitialInventory,
@@ -2245,6 +2246,20 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
         // Broadcast to all connected clients
         io.emit('chatMessage', chatMessage);
+
+        // Trigger a bot raid if the message mentions a raid-eligible boss tier.
+        // Only supers and uniques count — never ultras. triggerBotRaid picks
+        // the actual target (uniques preferred) or no-ops if none exist.
+        if (/\b(super|unique)\b/i.test(message)) {
+            const target = triggerBotRaid();
+            if (target) {
+                io.emit('chatMessage', {
+                    sender: 'System',
+                    content: `<span style="color: #ff8866;">Bots are raiding a ${target.tier}!</span>`,
+                    timestamp: Date.now()
+                });
+            }
+        }
     });
 
     // Add this after socket handlers but before socket.on('authenticate'...)
@@ -4089,11 +4104,19 @@ function start_loop() {
             const socket = io.sockets.sockets.get(id) as AuthenticatedSocket;
             return socket && socket.userId;
         });
-        
+
+        // Keep bot population aligned with real player count. Despawns all bots
+        // when nobody is online so the server goes fully idle.
+        maintainBotCount(io, authenticatedPlayerIds.length);
+
         // Skip game processing if there are no authenticated players
         if (authenticatedPlayerIds.length === 0) {
             return;
         }
+
+        // Populate bot inputs before running the normal update pipeline so
+        // bots move/attack just like real players.
+        updateBotAI(io);
 
         for (const id in players) {
             updatePlayerState(players[id], deltaTime, playerStateDeps);

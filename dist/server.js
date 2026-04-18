@@ -66,6 +66,7 @@ const playerState_1 = require("./server/playerState");
 const commands_1 = require("./server/commands");
 const gameState_1 = require("./server/gameState");
 const itemManager_1 = require("./server/itemManager");
+const botManager_1 = require("./server/botManager");
 const playerManager_1 = require("./server/playerManager");
 const crossServer_1 = require("./server/crossServer");
 const enemySpawner_1 = require("./server/enemySpawner");
@@ -1939,6 +1940,19 @@ io.on('connection', (socket) => {
         }
         // Broadcast to all connected clients
         io.emit('chatMessage', chatMessage);
+        // Trigger a bot raid if the message mentions a raid-eligible boss tier.
+        // Only supers and uniques count — never ultras. triggerBotRaid picks
+        // the actual target (uniques preferred) or no-ops if none exist.
+        if (/\b(super|unique)\b/i.test(message)) {
+            const target = (0, botManager_1.triggerBotRaid)();
+            if (target) {
+                io.emit('chatMessage', {
+                    sender: 'System',
+                    content: `<span style="color: #ff8866;">Bots are raiding a ${target.tier}!</span>`,
+                    timestamp: Date.now()
+                });
+            }
+        }
     });
     // Add this after socket handlers but before socket.on('authenticate'...)
     socket.on('requestChatHistory', () => {
@@ -3575,10 +3589,16 @@ function start_loop() {
             const socket = io.sockets.sockets.get(id);
             return socket && socket.userId;
         });
+        // Keep bot population aligned with real player count. Despawns all bots
+        // when nobody is online so the server goes fully idle.
+        (0, botManager_1.maintainBotCount)(io, authenticatedPlayerIds.length);
         // Skip game processing if there are no authenticated players
         if (authenticatedPlayerIds.length === 0) {
             return;
         }
+        // Populate bot inputs before running the normal update pipeline so
+        // bots move/attack just like real players.
+        (0, botManager_1.updateBotAI)(io);
         for (const id in constants_2.players) {
             (0, playerState_1.updatePlayerState)(constants_2.players[id], deltaTime, playerStateDeps);
         }

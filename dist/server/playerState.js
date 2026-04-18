@@ -93,6 +93,10 @@ function cleanupPetalPhysicsStates(playerId) {
 function getPlayerViewports() {
     const viewports = [];
     for (const playerId in constants_1.players) {
+        // Bots don't dictate enemy spawn budget — otherwise 17 bots clustered
+        // around one human would ~18x the spawned mob count.
+        if (playerId.startsWith('bot_'))
+            continue;
         const player = constants_1.players[playerId];
         if (player && player.x !== undefined && player.y !== undefined &&
             !isNaN(player.x) && !isNaN(player.y) &&

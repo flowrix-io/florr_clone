@@ -166,6 +166,9 @@ export function getPlayerViewports(): Array<{x: number, y: number, width: number
     const viewports: Array<{x: number, y: number, width: number, height: number}> = [];
 
     for (const playerId in players) {
+        // Bots don't dictate enemy spawn budget — otherwise 17 bots clustered
+        // around one human would ~18x the spawned mob count.
+        if (playerId.startsWith('bot_')) continue;
         const player = players[playerId];
         if (player && player.x !== undefined && player.y !== undefined &&
             !isNaN(player.x) && !isNaN(player.y) &&

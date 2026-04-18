@@ -355,13 +355,18 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         return null as any;
     }
 
-    // Pick the player with the fewest enemies in their viewport to balance density
-    const playerIds = Object.keys(players);
-    let targetPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)];
+    // Pick the player with the fewest enemies in their viewport to balance density.
+    // Only real (human) players drive spawning — bots shouldn't trigger mob spawns
+    // of their own, otherwise the world fills up with enemies per bot.
+    const realPlayerIds = Object.keys(players).filter(id => !id.startsWith('bot_'));
+    if (realPlayerIds.length === 0) {
+        return null as any;
+    }
+    let targetPlayerId = realPlayerIds[Math.floor(Math.random() * realPlayerIds.length)];
 
-    if (playerIds.length > 1) {
+    if (realPlayerIds.length > 1) {
         let minCount = Infinity;
-        for (const pid of playerIds) {
+        for (const pid of realPlayerIds) {
             const p = players[pid];
             if (!p) continue;
             const vpW = p.viewportWidth || VIEWPORT_WIDTH;
@@ -392,7 +397,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         attempts++;
 
         // Spawn near the player with the lowest mob density
-        const player = players[targetPlayerId] || players[playerIds[0]];
+        const player = players[targetPlayerId] || players[realPlayerIds[0]];
         
         // Generate position within player's viewport (with buffer)
         const vpW = player.viewportWidth || VIEWPORT_WIDTH;
@@ -453,7 +458,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             newAttempts++;
 
             // Use same target player for phase 2 retries
-            const player = players[targetPlayerId] || players[playerIds[0]];
+            const player = players[targetPlayerId] || players[realPlayerIds[0]];
 
             const vpW = player.viewportWidth || VIEWPORT_WIDTH;
             const vpH = player.viewportHeight || VIEWPORT_HEIGHT;
@@ -514,7 +519,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             newAttempts++;
 
             // Use same target player for mob spacing retries
-            const player = players[targetPlayerId] || players[playerIds[0]];
+            const player = players[targetPlayerId] || players[realPlayerIds[0]];
 
             const vpW = player.viewportWidth || VIEWPORT_WIDTH;
             const vpH = player.viewportHeight || VIEWPORT_HEIGHT;
