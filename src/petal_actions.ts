@@ -521,7 +521,7 @@ export function despawnAllPlayerPets(playerId: string, io: any): void {
 }
 
 // Spawn a pet mob that belongs to a player
-export function spawnPet(mobType: string, rarity: string, x: number, y: number, ownerId: string, io: any): void {
+export function spawnPet(mobType: string, rarity: string, x: number, y: number, ownerId: string, io: any, skipDuplicateCheck: boolean = false): void {
     // Validate mob type
     const allMobTypes = getAllMobTypes();
     if (!allMobTypes.includes(mobType)) {
@@ -530,17 +530,32 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     }
 
     // Validate rarity
-    const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
     if (!validRarities.includes(rarity.toLowerCase())) {
         console.log(`Invalid rarity for pet: ${rarity}`);
         return;
     }
 
+    // Apex eggs spawn 3 unique pets instead of a single apex pet
+    if (rarity.toLowerCase() === 'apex') {
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            if (enemies[i].ownerId === ownerId && enemies[i].type === mobType) {
+                despawnPet(enemies[i], io);
+            }
+        }
+        for (let i = 0; i < 3; i++) {
+            spawnPet(mobType, 'unique', x, y, ownerId, io, true);
+        }
+        return;
+    }
+
     // Check if player already has a pet of this mob type - despawn it first
-    const existingPet = findPlayerPetByMobType(ownerId, mobType);
-    if (existingPet) {
-        // console.log(`[PET] Player ${ownerId} already has a ${mobType} pet, despawning old one`);
-        despawnPet(existingPet, io);
+    if (!skipDuplicateCheck) {
+        const existingPet = findPlayerPetByMobType(ownerId, mobType);
+        if (existingPet) {
+            // console.log(`[PET] Player ${ownerId} already has a ${mobType} pet, despawning old one`);
+            despawnPet(existingPet, io);
+        }
     }
 
     const tier = rarity.toLowerCase() as Enemy['tier'];

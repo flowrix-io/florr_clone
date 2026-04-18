@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 273452788,
+      "totalXP": 273452961,
       "inventory": {
         "common": {
           "shield": 277,
@@ -563,7 +563,7 @@
           "petal_rock_egg": 1
         },
         "apex": {
-          "petal_beetle_egg": 2,
+          "petal_beetle_egg": 1,
           "petal_lightning": 1,
           "petal_lightning_cutter": 1,
           "petal_centipede_egg": 1,
@@ -581,7 +581,11 @@
           "rarity": "apex",
           "petalType": "basic"
         },
-        null,
+        {
+          "type": "petal",
+          "rarity": "apex",
+          "petalType": "beetle_egg"
+        },
         {
           "type": "petal",
           "rarity": "unique",
@@ -688,7 +692,7 @@
           "rare": 214,
           "mythic": 672,
           "ultra": 19,
-          "uncommon": 317,
+          "uncommon": 318,
           "super": 11,
           "unique": 3,
           "apex": 2
@@ -700,12 +704,12 @@
           "mythic": 248,
           "epic": 64,
           "rare": 87,
-          "uncommon": 160,
+          "uncommon": 161,
           "super": 3,
           "unique": 2
         },
         "dark_ladybug": {
-          "common": 841,
+          "common": 842,
           "legendary": 235,
           "mythic": 242,
           "uncommon": 221,
@@ -719,7 +723,7 @@
           "common": 862,
           "legendary": 547,
           "mythic": 481,
-          "uncommon": 276,
+          "uncommon": 277,
           "rare": 159,
           "epic": 124,
           "ultra": 21,
@@ -1023,7 +1027,7 @@
           "uncommon": 5
         },
         "centipede": {
-          "common": 16,
+          "common": 17,
           "uncommon": 2,
           "legendary": 44,
           "epic": 7,
@@ -1033,7 +1037,7 @@
           "super": 2
         },
         "centipede_body": {
-          "common": 114,
+          "common": 123,
           "uncommon": 15,
           "legendary": 341,
           "mythic": 226,
@@ -1434,7 +1438,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1776477125262
+      "lastActiveAt": 1776477401649
     },
     "dev": {
       "id": "1g99g1gfk",

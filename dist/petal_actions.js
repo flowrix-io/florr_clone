@@ -406,7 +406,7 @@ function despawnAllPlayerPets(playerId, io) {
     }
 }
 // Spawn a pet mob that belongs to a player
-function spawnPet(mobType, rarity, x, y, ownerId, io) {
+function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false) {
     // Validate mob type
     const allMobTypes = (0, mobs_1.getAllMobTypes)();
     if (!allMobTypes.includes(mobType)) {
@@ -414,16 +414,30 @@ function spawnPet(mobType, rarity, x, y, ownerId, io) {
         return;
     }
     // Validate rarity
-    const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
     if (!validRarities.includes(rarity.toLowerCase())) {
         console.log(`Invalid rarity for pet: ${rarity}`);
         return;
     }
+    // Apex eggs spawn 3 unique pets instead of a single apex pet
+    if (rarity.toLowerCase() === 'apex') {
+        for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
+            if (constants_1.enemies[i].ownerId === ownerId && constants_1.enemies[i].type === mobType) {
+                despawnPet(constants_1.enemies[i], io);
+            }
+        }
+        for (let i = 0; i < 3; i++) {
+            spawnPet(mobType, 'unique', x, y, ownerId, io, true);
+        }
+        return;
+    }
     // Check if player already has a pet of this mob type - despawn it first
-    const existingPet = findPlayerPetByMobType(ownerId, mobType);
-    if (existingPet) {
-        // console.log(`[PET] Player ${ownerId} already has a ${mobType} pet, despawning old one`);
-        despawnPet(existingPet, io);
+    if (!skipDuplicateCheck) {
+        const existingPet = findPlayerPetByMobType(ownerId, mobType);
+        if (existingPet) {
+            // console.log(`[PET] Player ${ownerId} already has a ${mobType} pet, despawning old one`);
+            despawnPet(existingPet, io);
+        }
     }
     const tier = rarity.toLowerCase();
     const mobStats = (0, mobs_1.getMobStats)(mobType, tier);

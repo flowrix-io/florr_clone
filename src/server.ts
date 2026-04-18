@@ -1791,16 +1791,16 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                     addItem(serverInventory, oldItem.rarity, oldKey, 1);
                 }
 
-                // If the unequipped item was a petal with petMobType, despawn the pet
+                // If the unequipped item was a petal with petMobType, despawn all pets of that type
+                // (apex eggs spawn multiple pets, so we need to clear them all)
                 if (oldItem.type === 'petal' && oldItem.petalType && oldItem.rarity) {
                     const oldPetalStats = getPetalStats(oldItem.petalType, oldItem.rarity);
                     if (oldPetalStats?.petMobType) {
-                        const petToDespawn = enemies.find(e =>
-                            e.ownerId === player.id &&
-                            e.type === oldPetalStats.petMobType
-                        );
-                        if (petToDespawn) {
-                            despawnPet(petToDespawn, io);
+                        for (let i = enemies.length - 1; i >= 0; i--) {
+                            const e = enemies[i];
+                            if (e.ownerId === player.id && e.type === oldPetalStats.petMobType) {
+                                despawnPet(e, io);
+                            }
                         }
                     }
                 }
