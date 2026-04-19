@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 376017811,
+      "totalXP": 376020032,
       "inventory": {
         "common": {
           "shield": 291,
@@ -721,11 +721,11 @@
         "soldier_ant": {
           "epic": 219,
           "legendary": 848,
-          "common": 993,
-          "rare": 339,
+          "common": 994,
+          "rare": 349,
           "mythic": 882,
           "ultra": 27,
-          "uncommon": 397,
+          "uncommon": 417,
           "super": 13,
           "unique": 4,
           "apex": 2
@@ -901,9 +901,9 @@
           "epic": 16
         },
         "soldier_fire_ant": {
-          "uncommon": 412,
-          "common": 18,
-          "rare": 138,
+          "uncommon": 449,
+          "common": 20,
+          "rare": 140,
           "epic": 280,
           "mythic": 179,
           "legendary": 289,
@@ -955,7 +955,7 @@
           "uncommon": 1
         },
         "sandstorm": {
-          "common": 44,
+          "common": 47,
           "rare": 10,
           "epic": 28,
           "legendary": 110,
@@ -1099,11 +1099,11 @@
           "rare": 2
         },
         "worker_ant": {
-          "uncommon": 8,
-          "rare": 23,
+          "uncommon": 13,
+          "rare": 25,
           "epic": 31,
           "legendary": 1,
-          "common": 8
+          "common": 9
         },
         "baby_ant": {
           "uncommon": 9,
@@ -1113,7 +1113,7 @@
           "common": 4
         },
         "worker_fire_ant": {
-          "uncommon": 23,
+          "uncommon": 28,
           "common": 1,
           "rare": 13,
           "epic": 16,
@@ -1121,14 +1121,16 @@
           "mythic": 8
         },
         "baby_fire_ant": {
-          "uncommon": 5,
+          "uncommon": 6,
           "rare": 4,
           "epic": 5,
           "legendary": 5,
           "mythic": 3
         }
       },
-      "stars": 136048
+      "stars": 136049,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-04-19"
     },
     "1g99g1gfk": {
       "totalXP": 345,
@@ -1549,7 +1551,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1776569025788
+      "lastActiveAt": 1776630453454
     },
     "dev": {
       "id": "1g99g1gfk",

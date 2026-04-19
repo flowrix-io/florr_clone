@@ -836,6 +836,8 @@ io.on('connection', (socket) => {
             socket.userId = user.id;
             socket.username = user.username;
             gameState_1.playerUserIds[socket.id] = user.id; // Store the mapping
+            // Award daily streak bonus before loading progress so saved stars are up-to-date
+            const streakResult = database_1.database.processDailyStreak(user.id);
             // console.log('User authenticated, loading saved progress for userId:', user.id);
             const savedProgress = database_1.database.getPlayerByUserId(user.id);
             // console.log('Loaded saved progress:', savedProgress);
@@ -1067,6 +1069,14 @@ io.on('connection', (socket) => {
             socket.emit('authenticated', {
                 success: true,
                 player: constants_2.players[socket.id]
+            });
+            socket.emit('dailyStreakStatus', {
+                starsAwarded: streakResult.starsAwarded,
+                streak: streakResult.streak,
+                newDay: streakResult.newDay,
+                nextClaimAtMs: streakResult.nextClaimAtMs,
+                streakExpiresAtMs: streakResult.streakExpiresAtMs,
+                totalStars: constants_2.players[socket.id].stars
             });
             // Send the user's current guild (if any) and notify online guild members so online list refreshes.
             if (socket.username) {

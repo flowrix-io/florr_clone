@@ -25,6 +25,8 @@ export interface PlayerProgress {
     loadout?: (Item | null)[];
     mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
     stars?: number; // In-game currency earned from challenges and codes
+    dailyStreak?: number; // Consecutive-day login counter, cycles 1..5
+    lastStreakDate?: string; // YYYY-MM-DD (UTC) of last streak claim
 }
 
 interface User {
@@ -201,6 +203,55 @@ export const database = {
 
     getPlayerByUserId: (userId:string): PlayerProgress | null => {
         return db.players[userId] || null;
+    },
+
+    // Daily streak: awards stars on the first login of each UTC day.
+    // Streak cycles 1..5 (1⭐, 2⭐, 3⭐, 4⭐, 5⭐ then wraps). Missed days reset to 1.
+    // - nextClaimAtMs: UTC epoch ms when the next claim window opens (next UTC midnight
+    //   if already claimed, or now if unclaimed).
+    // - streakExpiresAtMs: UTC epoch ms when the streak lapses if unclaimed — the end
+    //   of the day after the next claim window (i.e. two UTC midnights from last claim).
+    processDailyStreak: (userId: string): {
+        starsAwarded: number;
+        streak: number;
+        newDay: boolean;
+        nextClaimAtMs: number;
+        streakExpiresAtMs: number;
+    } => {
+        const progress: PlayerProgress = db.players[userId] || { totalXP: 0 };
+        const today = new Date().toISOString().slice(0, 10);
+        const todayUtcMs = Date.parse(today + 'T00:00:00Z');
+        const msPerDay = 86400000;
+        const last = progress.lastStreakDate;
+        let starsAwarded = 0;
+        let newDay = false;
+        let streak = progress.dailyStreak || 0;
+
+        if (last === today) {
+            // Already claimed today — no award, streak as-is.
+        } else {
+            if (last) {
+                const lastMs = Date.parse(last + 'T00:00:00Z');
+                const dayDiff = Math.round((todayUtcMs - lastMs) / msPerDay);
+                streak = dayDiff === 1 ? streak + 1 : 1;
+            } else {
+                streak = 1;
+            }
+            starsAwarded = ((streak - 1) % 5) + 1;
+            progress.dailyStreak = streak;
+            progress.lastStreakDate = today;
+            progress.stars = (progress.stars || 0) + starsAwarded;
+            db.players[userId] = progress;
+            writeDatabase();
+            newDay = true;
+        }
+
+        const claimedToday = progress.lastStreakDate === today;
+        const nextClaimAtMs = claimedToday ? todayUtcMs + msPerDay : Date.now();
+        // Streak expires at the end of the day after the next claim window.
+        const streakExpiresAtMs = claimedToday ? todayUtcMs + 2 * msPerDay : todayUtcMs + msPerDay;
+
+        return { starsAwarded, streak, newDay, nextClaimAtMs, streakExpiresAtMs };
     },
 
     // Migration function to upgrade all plain text passwords to hashed passwords
