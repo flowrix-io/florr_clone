@@ -1,6 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getThirdEyeRarity = getThirdEyeRarity;
 const core_1 = require("./core");
+function getThirdEyeRarity(player) {
+    if (!player.loadout)
+        return undefined;
+    for (const item of player.loadout) {
+        if (item && item.type === 'petal' && item.petalType === 'third_eye' && item.rarity) {
+            return item.rarity;
+        }
+    }
+    return undefined;
+}
 core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension = 1.0, enemies = new Map()) {
     this.ctx.save();
     this.ctx.translate(player.x, player.y);
@@ -43,6 +54,7 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
             eyeY: this.playerEye.y,
             mouth: player.mouth ?? 14.5,
             cutterAngle: player.cutterAngle,
+            thirdEyeRarity: getThirdEyeRarity(player),
         });
         this.ctx.restore();
     }
@@ -73,6 +85,7 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
             eyeY: player.eye.y,
             mouth: player.mouth ?? 14.5,
             cutterAngle: player.cutterAngle,
+            thirdEyeRarity: getThirdEyeRarity(player),
         });
         this.ctx.restore();
     }

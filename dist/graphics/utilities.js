@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+const player_drawing_1 = require("./player-drawing");
 core_1.Graphics.prototype.sampleColorAtPosition = function (worldX, worldY) {
     // Get the current transform state to properly convert coordinates
     // Note: getImageData uses canvas pixel coordinates, not transformed coordinates
@@ -243,6 +244,7 @@ core_1.Graphics.prototype.drawUI = function (players, socket) {
                     eyeX: 2,
                     eyeY: 0,
                     mouth: member.mouth ?? 14.5,
+                    thirdEyeRarity: (0, player_drawing_1.getThirdEyeRarity)(member),
                 });
                 this.ctx.restore();
                 const smBlockBottom = Math.max(smXpY + smBarHeight, smFlowerCenterY + smFlowerOutlineRadius);
@@ -370,6 +372,7 @@ core_1.Graphics.prototype.drawCorpse = function (x, y, angle, player) {
         eyeX: 0,
         eyeY: 0,
         mouth: 15, // Sad mouth (curve goes down)
+        thirdEyeRarity: player ? (0, player_drawing_1.getThirdEyeRarity)(player) : undefined,
     });
     this.ctx.restore();
 };

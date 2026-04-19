@@ -1,4 +1,5 @@
 import { Graphics, Player, Enemy, FaceFlags, getMobStats } from './core';
+import { getThirdEyeRarity } from './player-drawing';
 
 declare module './core' {
     interface Graphics {
@@ -285,6 +286,7 @@ Graphics.prototype.drawUI = function(this: Graphics, players: Map<string, Player
                     eyeX: 2,
                     eyeY: 0,
                     mouth: member.mouth ?? 14.5,
+                    thirdEyeRarity: getThirdEyeRarity(member),
                 });
                 this.ctx.restore();
 
@@ -426,6 +428,7 @@ Graphics.prototype.drawCorpse = function(this: Graphics, x: number, y: number, a
         eyeX: 0,
         eyeY: 0,
         mouth: 15, // Sad mouth (curve goes down)
+        thirdEyeRarity: player ? getThirdEyeRarity(player) : undefined,
     });
 
     this.ctx.restore();

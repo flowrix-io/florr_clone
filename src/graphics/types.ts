@@ -93,4 +93,6 @@ export interface FlowerRenderAttributes {
     eyeY: number;         // Eye offset Y
     mouth: number;         // Mouth curve control point Y (14.5 = smile, lower = sad)
     cutterAngle?: number;  // Rotation angle for cutter equipment
+    thirdEyeRarity?: string; // Rarity of the equipped Third Eye petal (when ThirdEye equipFlag is set)
+                             // If provided, the real petal canvas is rendered on the flower instead of a custom eye.
 }

@@ -9,6 +9,16 @@ declare module './core' {
     }
 }
 
+export function getThirdEyeRarity(player: Player): string | undefined {
+    if (!player.loadout) return undefined;
+    for (const item of player.loadout) {
+        if (item && item.type === 'petal' && item.petalType === 'third_eye' && item.rarity) {
+            return item.rarity as string;
+        }
+    }
+    return undefined;
+}
+
 Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket: string, petalExtension: number = 1.0, enemies: Map<string, Enemy> = new Map()) {
     this.ctx.save();
     this.ctx.translate(player.x, player.y);
@@ -57,6 +67,7 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
             eyeY: this.playerEye.y,
             mouth: player.mouth ?? 14.5,
             cutterAngle: player.cutterAngle,
+            thirdEyeRarity: getThirdEyeRarity(player),
         });
         this.ctx.restore();
     } else {
@@ -89,6 +100,7 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
             eyeY: player.eye.y,
             mouth: player.mouth ?? 14.5,
             cutterAngle: player.cutterAngle,
+            thirdEyeRarity: getThirdEyeRarity(player),
         });
         this.ctx.restore();
     }

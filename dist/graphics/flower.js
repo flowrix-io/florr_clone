@@ -158,36 +158,52 @@ core_1.Graphics.prototype.drawFlower = function (attrs) {
     }
     // ── Equipment: Third Eye ──────────────────────────────────
     if (equipFlags & core_1.EquipmentFlags.ThirdEye) {
-        ctx.save();
-        ctx.translate(0, -14);
-        ctx.scale(0.5, 0.5);
-        if (faceFlags & core_1.FaceFlags.DeadEyes) {
-            const len = 4;
-            ctx.strokeStyle = '#222222';
-            ctx.lineWidth = 3;
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(-len, -len);
-            ctx.lineTo(len, len);
-            ctx.moveTo(len, -len);
-            ctx.lineTo(-len, len);
-            ctx.stroke();
+        // Prefer drawing the real Third Eye petal canvas when a rarity is provided
+        // and the cached canvas is ready, so the flower shows the actual equipped petal.
+        let drewPetalCanvas = false;
+        if (attrs.thirdEyeRarity) {
+            const petalCanvas = this.getPetalCanvas(`third_eye_${attrs.thirdEyeRarity}`, this.frameTimestamp || Date.now());
+            if (petalCanvas && petalCanvas.width > 0 && petalCanvas.height > 0) {
+                ctx.save();
+                ctx.translate(0, -14);
+                const petalDrawSize = 13;
+                ctx.drawImage(petalCanvas, -petalDrawSize / 2, -petalDrawSize / 2, petalDrawSize, petalDrawSize);
+                ctx.restore();
+                drewPetalCanvas = true;
+            }
         }
-        else {
-            ctx.fillStyle = '#222222';
-            ctx.strokeStyle = '#222222';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.ellipse(0, 0, 3.2, 6.5, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            ctx.clip();
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(eyeX, eyeY, 3, 0, Math.PI * 2);
-            ctx.fill();
+        if (!drewPetalCanvas) {
+            ctx.save();
+            ctx.translate(0, -14);
+            ctx.scale(0.5, 0.5);
+            if (faceFlags & core_1.FaceFlags.DeadEyes) {
+                const len = 4;
+                ctx.strokeStyle = '#222222';
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(-len, -len);
+                ctx.lineTo(len, len);
+                ctx.moveTo(len, -len);
+                ctx.lineTo(-len, len);
+                ctx.stroke();
+            }
+            else {
+                ctx.fillStyle = '#222222';
+                ctx.strokeStyle = '#222222';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 3.2, 6.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.clip();
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(eyeX, eyeY, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
         }
-        ctx.restore();
     }
     ctx.restore(); // Restore from face scale
     ctx.imageSmoothingEnabled = prevSmoothing;
