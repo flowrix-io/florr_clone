@@ -55,6 +55,7 @@ class Graphics {
         this.changelogManager = null;
         this.notificationsManager = null;
         this.leaderboardManager = null;
+        this.guildMenuManager = null;
         this.MINIMAP_WIDTH = 200;
         this.MINIMAP_HEIGHT = 200;
         this.MINIMAP_PADDING = 10;
@@ -443,6 +444,12 @@ class Graphics {
         this.leaderboardManager = leaderboardManager;
         if (leaderboardManager && this.canvas) {
             leaderboardManager.setCanvas(this.canvas);
+        }
+    }
+    setGuildMenuManager(guildMenuManager) {
+        this.guildMenuManager = guildMenuManager;
+        if (guildMenuManager && this.canvas) {
+            guildMenuManager.setCanvas(this.canvas);
         }
     }
     setupItemSprites(itemSprites) {

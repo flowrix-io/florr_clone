@@ -7,6 +7,7 @@ import { MapElement, MapData, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SI
 import { ITEM_RARITY_COLORS } from './petals';
 import { Graphics } from './graphics';
 import { Chat } from './chat';
+import { GuildMenuManager } from './guildMenu';
 import { initMultiPlayerMode, Socket } from './socket';
 import { InventoryManager } from './inventory';
 import { SkillsManager } from './skills';
@@ -224,6 +225,7 @@ export class Game {
 
     // Add chat property
     private chat: Chat | null = null;
+    public guildMenu: GuildMenuManager | null = null;
 
     // Add property
     public inventoryManager!: InventoryManager;
@@ -1695,6 +1697,11 @@ export class Game {
     }
 
     // Change from private to public
+    public connectGuildMenu(menu: GuildMenuManager) {
+        this.guildMenu = menu;
+        menu.setSocket(this.socket);
+    }
+
     public cleanup() {
         // Stop the game loop immediately to prevent further drawing
         if (this.gameLoopId) {

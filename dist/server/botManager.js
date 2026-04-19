@@ -7,6 +7,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAX_BOT_COUNT = void 0;
 exports.setTargetBotCount = setTargetBotCount;
 exports.getTargetBotCount = getTargetBotCount;
+exports.initializeBotGuilds = initializeBotGuilds;
 exports.isBot = isBot;
 exports.removeAllBots = removeAllBots;
 exports.maintainBotCount = maintainBotCount;
@@ -19,6 +20,7 @@ const mobs_1 = require("../mobs");
 const playerManager_1 = require("./playerManager");
 const gameState_1 = require("./gameState");
 const squadManager_1 = require("./squadManager");
+const guildManager_1 = require("./guildManager");
 const BOT_ID_PREFIX = 'bot_';
 const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
@@ -122,6 +124,41 @@ const BOT_NAMES = [
     'not bot', 'bot', 'scripts', 'ban dupers', 'absorbed super'
 ];
 const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder', 'javascript'];
+const BOT_GUILDS = [
+    {
+        name: 'DEVSS',
+        members: ['developer', 'dev', 'fake dev', 'admin', 'real admin'],
+    },
+    {
+        name: 'MSERS',
+        members: ['m28', 'M28', 'm29', 'm56'],
+    },
+    {
+        name: 'SUPRS',
+        members: ['super hunter', 'SUPER BASIC', 'super raider', 'pls loot super', 'nl super', 'absorbed super'],
+    },
+    {
+        name: 'SKBDI',
+        members: ['skibidi', 'skibidi ohio rizz', 'rizzler'],
+    },
+    {
+        name: 'CRTRS',
+        members: ['[YT]', 'Play Zorr.pro', 'florrio', 'CraftApexPetal'],
+    },
+    {
+        name: 'BOTZA',
+        members: ['bot', 'not bot', 'scripts', 'ban dupers'],
+    },
+];
+function initializeBotGuilds() {
+    (0, guildManager_1.clearBotGuilds)();
+    for (const def of BOT_GUILDS) {
+        if (def.members.length === 0)
+            continue;
+        const [leader, ...rest] = def.members;
+        (0, guildManager_1.registerBotGuild)(def.name, leader, rest);
+    }
+}
 const botAIState = new Map();
 let lastMaintainTime = 0;
 // Timestamp of the last tick that saw at least one real player. Used to keep
@@ -596,6 +633,7 @@ function createBot(io) {
     const maxHealth = (0, playerManager_1.calculateMaxHealthFromLevel)(level);
     const damage = (0, playerManager_1.calculateDamageFromLevel)(level);
     const pos = pickBotSpawnPosition();
+    const botGuildName = (0, guildManager_1.getBotGuildNameForBot)(name) || undefined;
     const bot = {
         id,
         name,
@@ -621,7 +659,8 @@ function createBot(io) {
         isDead: false,
         skills: {},
         mobKills: {},
-        stars: 0
+        stars: 0,
+        guildName: botGuildName
     };
     constants_1.players[id] = bot;
     botAIState.set(id, {

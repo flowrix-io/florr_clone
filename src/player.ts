@@ -77,6 +77,7 @@ export interface Player {
   cutterAngle?: number;    // Rotation angle for cutter equipment
   forcedFlags?: boolean;   // When true, server flag updates are ignored (set by /forcelocalplayerflags)
   squadId?: string;        // ID of the squad this player belongs to
+  guildName?: string;      // 5-char alphanumeric guild name — rendered as [NAME] under the health bar
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
@@ -155,4 +156,5 @@ export interface ServerPlayer {
   equipFlags?: number;     // Bitmask of EquipmentFlags (computed from loadout)
   mouth?: number;          // Mouth curve Y control point
   squadId?: string;        // ID of the squad this player belongs to
+  guildName?: string;      // 5-char alphanumeric guild name (broadcast so clients can render it)
 }

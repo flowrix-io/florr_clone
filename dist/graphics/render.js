@@ -55,6 +55,9 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     if (this.leaderboardManager) {
         this.leaderboardManager.render();
     }
+    if (this.guildMenuManager) {
+        this.guildMenuManager.render();
+    }
     // Draw console logs overlay
     this.drawConsoleLogs();
     // Draw canvas-based death screen overlay

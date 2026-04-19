@@ -76,6 +76,9 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     if (this.leaderboardManager) {
         this.leaderboardManager.render();
     }
+    if (this.guildMenuManager) {
+        this.guildMenuManager.render();
+    }
 
     // Draw console logs overlay
     this.drawConsoleLogs();

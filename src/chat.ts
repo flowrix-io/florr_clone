@@ -66,6 +66,20 @@ const COMMANDS: CommandDefinition[] = [
     { command: '/squad-leave', description: 'Leave your current squad', isAdmin: false },
     { command: '/squad-info', description: 'Show squad members', isAdmin: false },
     { command: '/s', description: 'Send a message to your squad', isAdmin: false },
+    { command: '/guild-create', description: 'Create a new guild: /guild-create <name>', isAdmin: false },
+    { command: '/guild-invite', description: 'Invite a player to your guild (leader only)', isAdmin: false },
+    { command: '/guild-accept', description: 'Accept a guild invite', isAdmin: false },
+    { command: '/guild-decline', description: 'Decline a guild invite', isAdmin: false },
+    { command: '/guild-leave', description: 'Leave your current guild', isAdmin: false },
+    { command: '/guild-kick', description: 'Kick a member from the guild (leader only)', isAdmin: false },
+    { command: '/guild-info', description: 'Show guild members and status', isAdmin: false },
+    { command: '/guild-squad', description: 'Invite online guildmates into a squad', isAdmin: false },
+    { command: '/guild-list', description: 'List all guilds (id, name, members)', isAdmin: false },
+    { command: '/guild-menu', description: 'Toggle the guild menu panel', isAdmin: false },
+    { command: '/g', description: 'Send a message to your guild', isAdmin: false },
+    { command: '/admin guild_force_join', description: 'Force a player into a guild', isAdmin: true },
+    { command: '/admin guild_list', description: 'List all guilds', isAdmin: true },
+    { command: '/admin guild_info', description: 'Show info for a guild by id', isAdmin: true },
 ];
 
 export class Chat {
@@ -127,6 +141,15 @@ export class Chat {
     }
 
     private handleClientCommand(message: string): boolean {
+        if (message === '/guild-menu' || message === '/guild menu') {
+            const game = (window as any).currentGame;
+            if (game?.guildMenu) {
+                game.guildMenu.toggle();
+            } else {
+                this.addChatMessage({ sender: 'System', content: 'Guild menu is only available in-game.', timestamp: Date.now() });
+            }
+            return true;
+        }
         if (message.startsWith('/forcelocalplayerflags')) {
             const args = message.slice('/forcelocalplayerflags'.length).trim().split(/\s+/);
             const game = (window as any).currentGame;

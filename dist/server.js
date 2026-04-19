@@ -61,6 +61,7 @@ const utils_1 = require("./server/utils");
 Object.defineProperty(exports, "trackDamage", { enumerable: true, get: function () { return utils_1.trackDamage; } });
 Object.defineProperty(exports, "sendBossMobDefeatedMessage", { enumerable: true, get: function () { return utils_1.sendBossMobDefeatedMessage; } });
 const squadManager_1 = require("./server/squadManager");
+const guildManager_1 = require("./server/guildManager");
 const physics_1 = require("./server/physics");
 const playerState_1 = require("./server/playerState");
 const commands_1 = require("./server/commands");
@@ -70,6 +71,9 @@ const botManager_1 = require("./server/botManager");
 const playerManager_1 = require("./server/playerManager");
 const crossServer_1 = require("./server/crossServer");
 const enemySpawner_1 = require("./server/enemySpawner");
+// Load persisted guilds into memory now that database + guildManager are both ready.
+(0, guildManager_1.loadGuildsFromDatabase)();
+(0, botManager_1.initializeBotGuilds)();
 const app = (0, express_1.default)();
 // Wrapper function for handleMobDrops that passes io (will be set up later)
 let ioInstance;
@@ -1064,6 +1068,19 @@ io.on('connection', (socket) => {
                 success: true,
                 player: constants_2.players[socket.id]
             });
+            // Send the user's current guild (if any) and notify online guild members so online list refreshes.
+            if (socket.username) {
+                const userGuild = (0, guildManager_1.getGuildForUsername)(socket.username);
+                if (userGuild) {
+                    if (constants_2.players[socket.id])
+                        constants_2.players[socket.id].guildName = userGuild.name;
+                    (0, guildManager_1.broadcastGuildUpdate)(userGuild, io);
+                    (0, guildManager_1.syncGuildToOnlineMembers)([socket.username], userGuild, io);
+                }
+                else {
+                    socket.emit('guildUpdate', null);
+                }
+            }
             // Send initial skills update
             socket.emit('skillsUpdated', {
                 playerId: constants_2.players[socket.id].id,
@@ -1116,6 +1133,19 @@ io.on('connection', (socket) => {
         console.log('A user disconnected');
         // Clean up squad membership
         (0, squadManager_1.handlePlayerDisconnect)(socket.id, io);
+        // Refresh online status for this user's guildmates (guild itself is persistent).
+        if (socket.username) {
+            const userGuild = (0, guildManager_1.getGuildForUsername)(socket.username);
+            if (userGuild) {
+                // Delay one tick so this socket is already removed from io.sockets before recomputing online list.
+                const leavingUsername = socket.username;
+                setImmediate(() => {
+                    const g = (0, guildManager_1.getGuildForUsername)(leavingUsername);
+                    if (g)
+                        (0, guildManager_1.broadcastGuildUpdate)(g, io);
+                });
+            }
+        }
         // Check if player is split and clean up both split players
         const { splitPlayers } = require('./petal_actions');
         const originalId = socket.id.replace('_split2', '').replace('_split1', '');
@@ -1887,6 +1917,244 @@ io.on('connection', (socket) => {
             }
             return;
         }
+        // Normalize hyphenated guild commands to the space form (mirrors the squad approach).
+        let normalizedGuildMessage = message;
+        const guildDashMatch = normalizedGuildMessage.match(/^\/guild-([a-z]+)(\s|$)/i);
+        if (guildDashMatch) {
+            normalizedGuildMessage = `/guild ${guildDashMatch[1]}${normalizedGuildMessage.substring(guildDashMatch[0].length - guildDashMatch[2].length)}`;
+        }
+        if (normalizedGuildMessage.startsWith('/guild ') || normalizedGuildMessage === '/guild') {
+            if (!socket.username)
+                return;
+            const args = normalizedGuildMessage.substring('/guild'.length).trim().split(/\s+/);
+            const subCommand = (args[0] || '').toLowerCase();
+            const emitSystem = (content) => io.to(socket.id).emit('chatMessage', { sender: 'System', content, timestamp: Date.now() });
+            if (subCommand === 'create') {
+                const guildName = args.slice(1).join(' ').trim();
+                if (!guildName) {
+                    emitSystem('Usage: /guild-create &lt;name&gt;');
+                }
+                else {
+                    const { guild, error } = (0, guildManager_1.createGuild)(socket.username, guildName);
+                    if (error || !guild) {
+                        emitSystem(error || 'Failed to create guild.');
+                    }
+                    else {
+                        emitSystem(`<span style="color: #ffb74d;">Guild "${guild.name}" created. Use /guild-invite &lt;username&gt; to invite players.</span>`);
+                        (0, guildManager_1.syncGuildToOnlineMembers)([socket.username], guild, io);
+                        (0, guildManager_1.broadcastGuildUpdate)(guild, io);
+                    }
+                }
+            }
+            else if (subCommand === 'invite' && args[1]) {
+                const { guild, error } = (0, guildManager_1.inviteToGuild)(socket.username, args[1]);
+                if (error || !guild) {
+                    emitSystem(error || 'Failed to invite.');
+                }
+                else {
+                    emitSystem(`<span style="color: #ffb74d;">Guild invite sent to ${args[1]}.</span>`);
+                    const targetSid = (0, guildManager_1.findSocketIdByUsername)(args[1], io);
+                    if (targetSid) {
+                        io.to(targetSid).emit('guildInviteReceived', { guildName: guild.name, fromUsername: socket.username });
+                        io.to(targetSid).emit('chatMessage', { sender: 'System', content: `<span style="color: #ffb74d;">@${socket.username} has invited you to guild "${guild.name}". Use /guild-accept or /guild-decline.</span>`, timestamp: Date.now() });
+                    }
+                }
+            }
+            else if (subCommand === 'accept') {
+                const { guild, error } = (0, guildManager_1.acceptGuildInvite)(socket.username);
+                if (error || !guild) {
+                    emitSystem(error || 'Failed to accept invite.');
+                }
+                else {
+                    (0, guildManager_1.sendGuildSystemMessage)(guild, io, `${socket.username} has joined the guild.`);
+                    (0, guildManager_1.syncGuildToOnlineMembers)([socket.username], guild, io);
+                    (0, guildManager_1.broadcastGuildUpdate)(guild, io);
+                }
+            }
+            else if (subCommand === 'decline') {
+                (0, guildManager_1.declineGuildInvite)(socket.username);
+                emitSystem('Guild invite declined.');
+            }
+            else if (subCommand === 'leave') {
+                const existed = (0, guildManager_1.getGuildForUsername)(socket.username);
+                const leavingUsername = socket.username;
+                const { guild, disbanded, promotedTo, error } = (0, guildManager_1.leaveGuild)(socket.username);
+                if (error) {
+                    emitSystem(error);
+                }
+                else {
+                    emitSystem('You have left the guild.');
+                    socket.emit('guildUpdate', null);
+                    (0, guildManager_1.syncGuildToOnlineMembers)([leavingUsername], null, io);
+                    if (disbanded) {
+                        // nothing more to do
+                    }
+                    else if (guild) {
+                        (0, guildManager_1.sendGuildSystemMessage)(guild, io, `${socket.username} has left the guild.`);
+                        if (promotedTo) {
+                            (0, guildManager_1.sendGuildSystemMessage)(guild, io, `${promotedTo} is now the guild leader.`);
+                        }
+                        (0, guildManager_1.broadcastGuildUpdate)(guild, io);
+                    }
+                    // silence unused var warning for narrowing
+                    void existed;
+                }
+            }
+            else if (subCommand === 'kick' && args[1]) {
+                const target = args[1];
+                const { guild, error } = (0, guildManager_1.kickFromGuild)(socket.username, target);
+                if (error || !guild) {
+                    emitSystem(error || 'Failed to kick.');
+                }
+                else {
+                    (0, guildManager_1.sendGuildSystemMessage)(guild, io, `${target} was kicked from the guild by ${socket.username}.`);
+                    const targetSid = (0, guildManager_1.findSocketIdByUsername)(target, io);
+                    if (targetSid) {
+                        io.to(targetSid).emit('guildUpdate', null);
+                        io.to(targetSid).emit('chatMessage', { sender: 'System', content: `<span style="color: #ffb74d;">You were kicked from guild "${guild.name}".</span>`, timestamp: Date.now() });
+                    }
+                    (0, guildManager_1.syncGuildToOnlineMembers)([target], null, io);
+                    (0, guildManager_1.broadcastGuildUpdate)(guild, io);
+                }
+            }
+            else if (subCommand === 'info') {
+                const guild = (0, guildManager_1.getGuildForUsername)(socket.username);
+                if (!guild) {
+                    emitSystem('You are not in a guild.');
+                }
+                else {
+                    const payload = (0, guildManager_1.buildGuildUpdate)(guild, io);
+                    const onlineSet = new Set(payload.onlineUsernames.map(u => u.toLowerCase()));
+                    const lines = guild.memberUsernames.map(u => {
+                        const isLeader = u.toLowerCase() === guild.leaderUsername.toLowerCase();
+                        const online = onlineSet.has(u.toLowerCase());
+                        const dot = online ? '<span style="color: #6eff6e;">&#9679;</span>' : '<span style="color: #888;">&#9679;</span>';
+                        return `${dot} @${u}${isLeader ? ' <span style="color: #ffd54f;">(Leader)</span>' : ''}`;
+                    });
+                    emitSystem(`<span style="color: #ffb74d;">Guild "${guild.name}" (${guild.memberUsernames.length}/${guildManager_1.MAX_GUILD_SIZE}):<br/>${lines.join('<br/>')}</span>`);
+                }
+            }
+            else if (subCommand === 'squad') {
+                // Form a squad from online guildmates. Leader becomes squad leader; invites are sent to others.
+                const guild = (0, guildManager_1.getGuildForUsername)(socket.username);
+                if (!guild) {
+                    emitSystem('You are not in a guild.');
+                }
+                else {
+                    let squad = (0, squadManager_1.getSquadForPlayer)(socket.id);
+                    if (!squad) {
+                        squad = (0, squadManager_1.createSquad)(socket.id, false);
+                        if (squad) {
+                            const player = constants_2.players[socket.id];
+                            if (player)
+                                player.squadId = squad.id;
+                            io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+                        }
+                    }
+                    if (!squad) {
+                        emitSystem('Failed to create a squad.');
+                    }
+                    else if (squad.leaderId !== socket.id) {
+                        emitSystem('Only your squad leader can invite guildmates into the squad.');
+                    }
+                    else {
+                        let invited = 0;
+                        for (const member of guild.memberUsernames) {
+                            if (member.toLowerCase() === socket.username.toLowerCase())
+                                continue;
+                            if (squad.memberIds.length + 1 /* pending */ >= squadManager_1.MAX_SQUAD_SIZE)
+                                break;
+                            const sid = (0, guildManager_1.findSocketIdByUsername)(member, io);
+                            if (!sid)
+                                continue;
+                            const err = (0, squadManager_1.inviteToSquad)(socket.id, sid, socket.username);
+                            if (!err) {
+                                invited++;
+                                io.to(sid).emit('squadInviteReceived', { fromUsername: socket.username });
+                                io.to(sid).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">@${socket.username} (guild) invited you to their squad. Use /squad-accept or /squad-decline.</span>`, timestamp: Date.now() });
+                            }
+                        }
+                        if (invited === 0) {
+                            emitSystem('No online guildmates available to invite (or squad is full).');
+                        }
+                        else {
+                            emitSystem(`<span style="color: #ffb74d;">Sent squad invites to ${invited} online guildmate(s).</span>`);
+                        }
+                    }
+                }
+            }
+            else if (subCommand === 'squad-invite' && args[1]) {
+                // Invite a single guild member to your squad (UI button uses socket event instead).
+                const targetUsername = args[1];
+                const guild = (0, guildManager_1.getGuildForUsername)(socket.username);
+                if (!guild || !guild.memberUsernames.some(u => u.toLowerCase() === targetUsername.toLowerCase())) {
+                    emitSystem(`${targetUsername} is not in your guild.`);
+                }
+                else {
+                    const targetSid = (0, guildManager_1.findSocketIdByUsername)(targetUsername, io);
+                    if (!targetSid) {
+                        emitSystem(`${targetUsername} is offline.`);
+                    }
+                    else {
+                        let squad = (0, squadManager_1.getSquadForPlayer)(socket.id);
+                        if (!squad) {
+                            squad = (0, squadManager_1.createSquad)(socket.id, false);
+                            if (squad) {
+                                const player = constants_2.players[socket.id];
+                                if (player)
+                                    player.squadId = squad.id;
+                                io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+                            }
+                        }
+                        if (!squad) {
+                            emitSystem('Failed to create a squad.');
+                        }
+                        else {
+                            const err = (0, squadManager_1.inviteToSquad)(socket.id, targetSid, socket.username);
+                            if (err)
+                                emitSystem(err);
+                            else {
+                                emitSystem(`<span style="color: #4fc3f7;">Squad invite sent to ${targetUsername}.</span>`);
+                                io.to(targetSid).emit('squadInviteReceived', { fromUsername: socket.username });
+                                io.to(targetSid).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">@${socket.username} (guild) invited you to their squad. Use /squad-accept or /squad-decline.</span>`, timestamp: Date.now() });
+                            }
+                        }
+                    }
+                }
+            }
+            else if (subCommand === 'list') {
+                const all = (0, guildManager_1.listGuilds)();
+                if (all.length === 0) {
+                    emitSystem('No guilds exist yet.');
+                }
+                else {
+                    const lines = all.map(g => `"${g.name}" — ${g.memberUsernames.length}/${guildManager_1.MAX_GUILD_SIZE} — leader @${g.leaderUsername}`);
+                    emitSystem(`<span style="color: #ffb74d;">Guilds:<br/>${lines.join('<br/>')}</span>`);
+                }
+            }
+            else {
+                emitSystem('Guild commands: /guild-create &lt;name&gt;, /guild-invite &lt;username&gt;, /guild-accept, /guild-decline, /guild-leave, /guild-kick &lt;username&gt;, /guild-info, /guild-squad, /guild-list');
+            }
+            return;
+        }
+        // Check for guild chat shorthand: /g <message>
+        if (message.startsWith('/g ')) {
+            if (!socket.username)
+                return;
+            const guildMsg = message.substring(3).trim();
+            if (guildMsg) {
+                const guild = (0, guildManager_1.getGuildForUsername)(socket.username);
+                if (!guild) {
+                    io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
+                }
+                else {
+                    const player = constants_2.players[socket.id];
+                    const playerName = player ? player.name : socket.username;
+                    (0, guildManager_1.sendGuildChatMessage)(guild, io, socket.username, playerName, guildMsg);
+                }
+            }
+            return;
+        }
         // Check for squad chat shorthand: /s <message>
         if (message.startsWith('/s ')) {
             const squadMsg = message.substring(3).trim();
@@ -1923,6 +2191,17 @@ io.on('connection', (socket) => {
                 helpText += '/squad-leave - Leave your squad<br/>';
                 helpText += '/squad-info - Show squad members<br/>';
                 helpText += '/s &lt;message&gt; - Send a message to your squad<br/>';
+                helpText += '<br/><b>Guild commands (up to 200 members, persistent):</b><br/>';
+                helpText += '/guild-create &lt;name&gt; - Create a new guild (5-char alphanumeric ID)<br/>';
+                helpText += '/guild-invite &lt;username&gt; - Invite a player (leader only)<br/>';
+                helpText += '/guild-accept / /guild-decline - Respond to a guild invite<br/>';
+                helpText += '/guild-leave - Leave your guild<br/>';
+                helpText += '/guild-kick &lt;username&gt; - Kick a member (leader only)<br/>';
+                helpText += '/guild-info - Show guild info<br/>';
+                helpText += '/guild-squad - Invite online guildmates into a squad<br/>';
+                helpText += '/guild-list - List all guilds<br/>';
+                helpText += '/guild-menu - Toggle guild menu panel (client, also "G" key)<br/>';
+                helpText += '/g &lt;message&gt; - Send a message to your guild<br/>';
                 helpText += '<br/>Chat supports HTML tags: <b>bold</b>, <i>italic</i>, <u>underline</u>, <span style="color: red">colored text</span>, <blink>blinking text</blink>';
                 if (isAdmin) {
                     helpText += (0, commands_1.getAdminHelpText)();
@@ -2189,6 +2468,176 @@ io.on('connection', (socket) => {
                 io.to(memberId).emit('squadUpdate', { squadId: remainingSquad.id, memberIds: remainingSquad.memberIds, leaderId: remainingSquad.leaderId });
             }
         }
+    });
+    // --- Guild events (also triggerable by /guild-* chat commands, but exposed directly for the UI menu) ---
+    socket.on('guildCreate', (name) => {
+        if (!socket.username)
+            return;
+        const { guild, error } = (0, guildManager_1.createGuild)(socket.username, typeof name === 'string' ? name : '');
+        if (error || !guild) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: error || 'Failed to create guild.', timestamp: Date.now() });
+            return;
+        }
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: `<span style="color: #ffb74d;">Guild "${guild.name}" created.</span>`, timestamp: Date.now() });
+        (0, guildManager_1.syncGuildToOnlineMembers)([socket.username], guild, io);
+        (0, guildManager_1.broadcastGuildUpdate)(guild, io);
+    });
+    socket.on('guildInvite', (targetUsername) => {
+        if (!socket.username || typeof targetUsername !== 'string')
+            return;
+        const { guild, error } = (0, guildManager_1.inviteToGuild)(socket.username, targetUsername);
+        if (error || !guild) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: error || 'Failed to invite.', timestamp: Date.now() });
+            return;
+        }
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: `<span style="color: #ffb74d;">Guild invite sent to ${targetUsername}.</span>`, timestamp: Date.now() });
+        const targetSid = (0, guildManager_1.findSocketIdByUsername)(targetUsername, io);
+        if (targetSid) {
+            io.to(targetSid).emit('guildInviteReceived', { guildName: guild.name, fromUsername: socket.username });
+            io.to(targetSid).emit('chatMessage', { sender: 'System', content: `<span style="color: #ffb74d;">@${socket.username} has invited you to guild "${guild.name}". Use /guild-accept or /guild-decline.</span>`, timestamp: Date.now() });
+        }
+    });
+    socket.on('guildAccept', () => {
+        if (!socket.username)
+            return;
+        const { guild, error } = (0, guildManager_1.acceptGuildInvite)(socket.username);
+        if (error || !guild) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: error || 'Failed to accept invite.', timestamp: Date.now() });
+            return;
+        }
+        (0, guildManager_1.sendGuildSystemMessage)(guild, io, `${socket.username} has joined the guild.`);
+        (0, guildManager_1.syncGuildToOnlineMembers)([socket.username], guild, io);
+        (0, guildManager_1.broadcastGuildUpdate)(guild, io);
+    });
+    socket.on('guildDecline', () => {
+        if (!socket.username)
+            return;
+        (0, guildManager_1.declineGuildInvite)(socket.username);
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'Guild invite declined.', timestamp: Date.now() });
+    });
+    socket.on('guildLeave', () => {
+        if (!socket.username)
+            return;
+        const leavingUsername = socket.username;
+        const { guild, disbanded, promotedTo, error } = (0, guildManager_1.leaveGuild)(socket.username);
+        if (error) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: error, timestamp: Date.now() });
+            return;
+        }
+        io.to(socket.id).emit('guildUpdate', null);
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You have left the guild.', timestamp: Date.now() });
+        (0, guildManager_1.syncGuildToOnlineMembers)([leavingUsername], null, io);
+        if (!disbanded && guild) {
+            (0, guildManager_1.sendGuildSystemMessage)(guild, io, `${socket.username} has left the guild.`);
+            if (promotedTo)
+                (0, guildManager_1.sendGuildSystemMessage)(guild, io, `${promotedTo} is now the guild leader.`);
+            (0, guildManager_1.broadcastGuildUpdate)(guild, io);
+        }
+    });
+    socket.on('guildKick', (targetUsername) => {
+        if (!socket.username || typeof targetUsername !== 'string')
+            return;
+        const { guild, error } = (0, guildManager_1.kickFromGuild)(socket.username, targetUsername);
+        if (error || !guild) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: error || 'Failed to kick.', timestamp: Date.now() });
+            return;
+        }
+        (0, guildManager_1.sendGuildSystemMessage)(guild, io, `${targetUsername} was kicked from the guild by ${socket.username}.`);
+        const targetSid = (0, guildManager_1.findSocketIdByUsername)(targetUsername, io);
+        if (targetSid) {
+            io.to(targetSid).emit('guildUpdate', null);
+            io.to(targetSid).emit('chatMessage', { sender: 'System', content: `<span style="color: #ffb74d;">You were kicked from guild "${guild.name}".</span>`, timestamp: Date.now() });
+        }
+        (0, guildManager_1.syncGuildToOnlineMembers)([targetUsername], null, io);
+        (0, guildManager_1.broadcastGuildUpdate)(guild, io);
+    });
+    socket.on('guildInviteToSquad', (targetUsername) => {
+        if (!socket.username || typeof targetUsername !== 'string')
+            return;
+        const guild = (0, guildManager_1.getGuildForUsername)(socket.username);
+        if (!guild || !guild.memberUsernames.some(u => u.toLowerCase() === targetUsername.toLowerCase())) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: `${targetUsername} is not in your guild.`, timestamp: Date.now() });
+            return;
+        }
+        const targetSid = (0, guildManager_1.findSocketIdByUsername)(targetUsername, io);
+        if (!targetSid) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: `${targetUsername} is offline.`, timestamp: Date.now() });
+            return;
+        }
+        let squad = (0, squadManager_1.getSquadForPlayer)(socket.id);
+        if (!squad) {
+            squad = (0, squadManager_1.createSquad)(socket.id, false);
+            if (squad) {
+                const player = constants_2.players[socket.id];
+                if (player)
+                    player.squadId = squad.id;
+                io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+            }
+        }
+        if (!squad) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'Failed to create a squad.', timestamp: Date.now() });
+            return;
+        }
+        const err = (0, squadManager_1.inviteToSquad)(socket.id, targetSid, socket.username);
+        if (err) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: err, timestamp: Date.now() });
+            return;
+        }
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">Squad invite sent to ${targetUsername}.</span>`, timestamp: Date.now() });
+        io.to(targetSid).emit('squadInviteReceived', { fromUsername: socket.username });
+        io.to(targetSid).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">@${socket.username} (guild) invited you to their squad. Use /squad-accept or /squad-decline.</span>`, timestamp: Date.now() });
+    });
+    socket.on('guildSquadAll', () => {
+        if (!socket.username)
+            return;
+        const guild = (0, guildManager_1.getGuildForUsername)(socket.username);
+        if (!guild) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
+            return;
+        }
+        let squad = (0, squadManager_1.getSquadForPlayer)(socket.id);
+        if (!squad) {
+            squad = (0, squadManager_1.createSquad)(socket.id, false);
+            if (squad) {
+                const player = constants_2.players[socket.id];
+                if (player)
+                    player.squadId = squad.id;
+                io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+            }
+        }
+        if (!squad || squad.leaderId !== socket.id) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'Only your squad leader can invite guildmates into the squad.', timestamp: Date.now() });
+            return;
+        }
+        let invited = 0;
+        for (const member of guild.memberUsernames) {
+            if (member.toLowerCase() === socket.username.toLowerCase())
+                continue;
+            if (squad.memberIds.length + 1 >= squadManager_1.MAX_SQUAD_SIZE)
+                break;
+            const sid = (0, guildManager_1.findSocketIdByUsername)(member, io);
+            if (!sid)
+                continue;
+            const err = (0, squadManager_1.inviteToSquad)(socket.id, sid, socket.username);
+            if (!err) {
+                invited++;
+                io.to(sid).emit('squadInviteReceived', { fromUsername: socket.username });
+                io.to(sid).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">@${socket.username} (guild) invited you to their squad. Use /squad-accept or /squad-decline.</span>`, timestamp: Date.now() });
+            }
+        }
+        io.to(socket.id).emit('chatMessage', { sender: 'System', content: invited === 0 ? 'No online guildmates available to invite (or squad is full).' : `<span style="color: #ffb74d;">Sent squad invites to ${invited} online guildmate(s).</span>`, timestamp: Date.now() });
+    });
+    socket.on('guildChat', (message) => {
+        if (!socket.username || typeof message !== 'string')
+            return;
+        const guild = (0, guildManager_1.getGuildForUsername)(socket.username);
+        if (!guild) {
+            io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
+            return;
+        }
+        const player = constants_2.players[socket.id];
+        const playerName = player ? player.name : socket.username;
+        (0, guildManager_1.sendGuildChatMessage)(guild, io, socket.username, playerName, message);
     });
     socket.on('squadChat', (message) => {
         if (!socket.username)

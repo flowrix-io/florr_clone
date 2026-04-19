@@ -454,6 +454,12 @@ function setupSocketListeners(game) {
             });
         }
     });
+    game.socket.on('guildTagUpdate', (data) => {
+        const player = game.players.get(data.id);
+        if (!player)
+            return;
+        player.guildName = data.guildName || undefined;
+    });
     game.socket.on('disconnect', (reason) => {
         const disconnectTime = performance.now();
         console.log(`[CLIENT] Disconnected from server at ${disconnectTime.toFixed(0)}, reason: ${reason}`);

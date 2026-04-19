@@ -9,6 +9,16 @@ import { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase } from '../se
 import { getAllPetalTypes, getPetalStats, RARITY_LEVELS } from '../petals';
 import { addItem } from './playerManager';
 import { setTargetBotCount, getTargetBotCount, MAX_BOT_COUNT } from './botManager';
+import {
+    forceJoinGuild,
+    getGuildByName,
+    listGuilds,
+    broadcastGuildUpdate,
+    sendGuildSystemMessage,
+    findSocketIdByUsername as findGuildSocketIdByUsername,
+    syncGuildToOnlineMembers,
+    MAX_GUILD_SIZE
+} from './guildManager';
 
 // AuthenticatedSocket interface (matches definition in server.ts)
 interface AuthenticatedSocket extends Socket {
@@ -438,6 +448,61 @@ export function executeServerCommand(
             sendOutput('    Consumables: health_potion, speed_boost, shield', socketId, io);
             sendOutput(`  Valid rarities: ${RARITY_LEVELS.join(', ')}`, socketId, io);
         }
+    } else if (trimmedCommand.startsWith('guild_force_join') || trimmedCommand.startsWith('guild_force') || trimmedCommand.startsWith('guild-force-join')) {
+        // Admins reference guilds by name. Guild names can contain spaces, so parse
+        // as: <command> <guild name tokens...> <username>. The last whitespace-
+        // separated token is the username; everything in between is the guild name.
+        const rest = trimmedCommand.replace(/^(guild_force_join|guild_force|guild-force-join)\s*/, '');
+        const tokens = rest.trim().split(/\s+/).filter(t => t.length > 0);
+        if (tokens.length < 2) {
+            sendOutput('Usage: guild_force_join <guild name> <username>', socketId, io);
+        } else {
+            const targetUsername = tokens[tokens.length - 1];
+            const guildName = tokens.slice(0, -1).join(' ');
+            const { guild, prevGuild, error } = forceJoinGuild(guildName, targetUsername);
+            if (error || !guild) {
+                sendOutput(error || 'Force-join failed.', socketId, io);
+            } else {
+                sendOutput(`Force-joined ${targetUsername} into guild "${guild.name}".`, socketId, io);
+                if (prevGuild && prevGuild.name !== guild.name) {
+                    broadcastGuildUpdate(prevGuild, io);
+                }
+                syncGuildToOnlineMembers([targetUsername], guild, io);
+                broadcastGuildUpdate(guild, io);
+                sendGuildSystemMessage(guild, io, `${targetUsername} was added to the guild by an admin.`);
+                const targetSid = findGuildSocketIdByUsername(targetUsername, io);
+                if (targetSid) {
+                    io.to(targetSid).emit('chatMessage', {
+                        sender: 'System',
+                        content: `<span style="color: #ffb74d;">You were added to guild "${guild.name}" by an admin.</span>`,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        }
+    } else if (trimmedCommand === 'guild_list' || trimmedCommand === 'list_guilds') {
+        const all = listGuilds();
+        if (all.length === 0) {
+            sendOutput('No guilds exist.', socketId, io);
+        } else {
+            sendOutput(`Guilds (${all.length}):`, socketId, io);
+            all.forEach(g => {
+                sendOutput(`  "${g.name}" — ${g.memberUsernames.length}/${MAX_GUILD_SIZE} — leader @${g.leaderUsername}`, socketId, io);
+            });
+        }
+    } else if (trimmedCommand.startsWith('guild_info') || trimmedCommand.startsWith('guild-info')) {
+        const name = trimmedCommand.replace(/^(guild_info|guild-info)\s*/, '').trim();
+        if (!name) {
+            sendOutput('Usage: guild_info <guild name>', socketId, io);
+        } else {
+            const g = getGuildByName(name);
+            if (!g) {
+                sendOutput(`Guild "${name}" not found.`, socketId, io);
+            } else {
+                sendOutput(`"${g.name}" — leader @${g.leaderUsername} — ${g.memberUsernames.length}/${MAX_GUILD_SIZE}`, socketId, io);
+                sendOutput(`Members: ${g.memberUsernames.join(', ')}`, socketId, io);
+            }
+        }
     } else if (trimmedCommand === 'delete_guests') {
         const count = database.deleteGuestAccounts();
         sendOutput(`Deleted ${count} guest account(s) and their player data.`, socketId, io);
@@ -522,6 +587,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>';
 }
 

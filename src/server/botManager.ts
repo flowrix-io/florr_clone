@@ -39,6 +39,7 @@ import {
     sendSquadSystemMessage,
     playerSquadMap
 } from './squadManager';
+import { registerBotGuild, clearBotGuilds, getBotGuildNameForBot } from './guildManager';
 
 const BOT_ID_PREFIX = 'bot_';
 const TARGET_TOTAL_PLAYERS = 23;
@@ -151,6 +152,54 @@ const BOT_NAMES = [
 ];
 
 const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder', 'javascript'];
+
+/**
+ * Pre-defined bot-only guilds. Each entry registers a guild in the guildManager
+ * whose membership is a fixed set of bot display names drawn from BOT_NAMES.
+ * Bots that spawn with a listed name appear as members of that guild (offline
+ * when no instance is currently spawned). The first entry of `members` is the
+ * leader. Guild names must be exactly 5 uppercase alphanumeric chars and unique.
+ */
+interface BotGuildDef {
+    name: string;
+    members: string[];
+}
+
+const BOT_GUILDS: BotGuildDef[] = [
+    {
+        name: 'DEVSS',
+        members: ['developer', 'dev', 'fake dev', 'admin', 'real admin'],
+    },
+    {
+        name: 'MSERS',
+        members: ['m28', 'M28', 'm29', 'm56'],
+    },
+    {
+        name: 'SUPRS',
+        members: ['super hunter', 'SUPER BASIC', 'super raider', 'pls loot super', 'nl super', 'absorbed super'],
+    },
+    {
+        name: 'SKBDI',
+        members: ['skibidi', 'skibidi ohio rizz', 'rizzler'],
+    },
+    {
+        name: 'CRTRS',
+        members: ['[YT]', 'Play Zorr.pro', 'florrio', 'CraftApexPetal'],
+    },
+    {
+        name: 'BOTZA',
+        members: ['bot', 'not bot', 'scripts', 'ban dupers'],
+    },
+];
+
+export function initializeBotGuilds(): void {
+    clearBotGuilds();
+    for (const def of BOT_GUILDS) {
+        if (def.members.length === 0) continue;
+        const [leader, ...rest] = def.members;
+        registerBotGuild(def.name, leader, rest);
+    }
+}
 
 interface BotAIState {
     wanderTargetX: number;
@@ -693,6 +742,7 @@ function createBot(io: SocketIOServer): ServerPlayer {
     const damage = calculateDamageFromLevel(level);
     const pos = pickBotSpawnPosition();
 
+    const botGuildName = getBotGuildNameForBot(name) || undefined;
     const bot: ServerPlayer = {
         id,
         name,
@@ -718,7 +768,8 @@ function createBot(io: SocketIOServer): ServerPlayer {
         isDead: false,
         skills: {},
         mobKills: {},
-        stars: 0
+        stars: 0,
+        guildName: botGuildName
     };
 
     players[id] = bot;

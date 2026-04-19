@@ -10,6 +10,7 @@ const petals_1 = require("./petals");
 const changelog_1 = require("./changelog");
 const notifications_1 = require("./notifications");
 const leaderboard_1 = require("./leaderboard");
+const guildMenu_1 = require("./guildMenu");
 const constants_1 = require("./constants");
 const chat_1 = require("./chat");
 const skills_1 = require("./skills");
@@ -182,6 +183,8 @@ class TitleScreen {
         this.changelogManager = new changelog_1.ChangelogManager();
         this.notificationsManager = new notifications_1.NotificationsManager();
         this.leaderboardManager = new leaderboard_1.LeaderboardManager();
+        this.guildMenuManager = new guildMenu_1.GuildMenuManager();
+        window.guildMenuManager = this.guildMenuManager;
         // Make notifications manager globally accessible
         window.notificationsManager = this.notificationsManager;
         // Set canvas on managers after canvas is available
@@ -196,6 +199,7 @@ class TitleScreen {
             this.changelogManager.setCanvas(canvas);
             this.notificationsManager.setCanvas(canvas);
             this.leaderboardManager.setCanvas(canvas);
+            this.guildMenuManager.setCanvas(canvas);
         };
         const gameCanvas = document.getElementById('gameCanvas');
         if (gameCanvas) {
@@ -459,12 +463,14 @@ class TitleScreen {
         const changelogIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'changelog')?.value || '';
         const notificationsIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'notifications')?.value || '';
         const leaderboardIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'leaderboard')?.value || '';
+        const guildIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'guild')?.value || '';
         const exitIcon = GAME_ICONS_NET_ICONS.find((icon) => icon.name === 'exit_button')?.value || '';
         // Update the SVG to be 32x32
         const formattedSettingsIcon = settingsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedChangelogIcon = changelogIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedNotificationsIcon = notificationsIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedLeaderboardIcon = leaderboardIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
+        const formattedGuildIcon = guildIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         const formattedExitIcon = exitIcon.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
         this.exitButtonContainer.innerHTML = `
             <style>
@@ -510,6 +516,9 @@ class TitleScreen {
             </div>
             <div id="leaderboardButton" class="gardn-icon-btn" style="background: #e8a023; border-color: #ba801c;" title="Leaderboard">
                 ${formattedLeaderboardIcon}
+            </div>
+            <div id="guildButton" class="gardn-icon-btn" style="background: #27dade; border-color: #1fb3b0;" title="Guild">
+                ${formattedGuildIcon}
             </div>
             <div id="exitButton" class="gardn-icon-btn" style="background: #ff0000; border-color: #cc0000; display: none;" title="Exit to Menu">
                 ${formattedExitIcon}
@@ -694,6 +703,7 @@ class TitleScreen {
         const changelogButton = this.exitButtonContainer.querySelector('#changelogButton');
         const notificationsButton = this.exitButtonContainer.querySelector('#notificationsButton');
         const leaderboardButton = this.exitButtonContainer.querySelector('#leaderboardButton');
+        const guildButton = this.exitButtonContainer.querySelector('#guildButton');
         const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         console.log('Setting up buttons - changelogButton:', !!changelogButton, 'notificationsButton:', !!notificationsButton);
         if (settingsButton) {
@@ -703,6 +713,7 @@ class TitleScreen {
                 this.changelogManager.hide();
                 this.notificationsManager.hide();
                 this.leaderboardManager.hide();
+                this.guildMenuManager.hide();
                 this.toggleSettings();
             });
         }
@@ -714,6 +725,7 @@ class TitleScreen {
                 this.settingsOpen = false;
                 this.notificationsManager.hide();
                 this.leaderboardManager.hide();
+                this.guildMenuManager.hide();
                 console.log('[CHANGELOG] Button clicked, isOpen before:', this.changelogManager.isChangelogOpen());
                 this.changelogManager.toggle();
                 console.log('[CHANGELOG] Button clicked, isOpen after:', this.changelogManager.isChangelogOpen());
@@ -736,6 +748,7 @@ class TitleScreen {
                 this.settingsOpen = false;
                 this.changelogManager.hide();
                 this.leaderboardManager.hide();
+                this.guildMenuManager.hide();
                 console.log('[NOTIFICATIONS] Button clicked, isOpen before:', this.notificationsManager.isNotificationsOpen());
                 this.notificationsManager.toggle();
                 console.log('[NOTIFICATIONS] Button clicked, isOpen after:', this.notificationsManager.isNotificationsOpen());
@@ -757,7 +770,20 @@ class TitleScreen {
                 this.settingsOpen = false;
                 this.changelogManager.hide();
                 this.notificationsManager.hide();
+                this.guildMenuManager.hide();
                 this.leaderboardManager.toggle();
+            });
+        }
+        if (guildButton) {
+            guildButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                // Close other menus
+                this.settingsOpen = false;
+                this.changelogManager.hide();
+                this.notificationsManager.hide();
+                this.leaderboardManager.hide();
+                this.guildMenuManager.toggle();
             });
         }
         // Exit button is handled by index.ts setupGameEventListeners
@@ -3445,7 +3471,8 @@ class TitleScreen {
                 const changelogOpen = this.changelogManager.isChangelogOpen();
                 const notificationsOpen = this.notificationsManager.isNotificationsOpen();
                 const leaderboardOpen = this.leaderboardManager.isLeaderboardOpen();
-                if (changelogOpen || notificationsOpen || leaderboardOpen) {
+                const guildOpen = this.guildMenuManager.isGuildMenuOpen();
+                if (changelogOpen || notificationsOpen || leaderboardOpen || guildOpen) {
                     // Menu is open - resize canvas to only cover menu area
                     const PANEL_X = 20;
                     const PANEL_Y = 72;
@@ -3459,6 +3486,7 @@ class TitleScreen {
                         this.changelogManager.setCanvas(gameCanvas);
                         this.notificationsManager.setCanvas(gameCanvas);
                         this.leaderboardManager.setCanvas(gameCanvas);
+                        this.guildMenuManager.setCanvas(gameCanvas);
                     }
                     // Position canvas at menu location and show it
                     gameCanvas.style.position = 'absolute';
@@ -3478,6 +3506,7 @@ class TitleScreen {
                     this.changelogManager.render();
                     this.notificationsManager.render();
                     this.leaderboardManager.render();
+                    this.guildMenuManager.render();
                 }
                 else {
                     // No menus open - hide canvas
@@ -3562,6 +3591,7 @@ class TitleScreen {
             if (window.preconnectedSocket && window.preconnectedSocket.connected) {
                 console.log('[TitleScreen] Initializing chat with preconnected socket');
                 this.titleScreenChat = new chat_1.Chat(window.preconnectedSocket);
+                this.guildMenuManager.setSocket(window.preconnectedSocket);
                 clearInterval(checkSocket);
             }
         }, 100);
@@ -3571,6 +3601,7 @@ class TitleScreen {
             if (!this.titleScreenChat && window.preconnectedSocket && window.preconnectedSocket.connected) {
                 console.log('[TitleScreen] Initializing chat with preconnected socket (delayed)');
                 this.titleScreenChat = new chat_1.Chat(window.preconnectedSocket);
+                this.guildMenuManager.setSocket(window.preconnectedSocket);
             }
         }, 5000);
     }

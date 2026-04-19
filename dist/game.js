@@ -148,6 +148,7 @@ class Game {
         this.gameStartTime = 0;
         // Add chat property
         this.chat = null;
+        this.guildMenu = null;
         this.beforeUnloadHandler = null;
         this.abortController = new AbortController();
         this.createdElements = []; // Track DOM elements for cleanup
@@ -1405,6 +1406,10 @@ class Game {
         (0, zoom_compensation_1.applyZoomCompensation)(this.canvas);
     }
     // Change from private to public
+    connectGuildMenu(menu) {
+        this.guildMenu = menu;
+        menu.setSocket(this.socket);
+    }
     cleanup() {
         // Stop the game loop immediately to prevent further drawing
         if (this.gameLoopId) {

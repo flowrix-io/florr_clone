@@ -39,6 +39,7 @@ export class Graphics {
     public changelogManager: any = null;
     public notificationsManager: any = null;
     public leaderboardManager: any = null;
+    public guildMenuManager: any = null;
 
     public readonly MINIMAP_WIDTH = 200;
     public readonly MINIMAP_HEIGHT = 200;
@@ -486,6 +487,13 @@ export class Graphics {
         this.leaderboardManager = leaderboardManager;
         if (leaderboardManager && this.canvas) {
             leaderboardManager.setCanvas(this.canvas);
+        }
+    }
+
+    public setGuildMenuManager(guildMenuManager: any): void {
+        this.guildMenuManager = guildMenuManager;
+        if (guildMenuManager && this.canvas) {
+            guildMenuManager.setCanvas(this.canvas);
         }
     }
 

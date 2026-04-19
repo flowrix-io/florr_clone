@@ -140,6 +140,20 @@ exports.database = {
         const user = db.users[username];
         return user?.admin === true;
     },
+    // Case-insensitive lookup of registered users, used to validate guild targets
+    // before inviting/force-joining since usernames are stored with their original casing.
+    userExists: (username) => {
+        if (!username)
+            return false;
+        if (db.users[username])
+            return true;
+        const key = username.toLowerCase();
+        for (const name in db.users) {
+            if (name.toLowerCase() === key)
+                return true;
+        }
+        return false;
+    },
     // Player-related functions
     savePlayer: (userId, progress) => {
         db.players[userId] = {
@@ -354,6 +368,30 @@ exports.database = {
         }
         active.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
         return active;
+    },
+    // Guild-related functions
+    saveGuild: (guild) => {
+        if (!db.guilds)
+            db.guilds = {};
+        db.guilds[guild.name] = {
+            name: guild.name,
+            leaderUsername: guild.leaderUsername,
+            memberUsernames: guild.memberUsernames.slice(),
+            createdAt: guild.createdAt,
+        };
+        writeDatabase();
+        return true;
+    },
+    deleteGuild: (guildName) => {
+        if (db.guilds && db.guilds[guildName]) {
+            delete db.guilds[guildName];
+            writeDatabase();
+            return true;
+        }
+        return false;
+    },
+    getAllGuilds: () => {
+        return db.guilds || {};
     },
     // Delete guest accounts that still have the default initial inventory/loadout
     deleteGuestAccounts: () => {

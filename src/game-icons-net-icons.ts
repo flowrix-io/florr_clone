@@ -38,5 +38,9 @@ export const GAME_ICONS_NET_ICONS = [
     {
         name: 'leaderboard',
         value: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="height: 512px; width: 512px;"><g class="" transform="translate(0,0)" style=""><path d="M256 21.52l-60 90v30h120v-30l-60-90zM152 160.52v240h80v-240h-80zm128 80v160h80v-160h-80zm-192 48v112h80v-112h-80zm320 48v64h80v-64h-64zM26 468.52v22h460v-22H26z" fill="#fff" fill-opacity="1"></path></g></svg>'
+    },
+    {
+        name: 'guild',
+        value: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="height: 512px; width: 512px;"><g class="" transform="translate(0,0)" style=""><path d="M406 484.7H106v-60h300v60zm-56.67-330.83h-50.05V91.3h-82.39v62.57h-54.22V91.3h-54.23v113.67h295.12V91.3h-54.23v62.57zm23.35 67.23H139.32v187.6h233.36V221.1z" fill="#fff" fill-opacity="1"></path></g></svg>'
     }
 ]

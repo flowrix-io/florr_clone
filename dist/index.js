@@ -305,6 +305,12 @@ function setupGameEventListeners() {
                 if (leaderboardManager) {
                     currentGame.graphics.setLeaderboardManager(leaderboardManager);
                 }
+                const guildMenuManager = titleScreen.guildMenuManager;
+                if (guildMenuManager) {
+                    currentGame.graphics.setGuildMenuManager(guildMenuManager);
+                    currentGame.guildMenu = guildMenuManager;
+                    currentGame.connectGuildMenu?.(guildMenuManager);
+                }
             }
             // Capture title screen screenshot for iris transition (also stored for exit animation)
             if (currentGame?.graphics) {

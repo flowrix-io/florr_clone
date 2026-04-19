@@ -53,11 +53,19 @@ export interface Notification {
     timestamp: number;
 }
 
+export interface Guild {
+    name: string;               // 5-char alphanumeric, uppercase — serves as the unique identifier
+    leaderUsername: string;
+    memberUsernames: string[];  // includes leader
+    createdAt: number;
+}
+
 interface DatabaseData {
     players: { [userId: string]: PlayerProgress };
     users: { [username: string]: User };
     codes?: { [code: string]: RedeemedCode }; // Store codes persistently
     notifications?: Notification[]; // Global notifications array
+    guilds?: { [guildName: string]: Guild }; // Persistent guild storage, keyed by uppercase name
 }
 
 let db: DatabaseData = { players: {}, users: {} };
@@ -167,6 +175,18 @@ export const database = {
     isUserAdmin: (username: string): boolean => {
         const user = db.users[username];
         return user?.admin === true;
+    },
+
+    // Case-insensitive lookup of registered users, used to validate guild targets
+    // before inviting/force-joining since usernames are stored with their original casing.
+    userExists: (username: string): boolean => {
+        if (!username) return false;
+        if (db.users[username]) return true;
+        const key = username.toLowerCase();
+        for (const name in db.users) {
+            if (name.toLowerCase() === key) return true;
+        }
+        return false;
     },
 
     // Player-related functions
@@ -406,6 +426,32 @@ export const database = {
         }
         active.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
         return active;
+    },
+
+    // Guild-related functions
+    saveGuild: (guild: Guild) => {
+        if (!db.guilds) db.guilds = {};
+        db.guilds[guild.name] = {
+            name: guild.name,
+            leaderUsername: guild.leaderUsername,
+            memberUsernames: guild.memberUsernames.slice(),
+            createdAt: guild.createdAt,
+        };
+        writeDatabase();
+        return true;
+    },
+
+    deleteGuild: (guildName: string) => {
+        if (db.guilds && db.guilds[guildName]) {
+            delete db.guilds[guildName];
+            writeDatabase();
+            return true;
+        }
+        return false;
+    },
+
+    getAllGuilds: (): { [guildName: string]: Guild } => {
+        return db.guilds || {};
     },
 
     // Delete guest accounts that still have the default initial inventory/loadout

@@ -485,6 +485,22 @@ Graphics.prototype.drawPlayerHealthBar = function(this: Graphics, player: Player
     const levelLabel = `Lv. ${player.level}`;
     this.ctx.strokeText(levelLabel, levelX, levelY);
     this.ctx.fillText(levelLabel, levelX, levelY);
+
+    // Draw guild tag below health bar, left-aligned — mirrors the level label position
+    // so the two sit on opposite sides under the bar. Smaller font so a 5-char
+    // ID plus brackets doesn't collide with the right-aligned level label.
+    if (player.guildName) {
+        this.ctx.textAlign = 'left';
+        this.ctx.font = '8px Ubuntu, sans-serif';
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 2;
+        const tagX = -healthBarWidth / 2;
+        const tagY = levelY;
+        const tag = `[${player.guildName}]`;
+        this.ctx.strokeText(tag, tagX, tagY);
+        this.ctx.fillStyle = '#27dade';
+        this.ctx.fillText(tag, tagX, tagY);
+    }
 };
 
 /**
