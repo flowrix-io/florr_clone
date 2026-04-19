@@ -460,6 +460,20 @@ function setupSocketListeners(game) {
             return;
         player.guildName = data.guildName || undefined;
     });
+    // Guild menu lifecycle events. Registered here (not inside GuildMenuManager)
+    // so they stay wired to whatever socket instance the game is actually using.
+    game.socket.on('guildUpdate', (data) => {
+        const menu = window.currentGame?.guildMenu;
+        if (!menu)
+            return;
+        menu.applyGuildUpdate(data);
+    });
+    game.socket.on('guildInviteReceived', (data) => {
+        const menu = window.currentGame?.guildMenu;
+        if (!menu)
+            return;
+        menu.applyInviteReceived(data);
+    });
     game.socket.on('disconnect', (reason) => {
         const disconnectTime = performance.now();
         console.log(`[CLIENT] Disconnected from server at ${disconnectTime.toFixed(0)}, reason: ${reason}`);

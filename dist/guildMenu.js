@@ -63,23 +63,19 @@ class GuildMenuManager {
         this.attachCanvas();
     }
     setSocket(socket) {
-        if (this.socket) {
-            this.socket.off('guildUpdate');
-            this.socket.off('guildInviteReceived');
-        }
         this.socket = socket;
-        if (!socket)
-            return;
-        socket.on('guildUpdate', (data) => {
-            this.currentGuild = data;
-            if (data)
-                this.pendingInvite = null;
-        });
-        socket.on('guildInviteReceived', (data) => {
-            this.pendingInvite = data;
-            if (!this.isOpen)
-                this.show();
-        });
+    }
+    /** Called by socket.ts when the server pushes a guildUpdate. */
+    applyGuildUpdate(data) {
+        this.currentGuild = data;
+        if (data)
+            this.pendingInvite = null;
+    }
+    /** Called by socket.ts when the server pushes a guildInviteReceived. */
+    applyInviteReceived(data) {
+        this.pendingInvite = data;
+        if (!this.isOpen)
+            this.show();
     }
     isGuildMenuOpen() { return this.isOpen; }
     toggle() { this.isOpen ? this.hide() : this.show(); }

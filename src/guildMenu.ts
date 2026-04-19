@@ -99,20 +99,19 @@ export class GuildMenuManager {
     }
 
     public setSocket(socket: Socket | null): void {
-        if (this.socket) {
-            this.socket.off('guildUpdate');
-            this.socket.off('guildInviteReceived');
-        }
         this.socket = socket;
-        if (!socket) return;
-        socket.on('guildUpdate', (data: GuildState | null) => {
-            this.currentGuild = data;
-            if (data) this.pendingInvite = null;
-        });
-        socket.on('guildInviteReceived', (data: PendingInvite) => {
-            this.pendingInvite = data;
-            if (!this.isOpen) this.show();
-        });
+    }
+
+    /** Called by socket.ts when the server pushes a guildUpdate. */
+    public applyGuildUpdate(data: GuildState | null): void {
+        this.currentGuild = data;
+        if (data) this.pendingInvite = null;
+    }
+
+    /** Called by socket.ts when the server pushes a guildInviteReceived. */
+    public applyInviteReceived(data: PendingInvite): void {
+        this.pendingInvite = data;
+        if (!this.isOpen) this.show();
     }
 
     public isGuildMenuOpen(): boolean { return this.isOpen; }

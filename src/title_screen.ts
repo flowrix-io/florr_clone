@@ -3957,6 +3957,11 @@ export class TitleScreen {
                 console.log('[TitleScreen] Initializing chat with preconnected socket');
                 this.titleScreenChat = new Chat(window.preconnectedSocket);
                 this.guildMenuManager.setSocket(window.preconnectedSocket);
+                // Forward guild events received while on the title screen (before
+                // the in-game socket handlers in socket.ts are wired up).
+                const menu = this.guildMenuManager;
+                window.preconnectedSocket.on('guildUpdate', (data: any) => menu.applyGuildUpdate(data));
+                window.preconnectedSocket.on('guildInviteReceived', (data: any) => menu.applyInviteReceived(data));
                 clearInterval(checkSocket);
             }
         }, 100);
@@ -3968,6 +3973,11 @@ export class TitleScreen {
                 console.log('[TitleScreen] Initializing chat with preconnected socket (delayed)');
                 this.titleScreenChat = new Chat(window.preconnectedSocket);
                 this.guildMenuManager.setSocket(window.preconnectedSocket);
+                // Forward guild events received while on the title screen (before
+                // the in-game socket handlers in socket.ts are wired up).
+                const menu = this.guildMenuManager;
+                window.preconnectedSocket.on('guildUpdate', (data: any) => menu.applyGuildUpdate(data));
+                window.preconnectedSocket.on('guildInviteReceived', (data: any) => menu.applyInviteReceived(data));
             }
         }, 5000);
     }
