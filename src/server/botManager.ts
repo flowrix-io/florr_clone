@@ -251,8 +251,15 @@ const FORCED_RAID_DURATION_MS = 45000; // 45s — enough for bots to traverse th
 // shouts it in chat, which also triggers the raid. Tracked by enemy id so we
 // don't re-announce the same boss every tick.
 const announcedBosses = new Set<string>();
-let lastBossAnnounceAt = 0;
-const BOSS_ANNOUNCE_COOLDOWN_MS = 2500;
+// Cooldown between boss announcements / raid calls. Randomized per-announcement
+// in [MIN, MAX] so bots don't chain-call raids the instant a new boss pops.
+const BOSS_ANNOUNCE_COOLDOWN_MIN_MS = 60000;
+const BOSS_ANNOUNCE_COOLDOWN_MAX_MS = 90000;
+let nextBossAnnounceAllowedAt = 0;
+// On the first announce pass, suppress bosses that already existed when the
+// module came online (server boot / initial super spawn wave) so bots don't
+// spam chat with a flood of callouts.
+let bossAnnounceInitialized = false;
 
 // Casual phrasings for boss sightings. Kept lower-case / inconsistently
 // punctuated on purpose so bot chatter blends in with the usual player chat.
@@ -1455,7 +1462,24 @@ function getActiveForcedRaidAnchor(): { x: number; y: number } | null {
 // directly. Rate-limited globally to avoid spam when multiple bosses spawn
 // at once.
 function announceNewBosses(io: SocketIOServer, now: number): void {
-    if (now - lastBossAnnounceAt < BOSS_ANNOUNCE_COOLDOWN_MS) return;
+    // First pass: silently absorb any bosses that were already alive when the
+    // bot manager spun up (or that existed before this guard was in place).
+    // Prevents a burst of "super X come!" chatter the instant supers spawn.
+    if (!bossAnnounceInitialized) {
+        for (const enemy of enemies) {
+            if (enemy.ownerId) continue;
+            if ((enemy as any).isDead) continue;
+            if (!BOSS_TIERS.has(enemy.tier)) continue;
+            if (enemy.type === 'target_dummy') continue;
+            announcedBosses.add(enemy.id);
+        }
+        bossAnnounceInitialized = true;
+        // Require a full cooldown before the very first real announcement too.
+        nextBossAnnounceAllowedAt = now + BOSS_ANNOUNCE_COOLDOWN_MIN_MS +
+            Math.random() * (BOSS_ANNOUNCE_COOLDOWN_MAX_MS - BOSS_ANNOUNCE_COOLDOWN_MIN_MS);
+    }
+
+    if (now < nextBossAnnounceAllowedAt) return;
 
     for (const enemy of enemies) {
         if (enemy.ownerId) continue;
@@ -1489,7 +1513,8 @@ function announceNewBosses(io: SocketIOServer, now: number): void {
             timestamp: now
         });
         announcedBosses.add(enemy.id);
-        lastBossAnnounceAt = now;
+        nextBossAnnounceAllowedAt = now + BOSS_ANNOUNCE_COOLDOWN_MIN_MS +
+            Math.random() * (BOSS_ANNOUNCE_COOLDOWN_MAX_MS - BOSS_ANNOUNCE_COOLDOWN_MIN_MS);
         // Rally every bot — the chat handler's regex trigger won't fire for
         // messages we emit directly, so invoke it explicitly.
         triggerBotRaid();
