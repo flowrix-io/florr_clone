@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 376017808,
+      "totalXP": 376017811,
       "inventory": {
         "common": {
           "shield": 291,
@@ -725,7 +725,7 @@
           "rare": 339,
           "mythic": 882,
           "ultra": 27,
-          "uncommon": 396,
+          "uncommon": 397,
           "super": 13,
           "unique": 4,
           "apex": 2
@@ -1549,7 +1549,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1776568936992
+      "lastActiveAt": 1776569025788
     },
     "dev": {
       "id": "1g99g1gfk",

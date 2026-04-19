@@ -266,6 +266,8 @@ exports.CHANGELOG = [
             'New mob: Baby Ant',
             'New mob: Worker Fire Ant',
             'New mob: Baby Fire Ant',
+            'A new portal has opened in desert',
+            'Ant hell background looks much nicer now'
         ]
     }
 ];
