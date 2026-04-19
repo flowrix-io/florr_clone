@@ -177,6 +177,121 @@ Graphics.prototype.drawUI = function(this: Graphics, players: Map<string, Player
             mouth: 14.5,
         });
         this.ctx.restore();
+
+        // Draw smaller HUDs for other squad members, stacked beneath the main HUD.
+        // Uniformly scaled to 80% of the main HUD and mirrors its layout (flower + health + xp).
+        const squadMemberIds: string[] = (window as any).squadMemberIds || [];
+        if (squadMemberIds.length > 0) {
+            const scale = 0.8;
+            const smBarWidth = healthBarWidth * scale;
+            const smBarHeight = healthBarHeight * scale;
+            const smRadius = smBarHeight / 2;
+            const smBarGap = 5 * scale;
+            const smFlowerRadius = 25 * scale;
+            const smFlowerOutlineRadius = 27 * scale;
+            const smFlowerOutlineLineWidth = 4 * scale;
+            const smFlowerInset = 12 * scale;
+            const smTextInset = 35 * scale;
+            const smFontSize = 14 * scale;
+            const smTextLineWidth = 3 * scale;
+            const smNameGap = 4;
+            const smMemberGap = 12;
+            const smFlowerCenterX = flowerCenterX;
+            const smBarX = smFlowerCenterX + smFlowerInset;
+            const smTextX = smFlowerCenterX + smTextInset;
+            const smBarsHalfHeight = smBarHeight + smBarGap / 2;
+
+            const mainHudBottom = Math.max(xpBarY + healthBarHeight, flowerCenterY + 27);
+            let smBlockTopY = mainHudBottom + 10;
+
+            for (const memberId of squadMemberIds) {
+                if (memberId === socket) continue;
+                const member = players.get(memberId);
+                if (!member) continue;
+
+                this.ctx.font = `${smFontSize}px Ubuntu, sans-serif`;
+                const memberName = member.name || 'Squadmate';
+                const nameBaselineY = smBlockTopY + smFontSize;
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = smTextLineWidth;
+                this.ctx.strokeText(memberName, smBarX, nameBaselineY);
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillText(memberName, smBarX, nameBaselineY);
+
+                const smHealthY = nameBaselineY + smNameGap;
+                const smXpY = smHealthY + smBarHeight + smBarGap;
+                const smFlowerCenterY = smHealthY + smBarsHalfHeight;
+
+                // Health bar background
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
+                this.ctx.beginPath();
+                this.ctx.roundRect(smBarX - 2, smHealthY - 2, smBarWidth + 4, smBarHeight + 4, smRadius);
+                this.ctx.fill();
+
+                // Health bar fill
+                const smClampedHealth = Math.max(0, member.health);
+                const smMaxHealth = member.maxHealth > 0 ? member.maxHealth : 1;
+                const smHealthFillWidth = (smClampedHealth / smMaxHealth) * smBarWidth;
+                this.ctx.fillStyle = member.isInvulnerable ? '#faffc9' : '#73ff54';
+                this.ctx.beginPath();
+                this.ctx.roundRect(smBarX, smHealthY, smHealthFillWidth, smBarHeight, smRadius);
+                this.ctx.fill();
+
+                // Health text
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = smTextLineWidth;
+                const smHealthText = `${this.formatNumber(Math.round(smClampedHealth))}/${this.formatNumber(member.maxHealth)}`;
+                const smHealthTextY = smHealthY + 15 * scale;
+                this.ctx.strokeText(smHealthText, smTextX, smHealthTextY);
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillText(smHealthText, smTextX, smHealthTextY);
+
+                // XP bar background
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
+                this.ctx.beginPath();
+                this.ctx.roundRect(smBarX - 2, smXpY - 2, smBarWidth + 4, smBarHeight + 4, smRadius);
+                this.ctx.fill();
+
+                // XP bar fill
+                const smXpDen = member.xpToNextLevel > 0 ? member.xpToNextLevel : 1;
+                const smXpFillWidth = (member.xp / smXpDen) * smBarWidth;
+                this.ctx.fillStyle = '#faffc9';
+                this.ctx.beginPath();
+                this.ctx.roundRect(smBarX, smXpY, smXpFillWidth, smBarHeight, smRadius);
+                this.ctx.fill();
+
+                // XP text
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = smTextLineWidth;
+                const smXpText = `LVL ${member.level} - ${this.formatNumber(member.xp)}/${this.formatNumber(member.xpToNextLevel)}`;
+                const smXpTextY = smXpY + 15 * scale;
+                this.ctx.strokeText(smXpText, smTextX, smXpTextY);
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillText(smXpText, smTextX, smXpTextY);
+
+                // Flower (uses the member's own colors/flags/mouth)
+                this.ctx.save();
+                this.ctx.translate(smFlowerCenterX, smFlowerCenterY);
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, smFlowerOutlineRadius, 0, Math.PI * 2, false);
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = smFlowerOutlineLineWidth;
+                this.ctx.stroke();
+                this.drawFlower({
+                    radius: smFlowerRadius,
+                    color: member.flowerColor || '#FFE763',
+                    faceFlags: member.faceFlags ?? 0,
+                    equipFlags: member.equipFlags ?? 0,
+                    eyeX: 2,
+                    eyeY: 0,
+                    mouth: member.mouth ?? 14.5,
+                });
+                this.ctx.restore();
+
+                const smBlockBottom = Math.max(smXpY + smBarHeight, smFlowerCenterY + smFlowerOutlineRadius);
+                smBlockTopY = smBlockBottom + smMemberGap;
+            }
+        }
     }
 
     // Draw floating texts
