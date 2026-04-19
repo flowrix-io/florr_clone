@@ -254,8 +254,11 @@ core_1.Graphics.prototype.drawUI = function (players, socket) {
     }
     // Draw floating texts
     this.drawFloatingTexts();
-    // Draw minimap
-    this.drawMinimap(players, socket);
+    // Draw minimap (hidden inside the PVP arena — that map has its own UI)
+    const localPlayer = players.get(socket);
+    if (!localPlayer || !localPlayer.inPvpArena) {
+        this.drawMinimap(players, socket);
+    }
 };
 core_1.Graphics.prototype.drawBossBars = function (enemies) {
     // Calculate viewport accounting for zoom level

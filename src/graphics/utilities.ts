@@ -299,8 +299,11 @@ Graphics.prototype.drawUI = function(this: Graphics, players: Map<string, Player
     // Draw floating texts
     this.drawFloatingTexts();
 
-    // Draw minimap
-    this.drawMinimap(players, socket);
+    // Draw minimap (hidden inside the PVP arena — that map has its own UI)
+    const localPlayer = players.get(socket) as any;
+    if (!localPlayer || !localPlayer.inPvpArena) {
+        this.drawMinimap(players, socket);
+    }
 };
 
 Graphics.prototype.drawBossBars = function(this: Graphics, enemies: Map<string, Enemy>) {

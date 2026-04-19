@@ -92,19 +92,20 @@ Graphics.prototype.drawPvpArenaBoundary = function(this: Graphics): void {
     ctx.restore();
 };
 
-// Render a small live leaderboard in the top-right corner showing every player
-// currently inside the arena (including the local player), sorted by PVP score.
+// Render a live leaderboard styled to match gardn's: green pill header with the
+// player count on top, dark-gray rounded container below, and each row is a dark
+// pill with a flower-colored progress bar behind centered "Name - Score" text.
 Graphics.prototype.drawPvpLeaderboard = function(this: Graphics, players: Map<string, Player>, currentPlayerId: string): void {
     const local = players.get(currentPlayerId) as any;
     if (!local || !local.inPvpArena) return;
 
-    const arenaPlayers: Array<{ name: string; score: number; isSelf: boolean }> = [];
-    players.forEach((p, id) => {
+    const arenaPlayers: Array<{ name: string; score: number; color: string }> = [];
+    players.forEach((p) => {
         if (!(p as any).inPvpArena) return;
         arenaPlayers.push({
-            name: p.name || 'unknown',
+            name: p.name || 'Unnamed',
             score: (p as any).pvpScore || 0,
-            isSelf: id === currentPlayerId,
+            color: (p as any).flowerColor || '#FFE763',
         });
     });
     if (arenaPlayers.length === 0) return;
@@ -114,56 +115,108 @@ Graphics.prototype.drawPvpLeaderboard = function(this: Graphics, players: Map<st
     const maxScore = Math.max(1, topN[0].score);
 
     const ctx = this.ctx;
-    const PANEL_W = 260;
-    const ROW_H = 22;
-    const HEADER_H = 28;
-    const PADDING = 8;
-    const PANEL_H = HEADER_H + topN.length * ROW_H + PADDING;
-    const x = this.canvas.width - PANEL_W - 16;
-    const y = 16;
+
+    // Layout — sized in the same proportions as gardn's leaderboard.
+    const ROW_W = 200;
+    const ROW_H = 20;
+    const ROW_GAP = 4;
+    const HEADER_H = 36;
+    const HEADER_PAD_X = 14;
+    const PANEL_PAD = 10;
+    const BORDER = 5;
+    const RADIUS = 7;
+
+    const headerW = ROW_W + HEADER_PAD_X * 2;
+    const panelW = headerW + PANEL_PAD * 2;
+    const rowsH = topN.length * ROW_H + Math.max(0, topN.length - 1) * ROW_GAP;
+    const panelH = HEADER_H + PANEL_PAD * 2 + rowsH + PANEL_PAD;
+
+    const x = this.canvas.width - panelW - 20;
+    const y = 20;
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.lineJoin = 'round';
 
-    // Panel background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-    ctx.strokeStyle = 'rgba(255, 80, 80, 0.8)';
-    ctx.lineWidth = 2;
-    roundRect(ctx, x, y, PANEL_W, PANEL_H, 8);
-    ctx.fill();
+    // Outer dark-gray container.
+    ctx.fillStyle = '#555555';
+    ctx.strokeStyle = '#454545';
+    ctx.lineWidth = BORDER;
+    roundRect(ctx, x, y, panelW, panelH, RADIUS);
     ctx.stroke();
+    ctx.fill();
 
-    // Header
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px Ubuntu, sans-serif';
+    // Green pill header.
+    const headerX = x + (panelW - headerW) / 2;
+    const headerY = y + PANEL_PAD;
+    ctx.fillStyle = '#55bb55';
+    ctx.strokeStyle = '#469646';
+    ctx.lineWidth = BORDER;
+    roundRect(ctx, headerX, headerY, headerW, HEADER_H, RADIUS);
+    ctx.stroke();
+    ctx.fill();
+
+    const headerText = arenaPlayers.length === 1 ? '1 Flower' : `${arenaPlayers.length} Flowers`;
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    ctx.fillText('PVP Arena', x + PADDING, y + HEADER_H / 2);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(255, 200, 200, 0.85)';
-    ctx.fillText(`${arenaPlayers.length} fighting`, x + PANEL_W - PADDING, y + HEADER_H / 2);
+    ctx.font = 'bold 18px Ubuntu, sans-serif';
+    ctx.lineWidth = 18 * 0.18;
+    ctx.strokeStyle = '#222222';
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeText(headerText, headerX + headerW / 2, headerY + HEADER_H / 2);
+    ctx.fillText(headerText, headerX + headerW / 2, headerY + HEADER_H / 2);
 
-    // Rows
-    ctx.font = '12px Ubuntu, sans-serif';
+    // Rows.
+    const rowsX = x + (panelW - ROW_W) / 2;
+    const rowsY = headerY + HEADER_H + PANEL_PAD;
+    const rowFontSize = ROW_H * 0.75;
+    ctx.font = `bold ${rowFontSize}px Ubuntu, sans-serif`;
+
     for (let i = 0; i < topN.length; i++) {
         const entry = topN[i];
-        const rowY = y + HEADER_H + i * ROW_H;
-        const ratio = entry.score / maxScore;
+        const rowY = rowsY + i * (ROW_H + ROW_GAP);
+        const cx = rowsX + ROW_W / 2;
+        const cy = rowY + ROW_H / 2;
+        const ratio = Math.max(0, Math.min(1, entry.score / maxScore));
 
-        // Bar
-        ctx.fillStyle = entry.isSelf ? 'rgba(255, 215, 0, 0.55)' : 'rgba(220, 60, 60, 0.5)';
-        ctx.fillRect(x + PADDING, rowY + 2, (PANEL_W - PADDING * 2) * ratio, ROW_H - 4);
+        // Dark track pill drawn as a thick rounded line (matches gardn's look).
+        const trackInset = ROW_H / 2;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#222222';
+        ctx.lineWidth = ROW_H;
+        ctx.beginPath();
+        ctx.moveTo(rowsX + trackInset, cy);
+        ctx.lineTo(rowsX + ROW_W - trackInset, cy);
+        ctx.stroke();
 
+        // Colored progress fill, slightly narrower so the dark track shows.
+        if (ratio > 0) {
+            ctx.strokeStyle = entry.color;
+            ctx.lineWidth = ROW_H * 0.8;
+            const segLen = (ROW_W - ROW_H) * ratio;
+            ctx.beginPath();
+            ctx.moveTo(rowsX + trackInset, cy);
+            ctx.lineTo(rowsX + trackInset + segLen, cy);
+            ctx.stroke();
+        }
+
+        // Centered "Name - Score" with dark outline.
+        const label = `${entry.name} - ${formatScore(entry.score)}`;
+        ctx.lineWidth = rowFontSize * 0.18;
+        ctx.strokeStyle = '#222222';
         ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'left';
-        const label = `${i + 1}. ${entry.name.length > 18 ? entry.name.slice(0, 17) + '\u2026' : entry.name}`;
-        ctx.fillText(label, x + PADDING + 4, rowY + ROW_H / 2);
-        ctx.textAlign = 'right';
-        ctx.fillText(`${entry.score}`, x + PANEL_W - PADDING - 4, rowY + ROW_H / 2);
+        ctx.strokeText(label, cx, cy);
+        ctx.fillText(label, cx, cy);
     }
 
     ctx.restore();
 };
+
+function formatScore(s: number): string {
+    if (s >= 1_000_000) return (s / 1_000_000).toFixed(s >= 10_000_000 ? 0 : 1) + 'M';
+    if (s >= 1_000) return (s / 1_000).toFixed(s >= 10_000 ? 0 : 1) + 'k';
+    return Math.floor(s).toString();
+}
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
     ctx.beginPath();
