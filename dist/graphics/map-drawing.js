@@ -59,6 +59,9 @@ core_1.Graphics.prototype.drawWallGrid = function (viewport) {
     const minTileY = Math.max(0, (0, core_1.worldToTileY)(viewport.top));
     const maxTileY = Math.min(core_1.WALL_GRID.length - 1, (0, core_1.worldToTileY)(viewport.bottom));
     // Pass 1: Draw all tile fills (walls and water rectangles)
+    // Slight overlap prevents sub-pixel background bleed between adjacent tiles
+    const OVERLAP = 1.5;
+    const OVERLAP_SIZE = core_1.WALL_TILE_SIZE + OVERLAP * 2;
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
             const state = core_1.WALL_GRID[tileY]?.[tileX] || 0;
@@ -66,24 +69,26 @@ core_1.Graphics.prototype.drawWallGrid = function (viewport) {
                 continue;
             const worldX = (0, core_1.tileToWorldX)(tileX);
             const worldY = (0, core_1.tileToWorldY)(tileY);
+            const drawX = worldX - OVERLAP;
+            const drawY = worldY - OVERLAP;
             if (state === 1) {
                 const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
                 if (pattern) {
                     this.ctx.save();
                     this.ctx.fillStyle = pattern;
-                    this.ctx.fillRect(worldX, worldY, core_1.WALL_TILE_SIZE, core_1.WALL_TILE_SIZE);
+                    this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
                     this.ctx.restore();
                 }
                 else {
                     this.ctx.fillStyle = '#666666';
-                    this.ctx.fillRect(worldX, worldY, core_1.WALL_TILE_SIZE, core_1.WALL_TILE_SIZE);
+                    this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
                 }
             }
             else if (state === 2) {
                 this.ctx.fillStyle = '#4169E1';
-                this.ctx.fillRect(worldX, worldY, core_1.WALL_TILE_SIZE, core_1.WALL_TILE_SIZE);
+                this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
                 this.ctx.fillStyle = 'rgba(65, 105, 225, 0.3)';
-                this.ctx.fillRect(worldX, worldY, core_1.WALL_TILE_SIZE, core_1.WALL_TILE_SIZE);
+                this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
             }
         }
     }
