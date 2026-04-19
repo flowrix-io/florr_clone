@@ -2181,6 +2181,8 @@ io.on('connection', (socket) => {
                 helpText += '/list_super - List all super mobs <br/>';
                 helpText += '/list_unique - List all unique mobs <br/>';
                 helpText += '/biome - Show the most populated biome <br/>';
+                helpText += '/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would roll <br/>';
+                helpText += '/loadout-from-string &lt;name&gt; - Show the loadout a bot named &lt;name&gt; would roll <br/>';
                 helpText += '<br/><b>Squad commands (groups of 4, share loot as one instance):</b><br/>';
                 helpText += '/squad-create [public|private] - Create a new squad (defaults to private)<br/>';
                 helpText += '/squad-invite &lt;username&gt; - Invite a player to your squad<br/>';
@@ -2345,10 +2347,51 @@ io.on('connection', (socket) => {
                 }
                 return;
             }
+            if (command.startsWith('level-from-string')) {
+                const spaceIdx = message.indexOf(' ');
+                const name = spaceIdx === -1 ? '' : message.substring(spaceIdx + 1).trim();
+                if (!name) {
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: 'Usage: /level-from-string &lt;name&gt;',
+                        timestamp: Date.now()
+                    });
+                }
+                else {
+                    const level = (0, botManager_1.getBotLevelForName)(name);
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: `"${name}" would be level ${level}.`,
+                        timestamp: Date.now()
+                    });
+                }
+                return;
+            }
+            if (command.startsWith('loadout-from-string')) {
+                const spaceIdx = message.indexOf(' ');
+                const name = spaceIdx === -1 ? '' : message.substring(spaceIdx + 1).trim();
+                if (!name) {
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: 'Usage: /loadout-from-string &lt;name&gt;',
+                        timestamp: Date.now()
+                    });
+                }
+                else {
+                    const loadout = (0, botManager_1.getBotLoadoutForName)(name);
+                    const lines = loadout.map((item, i) => `Slot ${i + 1}: ${item.rarity} ${item.petalType}`);
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: `"${name}" loadout:<br/>${lines.join('<br/>')}`,
+                        timestamp: Date.now()
+                    });
+                }
+                return;
+            }
             // Unknown command
             io.to(socket.id).emit('chatMessage', {
                 sender: 'System',
-                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique, /biome',
+                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique, /biome, /level-from-string, /loadout-from-string',
                 timestamp: Date.now()
             });
             return;

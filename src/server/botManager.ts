@@ -413,6 +413,23 @@ function rollBotLevel(rng: () => number): number {
     return Math.floor(rng() * 225) + 1;
 }
 
+// Recompute the level a bot named `name` would roll. Mirrors the rng draw
+// order in createBot so callers (e.g. /level-from-string) see the same value
+// without needing to spawn the bot.
+export function getBotLevelForName(name: string): number {
+    const rng = seededRng(hashString(name));
+    return rollBotLevel(rng);
+}
+
+// Recompute the loadout a bot named `name` would roll. Must consume `rollBotLevel`
+// first so the rng stream lines up with createBot — otherwise the loadout would
+// diverge from what an actual bot of that name carries.
+export function getBotLoadoutForName(name: string): any[] {
+    const rng = seededRng(hashString(name));
+    const level = rollBotLevel(rng);
+    return buildBotLoadout(level, rng);
+}
+
 function buildBotLoadout(level: number, rng: () => number): any[] {
     const loadout: any[] = [];
 

@@ -9,6 +9,8 @@ exports.setTargetBotCount = setTargetBotCount;
 exports.getTargetBotCount = getTargetBotCount;
 exports.initializeBotGuilds = initializeBotGuilds;
 exports.isBot = isBot;
+exports.getBotLevelForName = getBotLevelForName;
+exports.getBotLoadoutForName = getBotLoadoutForName;
 exports.removeAllBots = removeAllBots;
 exports.maintainBotCount = maintainBotCount;
 exports.triggerBotRaid = triggerBotRaid;
@@ -323,6 +325,21 @@ function rollBotLevel(rng) {
     // Uniform 1-225. Roughly 11% of bots land at apex tier (level >= 200).
     // Derived from the name-seeded rng so same-name bots share a level.
     return Math.floor(rng() * 225) + 1;
+}
+// Recompute the level a bot named `name` would roll. Mirrors the rng draw
+// order in createBot so callers (e.g. /level-from-string) see the same value
+// without needing to spawn the bot.
+function getBotLevelForName(name) {
+    const rng = seededRng(hashString(name));
+    return rollBotLevel(rng);
+}
+// Recompute the loadout a bot named `name` would roll. Must consume `rollBotLevel`
+// first so the rng stream lines up with createBot — otherwise the loadout would
+// diverge from what an actual bot of that name carries.
+function getBotLoadoutForName(name) {
+    const rng = seededRng(hashString(name));
+    const level = rollBotLevel(rng);
+    return buildBotLoadout(level, rng);
 }
 function buildBotLoadout(level, rng) {
     const loadout = [];
