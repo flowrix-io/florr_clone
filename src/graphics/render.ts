@@ -41,6 +41,9 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     // Draw the map
     this.drawMap(this.mapData);
 
+    // Draw PVP arena boundary in world space (visible from inside the arena)
+    this.drawPvpArenaBoundary();
+
     // Draw game objects
     this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
 
@@ -60,6 +63,9 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
 
     // Draw boss bars for ultra, super, and unique mobs in view
     this.drawBossBars(enemies);
+
+    // Draw the live PVP leaderboard (only visible while in the arena)
+    this.drawPvpLeaderboard(players, currentPlayerId);
 
     // Draw changelog and notifications menus
     // Ensure canvas z-index is low so UI elements stay on top (only while in-game)

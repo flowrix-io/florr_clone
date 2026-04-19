@@ -27,6 +27,8 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     }
     // Draw the map
     this.drawMap(this.mapData);
+    // Draw PVP arena boundary in world space (visible from inside the arena)
+    this.drawPvpArenaBoundary();
     // Draw game objects
     this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
     // Draw explosion effects (in world coordinates, before camera restore)
@@ -41,6 +43,8 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     this.drawFallingStars();
     // Draw boss bars for ultra, super, and unique mobs in view
     this.drawBossBars(enemies);
+    // Draw the live PVP leaderboard (only visible while in the arena)
+    this.drawPvpLeaderboard(players, currentPlayerId);
     // Draw changelog and notifications menus
     // Ensure canvas z-index is low so UI elements stay on top (only while in-game)
     if (this.canvas && window.currentGame) {

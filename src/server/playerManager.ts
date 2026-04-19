@@ -19,7 +19,10 @@ import {
     getTileState,
     WALL_TILE_SIZE,
     worldToTileX,
-    worldToTileY
+    worldToTileY,
+    PVP_ARENA_SPAWN_X,
+    PVP_ARENA_SPAWN_Y,
+    isInPvpArena
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { MapElement } from '../constants';
@@ -191,8 +194,21 @@ export function findSafeSpawnPosition(
 export function respawnPlayer(player: ServerPlayer, io: SocketIOServer) {
     let spawnPosition: { x: number; y: number } | null = null;
 
+    // PVP arena: either the player picked "PVP" on the title screen, or they
+    // died while inside the arena. Either way, drop them at the arena spawn
+    // and start a fresh PVP session.
+    const wantsPvp = player.spawnBiome === 'pvp'
+        || player.inPvpArena
+        || isInPvpArena(player.x, player.y);
+    if (wantsPvp) {
+        spawnPosition = { x: PVP_ARENA_SPAWN_X, y: PVP_ARENA_SPAWN_Y };
+        player.pvpScore = 0;
+        player.pvpInventoryGains = [];
+        player.inPvpArena = true;
+    }
+
     // First, try to spawn in the biome the player selected on the title screen
-    if (player.spawnBiome && player.spawnBiome !== 'default') {
+    if (!spawnPosition && player.spawnBiome && player.spawnBiome !== 'default') {
         spawnPosition = getSpawnPositionInBiome(player.spawnBiome);
     }
 

@@ -19,6 +19,7 @@ const physics_2 = require("./physics");
 const petal_actions_1 = require("../petal_actions");
 const mobs_1 = require("../mobs");
 const playerManager_1 = require("./playerManager");
+const inventoryCodec_1 = require("../inventoryCodec");
 const utils_1 = require("./utils");
 // Map to store petal physics state (keyed by petalId)
 const petalPhysicsStates = new Map();
@@ -236,10 +237,12 @@ function validatePlayerPositions(io) {
     for (const playerId in constants_1.players) {
         const player = constants_1.players[playerId];
         if (player) {
-            // Reset invalid positions to a safe default
-            if (isNaN(player.x) || isNaN(player.y) ||
+            // Reset invalid positions to a safe default. PVP-arena coordinates
+            // sit outside the regular world but are still valid.
+            const inArena = (0, constants_1.isInPvpArena)(player.x, player.y);
+            if (!inArena && (isNaN(player.x) || isNaN(player.y) ||
                 player.x < 0 || player.x > constants_1.ACTUAL_WORLD_WIDTH ||
-                player.y < 0 || player.y > constants_1.ACTUAL_WORLD_HEIGHT) {
+                player.y < 0 || player.y > constants_1.ACTUAL_WORLD_HEIGHT)) {
                 console.log(`[SERVER] Fixing invalid position for player ${playerId}: (${player.x}, ${player.y})`);
                 // Reset to center of world
                 player.x = constants_1.ACTUAL_WORLD_WIDTH / 2;
@@ -299,6 +302,126 @@ function trySecondChance(player, io) {
         isInvulnerable: true,
     });
     return true;
+}
+/**
+ * Reset PVP arena state (called on entry or after committing gains).
+ */
+function resetPvpState(player) {
+    player.pvpScore = 0;
+    player.pvpInventoryGains = [];
+}
+/**
+ * Convert PVP-gained petals into the player's regular inventory at the
+ * configured keep ratio. Called when a player leaves the arena.
+ */
+function commitPvpGains(player, io, savePlayerProgress) {
+    const gains = player.pvpInventoryGains;
+    if (!gains || gains.length === 0)
+        return;
+    let totalAdded = 0;
+    for (let i = 0; i < gains.length; i += 3) {
+        const rarityId = gains[i];
+        const itemId = gains[i + 1];
+        const count = gains[i + 2];
+        const kept = Math.floor(count * constants_1.PVP_INVENTORY_KEEP_RATIO);
+        if (kept <= 0)
+            continue;
+        const rarity = inventoryCodec_1.ID_TO_RARITY.get(rarityId);
+        const itemKey = inventoryCodec_1.ID_TO_ITEM_KEY.get(itemId);
+        if (!rarity || !itemKey)
+            continue;
+        (0, playerManager_1.addItem)(player.inventory, rarity, itemKey, kept);
+        totalAdded += kept;
+    }
+    if (totalAdded > 0) {
+        io.to(player.id).emit('inventoryUpdated', player.inventory);
+        const userId = gameState_1.playerUserIds[player.id];
+        if (userId)
+            savePlayerProgress(player, userId);
+    }
+}
+/**
+ * Add an item to a player's PVP gains buffer (compact triplet format).
+ */
+function addPvpGain(player, rarity, itemKey, count) {
+    if (!player.pvpInventoryGains)
+        player.pvpInventoryGains = [];
+    (0, playerManager_1.addItem)(player.pvpInventoryGains, rarity, itemKey, count);
+}
+/**
+ * Apply damage to a player from another player (PVP). Handles knockback,
+ * invulnerability, second-chance, kill tracking, and gain transfer.
+ */
+function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
+    if (victim.isDead || victim.isInvulnerable)
+        return;
+    if (damage <= 0)
+        return;
+    const shieldAmount = (0, petal_actions_1.getShieldAmount)(victim);
+    const damageToVictim = Math.max(0, damage - shieldAmount);
+    victim.health -= damageToVictim;
+    victim.lastDamageTime = Date.now();
+    victim.lastDamagedByPlayerId = attacker.id;
+    const secondChanceTriggered = victim.health <= 0 && trySecondChance(victim, io);
+    if (!secondChanceTriggered) {
+        if (victim.health <= 0) {
+            victim.killedBy = { type: 'player', tier: 'common' };
+        }
+        victim.isInvulnerable = true;
+        setTimeout(() => {
+            if (constants_1.players[victim.id]) {
+                constants_1.players[victim.id].isInvulnerable = false;
+                io.emit('playerInvulnerabilityEnded', { playerId: victim.id });
+            }
+        }, 50);
+    }
+    // Knockback: away from attacker
+    const dx = victim.x - attacker.x;
+    const dy = victim.y - attacker.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const knockDist = 25;
+    const knockbackX = (dx / dist) * knockDist;
+    const knockbackY = (dy / dist) * knockDist;
+    victim.x += knockbackX;
+    victim.y += knockbackY;
+    io.emit('playerDamaged', {
+        playerId: victim.id,
+        health: victim.health,
+        maxHealth: victim.maxHealth,
+        isInvulnerable: victim.isInvulnerable,
+        knockbackX,
+        knockbackY
+    });
+    // Killed by attacker: award PVP score, transfer victim's gains, mark dead now.
+    if (victim.health <= 0 && !secondChanceTriggered && !victim.isDead) {
+        attacker.pvpScore = (attacker.pvpScore || 0) + 1;
+        if (victim.pvpInventoryGains && victim.pvpInventoryGains.length > 0) {
+            for (let i = 0; i < victim.pvpInventoryGains.length; i += 3) {
+                const rarityId = victim.pvpInventoryGains[i];
+                const itemId = victim.pvpInventoryGains[i + 1];
+                const count = victim.pvpInventoryGains[i + 2];
+                const rarity = inventoryCodec_1.ID_TO_RARITY.get(rarityId);
+                const itemKey = inventoryCodec_1.ID_TO_ITEM_KEY.get(itemId);
+                if (rarity && itemKey) {
+                    addPvpGain(attacker, rarity, itemKey, count);
+                }
+            }
+            victim.pvpInventoryGains = [];
+        }
+        // Mark dead immediately so passive-heal can't revive the victim before
+        // their own update tick runs the standard death handler.
+        victim.isDead = true;
+        victim.angle = Math.random() * Math.PI * 2;
+        (0, petal_actions_1.despawnAllPlayerPets)(victim.id, io);
+        io.emit('playerDied', {
+            playerId: victim.id,
+            x: victim.x,
+            y: victim.y,
+            angle: victim.angle,
+            killedBy: victim.killedBy
+        });
+        void savePlayerProgress;
+    }
 }
 /**
  * Update player state (movement, collisions, etc.)
@@ -1321,6 +1444,43 @@ function updatePlayerState(player, deltaTime, deps) {
                     }
                 }
             }
+            // PVP petal-vs-player collision: if both attacker and victim are inside the
+            // arena, a petal swing on contact deals damage and knocks the victim back.
+            if (player.inPvpArena) {
+                const petalSizePx = 40 * effectiveSize;
+                const petalRadius = petalSizePx / 2;
+                const playerRadius = constants_1.PLAYER_SIZE / 2;
+                const minDist = petalRadius + playerRadius;
+                const minDistSq = minDist * minDist;
+                for (const otherId in constants_1.players) {
+                    if (otherId === player.id)
+                        continue;
+                    const other = constants_1.players[otherId];
+                    if (!other || other.isDead || !other.inPvpArena)
+                        continue;
+                    const dxp = other.x - petalX;
+                    const dyp = other.y - petalY;
+                    const distSqP = dxp * dxp + dyp * dyp;
+                    if (distSqP >= minDistSq || distSqP <= 0)
+                        continue;
+                    // Per-victim cooldown so a single petal can't deal damage every tick
+                    const damageCooldownKey = `${player.id}_${loadoutIndex}_${instanceIndex}_pvp_${otherId}`;
+                    const PVP_PETAL_COOLDOWN = petalStats.damageCooldown || 250; // ms between hits on same victim
+                    const lastDmgTime = petalLastDamageTime.get(damageCooldownKey) || 0;
+                    if (currentTime - lastDmgTime < PVP_PETAL_COOLDOWN)
+                        continue;
+                    petalLastDamageTime.set(damageCooldownKey, currentTime);
+                    const damageMultiplier = (0, petal_actions_1.getDamageMultiplier)(player);
+                    const finalDamage = petalStats.damage * damageMultiplier;
+                    applyPvpDamage(player, other, finalDamage, io, savePlayerProgress);
+                    // The attacking petal also takes damage from the hit and may break.
+                    if (!petalStats.damageCooldown) {
+                        const prevHealth = getInstanceHealth(petal, instanceIndex, petalStats);
+                        // Use a fixed self-damage so PVP doesn't trivially destroy petals on the first hit.
+                        setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevHealth - 1));
+                    }
+                }
+            }
             // Check for corpse revival if this is a yggdrasil petal (always active)
             if (petal.petalType === 'yggdrasil') {
                 const revivalRange = 80; // Range for automatic revival
@@ -1404,10 +1564,17 @@ function updatePlayerState(player, deltaTime, deps) {
                     continue;
                 }
             }
-            // Add item to player's inventory (which may be shared with split player)
+            // Add item to player's inventory (which may be shared with split player).
+            // While inside the PVP arena, route gains into the temporary PVP buffer instead
+            // — only 25% will be transferred back to the regular inventory on exit.
             const rarity = item.rarity || 'common';
             const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
-            (0, playerManager_1.addItem)(player.inventory, rarity, itemKey, 1);
+            if (player.inPvpArena) {
+                addPvpGain(player, rarity, itemKey, 1);
+            }
+            else {
+                (0, playerManager_1.addItem)(player.inventory, rarity, itemKey, 1);
+            }
             // Mark as picked up by this player (don't remove from world)
             if (!item.pickedUpBy) {
                 item.pickedUpBy = new Set();
@@ -1455,6 +1622,19 @@ function updatePlayerState(player, deltaTime, deps) {
                     }
                 }
             }
+        }
+    }
+    // Clamp position to the PVP arena boundary if the player is currently inside it.
+    // Players can only leave via the central exit teleporter — never by walking out.
+    if (player.inPvpArena) {
+        const dxArena = newX - constants_1.PVP_ARENA_CENTER_X;
+        const dyArena = newY - constants_1.PVP_ARENA_CENTER_Y;
+        const distSqArena = dxArena * dxArena + dyArena * dyArena;
+        const maxR = constants_1.PVP_ARENA_RADIUS - constants_1.PLAYER_SIZE / 2;
+        if (distSqArena > maxR * maxR) {
+            const distArena = Math.sqrt(distSqArena) || 1;
+            newX = constants_1.PVP_ARENA_CENTER_X + (dxArena / distArena) * maxR;
+            newY = constants_1.PVP_ARENA_CENTER_Y + (dyArena / distArena) * maxR;
         }
     }
     // Check for teleporter interactions
@@ -1536,8 +1716,20 @@ function updatePlayerState(player, deltaTime, deps) {
         player.teleporterEnterTime = undefined;
         io.to(player.id).emit('teleporterExited');
     }
+    const wasInArena = !!player.inPvpArena;
     player.x = newX;
     player.y = newY;
+    const isNowInArena = (0, constants_1.isInPvpArena)(player.x, player.y);
+    if (wasInArena && !isNowInArena) {
+        // Player just left the arena (via teleporter) — convert 25% of PVP gains, then clear PVP state.
+        commitPvpGains(player, io, savePlayerProgress);
+        resetPvpState(player);
+    }
+    else if (!wasInArena && isNowInArena) {
+        // Player just entered the arena — start a fresh PVP session.
+        resetPvpState(player);
+    }
+    player.inPvpArena = isNowInArena;
     if (player.health <= 0 && !player.isDead) {
         // Mark player as dead instead of respawning immediately
         player.isDead = true;

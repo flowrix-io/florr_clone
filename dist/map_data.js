@@ -3406,6 +3406,19 @@ const WORLD_MAP_DATA = {
                     "y": 13810
                 }
             }
+        },
+        {
+            "type": "teleporter",
+            "x": 150000,
+            "y": 150000,
+            "width": 0,
+            "height": 0,
+            "properties": {
+                "teleportTo": {
+                    "x": 19000,
+                    "y": 17400
+                }
+            }
         }
     ],
     "wallGrid": [

@@ -1,11 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BASE_XP_REQUIREMENT = exports.KNOCKBACK_RECOVERY_SPEED = exports.KNOCKBACK_FORCE = exports.MOUSE_NONLINEAR_EXPONENT = exports.MOUSE_NONLINEAR_SCALE = exports.MAX_SPEED = exports.RESPAWN_INVULNERABILITY_TIME = exports.MAX_INVENTORY_SIZE = exports.ENEMY_TIERS = exports.MAX_SAND_RADIUS = exports.MIN_SAND_RADIUS = exports.SAND_COUNT = exports.DECORATION_COUNT = exports.ENEMY_DAMAGE = exports.PLAYER_DAMAGE = exports.ENEMY_MAX_HEALTH = exports.PLAYER_MAX_HEALTH = exports.ENEMY_CORAL_DAMAGE = exports.ENEMY_CORAL_HEALTH = exports.ENEMY_CORAL_PROBABILITY = exports.OBSTACLE_COUNT = exports.SCALE_FACTOR = exports.PVP_WORLD_HEIGHT = exports.PVP_WORLD_WIDTH = exports.OLD_WORLD_HEIGHT = exports.OLD_WORLD_WIDTH = exports.ENEMIES_PER_VIEWPORT = exports.VIEWPORT_WITH_BUFFER_AREA = exports.ORIGINAL_ENEMY_DENSITY = exports.ORIGINAL_ENEMY_COUNT = exports.TOTAL_WORLD_AREA = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.enemies = exports.dots = exports.players = exports.VIEWPORT_AREA = exports.VIEWPORT_HEIGHT = exports.VIEWPORT_WIDTH = exports.ENEMY_DESPAWN_TIME = exports.VIEWPORT_BUFFER = exports.SERVER_PROTOCOL = exports.USE_HTTPS = void 0;
-exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.DEFAULT_SERVER_CONFIGS = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.TELEPORTER_COOLDOWN = exports.TELEPORTER_SUCTION_FORCE = exports.TELEPORTER_SUCTION_RADIUS = exports.TELEPORTER_RADIUS = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = void 0;
+exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.DEFAULT_SERVER_CONFIGS = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.PVP_INVENTORY_KEEP_RATIO = exports.PVP_EXIT_RETURN_Y = exports.PVP_EXIT_RETURN_X = exports.PVP_ARENA_SPAWN_Y = exports.PVP_ARENA_SPAWN_X = exports.PVP_ARENA_RADIUS = exports.PVP_ARENA_CENTER_Y = exports.PVP_ARENA_CENTER_X = exports.TELEPORTER_COOLDOWN = exports.TELEPORTER_SUCTION_FORCE = exports.TELEPORTER_SUCTION_RADIUS = exports.TELEPORTER_RADIUS = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = void 0;
 exports.getMobAnimationFramerate = getMobAnimationFramerate;
 exports.getMobAnimationFrameTime = getMobAnimationFrameTime;
 exports.getHighQualityMobs = getHighQualityMobs;
 exports.invalidateSettingsCache = invalidateSettingsCache;
+exports.isInPvpArena = isInPvpArena;
 exports.isWall = isWall;
 exports.isSpawn = isSpawn;
 exports.isTeleporter = isTeleporter;
@@ -136,6 +137,27 @@ exports.TELEPORTER_RADIUS = 60; // Radius for point-based teleporter interaction
 exports.TELEPORTER_SUCTION_RADIUS = 150; // Larger radius for suction pull effect
 exports.TELEPORTER_SUCTION_FORCE = 400; // Force magnitude (enough to overcome knockback of 25)
 exports.TELEPORTER_COOLDOWN = 5000; // 5 second cooldown after teleporting
+// PVP arena: a circular zone where players can damage each other.
+// Placed well outside the regular world bounds (60000x60000) so it shares no
+// coordinate space with the map — there is no walkable path between them.
+// Entry is exclusively via the "PVP" choice on the title screen; exit is via
+// the teleporter at the arena center.
+exports.PVP_ARENA_CENTER_X = 150000;
+exports.PVP_ARENA_CENTER_Y = 150000;
+exports.PVP_ARENA_RADIUS = 2500;
+// Spawn point inside the arena (offset from center so players don't sit on the exit teleporter)
+exports.PVP_ARENA_SPAWN_X = exports.PVP_ARENA_CENTER_X + 1500;
+exports.PVP_ARENA_SPAWN_Y = exports.PVP_ARENA_CENTER_Y;
+// Where the exit teleporter drops players when they leave the arena.
+exports.PVP_EXIT_RETURN_X = 19000;
+exports.PVP_EXIT_RETURN_Y = 17400;
+// Fraction of petals gained inside PVP that survive the trip back to the regular inventory.
+exports.PVP_INVENTORY_KEEP_RATIO = 0.25;
+function isInPvpArena(x, y) {
+    const dx = x - exports.PVP_ARENA_CENTER_X;
+    const dy = y - exports.PVP_ARENA_CENTER_Y;
+    return dx * dx + dy * dy <= exports.PVP_ARENA_RADIUS * exports.PVP_ARENA_RADIUS;
+}
 // Define zone boundaries for different tiers
 exports.ZONE_BOUNDARIES = {
     common: { start: 0, end: 12000 },

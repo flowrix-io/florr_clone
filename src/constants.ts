@@ -139,6 +139,29 @@ export const TELEPORTER_SUCTION_RADIUS = 150; // Larger radius for suction pull 
 export const TELEPORTER_SUCTION_FORCE = 400; // Force magnitude (enough to overcome knockback of 25)
 export const TELEPORTER_COOLDOWN = 5000; // 5 second cooldown after teleporting
 
+// PVP arena: a circular zone where players can damage each other.
+// Placed well outside the regular world bounds (60000x60000) so it shares no
+// coordinate space with the map — there is no walkable path between them.
+// Entry is exclusively via the "PVP" choice on the title screen; exit is via
+// the teleporter at the arena center.
+export const PVP_ARENA_CENTER_X = 150000;
+export const PVP_ARENA_CENTER_Y = 150000;
+export const PVP_ARENA_RADIUS = 2500;
+// Spawn point inside the arena (offset from center so players don't sit on the exit teleporter)
+export const PVP_ARENA_SPAWN_X = PVP_ARENA_CENTER_X + 1500;
+export const PVP_ARENA_SPAWN_Y = PVP_ARENA_CENTER_Y;
+// Where the exit teleporter drops players when they leave the arena.
+export const PVP_EXIT_RETURN_X = 19000;
+export const PVP_EXIT_RETURN_Y = 17400;
+// Fraction of petals gained inside PVP that survive the trip back to the regular inventory.
+export const PVP_INVENTORY_KEEP_RATIO = 0.25;
+
+export function isInPvpArena(x: number, y: number): boolean {
+    const dx = x - PVP_ARENA_CENTER_X;
+    const dy = y - PVP_ARENA_CENTER_Y;
+    return dx * dx + dy * dy <= PVP_ARENA_RADIUS * PVP_ARENA_RADIUS;
+}
+
 // Define zone boundaries for different tiers
 export const ZONE_BOUNDARIES = {
     common: { start: 0, end: 12000 },

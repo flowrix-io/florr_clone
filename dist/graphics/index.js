@@ -18,5 +18,6 @@ require("./effects");
 require("./minimap");
 require("./background");
 require("./game-objects");
+require("./pvp-arena");
 require("./render");
 require("./utilities");

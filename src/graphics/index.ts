@@ -16,5 +16,6 @@ import './effects';
 import './minimap';
 import './background';
 import './game-objects';
+import './pvp-arena';
 import './render';
 import './utilities';

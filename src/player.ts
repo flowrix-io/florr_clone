@@ -78,6 +78,8 @@ export interface Player {
   forcedFlags?: boolean;   // When true, server flag updates are ignored (set by /forcelocalplayerflags)
   squadId?: string;        // ID of the squad this player belongs to
   guildName?: string;      // 5-char alphanumeric guild name — rendered as [NAME] under the health bar
+  inPvpArena?: boolean;    // True when this player is currently inside the PVP arena
+  pvpScore?: number;       // PVP arena score (resets when leaving the arena)
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
@@ -157,4 +159,8 @@ export interface ServerPlayer {
   mouth?: number;          // Mouth curve Y control point
   squadId?: string;        // ID of the squad this player belongs to
   guildName?: string;      // 5-char alphanumeric guild name (broadcast so clients can render it)
+  inPvpArena?: boolean;    // True when player is currently inside the PVP arena
+  pvpScore?: number;       // PVP arena score (kills + assists). Resets when leaving the arena.
+  pvpInventoryGains?: PlayerInventory; // Petals collected while inside PVP. 25% transferred to inventory on exit.
+  lastDamagedByPlayerId?: string; // ID of the most recent player to damage this player (for PVP kill credit)
 }

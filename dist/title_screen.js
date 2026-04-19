@@ -234,6 +234,8 @@ class TitleScreen {
         const biomeNames = new Set();
         // Add default biome
         biomeNames.add('default');
+        // PVP arena lives outside the regular map; surface it as its own pickable destination.
+        biomeNames.add('pvp');
         // Scan map data for biome elements
         if (mapData && Array.isArray(mapData)) {
             console.log('Scanning map data for biomes, total elements:', mapData.length);
@@ -292,6 +294,11 @@ class TitleScreen {
                 color: 'rgb(96, 255, 149)',
                 title: 'Computer Lab',
                 displayName: 'Computer Lab'
+            },
+            'pvp': {
+                color: 'rgb(220, 60, 60)',
+                title: 'PVP Arena',
+                displayName: 'PVP Arena'
             }
         };
         // Return config for known biome or create a default one

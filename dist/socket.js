@@ -1134,6 +1134,9 @@ function setupSocketListeners(game) {
                         existingPlayer.mouth = serverPlayer.mouth;
                     }
                 }
+                // Sync PVP arena state for the leaderboard / boundary rendering.
+                existingPlayer.inPvpArena = !!serverPlayer.inPvpArena;
+                existingPlayer.pvpScore = serverPlayer.pvpScore || 0;
                 // Sync petal extension from server (if available in gameStateUpdate)
                 if ('petalExtension' in serverPlayer) {
                     existingPlayer.petalExtension = serverPlayer.petalExtension || 1.0;

@@ -156,8 +156,20 @@ function findSafeSpawnPosition(spawnArea, maxAttempts = 50) {
 }
 function respawnPlayer(player, io) {
     let spawnPosition = null;
+    // PVP arena: either the player picked "PVP" on the title screen, or they
+    // died while inside the arena. Either way, drop them at the arena spawn
+    // and start a fresh PVP session.
+    const wantsPvp = player.spawnBiome === 'pvp'
+        || player.inPvpArena
+        || (0, constants_1.isInPvpArena)(player.x, player.y);
+    if (wantsPvp) {
+        spawnPosition = { x: constants_1.PVP_ARENA_SPAWN_X, y: constants_1.PVP_ARENA_SPAWN_Y };
+        player.pvpScore = 0;
+        player.pvpInventoryGains = [];
+        player.inPvpArena = true;
+    }
     // First, try to spawn in the biome the player selected on the title screen
-    if (player.spawnBiome && player.spawnBiome !== 'default') {
+    if (!spawnPosition && player.spawnBiome && player.spawnBiome !== 'default') {
         spawnPosition = getSpawnPositionInBiome(player.spawnBiome);
     }
     // If no spawn found in the player's selected biome, fall back to level-based spawn points

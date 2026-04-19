@@ -7,7 +7,7 @@ import fs from 'fs';
 import https from 'https';
 import http from 'http';
 import { database, Notification } from './database';
-import { USE_HTTPS, SERVER_PROTOCOL } from './constants';
+import { USE_HTTPS, SERVER_PROTOCOL, PVP_ARENA_SPAWN_X, PVP_ARENA_SPAWN_Y } from './constants';
 
 // Check for and migrate any plain text passwords on server startup
 if (database.checkForPlainTextPasswords()) {
@@ -182,6 +182,7 @@ import {
     spawnCentipedeBodySegments,
     EnemySpawnerHelpers
 } from './server/enemySpawner';
+import { spawnArenaMobs } from './server/pvpArenaSpawner';
 
 // Load persisted guilds into memory now that database + guildManager are both ready.
 loadGuildsFromDatabase();
@@ -1106,7 +1107,12 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             let spawnX = 200;
             let spawnY = WORLD_HEIGHT / 2;
             
-            if (credentials.spawnBiome && credentials.spawnBiome !== 'default') {
+            if (credentials.spawnBiome === 'pvp') {
+                // PVP arena lives outside the regular map — skip biome lookup and drop the player at the arena spawn.
+                spawnX = PVP_ARENA_SPAWN_X;
+                spawnY = PVP_ARENA_SPAWN_Y;
+                console.log(`Player ${credentials.playerName} spawning in PVP arena`);
+            } else if (credentials.spawnBiome && credentials.spawnBiome !== 'default') {
                 const biomeSpawn = getSpawnPositionInBiome(credentials.spawnBiome);
                 if (biomeSpawn) {
                     spawnX = biomeSpawn.x;
@@ -1249,7 +1255,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 skills: savedSkills,
                 mobKills: (savedProgress as any)?.mobKills || {},
                 stars: (savedProgress as any)?.stars || 0,
-                spawnBiome: credentials.spawnBiome || 'default'
+                spawnBiome: credentials.spawnBiome || 'default',
+                inPvpArena: credentials.spawnBiome === 'pvp',
+                pvpScore: 0,
+                pvpInventoryGains: []
             };
             
             // Recalculate player stats with modifiers after loadout is set
@@ -4913,6 +4922,8 @@ function start_loop() {
                 faceFlags,
                 equipFlags,
                 mouth,
+                inPvpArena: !!p.inPvpArena,
+                pvpScore: p.pvpScore || 0,
             };
         };
 
@@ -5063,6 +5074,12 @@ setInterval(() => {
         const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
         const currentViewportEnemies = getEnemiesInViewportCount();
         
+        // Keep the PVP arena populated with garden mobs + spiders.
+        const arenaMobs = spawnArenaMobs(3);
+        for (const mob of arenaMobs) {
+            enemies.push(mob);
+        }
+
         if (currentViewportEnemies < targetEnemyCount) {
             // Scale spawn cap with player count so each player's viewport fills at the same rate
             const enemiesToSpawn = Math.min(3 * playerCount, targetEnemyCount - currentViewportEnemies);
