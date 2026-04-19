@@ -1187,6 +1187,8 @@ function pickBestEnemyTarget(bot, anchor, tetherRadius, preferredTiers) {
             continue;
         if (enemy.type === 'item_spawner')
             continue;
+        if (enemy.type === 'target_dummy')
+            continue;
         const isBoss = BOSS_TIERS.has(enemy.tier);
         // Tether applies to everything except bosses — bosses are raids and
         // bots are allowed to crowd up from across the map to fight them.
@@ -1243,6 +1245,8 @@ function pickRaidTargetGlobal() {
         if (enemy.ownerId)
             continue;
         if (enemy.isDead)
+            continue;
+        if (enemy.type === 'target_dummy')
             continue;
         if (enemy.tier === 'unique') {
             if (!bestUnique)
@@ -1382,6 +1386,8 @@ function findNearestBossForBot(bot) {
             continue;
         if (enemy.isDead)
             continue;
+        if (enemy.type === 'target_dummy')
+            continue;
         if (enemy.tier !== 'unique')
             continue;
         const dx = enemy.x - bot.x;
@@ -1399,6 +1405,8 @@ function findNearestBossForBot(bot) {
         if (enemy.ownerId)
             continue;
         if (enemy.isDead)
+            continue;
+        if (enemy.type === 'target_dummy')
             continue;
         if (enemy.tier !== 'super')
             continue;

@@ -1323,6 +1323,7 @@ function pickBestEnemyTarget(
         if (enemy.ownerId) continue;
         if ((enemy as any).isDead) continue;
         if (enemy.type === 'item_spawner') continue;
+        if (enemy.type === 'target_dummy') continue;
 
         const isBoss = BOSS_TIERS.has(enemy.tier);
 
@@ -1387,6 +1388,7 @@ function pickRaidTargetGlobal(): { x: number; y: number; tier: string } | null {
     for (const enemy of enemies) {
         if (enemy.ownerId) continue;
         if ((enemy as any).isDead) continue;
+        if (enemy.type === 'target_dummy') continue;
         if (enemy.tier === 'unique') {
             if (!bestUnique) bestUnique = enemy;
         } else if (enemy.tier === 'super') {
@@ -1513,6 +1515,7 @@ function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist:
     for (const enemy of enemies) {
         if (enemy.ownerId) continue;
         if ((enemy as any).isDead) continue;
+        if (enemy.type === 'target_dummy') continue;
         if (enemy.tier !== 'unique') continue;
         const dx = enemy.x - bot.x;
         const dy = enemy.y - bot.y;
@@ -1528,6 +1531,7 @@ function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist:
     for (const enemy of enemies) {
         if (enemy.ownerId) continue;
         if ((enemy as any).isDead) continue;
+        if (enemy.type === 'target_dummy') continue;
         if (enemy.tier !== 'super') continue;
         const dx = enemy.x - bot.x;
         const dy = enemy.y - bot.y;
