@@ -123,32 +123,33 @@ const BOT_NAMES = [
     'CraftApexPetal', 'developer', 'hi', 'hello', '4167', 'florrrrr', 'bro', 'bruh', 'You suck',
     'pls loot super', 'powder', 'skibidi ohio rizz', 'rizzler', 'pro', 'noob', 'nub', '[YT]', 'killer', 'flower', 'ur mom', 'random flower',
     'centi', 'petall', 'ygg pls', 'SUPER BASIC', 'carry pls', 'lol', 'floor', 'ded', 'noooo', 'nl super', 'nah', 'm29', 'm56', 'florr67', 'get good', 'super raider', 'real admin',
-    'not bot', 'bot', 'scripts', 'ban dupers', 'absorbed super'
+    'not bot', 'bot', 'scripts', 'ban dupers', 'absorbed super', 'Guest #1234', 'Guest #6767', 'Guest #4167', 'UwU', 'm27', 'n28', 'super petal', 'apex petal', 'apex crafter', 'uniques',
+    'i use scripts', 'm28 bad', 'guests', 'leech squad', 'leecher'
 ];
 const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder', 'javascript'];
 const BOT_GUILDS = [
     {
-        name: 'DEVSS',
+        name: 'PRO1',
         members: ['developer', 'dev', 'fake dev', 'admin', 'real admin'],
     },
     {
-        name: 'MSERS',
+        name: 'SUPERS',
         members: ['m28', 'M28', 'm29', 'm56'],
     },
     {
-        name: 'SUPRS',
+        name: 'YGG',
         members: ['super hunter', 'SUPER BASIC', 'super raider', 'pls loot super', 'nl super', 'absorbed super'],
     },
     {
-        name: 'SKBDI',
+        name: 'LOL',
         members: ['skibidi', 'skibidi ohio rizz', 'rizzler'],
     },
     {
-        name: 'CRTRS',
+        name: 'AA',
         members: ['[YT]', 'Play Zorr.pro', 'florrio', 'CraftApexPetal'],
     },
     {
-        name: 'BOTZA',
+        name: 'ABCDE',
         members: ['bot', 'not bot', 'scripts', 'ban dupers'],
     },
 ];
