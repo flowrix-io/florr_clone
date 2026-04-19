@@ -726,6 +726,7 @@ function removeBot(id, io) {
     }
     delete constants_1.players[id];
     botAIState.delete(id);
+    botJitter.delete(id);
     io.emit('playerDisconnected', id);
 }
 function removeAllBots(io) {
@@ -1607,10 +1608,74 @@ function computeBotMode(bot, groups) {
         returnRadius: TETHER_RETURN_RADIUS
     };
 }
+// Radius within which another bot pushes us aside. Tuned to just larger than
+// two player bodies so bots don't overlap but don't scatter across the map.
+const BOT_SEPARATION_RADIUS = constants_1.PLAYER_SIZE * 2.2;
+// How strongly the separation vector blends into intended direction.
+const BOT_SEPARATION_STRENGTH = 0.9;
+// Per-bot persistent tiny jitter so two bots chasing the same spot still drift
+// a few px apart instead of sitting on identical coordinates. Keyed by bot id.
+// standoffBias: signed radial offset (±px) so each bot parks on a slightly
+// different ring around a target — kills the feedback loop where every bot
+// converges on the same standoff and then oscillates as separation shoves
+// them in and out of adjacent bands.
+const botJitter = new Map();
+function getBotJitter(id) {
+    let j = botJitter.get(id);
+    if (!j) {
+        const a = Math.random() * Math.PI * 2;
+        j = {
+            x: Math.cos(a),
+            y: Math.sin(a),
+            standoffBias: (Math.random() - 0.5) * 30, // ±15 px
+        };
+        botJitter.set(id, j);
+    }
+    return j;
+}
 function driveMove(bot, dirX, dirY, speedMult, petalExtension) {
+    // Separation: push away from any other bot inside BOT_SEPARATION_RADIUS,
+    // weighted by 1 - dist/radius so near-touches dominate over mid-range
+    // neighbors. Keeps squads from collapsing to a single point.
+    let sepX = 0;
+    let sepY = 0;
+    for (const pid in constants_1.players) {
+        if (pid === bot.id)
+            continue;
+        if (!isBot(pid))
+            continue;
+        const other = constants_1.players[pid];
+        if (!other || other.isDead)
+            continue;
+        const dx = bot.x - other.x;
+        const dy = bot.y - other.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 === 0 || d2 > BOT_SEPARATION_RADIUS * BOT_SEPARATION_RADIUS)
+            continue;
+        const d = Math.sqrt(d2);
+        const w = (1 - d / BOT_SEPARATION_RADIUS) / d;
+        sepX += dx * w;
+        sepY += dy * w;
+    }
+    // Persistent per-bot bias + a tiny tick-level wobble so motion looks alive
+    // instead of pixel-locked. Kept small (<0.15) so it never overrides intent.
+    const jitter = getBotJitter(bot.id);
+    const wobbleX = jitter.x * 0.08 + (Math.random() - 0.5) * 0.06;
+    const wobbleY = jitter.y * 0.08 + (Math.random() - 0.5) * 0.06;
+    let outX = dirX + sepX * BOT_SEPARATION_STRENGTH + wobbleX;
+    let outY = dirY + sepY * BOT_SEPARATION_STRENGTH + wobbleY;
+    const mag = Math.sqrt(outX * outX + outY * outY);
+    if (mag > 0) {
+        outX /= mag;
+        outY /= mag;
+    }
+    else {
+        outX = dirX;
+        outY = dirY;
+    }
     bot.inputs.useMouse = true;
-    bot.inputs.mouseDirectionX = dirX;
-    bot.inputs.mouseDirectionY = dirY;
+    bot.inputs.mouseDirectionX = outX;
+    bot.inputs.mouseDirectionY = outY;
     bot.inputs.mouseSpeedMultiplier = speedMult;
     bot.inputs.petalExtension = petalExtension;
 }
@@ -1769,7 +1834,11 @@ function updateBotAI(io) {
             // buffer + mobRadius. Stand ~10 px inside that so position jitter
             // still lands hits. Without this subtraction the safety buffer
             // gets double-counted and bots park just outside actual reach.
-            const standoff = petalReach - STANDOFF_SAFETY_BUFFER + mobRadius - 10;
+            const baseStandoff = petalReach - STANDOFF_SAFETY_BUFFER + mobRadius - 10;
+            // Per-bot radial bias spreads the equilibrium ring so neighboring
+            // bots don't all target the same distance and thrash between the
+            // retreat/strafe/creep bands.
+            const standoff = baseStandoff + getBotJitter(bot.id).standoffBias;
             const dangerDist = constants_1.PLAYER_SIZE / 2 + mobRadius + 6; // body-touch threshold
             let moveX;
             let moveY;
@@ -1810,9 +1879,11 @@ function updateBotAI(io) {
                 }
                 petalExt = extendedPetalExt;
             }
-            else if (d < standoff - 8) {
+            else if (d < standoff - 20) {
                 // Inside standoff but past the body-collision threshold — back
-                // out while keeping petals trained on the mob.
+                // out while keeping petals trained on the mob. Band widened
+                // vs. the strafe band below so small position wobble can't
+                // flip the bot between retreating and strafing every tick.
                 const dir = tangentDirection(bot.id);
                 // 70% retreat + 30% strafe (deterministic direction)
                 moveX = dirX * -0.7 + -dirY * dir * 0.3;
@@ -1820,7 +1891,7 @@ function updateBotAI(io) {
                 speedMult = 0.6;
                 petalExt = extendedPetalExt;
             }
-            else if (d < standoff + 10) {
+            else if (d < standoff + 20) {
                 // In the sweet spot — pure strafe, no forward/backward component
                 // (deterministic per-bot direction so bots don't oscillate).
                 const dir = tangentDirection(bot.id);

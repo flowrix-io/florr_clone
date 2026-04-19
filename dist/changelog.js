@@ -262,6 +262,10 @@ exports.CHANGELOG = [
             'Fixed players glitching into walls when going very fast',
             'Added squads',
             'Added guilds',
+            'New mob: Worker Ant',
+            'New mob: Baby Ant',
+            'New mob: Worker Fire Ant',
+            'New mob: Baby Fire Ant',
         ]
     }
 ];
