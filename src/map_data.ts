@@ -3377,6 +3377,32 @@ const WORLD_MAP_DATA: MapData = {
           "y": 59000
         }
       }
+    },
+    {
+      "type": "teleporter",
+      "x": 32649.453125,
+      "y": 14145.078125,
+      "width": 0,
+      "height": 0,
+      "properties": {
+        "teleportTo": {
+          "x": 37479,
+          "y": 42872
+        }
+      }
+    },
+    {
+      "type": "teleporter",
+      "x": 37859.453125,
+      "y": 43175.078125,
+      "width": 0,
+      "height": 0,
+      "properties": {
+        "teleportTo": {
+          "x": 32459,
+          "y": 13810
+        }
+      }
     }
   ],
   "wallGrid": [
