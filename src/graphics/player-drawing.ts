@@ -207,7 +207,7 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
                 playerRangeModifier *= pStats.playerModifiers.range;
             }
             if (pStats?.playerModifiers?.rotationSpeed !== undefined) {
-                playerRotationSpeedModifier *= pStats.playerModifiers.rotationSpeed;
+                playerRotationSpeedModifier += pStats.playerModifiers.rotationSpeed - 1;
             }
         }
     }

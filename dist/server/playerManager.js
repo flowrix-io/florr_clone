@@ -396,7 +396,7 @@ function calculatePlayerModifiers(player) {
             modifiers.range *= petalModifiers.range;
         }
         if (petalModifiers.rotationSpeed !== undefined && modifiers.rotationSpeed !== undefined) {
-            modifiers.rotationSpeed *= petalModifiers.rotationSpeed;
+            modifiers.rotationSpeed += petalModifiers.rotationSpeed - 1;
         }
     }
     return modifiers;

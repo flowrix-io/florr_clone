@@ -258,6 +258,15 @@ export const CHANGELOG: ChangelogEntry[] = [
             'New mob: Desert Centipede',
             'New mob: Centipede',
         ]
+    },
+    {
+        date: 'April 18, 2026',
+        changes: [
+            'Faster now stacks additively instead of multiplicatively',
+            'Fixed players glitching into walls when going very fast',
+            'Added squads',
+            'Added guilds',
+        ]
     }
 ];
 

@@ -464,7 +464,7 @@ export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers 
             modifiers.range *= petalModifiers.range;
         }
         if (petalModifiers.rotationSpeed !== undefined && modifiers.rotationSpeed !== undefined) {
-            modifiers.rotationSpeed *= petalModifiers.rotationSpeed;
+            modifiers.rotationSpeed += petalModifiers.rotationSpeed - 1;
         }
     }
     
