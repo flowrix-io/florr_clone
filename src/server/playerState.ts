@@ -26,7 +26,6 @@ import {
     PVP_ARENA_CENTER_X,
     PVP_ARENA_CENTER_Y,
     PVP_ARENA_RADIUS,
-    PVP_INVENTORY_KEEP_RATIO,
     isInPvpArena
 } from '../constants';
 import { WORLD_MAP } from '../map_data';
@@ -59,7 +58,7 @@ import {
     despawnAllPlayerPets
 } from '../petal_actions';
 import { getMobStats } from '../mobs';
-import { addItem, applyPetalHealthBonus, calculatePlayerModifiers } from './playerManager';
+import { addItem, applyPetalHealthBonus, calculatePlayerModifiers, enterPvpArena, exitPvpArena } from './playerManager';
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { trackDamage, sendBossMobDefeatedMessage, cleanupEnemy, trackMobKill } from './utils';
 import { transferPlayerToServer as transferPlayerToServerModule } from './crossServer';
@@ -380,6 +379,8 @@ const SECOND_CHANCE_COOLDOWNS: Record<string, number> = {
  */
 function trySecondChance(player: ServerPlayer, io: SocketIOServer): boolean {
     if (player.health > 0) return false;
+    // Skills are disabled inside the PVP arena.
+    if (player.inPvpArena) return false;
     const tier = player.skills?.secondChance;
     if (!tier) return false;
     const duration = SECOND_CHANCE_DURATIONS[tier];
@@ -413,55 +414,6 @@ function trySecondChance(player: ServerPlayer, io: SocketIOServer): boolean {
     });
 
     return true;
-}
-
-/**
- * Reset PVP arena state (called on entry or after committing gains).
- */
-function resetPvpState(player: ServerPlayer): void {
-    player.pvpScore = 0;
-    player.pvpInventoryGains = [];
-}
-
-/**
- * Convert PVP-gained petals into the player's regular inventory at the
- * configured keep ratio. Called when a player leaves the arena.
- */
-function commitPvpGains(
-    player: ServerPlayer,
-    io: SocketIOServer,
-    savePlayerProgress: (player: ServerPlayer, userId: string) => void
-): void {
-    const gains = player.pvpInventoryGains;
-    if (!gains || gains.length === 0) return;
-
-    let totalAdded = 0;
-    for (let i = 0; i < gains.length; i += 3) {
-        const rarityId = gains[i];
-        const itemId = gains[i + 1];
-        const count = gains[i + 2];
-        const kept = Math.floor(count * PVP_INVENTORY_KEEP_RATIO);
-        if (kept <= 0) continue;
-        const rarity = ID_TO_RARITY.get(rarityId);
-        const itemKey = ID_TO_ITEM_KEY.get(itemId);
-        if (!rarity || !itemKey) continue;
-        addItem(player.inventory, rarity, itemKey, kept);
-        totalAdded += kept;
-    }
-
-    if (totalAdded > 0) {
-        io.to(player.id).emit('inventoryUpdated', player.inventory);
-        const userId = playerUserIds[player.id];
-        if (userId) savePlayerProgress(player, userId);
-    }
-}
-
-/**
- * Add an item to a player's PVP gains buffer (compact triplet format).
- */
-function addPvpGain(player: ServerPlayer, rarity: string, itemKey: string, count: number): void {
-    if (!player.pvpInventoryGains) player.pvpInventoryGains = [];
-    addItem(player.pvpInventoryGains, rarity, itemKey, count);
 }
 
 /**
@@ -519,22 +471,29 @@ function applyPvpDamage(
         knockbackY
     });
 
-    // Killed by attacker: award PVP score, transfer victim's gains, mark dead now.
+    // Killed by attacker: transfer victim's PVP score and full PVP inventory,
+    // mark dead now. While in the arena, `inventory` IS the PVP inventory.
     if (victim.health <= 0 && !secondChanceTriggered && !victim.isDead) {
-        attacker.pvpScore = (attacker.pvpScore || 0) + 1;
-        if (victim.pvpInventoryGains && victim.pvpInventoryGains.length > 0) {
-            for (let i = 0; i < victim.pvpInventoryGains.length; i += 3) {
-                const rarityId = victim.pvpInventoryGains[i];
-                const itemId = victim.pvpInventoryGains[i + 1];
-                const count = victim.pvpInventoryGains[i + 2];
+        const transferredScore = victim.pvpScore || 0;
+        attacker.pvpScore = (attacker.pvpScore || 0) + transferredScore;
+        victim.pvpScore = 0;
+        const victimGains = victim.inventory || [];
+        if (victimGains.length > 0 && attacker.inPvpArena) {
+            if (!attacker.inventory) attacker.inventory = [];
+            for (let i = 0; i < victimGains.length; i += 3) {
+                const rarityId = victimGains[i];
+                const itemId = victimGains[i + 1];
+                const count = victimGains[i + 2];
                 const rarity = ID_TO_RARITY.get(rarityId);
                 const itemKey = ID_TO_ITEM_KEY.get(itemId);
                 if (rarity && itemKey) {
-                    addPvpGain(attacker, rarity, itemKey, count);
+                    addItem(attacker.inventory, rarity, itemKey, count);
                 }
             }
-            victim.pvpInventoryGains = [];
+            io.to(attacker.id).emit('inventoryUpdated', attacker.inventory);
         }
+        victim.inventory = [];
+        io.to(victim.id).emit('inventoryUpdated', victim.inventory);
 
         // Mark dead immediately so passive-heal can't revive the victim before
         // their own update tick runs the standard death handler.
@@ -595,7 +554,8 @@ export function updatePlayerState(
                         super: 3.3,
                         unique: 4.0
                     };
-                    const healingMultiplier = player.skills?.healingMultiplier 
+                    // Skills are disabled inside the PVP arena.
+                    const healingMultiplier = !player.inPvpArena && player.skills?.healingMultiplier
                         ? (SKILL_MULTIPLIERS[player.skills.healingMultiplier] || 1.0)
                         : 1.0;
                     
@@ -1833,15 +1793,11 @@ export function updatePlayerState(
             }
             
             // Add item to player's inventory (which may be shared with split player).
-            // While inside the PVP arena, route gains into the temporary PVP buffer instead
-            // — only 25% will be transferred back to the regular inventory on exit.
+            // While inside the PVP arena, `inventory` IS the PVP-only inventory; on
+            // exit, 25% of it is transferred back into the regular inventory.
             const rarity = item.rarity || 'common';
             const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
-            if (player.inPvpArena) {
-                addPvpGain(player, rarity, itemKey, 1);
-            } else {
-                addItem(player.inventory, rarity, itemKey, 1);
-            }
+            addItem(player.inventory, rarity, itemKey, 1);
             
             // Mark as picked up by this player (don't remove from world)
             if (!item.pickedUpBy) {
@@ -2025,15 +1981,14 @@ export function updatePlayerState(
     player.x = newX;
     player.y = newY;
     const isNowInArena = isInPvpArena(player.x, player.y);
-    if (wasInArena && !isNowInArena) {
-        // Player just left the arena (via teleporter) — convert 25% of PVP gains, then clear PVP state.
-        commitPvpGains(player, io, savePlayerProgress);
-        resetPvpState(player);
-    } else if (!wasInArena && isNowInArena) {
-        // Player just entered the arena — start a fresh PVP session.
-        resetPvpState(player);
+    if (!wasInArena && isNowInArena) {
+        // Entering: stash regular inventory/loadout, swap in fresh PVP versions.
+        enterPvpArena(player, io);
+    } else if (wasInArena && !isNowInArena) {
+        // Exiting: transfer 25% of the PVP inventory into the regular inventory,
+        // then restore regular inventory/loadout.
+        exitPvpArena(player, io, (p, uid) => savePlayerProgress(p, uid));
     }
-    player.inPvpArena = isNowInArena;
 
     if (player.health <= 0 && !player.isDead) {
         // Mark player as dead instead of respawning immediately

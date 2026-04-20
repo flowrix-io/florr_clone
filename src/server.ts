@@ -44,7 +44,7 @@ import { ServerPlayer, PlayerProgress, PlayerInventory, FaceFlags, EquipmentFlag
 import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
 import { updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet, despawnAllPlayerPets } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
-import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState, SECTION_CONFIGS } from './constants';
+import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState, SECTION_CONFIGS, isInPvpArena } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { MobProjectile, PlayerProjectile } from './enemy';
@@ -171,7 +171,8 @@ import {
     applyPetalHealthBonus,
     addXPToPlayer as addXPToPlayerModule,
     savePlayerProgress as savePlayerProgressModule,
-    recalculatePlayerStats
+    recalculatePlayerStats,
+    enterPvpArena
 } from './server/playerManager';
 import { setupTransferEndpoints, transferPlayerToServer as transferPlayerToServerModule } from './server/crossServer';
 import {
@@ -1256,13 +1257,19 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 mobKills: (savedProgress as any)?.mobKills || {},
                 stars: (savedProgress as any)?.stars || 0,
                 spawnBiome: credentials.spawnBiome || 'default',
-                inPvpArena: credentials.spawnBiome === 'pvp',
-                pvpScore: 0,
-                pvpInventoryGains: []
+                inPvpArena: false,
+                pvpScore: 0
             };
-            
-            // Recalculate player stats with modifiers after loadout is set
-            recalculatePlayerStats(players[socket.id], io);
+
+            // If the player chose PVP from the title screen, swap to the PVP
+            // loadout/inventory now (this also stashes the regular versions and
+            // recalcs stats to apply the PVP-fixed max health).
+            if (credentials.spawnBiome === 'pvp') {
+                enterPvpArena(players[socket.id], io);
+            } else {
+                // Recalculate player stats with modifiers after loadout is set
+                recalculatePlayerStats(players[socket.id], io);
+            }
 
             // Start cooldown timers for all petals that are on cooldown
             const player = players[socket.id];
@@ -4812,10 +4819,12 @@ function start_loop() {
             checkItemWallCollisions(item);
         }
 
-        // Delete items that go out of bounds
+        // Delete items that go out of bounds. The PVP arena lives well outside
+        // the regular world rectangle, so items inside it must be exempted.
         for (let i = items.length - 1; i >= 0; i--) {
             const item = items[i];
-            if (item.x < 0 || item.x >= ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= ACTUAL_WORLD_HEIGHT) {
+            const outOfBounds = item.x < 0 || item.x >= ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= ACTUAL_WORLD_HEIGHT;
+            if (outOfBounds && !isInPvpArena(item.x, item.y)) {
                 // Clean up expiration timeout
                 const timeout = itemExpirationTimeouts.get(item.id);
                 if (timeout) {

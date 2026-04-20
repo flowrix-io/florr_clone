@@ -161,6 +161,11 @@ export interface ServerPlayer {
   guildName?: string;      // 5-char alphanumeric guild name (broadcast so clients can render it)
   inPvpArena?: boolean;    // True when player is currently inside the PVP arena
   pvpScore?: number;       // PVP arena score (kills + assists). Resets when leaving the arena.
-  pvpInventoryGains?: PlayerInventory; // Petals collected while inside PVP. 25% transferred to inventory on exit.
+  // While inside the PVP arena, `inventory`/`loadout` hold the PVP-only versions
+  // and the player's regular versions are stashed here. On exit, 25% of the PVP
+  // inventory is transferred into `regularInventory` and the regular inventory/
+  // loadout are restored.
+  regularInventory?: PlayerInventory;
+  regularLoadout?: (Item | null)[];
   lastDamagedByPlayerId?: string; // ID of the most recent player to damage this player (for PVP kill credit)
 }

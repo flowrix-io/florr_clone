@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RARITY_TP_COSTS = exports.createInitialInventory = exports.hasItem = exports.removeItem = exports.addItem = void 0;
 exports.createInitialBasicPetals = createInitialBasicPetals;
+exports.enterPvpArena = enterPvpArena;
+exports.exitPvpArena = exitPvpArena;
 exports.findSafeSpawnPosition = findSafeSpawnPosition;
 exports.respawnPlayer = respawnPlayer;
 exports.isBiomeSafeForSpawn = isBiomeSafeForSpawn;
@@ -20,12 +22,14 @@ exports.addXPToPlayer = addXPToPlayer;
 exports.savePlayerProgress = savePlayerProgress;
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
-const map_data_1 = require("../map_data");
 const inventoryCodec_1 = require("../inventoryCodec");
-Object.defineProperty(exports, "addItem", { enumerable: true, get: function () { return inventoryCodec_1.addItem; } });
-Object.defineProperty(exports, "removeItem", { enumerable: true, get: function () { return inventoryCodec_1.removeItem; } });
-Object.defineProperty(exports, "hasItem", { enumerable: true, get: function () { return inventoryCodec_1.hasItem; } });
-Object.defineProperty(exports, "createInitialInventory", { enumerable: true, get: function () { return inventoryCodec_1.createInitialInventory; } });
+const gameState_1 = require("./gameState");
+const map_data_1 = require("../map_data");
+const inventoryCodec_2 = require("../inventoryCodec");
+Object.defineProperty(exports, "addItem", { enumerable: true, get: function () { return inventoryCodec_2.addItem; } });
+Object.defineProperty(exports, "removeItem", { enumerable: true, get: function () { return inventoryCodec_2.removeItem; } });
+Object.defineProperty(exports, "hasItem", { enumerable: true, get: function () { return inventoryCodec_2.hasItem; } });
+Object.defineProperty(exports, "createInitialInventory", { enumerable: true, get: function () { return inventoryCodec_2.createInitialInventory; } });
 const mobs_1 = require("../mobs");
 const RARITY_TP_COSTS = {
     common: 0,
@@ -54,6 +58,71 @@ function createInitialBasicPetals() {
         maxHealth: basicPetalStats.health,
         onCooldown: true
     }));
+}
+/**
+ * Build the fixed PVP loadout: 5 common basic petals, then 5 empty extra slots.
+ */
+function createPvpLoadout() {
+    return createInitialBasicPetals().concat(Array(5).fill(null));
+}
+/**
+ * Enter the PVP arena: stash the regular inventory/loadout, give the player a
+ * fresh PVP loadout (5 common basics) and an empty PVP inventory, reset PVP
+ * score, and recalc stats so the fixed PVP max health applies. Idempotent —
+ * calling this while already in PVP just resets the PVP loadout/inventory.
+ */
+function enterPvpArena(player, io) {
+    if (!player.regularInventory) {
+        player.regularInventory = player.inventory || [];
+        player.regularLoadout = player.loadout || [];
+    }
+    player.inventory = [];
+    player.loadout = createPvpLoadout();
+    player.pvpScore = 0;
+    player.inPvpArena = true;
+    recalculatePlayerStats(player, io);
+    player.health = player.maxHealth;
+    if (io) {
+        io.to(player.id).emit('inventoryUpdated', player.inventory);
+    }
+}
+/**
+ * Leave the PVP arena: transfer 25% of the PVP inventory back to the regular
+ * inventory, restore the regular inventory/loadout, recalc stats, full-heal,
+ * and emit the inventory update.
+ */
+function exitPvpArena(player, io, savePlayerProgress) {
+    const pvpInventory = player.inventory || [];
+    const restored = player.regularInventory || (0, inventoryCodec_2.createInitialInventory)();
+    for (let i = 0; i < pvpInventory.length; i += 3) {
+        const rarityId = pvpInventory[i];
+        const itemId = pvpInventory[i + 1];
+        const count = pvpInventory[i + 2];
+        const kept = Math.floor(count * constants_1.PVP_INVENTORY_KEEP_RATIO);
+        if (kept <= 0)
+            continue;
+        const rarity = inventoryCodec_1.ID_TO_RARITY.get(rarityId);
+        const itemKey = inventoryCodec_1.ID_TO_ITEM_KEY.get(itemId);
+        if (!rarity || !itemKey)
+            continue;
+        (0, inventoryCodec_2.addItem)(restored, rarity, itemKey, kept);
+    }
+    player.inventory = restored;
+    player.loadout = player.regularLoadout || createPvpLoadout();
+    player.regularInventory = undefined;
+    player.regularLoadout = undefined;
+    player.pvpScore = 0;
+    player.inPvpArena = false;
+    recalculatePlayerStats(player, io);
+    player.health = player.maxHealth;
+    if (io) {
+        io.to(player.id).emit('inventoryUpdated', player.inventory);
+    }
+    if (savePlayerProgress) {
+        const userId = gameState_1.playerUserIds[player.id];
+        if (userId)
+            savePlayerProgress(player, userId);
+    }
 }
 /**
  * Check if a position is inside a wall or water tile
@@ -164,9 +233,9 @@ function respawnPlayer(player, io) {
         || (0, constants_1.isInPvpArena)(player.x, player.y);
     if (wantsPvp) {
         spawnPosition = { x: constants_1.PVP_ARENA_SPAWN_X, y: constants_1.PVP_ARENA_SPAWN_Y };
-        player.pvpScore = 0;
-        player.pvpInventoryGains = [];
-        player.inPvpArena = true;
+        // Resets PVP loadout/inventory and applies PVP-fixed max health.
+        // Idempotent — safe whether the player is mid-arena or freshly spawning.
+        enterPvpArena(player, io);
     }
     // First, try to spawn in the biome the player selected on the title screen
     if (!spawnPosition && player.spawnBiome && player.spawnBiome !== 'default') {
@@ -223,7 +292,9 @@ function respawnPlayer(player, io) {
     }
     player.x = spawnPosition.x;
     player.y = spawnPosition.y;
-    // Rest of respawnPlayer remains the same
+    // Recalculate stats so PVP spawns get the fixed PVP max health and regular
+    // spawns get their leveled max health before we full-heal below.
+    recalculatePlayerStats(player, io);
     player.health = player.maxHealth;
     player.score = Math.max(0, player.score - 10);
     player.isInvulnerable = true;
@@ -366,7 +437,8 @@ function applyPetalHealthBonus(petal, player) {
     const petalStats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity || 'common');
     if (!petalStats)
         return;
-    const petalHealthMultiplier = getSkillMultiplier(player.skills?.petalHealth);
+    // Skills are disabled inside the PVP arena.
+    const petalHealthMultiplier = player.inPvpArena ? 1 : getSkillMultiplier(player.skills?.petalHealth);
     const maxHealth = Math.round(petalStats.health * petalHealthMultiplier);
     petal.maxHealth = maxHealth;
     if (petal.health !== undefined) {
@@ -420,15 +492,18 @@ function recalculatePlayerStats(player, io) {
     // Get base stats from level
     const baseMaxHealth = calculateMaxHealthFromLevel(player.level);
     const baseDamage = calculateDamageFromLevel(player.level);
-    // Apply skill multipliers
-    const healthMultiplier = getSkillMultiplier(player.skills?.playerHealth);
-    const damageMultiplier = getSkillMultiplier(player.skills?.damage);
+    // Apply skill multipliers — disabled in the PVP arena.
+    const healthMultiplier = player.inPvpArena ? 1 : getSkillMultiplier(player.skills?.playerHealth);
+    const damageMultiplier = player.inPvpArena ? 1 : getSkillMultiplier(player.skills?.damage);
     // Get petal modifiers
     const petalModifiers = calculatePlayerModifiers(player);
     // Store old maxHealth to calculate health percentage
     const oldMaxHealth = player.maxHealth || 0;
-    // Apply all multipliers (use 1.0 as fallback if modifier is undefined)
-    const newMaxHealth = Math.round(baseMaxHealth * healthMultiplier * (petalModifiers.maxHealth ?? 1.0));
+    // Apply all multipliers (use 1.0 as fallback if modifier is undefined).
+    // PVP arena overrides max health to a fixed value so all players are on equal footing.
+    const newMaxHealth = player.inPvpArena
+        ? constants_1.PVP_MAX_HEALTH
+        : Math.round(baseMaxHealth * healthMultiplier * (petalModifiers.maxHealth ?? 1.0));
     player.damage = Math.round(baseDamage * damageMultiplier * (petalModifiers.damage ?? 1.0));
     // Scale current health proportionally if maxHealth changed
     if (oldMaxHealth > 0 && oldMaxHealth !== newMaxHealth) {
@@ -465,6 +540,10 @@ function addXPToPlayer(player, xp, socketId, io) {
     player.xp = newCurrentLevelXP;
     player.level = newLevel;
     player.xpToNextLevel = calculateXPRequirement(newLevel);
+    // PVP leaderboard score = XP gained from kills during this arena session.
+    if (player.inPvpArena && xp > 0) {
+        player.pvpScore = (player.pvpScore || 0) + xp;
+    }
     // Check if level increased and handle level ups
     if (newLevel > oldLevel) {
         // Award TP for each level gained (1 TP per level)
@@ -501,8 +580,17 @@ function savePlayerProgress(player, userId, database) {
     if (userId) {
         // Calculate total XP from current level and XP
         const totalXP = calculateTotalXP(player.level, player.xp);
+        // While in PVP, the live `inventory`/`loadout` are the temporary PVP
+        // versions; save the stashed regular versions so PVP play doesn't clobber
+        // the player's persisted data.
+        const inventoryToSave = player.inPvpArena
+            ? (player.regularInventory || [])
+            : (player.inventory || []);
+        const loadoutSource = player.inPvpArena
+            ? (player.regularLoadout || [])
+            : (player.loadout || []);
         // Filter loadout to only save type and rarity (not status fields)
-        const cleanLoadout = (player.loadout || []).map(item => {
+        const cleanLoadout = loadoutSource.map(item => {
             if (!item)
                 return null;
             return {
@@ -513,7 +601,7 @@ function savePlayerProgress(player, userId, database) {
         });
         database.savePlayer(userId, {
             totalXP: totalXP,
-            inventory: (0, inventoryCodec_1.inventoryToDict)(player.inventory),
+            inventory: (0, inventoryCodec_2.inventoryToDict)(inventoryToSave),
             loadout: cleanLoadout,
             tp: player.tp || 0,
             skills: player.skills || {},

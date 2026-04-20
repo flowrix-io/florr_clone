@@ -991,12 +991,19 @@ io.on('connection', (socket) => {
                 mobKills: savedProgress?.mobKills || {},
                 stars: savedProgress?.stars || 0,
                 spawnBiome: credentials.spawnBiome || 'default',
-                inPvpArena: credentials.spawnBiome === 'pvp',
-                pvpScore: 0,
-                pvpInventoryGains: []
+                inPvpArena: false,
+                pvpScore: 0
             };
-            // Recalculate player stats with modifiers after loadout is set
-            (0, playerManager_1.recalculatePlayerStats)(constants_2.players[socket.id], io);
+            // If the player chose PVP from the title screen, swap to the PVP
+            // loadout/inventory now (this also stashes the regular versions and
+            // recalcs stats to apply the PVP-fixed max health).
+            if (credentials.spawnBiome === 'pvp') {
+                (0, playerManager_1.enterPvpArena)(constants_2.players[socket.id], io);
+            }
+            else {
+                // Recalculate player stats with modifiers after loadout is set
+                (0, playerManager_1.recalculatePlayerStats)(constants_2.players[socket.id], io);
+            }
             // Start cooldown timers for all petals that are on cooldown
             const player = constants_2.players[socket.id];
             if (player && player.loadout) {
@@ -4302,10 +4309,12 @@ function start_loop() {
         for (const item of gameState_1.items) {
             (0, physics_1.checkItemWallCollisions)(item);
         }
-        // Delete items that go out of bounds
+        // Delete items that go out of bounds. The PVP arena lives well outside
+        // the regular world rectangle, so items inside it must be exempted.
         for (let i = gameState_1.items.length - 1; i >= 0; i--) {
             const item = gameState_1.items[i];
-            if (item.x < 0 || item.x >= constants_2.ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= constants_2.ACTUAL_WORLD_HEIGHT) {
+            const outOfBounds = item.x < 0 || item.x >= constants_2.ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= constants_2.ACTUAL_WORLD_HEIGHT;
+            if (outOfBounds && !(0, constants_2.isInPvpArena)(item.x, item.y)) {
                 // Clean up expiration timeout
                 const timeout = gameState_1.itemExpirationTimeouts.get(item.id);
                 if (timeout) {

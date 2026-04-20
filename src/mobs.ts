@@ -2873,6 +2873,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         emissive: true,
         light_radius: 2000,
         hideRotation: true,
+        noEggDrop: true,
     },
     centipede: {
         name: "Centipede",
@@ -4238,6 +4239,59 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
             }
         ]
     },
+    sun: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'glass',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'rock',
+                rarity: 'uncommon',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'sand',
+                rarity: 'uncommon',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'pollen',
+                rarity: 'uncommon',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'consumable',
+                itemType: 'speed_boost',
+                rarity: 'uncommon',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'consumable',
+                itemType: 'shield',
+                rarity: 'uncommon',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    }
 };
 
 // Ensure every mob type drops its egg with 100% chance for common rarity

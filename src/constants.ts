@@ -155,6 +155,8 @@ export const PVP_EXIT_RETURN_X = 19000;
 export const PVP_EXIT_RETURN_Y = 17400;
 // Fraction of petals gained inside PVP that survive the trip back to the regular inventory.
 export const PVP_INVENTORY_KEEP_RATIO = 0.25;
+// All players in the PVP arena share the same fixed max health regardless of level/petals.
+export const PVP_MAX_HEALTH = 100;
 
 export function isInPvpArena(x: number, y: number): boolean {
     const dx = x - PVP_ARENA_CENTER_X;

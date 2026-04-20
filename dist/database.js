@@ -272,8 +272,14 @@ exports.database = {
         }
         return migrated;
     },
-    // Remove invalid eggs from all player inventories and loadouts
+    // Remove invalid eggs from all player inventories and loadouts.
+    // `invalidEggTypes` holds inventory keys like `petal_<mob>_egg`; the loadout
+    // stores `petalType` without the `petal_` prefix, so we check both forms.
     removeInvalidEggs: (invalidEggTypes) => {
+        const invalidLoadoutPetalTypes = new Set();
+        for (const key of invalidEggTypes) {
+            invalidLoadoutPetalTypes.add(key.startsWith('petal_') ? key.slice('petal_'.length) : key);
+        }
         let cleaned = 0;
         for (const userId in db.players) {
             const player = db.players[userId];
@@ -299,7 +305,7 @@ exports.database = {
             if (player.loadout) {
                 for (let i = 0; i < player.loadout.length; i++) {
                     const item = player.loadout[i];
-                    if (item && item.petalType && invalidEggTypes.has(item.petalType)) {
+                    if (item && item.petalType && invalidLoadoutPetalTypes.has(item.petalType)) {
                         player.loadout[i] = null;
                         playerModified = true;
                     }
