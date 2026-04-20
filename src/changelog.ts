@@ -273,6 +273,16 @@ export const CHANGELOG: ChangelogEntry[] = [
             'A new portal has opened in desert',
             'Ant hell background looks much nicer now'
         ]
+    },
+    {
+        date: 'April 19, 2026',
+        changes: [
+            'Sun no longer drops eggs (to fix an exploit)',
+            'Sun now drops glass, rock, sand, pollen, speed boost, and shield',
+            'Added PVP mode',
+            'Added Daily Streak',
+            'Any obtained sun egg is now deleted'
+        ]
     }
 ];
 
