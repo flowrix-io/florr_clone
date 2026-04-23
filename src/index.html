@@ -52,6 +52,38 @@
     <script>
         console.log('Hello');
     </script>
-    <script src="bundle.js"></script>
+    <script>
+        async function fetchAndDecompress(url) {
+            // 1. Fetch the compressed binary file
+            const response = await fetch(url);
+            
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+            // 2. Create a DecompressionStream with 'deflate-raw'
+            const decompressionStream = new DecompressionStream('deflate-raw');
+
+            // 3. Pipe the response body (a ReadableStream) through the decompressor
+            const decompressedStream = response.body.pipeThrough(decompressionStream);
+
+            // 4. Read the resulting data (e.g., as an ArrayBuffer or Blob)
+            const decompressedResponse = new Response(decompressedStream);
+            const buffer = await decompressedResponse.arrayBuffer();
+
+            return new Uint8Array(buffer);
+        }
+        const loadingScreen = document.createElement('div');
+        loadingScreen.innerHTML = '<div style="text-align: center;"><h1 style="color: yellow; font-size: 48px; margin-bottom: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Decompressing bundle...</h1><p style="color: rgba(255,255,255,0.9); font-size: 20px; margin-bottom: 30px;">Please wait while we decompress the bundle...</p></div>';
+        document.body.appendChild(loadingScreen);
+        console.log('Decompressing bundle...');
+
+        const fetchedBundle = fetchAndDecompress('bundle.bin');
+        fetchedBundle.then(bundle => {
+            const scriptData = new TextDecoder().decode(bundle);
+            const script = document.createElement('script');
+            script.textContent = scriptData;
+            document.body.appendChild(script);
+
+        });
+    </script>
 </body>
 </html>
