@@ -50,7 +50,7 @@ import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration,
 import { MobProjectile, PlayerProjectile } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getAllPetalTypes, getPetalStats } from './petals';
-import { MOB_CONFIG, getMobStats, getAllMobTypes, calculateMobDrops, DropItem, SIZE_SCALING, ANT_HOLE_SPAWN_WAVES, isAntHoleType } from './mobs';
+import { MOB_CONFIG, getMobStats, getAllMobTypes, calculateMobDrops, DropItem, SIZE_SCALING } from './mobs';
 
 // Import from refactored modules
 import {
@@ -181,7 +181,7 @@ import {
     spawnSpecialMobs as spawnSpecialMobsModule,
     updateSpecialMobCounts as updateSpecialMobCountsModule,
     spawnCentipedeBodySegments,
-    spawnAntHoleInitialAnts,
+    spawnInitialSpawns,
     EnemySpawnerHelpers
 } from './server/enemySpawner';
 import { spawnArenaMobs } from './server/pvpArenaSpawner';
@@ -811,12 +811,12 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
         }
     }
 
-    // Ant holes arrive with a guardian cluster of ants.
-    if (isAntHoleType(mobType)) {
+    // Mobs with initial_spawns (e.g. ant holes) arrive with a pre-spawned cluster.
+    if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
         const beforeCount = enemies.length;
-        spawnAntHoleInitialAnts(enemy);
-        for (let i = beforeCount; i < enemies.length; i++) {
-            io.emit('enemySpawned', enemies[i]);
+        spawnInitialSpawns(enemy);
+        for (let j = beforeCount; j < enemies.length; j++) {
+            io.emit('enemySpawned', enemies[j]);
         }
     }
 
@@ -3675,74 +3675,73 @@ function computeOwnSegmentAvoidance(enemy: Enemy): { x: number; y: number } | nu
 }
 
 /**
- * Spawn ant waves from any ant hole whose health dropped this tick. Each ant
- * hole has a sequence of waves tied to HP thresholds; every wave crossed on the
- * way down spawns its ants, so multiple waves can fire on a single big hit.
+ * Spawn child waves from any mob with `spawn_waves` whose health dropped this
+ * tick. Each wave is tied to an HP threshold; every wave crossed on the way
+ * down spawns its listed mobs, so multiple waves can fire on a single big hit.
  * Mirrors the kAntHole damage behavior from the gardn reference project.
  */
-function spawnAntHoleWaves() {
+function spawnWaveMobs() {
     const currentTime = Date.now();
 
     for (const enemy of enemies) {
-        if (!isAntHoleType(enemy.type)) continue;
         if ((enemy as any).isDead) continue;
 
-        const waves = ANT_HOLE_SPAWN_WAVES[enemy.type];
-        if (!waves || waves.length === 0) continue;
+        const parentStats = getMobStats(enemy.type, enemy.tier);
+        if (!parentStats || !parentStats.spawn_waves || parentStats.spawn_waves.length === 0) continue;
+        const waves = parentStats.spawn_waves;
         const numWaves = waves.length - 1;
 
-        const prev = (enemy as any)._antHolePrevHealth;
+        const prev = (enemy as any)._spawnWavePrevHealth;
         if (prev === undefined) {
-            (enemy as any)._antHolePrevHealth = enemy.health;
+            (enemy as any)._spawnWavePrevHealth = enemy.health;
             continue;
         }
 
         if (enemy.health >= prev) {
-            (enemy as any)._antHolePrevHealth = enemy.health;
+            (enemy as any)._spawnWavePrevHealth = enemy.health;
             continue;
         }
 
         const maxHp = enemy.maxHealth || 1;
         const startWave = Math.floor((prev / maxHp) * numWaves);
         const endWave = Math.ceil((enemy.health / maxHp) * numWaves);
+        const parentRadius = (parentStats.size * 40) / 2;
 
         for (let i = startWave; i >= endWave; i--) {
             const waveIndex = numWaves - i;
             if (waveIndex < 0 || waveIndex >= waves.length) continue;
             const wave = waves[waveIndex];
-            const holeStats = getMobStats(enemy.type, enemy.tier);
-            const holeRadius = (holeStats ? holeStats.size * 40 : 80) / 2;
 
-            for (const antType of wave) {
-                const antStats = getMobStats(antType, enemy.tier);
-                if (!antStats) continue;
+            for (const childType of wave) {
+                const childStats = getMobStats(childType, enemy.tier);
+                if (!childStats) continue;
                 const angle = Math.random() * Math.PI * 2;
-                const dist = holeRadius + 10 + Math.random() * holeRadius;
-                const ant: Enemy = {
+                const dist = parentRadius + 10 + Math.random() * parentRadius;
+                const child: Enemy = {
                     id: Math.random().toString(36).substr(2, 9),
-                    type: antType as Enemy['type'],
+                    type: childType as Enemy['type'],
                     tier: enemy.tier,
                     x: enemy.x + Math.cos(angle) * dist,
                     y: enemy.y + Math.sin(angle) * dist,
                     angle: Math.random() * Math.PI * 2,
-                    health: antStats.health,
-                    maxHealth: antStats.health,
-                    speed: antStats.speed,
-                    damage: antStats.damage,
+                    health: childStats.health,
+                    maxHealth: childStats.health,
+                    speed: childStats.speed,
+                    damage: childStats.damage,
                     knockbackX: 0,
                     knockbackY: 0,
-                    aiType: antStats.ai_type,
-                    range: antStats.range,
-                    reversed: antStats.reversed ?? false,
+                    aiType: childStats.ai_type,
+                    range: childStats.range,
+                    reversed: childStats.reversed ?? false,
                     spawnTime: currentTime,
                     lastViewportCheck: currentTime,
                 };
-                enemies.push(ant);
-                io.emit('enemySpawned', ant);
+                enemies.push(child);
+                io.emit('enemySpawned', child);
             }
         }
 
-        (enemy as any)._antHolePrevHealth = enemy.health;
+        (enemy as any)._spawnWavePrevHealth = enemy.health;
     }
 }
 
@@ -4854,8 +4853,8 @@ function start_loop() {
         // Update viewport status for all enemies
         updateEnemyViewportStatus();
         
-        // Spawn ant waves from damaged ant holes before emitting damage batch
-        spawnAntHoleWaves();
+        // Spawn wave mobs from damaged spawners (e.g. ant holes) before emitting damage batch
+        spawnWaveMobs();
 
         // Batch all enemy damage updates into a single event
         const damagedEnemies: Array<{ enemyId: string, health: number }> = [];

@@ -1,13 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ANT_HOLE_INITIAL_SPAWNS = exports.ANT_HOLE_SPAWN_WAVES = exports.MOB_DROP_TABLES = exports.MOB_CONFIG = exports.BASE_MOB_CONFIGS = exports.SIZE_SCALING = exports.RARITY_LEVELS = void 0;
+exports.MOB_DROP_TABLES = exports.MOB_CONFIG = exports.BASE_MOB_CONFIGS = exports.SIZE_SCALING = exports.RARITY_LEVELS = void 0;
 exports.getMobStats = getMobStats;
 exports.getAllMobTypes = getAllMobTypes;
 exports.getMobRarities = getMobRarities;
 exports.getMobTypesBySection = getMobTypesBySection;
 exports.calculateMobDrops = calculateMobDrops;
 exports.getMobDropTable = getMobDropTable;
-exports.isAntHoleType = isAntHoleType;
 exports.testDropSystem = testDropSystem;
 // Rarity levels in order from lowest to highest
 exports.RARITY_LEVELS = [
@@ -707,11 +706,27 @@ exports.BASE_MOB_CONFIGS = {
   <circle cx="0" cy="0" r="13" fill="#5c4300" />
 </svg>`,
         ai_type: 'passive',
-        section: 4,
+        section: 0,
         range: 0,
         hideRotation: true,
         noEggDrop: true,
-        spawn_weight: 0.15
+        spawn_weight: 0.15,
+        no_mob_collision: true,
+        initial_spawns: [
+            'baby_ant', 'baby_ant', 'baby_ant',
+            'worker_ant', 'worker_ant', 'soldier_ant'
+        ],
+        spawn_waves: [
+            ['baby_ant'],
+            ['worker_ant', 'baby_ant'],
+            ['worker_ant', 'worker_ant'],
+            ['soldier_ant', 'worker_ant'],
+            ['baby_ant', 'worker_ant', 'soldier_ant'],
+            ['worker_ant', 'soldier_ant'],
+            ['soldier_ant', 'worker_ant', 'worker_ant'],
+            ['soldier_ant', 'soldier_ant'],
+            ['soldier_ant', 'soldier_ant', 'soldier_ant']
+        ]
     },
     fire_ant_hole: {
         name: "Fire Ant Hole",
@@ -733,7 +748,23 @@ exports.BASE_MOB_CONFIGS = {
         range: 0,
         hideRotation: true,
         noEggDrop: true,
-        spawn_weight: 0.15
+        spawn_weight: 0.15,
+        no_mob_collision: true,
+        initial_spawns: [
+            'baby_fire_ant', 'baby_fire_ant', 'baby_fire_ant',
+            'worker_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'
+        ],
+        spawn_waves: [
+            ['baby_fire_ant'],
+            ['worker_fire_ant', 'baby_fire_ant'],
+            ['worker_fire_ant', 'worker_fire_ant'],
+            ['soldier_fire_ant', 'worker_fire_ant'],
+            ['baby_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'],
+            ['worker_fire_ant', 'soldier_fire_ant'],
+            ['soldier_fire_ant', 'worker_fire_ant', 'worker_fire_ant'],
+            ['soldier_fire_ant', 'soldier_fire_ant'],
+            ['soldier_fire_ant', 'soldier_fire_ant', 'soldier_fire_ant']
+        ]
     },
     worker_fire_ant: {
         name: "Worker Fire Ant",
@@ -3365,7 +3396,10 @@ function generateMobStats(baseConfig, rarity, mobType) {
         emissive: overrides.emissive ?? baseConfig.emissive,
         light_radius: overrides.light_radius ?? baseConfig.light_radius,
         light_color: overrides.light_color ?? baseConfig.light_color,
-        projectile: overrides.projectile ?? baseConfig.projectile
+        projectile: overrides.projectile ?? baseConfig.projectile,
+        spawn_waves: overrides.spawn_waves ?? baseConfig.spawn_waves,
+        initial_spawns: overrides.initial_spawns ?? baseConfig.initial_spawns,
+        no_mob_collision: overrides.no_mob_collision ?? baseConfig.no_mob_collision
     };
 }
 // Generate the full mob configuration
@@ -4353,49 +4387,6 @@ function calculateMobDrops(mobType, mobRarity) {
 // Function to get drop table for a specific mob type
 function getMobDropTable(mobType) {
     return exports.MOB_DROP_TABLES[mobType] || null;
-}
-// Ant hole spawn waves. Each wave is a list of ant mob types that are spawned
-// when that wave is crossed as the ant hole's health drops. Wave index 0 is the
-// wave that fires at full health (on first hit); the last wave fires at death.
-// Keyed by ant-hole mob type so each hole variant spawns its own ant family.
-exports.ANT_HOLE_SPAWN_WAVES = {
-    ant_hole: [
-        ['baby_ant'],
-        ['worker_ant', 'baby_ant'],
-        ['worker_ant', 'worker_ant'],
-        ['soldier_ant', 'worker_ant'],
-        ['baby_ant', 'worker_ant', 'soldier_ant'],
-        ['worker_ant', 'soldier_ant'],
-        ['soldier_ant', 'worker_ant', 'worker_ant'],
-        ['soldier_ant', 'soldier_ant'],
-        ['soldier_ant', 'soldier_ant', 'soldier_ant']
-    ],
-    fire_ant_hole: [
-        ['baby_fire_ant'],
-        ['worker_fire_ant', 'baby_fire_ant'],
-        ['worker_fire_ant', 'worker_fire_ant'],
-        ['soldier_fire_ant', 'worker_fire_ant'],
-        ['baby_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'],
-        ['worker_fire_ant', 'soldier_fire_ant'],
-        ['soldier_fire_ant', 'worker_fire_ant', 'worker_fire_ant'],
-        ['soldier_fire_ant', 'soldier_fire_ant'],
-        ['soldier_fire_ant', 'soldier_fire_ant', 'soldier_fire_ant']
-    ]
-};
-// Ants pre-spawned around an ant hole when the hole itself is spawned.
-exports.ANT_HOLE_INITIAL_SPAWNS = {
-    ant_hole: [
-        'baby_ant', 'baby_ant', 'baby_ant',
-        'worker_ant', 'worker_ant', 'soldier_ant'
-    ],
-    fire_ant_hole: [
-        'baby_fire_ant', 'baby_fire_ant', 'baby_fire_ant',
-        'worker_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'
-    ]
-};
-// Returns true if the mob type is any kind of ant hole (spawns ants on damage).
-function isAntHoleType(mobType) {
-    return mobType === 'ant_hole' || mobType === 'fire_ant_hole';
 }
 // Test function to verify drop system
 function testDropSystem() {

@@ -346,9 +346,11 @@ function checkEnemyEnemyCollisions(enemies, io) {
             if (thisHeadId && otherHeadId && thisHeadId === otherHeadId) {
                 continue;
             }
-            // Ant holes don't collide with other mobs — their guardian ants
-            // and any passerby can overlap them freely.
-            if ((0, mobs_1.isAntHoleType)(enemy.type) || (0, mobs_1.isAntHoleType)(otherEnemy.type)) {
+            // Get other enemy's size
+            const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
+            // Mobs flagged with no_mob_collision (e.g. ant holes) don't push
+            // or get pushed by other mobs.
+            if (mobStats?.no_mob_collision || otherMobStats?.no_mob_collision) {
                 continue;
             }
             // Skip collision resolution if both mobs are passive and not chasing
@@ -361,8 +363,6 @@ function checkEnemyEnemyCollisions(enemies, io) {
             if (thisMobIsPassive && otherMobIsPassive && !thisMobIsPet && !otherMobIsPet) {
                 continue; // Both are passive wild mobs, don't push each other
             }
-            // Get other enemy's size
-            const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
             const otherEnemySize = otherMobStats ? otherMobStats.size * 40 : constants_1.ENEMY_SIZE;
             const otherHalfSize = otherEnemySize / 2;
             // Calculate distance between mobs

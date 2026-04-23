@@ -30,6 +30,14 @@ export interface MobStats {
         speed?: number; // Projectile speed (default: 200 pixels per second)
         spreadAngle?: number; // Spread angle in radians for multiple projectiles (default: 0.2)
     };
+    // Mobs that spawn other mobs in waves as they take damage (like ant holes).
+    // Each entry is a list of mob types spawned when that wave is crossed. The
+    // first wave fires at full health; the last wave fires at death.
+    spawn_waves?: string[][];
+    // Mobs pre-spawned around this mob when it is itself spawned.
+    initial_spawns?: string[];
+    // If true, this mob does not participate in mob-mob collision resolution.
+    no_mob_collision?: boolean;
 }
 
 export interface MobConfig {
@@ -100,6 +108,9 @@ interface BaseMobConfig {
         speed?: number;
         spreadAngle?: number;
     };
+    spawn_waves?: string[][];
+    initial_spawns?: string[];
+    no_mob_collision?: boolean;
 }
 
 // Special rarity overrides for specific mobs
@@ -133,6 +144,9 @@ interface RarityOverride {
         speed?: number;
         spreadAngle?: number;
     };
+    spawn_waves?: string[][];
+    initial_spawns?: string[];
+    no_mob_collision?: boolean;
 }
 
 // Scaling multipliers for mob stats
@@ -824,11 +838,27 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
   <circle cx="0" cy="0" r="13" fill="#5c4300" />
 </svg>`,
         ai_type: 'passive',
-        section: 4,
+        section: 0,
         range: 0,
         hideRotation: true,
         noEggDrop: true,
-        spawn_weight: 0.15
+        spawn_weight: 0.15,
+        no_mob_collision: true,
+        initial_spawns: [
+            'baby_ant', 'baby_ant', 'baby_ant',
+            'worker_ant', 'worker_ant', 'soldier_ant'
+        ],
+        spawn_waves: [
+            ['baby_ant'],
+            ['worker_ant', 'baby_ant'],
+            ['worker_ant', 'worker_ant'],
+            ['soldier_ant', 'worker_ant'],
+            ['baby_ant', 'worker_ant', 'soldier_ant'],
+            ['worker_ant', 'soldier_ant'],
+            ['soldier_ant', 'worker_ant', 'worker_ant'],
+            ['soldier_ant', 'soldier_ant'],
+            ['soldier_ant', 'soldier_ant', 'soldier_ant']
+        ]
     },
     fire_ant_hole: {
         name: "Fire Ant Hole",
@@ -850,7 +880,23 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         range: 0,
         hideRotation: true,
         noEggDrop: true,
-        spawn_weight: 0.15
+        spawn_weight: 0.15,
+        no_mob_collision: true,
+        initial_spawns: [
+            'baby_fire_ant', 'baby_fire_ant', 'baby_fire_ant',
+            'worker_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'
+        ],
+        spawn_waves: [
+            ['baby_fire_ant'],
+            ['worker_fire_ant', 'baby_fire_ant'],
+            ['worker_fire_ant', 'worker_fire_ant'],
+            ['soldier_fire_ant', 'worker_fire_ant'],
+            ['baby_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'],
+            ['worker_fire_ant', 'soldier_fire_ant'],
+            ['soldier_fire_ant', 'worker_fire_ant', 'worker_fire_ant'],
+            ['soldier_fire_ant', 'soldier_fire_ant'],
+            ['soldier_fire_ant', 'soldier_fire_ant', 'soldier_fire_ant']
+        ]
     },
     worker_fire_ant: {
         name: "Worker Fire Ant",
@@ -3493,7 +3539,10 @@ function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: st
         emissive: overrides.emissive ?? baseConfig.emissive,
         light_radius: overrides.light_radius ?? baseConfig.light_radius,
         light_color: overrides.light_color ?? baseConfig.light_color,
-        projectile: overrides.projectile ?? baseConfig.projectile
+        projectile: overrides.projectile ?? baseConfig.projectile,
+        spawn_waves: overrides.spawn_waves ?? baseConfig.spawn_waves,
+        initial_spawns: overrides.initial_spawns ?? baseConfig.initial_spawns,
+        no_mob_collision: overrides.no_mob_collision ?? baseConfig.no_mob_collision
     };
 }
 
@@ -4504,51 +4553,6 @@ export function getMobDropTable(mobType: string): MobDropTable | null {
     return MOB_DROP_TABLES[mobType] || null;
 }
 
-// Ant hole spawn waves. Each wave is a list of ant mob types that are spawned
-// when that wave is crossed as the ant hole's health drops. Wave index 0 is the
-// wave that fires at full health (on first hit); the last wave fires at death.
-// Keyed by ant-hole mob type so each hole variant spawns its own ant family.
-export const ANT_HOLE_SPAWN_WAVES: Record<string, string[][]> = {
-    ant_hole: [
-        ['baby_ant'],
-        ['worker_ant', 'baby_ant'],
-        ['worker_ant', 'worker_ant'],
-        ['soldier_ant', 'worker_ant'],
-        ['baby_ant', 'worker_ant', 'soldier_ant'],
-        ['worker_ant', 'soldier_ant'],
-        ['soldier_ant', 'worker_ant', 'worker_ant'],
-        ['soldier_ant', 'soldier_ant'],
-        ['soldier_ant', 'soldier_ant', 'soldier_ant']
-    ],
-    fire_ant_hole: [
-        ['baby_fire_ant'],
-        ['worker_fire_ant', 'baby_fire_ant'],
-        ['worker_fire_ant', 'worker_fire_ant'],
-        ['soldier_fire_ant', 'worker_fire_ant'],
-        ['baby_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'],
-        ['worker_fire_ant', 'soldier_fire_ant'],
-        ['soldier_fire_ant', 'worker_fire_ant', 'worker_fire_ant'],
-        ['soldier_fire_ant', 'soldier_fire_ant'],
-        ['soldier_fire_ant', 'soldier_fire_ant', 'soldier_fire_ant']
-    ]
-};
-
-// Ants pre-spawned around an ant hole when the hole itself is spawned.
-export const ANT_HOLE_INITIAL_SPAWNS: Record<string, string[]> = {
-    ant_hole: [
-        'baby_ant', 'baby_ant', 'baby_ant',
-        'worker_ant', 'worker_ant', 'soldier_ant'
-    ],
-    fire_ant_hole: [
-        'baby_fire_ant', 'baby_fire_ant', 'baby_fire_ant',
-        'worker_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'
-    ]
-};
-
-// Returns true if the mob type is any kind of ant hole (spawns ants on damage).
-export function isAntHoleType(mobType: string): boolean {
-    return mobType === 'ant_hole' || mobType === 'fire_ant_hole';
-}
 
 // Test function to verify drop system
 export function testDropSystem() {

@@ -20,7 +20,7 @@ import {
     JAGGED_MAX_OFFSET
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
-import { getMobStats, isAntHoleType } from '../mobs';
+import { getMobStats } from '../mobs';
 
 // Boundary threshold for wall extension (same as out-of-bounds zone)
 const BOUNDARY_THRESHOLD = 100;
@@ -433,9 +433,12 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                 continue;
             }
 
-            // Ant holes don't collide with other mobs — their guardian ants
-            // and any passerby can overlap them freely.
-            if (isAntHoleType(enemy.type) || isAntHoleType(otherEnemy.type)) {
+            // Get other enemy's size
+            const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
+
+            // Mobs flagged with no_mob_collision (e.g. ant holes) don't push
+            // or get pushed by other mobs.
+            if (mobStats?.no_mob_collision || otherMobStats?.no_mob_collision) {
                 continue;
             }
 
@@ -450,9 +453,6 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
             if (thisMobIsPassive && otherMobIsPassive && !thisMobIsPet && !otherMobIsPet) {
                 continue; // Both are passive wild mobs, don't push each other
             }
-            
-            // Get other enemy's size
-            const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
             const otherEnemySize = otherMobStats ? otherMobStats.size * 40 : ENEMY_SIZE;
             const otherHalfSize = otherEnemySize / 2;
 

@@ -602,12 +602,12 @@ function spawnMob(mobType, rarity, x, y) {
             io.emit('enemySpawned', constants_2.enemies[i]);
         }
     }
-    // Ant holes arrive with a guardian cluster of ants.
-    if ((0, mobs_2.isAntHoleType)(mobType)) {
+    // Mobs with initial_spawns (e.g. ant holes) arrive with a pre-spawned cluster.
+    if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
         const beforeCount = constants_2.enemies.length;
-        (0, enemySpawner_1.spawnAntHoleInitialAnts)(enemy);
-        for (let i = beforeCount; i < constants_2.enemies.length; i++) {
-            io.emit('enemySpawned', constants_2.enemies[i]);
+        (0, enemySpawner_1.spawnInitialSpawns)(enemy);
+        for (let j = beforeCount; j < constants_2.enemies.length; j++) {
+            io.emit('enemySpawned', constants_2.enemies[j]);
         }
     }
     console.log(`Spawned ${tier} ${mobType} at (${Math.round(spawnX)}, ${Math.round(spawnY)})`);
@@ -3296,71 +3296,69 @@ function computeOwnSegmentAvoidance(enemy) {
     return { x: ax, y: ay };
 }
 /**
- * Spawn ant waves from any ant hole whose health dropped this tick. Each ant
- * hole has a sequence of waves tied to HP thresholds; every wave crossed on the
- * way down spawns its ants, so multiple waves can fire on a single big hit.
+ * Spawn child waves from any mob with `spawn_waves` whose health dropped this
+ * tick. Each wave is tied to an HP threshold; every wave crossed on the way
+ * down spawns its listed mobs, so multiple waves can fire on a single big hit.
  * Mirrors the kAntHole damage behavior from the gardn reference project.
  */
-function spawnAntHoleWaves() {
+function spawnWaveMobs() {
     const currentTime = Date.now();
     for (const enemy of constants_2.enemies) {
-        if (!(0, mobs_2.isAntHoleType)(enemy.type))
-            continue;
         if (enemy.isDead)
             continue;
-        const waves = mobs_2.ANT_HOLE_SPAWN_WAVES[enemy.type];
-        if (!waves || waves.length === 0)
+        const parentStats = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
+        if (!parentStats || !parentStats.spawn_waves || parentStats.spawn_waves.length === 0)
             continue;
+        const waves = parentStats.spawn_waves;
         const numWaves = waves.length - 1;
-        const prev = enemy._antHolePrevHealth;
+        const prev = enemy._spawnWavePrevHealth;
         if (prev === undefined) {
-            enemy._antHolePrevHealth = enemy.health;
+            enemy._spawnWavePrevHealth = enemy.health;
             continue;
         }
         if (enemy.health >= prev) {
-            enemy._antHolePrevHealth = enemy.health;
+            enemy._spawnWavePrevHealth = enemy.health;
             continue;
         }
         const maxHp = enemy.maxHealth || 1;
         const startWave = Math.floor((prev / maxHp) * numWaves);
         const endWave = Math.ceil((enemy.health / maxHp) * numWaves);
+        const parentRadius = (parentStats.size * 40) / 2;
         for (let i = startWave; i >= endWave; i--) {
             const waveIndex = numWaves - i;
             if (waveIndex < 0 || waveIndex >= waves.length)
                 continue;
             const wave = waves[waveIndex];
-            const holeStats = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
-            const holeRadius = (holeStats ? holeStats.size * 40 : 80) / 2;
-            for (const antType of wave) {
-                const antStats = (0, mobs_2.getMobStats)(antType, enemy.tier);
-                if (!antStats)
+            for (const childType of wave) {
+                const childStats = (0, mobs_2.getMobStats)(childType, enemy.tier);
+                if (!childStats)
                     continue;
                 const angle = Math.random() * Math.PI * 2;
-                const dist = holeRadius + 10 + Math.random() * holeRadius;
-                const ant = {
+                const dist = parentRadius + 10 + Math.random() * parentRadius;
+                const child = {
                     id: Math.random().toString(36).substr(2, 9),
-                    type: antType,
+                    type: childType,
                     tier: enemy.tier,
                     x: enemy.x + Math.cos(angle) * dist,
                     y: enemy.y + Math.sin(angle) * dist,
                     angle: Math.random() * Math.PI * 2,
-                    health: antStats.health,
-                    maxHealth: antStats.health,
-                    speed: antStats.speed,
-                    damage: antStats.damage,
+                    health: childStats.health,
+                    maxHealth: childStats.health,
+                    speed: childStats.speed,
+                    damage: childStats.damage,
                     knockbackX: 0,
                     knockbackY: 0,
-                    aiType: antStats.ai_type,
-                    range: antStats.range,
-                    reversed: antStats.reversed ?? false,
+                    aiType: childStats.ai_type,
+                    range: childStats.range,
+                    reversed: childStats.reversed ?? false,
                     spawnTime: currentTime,
                     lastViewportCheck: currentTime,
                 };
-                constants_2.enemies.push(ant);
-                io.emit('enemySpawned', ant);
+                constants_2.enemies.push(child);
+                io.emit('enemySpawned', child);
             }
         }
-        enemy._antHolePrevHealth = enemy.health;
+        enemy._spawnWavePrevHealth = enemy.health;
     }
 }
 function moveEnemies() {
@@ -4344,8 +4342,8 @@ function start_loop() {
         updatePlayerProjectiles(TICK_INTERVAL); // Pass milliseconds
         // Update viewport status for all enemies
         updateEnemyViewportStatus();
-        // Spawn ant waves from damaged ant holes before emitting damage batch
-        spawnAntHoleWaves();
+        // Spawn wave mobs from damaged spawners (e.g. ant holes) before emitting damage batch
+        spawnWaveMobs();
         // Batch all enemy damage updates into a single event
         const damagedEnemies = [];
         for (const enemy of constants_2.enemies) {

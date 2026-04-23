@@ -29,7 +29,7 @@ import {
     WALL_TILE_SIZE
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
-import { getMobStats, getAllMobTypes, ANT_HOLE_INITIAL_SPAWNS, isAntHoleType } from '../mobs';
+import { getMobStats, getAllMobTypes } from '../mobs';
 
 // Tier order from lowest to highest
 const TIER_ORDER: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
@@ -747,50 +747,49 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         spawnCentipedeBodySegments(enemy);
     }
 
-    // Pre-spawn a cluster of ants around a newly spawned ant hole
-    if (isAntHoleType(mobType)) {
-        spawnAntHoleInitialAnts(enemy);
+    // Pre-spawn configured mobs around this one (e.g. ant-hole guardians).
+    if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
+        spawnInitialSpawns(enemy);
     }
 
     return enemy;
 }
 
 /**
- * Spawn the initial cluster of ants around a freshly-created ant hole so the
- * hole is guarded as soon as it appears.
+ * Spawn the cluster of mobs declared in the parent's `initial_spawns` around
+ * it, so mobs like ant holes are guarded the moment they appear.
  */
-export function spawnAntHoleInitialAnts(hole: Enemy): void {
-    const holeStats = getMobStats(hole.type, hole.tier);
-    const holeRadius = (holeStats ? holeStats.size * 40 : 80) / 2;
+export function spawnInitialSpawns(parent: Enemy): void {
+    const parentStats = getMobStats(parent.type, parent.tier);
+    if (!parentStats || !parentStats.initial_spawns) return;
+    const parentRadius = (parentStats.size * 40) / 2;
     const currentTime = Date.now();
-    const initialSpawns = ANT_HOLE_INITIAL_SPAWNS[hole.type];
-    if (!initialSpawns) return;
 
-    for (const antType of initialSpawns) {
-        const antStats = getMobStats(antType, hole.tier);
-        if (!antStats) continue;
+    for (const childType of parentStats.initial_spawns) {
+        const childStats = getMobStats(childType, parent.tier);
+        if (!childStats) continue;
         const angle = Math.random() * Math.PI * 2;
-        const dist = holeRadius + 30 + Math.random() * holeRadius;
-        const ant: Enemy = {
+        const dist = parentRadius + 30 + Math.random() * parentRadius;
+        const child: Enemy = {
             id: Math.random().toString(36).substr(2, 9),
-            type: antType as Enemy['type'],
-            tier: hole.tier,
-            x: hole.x + Math.cos(angle) * dist,
-            y: hole.y + Math.sin(angle) * dist,
+            type: childType as Enemy['type'],
+            tier: parent.tier,
+            x: parent.x + Math.cos(angle) * dist,
+            y: parent.y + Math.sin(angle) * dist,
             angle: Math.random() * Math.PI * 2,
-            health: antStats.health,
-            maxHealth: antStats.health,
-            speed: antStats.speed,
-            damage: antStats.damage,
+            health: childStats.health,
+            maxHealth: childStats.health,
+            speed: childStats.speed,
+            damage: childStats.damage,
             knockbackX: 0,
             knockbackY: 0,
-            aiType: antStats.ai_type,
-            range: antStats.range,
-            reversed: antStats.reversed ?? false,
+            aiType: childStats.ai_type,
+            range: childStats.range,
+            reversed: childStats.reversed ?? false,
             spawnTime: currentTime,
             lastViewportCheck: currentTime,
         };
-        enemies.push(ant);
+        enemies.push(child);
     }
 }
 
