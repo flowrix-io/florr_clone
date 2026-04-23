@@ -218,7 +218,7 @@ export class TitleScreen {
 
     // Canvas-based settings menu state
     private settingsOpen: boolean = false;
-    private settingsTab: 'controls' | 'graphics' | 'advanced' = 'controls';
+    private settingsTab: 'controls' | 'graphics' | 'advanced' | 'credits' = 'controls';
     private settingsScrollY: number = 0;
     private settingsHoveredItem: string | null = null;
     private settingsEditingControl: string | null = null; // which control key is being edited
@@ -2279,10 +2279,11 @@ export class TitleScreen {
             '#cc4444', closeHovered, this.pressedButton === 'settings_close', 'X', 16, 3, 3);
 
         // Tabs
-        const tabs: Array<{ id: 'controls' | 'graphics' | 'advanced'; label: string }> = [
+        const tabs: Array<{ id: 'controls' | 'graphics' | 'advanced' | 'credits'; label: string }> = [
             { id: 'controls', label: 'Controls' },
             { id: 'graphics', label: 'Graphics' },
             { id: 'advanced', label: 'Advanced' },
+            { id: 'credits', label: 'Credits' },
         ];
         const tabW = (contentW - (tabs.length - 1) * 5) / tabs.length;
         const tabY = panelY + headerH + pad + 5;
@@ -2460,11 +2461,56 @@ export class TitleScreen {
             // Show Console Logs checkbox
             this.drawSettingsCheckbox(ctx, contentX, cy, 22, this.settingsShowConsoleLogs, 'Show Console Logs on Screen', this.settingsHoveredItem === 'cb_showConsoleLogs_adv');
             cy += rowH;
+        } else if (this.settingsTab === 'credits') {
+            this.renderCreditsTab(ctx, contentX, contentW, cy);
         }
 
         ctx.restore(); // restore clip
 
         ctx.restore(); // restore initial save
+    }
+
+    /** Renders the credits tab content */
+    private renderCreditsTab(ctx: CanvasRenderingContext2D, contentX: number, contentW: number, startY: number): void {
+        let cy = startY;
+
+        const drawText = (text: string, font: string, color: string, y: number, align: CanvasTextAlign = 'left') => {
+            ctx.font = font;
+            ctx.textAlign = align;
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            const drawX = align === 'center' ? contentX + contentW / 2 : contentX;
+            ctx.strokeText(text, drawX, y);
+            ctx.fillStyle = color;
+            ctx.fillText(text, drawX, y);
+        };
+
+        drawText('Florr.io Clone', 'bold 18px Ubuntu, sans-serif', '#ffffff', cy + 10, 'center');
+        cy += 30;
+
+        drawText('Developers', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
+        cy += 24;
+        drawText('• sussybite8888', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        cy += 20;
+
+        drawText('Inspired By', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
+        cy += 24;
+        drawText('• florr.io by M28', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        cy += 28;
+
+        drawText('Assets & Libraries', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
+        cy += 24;
+        drawText('• Icons from game-icons.net and svgrepo.com', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        cy += 20;
+        drawText('• Ubuntu font by Canonical', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        cy += 28;
+        drawText('• Assets extracted by Bismuth(https://github.com/trigonal-bacon/gardn)', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        cy += 20;
+        drawText('• UI style by Bismuth(https://github.com/trigonal-bacon/gardn)', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        cy += 20;
+
+        drawText('Thanks for playing!', 'bold 13px Ubuntu, sans-serif', '#cccccc', cy + 8, 'center');
     }
 
     /** Draws a gardn-style checkbox (toggle square) */
@@ -2548,7 +2594,7 @@ export class TitleScreen {
         }
 
         // Tabs
-        const tabs: Array<'controls' | 'graphics' | 'advanced'> = ['controls', 'graphics', 'advanced'];
+        const tabs: Array<'controls' | 'graphics' | 'advanced' | 'credits'> = ['controls', 'graphics', 'advanced', 'credits'];
         const tabW = (contentW - (tabs.length - 1) * 5) / tabs.length;
         const tabY = panelY + headerH + pad + 5;
         for (let i = 0; i < tabs.length; i++) {
@@ -2682,7 +2728,7 @@ export class TitleScreen {
         }
 
         // Tabs
-        const tabs: Array<'controls' | 'graphics' | 'advanced'> = ['controls', 'graphics', 'advanced'];
+        const tabs: Array<'controls' | 'graphics' | 'advanced' | 'credits'> = ['controls', 'graphics', 'advanced', 'credits'];
         const tabW = (contentW - (tabs.length - 1) * 5) / tabs.length;
         const tabY = panelY + headerH + pad + 5;
         for (let i = 0; i < tabs.length; i++) {

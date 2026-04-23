@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 386521107,
+      "totalXP": 386521130,
       "inventory": {
         "common": {
           "shield": 294,
@@ -706,7 +706,7 @@
         "soldier_ant": {
           "epic": 235,
           "legendary": 926,
-          "common": 1110,
+          "common": 1112,
           "rare": 365,
           "mythic": 915,
           "ultra": 35,
@@ -727,7 +727,7 @@
           "unique": 3
         },
         "dark_ladybug": {
-          "common": 997,
+          "common": 998,
           "legendary": 432,
           "mythic": 396,
           "uncommon": 287,
@@ -760,7 +760,7 @@
           "super": 10
         },
         "bee": {
-          "common": 867,
+          "common": 868,
           "epic": 170,
           "mythic": 455,
           "uncommon": 243,
@@ -1097,7 +1097,7 @@
           "rare": 16,
           "epic": 32,
           "legendary": 4,
-          "common": 11,
+          "common": 12,
           "mythic": 3,
           "ultra": 6
         },
@@ -1582,7 +1582,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1776916888687
+      "lastActiveAt": 1776917462402
     },
     "dev": {
       "id": "1g99g1gfk",
