@@ -20,7 +20,7 @@ import {
     JAGGED_MAX_OFFSET
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
-import { getMobStats } from '../mobs';
+import { getMobStats, isAntHoleType } from '../mobs';
 
 // Boundary threshold for wall extension (same as out-of-bounds zone)
 const BOUNDARY_THRESHOLD = 100;
@@ -430,6 +430,12 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
             const thisHeadId = enemy.headId ?? (isCentipedeHeadType(enemy.type) ? enemy.id : undefined);
             const otherHeadId = otherEnemy.headId ?? (isCentipedeHeadType(otherEnemy.type) ? otherEnemy.id : undefined);
             if (thisHeadId && otherHeadId && thisHeadId === otherHeadId) {
+                continue;
+            }
+
+            // Ant holes don't collide with other mobs — their guardian ants
+            // and any passerby can overlap them freely.
+            if (isAntHoleType(enemy.type) || isAntHoleType(otherEnemy.type)) {
                 continue;
             }
 

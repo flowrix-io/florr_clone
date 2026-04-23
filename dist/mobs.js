@@ -1,12 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MOB_DROP_TABLES = exports.MOB_CONFIG = exports.BASE_MOB_CONFIGS = exports.SIZE_SCALING = exports.RARITY_LEVELS = void 0;
+exports.ANT_HOLE_INITIAL_SPAWNS = exports.ANT_HOLE_SPAWN_WAVES = exports.MOB_DROP_TABLES = exports.MOB_CONFIG = exports.BASE_MOB_CONFIGS = exports.SIZE_SCALING = exports.RARITY_LEVELS = void 0;
 exports.getMobStats = getMobStats;
 exports.getAllMobTypes = getAllMobTypes;
 exports.getMobRarities = getMobRarities;
 exports.getMobTypesBySection = getMobTypesBySection;
 exports.calculateMobDrops = calculateMobDrops;
 exports.getMobDropTable = getMobDropTable;
+exports.isAntHoleType = isAntHoleType;
 exports.testDropSystem = testDropSystem;
 // Rarity levels in order from lowest to highest
 exports.RARITY_LEVELS = [
@@ -444,6 +445,28 @@ const MOB_XP_TABLES = {
         ultra: 45000,
         super: 350000,
         unique: 1950000
+    },
+    ant_hole: {
+        common: 5,
+        uncommon: 20,
+        rare: 120,
+        epic: 800,
+        legendary: 4500,
+        mythic: 90000,
+        ultra: 450000,
+        super: 3500000,
+        unique: 18000000
+    },
+    fire_ant_hole: {
+        common: 5,
+        uncommon: 20,
+        rare: 120,
+        epic: 800,
+        legendary: 4500,
+        mythic: 90000,
+        ultra: 450000,
+        super: 3500000,
+        unique: 18000000
     }
 };
 // Base mob configurations - only common rarity stats
@@ -610,7 +633,7 @@ exports.BASE_MOB_CONFIGS = {
     worker_ant: {
         name: "Worker Ant",
         damage: 10,
-        health: 100,
+        health: 60,
         size: 1.0,
         visual_scale: 1.5,
         speed: 2.4,
@@ -639,8 +662,8 @@ exports.BASE_MOB_CONFIGS = {
     baby_ant: {
         name: "Baby Ant",
         damage: 10,
-        health: 100,
-        size: 1.0,
+        health: 30,
+        size: 0.7,
         visual_scale: 1.2,
         speed: 2.4,
         cooldown: 2000,
@@ -668,15 +691,59 @@ exports.BASE_MOB_CONFIGS = {
         section: 4,
         range: 300
     },
+    ant_hole: {
+        name: "Ant Hole",
+        damage: 10,
+        health: 500,
+        size: 2.0,
+        visual_scale: 1.0,
+        speed: 0,
+        cooldown: 2000,
+        description: "There are ants inside",
+        color: "#b58500",
+        image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="0" r="38" fill="#b58500" />
+  <circle cx="0" cy="0" r="25" fill="#8a6500" />
+  <circle cx="0" cy="0" r="13" fill="#5c4300" />
+</svg>`,
+        ai_type: 'passive',
+        section: 4,
+        range: 0,
+        hideRotation: true,
+        noEggDrop: true,
+        spawn_weight: 0.15
+    },
+    fire_ant_hole: {
+        name: "Fire Ant Hole",
+        damage: 20,
+        health: 500,
+        size: 2.0,
+        visual_scale: 1.0,
+        speed: 0,
+        cooldown: 2000,
+        description: "There are fire ants inside",
+        color: "#b03020",
+        image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="0" r="38" fill="#b03020" />
+  <circle cx="0" cy="0" r="25" fill="#7a1d13" />
+  <circle cx="0" cy="0" r="13" fill="#3d1512" />
+</svg>`,
+        ai_type: 'passive',
+        section: 1,
+        range: 0,
+        hideRotation: true,
+        noEggDrop: true,
+        spawn_weight: 0.15
+    },
     worker_fire_ant: {
         name: "Worker Fire Ant",
         damage: 20,
-        health: 100,
+        health: 60,
         size: 1.0,
         visual_scale: 1.5,
         speed: 2.4,
         cooldown: 2000,
-        description: "It's neutral towards flowers",
+        description: "It only stings if you attack it",
         color: "#ff8800",
         image: `<svg id="worker-fire-ant-svg" width="32" height="32" viewBox="-40 -35 80 70" xmlns="http://www.w3.org/2000/svg">
   <circle cx="-12" cy="0" r="10" fill="#b02a22" stroke="#8c221b" stroke-width="7" />
@@ -700,12 +767,12 @@ exports.BASE_MOB_CONFIGS = {
     baby_fire_ant: {
         name: "Baby Fire Ant",
         damage: 20,
-        health: 100,
+        health: 30,
         size: 1.0,
         visual_scale: 1.2,
         speed: 2.4,
         cooldown: 2000,
-        description: "A baby fire ant",
+        description: "Weak, but can still sting",
         color: "#ff8800",
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-20 -20 50 40">
   <path fill="none" stroke="#3d1512" stroke-width="7" stroke-linecap="round" d="M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5">
@@ -3487,6 +3554,48 @@ exports.MOB_DROP_TABLES = {
             }
         ]
     },
+    ant_hole: {
+        guaranteed: false,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'corn',
+                rarity: 'uncommon',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'leaf',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    fire_ant_hole: {
+        guaranteed: false,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'bone',
+                rarity: 'uncommon',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'bone',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
     rock: {
         guaranteed: true, // Rock always drop something
         drops: [
@@ -4244,6 +4353,49 @@ function calculateMobDrops(mobType, mobRarity) {
 // Function to get drop table for a specific mob type
 function getMobDropTable(mobType) {
     return exports.MOB_DROP_TABLES[mobType] || null;
+}
+// Ant hole spawn waves. Each wave is a list of ant mob types that are spawned
+// when that wave is crossed as the ant hole's health drops. Wave index 0 is the
+// wave that fires at full health (on first hit); the last wave fires at death.
+// Keyed by ant-hole mob type so each hole variant spawns its own ant family.
+exports.ANT_HOLE_SPAWN_WAVES = {
+    ant_hole: [
+        ['baby_ant'],
+        ['worker_ant', 'baby_ant'],
+        ['worker_ant', 'worker_ant'],
+        ['soldier_ant', 'worker_ant'],
+        ['baby_ant', 'worker_ant', 'soldier_ant'],
+        ['worker_ant', 'soldier_ant'],
+        ['soldier_ant', 'worker_ant', 'worker_ant'],
+        ['soldier_ant', 'soldier_ant'],
+        ['soldier_ant', 'soldier_ant', 'soldier_ant']
+    ],
+    fire_ant_hole: [
+        ['baby_fire_ant'],
+        ['worker_fire_ant', 'baby_fire_ant'],
+        ['worker_fire_ant', 'worker_fire_ant'],
+        ['soldier_fire_ant', 'worker_fire_ant'],
+        ['baby_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'],
+        ['worker_fire_ant', 'soldier_fire_ant'],
+        ['soldier_fire_ant', 'worker_fire_ant', 'worker_fire_ant'],
+        ['soldier_fire_ant', 'soldier_fire_ant'],
+        ['soldier_fire_ant', 'soldier_fire_ant', 'soldier_fire_ant']
+    ]
+};
+// Ants pre-spawned around an ant hole when the hole itself is spawned.
+exports.ANT_HOLE_INITIAL_SPAWNS = {
+    ant_hole: [
+        'baby_ant', 'baby_ant', 'baby_ant',
+        'worker_ant', 'worker_ant', 'soldier_ant'
+    ],
+    fire_ant_hole: [
+        'baby_fire_ant', 'baby_fire_ant', 'baby_fire_ant',
+        'worker_fire_ant', 'worker_fire_ant', 'soldier_fire_ant'
+    ]
+};
+// Returns true if the mob type is any kind of ant hole (spawns ants on damage).
+function isAntHoleType(mobType) {
+    return mobType === 'ant_hole' || mobType === 'fire_ant_hole';
 }
 // Test function to verify drop system
 function testDropSystem() {

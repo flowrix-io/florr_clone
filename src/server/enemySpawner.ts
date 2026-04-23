@@ -29,7 +29,7 @@ import {
     WALL_TILE_SIZE
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
-import { getMobStats, getAllMobTypes } from '../mobs';
+import { getMobStats, getAllMobTypes, ANT_HOLE_INITIAL_SPAWNS, isAntHoleType } from '../mobs';
 
 // Tier order from lowest to highest
 const TIER_ORDER: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
@@ -747,7 +747,51 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         spawnCentipedeBodySegments(enemy);
     }
 
+    // Pre-spawn a cluster of ants around a newly spawned ant hole
+    if (isAntHoleType(mobType)) {
+        spawnAntHoleInitialAnts(enemy);
+    }
+
     return enemy;
+}
+
+/**
+ * Spawn the initial cluster of ants around a freshly-created ant hole so the
+ * hole is guarded as soon as it appears.
+ */
+export function spawnAntHoleInitialAnts(hole: Enemy): void {
+    const holeStats = getMobStats(hole.type, hole.tier);
+    const holeRadius = (holeStats ? holeStats.size * 40 : 80) / 2;
+    const currentTime = Date.now();
+    const initialSpawns = ANT_HOLE_INITIAL_SPAWNS[hole.type];
+    if (!initialSpawns) return;
+
+    for (const antType of initialSpawns) {
+        const antStats = getMobStats(antType, hole.tier);
+        if (!antStats) continue;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = holeRadius + 30 + Math.random() * holeRadius;
+        const ant: Enemy = {
+            id: Math.random().toString(36).substr(2, 9),
+            type: antType as Enemy['type'],
+            tier: hole.tier,
+            x: hole.x + Math.cos(angle) * dist,
+            y: hole.y + Math.sin(angle) * dist,
+            angle: Math.random() * Math.PI * 2,
+            health: antStats.health,
+            maxHealth: antStats.health,
+            speed: antStats.speed,
+            damage: antStats.damage,
+            knockbackX: 0,
+            knockbackY: 0,
+            aiType: antStats.ai_type,
+            range: antStats.range,
+            reversed: antStats.reversed ?? false,
+            spawnTime: currentTime,
+            lastViewportCheck: currentTime,
+        };
+        enemies.push(ant);
+    }
 }
 
 /**

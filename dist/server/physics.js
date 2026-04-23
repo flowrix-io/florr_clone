@@ -346,6 +346,11 @@ function checkEnemyEnemyCollisions(enemies, io) {
             if (thisHeadId && otherHeadId && thisHeadId === otherHeadId) {
                 continue;
             }
+            // Ant holes don't collide with other mobs — their guardian ants
+            // and any passerby can overlap them freely.
+            if ((0, mobs_1.isAntHoleType)(enemy.type) || (0, mobs_1.isAntHoleType)(otherEnemy.type)) {
+                continue;
+            }
             // Skip collision resolution if both mobs are passive and not chasing
             // BUT allow pets (enemies with ownerId) to collide with each other
             const thisMobIsPassive = (enemy.aiType === 'passive' || enemy.aiType === 'sandstorm') && !enemy.isChasing;

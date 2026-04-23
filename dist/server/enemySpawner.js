@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EQUAL_RARITY_SECTIONS = void 0;
 exports.getSectionAtPosition = getSectionAtPosition;
 exports.createEnemy = createEnemy;
+exports.spawnAntHoleInitialAnts = spawnAntHoleInitialAnts;
 exports.spawnCentipedeBodySegments = spawnCentipedeBodySegments;
 exports.createSpecialMob = createSpecialMob;
 exports.updateSpecialMobCounts = updateSpecialMobCounts;
@@ -631,7 +632,50 @@ function createEnemy(helpers) {
     if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
         spawnCentipedeBodySegments(enemy);
     }
+    // Pre-spawn a cluster of ants around a newly spawned ant hole
+    if ((0, mobs_1.isAntHoleType)(mobType)) {
+        spawnAntHoleInitialAnts(enemy);
+    }
     return enemy;
+}
+/**
+ * Spawn the initial cluster of ants around a freshly-created ant hole so the
+ * hole is guarded as soon as it appears.
+ */
+function spawnAntHoleInitialAnts(hole) {
+    const holeStats = (0, mobs_1.getMobStats)(hole.type, hole.tier);
+    const holeRadius = (holeStats ? holeStats.size * 40 : 80) / 2;
+    const currentTime = Date.now();
+    const initialSpawns = mobs_1.ANT_HOLE_INITIAL_SPAWNS[hole.type];
+    if (!initialSpawns)
+        return;
+    for (const antType of initialSpawns) {
+        const antStats = (0, mobs_1.getMobStats)(antType, hole.tier);
+        if (!antStats)
+            continue;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = holeRadius + 30 + Math.random() * holeRadius;
+        const ant = {
+            id: Math.random().toString(36).substr(2, 9),
+            type: antType,
+            tier: hole.tier,
+            x: hole.x + Math.cos(angle) * dist,
+            y: hole.y + Math.sin(angle) * dist,
+            angle: Math.random() * Math.PI * 2,
+            health: antStats.health,
+            maxHealth: antStats.health,
+            speed: antStats.speed,
+            damage: antStats.damage,
+            knockbackX: 0,
+            knockbackY: 0,
+            aiType: antStats.ai_type,
+            range: antStats.range,
+            reversed: antStats.reversed ?? false,
+            spawnTime: currentTime,
+            lastViewportCheck: currentTime,
+        };
+        constants_1.enemies.push(ant);
+    }
 }
 /**
  * Attach the body-segment chain to a centipede head. Used by every centipede
