@@ -81,6 +81,7 @@ export interface Player {
   inPvpArena?: boolean;    // True when this player is currently inside the PVP arena
   pvpScore?: number;       // PVP arena score (resets when leaving the arena)
   sizeMultiplier?: number; // Multiplier applied to the flower's radius/hitbox (from equipped petal playerRadius modifiers)
+  magnetism?: number;      // Additive pixels added to item pickup radius (sum of equipped petal magnetism modifiers)
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
@@ -170,4 +171,5 @@ export interface ServerPlayer {
   regularLoadout?: (Item | null)[];
   lastDamagedByPlayerId?: string; // ID of the most recent player to damage this player (for PVP kill credit)
   sizeMultiplier?: number; // Multiplier applied to the flower's radius/hitbox (from equipped petal playerRadius modifiers)
+  magnetism?: number;      // Additive pixels added to item pickup radius (sum of equipped petal magnetism modifiers)
 }

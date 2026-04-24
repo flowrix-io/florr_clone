@@ -3614,15 +3614,7 @@ exports.MOB_DROP_TABLES = {
         drops: [
             {
                 type: 'petal',
-                itemType: 'bone',
-                rarity: 'uncommon',
-                probability: 0.5,
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'bone',
+                itemType: 'magnet',
                 rarity: 'common',
                 probability: 0.4,
                 minQuantity: 1,
@@ -4302,6 +4294,19 @@ exports.MOB_DROP_TABLES = {
                 itemType: 'shield',
                 rarity: 'uncommon',
                 probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    shell: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'magnet',
+                rarity: 'common',
+                probability: 0.8,
                 minQuantity: 1,
                 maxQuantity: 1
             }

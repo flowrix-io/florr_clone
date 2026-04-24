@@ -9,6 +9,7 @@ export interface PlayerModifiers {
     range?: number; // Multiplier for petal orbit range (e.g., 1.2 = +20% range)
     rotationSpeed?: number; // Multiplier for global petal rotation speed (e.g., 1.5 = +50% rotation speed)
     playerRadius?: number; // Multiplier for the flower's radius/size (e.g., 1.25 = +25% radius, affecting visuals and hitbox)
+    magnetism?: number; // Additive pixels added to the item pickup radius (e.g., 50 = +50px pickup range)
 }
 
 export interface PetalStats {
@@ -1632,6 +1633,22 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         playerModifiers: {playerRadius: 1.1},
         isAdminPetal: false
     },
+    magnet: {
+        name: "Magnet",
+        damage: 1,
+        health: 5,
+        size: 1.0,
+        cooldown: 2000,
+        description: "Has two poles, which attract mob drops",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<rect x="12.5" y="0" width="7" height="16" fill="#346bd1" stroke="#2653a6" stroke-width="1"/>
+<rect x="12.5" y="16" width="7" height="16" fill="#b83a2c" stroke="#942f24" stroke-width="1"/>
+</svg>`,
+        playerModifiers: {magnetism: 500},
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
@@ -2038,7 +2055,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         // For modifiers, we can either:
         // 1. Use override if provided (for rarity-specific scaling) - overrides are NOT scaled
         // 2. Scale base modifiers by rarity multiplier
-        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined) {
+        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined || overrideModifiers.magnetism !== undefined) {
             // Use override modifiers directly (not scaled, as they're already rarity-specific)
             playerModifiers = {
                 damage: overrideModifiers.damage ?? baseModifiers.damage,
@@ -2046,9 +2063,10 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
                 speed: overrideModifiers.speed ?? baseModifiers.speed,
                 range: overrideModifiers.range ?? baseModifiers.range,
                 rotationSpeed: overrideModifiers.rotationSpeed ?? baseModifiers.rotationSpeed,
-                playerRadius: overrideModifiers.playerRadius ?? baseModifiers.playerRadius
+                playerRadius: overrideModifiers.playerRadius ?? baseModifiers.playerRadius,
+                magnetism: overrideModifiers.magnetism ?? baseModifiers.magnetism
             };
-        } else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined) {
+        } else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined || baseModifiers.magnetism !== undefined) {
             // Scale base modifiers by rarity multiplier
             // Formula: baseValue * (1 + (rarityIndex / 8) * 3)
             // This scales from 1x at common to 4x at unique
@@ -2070,6 +2088,9 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
                     : undefined,
                 playerRadius: baseModifiers.playerRadius !== undefined
                     ? 1 + (baseModifiers.playerRadius - 1) * modifierRarityMultiplier
+                    : undefined,
+                magnetism: baseModifiers.magnetism !== undefined
+                    ? baseModifiers.magnetism * modifierRarityMultiplier
                     : undefined
             };
         }

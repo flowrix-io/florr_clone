@@ -455,7 +455,8 @@ function calculatePlayerModifiers(player) {
         speed: 1.0,
         range: 1.0,
         rotationSpeed: 1.0,
-        playerRadius: 1.0
+        playerRadius: 1.0,
+        magnetism: 0
     };
     if (!player.loadout)
         return modifiers;
@@ -486,6 +487,9 @@ function calculatePlayerModifiers(player) {
         if (petalModifiers.playerRadius !== undefined && modifiers.playerRadius !== undefined) {
             modifiers.playerRadius *= petalModifiers.playerRadius;
         }
+        if (petalModifiers.magnetism !== undefined && modifiers.magnetism !== undefined) {
+            modifiers.magnetism += petalModifiers.magnetism;
+        }
     }
     return modifiers;
 }
@@ -510,6 +514,7 @@ function recalculatePlayerStats(player, io) {
         : Math.round(baseMaxHealth * healthMultiplier * (petalModifiers.maxHealth ?? 1.0));
     player.damage = Math.round(baseDamage * damageMultiplier * (petalModifiers.damage ?? 1.0));
     player.sizeMultiplier = petalModifiers.playerRadius ?? 1.0;
+    player.magnetism = petalModifiers.magnetism ?? 0;
     // Scale current health proportionally if maxHealth changed
     if (oldMaxHealth > 0 && oldMaxHealth !== newMaxHealth) {
         // Calculate health percentage (0.0 to 1.0)

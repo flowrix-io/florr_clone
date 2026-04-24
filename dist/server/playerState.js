@@ -1491,7 +1491,7 @@ function updatePlayerState(player, deltaTime, deps) {
     }
     // Check for item collisions (independent of enemy collisions)
     // Optimize: use squared distance comparison to avoid Math.sqrt
-    const pickupSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+    const pickupSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0) + (player.magnetism ?? 0);
     const pickupRadiusSquared = pickupSize * pickupSize;
     for (let i = gameState_1.items.length - 1; i >= 0; i--) {
         const item = gameState_1.items[i];

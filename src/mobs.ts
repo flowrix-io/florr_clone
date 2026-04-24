@@ -3764,15 +3764,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         drops: [
             {
                 type: 'petal',
-                itemType: 'bone',
-                rarity: 'uncommon',
-                probability: 0.5,
-                minQuantity: 1,
-                maxQuantity: 1
-            },
-            {
-                type: 'petal',
-                itemType: 'bone',
+                itemType: 'magnet',
                 rarity: 'common',
                 probability: 0.4,
                 minQuantity: 1,
@@ -4452,6 +4444,19 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 itemType: 'shield',
                 rarity: 'uncommon',
                 probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    shell: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'magnet',
+                rarity: 'common',
+                probability: 0.8,
                 minQuantity: 1,
                 maxQuantity: 1
             }
