@@ -547,7 +547,36 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
                 speed: 0.6
             }
         }
-    }
+    },
+    air: {
+        uncommon: {
+            playerModifiers: {playerRadius: 1.2},
+        },
+        rare: {
+            playerModifiers: {playerRadius: 1.6},
+        },
+        epic: {
+            playerModifiers: {playerRadius: 1.8},
+        },
+        legendary: {
+            playerModifiers: {playerRadius: 2.0},
+        },
+        mythic: {
+            playerModifiers: {playerRadius: 2.2},
+        },
+        ultra: {
+            playerModifiers: {playerRadius: 2.4},
+        },
+        super: {
+            playerModifiers: {playerRadius: 2.6},
+        },
+        unique: {
+            playerModifiers: {playerRadius: 2.8},
+        },
+        apex: {
+            playerModifiers: {playerRadius: 3.0},
+        }
+    },
 };
 
 // Base petal configurations - only common rarity stats
@@ -1572,7 +1601,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         }
     },
     soil: {
-        name: "Soil Petal",
+        name: "Soil",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -1587,6 +1616,20 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
            stroke-width="1"/>
 </svg>`,
         playerModifiers: { maxHealth: 1.1, playerRadius: 1.05, speed: 0.95 },
+        isAdminPetal: false
+    },
+    air: {
+        name: "Air",
+        damage: 0,
+        health: 0,
+        size: 1.0,
+        cooldown: 1000,
+        description: "Its just nothing, but inflates you",
+        color: "#000000",
+        count: 0,
+        image: `<svg width="32" height="32" viewBox="-16 -16 64 64" xmlns="http://www.w3.org/2000/svg">
+</svg>`,
+        playerModifiers: {playerRadius: 1.1},
         isAdminPetal: false
     },
     sparkle: {
