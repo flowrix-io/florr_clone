@@ -3998,7 +3998,7 @@ function updateMobProjectiles(deltaTimeMs) {
                 const dx = player.x - projectile.x;
                 const dy = player.y - projectile.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
-                const hitRadius = constants_2.PLAYER_SIZE / 2 + halfSize;
+                const hitRadius = (constants_2.PLAYER_SIZE / 2) * (player.sizeMultiplier ?? 1.0) + halfSize;
                 if (distance < hitRadius) {
                     // Calculate knockback direction
                     let knockbackX = 0;
@@ -4496,6 +4496,7 @@ function start_loop() {
                 mouth,
                 inPvpArena: !!p.inPvpArena,
                 pvpScore: p.pvpScore || 0,
+                sizeMultiplier: p.sizeMultiplier ?? 1.0,
             };
         };
         // Helper function to create optimized enemy data

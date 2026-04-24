@@ -80,6 +80,7 @@ export interface Player {
   guildName?: string;      // 5-char alphanumeric guild name — rendered as [NAME] under the health bar
   inPvpArena?: boolean;    // True when this player is currently inside the PVP arena
   pvpScore?: number;       // PVP arena score (resets when leaving the arena)
+  sizeMultiplier?: number; // Multiplier applied to the flower's radius/hitbox (from equipped petal playerRadius modifiers)
 }
 export interface PlayerProgress {
   totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
@@ -168,4 +169,5 @@ export interface ServerPlayer {
   regularInventory?: PlayerInventory;
   regularLoadout?: (Item | null)[];
   lastDamagedByPlayerId?: string; // ID of the most recent player to damage this player (for PVP kill credit)
+  sizeMultiplier?: number; // Multiplier applied to the flower's radius/hitbox (from equipped petal playerRadius modifiers)
 }

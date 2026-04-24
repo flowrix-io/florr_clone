@@ -15,6 +15,9 @@ function getThirdEyeRarity(player) {
 core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension = 1.0, enemies = new Map()) {
     this.ctx.save();
     this.ctx.translate(player.x, player.y);
+    const sizeMultiplier = player.sizeMultiplier ?? 1.0;
+    const flowerRadius = 25 * sizeMultiplier;
+    const hitboxSize = core_1.PLAYER_SIZE * sizeMultiplier;
     // Draw hitbox if enabled
     if (this.showHitboxes) {
         this.ctx.save();
@@ -22,7 +25,7 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
         this.ctx.lineWidth = 2;
         this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
         this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
-        this.ctx.strokeRect(-core_1.PLAYER_SIZE / 2, -core_1.PLAYER_SIZE / 2, core_1.PLAYER_SIZE, core_1.PLAYER_SIZE);
+        this.ctx.strokeRect(-hitboxSize / 2, -hitboxSize / 2, hitboxSize, hitboxSize);
         this.ctx.restore();
     }
     // Draw player name and health bar
@@ -46,7 +49,7 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
         this.playerEye.y += (targetEye.y - this.playerEye.y) * lerpFactor;
         this.ctx.save();
         this.drawFlower({
-            radius: 25,
+            radius: flowerRadius,
             color: player.flowerColor || '#FFE763',
             faceFlags: player.faceFlags || 0,
             equipFlags: player.equipFlags || 0,
@@ -77,7 +80,7 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
         player.eye.y += (player.targetEye.y - player.eye.y) * lerpFactor;
         this.ctx.save();
         this.drawFlower({
-            radius: 25,
+            radius: flowerRadius,
             color: player.flowerColor || '#FFE763',
             faceFlags: player.faceFlags || 0,
             equipFlags: player.equipFlags || 0,
@@ -170,7 +173,9 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
         }
     });
     keysToDelete.forEach(key => this.petalPhysicsStates.delete(key));
-    const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
+    // Keep petals a constant distance from the flower edge: scale only the body-radius portion by sizeMultiplier.
+    const playerSizeMultiplier = player.sizeMultiplier ?? 1.0;
+    const baseRadius = (60 + (core_1.PLAYER_SIZE / 2) * (playerSizeMultiplier - 1)) * petalExtension;
     const totalSlots = nextSlotIndex;
     const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0; // Evenly space petals across slots (clumped petals share a slot)
     // Calculate player range and rotation speed modifiers from equipped petals
@@ -367,9 +372,10 @@ core_1.Graphics.prototype.drawPlayerHealthBar = function (player) {
     this.ctx.globalAlpha = 1.0;
     this.ctx.shadowBlur = 0;
     this.ctx.shadowColor = 'transparent';
+    const sizeMultiplier = player.sizeMultiplier ?? 1.0;
     const healthBarWidth = 60;
     const healthBarHeight = 8;
-    const healthBarY = core_1.PLAYER_SIZE / 2 + 24;
+    const healthBarY = (core_1.PLAYER_SIZE / 2) * sizeMultiplier + 24;
     const radius = healthBarHeight / 2;
     // Draw player name above health bar, left-aligned
     this.ctx.textAlign = 'left';

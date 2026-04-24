@@ -273,7 +273,8 @@ export function isPositionInPlayerPetalRange(x: number, y: number, mobSize: numb
         
         // Calculate player's maximum petal range
         const petalExtension = player.inputs?.petalExtension || 1.0;
-        const baseRadius = 60 * petalExtension;
+        const sizeMult = player.sizeMultiplier ?? 1.0;
+        const baseRadius = (60 + (PLAYER_SIZE / 2) * (sizeMult - 1)) * petalExtension;
         
         // Find the largest petal size and range in the player's loadout
         const playerRangeMod = calculatePlayerModifiers(player).range ?? 1.0;
@@ -622,7 +623,8 @@ export function updatePlayerState(
     // Substep movement so a single fast tick can't skip past a wall.
     // Step size is bounded by half the player hitbox so collision checks
     // always sample an overlapping position against any tile in the path.
-    const MAX_STEP = PLAYER_SIZE / 2;
+    const effectivePlayerSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+    const MAX_STEP = effectivePlayerSize / 2;
     const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     const steps = Math.max(1, Math.ceil(moveDistance / MAX_STEP));
     const stepX = deltaX / steps;
@@ -633,7 +635,7 @@ export function updatePlayerState(
     for (let i = 0; i < steps; i++) {
         newX += stepX;
         newY += stepY;
-        const wallCollision = checkPlayerWallCollisions(newX, newY, PLAYER_SIZE);
+        const wallCollision = checkPlayerWallCollisions(newX, newY, effectivePlayerSize);
         newX = wallCollision.x;
         newY = wallCollision.y;
     }
@@ -645,7 +647,7 @@ export function updatePlayerState(
             continue;
         }
         
-        const collisionInfo = checkPlayerEnemyCollision(newX, newY, PLAYER_SIZE, enemy);
+        const collisionInfo = checkPlayerEnemyCollision(newX, newY, effectivePlayerSize, enemy);
         
         if (collisionInfo.collided) {
             collision = true;
@@ -870,7 +872,9 @@ export function updatePlayerState(
 
         const currentTime = Date.now();
         const petalExtension = player.inputs.petalExtension || 1.0;
-        const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
+        // Keep petals a constant distance from the flower edge: scale only the body-radius portion by sizeMultiplier.
+        const playerSizeMult = player.sizeMultiplier ?? 1.0;
+        const baseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMult - 1)) * petalExtension;
         const totalSlots = nextSlotIndex;
         const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
         const playerModifiers = calculatePlayerModifiers(player);
@@ -1662,14 +1666,15 @@ export function updatePlayerState(
             if (player.inPvpArena) {
                 const petalSizePx = 40 * effectiveSize;
                 const petalRadius = petalSizePx / 2;
-                const playerRadius = PLAYER_SIZE / 2;
-                const minDist = petalRadius + playerRadius;
-                const minDistSq = minDist * minDist;
 
                 for (const otherId in players) {
                     if (otherId === player.id) continue;
                     const other = players[otherId];
                     if (!other || other.isDead || !other.inPvpArena) continue;
+
+                    const otherPlayerRadius = (PLAYER_SIZE / 2) * (other.sizeMultiplier ?? 1.0);
+                    const minDist = petalRadius + otherPlayerRadius;
+                    const minDistSq = minDist * minDist;
 
                     const dxp = other.x - petalX;
                     const dyp = other.y - petalY;
@@ -1745,7 +1750,8 @@ export function updatePlayerState(
 
     // Check for item collisions (independent of enemy collisions)
     // Optimize: use squared distance comparison to avoid Math.sqrt
-    const pickupRadiusSquared = PLAYER_SIZE * PLAYER_SIZE;
+    const pickupSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+    const pickupRadiusSquared = pickupSize * pickupSize;
     for (let i = items.length - 1; i >= 0; i--) {
         const item = items[i];
         const dx = newX - item.x;

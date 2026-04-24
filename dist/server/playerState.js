@@ -181,7 +181,8 @@ function isPositionInPlayerPetalRange(x, y, mobSize) {
             continue;
         // Calculate player's maximum petal range
         const petalExtension = player.inputs?.petalExtension || 1.0;
-        const baseRadius = 60 * petalExtension;
+        const sizeMult = player.sizeMultiplier ?? 1.0;
+        const baseRadius = (60 + (constants_1.PLAYER_SIZE / 2) * (sizeMult - 1)) * petalExtension;
         // Find the largest petal size and range in the player's loadout
         const playerRangeMod = (0, playerManager_1.calculatePlayerModifiers)(player).range ?? 1.0;
         let maxPetalSize = 0;
@@ -486,7 +487,8 @@ function updatePlayerState(player, deltaTime, deps) {
     // Substep movement so a single fast tick can't skip past a wall.
     // Step size is bounded by half the player hitbox so collision checks
     // always sample an overlapping position against any tile in the path.
-    const MAX_STEP = constants_1.PLAYER_SIZE / 2;
+    const effectivePlayerSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+    const MAX_STEP = effectivePlayerSize / 2;
     const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     const steps = Math.max(1, Math.ceil(moveDistance / MAX_STEP));
     const stepX = deltaX / steps;
@@ -496,7 +498,7 @@ function updatePlayerState(player, deltaTime, deps) {
     for (let i = 0; i < steps; i++) {
         newX += stepX;
         newY += stepY;
-        const wallCollision = (0, physics_1.checkPlayerWallCollisions)(newX, newY, constants_1.PLAYER_SIZE);
+        const wallCollision = (0, physics_1.checkPlayerWallCollisions)(newX, newY, effectivePlayerSize);
         newX = wallCollision.x;
         newY = wallCollision.y;
     }
@@ -506,7 +508,7 @@ function updatePlayerState(player, deltaTime, deps) {
         if (enemy.ownerId) {
             continue;
         }
-        const collisionInfo = (0, physics_1.checkPlayerEnemyCollision)(newX, newY, constants_1.PLAYER_SIZE, enemy);
+        const collisionInfo = (0, physics_1.checkPlayerEnemyCollision)(newX, newY, effectivePlayerSize, enemy);
         if (collisionInfo.collided) {
             collision = true;
             // Don't interact with dead players (corpses)
@@ -713,7 +715,9 @@ function updatePlayerState(player, deltaTime, deps) {
         }
         const currentTime = Date.now();
         const petalExtension = player.inputs.petalExtension || 1.0;
-        const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
+        // Keep petals a constant distance from the flower edge: scale only the body-radius portion by sizeMultiplier.
+        const playerSizeMult = player.sizeMultiplier ?? 1.0;
+        const baseRadius = (60 + (constants_1.PLAYER_SIZE / 2) * (playerSizeMult - 1)) * petalExtension;
         const totalSlots = nextSlotIndex;
         const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
         const playerModifiers = (0, playerManager_1.calculatePlayerModifiers)(player);
@@ -1416,15 +1420,15 @@ function updatePlayerState(player, deltaTime, deps) {
             if (player.inPvpArena) {
                 const petalSizePx = 40 * effectiveSize;
                 const petalRadius = petalSizePx / 2;
-                const playerRadius = constants_1.PLAYER_SIZE / 2;
-                const minDist = petalRadius + playerRadius;
-                const minDistSq = minDist * minDist;
                 for (const otherId in constants_1.players) {
                     if (otherId === player.id)
                         continue;
                     const other = constants_1.players[otherId];
                     if (!other || other.isDead || !other.inPvpArena)
                         continue;
+                    const otherPlayerRadius = (constants_1.PLAYER_SIZE / 2) * (other.sizeMultiplier ?? 1.0);
+                    const minDist = petalRadius + otherPlayerRadius;
+                    const minDistSq = minDist * minDist;
                     const dxp = other.x - petalX;
                     const dyp = other.y - petalY;
                     const distSqP = dxp * dxp + dyp * dyp;
@@ -1487,7 +1491,8 @@ function updatePlayerState(player, deltaTime, deps) {
     }
     // Check for item collisions (independent of enemy collisions)
     // Optimize: use squared distance comparison to avoid Math.sqrt
-    const pickupRadiusSquared = constants_1.PLAYER_SIZE * constants_1.PLAYER_SIZE;
+    const pickupSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+    const pickupRadiusSquared = pickupSize * pickupSize;
     for (let i = gameState_1.items.length - 1; i >= 0; i--) {
         const item = gameState_1.items[i];
         const dx = newX - item.x;

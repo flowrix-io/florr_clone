@@ -843,7 +843,8 @@ function clampToWorld(v, margin, max) {
 // Largest distance from bot center that a petal can still strike a target
 // at, given petalExtension and this bot's equipped petals' size/range.
 function computePetalReach(bot, petalExtension) {
-    const baseRadius = 60 * petalExtension;
+    const sizeMult = bot.sizeMultiplier ?? 1.0;
+    const baseRadius = (60 + (constants_1.PLAYER_SIZE / 2) * (sizeMult - 1)) * petalExtension;
     let maxRangeMult = 1.0;
     let maxPetalHalfSize = 0;
     if (bot.loadout) {

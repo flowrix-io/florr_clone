@@ -23,6 +23,10 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
     this.ctx.save();
     this.ctx.translate(player.x, player.y);
 
+    const sizeMultiplier = player.sizeMultiplier ?? 1.0;
+    const flowerRadius = 25 * sizeMultiplier;
+    const hitboxSize = PLAYER_SIZE * sizeMultiplier;
+
     // Draw hitbox if enabled
     if (this.showHitboxes) {
         this.ctx.save();
@@ -30,7 +34,7 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
         this.ctx.lineWidth = 2;
         this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
         this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
-        this.ctx.strokeRect(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
+        this.ctx.strokeRect(-hitboxSize / 2, -hitboxSize / 2, hitboxSize, hitboxSize);
         this.ctx.restore();
     }
 
@@ -59,7 +63,7 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
 
         this.ctx.save();
         this.drawFlower({
-            radius: 25,
+            radius: flowerRadius,
             color: player.flowerColor || '#FFE763',
             faceFlags: player.faceFlags || 0,
             equipFlags: player.equipFlags || 0,
@@ -92,7 +96,7 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
 
         this.ctx.save();
         this.drawFlower({
-            radius: 25,
+            radius: flowerRadius,
             color: player.flowerColor || '#FFE763',
             faceFlags: player.faceFlags || 0,
             equipFlags: player.equipFlags || 0,
@@ -193,7 +197,9 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
         }
     });
     keysToDelete.forEach(key => this.petalPhysicsStates.delete(key));
-    const baseRadius = 60 * petalExtension; // Distance from player center, modified by extension
+    // Keep petals a constant distance from the flower edge: scale only the body-radius portion by sizeMultiplier.
+    const playerSizeMultiplier = player.sizeMultiplier ?? 1.0;
+    const baseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMultiplier - 1)) * petalExtension;
     const totalSlots = nextSlotIndex;
     const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0; // Evenly space petals across slots (clumped petals share a slot)
 
@@ -412,9 +418,10 @@ Graphics.prototype.drawPlayerHealthBar = function(this: Graphics, player: Player
     this.ctx.shadowBlur = 0;
     this.ctx.shadowColor = 'transparent';
 
+    const sizeMultiplier = player.sizeMultiplier ?? 1.0;
     const healthBarWidth = 60;
     const healthBarHeight = 8;
-    const healthBarY = PLAYER_SIZE / 2 + 24;
+    const healthBarY = (PLAYER_SIZE / 2) * sizeMultiplier + 24;
     const radius = healthBarHeight / 2;
 
     // Draw player name above health bar, left-aligned
