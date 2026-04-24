@@ -279,6 +279,22 @@ exports.CHANGELOG = [
             'Added Daily Streak',
             'Any obtained sun egg is now deleted'
         ]
+    },
+    {
+        date: 'April 22, 2026',
+        changes: [
+            'New mob: Ant Hole',
+            'New mob: Fire Ant Hole',
+        ]
+    },
+    {
+        date: 'April 23, 2026',
+        changes: [
+            'New petal: Magnet',
+            'New petal: Air',
+            'New petal: Soil',
+            'Changed Ant Hole and Fire Ant Hole drops',
+        ]
     }
 ];
 class ChangelogManager {
