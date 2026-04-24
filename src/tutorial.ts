@@ -1,5 +1,5 @@
 /**
- * Tutorial System for florr.io clone
+ * Tutorial System for flowrix.pro
  * Guides new players through basic game mechanics
  */
 
@@ -24,7 +24,7 @@ export class Tutorial {
     private readonly steps: TutorialStep[] = [
         {
             id: 'welcome',
-            title: 'Welcome to florr.io clone!',
+            title: 'Welcome to flowrix.pro!',
             description: 'Let\'s learn the basics! You\'ll learn how to move, use petals, equip items, and craft upgrades.',
             position: 'center',
             skipButton: true

@@ -2033,7 +2033,7 @@ export class TitleScreen {
         ctx.lineWidth = 6;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const titleText = 'florr.io clone';
+        const titleText = 'flowrix.pro';
         // Render connecting state, auth form, or game menu
         if (this.isConnecting) {
             this.renderConnecting(ctx, centerX, centerY);
@@ -2486,7 +2486,7 @@ export class TitleScreen {
             ctx.fillText(text, drawX, y);
         };
 
-        drawText('Florr.io Clone', 'bold 18px Ubuntu, sans-serif', '#ffffff', cy + 10, 'center');
+        drawText('Flowrix.pro', 'bold 18px Ubuntu, sans-serif', '#ffffff', cy + 10, 'center');
         cy += 30;
 
         drawText('Developers', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
@@ -2890,7 +2890,7 @@ export class TitleScreen {
         ctx.lineWidth = 6;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const titleText = 'florr.io clone';
+        const titleText = 'flowrix.pro';
         ctx.strokeText(titleText, centerX, centerY - 200);
         ctx.fillText(titleText, centerX, centerY - 200);
         ctx.restore();
