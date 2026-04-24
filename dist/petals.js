@@ -317,6 +317,71 @@ const RARITY_OVERRIDES = {
                 speed: 2.8
             }
         },
+    },
+    soil: {
+        uncommon: {
+            playerModifiers: {
+                maxHealth: 1.1,
+                playerRadius: 1.05,
+                speed: 0.95
+            }
+        },
+        rare: {
+            playerModifiers: {
+                maxHealth: 1.2,
+                playerRadius: 1.1,
+                speed: 0.9
+            }
+        },
+        epic: {
+            playerModifiers: {
+                maxHealth: 1.3,
+                playerRadius: 1.2,
+                speed: 0.85
+            }
+        },
+        legendary: {
+            playerModifiers: {
+                maxHealth: 1.4,
+                playerRadius: 1.4,
+                speed: 0.8
+            }
+        },
+        mythic: {
+            playerModifiers: {
+                maxHealth: 1.5,
+                playerRadius: 1.6,
+                speed: 0.75
+            }
+        },
+        ultra: {
+            playerModifiers: {
+                maxHealth: 1.6,
+                playerRadius: 1.8,
+                speed: 0.7
+            }
+        },
+        super: {
+            playerModifiers: {
+                maxHealth: 1.7,
+                playerRadius: 2.2,
+                speed: 0.65
+            }
+        },
+        unique: {
+            playerModifiers: {
+                maxHealth: 1.8,
+                playerRadius: 2.4,
+                speed: 0.6
+            }
+        },
+        apex: {
+            playerModifiers: {
+                maxHealth: 1.9,
+                playerRadius: 2.6,
+                speed: 0.6
+            }
+        }
     }
 };
 // Base petal configurations - only common rarity stats
@@ -1355,7 +1420,7 @@ const BASE_PETAL_CONFIGS = {
            stroke="#6b481f" 
            stroke-width="1"/>
 </svg>`,
-        playerModifiers: { maxHealth: 1.3, playerRadius: 1.2, speed: 0.8 },
+        playerModifiers: { maxHealth: 1.1, playerRadius: 1.05, speed: 0.95 },
         isAdminPetal: false
     },
     sparkle: {
