@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 386521954,
+      "totalXP": 386521955,
       "inventory": {
         "common": {
           "shield": 294,
@@ -693,7 +693,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 844,
+          "common": 845,
           "legendary": 614,
           "uncommon": 246,
           "mythic": 471,
@@ -1126,9 +1126,9 @@
           "uncommon": 1
         }
       },
-      "stars": 137495,
-      "dailyStreak": 2,
-      "lastStreakDate": "2026-04-23"
+      "stars": 137498,
+      "dailyStreak": 3,
+      "lastStreakDate": "2026-04-24"
     },
     "1g99g1gfk": {
       "totalXP": 345,
@@ -1582,7 +1582,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1776988169785
+      "lastActiveAt": 1776989893414
     },
     "dev": {
       "id": "1g99g1gfk",
