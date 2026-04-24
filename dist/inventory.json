@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 386521194,
+      "totalXP": 386521954,
       "inventory": {
         "common": {
           "shield": 294,
@@ -18,12 +18,12 @@
           "petal_iris": 16,
           "petal_poison_cactus": 18,
           "petal_lightning": 65,
-          "petal_missile": 231,
+          "petal_missile": 232,
           "petal_jelly": 47,
           "petal_leaf": 25,
           "petal_cutter": 2,
           "petal_wing": 318,
-          "petal_rose": 191,
+          "petal_rose": 192,
           "health_potion": 63,
           "petal_basic": 76,
           "petal_square": 31,
@@ -35,7 +35,7 @@
           "petal_ladybug_egg": 149,
           "petal_soldier_ant_egg": 209,
           "petal_dark_ladybug_egg": 147,
-          "petal_bee_egg": 157,
+          "petal_bee_egg": 158,
           "petal_fly_egg": 94,
           "petal_bubble_egg": 38,
           "petal_rock_egg": 145,
@@ -228,7 +228,7 @@
           "petal_blood_leaf": 9,
           "petal_dandelion_egg": 74,
           "petal_dark_ladybug_egg": 76,
-          "petal_ladybug_egg": 64,
+          "petal_ladybug_egg": 65,
           "petal_bee_egg": 82,
           "petal_hornet_egg": 87,
           "petal_soldier_ant_egg": 113,
@@ -434,7 +434,7 @@
         "rare": {
           "petal_rock": 34,
           "petal_rose": 68,
-          "petal_light": 55,
+          "petal_light": 56,
           "health_potion": 40,
           "shield": 87,
           "petal_sand": 8,
@@ -693,11 +693,11 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 841,
+          "common": 844,
           "legendary": 614,
           "uncommon": 246,
           "mythic": 471,
-          "rare": 124,
+          "rare": 125,
           "ultra": 23,
           "epic": 222,
           "super": 16,
@@ -706,11 +706,11 @@
         "soldier_ant": {
           "epic": 235,
           "legendary": 926,
-          "common": 1115,
-          "rare": 365,
+          "common": 1119,
+          "rare": 366,
           "mythic": 915,
           "ultra": 35,
-          "uncommon": 474,
+          "uncommon": 476,
           "super": 14,
           "unique": 4,
           "apex": 2
@@ -718,7 +718,7 @@
         "rock": {
           "legendary": 439,
           "ultra": 12,
-          "common": 786,
+          "common": 787,
           "mythic": 396,
           "epic": 96,
           "rare": 113,
@@ -727,7 +727,7 @@
           "unique": 3
         },
         "dark_ladybug": {
-          "common": 1000,
+          "common": 1001,
           "legendary": 432,
           "mythic": 396,
           "uncommon": 287,
@@ -741,7 +741,7 @@
           "common": 1070,
           "legendary": 821,
           "mythic": 689,
-          "uncommon": 366,
+          "uncommon": 368,
           "rare": 206,
           "epic": 172,
           "ultra": 26,
@@ -750,20 +750,20 @@
         },
         "dandelion": {
           "legendary": 477,
-          "common": 735,
+          "common": 736,
           "mythic": 379,
           "uncommon": 212,
           "unique": 6,
           "ultra": 26,
-          "rare": 125,
+          "rare": 126,
           "epic": 101,
           "super": 10
         },
         "bee": {
-          "common": 868,
+          "common": 869,
           "epic": 170,
           "mythic": 455,
-          "uncommon": 243,
+          "uncommon": 244,
           "legendary": 514,
           "rare": 142,
           "ultra": 35,
@@ -1066,7 +1066,7 @@
           "legendary": 1139,
           "mythic": 712,
           "epic": 252,
-          "rare": 209,
+          "rare": 210,
           "ultra": 19
         },
         "desert_centipede_body": {
@@ -1084,7 +1084,7 @@
           "rare": 2
         },
         "worker_ant": {
-          "uncommon": 14,
+          "uncommon": 15,
           "rare": 25,
           "epic": 31,
           "legendary": 3,
@@ -1582,7 +1582,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1776987911664
+      "lastActiveAt": 1776988169785
     },
     "dev": {
       "id": "1g99g1gfk",
