@@ -2565,13 +2565,17 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         visual_scale: 1.0,
         speed: 5.0,
         cooldown: 2000,
-        description: "It's a roach",
+        description: "If you hit it, it will hit you back",
         color: "#914911",
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <ellipse cx="21" cy="16" rx="11" ry="8" fill="#a33c00" stroke-width="2" stroke="#732a00"/>
+<ellipse cx="20" cy="19" rx="2" ry="3" fill="#732a00" stroke-width="0" transform="rotate(45, 20 19)"/>
+<ellipse cx="20" cy="13" rx="2" ry="3" fill="#732a00" stroke-width="0" transform="rotate(-45, 20 13)"/>
 <circle cx="12" cy="16" r="5" fill="#3b1600"/>
 <path d="M 9 14 A 12 12 0 0 1 5 10" stroke="#333333" stroke-linecap="round"/>
 <path d="M 9 18 A 12 12 0 0 0 5 22" stroke="#333333" stroke-linecap="round"/>
+<path d="M 23 19 A 12 12 0 0 0 27 18" stroke="#732a00" stroke-linecap="round"/>
+<path d="M 23 13 A 12 12 0 0 1 27 14" stroke="#732a00" stroke-linecap="round"/>
 </svg>`,
         ai_type: 'neutral',
         range: 300,
