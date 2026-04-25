@@ -6,7 +6,6 @@ import path from 'path';
 import fs from 'fs';
 import https from 'https';
 import http from 'http';
-import * as crypto from 'crypto';
 import { database, Notification, ApiKey } from './database';
 import { USE_HTTPS, SERVER_PROTOCOL, PVP_ARENA_SPAWN_X, PVP_ARENA_SPAWN_Y } from './constants';
 
@@ -2744,7 +2743,12 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 }
                 const spaceIdx = message.indexOf(' ');
                 const label = spaceIdx === -1 ? socket.username : message.substring(spaceIdx + 1).trim() || socket.username;
-                const key = `sk_${crypto.randomBytes(24).toString('hex')}`;
+                // 64 random alphanumeric chars after the sk_ prefix.
+                let body = '';
+                while (body.length < 64) {
+                    body += Math.random().toString(36).substring(2);
+                }
+                const key = `sk_${body.substring(0, 64)}`;
                 const entry: ApiKey = {
                     key,
                     username: socket.username,

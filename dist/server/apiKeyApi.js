@@ -13,35 +13,11 @@
 // Spawn/defeat events are kept in an in-memory ring buffer; the existing
 // emit sites in enemySpawner.ts and utils.ts call recordBossEvent() so the
 // API can return them on demand.
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.recordBossEvent = recordBossEvent;
 exports.getRecentBossEvents = getRecentBossEvents;
 exports.stripHtml = stripHtml;
 exports.registerApiKeyRoutes = registerApiKeyRoutes;
-const crypto = __importStar(require("crypto"));
 const database_1 = require("../database");
 const BOSS_EVENT_BUFFER_SIZE = 500;
 const bossEventBuffer = [];
@@ -171,7 +147,7 @@ function registerApiKeyRoutes(app, deps) {
             return res.status(400).json({ error: '"message" must be a non-empty string' });
         }
         const notification = {
-            id: `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+            id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
             type,
             message: message.trim(),
             timestamp: Date.now()

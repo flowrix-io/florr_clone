@@ -14,7 +14,6 @@
 // API can return them on demand.
 
 import type { Express, Request, Response, NextFunction } from 'express';
-import * as crypto from 'crypto';
 import { database, ApiKey, Notification, RedeemedCode } from '../database';
 
 export interface BossEvent {
@@ -178,7 +177,7 @@ export function registerApiKeyRoutes(app: Express, deps: ApiKeyApiDeps): void {
             return res.status(400).json({ error: '"message" must be a non-empty string' });
         }
         const notification: Notification = {
-            id: `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+            id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
             type,
             message: message.trim(),
             timestamp: Date.now()
