@@ -72,38 +72,14 @@ function computeMobDrops(mobType: string, mobRarity: string): DropEntry[] {
     const isCommon = mobRarity === 'common';
     const ultraMultiplier = mobRarity === 'ultra' ? 20 : 1;
 
-    // For non-common mobs, combine common+uncommon variants of the same item
-    // so they don't render as duplicate cards.
+    // Drops listed at common/uncommon rarity in the table are "special"
+    // common-mob drops — they only apply when the mob itself is common. For
+    // any non-common mob, filter them out entirely so they don't appear in
+    // the gallery tooltip.
     type DropDef = (typeof dropTable.drops)[number];
-    let processedDrops: DropDef[];
-    if (!isCommon) {
-        const groups = new Map<string, DropDef[]>();
-        for (const drop of dropTable.drops) {
-            const key = `${drop.type}_${drop.itemType}`;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key)!.push(drop);
-        }
-        processedDrops = [];
-        for (const group of groups.values()) {
-            const c = group.find((d) => d.rarity === 'common');
-            const u = group.find((d) => d.rarity === 'uncommon');
-            const others = group.filter((d) => d.rarity !== 'common' && d.rarity !== 'uncommon');
-            if (c && u) {
-                processedDrops.push({
-                    ...u,
-                    probability: c.probability + u.probability,
-                    minQuantity: Math.min(c.minQuantity || 1, u.minQuantity || 1),
-                    maxQuantity: Math.max(c.maxQuantity || 1, u.maxQuantity || 1),
-                    rarity: 'uncommon',
-                });
-                processedDrops.push(...others);
-            } else {
-                processedDrops.push(...group);
-            }
-        }
-    } else {
-        processedDrops = dropTable.drops;
-    }
+    const processedDrops: DropDef[] = isCommon
+        ? dropTable.drops.slice()
+        : dropTable.drops.filter((d) => d.rarity !== 'common' && d.rarity !== 'uncommon');
 
     const out: DropEntry[] = [];
 
