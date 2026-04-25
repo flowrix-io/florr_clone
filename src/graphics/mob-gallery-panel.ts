@@ -29,9 +29,19 @@ interface CellRect {
     stats: MobStats | null;
 }
 
-const PANEL_PAD = 16;
-const TITLE_HEIGHT = 32;
-const HEADER_HEIGHT = 26;     // first row: rarity column headers
+// Layout constants chosen to mirror the legacy DOM:
+//   .mob-gallery-panel { padding: 20px; border-radius: 3px; ... }
+//   h2 'Mob Gallery'   { margin: 0 0 20px 0; font-size: 24px; ... }
+//   .mob-gallery-grid  { display: flex; flex-direction: column; gap: 5px; }
+//   .mob-gallery-row   { display: grid; grid-template-columns: repeat(N,1fr); gap: 0; }
+//   .mob-gallery-cell  { height: 60px; border-radius: 5px; ... }
+const PANEL_PAD = 20;
+const PANEL_BG = '#e6d64c';
+const PANEL_BORDER = '#a89d36';
+const PANEL_BORDER_W = 4;
+const PANEL_RADIUS = 3;
+const TITLE_HEIGHT = 30;
+const TITLE_MARGIN_BOTTOM = 20;
 const CELL_HEIGHT = 60;
 const ROW_GAP = 5;
 const SCROLLBAR_WIDTH = 12;
@@ -158,6 +168,11 @@ export class CanvasMobGalleryPanel {
         return { dpr, cssW: rect.width, cssH: rect.height };
     }
 
+    /** Y at which the scrollable content area starts (just below the title). */
+    private contentTop(): number {
+        return PANEL_PAD + TITLE_HEIGHT + TITLE_MARGIN_BOTTOM;
+    }
+
     private layout(cssW: number) {
         // Mirror the legacy DOM grid layout: each row is a mob type, columns
         // are rarities (sans apex), and each cell stretches to fill the row
@@ -167,7 +182,8 @@ export class CanvasMobGalleryPanel {
         const usable = cssW - PANEL_PAD * 2 - SCROLLBAR_WIDTH - 4;
         const cellW = Math.floor(usable / this.rarities.length);
         const startX = PANEL_PAD;
-        let cursorY = TITLE_HEIGHT + HEADER_HEIGHT + PANEL_PAD;
+        const top = this.contentTop();
+        let cursorY = top;
 
         for (const mobType of types) {
             const validRarities = new Set(getMobRarities(mobType));
@@ -191,7 +207,7 @@ export class CanvasMobGalleryPanel {
             }
             cursorY += CELL_HEIGHT + ROW_GAP;
         }
-        this.contentHeight = cursorY - (TITLE_HEIGHT + HEADER_HEIGHT + PANEL_PAD);
+        this.contentHeight = cursorY - top;
     }
 
     private getMobImage(stats: MobStats): HTMLImageElement | null {
@@ -214,31 +230,30 @@ export class CanvasMobGalleryPanel {
         const ctx = this.ctx;
         ctx.save();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        // Clear backing buffer.
         ctx.clearRect(0, 0, cssW, cssH);
 
-        // Panel chrome.
-        ctx.fillStyle = '#e6d64c';
-        ctx.fillRect(0, 0, cssW, cssH);
-        ctx.strokeStyle = '#a89d36';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(2, 2, cssW - 4, cssH - 4);
+        // Panel chrome — bg + 4px border with 3px corner radius. Two-fill
+        // technique to keep the outer corner radius exactly at 3 (a stroked
+        // path centers the line on the path, so a 4px stroke would put the
+        // outer corner at 5).
+        ctx.fillStyle = PANEL_BORDER;
+        roundedRect(ctx, 0, 0, cssW, cssH, PANEL_RADIUS);
+        ctx.fill();
+        ctx.fillStyle = PANEL_BG;
+        roundedRect(ctx, PANEL_BORDER_W, PANEL_BORDER_W, cssW - PANEL_BORDER_W * 2, cssH - PANEL_BORDER_W * 2, 0);
+        ctx.fill();
 
-        // Title.
-        ctx.font = 'bold 22px Ubuntu, sans-serif';
+        // Title — plain white, centered, 24px to match the legacy h2.
+        ctx.font = 'bold 24px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#fff';
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 3;
-        ctx.lineJoin = 'round';
-        ctx.strokeText('Mob Gallery', cssW / 2, TITLE_HEIGHT / 2 + PANEL_PAD / 2);
-        ctx.fillText('Mob Gallery', cssW / 2, TITLE_HEIGHT / 2 + PANEL_PAD / 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Mob Gallery', cssW / 2, PANEL_PAD + TITLE_HEIGHT / 2);
 
-        // Close button (top-right).
+        // Close button (top-right). Sits inside the panel padding.
         const closeSize = 26;
-        const cx = cssW - closeSize - PANEL_PAD / 2;
-        const cy = PANEL_PAD / 2;
+        const cx = cssW - PANEL_PAD - closeSize;
+        const cy = PANEL_PAD + (TITLE_HEIGHT - closeSize) / 2;
         this.closeBtnRect = { x: cx, y: cy, w: closeSize, h: closeSize };
         ctx.fillStyle = this.closeBtnHovered ? '#ff6677' : '#cc4455';
         roundedRect(ctx, cx, cy, closeSize, closeSize, 4);
@@ -256,8 +271,8 @@ export class CanvasMobGalleryPanel {
         // Compute layout in CSS pixels.
         this.layout(cssW);
 
-        // Clip the scrollable region.
-        const contentY = TITLE_HEIGHT + PANEL_PAD;
+        // Clip the scrollable region (everything below the title).
+        const contentY = this.contentTop();
         const contentH = cssH - contentY - PANEL_PAD;
         ctx.save();
         ctx.beginPath();
@@ -265,26 +280,8 @@ export class CanvasMobGalleryPanel {
         ctx.clip();
         ctx.translate(0, -this.scrollY);
 
-        // Rarity column headers.
-        const usable = cssW - PANEL_PAD * 2 - SCROLLBAR_WIDTH - 4;
-        const cellW = Math.floor(usable / this.rarities.length);
-        const startX = PANEL_PAD;
-        ctx.font = 'bold 13px Ubuntu, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.lineWidth = 2;
-        for (let i = 0; i < this.rarities.length; i++) {
-            const rarity = this.rarities[i];
-            const x = startX + i * cellW;
-            const headerY = contentY + HEADER_HEIGHT / 2;
-            ctx.fillStyle = ITEM_RARITY_COLORS[rarity] || '#fff';
-            ctx.strokeStyle = '#000';
-            const label = rarity.charAt(0).toUpperCase() + rarity.slice(1);
-            ctx.strokeText(label, x + cellW / 2, headerY);
-            ctx.fillText(label, x + cellW / 2, headerY);
-        }
-
-        // Cells.
+        // Cells. (No rarity-header row — the legacy DOM didn't have one;
+        // each cell carries its own mob name and is colored by rarity.)
         for (let i = 0; i < this.cellRects.length; i++) {
             const c = this.cellRects[i];
             const isHover = i === this.hoverIndex;
@@ -359,15 +356,15 @@ export class CanvasMobGalleryPanel {
         ctx.restore(); // unclip / unscroll
 
         // Scrollbar (over the chrome, not the clipped content).
-        const maxScroll = Math.max(0, this.contentHeight - (contentH - HEADER_HEIGHT));
+        const maxScroll = Math.max(0, this.contentHeight - contentH);
         if (maxScroll > 0) {
             const trackX = cssW - PANEL_PAD - SCROLLBAR_WIDTH;
-            const trackY = contentY + HEADER_HEIGHT;
-            const trackH = contentH - HEADER_HEIGHT;
+            const trackY = contentY;
+            const trackH = contentH;
             ctx.fillStyle = 'rgba(0,0,0,0.15)';
             roundedRect(ctx, trackX, trackY, SCROLLBAR_WIDTH, trackH, 4);
             ctx.fill();
-            const thumbH = Math.max(20, trackH * (trackH / (this.contentHeight + HEADER_HEIGHT)));
+            const thumbH = Math.max(20, trackH * (trackH / this.contentHeight));
             const thumbY = trackY + (this.scrollY / maxScroll) * (trackH - thumbH);
             ctx.fillStyle = '#a89d36';
             roundedRect(ctx, trackX, thumbY, SCROLLBAR_WIDTH, thumbH, 4);
@@ -420,7 +417,7 @@ export class CanvasMobGalleryPanel {
         let ty = c.y - this.scrollY;               // adjust for scroll
         if (tx + w > cssW - 4) tx = c.x - w - 8;
         if (ty + h > cssH - 4) ty = cssH - h - 4;
-        if (ty < TITLE_HEIGHT + PANEL_PAD) ty = TITLE_HEIGHT + PANEL_PAD;
+        if (ty < this.contentTop()) ty = this.contentTop();
 
         ctx.fillStyle = 'rgba(0,0,0,0.95)';
         ctx.strokeStyle = rarityColor;
@@ -468,18 +465,16 @@ export class CanvasMobGalleryPanel {
     private handleMouseMove = (e: MouseEvent) => {
         const { x, y } = this.toLocal(e);
         this.closeBtnHovered = pointInRect(x, y, this.closeBtnRect);
+        const cssH = this.canvas.getBoundingClientRect().height;
+        const contentY = this.contentTop();
+        const contentH = cssH - contentY - PANEL_PAD;
         if (this.isScrollDragging) {
-            const cssH = this.canvas.getBoundingClientRect().height;
-            const contentH = cssH - (TITLE_HEIGHT + PANEL_PAD) - PANEL_PAD;
-            const trackH = contentH - HEADER_HEIGHT;
-            const maxScroll = Math.max(0, this.contentHeight - (contentH - HEADER_HEIGHT));
+            const trackH = contentH;
+            const maxScroll = Math.max(0, this.contentHeight - contentH);
             const dy = y - this.dragStartY;
             this.scrollY = Math.max(0, Math.min(maxScroll, this.dragStartScroll + dy * (maxScroll / Math.max(1, trackH))));
         } else {
             // Only hit-test cells inside the scrollable content.
-            const contentY = TITLE_HEIGHT + PANEL_PAD;
-            const cssH = this.canvas.getBoundingClientRect().height;
-            const contentH = cssH - contentY - PANEL_PAD;
             if (y < contentY || y > contentY + contentH) {
                 this.hoverIndex = -1;
             } else {
@@ -506,13 +501,13 @@ export class CanvasMobGalleryPanel {
         // Scrollbar drag.
         const cssW = this.canvas.getBoundingClientRect().width;
         const cssH = this.canvas.getBoundingClientRect().height;
-        const contentY = TITLE_HEIGHT + PANEL_PAD;
+        const contentY = this.contentTop();
         const contentH = cssH - contentY - PANEL_PAD;
-        const maxScroll = Math.max(0, this.contentHeight - (contentH - HEADER_HEIGHT));
+        const maxScroll = Math.max(0, this.contentHeight - contentH);
         if (maxScroll > 0) {
             const trackX = cssW - PANEL_PAD - SCROLLBAR_WIDTH;
-            const trackY = contentY + HEADER_HEIGHT;
-            const trackH = contentH - HEADER_HEIGHT;
+            const trackY = contentY;
+            const trackH = contentH;
             if (x >= trackX && x <= trackX + SCROLLBAR_WIDTH && y >= trackY && y <= trackY + trackH) {
                 e.preventDefault();
                 this.isScrollDragging = true;
@@ -526,9 +521,9 @@ export class CanvasMobGalleryPanel {
     private handleWheel = (e: WheelEvent) => {
         e.preventDefault();
         const cssH = this.canvas.getBoundingClientRect().height;
-        const contentY = TITLE_HEIGHT + PANEL_PAD;
+        const contentY = this.contentTop();
         const contentH = cssH - contentY - PANEL_PAD;
-        const maxScroll = Math.max(0, this.contentHeight - (contentH - HEADER_HEIGHT));
+        const maxScroll = Math.max(0, this.contentHeight - contentH);
         this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY + e.deltaY));
     };
 }
