@@ -542,6 +542,7 @@ export class CanvasMobGalleryPanel {
         const bodyFont = '12px Ubuntu, sans-serif';
         const headerFont = 'bold 12px Ubuntu, sans-serif';
         const probFont = 'bold 10px Ubuntu, sans-serif';
+        const colHeaderFont = 'bold 10px Ubuntu, sans-serif';
 
         lines.push({
             text: `${c.rarity.charAt(0).toUpperCase() + c.rarity.slice(1)} ${stats.name || c.mobType}`,
@@ -558,7 +559,29 @@ export class CanvasMobGalleryPanel {
         lines.push({ text: `Speed: ${stats.speed.toFixed(1)}`, color: '#2196F3', font: bodyFont });
         lines.push({ text: `XP: ${abbreviateNumber(stats.xp)}`, color: '#FF9800', font: bodyFont });
 
-        const drops = computeMobDrops(c.mobType, c.rarity);
+        // === Build drops table: rows = drop types, columns = rarities ===
+        const flatDrops = computeMobDrops(c.mobType, c.rarity);
+        // One row per unique (type, itemType); cells keyed by rarity.
+        const rowKeys: string[] = [];
+        const rowMeta: Record<string, { type: string; itemType: string }> = {};
+        const cells: Record<string, Record<string, DropEntry>> = {};
+        const usedRarities = new Set<Rarity>();
+        for (const d of flatDrops) {
+            const key = `${d.type}_${d.itemType}`;
+            if (!(key in cells)) {
+                rowKeys.push(key);
+                rowMeta[key] = { type: d.type, itemType: d.itemType };
+                cells[key] = {};
+            }
+            // Sum probabilities if multiple branches hit the same (item, rarity).
+            const existing = cells[key][d.rarity];
+            cells[key][d.rarity] = existing
+                ? { ...existing, probability: existing.probability + d.probability }
+                : d;
+            usedRarities.add(d.rarity);
+        }
+        const colRarities = DROP_RARITY_ORDER.filter((r) => usedRarities.has(r));
+        const hasDrops = rowKeys.length > 0 && colRarities.length > 0;
 
         // === Layout constants ===
         const padX = 10;
@@ -566,14 +589,14 @@ export class CanvasMobGalleryPanel {
         const lineH = 16;
         const titleH = 20;
         const dropsHeaderH = 20;
-        const cardSize = 32;          // colored square holding the item icon
-        const cardLabelH = 14;        // probability text below card
-        const cardCellW = 60;         // per-card slot width (gives room for "100.00%")
-        const cardCellH = cardSize + 4 + cardLabelH;
-        const cardGapX = 4;
-        const cardGapY = 6;
+        const colHeaderH = 16;
+        const cardSize = 32;
+        const cardLabelH = 14;
+        const cellW = 56;            // per-rarity-column slot width
+        const rowH = cardSize + 4 + cardLabelH; // card + gap + probability label
+        const rowGapY = 4;
 
-        // === Tooltip width — text body width + cards-per-row width ===
+        // === Tooltip width = max(text body, drops table) + padding ===
         let textW = 0;
         for (const ln of lines) {
             if (!ln.text) continue;
@@ -581,19 +604,15 @@ export class CanvasMobGalleryPanel {
             const w = ctx.measureText(ln.text).width;
             if (w > textW) textW = w;
         }
-        // Aim for 4 cards per row. Tooltip width = max(textW, 4 cards wide).
-        const cardsPerRow = Math.max(1, Math.min(4, drops.length));
-        const cardsRowW = cardsPerRow * cardCellW + (cardsPerRow - 1) * cardGapX;
-        const w = Math.max(textW, cardsRowW) + padX * 2;
+        const tableW = colRarities.length * cellW;
+        const w = Math.max(textW, tableW) + padX * 2;
 
-        // === Tooltip height — text + drops grid ===
+        // === Tooltip height = text + drops header + col header + rows ===
         let textH = padY * 2;
         for (const ln of lines) textH += ln.font === titleFont ? titleH : lineH;
-        const cols = Math.max(1, Math.min(cardsPerRow, drops.length));
-        const rows = drops.length === 0 ? 0 : Math.ceil(drops.length / cols);
-        const dropsH = drops.length === 0
-            ? 0
-            : dropsHeaderH + rows * cardCellH + Math.max(0, rows - 1) * cardGapY + 4;
+        const dropsH = hasDrops
+            ? dropsHeaderH + colHeaderH + rowKeys.length * rowH + Math.max(0, rowKeys.length - 1) * rowGapY + 4
+            : 0;
         const h = textH + dropsH;
 
         // Position next to the cell, clamped to canvas bounds.
@@ -625,26 +644,76 @@ export class CanvasMobGalleryPanel {
             cy += lh;
         }
 
-        // === Render drops grid ===
-        if (drops.length > 0) {
-            // 'Drops:' header — gold like the legacy DOM tooltip.
-            ctx.font = headerFont;
-            ctx.fillStyle = '#FFD700';
-            ctx.fillText('Drops:', tx + padX, cy);
-            cy += dropsHeaderH;
+        // === Render drops table ===
+        if (!hasDrops) return;
+        // 'Drops:' header (gold).
+        ctx.font = headerFont;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText('Drops:', tx + padX, cy);
+        cy += dropsHeaderH;
 
-            // Center the cards row inside the tooltip.
-            const totalRowW = cols * cardCellW + (cols - 1) * cardGapX;
-            const startX = tx + (w - totalRowW) / 2;
-            for (let i = 0; i < drops.length; i++) {
-                const d = drops[i];
-                const r = Math.floor(i / cols);
-                const c2 = i % cols;
-                const cx = startX + c2 * (cardCellW + cardGapX);
-                const cy2 = cy + r * (cardCellH + cardGapY);
-                this.drawDropCard(ctx, cx, cy2, cardCellW, cardSize, d, probFont);
+        // Center the table horizontally inside the tooltip.
+        const tableStartX = tx + (w - tableW) / 2;
+
+        // Column header row: rarity labels colored by rarity.
+        ctx.font = colHeaderFont;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
+        for (let i = 0; i < colRarities.length; i++) {
+            const r = colRarities[i];
+            const col = ITEM_RARITY_COLORS[r] || '#fff';
+            const cx = tableStartX + i * cellW + cellW / 2;
+            const label = r.charAt(0).toUpperCase() + r.slice(1);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#000';
+            ctx.strokeText(label, cx, cy + colHeaderH / 2);
+            ctx.fillStyle = col;
+            ctx.fillText(label, cx, cy + colHeaderH / 2);
+        }
+        cy += colHeaderH;
+
+        // One row per drop type, one cell per rarity column. Cells without
+        // a matching outcome render as a muted placeholder.
+        for (let r = 0; r < rowKeys.length; r++) {
+            const key = rowKeys[r];
+            const meta = rowMeta[key];
+            const rowCells = cells[key];
+            const rowY = cy + r * (rowH + rowGapY);
+            for (let i = 0; i < colRarities.length; i++) {
+                const rarity = colRarities[i];
+                const cellX = tableStartX + i * cellW;
+                const entry = rowCells[rarity];
+                if (entry) {
+                    this.drawDropCard(ctx, cellX, rowY, cellW, cardSize, entry, probFont);
+                } else {
+                    this.drawEmptyDropCell(ctx, cellX, rowY, cellW, cardSize, meta.type, meta.itemType);
+                }
             }
         }
+    }
+
+    /** Muted placeholder for a (drop type, rarity) pair that has no
+     *  outcome — keeps each row width consistent with the column count. */
+    private drawEmptyDropCell(
+        ctx: CanvasRenderingContext2D,
+        cellX: number,
+        cellY: number,
+        cellW: number,
+        cardSize: number,
+        _type: string,
+        _itemType: string,
+    ) {
+        const cardX = cellX + (cellW - cardSize) / 2;
+        const cardY = cellY;
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        roundedRect(ctx, cardX, cardY, cardSize, cardSize, 4);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.lineWidth = 1;
+        roundedRect(ctx, cardX + 0.5, cardY + 0.5, cardSize - 1, cardSize - 1, 4);
+        ctx.stroke();
     }
 
     /** Paint one drop card: rarity-colored rounded square w/ darker border,
