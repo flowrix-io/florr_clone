@@ -326,6 +326,12 @@ export class SettingsMenu {
         cy += 24;
         drawText('• sussybite8888', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
+        drawText('• Cookery', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        cy += 20;
+        drawText('• Codelinkd203', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        cy += 20;
+        drawText('• NachoFrenchFry', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        cy += 20;
         drawText('Inspired By', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
         cy += 24;
         drawText('• florr.io by M28', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
