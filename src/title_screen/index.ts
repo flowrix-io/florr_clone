@@ -1227,6 +1227,20 @@ export class TitleScreen {
      */
     private renderCanvasUI(): void {
         const ctx = this.uiCtx;
+        // Outer save/restore: this method has many early-return paths and sets
+        // textAlign/textBaseline/font/fillStyle along the way. Without this
+        // guard, the state leaks into the menu-panel render() calls that run
+        // right after — making panel titles appear shifted (textAlign='center'
+        // bleeds through, etc.).
+        ctx.save();
+        try {
+            this.renderCanvasUIInner(ctx);
+        } finally {
+            ctx.restore();
+        }
+    }
+
+    private renderCanvasUIInner(ctx: CanvasRenderingContext2D): void {
         const width = this.uiCanvas.width;
         const height = this.uiCanvas.height;
         const centerX = width / 2;
