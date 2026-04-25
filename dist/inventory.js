@@ -6,6 +6,7 @@ const mobs_1 = require("./mobs");
 const inventoryCodec_1 = require("./inventoryCodec");
 const inventory_panel_1 = require("./graphics/inventory-panel");
 const crafting_panel_1 = require("./graphics/crafting-panel");
+const mob_gallery_panel_1 = require("./graphics/mob-gallery-panel");
 class InventoryManager {
     getIsInventoryOpen() {
         return this.isInventoryOpen;
@@ -399,6 +400,7 @@ class InventoryManager {
         this.inventoryGridContainer = null;
         this.canvasInventoryPanel = null;
         this.canvasCraftingPanel = null;
+        this.canvasMobGalleryPanel = null;
         this.canvasHoverPetal = null;
         // Cache petal canvas → data URL conversions to avoid expensive toDataURL() on every render
         this.petalDataUrlCache = new Map();
@@ -493,47 +495,21 @@ class InventoryManager {
             document.body.appendChild(this.craftingPanel);
         } // end crafting panel creation
         if (!craftingOnly) {
-            // Create mob gallery panel
+            // Mob gallery panel — slim DOM wrapper that hosts the canvas-based
+            // CanvasMobGalleryPanel. Wrapper carries the slide-in animation and
+            // positioning; the canvas paints all content (title, cells, scrollbar,
+            // tooltip).
             this.mobGalleryPanel = document.createElement('div');
             this.mobGalleryPanel.id = 'mobGalleryPanel';
             this.mobGalleryPanel.className = 'mob-gallery-panel';
             this.mobGalleryPanel.style.display = 'none';
-            const galleryContent = document.createElement('div');
-            galleryContent.className = 'mob-gallery-content';
-            galleryContent.style.cssText = `
-            height: 100%;
-            overflow-y: auto;
-            padding: 10px;
-            box-sizing: border-box;
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-        `;
-            const galleryTitle = document.createElement('h2');
-            galleryTitle.textContent = 'Mob Gallery';
-            galleryTitle.style.cssText = 'margin: 0 0 20px 0; text-align: center; color: white; font-size: 24px;';
-            galleryContent.appendChild(galleryTitle);
-            // Add notification banner for when mobs are killed while gallery is open
-            const notificationBanner = document.createElement('div');
-            notificationBanner.id = 'mobGalleryNotification';
-            notificationBanner.style.cssText = `
-            display: none;
-            background: rgba(255, 200, 0, 0.9);
-            color: #000;
-            padding: 10px;
-            margin-bottom: 15px;
-            border-radius: 5px;
-            text-align: center;
-            font-weight: bold;
-            font-size: 14px;
-            border: 2px solid #ffd700;
-        `;
-            notificationBanner.textContent = 'New mobs killed! Close and reopen the gallery to see updates.';
-            galleryContent.appendChild(notificationBanner);
-            const galleryGrid = document.createElement('div');
-            galleryGrid.className = 'mob-gallery-grid';
-            galleryContent.appendChild(galleryGrid);
-            this.mobGalleryPanel.appendChild(galleryContent);
+            this.mobGalleryPanel.style.padding = '0';
+            this.mobGalleryPanel.style.background = 'transparent';
+            this.mobGalleryPanel.style.border = 'none';
+            this.mobGalleryPanel.style.overflow = 'visible';
+            this.canvasMobGalleryPanel = new mob_gallery_panel_1.CanvasMobGalleryPanel();
+            this.canvasMobGalleryPanel.attachTo(this.mobGalleryPanel);
+            this.canvasMobGalleryPanel.onClose = () => this.closeMobGallery();
             document.body.appendChild(this.mobGalleryPanel);
         } // end !craftingOnly
         // Add styles
@@ -709,6 +685,7 @@ class InventoryManager {
             return;
         this.mobGalleryPanel.classList.remove('open');
         this.showChat();
+        this.canvasMobGalleryPanel?.stop();
         setTimeout(() => {
             if (this.mobGalleryPanel) {
                 this.mobGalleryPanel.style.display = 'none';
@@ -782,12 +759,13 @@ class InventoryManager {
                 this.mobGalleryPanel?.classList.add('open');
             }, 10);
             this.updateMobGalleryDisplay();
-            // Hide notification when opening
+            this.canvasMobGalleryPanel?.start();
             this.hideMobGalleryNotification();
         }
         else {
             this.mobGalleryPanel.classList.remove('open');
             this.showChat();
+            this.canvasMobGalleryPanel?.stop();
             setTimeout(() => {
                 if (this.mobGalleryPanel) {
                     this.mobGalleryPanel.style.display = 'none';
@@ -832,130 +810,10 @@ class InventoryManager {
         }
     }
     updateMobGalleryDisplay() {
-        if (!this.mobGalleryPanel)
+        if (!this.canvasMobGalleryPanel)
             return;
-        const galleryGrid = this.mobGalleryPanel.querySelector('.mob-gallery-grid');
-        if (!galleryGrid)
-            return;
-        galleryGrid.innerHTML = '';
         const player = this.game.getLocalPlayer();
-        const mobKills = player?.mobKills || {};
-        // Get all mob types and rarities
-        const allMobTypes = (0, mobs_1.getAllMobTypes)();
-        // Filter out apex from gallery display
-        const galleryRarities = petals_1.RARITY_LEVELS.filter(r => r !== 'apex');
-        // Create rows for each mob type
-        for (const mobType of allMobTypes) {
-            const row = document.createElement('div');
-            row.className = 'mob-gallery-row';
-            row.style.display = 'grid';
-            row.style.gridTemplateColumns = `repeat(${galleryRarities.length}, 1fr)`;
-            row.style.gap = '0';
-            row.style.marginBottom = '5px';
-            // Create cells for each rarity (excluding apex)
-            const mobRarities = (0, mobs_1.getMobRarities)(mobType);
-            for (const rarity of galleryRarities) {
-                const cell = document.createElement('div');
-                cell.className = 'mob-gallery-cell';
-                cell.style.width = '60px';
-                cell.style.height = '60px';
-                cell.style.border = '2px solid #555';
-                cell.style.borderRadius = '5px';
-                cell.style.display = 'flex';
-                cell.style.alignItems = 'center';
-                cell.style.justifyContent = 'center';
-                cell.style.position = 'relative';
-                cell.style.cursor = 'pointer';
-                cell.style.margin = '0';
-                cell.style.padding = '0';
-                const killCount = mobKills[mobType]?.[rarity] || 0;
-                const hasKilled = killCount > 0;
-                if (hasKilled && mobRarities.includes(rarity)) {
-                    // Mob has been killed - show it
-                    const mobStats = (0, mobs_1.getMobStats)(mobType, rarity);
-                    if (mobStats) {
-                        const rarityColor = this.ITEM_RARITY_COLORS[rarity] || '#fff';
-                        const darkenedColor = this.darkenColor(rarityColor);
-                        cell.style.backgroundColor = rarityColor;
-                        cell.style.borderColor = darkenedColor;
-                        cell.style.borderWidth = '3px';
-                        // Create mob image/icon by converting SVG to bitmap first
-                        const mobIcon = document.createElement('img');
-                        mobIcon.style.width = '40px';
-                        mobIcon.style.height = '40px';
-                        mobIcon.style.objectFit = 'contain';
-                        mobIcon.draggable = false;
-                        // Convert SVG to bitmap canvas, then use canvas data URL
-                        if (mobStats.image) {
-                            this.convertSVGToBitmap(mobStats.image, 32, 32).then((dataUrl) => {
-                                if (dataUrl) {
-                                    mobIcon.src = dataUrl;
-                                }
-                            }).catch((error) => {
-                                console.error(`[Inventory] Error converting mob icon to bitmap for ${mobType}_${rarity}:`, error);
-                            });
-                        }
-                        cell.appendChild(mobIcon);
-                        // Mob name with text stroke (like items)
-                        const mobName = document.createElement('div');
-                        mobName.textContent = mobStats.name || mobType.charAt(0).toUpperCase() + mobType.slice(1).replace('_', ' ');
-                        mobName.style.cssText = `
-                            position: absolute;
-                            bottom: 2px;
-                            left: 2px;
-                            right: 2px;
-                            font-size: 8px;
-                            font-weight: bold;
-                            text-align: center;
-                            color: #fff;
-                            text-shadow: 
-                                -1px -1px 0 #000,
-                                1px -1px 0 #000,
-                                -1px 1px 0 #000,
-                                1px 1px 0 #000;
-                            pointer-events: none;
-                            white-space: nowrap;
-                            overflow: hidden;
-                            text-overflow: ellipsis;
-                        `;
-                        cell.appendChild(mobName);
-                        // Kill count badge
-                        const countBadge = document.createElement('div');
-                        countBadge.textContent = killCount.toString();
-                        countBadge.style.position = 'absolute';
-                        countBadge.style.top = '2px';
-                        countBadge.style.right = '2px';
-                        countBadge.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-                        countBadge.style.color = '#fff';
-                        countBadge.style.padding = '2px 4px';
-                        countBadge.style.borderRadius = '3px';
-                        countBadge.style.fontSize = '10px';
-                        cell.appendChild(countBadge);
-                        // Setup tooltip
-                        this.setupMobTooltip(cell, mobType, rarity);
-                    }
-                }
-                else if (mobRarities.includes(rarity)) {
-                    // Mob exists but hasn't been killed - show as locked
-                    cell.style.backgroundColor = 'rgba(0, 0, 0, 0.3)';
-                    cell.style.borderColor = '#333';
-                    cell.style.opacity = '0.5';
-                    const lockIcon = document.createElement('div');
-                    lockIcon.textContent = '?';
-                    lockIcon.style.color = '#666';
-                    lockIcon.style.fontSize = '24px';
-                    cell.appendChild(lockIcon);
-                }
-                else {
-                    // Mob doesn't exist at this rarity
-                    cell.style.backgroundColor = 'rgba(0, 0, 0, 0.1)';
-                    cell.style.borderColor = '#222';
-                    cell.style.opacity = '0.3';
-                }
-                row.appendChild(cell);
-            }
-            galleryGrid.appendChild(row);
-        }
+        this.canvasMobGalleryPanel.setKills(player?.mobKills || {});
     }
     async convertSVGToBitmap(svgString, width, height) {
         try {

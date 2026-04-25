@@ -6,19 +6,25 @@ const biome_svgs_1 = require("../biome_svgs");
 const biomes_1 = require("./biomes");
 const floating_petals_1 = require("./floating_petals");
 /**
- * Owns the title-screen scrolling background canvas and the floating-petal layer.
- * `start()` accepts an optional per-frame callback for unrelated work (used by
- * TitleScreen to drive changelog/notifications/leaderboard/guild canvas state).
+ * Owns the title-screen canvas. Draws the scrolling biome background, runs the
+ * floating-petal renderer, and exposes the canvas/context so TitleScreen can
+ * paint UI on top of the same canvas via the per-frame `onFrame` callback.
+ *
+ * This is the single visible canvas on the title screen: bg + petals + UI all
+ * land here, and pointer events for the title UI register against it.
  */
 class BackgroundAnimation {
     constructor() {
         this.backgroundTime = 0;
         this.animationId = 0;
-        this.floatingPetalManager = null;
+        this.petalsVisible = true;
         this.onFrame = null;
         this.animate = () => {
             this.backgroundTime += 16;
             this.drawScrollingBackground();
+            if (this.petalsVisible) {
+                this.floatingPetalManager.draw(this.backgroundCtx, this.backgroundCanvas.width, this.backgroundCanvas.height);
+            }
             if (this.onFrame)
                 this.onFrame();
             this.animationId = requestAnimationFrame(this.animate);
@@ -29,30 +35,19 @@ class BackgroundAnimation {
             position: fixed;
             top: 0;
             left: 0;
-            pointer-events: none;
-            z-index: 1;
+            pointer-events: auto;
+            z-index: 1000;
         `;
         (0, zoom_compensation_1.applyZoomCompensation)(this.backgroundCanvas);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d');
         this.backgroundTexture = new Image();
-        this.floatingPetalsContainer = document.createElement('div');
-        this.floatingPetalsContainer.id = 'floating-petals-container';
-        this.floatingPetalsContainer.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 50;
-            overflow: hidden;
-        `;
+        this.floatingPetalManager = new floating_petals_1.FloatingPetalManager();
     }
-    /** Mounts both the bg canvas and the floating-petal container into document.body. */
+    getCanvas() { return this.backgroundCanvas; }
+    getCtx() { return this.backgroundCtx; }
+    /** Mounts the canvas into document.body. */
     mount() {
         document.body.appendChild(this.backgroundCanvas);
-        document.body.appendChild(this.floatingPetalsContainer);
-        this.floatingPetalManager = new floating_petals_1.FloatingPetalManager(this.floatingPetalsContainer);
     }
     async loadTexture(biomeName) {
         const biome = biomeName || localStorage.getItem('spawnBiome') || 'default';
@@ -151,21 +146,21 @@ class BackgroundAnimation {
         this.backgroundCanvas.style.display = 'block';
     }
     hideFloatingPetals() {
-        this.floatingPetalManager?.stopAnimation();
-        this.floatingPetalsContainer.style.display = 'none';
+        this.petalsVisible = false;
+        this.floatingPetalManager.hide();
     }
     showFloatingPetals() {
-        this.floatingPetalManager?.startAnimation();
-        this.floatingPetalsContainer.style.display = 'block';
+        this.petalsVisible = true;
+        this.floatingPetalManager.show();
     }
     startFloatingPetals() {
-        this.floatingPetalManager?.startAnimation();
+        this.floatingPetalManager.startAnimation();
     }
     stopFloatingPetals() {
-        this.floatingPetalManager?.stopAnimation();
+        this.floatingPetalManager.stopAnimation();
     }
     destroyFloatingPetals() {
-        this.floatingPetalManager?.destroy();
+        this.floatingPetalManager.destroy();
     }
 }
 exports.BackgroundAnimation = BackgroundAnimation;

@@ -41,6 +41,15 @@ class CanvasInventoryPanel {
         this.rafHandle = 0;
         this.running = false;
         this.imgCache = new Map();
+        /**
+         * True from dragstart until dragend (+ a small grace window) so we can
+         * suppress the `click` event that some browsers fire spuriously after a
+         * successful HTML5 drag of a `draggable=true` element. Without this,
+         * click-to-auto-equip fires after every drag-to-loadout, double-equipping
+         * the dragged item into the first empty slot.
+         */
+        this.dragInProgress = false;
+        this.suppressClickUntil = 0;
         /** Display mode toggle.
          *  - true  ("stacked"): only one slot per item *type*; the highest rarity
          *    the player owns sits on top and hides the lower-rarity copies.
@@ -68,8 +77,25 @@ class CanvasInventoryPanel {
          *  HTML input handles all keyboard input, IME, copy/paste, etc.). */
         this.searchInputEl = null;
         this.parentEl = null;
-        /** Callback fired when the user presses the left mouse button on an item. */
+        /**
+         * Callback fired on item mousedown. If set, the panel calls preventDefault
+         * to suppress the browser's HTML5 drag and `click` won't fire — use this
+         * when you have a custom JS-level drag system (in-game inventory).
+         */
         this.onItemMouseDown = null;
+        /**
+         * Callback fired when the user clicks an item (mouseup without drag).
+         * Only fires if `onItemMouseDown` is unset — wire this for plain
+         * click-to-action behavior like auto-equip-to-first-empty-slot.
+         */
+        this.onItemClick = null;
+        /**
+         * Callback fired on dragstart over an item. Set whatever data you need
+         * onto e.dataTransfer here (e.g. text/plain JSON of {rarity, type}); the
+         * loadout drop handler will read it. Setting this is required for HTML5
+         * drag-to-loadout to work; otherwise dragstart is canceled.
+         */
+        this.onItemDragStart = null;
         /** Callback fired when the hovered item changes (null when no item is hovered). */
         this.onItemHoverChange = null;
         /** Callback fired when the close button is clicked. */
@@ -113,13 +139,70 @@ class CanvasInventoryPanel {
                 this.stackMode = !this.stackMode;
                 return;
             }
-            // Search box clicks fall through to the real <input> overlay (which
-            // sits on top of the canvas), so we don't handle them here.
+            // Search box clicks fall through to the real <input> overlay (on top
+            // of the canvas), so we don't handle them here.
             const hit = this.hitTestClient(e.clientX, e.clientY);
-            if (hit && this.onItemMouseDown) {
+            if (!hit)
+                return;
+            // Legacy mousedown callback (in-game uses this for its custom JS-level
+            // drag). preventDefault suppresses the browser's HTML5 drag so the
+            // custom system has full control.
+            if (this.onItemMouseDown) {
                 e.preventDefault();
                 this.onItemMouseDown(hit.rarity, hit.itemType, e, hit);
+                return;
             }
+            // No mousedown handler: don't preventDefault — let dragstart fire
+            // (when onItemDragStart is wired) or let click fire (auto-equip).
+        };
+        this.handleClick = (e) => {
+            if (e.button !== 0)
+                return;
+            // If the consumer is using onItemMouseDown for its own drag system,
+            // its mousedown preventDefault'd already and click is suppressed for
+            // the dragged element anyway. Skip here to avoid double-handling.
+            if (this.onItemMouseDown)
+                return;
+            // Some browsers fire `click` right after a successful HTML5 drag-and-
+            // drop on a draggable=true element. Without this guard, dragging an
+            // item to a loadout slot also auto-equips it via the click path.
+            if (this.dragInProgress || performance.now() < this.suppressClickUntil)
+                return;
+            const { x, y } = this.toLocal(e);
+            if (this.pointInRect(x, y, this.closeBtnRect))
+                return;
+            if (this.pointInRect(x, y, this.stackToggleRect))
+                return;
+            const hit = this.hitTestClient(e.clientX, e.clientY);
+            if (hit && this.onItemClick) {
+                e.preventDefault();
+                this.onItemClick(hit.rarity, hit.itemType, e, hit);
+            }
+        };
+        this.handleDragStart = (e) => {
+            const hit = this.hitTestClient(e.clientX, e.clientY);
+            if (!hit) {
+                // Drag started on chrome / empty area — cancel so the canvas
+                // doesn't drag itself as an image.
+                e.preventDefault();
+                return;
+            }
+            if (this.onItemDragStart) {
+                this.dragInProgress = true;
+                this.onItemDragStart(hit.rarity, hit.itemType, e, hit);
+            }
+            else {
+                e.preventDefault();
+            }
+        };
+        this.handleDragEnd = () => {
+            if (!this.dragInProgress)
+                return;
+            this.dragInProgress = false;
+            // Some browsers queue a phantom `click` after the dragend completes
+            // (especially Chrome on draggable=true elements). Hold off click
+            // handling for a short grace window so that phantom click is dropped.
+            this.suppressClickUntil = performance.now() + 200;
         };
         this.handleWheel = (e) => {
             e.preventDefault();
@@ -148,7 +231,11 @@ class CanvasInventoryPanel {
         this.canvas.addEventListener('mousemove', this.handleMouseMove);
         this.canvas.addEventListener('mouseleave', this.handleMouseLeave);
         this.canvas.addEventListener('mousedown', this.handleMouseDown);
+        this.canvas.addEventListener('click', this.handleClick);
+        this.canvas.addEventListener('dragstart', this.handleDragStart);
+        this.canvas.addEventListener('dragend', this.handleDragEnd);
         this.canvas.addEventListener('wheel', this.handleWheel, { passive: false });
+        this.canvas.draggable = true;
     }
     attachTo(parent) {
         this.parentEl = parent;
