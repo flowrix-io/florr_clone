@@ -174,14 +174,14 @@ export class CanvasMobGalleryPanel {
     }
 
     private layout(cssW: number) {
-        // Mirror the legacy DOM grid layout: each row is a mob type, columns
-        // are rarities (sans apex), and each cell stretches to fill the row
-        // width evenly. Mob name is rendered inside the cell (bottom).
+        // Square cells (CELL_HEIGHT × CELL_HEIGHT) laid out left-to-right by
+        // rarity, top-to-bottom by mob type. Centered horizontally in the
+        // panel's usable width so the row sits neatly inside the chrome.
         this.cellRects = [];
         const types = getAllMobTypes();
         const usable = cssW - PANEL_PAD * 2 - SCROLLBAR_WIDTH - 4;
-        const cellW = Math.floor(usable / this.rarities.length);
-        const startX = PANEL_PAD;
+        const rowW = this.rarities.length * CELL_HEIGHT;
+        const startX = PANEL_PAD + Math.max(0, (usable - rowW) / 2);
         const top = this.contentTop();
         let cursorY = top;
 
@@ -189,13 +189,13 @@ export class CanvasMobGalleryPanel {
             const validRarities = new Set(getMobRarities(mobType));
             for (let i = 0; i < this.rarities.length; i++) {
                 const rarity = this.rarities[i];
-                const x = startX + i * cellW;
+                const x = startX + i * CELL_HEIGHT;
                 const valid = validRarities.has(rarity);
                 const killCount = this.kills[mobType]?.[rarity] || 0;
                 this.cellRects.push({
                     x,
                     y: cursorY,
-                    w: cellW,
+                    w: CELL_HEIGHT,
                     h: CELL_HEIGHT,
                     mobType,
                     rarity,
@@ -291,13 +291,12 @@ export class CanvasMobGalleryPanel {
                 ctx.fillStyle = rarityColor;
                 ctx.strokeStyle = darken(rarityColor);
                 ctx.lineWidth = 3;
-            } else if (c.valid) {
-                ctx.fillStyle = 'rgba(0,0,0,0.3)';
-                ctx.strokeStyle = '#333';
-                ctx.lineWidth = 2;
             } else {
-                ctx.fillStyle = 'rgba(0,0,0,0.1)';
-                ctx.strokeStyle = '#222';
+                // Locked + invalid both use the panel's accent color so the
+                // empty slots blend with the panel border / scrollbar thumb
+                // instead of a flat black overlay.
+                ctx.fillStyle = PANEL_BORDER;
+                ctx.strokeStyle = darken(PANEL_BORDER);
                 ctx.lineWidth = 2;
             }
             roundedRect(ctx, c.x, c.y, c.w, c.h, 5);
