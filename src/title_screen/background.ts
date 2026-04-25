@@ -4,9 +4,11 @@ import { getBiomeSvgFile } from './biomes';
 import { FloatingPetalManager } from './floating_petals';
 
 /**
- * Owns the title-screen scrolling background canvas and the floating-petal layer.
- * `start()` accepts an optional per-frame callback for unrelated work (used by
- * TitleScreen to drive changelog/notifications/leaderboard/guild canvas state).
+ * Owns the title-screen scrolling background canvas and drives the floating-petal
+ * renderer. Both layers share a single canvas — the petals are drawn on top of
+ * the scrolling biome each frame. `start()` accepts an optional per-frame
+ * callback for unrelated work (used by TitleScreen to drive the in-game menu
+ * panel overlay).
  */
 export class BackgroundAnimation {
     private backgroundCanvas: HTMLCanvasElement;
@@ -15,8 +17,8 @@ export class BackgroundAnimation {
     private backgroundTime: number = 0;
     private animationId: number = 0;
 
-    private floatingPetalsContainer: HTMLElement;
-    private floatingPetalManager: FloatingPetalManager | null = null;
+    private floatingPetalManager: FloatingPetalManager;
+    private petalsVisible: boolean = true;
 
     private onFrame: (() => void) | null = null;
 
@@ -33,26 +35,12 @@ export class BackgroundAnimation {
         applyZoomCompensation(this.backgroundCanvas);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d')!;
         this.backgroundTexture = new Image();
-
-        this.floatingPetalsContainer = document.createElement('div');
-        this.floatingPetalsContainer.id = 'floating-petals-container';
-        this.floatingPetalsContainer.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 50;
-            overflow: hidden;
-        `;
+        this.floatingPetalManager = new FloatingPetalManager();
     }
 
-    /** Mounts both the bg canvas and the floating-petal container into document.body. */
+    /** Mounts the background canvas into document.body. */
     public mount(): void {
         document.body.appendChild(this.backgroundCanvas);
-        document.body.appendChild(this.floatingPetalsContainer);
-        this.floatingPetalManager = new FloatingPetalManager(this.floatingPetalsContainer);
     }
 
     public async loadTexture(biomeName?: string): Promise<void> {
@@ -149,6 +137,13 @@ export class BackgroundAnimation {
     private animate = (): void => {
         this.backgroundTime += 16;
         this.drawScrollingBackground();
+        if (this.petalsVisible) {
+            this.floatingPetalManager.draw(
+                this.backgroundCtx,
+                this.backgroundCanvas.width,
+                this.backgroundCanvas.height,
+            );
+        }
         if (this.onFrame) this.onFrame();
         this.animationId = requestAnimationFrame(this.animate);
     };
@@ -176,24 +171,24 @@ export class BackgroundAnimation {
     }
 
     public hideFloatingPetals(): void {
-        this.floatingPetalManager?.stopAnimation();
-        this.floatingPetalsContainer.style.display = 'none';
+        this.petalsVisible = false;
+        this.floatingPetalManager.hide();
     }
 
     public showFloatingPetals(): void {
-        this.floatingPetalManager?.startAnimation();
-        this.floatingPetalsContainer.style.display = 'block';
+        this.petalsVisible = true;
+        this.floatingPetalManager.show();
     }
 
     public startFloatingPetals(): void {
-        this.floatingPetalManager?.startAnimation();
+        this.floatingPetalManager.startAnimation();
     }
 
     public stopFloatingPetals(): void {
-        this.floatingPetalManager?.stopAnimation();
+        this.floatingPetalManager.stopAnimation();
     }
 
     public destroyFloatingPetals(): void {
-        this.floatingPetalManager?.destroy();
+        this.floatingPetalManager.destroy();
     }
 }
