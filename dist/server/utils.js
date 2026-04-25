@@ -12,6 +12,7 @@ const constants_1 = require("../constants");
 const petal_actions_1 = require("../petal_actions");
 const squadManager_1 = require("./squadManager");
 const botManager_1 = require("./botManager");
+const apiKeyApi_1 = require("./apiKeyApi");
 // Helper function to track damage dealt to an enemy
 function trackDamage(enemy, playerId, damage) {
     if (!enemy.damageContributors) {
@@ -136,10 +137,22 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
     const socket = io.sockets.sockets.get(originalSocketId);
     const username = socket?.username || 'Unknown';
     // Send chat message
+    const content = `<b style="color: ${constants_1.ENEMY_TIERS[enemy.tier].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`;
+    const timestamp = Date.now();
     io.emit('chatMessage', {
         sender: '',
-        content: `<b style="color: ${constants_1.ENEMY_TIERS[enemy.tier].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`,
-        timestamp: Date.now()
+        content,
+        timestamp
+    });
+    (0, apiKeyApi_1.recordBossEvent)({
+        type: 'defeat',
+        tier: enemy.tier,
+        mobType: enemy.type,
+        x: enemy.x,
+        y: enemy.y,
+        timestamp,
+        message: (0, apiKeyApi_1.stripHtml)(content),
+        defeatedBy: { username, playerName: topDamager.name }
     });
 }
 // Helper function to track mob kills for eligible players

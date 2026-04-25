@@ -72,6 +72,7 @@ const playerManager_1 = require("./server/playerManager");
 const crossServer_1 = require("./server/crossServer");
 const enemySpawner_1 = require("./server/enemySpawner");
 const pvpArenaSpawner_1 = require("./server/pvpArenaSpawner");
+const apiKeyApi_1 = require("./server/apiKeyApi");
 // Load persisted guilds into memory now that database + guildManager are both ready.
 (0, guildManager_1.loadGuildsFromDatabase)();
 (0, botManager_1.initializeBotGuilds)();
@@ -727,6 +728,13 @@ function deleteCodeFromDatabase(code) {
 }
 // Load codes when server starts
 loadCodesFromDatabase();
+// Register the API-key authenticated REST API. Must run after redeemedCodes
+// + saveCodeToDatabase/deleteCodeFromDatabase are defined above.
+(0, apiKeyApi_1.registerApiKeyRoutes)(app, {
+    redeemedCodes: exports.redeemedCodes,
+    saveCodeToDatabase,
+    deleteCodeFromDatabase
+});
 // Wrapper for savePlayerProgress that passes database with debouncing
 function savePlayerProgress(player, userId) {
     // Clear existing timeout for this player
@@ -2218,6 +2226,8 @@ io.on('connection', (socket) => {
                 helpText += '/biome - Show the most populated biome <br/>';
                 helpText += '/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would roll <br/>';
                 helpText += '/loadout-from-string &lt;name&gt; - Show the loadout a bot named &lt;name&gt; would roll <br/>';
+                helpText += '/create-api-key [label] - Issue an API key tied to your account for /api/v1/* <br/>';
+                helpText += '/delete-api-key &lt;key-or-prefix&gt; - Revoke one of your API keys <br/>';
                 helpText += '<br/><b>Squad commands (groups of 4, share loot as one instance):</b><br/>';
                 helpText += '/squad-create [public|private] - Create a new squad (defaults to private)<br/>';
                 helpText += '/squad-invite &lt;username&gt; - Invite a player to your squad<br/>';
@@ -2382,6 +2392,95 @@ io.on('connection', (socket) => {
                 }
                 return;
             }
+            if (command === 'delete-api-key' || command.startsWith('delete-api-key ')) {
+                if (!socket.username) {
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: 'You must be logged in to delete an API key.',
+                        timestamp: Date.now()
+                    });
+                    return;
+                }
+                const spaceIdx = message.indexOf(' ');
+                const arg = spaceIdx === -1 ? '' : message.substring(spaceIdx + 1).trim();
+                if (!arg) {
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: 'Usage: /delete-api-key &lt;key-or-prefix&gt;',
+                        timestamp: Date.now()
+                    });
+                    return;
+                }
+                // Only operate on keys owned by this user; an admin still has to use
+                // an out-of-band path (editing inventory.json) to remove someone
+                // else's key, so this command can never escalate across users.
+                const ownedKeys = database_1.database.getAllApiKeys().filter(k => k.username === socket.username);
+                let target = ownedKeys.find(k => k.key === arg);
+                if (!target) {
+                    const prefixMatches = ownedKeys.filter(k => k.key.startsWith(arg));
+                    if (prefixMatches.length === 1) {
+                        target = prefixMatches[0];
+                    }
+                    else if (prefixMatches.length > 1) {
+                        io.to(socket.id).emit('chatMessage', {
+                            sender: 'System',
+                            content: `Prefix "${arg}" is ambiguous — matches ${prefixMatches.length} of your keys. Provide more characters.`,
+                            timestamp: Date.now()
+                        });
+                        return;
+                    }
+                }
+                if (!target) {
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: 'No API key of yours matched that key or prefix.',
+                        timestamp: Date.now()
+                    });
+                    return;
+                }
+                database_1.database.deleteApiKey(target.key);
+                io.to(socket.id).emit('chatMessage', {
+                    sender: 'System',
+                    content: `Deleted API key "${target.label}" (${target.key.substring(0, 10)}...).`,
+                    timestamp: Date.now()
+                });
+                return;
+            }
+            if (command === 'create-api-key' || command.startsWith('create-api-key ')) {
+                if (!socket.username) {
+                    io.to(socket.id).emit('chatMessage', {
+                        sender: 'System',
+                        content: 'You must be logged in to create an API key.',
+                        timestamp: Date.now()
+                    });
+                    return;
+                }
+                const spaceIdx = message.indexOf(' ');
+                const label = spaceIdx === -1 ? socket.username : message.substring(spaceIdx + 1).trim() || socket.username;
+                // 64 random alphanumeric chars after the sk_ prefix.
+                let body = '';
+                while (body.length < 64) {
+                    body += Math.random().toString(36).substring(2);
+                }
+                const key = `sk_${body.substring(0, 64)}`;
+                const entry = {
+                    key,
+                    username: socket.username,
+                    label,
+                    createdAt: Date.now()
+                };
+                database_1.database.saveApiKey(entry);
+                const isAdmin = database_1.database.isUserAdmin(socket.username);
+                const scopeNote = isAdmin
+                    ? 'Your account is admin, so this key has admin scope (can create star codes, broadcast notifications, etc.).'
+                    : 'Your account is not admin, so this key has user scope only (read events, whoami). Admin endpoints will return 403.';
+                io.to(socket.id).emit('chatMessage', {
+                    sender: 'System',
+                    content: `<b>[API KEY CREATED]</b><br/>Label: ${label}<br/>Key: <b>${key}</b><br/>Send this on requests as the X-API-Key header, or append ?api_key=&lt;key&gt; to the URL. Save it now — the full key is not shown again.<br/>${scopeNote}`,
+                    timestamp: Date.now()
+                });
+                return;
+            }
             if (command.startsWith('level-from-string')) {
                 const spaceIdx = message.indexOf(' ');
                 const name = spaceIdx === -1 ? '' : message.substring(spaceIdx + 1).trim();
@@ -2426,7 +2525,7 @@ io.on('connection', (socket) => {
             // Unknown command
             io.to(socket.id).emit('chatMessage', {
                 sender: 'System',
-                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique, /biome, /level-from-string, /loadout-from-string',
+                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique, /biome, /level-from-string, /loadout-from-string, /create-api-key, /delete-api-key',
                 timestamp: Date.now()
             });
             return;

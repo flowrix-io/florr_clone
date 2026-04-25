@@ -78,7 +78,7 @@ core_1.Graphics.prototype.drawItem = function (item, players) {
     // Death animation (pickup or despawn) takes precedence
     const deathAnim = this.itemDeathAnim?.get(item.id);
     if (deathAnim) {
-        const elapsed = Date.now() - deathAnim.startTime;
+        const elapsed = this.frameTimestamp - deathAnim.startTime;
         const duration = deathAnim.type === 'pickup' ? PICKUP_ANIM_DURATION : DESPAWN_ANIM_DURATION;
         const t = Math.min(1, elapsed / duration);
         if (deathAnim.type === 'pickup') {
@@ -109,7 +109,7 @@ core_1.Graphics.prototype.drawItem = function (item, players) {
         // Spawn spin-out animation
         const anim = this.itemSpawnAnim?.get(item.id);
         if (anim) {
-            const elapsed = Date.now() - anim.startTime;
+            const elapsed = this.frameTimestamp - anim.startTime;
             if (elapsed >= SPAWN_ANIM_DURATION) {
                 this.itemSpawnAnim.delete(item.id);
             }
@@ -123,9 +123,39 @@ core_1.Graphics.prototype.drawItem = function (item, players) {
             }
         }
     }
-    // Fast path: use cached background + overlay petal/sprite
-    const cached = this.getItemCanvas(item);
-    if (cached) {
+    // Build/fetch per-item render cache once. Subsequent frames skip the
+    // string-key build, the itemCanvasCache Map.get, and the getPetalStats
+    // lookup that would otherwise run for every drop every frame.
+    let cache = item._renderCache;
+    if (!cache) {
+        const bg = this.getItemCanvas(item);
+        let petalFrames = null;
+        let petalSize = 0;
+        if (item.type === 'petal' && item.petalType && item.rarity) {
+            const stats = (0, core_1.getPetalStats)(item.petalType, item.rarity);
+            if (stats) {
+                petalFrames = this.petalImageCache[`${item.petalType}_${item.rarity}`] ?? null;
+                petalSize = 12 * stats.size;
+            }
+        }
+        cache = { bg, petalFrames, petalSize };
+        item._renderCache = cache;
+    }
+    if (cache.bg) {
+        // Resolve current petal animation frame (cheap when static).
+        // Use Math.floor — `| 0` truncates to int32 and produces a negative
+        // index for Date.now()-scale timestamps, which would land on an
+        // undefined frame and silently drop the petal back to the fallback.
+        let petalFrame = null;
+        if (cache.petalFrames) {
+            if (Array.isArray(cache.petalFrames)) {
+                const arr = cache.petalFrames;
+                petalFrame = arr[Math.floor((this.frameTimestamp / 42) % arr.length)];
+            }
+            else {
+                petalFrame = cache.petalFrames;
+            }
+        }
         const needsTransform = rotation !== 0 || scale !== 1 || alpha !== 1;
         if (needsTransform) {
             this.ctx.save();
@@ -135,19 +165,21 @@ core_1.Graphics.prototype.drawItem = function (item, players) {
                 this.ctx.rotate(rotation);
             if (scale !== 1)
                 this.ctx.scale(scale, scale);
-            this.ctx.drawImage(cached, -ITEM_CANVAS_CENTER, -ITEM_CANVAS_CENTER);
-            if (item.type === 'petal') {
-                this.drawWorldPetal(item);
+            this.ctx.drawImage(cache.bg, -ITEM_CANVAS_CENTER, -ITEM_CANVAS_CENTER);
+            if (petalFrame) {
+                const half = cache.petalSize / 2;
+                this.ctx.drawImage(petalFrame, -half, -half, cache.petalSize, cache.petalSize);
             }
             this.ctx.restore();
         }
         else {
-            this.ctx.drawImage(cached, drawX - ITEM_CANVAS_CENTER, drawY - ITEM_CANVAS_CENTER);
-            if (item.type === 'petal') {
-                this.ctx.save();
-                this.ctx.translate(drawX, drawY);
-                this.drawWorldPetal(item);
-                this.ctx.restore();
+            // Fast path: no transforms required, so no save/restore — just
+            // draw directly at world coordinates. With many drops on screen
+            // this avoids ~2 ctx state saves per item per frame.
+            this.ctx.drawImage(cache.bg, drawX - ITEM_CANVAS_CENTER, drawY - ITEM_CANVAS_CENTER);
+            if (petalFrame) {
+                const half = cache.petalSize / 2;
+                this.ctx.drawImage(petalFrame, drawX - half, drawY - half, cache.petalSize, cache.petalSize);
             }
         }
         if (this.showHitboxes) {

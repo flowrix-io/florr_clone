@@ -4,6 +4,7 @@ import { ENEMY_TIERS, enemies } from '../constants';
 import { splitPlayers } from '../petal_actions';
 import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadManager';
 import { isBot } from './botManager';
+import { recordBossEvent, stripHtml } from './apiKeyApi';
 
 // Helper function to track damage dealt to an enemy
 export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
@@ -159,10 +160,23 @@ export function sendBossMobDefeatedMessage(
     const username = socket?.username || 'Unknown';
     
     // Send chat message
+    const content = `<b style="color: ${ENEMY_TIERS[enemy.tier as keyof typeof ENEMY_TIERS].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`;
+    const timestamp = Date.now();
     io.emit('chatMessage', {
         sender: '',
-        content: `<b style="color: ${ENEMY_TIERS[enemy.tier as keyof typeof ENEMY_TIERS].color};">A ${rarity} ${enemy.type.replace('_', ' ')} has been defeated by <span style="color: #00ff00;">@${username}</span> [<span style="color: yellow;">${topDamager.name}</span>]</b>`,
-        timestamp: Date.now()
+        content,
+        timestamp
+    });
+
+    recordBossEvent({
+        type: 'defeat',
+        tier: enemy.tier,
+        mobType: enemy.type,
+        x: enemy.x,
+        y: enemy.y,
+        timestamp,
+        message: stripHtml(content),
+        defeatedBy: { username, playerName: topDamager.name }
     });
 }
 

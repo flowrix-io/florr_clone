@@ -124,290 +124,239 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
 };
 
 Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, petalExtension: number = 1.0, enemies: Map<string, Enemy> = new Map(), currentPlayerId?: string) {
-    // Safety check: ensure player loadout exists before filtering
     if (!player.loadout || !Array.isArray(player.loadout)) {
-        return; // Skip drawing petals if loadout is not properly initialized
+        return;
     }
 
-    // IMPORTANT: This function is called from within drawPlayer(), which means:
-    // - The context has: scale(zoomLevel), translate(-cameraX, -cameraY), translate(player.x, player.y)
-    // - We need to draw petals relative to the player position (which is already translated)
-    // - So we should use relative coordinates (0, 0 is player center) or translate from player position
-
-
-    // Get all petals from player loadout and expand based on count property
-    const petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number, slotIndex: number}> = [];
+    // Single pass over the loadout: build instances, cache stats per-petal,
+    // and accumulate aggregate range/rotation modifiers. The previous version
+    // walked the loadout twice and called getPetalStats up to three times per
+    // instance (once in build, once for modifiers, once in render). With many
+    // petals onscreen each player is rendered, so the duplicated lookups
+    // showed up as a real cost.
+    type Inst = { petal: any; instanceIndex: number; loadoutIndex: number; slotIndex: number; stats: any };
+    const petalInstances: Inst[] = [];
     let nextSlotIndex = 0;
-    try {
-        player.loadout.forEach((item: any, loadoutIndex: number) => {
-            // Secondary loadout (slots 10+) is storage only — don't render petals
-            if (loadoutIndex >= 10) return;
-            if (item && item.type === 'petal' && item.petalType && item.rarity) {
-                const stats = getPetalStats(item.petalType, item.rarity);
-                if (!stats) return;
+    let playerRangeModifier = 1.0;
+    let playerRotationSpeedModifier = 1.0;
 
-                const count = stats.count || 1; // Use count from stats, default to 1
+    const loadout = player.loadout;
+    const loadoutLen = Math.min(10, loadout.length);
+    for (let loadoutIndex = 0; loadoutIndex < loadoutLen; loadoutIndex++) {
+        const item: any = loadout[loadoutIndex];
+        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity) continue;
 
-                // Validate count is a valid number
-                if (typeof count !== 'number' || count < 1 || !isFinite(count)) {
-                    console.warn('Invalid petal count:', count, 'for', item.petalType, item.rarity);
-                    return;
-                }
+        // Cache stats on the petal item itself. The loadout array is replaced
+        // wholesale on each server snapshot, so this cache lives only as long
+        // as the snapshot — which is fine, and avoids the per-frame dictionary
+        // lookup in getPetalStats.
+        let stats = item._statsCache;
+        if (stats === undefined) {
+            stats = getPetalStats(item.petalType, item.rarity) ?? null;
+            item._statsCache = stats;
+        }
+        if (!stats) continue;
 
-                // Clumped petals share a single orbit slot across all their instances
-                const clumped = !!stats.clumped;
-                const sharedSlot = nextSlotIndex;
-                // Create multiple instances based on count
-                for (let i = 0; i < count; i++) {
-                    const slotIndex = clumped ? sharedSlot : nextSlotIndex;
-                    if (!clumped) nextSlotIndex++;
-                    petalInstances.push({ petal: item, instanceIndex: i, loadoutIndex, slotIndex });
-                }
-                if (clumped) nextSlotIndex++;
-            }
-        });
-    } catch (error) {
-        console.error('Error building petal instances:', error);
-        return;
+        const rawCount = stats.count;
+        const count = (typeof rawCount === 'number' && rawCount >= 1 && isFinite(rawCount)) ? rawCount : 1;
+
+        const mods = stats.playerModifiers;
+        if (mods) {
+            if (mods.range !== undefined) playerRangeModifier *= mods.range;
+            if (mods.rotationSpeed !== undefined) playerRotationSpeedModifier += mods.rotationSpeed - 1;
+        }
+
+        const clumped = !!stats.clumped;
+        const sharedSlot = nextSlotIndex;
+        for (let i = 0; i < count; i++) {
+            const slotIndex = clumped ? sharedSlot : nextSlotIndex;
+            if (!clumped) nextSlotIndex++;
+            petalInstances.push({ petal: item, instanceIndex: i, loadoutIndex, slotIndex, stats });
+        }
+        if (clumped) nextSlotIndex++;
     }
 
     if (petalInstances.length === 0) {
-        // Clean up physics states for this player if no petals
-        const keysToDelete: string[] = [];
-        this.petalPhysicsStates.forEach((value: any, key: string) => {
-            if (key.startsWith(player.id)) {
-                keysToDelete.push(key);
-            }
-        });
-        keysToDelete.forEach(key => this.petalPhysicsStates.delete(key));
+        if (this.petalPhysicsStates.size > 0) {
+            const keysToDelete: string[] = [];
+            this.petalPhysicsStates.forEach((_value, key) => {
+                if (key.startsWith(player.id)) keysToDelete.push(key);
+            });
+            for (const k of keysToDelete) this.petalPhysicsStates.delete(k);
+        }
         return;
     }
 
-    const currentTime = Date.now();
-
-    // Clean up physics states for petals that no longer exist in loadout
-    const activePetalIds = new Set<string>();
-    petalInstances.forEach(({loadoutIndex, instanceIndex}) => {
-        activePetalIds.add(`${player.id}_${loadoutIndex}_${instanceIndex}`);
-    });
-    const keysToDelete: string[] = [];
-    this.petalPhysicsStates.forEach((value: any, key: string) => {
-        if (key.startsWith(player.id) && !activePetalIds.has(key)) {
-            keysToDelete.push(key);
-        }
-    });
-    keysToDelete.forEach(key => this.petalPhysicsStates.delete(key));
-    // Keep petals a constant distance from the flower edge: scale only the body-radius portion by sizeMultiplier.
+    const currentTime = this.frameTimestamp;
     const playerSizeMultiplier = player.sizeMultiplier ?? 1.0;
     const baseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMultiplier - 1)) * petalExtension;
     const totalSlots = nextSlotIndex;
-    const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0; // Evenly space petals across slots (clumped petals share a slot)
+    const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
 
-    // Calculate player range and rotation speed modifiers from equipped petals
-    let playerRangeModifier = 1.0;
-    let playerRotationSpeedModifier = 1.0;
-    for (const item of player.loadout) {
-        if (item && item.type === 'petal' && item.petalType && item.rarity) {
-            const pStats = getPetalStats(item.petalType, item.rarity);
-            if (pStats?.playerModifiers?.range !== undefined) {
-                playerRangeModifier *= pStats.playerModifiers.range;
-            }
-            if (pStats?.playerModifiers?.rotationSpeed !== undefined) {
-                playerRotationSpeedModifier += pStats.playerModifiers.rotationSpeed - 1;
-            }
-        }
-    }
+    const ctx = this.ctx;
+    const showGlow = this.showRarityGlow;
+    const playerX = player.x;
+    const playerY = player.y;
+    const serverPositions: any[] | undefined = player.petalPositions;
+    const petalCache = this.petalImageCache;
 
-    // Calculate deltaTime (approximate, using frame timing)
-    // Use a default of 1/60 seconds (60 FPS) if we can't calculate it
-    const lastFrameTime = (this as any).lastFrameTime || currentTime;
-    const deltaTime = Math.min((currentTime - lastFrameTime) / 1000, 1/30); // Cap at 30 FPS minimum
-    (this as any).lastFrameTime = currentTime;
+    for (let idx = 0, n = petalInstances.length; idx < n; idx++) {
+        const inst = petalInstances[idx];
+        const petal = inst.petal;
+        const stats = inst.stats;
 
-    petalInstances.forEach(({petal, instanceIndex, loadoutIndex, slotIndex}) => {
-        if (!petal || !petal.petalType || !petal.rarity) {
-            return;
-        }
+        if (petal.onCooldown) continue;
 
-        const stats = getPetalStats(petal.petalType, petal.rarity);
-        if (!stats) {
-            return;
-        }
+        const slotIndex = inst.slotIndex;
+        const loadoutIndex = inst.loadoutIndex;
+        const instanceIndex = inst.instanceIndex;
 
-        // Skip drawing if petal is on cooldown
-        if (petal.onCooldown) {
-            return;
-        }
-
-        // Calculate rotation angle
-        const rotationSpeed = (stats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002; // Convert to radians per ms
+        const fixedDirection = stats.fixedDirection;
+        const rotationSpeed = (stats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002;
         const baseAngle = slotIndex * angleStep;
         const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
-        // Fixed-direction petals don't orbit - they stay at a fixed relative position
-        const totalAngle = stats.fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
+        const totalAngle = fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
 
-        // Apply petal range multiplier and player range modifier to base radius
         const petalRange = (stats.range ?? 1.0) * playerRangeModifier;
         const petalRadius = baseRadius * petalRange;
 
-        // Clumped petals arrange instances in a small cluster around the slot center
+        const customSize = petal.customSize;
+        const baseStatsSize = stats.size;
         const clumpCount = stats.count || 1;
-        const clumpSize = (petal as any).customSize !== undefined ? (petal as any).customSize : stats.size;
-        const useClump = stats.clumped && clumpCount > 1;
-        const clumpSpacing = clumpSize * 40 * 0.5;
-        const clumpSubAngle = useClump ? (instanceIndex / clumpCount) * Math.PI * 2 + totalAngle : 0;
-        const clumpOffsetX = useClump ? Math.cos(clumpSubAngle) * clumpSpacing : 0;
-        const clumpOffsetY = useClump ? Math.sin(clumpSubAngle) * clumpSpacing : 0;
+        const clumpSize = customSize !== undefined ? customSize : baseStatsSize;
+        const useClump = !!stats.clumped && clumpCount > 1;
+        let clumpOffsetX = 0;
+        let clumpOffsetY = 0;
+        if (useClump) {
+            const clumpSpacing = clumpSize * 20; // 40 * 0.5
+            const clumpSubAngle = (instanceIndex / clumpCount) * Math.PI * 2 + totalAngle;
+            clumpOffsetX = Math.cos(clumpSubAngle) * clumpSpacing;
+            clumpOffsetY = Math.sin(clumpSubAngle) * clumpSpacing;
+        }
 
-        // Use server-provided petal positions if available (for all players)
         let petalX: number;
         let petalY: number;
-
-        // Check if we have server-provided petal positions
-        const serverPetalPos = player.petalPositions?.find(
-            (p: any) => p.loadoutIndex === loadoutIndex && p.instanceIndex === instanceIndex
-        );
-
-        if (stats.fixedDirection !== undefined) {
-            // Fixed-direction petals stay directly on the player
+        if (fixedDirection !== undefined) {
             petalX = 0;
             petalY = 0;
         } else if (stats.noPhysics) {
-            // noPhysics petals compute orbit position locally each frame — no server interpolation lag
             petalX = Math.cos(totalAngle) * petalRadius + clumpOffsetX;
             petalY = Math.sin(totalAngle) * petalRadius + clumpOffsetY;
-        } else if (serverPetalPos) {
-            // Use server-provided position (already interpolated on client)
-            // Convert from world coordinates to relative coordinates for rendering
-            petalX = serverPetalPos.x - player.x;
-            petalY = serverPetalPos.y - player.y;
         } else {
-            // Fallback: Calculate target orbit position if server positions not available yet
-            // This can happen during initial load or if server hasn't sent positions yet
-            const targetX = player.x + Math.cos(totalAngle) * petalRadius + clumpOffsetX;
-            const targetY = player.y + Math.sin(totalAngle) * petalRadius + clumpOffsetY;
-            petalX = targetX - player.x;
-            petalY = targetY - player.y;
+            // Linear scan for the matching server position. petalPositions is
+            // typically short (<= total instance count), so this stays cheap.
+            let foundX: number | null = null;
+            let foundY: number | null = null;
+            if (serverPositions) {
+                for (let j = 0, m = serverPositions.length; j < m; j++) {
+                    const sp = serverPositions[j];
+                    if (sp.loadoutIndex === loadoutIndex && sp.instanceIndex === instanceIndex) {
+                        foundX = sp.x;
+                        foundY = sp.y;
+                        break;
+                    }
+                }
+            }
+            if (foundX !== null) {
+                petalX = foundX - playerX;
+                petalY = (foundY as number) - playerY;
+            } else {
+                petalX = Math.cos(totalAngle) * petalRadius + clumpOffsetX;
+                petalY = Math.sin(totalAngle) * petalRadius + clumpOffsetY;
+            }
         }
 
-        // Petal positions are now provided by the server and interpolated on the client
-        // No client-side physics simulation needed
+        const effectiveSize = customSize !== undefined ? customSize : baseStatsSize;
+        const petalSize = 12 * effectiveSize;
+        const halfPetal = petalSize * 0.5;
 
-        // Draw petal - set up transforms first (same pattern as mobs)
-        // Check for custom size first, then use base stats
-        const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : stats.size;
-        const size = 12 * effectiveSize;
-        const petalSize = size;
+        ctx.save();
+        ctx.translate(petalX, petalY);
 
-        // Save context state before drawing this petal
-        // IMPORTANT: Each petal needs its own save/restore to prevent transform interference
-        // At this point, the context has: scale(zoomLevel), translate(-cameraX, -cameraY), translate(player.x, player.y)
-        // So (0, 0) is the player's center
-        this.ctx.save();
-
-        // Apply transforms for this specific petal
-        // petalX and petalY are relative to player center (0, 0)
-        // IMPORTANT: The order MUST be translate then rotate for rotation to happen around petal position
-        // If we rotate first, it rotates around (0, 0) which is the player center
-        // If we translate first, then rotate, it rotates around the petal position
-
-        // Step 1: Translate to petal's orbital position (relative to player)
-        this.ctx.translate(petalX, petalY);
-
-        // Draw emissive light glow behind petal (before rotation so glow stays circular)
         if (stats.emissive) {
             const hex = stats.lightColor || stats.color || '#ffffff';
             const r = parseInt(hex.slice(1, 3), 16);
             const g = parseInt(hex.slice(3, 5), 16);
             const b = parseInt(hex.slice(5, 7), 16);
             const lightRadius = stats.lightRadius ?? (petalSize * 3);
-            this.ctx.save();
-            const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, lightRadius);
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, lightRadius);
             gradient.addColorStop(0, `rgba(${r},${g},${b},0.6)`);
             gradient.addColorStop(0.4, `rgba(${r},${g},${b},0.25)`);
             gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
-            this.ctx.fillStyle = gradient;
-            this.ctx.beginPath();
-            this.ctx.arc(0, 0, lightRadius, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.restore();
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(0, 0, lightRadius, 0, Math.PI * 2);
+            ctx.fill();
         }
 
-        // Step 2: Rotate around the petal's position (which is now at origin after translate)
-        // If fixedDirection is set, the petal always faces that angle instead of spinning
-        if (stats.fixedDirection !== undefined) {
-            this.ctx.rotate(stats.fixedDirection);
+        if (fixedDirection !== undefined) {
+            ctx.rotate(fixedDirection);
         } else {
-            // IMPORTANT: Use only rotationAngle (not totalAngle) so the petal spins around its own center
-            // totalAngle includes the orbital position, which would make it rotate around the player
-            // rotationAngle is just the spinning motion, independent of orbital position
-            this.ctx.rotate(rotationAngle + Math.PI / 2);
+            ctx.rotate(rotationAngle + Math.PI / 2);
         }
 
-        // Step 3: Apply visual offset shift if specified
         const vOffX = stats.visualOffsetX ?? 0;
         const vOffY = stats.visualOffsetY ?? 0;
         if (vOffX !== 0 || vOffY !== 0) {
-            this.ctx.translate(vOffX, vOffY);
+            ctx.translate(vOffX, vOffY);
         }
 
-        // Reset any global state that might interfere
-        this.ctx.globalAlpha = 1.0;
-        this.ctx.globalCompositeOperation = 'source-over';
+        // Resolve the petal frame via a cached canvas reference on the petal
+        // (no per-frame string concat or object key lookup).
+        let petalFrames = petal._petalFramesCache;
+        let petalKey: string = petal._petalKeyCache;
+        if (petalFrames === undefined) {
+            petalKey = `${petal.petalType}_${petal.rarity}`;
+            petalFrames = petalCache[petalKey] ?? null;
+            petal._petalFramesCache = petalFrames;
+            petal._petalKeyCache = petalKey;
+        }
 
-        // Draw petal - the transforms are already applied (translate to petal position, then rotate)
-        // Try to use cached SVG image
-        const petalKey = `${petal.petalType}_${petal.rarity}`;
-        const petalCanvas = this.getPetalCanvas(petalKey, this.frameTimestamp);
+        // Use Math.floor — `| 0` truncates to int32 and produces a negative
+        // index for Date.now()-scale timestamps, which would land on an
+        // undefined frame and silently drop the petal to the fallback path.
+        let petalCanvas: HTMLCanvasElement | null = null;
+        if (petalFrames) {
+            if (Array.isArray(petalFrames)) {
+                petalCanvas = petalFrames[Math.floor((currentTime / 42) % petalFrames.length)];
+            } else {
+                petalCanvas = petalFrames;
+            }
+        }
 
         if (petalCanvas && petalCanvas.width > 0 && petalCanvas.height > 0) {
-            try {
-                if (this.showRarityGlow) {
-                    const glowCanvas = this.getPetalGlowCanvas(petalKey, petal.rarity, this.frameTimestamp);
-                    if (glowCanvas) {
-                        const scale = glowCanvas.width / petalCanvas.width;
-                        const drawSize = petalSize * scale;
-                        this.ctx.drawImage(glowCanvas, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
-                    } else {
-                        this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
-                    }
+            if (showGlow) {
+                const glowCanvas = this.getPetalGlowCanvas(petalKey, petal.rarity, currentTime);
+                if (glowCanvas) {
+                    const scale = glowCanvas.width / petalCanvas.width;
+                    const drawSize = petalSize * scale;
+                    ctx.drawImage(glowCanvas, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
                 } else {
-                    this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+                    ctx.drawImage(petalCanvas, -halfPetal, -halfPetal, petalSize, petalSize);
                 }
-            } catch (error) {
-                console.error(`[Graphics] Error drawing petal image for ${slotIndex}:`, error);
+            } else {
+                ctx.drawImage(petalCanvas, -halfPetal, -halfPetal, petalSize, petalSize);
             }
         } else {
-            // Fallback to colored circle if image not loaded
             const hue = (slotIndex * 40) % 360;
-            const fallbackColor = `hsl(${hue}, 70%, 50%)`;
-            this.ctx.fillStyle = fallbackColor;
-            this.ctx.strokeStyle = '#000000';
-            this.ctx.lineWidth = 1;
-            this.ctx.beginPath();
-            this.ctx.ellipse(0, 0, size / 2, size / 2, 0, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.stroke();
+            ctx.fillStyle = `hsl(${hue}, 70%, 50%)`;
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, halfPetal, halfPetal, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
         }
 
-        // Always restore context state after drawing this petal
-        // This restores to the state before this petal's save() (which should have player transform)
-        this.ctx.restore();
+        ctx.restore();
 
-        // Create particle effects for ultra, super, and unique petals
-        // IMPORTANT: These effects should NOT modify the context state, as the next petal needs the same starting state
-        if (['ultra', 'super', 'unique', 'apex'].includes(petal.rarity)) {
-            // Only create particles occasionally to avoid performance issues
-            if (Math.random() < 0.1) { // 10% chance per frame
-                // Convert relative petal coordinates to absolute world coordinates
-                // petalX and petalY are relative to player center, so add player position
-                const worldX = player.x + petalX;
-                const worldY = player.y + petalY;
-                this.showPetalParticleEffect(worldX, worldY, petal.rarity);
-            }
+        // High-rarity petal sparkle. Check rarity before rolling the dice so
+        // common petals (the bulk of equipped slots) skip the Math.random call.
+        const rarity = petal.rarity;
+        if ((rarity === 'ultra' || rarity === 'super' || rarity === 'unique' || rarity === 'apex') && Math.random() < 0.1) {
+            this.showPetalParticleEffect(playerX + petalX, playerY + petalY, rarity);
         }
-
-    });
+    }
 };
 
 Graphics.prototype.drawPlayerHealthBar = function(this: Graphics, player: Player) {
