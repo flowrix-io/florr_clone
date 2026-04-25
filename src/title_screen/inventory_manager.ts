@@ -90,12 +90,24 @@ export class TitleScreenInventoryManager {
         document.addEventListener('dragover', (e: Event) => {
             e.preventDefault();
         });
-        
+
         document.addEventListener('drop', (e: Event) => {
             e.preventDefault();
             const dragEvent = e as DragEvent;
             const target = e.target as HTMLElement;
-            
+
+            // If the drop already landed on the title canvas inside the loadout
+            // area, the canvas-level drop handler (setupCanvasLoadoutInteractions)
+            // has already routed it (swap / trash / equip). Skip the fallback
+            // so we don't double-handle and accidentally move the item back to
+            // the inventory.
+            if (this.loadoutCanvas && target === this.loadoutCanvas && this.canvasLoadoutBar) {
+                const r = this.loadoutCanvas.getBoundingClientRect();
+                const x = (dragEvent.clientX - r.left) * (this.loadoutCanvas.width / r.width);
+                const y = (dragEvent.clientY - r.top) * (this.loadoutCanvas.height / r.height);
+                if (this.canvasLoadoutBar.hitTest(x, y) >= 0) return;
+            }
+
             // If dropped outside loadout slots and inventory grid, move item back to inventory
             if (!target.closest('.loadout-slot') && !target.closest('.inventory-grid') && !target.closest('.crafting-inventory-grid')) {
                 const loadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
