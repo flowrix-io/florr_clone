@@ -67,9 +67,15 @@ function loadIconImage(iconName: string): HTMLImageElement | null {
     const entry = GAME_ICONS_NET_ICONS.find((i: any) => i.name === iconName);
     if (!entry || !entry.value) return null;
     let svg = entry.value as string;
-    // Force a 32x32 viewport — game-icons-net SVGs ship with viewBox 0 0 512 512
-    // and no width/height attribute, so the browser would render them at the
-    // SVG default (often 300x150).
+    // The DOM path forces SVGs to 32x32 via a `.gardn-icon-btn svg { width:
+    // 32px !important; ... }` rule. We can't apply external CSS to an Image
+    // loaded from a data URL — the SVG's own attributes/inline style wins.
+    // game-icons-net ships SVGs with `style="height:512px; width:512px"` AND
+    // a viewBox of 0 0 512 512, so without intervention the Image's intrinsic
+    // size is 512x512, drawImage downscales 16x and the icon paths render
+    // visibly thicker / blurrier than the DOM version. Strip the inline style
+    // so the width/height attributes we add take effect.
+    svg = svg.replace(/\s*style="[^"]*"/, '');
     if (svg.includes('viewBox="0 0 512 512"') && !/<svg[^>]*\swidth=/.test(svg)) {
         svg = svg.replace('viewBox="0 0 512 512"', 'viewBox="0 0 512 512" width="32" height="32"');
     } else if (/width="512px"/.test(svg)) {
