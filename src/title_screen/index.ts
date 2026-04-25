@@ -16,6 +16,7 @@ import { BackgroundAnimation } from './background';
 import { SettingsMenu, getControls } from './settings_menu';
 import { AuthForm } from './auth_form';
 import { TitleScreenSubmanagers } from './submanagers';
+import { TitleCanvasButtons, TitleButtonId } from './canvas_buttons';
 
 export { injectTitleScreenStyles, titleScreenStyles } from './styles';
 
@@ -57,6 +58,9 @@ export class TitleScreen {
     private pressedButton: string | null = null; // tracks which button is currently pressed (mousedown)
 
     private settings: SettingsMenu = new SettingsMenu();
+    private canvasButtons: TitleCanvasButtons = new TitleCanvasButtons({
+        onClick: (id) => this.handleCanvasButtonClick(id),
+    });
 
     // FPS/stats tracking for title screen
     private titleFrameCount: number = 0;
@@ -772,6 +776,20 @@ export class TitleScreen {
         const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement | null;
         if (gameCanvas) gameCanvas.style.display = 'none';
 
+        // Hide the DOM button containers — those buttons are now drawn on the
+        // shared title canvas. The DOM containers stay around so they can be
+        // shown again in-game (when the title canvas isn't active).
+        this.exitButtonContainer.style.display = 'none';
+        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
+        if (bottomLeftButtons) bottomLeftButtons.style.display = 'none';
+
+        // Sync the changelog shake state from the DOM-class signal that
+        // initializeElements wrote based on lastSeenChangelogCount.
+        const domChangelog = this.exitButtonContainer.querySelector('#changelogButton');
+        if (domChangelog && domChangelog.classList.contains('shake')) {
+            this.canvasButtons.setShake('changelog', true);
+        }
+
         // Load and start background animation. The per-frame callback runs all
         // remaining canvas work on the shared canvas: title UI (gated by
         // uiRenderingEnabled), then the changelog/notifications/leaderboard/
@@ -969,15 +987,19 @@ export class TitleScreen {
      * Sets up canvas UI event listeners for mouse and keyboard input
      */
     private setupCanvasUIListeners(): void {
-        // Mouse click handling
+        // Mouse click handling. Canvas buttons run their own click logic on
+        // mouseup-over-same-button (see mousedown/mouseup handlers below) so
+        // we filter them out of the generic click path here.
         this.uiCanvas.addEventListener('click', (e) => {
             const { x, y } = canvasCoords(this.uiCanvas, e);
+            if (this.canvasButtons.isPointOnButton(x, y)) return;
             this.handleCanvasClick(x, y);
         });
 
         // Mouse move for hover effects
         this.uiCanvas.addEventListener('mousemove', (e) => {
             const { x, y } = canvasCoords(this.uiCanvas, e);
+            this.canvasButtons.setHover(x, y);
             this.settings.handleMouseMove(x);
             this.handleCanvasHover(x, y);
         });
@@ -985,6 +1007,10 @@ export class TitleScreen {
         // Mouse down for pressed state
         this.uiCanvas.addEventListener('mousedown', (e) => {
             const { x, y } = canvasCoords(this.uiCanvas, e as MouseEvent);
+            if (this.canvasButtons.press(x, y)) {
+                this.pressedButton = null;
+                return;
+            }
             if (this.settings.handleMouseDown(x, y)) {
                 this.pressedButton = null;
                 return;
@@ -995,10 +1021,16 @@ export class TitleScreen {
             else this.pressedButton = null;
         });
 
-        // Mouse up to clear pressed state
+        // Mouse up to clear pressed state and dispatch canvas-button clicks
+        // (which only fire when mouseup lands on the same button as mousedown).
+        this.uiCanvas.addEventListener('mouseup', (e) => {
+            const { x, y } = canvasCoords(this.uiCanvas, e as MouseEvent);
+            this.canvasButtons.releaseClick(x, y);
+        });
         document.addEventListener('mouseup', () => {
             this.pressedButton = null;
             this.settings.handleMouseUp();
+            this.canvasButtons.release();
         });
 
         // Mouse leave to clear hover
@@ -1008,6 +1040,7 @@ export class TitleScreen {
             this.authForm.clearHover();
             this.pressedButton = null;
             this.settings.clearHover();
+            this.canvasButtons.clearHover();
         });
 
         // Scroll wheel for settings panel
@@ -1903,6 +1936,10 @@ export class TitleScreen {
         this.notificationsManager.setCanvas(titleCanvas);
         this.leaderboardManager.setCanvas(titleCanvas);
         this.guildMenuManager.setCanvas(titleCanvas);
+        // Hide the DOM button containers — canvas buttons paint on title.
+        this.exitButtonContainer.style.display = 'none';
+        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
+        if (bottomLeftButtons) bottomLeftButtons.style.display = 'none';
         // Restart canvas rendering
         this.startCanvasRendering();
         // Only show auth form if the user is not logged in
@@ -1947,14 +1984,15 @@ export class TitleScreen {
     }
 
     public hideExitButton(): void {
-        // Don't hide the container completely, just hide the exit button
-        // Keep settings button visible on title screen
+        // Hide the in-game DOM button containers when transitioning back to
+        // the title screen — the canvas buttons take over there.
         const exitButton = this.exitButtonContainer.querySelector('#exitButton') as HTMLElement;
         if (exitButton) {
             exitButton.style.display = 'none';
         }
-        // Keep bottom left buttons visible on title screen
-        // They are now always visible
+        this.exitButtonContainer.style.display = 'none';
+        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
+        if (bottomLeftButtons) bottomLeftButtons.style.display = 'none';
     }
 
     public showLoadingScreen(): void {
@@ -2065,9 +2103,67 @@ export class TitleScreen {
         if (this.uiRenderingEnabled) {
             this.renderCanvasUI();
             this.drawTitleLoadout();
+            this.canvasButtons.draw(this.uiCtx, this.uiCanvas.width, this.uiCanvas.height);
         }
         this.renderInGameMenusOverlay();
     };
+
+    /**
+     * Route a canvas-button click into the same logic the DOM button handlers
+     * used to run. Closes peer panels first so the open one toggles cleanly.
+     */
+    private handleCanvasButtonClick(id: TitleButtonId): void {
+        const closeOthers = (...except: string[]) => {
+            if (!except.includes('settings')) this.settings.close();
+            if (!except.includes('changelog')) this.changelogManager.hide();
+            if (!except.includes('notifications')) this.notificationsManager.hide();
+            if (!except.includes('leaderboard')) this.leaderboardManager.hide();
+            if (!except.includes('guild')) this.guildMenuManager.hide();
+        };
+        switch (id) {
+            case 'settings':
+                closeOthers('settings');
+                this.toggleSettings();
+                break;
+            case 'changelog':
+                closeOthers('changelog');
+                this.changelogManager.toggle();
+                this.canvasButtons.setShake('changelog', false);
+                localStorage.setItem('lastSeenChangelogCount', String(CHANGELOG.length));
+                break;
+            case 'notifications':
+                closeOthers('notifications');
+                this.notificationsManager.toggle();
+                break;
+            case 'leaderboard':
+                closeOthers('leaderboard');
+                this.leaderboardManager.toggle();
+                break;
+            case 'guild':
+                closeOthers('guild');
+                this.guildMenuManager.toggle();
+                break;
+            case 'inventory':
+                this.toggleInventoryOnTitleScreen();
+                break;
+            case 'skills':
+                this.toggleSkillsOnTitleScreen();
+                break;
+            case 'mobGallery':
+                if (this.submanagers.mobGallery) {
+                    this.submanagers.mobGallery.toggleMobGallery();
+                }
+                break;
+            case 'shop':
+                if (this.submanagers.shop) {
+                    this.submanagers.shop.toggleShop();
+                }
+                break;
+            case 'craft':
+                this.toggleCraftingOnTitleScreen();
+                break;
+        }
+    }
 
     /** Compute the loadout-bar bounds and paint it onto the shared title canvas. */
     private drawTitleLoadout(): void {
