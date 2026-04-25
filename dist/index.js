@@ -79,7 +79,7 @@ function removeLoadingScreen() {
         }, 500);
     }
 }
-window.onload = async () => {
+const bootstrap = async () => {
     console.log('[Index] Starting application initialization...');
     // Show loading screen
     const loadingScreen = createLoadingScreen();
@@ -153,6 +153,12 @@ window.onload = async () => {
         document.body.appendChild(errorMsg);
     }
 };
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { bootstrap(); });
+}
+else {
+    bootstrap();
+}
 // Preconnect to server without authenticating/spawning
 function preconnectToServer() {
     if (preconnectedSocket) {
