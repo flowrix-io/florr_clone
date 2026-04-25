@@ -381,10 +381,15 @@ export class CanvasMobGalleryPanel {
         roundedRect(ctx, PANEL_BORDER_W, PANEL_BORDER_W, cssW - PANEL_BORDER_W * 2, cssH - PANEL_BORDER_W * 2, 0);
         ctx.fill();
 
-        // Title — plain white, centered, 24px to match the legacy h2.
+        // Title — white, 24px Ubuntu, with a black outline for readability
+        // against the yellow panel.
         ctx.font = 'bold 24px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#000000';
+        ctx.strokeText('Mob Gallery', cssW / 2, PANEL_PAD + TITLE_HEIGHT / 2);
         ctx.fillStyle = '#ffffff';
         ctx.fillText('Mob Gallery', cssW / 2, PANEL_PAD + TITLE_HEIGHT / 2);
 
@@ -527,12 +532,9 @@ export class CanvasMobGalleryPanel {
         // stats + drops section. Each line carries its own font + color.
         type Line = { text: string; color: string; font: string };
         const lines: Line[] = [];
-        // Match the legacy DOM tooltip's font-family: Arial, sans-serif
-        // (the inventory/mob-gallery tooltips were styled with Arial
-        // explicitly, even though the rest of the panel chrome uses Ubuntu).
-        const titleFont = 'bold 14px Arial, sans-serif';
-        const bodyFont = '12px Arial, sans-serif';
-        const headerFont = 'bold 12px Arial, sans-serif';
+        const titleFont = 'bold 14px Ubuntu, sans-serif';
+        const bodyFont = '12px Ubuntu, sans-serif';
+        const headerFont = 'bold 12px Ubuntu, sans-serif';
 
         lines.push({
             text: `${c.rarity.charAt(0).toUpperCase() + c.rarity.slice(1)} ${stats.name || c.mobType}`,
