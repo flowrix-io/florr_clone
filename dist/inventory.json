@@ -1,10 +1,9 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 386934769,
+      "totalXP": 386935158,
       "inventory": {
         "common": {
-          "shield": 300,
           "petal_light": 104,
           "petal_dandelion": 38,
           "petal_stinger": 78,
@@ -13,7 +12,7 @@
           "petal_sand": 56,
           "petal_rock": 220,
           "petal_clover": 67,
-          "petal_bone": 171,
+          "petal_bone": 36,
           "petal_cactus": 22,
           "petal_iris": 17,
           "petal_poison_cactus": 18,
@@ -82,7 +81,8 @@
           "petal_worker_ant_egg": 7,
           "petal_worker_fire_ant_egg": 6,
           "petal_baby_fire_ant_egg": 4,
-          "petal_soil": 1
+          "petal_soil": 1,
+          "shield": 48
         },
         "unique": {
           "petal_stinger": 251,
@@ -207,13 +207,13 @@
           "petal_sand": 20,
           "speed_boost": 143,
           "petal_stinger": 55,
-          "shield": 139,
+          "shield": 178,
           "petal_clover": 86,
           "petal_light": 74,
           "health_potion": 35,
           "petal_rock": 59,
           "petal_yggdrasil": 9,
-          "petal_bone": 135,
+          "petal_bone": 156,
           "petal_poison_cactus": 143,
           "petal_iris": 19,
           "petal_lightning": 47,
@@ -623,10 +623,10 @@
           "petal_jelly": 1,
           "petal_powder": 1,
           "petal_centipede_egg": 1,
-          "petal_lightning_cutter": 1,
           "petal_sparkle": 1,
           "petal_basic": 1,
-          "petal_lightning": 1
+          "petal_lightning": 1,
+          "petal_lightning_cutter": 1
         }
       },
       "loadout": [
@@ -720,7 +720,7 @@
         "soldier_ant": {
           "epic": 236,
           "legendary": 926,
-          "common": 1141,
+          "common": 1144,
           "rare": 366,
           "mythic": 915,
           "ultra": 35,
@@ -1602,7 +1602,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1777090144132
+      "lastActiveAt": 1777092743793
     },
     "dev": {
       "id": "1g99g1gfk",
