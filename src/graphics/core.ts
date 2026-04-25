@@ -538,6 +538,19 @@ export class Graphics {
             }
         }, true);
 
+        // Swallow the matching `click` event when the press/release landed on
+        // a button. Without this, game.ts's click handler still fires —
+        // forwarding to settings.handleClick when settings has just opened,
+        // which interprets the off-panel click as click-outside-to-dismiss
+        // and closes settings on the same click that opened it.
+        this.canvas.addEventListener('click', (e: MouseEvent) => {
+            const { x, y } = toLocal(e);
+            if (buttons.isPointOnButton(x, y)) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+            }
+        }, true);
+
         // Hover doesn't need to block propagation — game cursor tracking still
         // wants to see the move events.
         this.canvas.addEventListener('mousemove', (e: MouseEvent) => {
