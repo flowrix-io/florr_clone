@@ -65,7 +65,14 @@ export class CanvasLoadoutBar {
     public hide() { this.visible = false; }
     public isVisible() { return this.visible; }
 
-    public layout(canvasWidth: number, canvasHeight: number) {
+    /**
+     * Lay out slot rectangles. By default the layout uses (0, 0, canvasWidth,
+     * canvasHeight) — i.e. centered horizontally on the canvas, anchored to the
+     * canvas bottom. Pass originX/originY to render into a sub-rect (used by
+     * the title screen, where the loadout bar shares the full-screen title
+     * canvas with everything else and lives in a custom region).
+     */
+    public layout(canvasWidth: number, canvasHeight: number, originX: number = 0, originY: number = 0) {
         // Sizes/gaps mirror gardn's HContainer layouts
         //   Primary HContainer(children, margin=5,  gap=20) — slot 70x70
         //   Secondary HContainer(children, margin=10, gap=15) — slot 50x50
@@ -84,12 +91,12 @@ export class CanvasLoadoutBar {
         // Secondary row width includes the trash slot appended with gap after the last slot
         const secondaryRowW = cols * secondarySize + (cols - 1) * secondaryGap + secondaryGap + secondarySize;
 
-        const primaryStartX = (canvasWidth - primaryRowW) / 2;
-        const secondaryStartX = (canvasWidth - secondaryRowW) / 2;
+        const primaryStartX = originX + (canvasWidth - primaryRowW) / 2;
+        const secondaryStartX = originX + (canvasWidth - secondaryRowW) / 2;
 
         // Bottom anchor: leave 34px mobile/keyboard padding + secondary margin
         const bottomPad = 34 + secondaryMargin;
-        const secondaryY = canvasHeight - bottomPad - secondarySize;
+        const secondaryY = originY + canvasHeight - bottomPad - secondarySize;
         const primaryY = secondaryY - secondaryMargin - primaryMargin - primarySize;
 
         this.slots = [];
@@ -213,10 +220,14 @@ export class CanvasLoadoutBar {
         this.draggingSlotIndex = -1;
     }
 
-    public draw(ctx: CanvasRenderingContext2D) {
+    public draw(ctx: CanvasRenderingContext2D, bounds?: { x: number; y: number; width: number; height: number }) {
         const player = this.game.getLocalPlayer();
         if (!player || !player.loadout) return;
-        this.layout(ctx.canvas.width, ctx.canvas.height);
+        if (bounds) {
+            this.layout(bounds.width, bounds.height, bounds.x, bounds.y);
+        } else {
+            this.layout(ctx.canvas.width, ctx.canvas.height);
+        }
 
         // Slide animation
         const target = this.visible ? 1 : 0;

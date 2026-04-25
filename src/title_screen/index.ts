@@ -86,6 +86,9 @@ export class TitleScreen {
         
         this.setupEventListeners();
         this.titleScreenInventoryManager = new TitleScreenInventoryManager();
+        // Wire the loadout bar onto the shared title canvas so it shares the
+        // single full-screen surface with bg + petals + UI + menu panels.
+        this.titleScreenInventoryManager.attachToTitleCanvas(titleCanvas);
         this.submanagers = new TitleScreenSubmanagers(this.titleScreenInventoryManager, this.guildMenuManager);
 
         // Initialize chat / skills / shop / mob gallery when the socket is available
@@ -269,11 +272,11 @@ export class TitleScreen {
             box-shadow: none;
             pointer-events: none;
         `;
-        this.centerText.innerHTML = `
-            <div id="titleScreenLoadoutWrap" style="margin-top: 20px; display: flex; justify-content: center;">
-                <canvas id="titleScreenLoadoutBar" width="900" height="210" style="background: transparent; display: block; pointer-events: auto; width: 900px; height: 211px;"></canvas>
-            </div>
-        `;
+        // centerText was historically the wrapper for the loadout-bar canvas.
+        // The loadout now paints onto the shared title canvas, so this DOM node
+        // is empty dead-weight — kept around because hide/showCenterText are
+        // still called elsewhere, but it has no children.
+        this.centerText.innerHTML = '';
 
         // Settings values load themselves in the SettingsMenu constructor.
 
@@ -777,31 +780,16 @@ export class TitleScreen {
         this.uiRenderingEnabled = true;
         this.background.start(this.titleFrame);
 
-        // Hide HTML centerText and use canvas instead
+        // Hide HTML centerText (empty dead-weight; loadout bar is on canvas now).
         this.centerText.style.display = 'none';
-        
-        // Move loadout bar out of centerText and make it visible (only if auth form is not shown)
-        // Use setTimeout to ensure DOM is ready
-        setTimeout(() => {
-            const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-            if (loadoutBar) {
-                // Remove from centerText if it's a child and append to body
-                if (loadoutBar.parentNode === this.centerText || loadoutBar.parentNode === null
-                    || (loadoutBar.parentNode as HTMLElement | null)?.id === 'titleScreenLoadoutWrap') {
-                    document.body.appendChild(loadoutBar);
-                }
-                // Position the canvas loadout bar (centered horizontally, above the instructions)
-                loadoutBar.style.position = 'absolute';
-                loadoutBar.style.top = '50%';
-                loadoutBar.style.left = '50%';
-                loadoutBar.style.transform = 'translate(-50%, 0)';
-                loadoutBar.style.marginTop = '50px';
-                loadoutBar.style.zIndex = '1001';
-                loadoutBar.style.pointerEvents = 'auto';
-                // Hide if auth form is shown
-                loadoutBar.style.display = this.authForm.isVisible() ? 'none' : 'block';
-            }
-        }, 100);
+
+        // The loadout bar now paints onto the shared title canvas via
+        // titleFrame; if the auth form is up, hide it so it doesn't draw.
+        if (this.authForm.isVisible()) {
+            this.titleScreenInventoryManager.hideLoadoutBar();
+        } else {
+            this.titleScreenInventoryManager.showLoadoutBar();
+        }
 
         // Setup canvas UI event listeners. The render loop itself is driven by
         // BackgroundAnimation's RAF — see the start() call above.
@@ -1524,10 +1512,7 @@ export class TitleScreen {
             this.authContainer.style.display = 'none';
         }
         // Show loadout bar when auth form is hidden
-        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (loadoutBar) {
-            loadoutBar.style.display = 'block';
-        }
+        this.titleScreenInventoryManager?.showLoadoutBar();
     }
 
     public showAuthContainer(): void {
@@ -1537,10 +1522,7 @@ export class TitleScreen {
             this.authContainer.style.display = 'none';
         }
         // Hide loadout bar when auth form is shown
-        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (loadoutBar) {
-            loadoutBar.style.display = 'none';
-        }
+        this.titleScreenInventoryManager?.hideLoadoutBar();
     }
 
     /**
@@ -1776,29 +1758,19 @@ export class TitleScreen {
 
     public hideCenterText(): void {
         this.centerText.style.display = 'none';
-        // Hide canvas UI
         if (this.uiCanvas) {
             this.uiCanvas.style.display = 'none';
         }
-        // Hide loadout bar
-        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (loadoutBar) {
-            loadoutBar.style.display = 'none';
-        }
+        this.titleScreenInventoryManager?.hideLoadoutBar();
         this.stopCanvasRendering();
     }
 
     public showCenterText(): void {
         this.centerText.style.display = 'none'; // Keep HTML hidden, use canvas
-        // Show canvas UI
         if (this.uiCanvas) {
             this.uiCanvas.style.display = 'block';
         }
-        // Show loadout bar
-        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (loadoutBar) {
-            loadoutBar.style.display = 'block';
-        }
+        this.titleScreenInventoryManager?.showLoadoutBar();
         this.startCanvasRendering();
     }
 
@@ -1855,12 +1827,10 @@ export class TitleScreen {
             craftingPanel.style.display = 'none';
         }
         
-        // Hide title screen loadout bar
-        const titleScreenLoadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (titleScreenLoadoutBar) {
-            titleScreenLoadoutBar.style.display = 'none';
-        }
-        
+        // Hide title screen loadout bar (now rendered on the shared canvas).
+        this.titleScreenInventoryManager?.hideLoadoutBar();
+
+
         // Hide skills panel (created by SkillsManager, no ID, so we need to find it by class)
         const skillsPanel = document.querySelector('.skills-panel');
         if (skillsPanel) {
@@ -2092,9 +2062,27 @@ export class TitleScreen {
 
     /** Single per-frame callback for the title canvas — matches appendToBody. */
     private titleFrame = (): void => {
-        if (this.uiRenderingEnabled) this.renderCanvasUI();
+        if (this.uiRenderingEnabled) {
+            this.renderCanvasUI();
+            this.drawTitleLoadout();
+        }
         this.renderInGameMenusOverlay();
     };
+
+    /** Compute the loadout-bar bounds and paint it onto the shared title canvas. */
+    private drawTitleLoadout(): void {
+        if (!this.titleScreenInventoryManager) return;
+        const ctx = this.uiCtx;
+        // Center the loadout band horizontally on screen, anchored just below
+        // the centerY (matches the legacy CSS that sat the bar at top:50%
+        // with margin-top:50px). The CanvasLoadoutBar layout uses these bounds
+        // to position slots; size mirrors the old standalone canvas.
+        const LOADOUT_W = 900;
+        const LOADOUT_H = 210;
+        const x = (this.uiCanvas.width - LOADOUT_W) / 2;
+        const y = this.uiCanvas.height / 2 + 50;
+        this.titleScreenInventoryManager.drawLoadout(ctx, { x, y, width: LOADOUT_W, height: LOADOUT_H });
+    }
 
     /**
      * Per-frame work driven by the background animation loop: paints whichever
