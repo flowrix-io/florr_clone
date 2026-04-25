@@ -62,12 +62,20 @@ export interface Guild {
     createdAt: number;
 }
 
+export interface ApiKey {
+    key: string;        // The raw API key — sent in the X-API-Key header
+    username: string;   // Owner of this key — admin status is re-checked at request time
+    label: string;      // Human-readable description, e.g. "discord-bot"
+    createdAt: number;
+}
+
 interface DatabaseData {
     players: { [userId: string]: PlayerProgress };
     users: { [username: string]: User };
     codes?: { [code: string]: RedeemedCode }; // Store codes persistently
     notifications?: Notification[]; // Global notifications array
     guilds?: { [guildName: string]: Guild }; // Persistent guild storage, keyed by uppercase name
+    apiKeys?: { [key: string]: ApiKey }; // External REST API keys
 }
 
 let db: DatabaseData = { players: {}, users: {} };
@@ -450,6 +458,33 @@ export const database = {
         db.notifications = [];
         writeDatabase();
         return count;
+    },
+
+    // API key management for the external REST API.
+    // Keys are stored verbatim — operators add them by editing inventory.json or via
+    // an admin tool, then attach them as the X-API-Key header on requests.
+    saveApiKey: (entry: ApiKey) => {
+        if (!db.apiKeys) db.apiKeys = {};
+        db.apiKeys[entry.key] = entry;
+        writeDatabase();
+        return true;
+    },
+
+    deleteApiKey: (key: string) => {
+        if (db.apiKeys && db.apiKeys[key]) {
+            delete db.apiKeys[key];
+            writeDatabase();
+            return true;
+        }
+        return false;
+    },
+
+    getApiKey: (key: string): ApiKey | null => {
+        return (db.apiKeys && db.apiKeys[key]) || null;
+    },
+
+    getAllApiKeys: (): ApiKey[] => {
+        return db.apiKeys ? Object.values(db.apiKeys) : [];
     },
 
     // Get leaderboard data: all accounts sorted by totalXP descending

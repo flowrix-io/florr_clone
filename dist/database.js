@@ -384,6 +384,30 @@ exports.database = {
         writeDatabase();
         return count;
     },
+    // API key management for the external REST API.
+    // Keys are stored verbatim — operators add them by editing inventory.json or via
+    // an admin tool, then attach them as the X-API-Key header on requests.
+    saveApiKey: (entry) => {
+        if (!db.apiKeys)
+            db.apiKeys = {};
+        db.apiKeys[entry.key] = entry;
+        writeDatabase();
+        return true;
+    },
+    deleteApiKey: (key) => {
+        if (db.apiKeys && db.apiKeys[key]) {
+            delete db.apiKeys[key];
+            writeDatabase();
+            return true;
+        }
+        return false;
+    },
+    getApiKey: (key) => {
+        return (db.apiKeys && db.apiKeys[key]) || null;
+    },
+    getAllApiKeys: () => {
+        return db.apiKeys ? Object.values(db.apiKeys) : [];
+    },
     // Get leaderboard data: all accounts sorted by totalXP descending
     getLeaderboard: (limit = 50) => {
         const entries = [];

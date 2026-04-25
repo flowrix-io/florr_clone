@@ -30,6 +30,7 @@ import {
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { getMobStats, getAllMobTypes } from '../mobs';
+import { recordBossEvent, stripHtml } from './apiKeyApi';
 
 // Tier order from lowest to highest
 const TIER_ORDER: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
@@ -1064,10 +1065,21 @@ export function spawnSpecialMobs(
             ultraMobCount.value = 1;
             // Don't send spawn notification for target dummies
             if (ultraMob.type !== 'target_dummy') {
+                const content = `<b style="color: ${ENEMY_TIERS.ultra.color};">An ultra ${ultraMob.type.replace('_', ' ')} has spawned in a legendary zone!</b>`;
+                const timestamp = Date.now();
                 io.emit('chatMessage', {
                     sender: '',
-                    content: `<b style="color: ${ENEMY_TIERS.ultra.color};">An ultra ${ultraMob.type.replace('_', ' ')} has spawned in a legendary zone!</b>`,
-                    timestamp: Date.now()
+                    content,
+                    timestamp
+                });
+                recordBossEvent({
+                    type: 'spawn',
+                    tier: 'ultra',
+                    mobType: ultraMob.type,
+                    x: ultraMob.x,
+                    y: ultraMob.y,
+                    timestamp,
+                    message: stripHtml(content)
                 });
             }
             console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
@@ -1087,6 +1099,7 @@ export function spawnSpecialMobs(
                 // Don't send spawn notification for target dummies
                 if (superMob.type !== 'target_dummy') {
                     const mobSection = getSectionAtPosition(superMob.x, superMob.y);
+                    const spawnTimestamp = Date.now();
 
                     // Send personalized message to each player based on their section
                     Object.entries(players).forEach(([playerId, player]) => {
@@ -1097,8 +1110,18 @@ export function spawnSpecialMobs(
                         io.to(playerId).emit('chatMessage', {
                             sender: '',
                             content: `<b style="color: ${ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned${somewhere}!</b>`,
-                            timestamp: Date.now()
+                            timestamp: spawnTimestamp
                         });
+                    });
+
+                    recordBossEvent({
+                        type: 'spawn',
+                        tier: 'super',
+                        mobType: superMob.type,
+                        x: superMob.x,
+                        y: superMob.y,
+                        timestamp: spawnTimestamp,
+                        message: `A super ${superMob.type.replace('_', ' ')} has spawned!`
                     });
                 }
                 console.log(`[SERVER] Spawned super mob in section ${section}: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
@@ -1115,6 +1138,7 @@ export function spawnSpecialMobs(
             // Don't send spawn notification for target dummies
             if (uniqueMob.type !== 'target_dummy') {
                 const mobSection = getSectionAtPosition(uniqueMob.x, uniqueMob.y);
+                const spawnTimestamp = Date.now();
 
                 // Send personalized message to each player based on their section
                 Object.entries(players).forEach(([playerId, player]) => {
@@ -1125,8 +1149,18 @@ export function spawnSpecialMobs(
                     io.to(playerId).emit('chatMessage', {
                         sender: '',
                         content: `<b style="color: ${ENEMY_TIERS.unique.color};">A unique ${uniqueMob.type.replace('_', ' ')} has spawned${somewhere}!</b>`,
-                        timestamp: Date.now()
+                        timestamp: spawnTimestamp
                     });
+                });
+
+                recordBossEvent({
+                    type: 'spawn',
+                    tier: 'unique',
+                    mobType: uniqueMob.type,
+                    x: uniqueMob.x,
+                    y: uniqueMob.y,
+                    timestamp: spawnTimestamp,
+                    message: `A unique ${uniqueMob.type.replace('_', ' ')} has spawned!`
                 });
             }
             console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);
