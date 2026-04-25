@@ -81,6 +81,7 @@
             const scriptData = new TextDecoder().decode(bundle);
             const script = document.createElement('script');
             script.textContent = scriptData;
+            document.removeChild(loadingScreen);
             document.body.appendChild(script);
 
         });

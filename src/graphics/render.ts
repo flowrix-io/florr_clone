@@ -20,6 +20,8 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
 
     // Clear the canvas
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.fillStyle = 'black';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Apply zoom scaling
     this.ctx.scale(this.zoomLevel, this.zoomLevel);
