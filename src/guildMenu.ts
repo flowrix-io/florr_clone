@@ -169,11 +169,8 @@ export class GuildMenuManager {
     }
 
     private panelOffset(): { x: number; y: number } {
-        const inGame = !!(window as any).currentGame;
-        return {
-            x: inGame ? this.PANEL_X : 0,
-            y: inGame ? this.PANEL_Y : 0,
-        };
+        // Canvas is always full-screen; panel is drawn at PANEL_X/PANEL_Y.
+        return { x: this.PANEL_X, y: this.PANEL_Y };
     }
 
     private hitTest(x: number, y: number): HitRegion | null {

@@ -74,34 +74,15 @@ export class TitleScreen {
         // Make notifications manager globally accessible
         (window as any).notificationsManager = this.notificationsManager;
         
-        // Set canvas on managers after canvas is available
-        const setupCanvas = (canvas: HTMLCanvasElement) => {
-            // Ensure canvas has proper dimensions (not just CSS sizing)
-            if (canvas.width === 0 || canvas.height === 0) {
-                applyZoomCompensation(canvas);
-            }
-            // Ensure canvas is visible on title screen
-            canvas.style.zIndex = '1';
-            canvas.style.pointerEvents = 'auto';
-            this.changelogManager.setCanvas(canvas);
-            this.notificationsManager.setCanvas(canvas);
-            this.leaderboardManager.setCanvas(canvas);
-            this.guildMenuManager.setCanvas(canvas);
-        };
-        
-        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-        if (gameCanvas) {
-            setupCanvas(gameCanvas);
-        } else {
-            // Wait for canvas to be ready
-            const checkCanvas = setInterval(() => {
-                const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-                if (canvas) {
-                    setupCanvas(canvas);
-                    clearInterval(checkCanvas);
-                }
-            }, 100);
-        }
+        // Hand the panel managers the full-screen title canvas. They draw at
+        // PANEL_X/PANEL_Y on whatever canvas they're attached to, so they
+        // composite cleanly on top of the bg + petals + UI.
+        const titleCanvas = this.background.getCanvas();
+        applyZoomCompensation(titleCanvas);
+        this.changelogManager.setCanvas(titleCanvas);
+        this.notificationsManager.setCanvas(titleCanvas);
+        this.leaderboardManager.setCanvas(titleCanvas);
+        this.guildMenuManager.setCanvas(titleCanvas);
         
         this.setupEventListeners();
         this.titleScreenInventoryManager = new TitleScreenInventoryManager();
@@ -782,6 +763,11 @@ export class TitleScreen {
         document.body.appendChild(this.loadingScreen);
         document.body.appendChild(this.landContainer);
         document.body.appendChild(this.axolotlContainer);
+
+        // Hide the in-game canvas while on the title screen; the title canvas
+        // owns rendering until a game starts.
+        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement | null;
+        if (gameCanvas) gameCanvas.style.display = 'none';
 
         // Load and start background animation. The per-frame callback runs all
         // remaining canvas work on the shared canvas: title UI (gated by
@@ -1926,6 +1912,16 @@ export class TitleScreen {
         if (this.uiCanvas) {
             this.uiCanvas.style.display = 'block';
         }
+        // Hide the in-game canvas; the title canvas owns rendering again.
+        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement | null;
+        if (gameCanvas) gameCanvas.style.display = 'none';
+        // Re-attach panel managers to the title canvas — the in-game graphics
+        // pointed them at gameCanvas while the game was running.
+        const titleCanvas = this.background.getCanvas();
+        this.changelogManager.setCanvas(titleCanvas);
+        this.notificationsManager.setCanvas(titleCanvas);
+        this.leaderboardManager.setCanvas(titleCanvas);
+        this.guildMenuManager.setCanvas(titleCanvas);
         // Restart canvas rendering
         this.startCanvasRendering();
         // Only show auth form if the user is not logged in
@@ -1953,12 +1949,6 @@ export class TitleScreen {
         // Re-initialize shop and mob gallery (they were torn down in hideTitleScreenPanels)
         if (!this.submanagers.shop) this.submanagers.initShop();
         if (!this.submanagers.mobGallery) this.submanagers.initMobGallery();
-
-        // Hide game canvas initially (it will be shown when menus are opened)
-        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-        if (gameCanvas) {
-            gameCanvas.style.display = 'none';
-        }
     }
 
     public showExitButton(): void {
@@ -2090,61 +2080,17 @@ export class TitleScreen {
     public stopBackgroundAnimation(): void { this.background.stop(); }
 
     /**
-     * Per-frame work driven by the background animation loop: positions the
-     * shared gameCanvas as a panel for whichever in-game menu is currently
-     * open (changelog/notifications/leaderboard/guild), or hides it otherwise.
-     * Skipped while a game is in progress — the in-game Graphics class owns
-     * the canvas then.
+     * Per-frame work driven by the background animation loop: paints whichever
+     * in-game menu (changelog/notifications/leaderboard/guild) is open onto
+     * the shared title canvas at PANEL_X/PANEL_Y. Skipped while a game is in
+     * progress — the in-game Graphics class owns the canvas then.
      */
     private renderInGameMenusOverlay(): void {
         if ((window as any).currentGame) return;
-
-        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-        if (!gameCanvas) return;
-
-        const changelogOpen = this.changelogManager.isChangelogOpen();
-        const notificationsOpen = this.notificationsManager.isNotificationsOpen();
-        const leaderboardOpen = this.leaderboardManager.isLeaderboardOpen();
-        const guildOpen = this.guildMenuManager.isGuildMenuOpen();
-
-        if (changelogOpen || notificationsOpen || leaderboardOpen || guildOpen) {
-            const PANEL_X = 20;
-            const PANEL_Y = 72;
-            const PANEL_WIDTH = 600;
-            const PANEL_HEIGHT = 500;
-
-            if (gameCanvas.width !== PANEL_WIDTH || gameCanvas.height !== PANEL_HEIGHT) {
-                gameCanvas.width = PANEL_WIDTH;
-                gameCanvas.height = PANEL_HEIGHT;
-                this.changelogManager.setCanvas(gameCanvas);
-                this.notificationsManager.setCanvas(gameCanvas);
-                this.leaderboardManager.setCanvas(gameCanvas);
-                this.guildMenuManager.setCanvas(gameCanvas);
-            }
-
-            gameCanvas.style.position = 'absolute';
-            gameCanvas.style.left = `${PANEL_X}px`;
-            gameCanvas.style.top = `${PANEL_Y}px`;
-            gameCanvas.style.width = `${PANEL_WIDTH}px`;
-            gameCanvas.style.height = `${PANEL_HEIGHT}px`;
-            gameCanvas.style.zIndex = '2000';
-            gameCanvas.style.pointerEvents = 'auto';
-            gameCanvas.style.display = 'block';
-
-            const ctx = gameCanvas.getContext('2d');
-            if (ctx) ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-
-            this.changelogManager.render();
-            this.notificationsManager.render();
-            this.leaderboardManager.render();
-            this.guildMenuManager.render();
-        } else {
-            gameCanvas.style.display = 'none';
-            const ctx = gameCanvas.getContext('2d');
-            if (ctx && gameCanvas.width > 0 && gameCanvas.height > 0) {
-                ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-            }
-        }
+        if (this.changelogManager.isChangelogOpen()) this.changelogManager.render();
+        if (this.notificationsManager.isNotificationsOpen()) this.notificationsManager.render();
+        if (this.leaderboardManager.isLeaderboardOpen()) this.leaderboardManager.render();
+        if (this.guildMenuManager.isGuildMenuOpen()) this.guildMenuManager.render();
     }
 
     private toggleInventoryOnTitleScreen(): void {
