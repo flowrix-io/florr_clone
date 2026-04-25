@@ -12,8 +12,146 @@
  * would otherwise balloon this file. Stats + description are still shown.
  */
 
-import { getAllMobTypes, getMobStats, getMobRarities, MobStats } from '../mobs';
+import { getAllMobTypes, getMobStats, getMobRarities, MobStats, MOB_DROP_TABLES, Rarity } from '../mobs';
 import { ITEM_RARITY_COLORS, RARITY_LEVELS } from '../petals';
+
+// Rarity progression for drop-rarity calculations. Mirrors the order used
+// server-side (server/itemManager.ts) and in the legacy DOM tooltip.
+const DROP_RARITY_ORDER: Rarity[] = [
+    'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique',
+];
+
+function getCraftingChance(rarityIndex: number): number {
+    const baseChance = 64;
+    return baseChance / Math.pow(2, rarityIndex);
+}
+
+function getDropUpgradeChance(currentRarity: Rarity): number {
+    const currentIndex = DROP_RARITY_ORDER.indexOf(currentRarity);
+    if (currentIndex === -1 || currentIndex >= DROP_RARITY_ORDER.length - 1) return 0;
+    return getCraftingChance(currentIndex) / 3;
+}
+
+function getDropDowngradeChance(currentRarity: Rarity): number {
+    const currentIndex = DROP_RARITY_ORDER.indexOf(currentRarity);
+    if (currentIndex === -1 || currentIndex === 0) return 0;
+    const craftingChanceToCurrentRarity = getCraftingChance(currentIndex - 1);
+    return (1 / (1 + craftingChanceToCurrentRarity)) * 100;
+}
+
+function upgradeRarity(r: Rarity): Rarity {
+    const idx = DROP_RARITY_ORDER.indexOf(r);
+    return idx >= 0 && idx < DROP_RARITY_ORDER.length - 1 ? DROP_RARITY_ORDER[idx + 1] : r;
+}
+
+function downgradeRarity(r: Rarity): Rarity {
+    const idx = DROP_RARITY_ORDER.indexOf(r);
+    return idx > 0 && idx < DROP_RARITY_ORDER.length ? DROP_RARITY_ORDER[idx - 1] : r;
+}
+
+interface DropEntry {
+    itemType: string;
+    type: 'petal' | 'consumable' | string;
+    rarity: Rarity;
+    /** Final probability as a percentage (0-100), rounded to 2 dp display. */
+    probability: number;
+    multiplier?: number;
+}
+
+/**
+ * Reproduce the DOM tooltip's drop-table calculation so the canvas tooltip
+ * can render the same outcomes. For non-common mobs, each drop expands into
+ * a 90% path (mob-rarity-1) and a 10% path (drop's listed rarity), with each
+ * path branching into downgrade/same/upgrade outcomes. Common mobs use the
+ * drop's listed rarity directly.
+ */
+function computeMobDrops(mobType: string, mobRarity: string): DropEntry[] {
+    const dropTable = MOB_DROP_TABLES[mobType];
+    if (!dropTable) return [];
+    const rarityIndex = DROP_RARITY_ORDER.indexOf(mobRarity as Rarity);
+    const isCommon = mobRarity === 'common';
+    const ultraMultiplier = mobRarity === 'ultra' ? 20 : 1;
+
+    // For non-common mobs, combine common+uncommon variants of the same item
+    // so they don't render as duplicate cards.
+    type DropDef = (typeof dropTable.drops)[number];
+    let processedDrops: DropDef[];
+    if (!isCommon) {
+        const groups = new Map<string, DropDef[]>();
+        for (const drop of dropTable.drops) {
+            const key = `${drop.type}_${drop.itemType}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(drop);
+        }
+        processedDrops = [];
+        for (const group of groups.values()) {
+            const c = group.find((d) => d.rarity === 'common');
+            const u = group.find((d) => d.rarity === 'uncommon');
+            const others = group.filter((d) => d.rarity !== 'common' && d.rarity !== 'uncommon');
+            if (c && u) {
+                processedDrops.push({
+                    ...u,
+                    probability: c.probability + u.probability,
+                    minQuantity: Math.min(c.minQuantity || 1, u.minQuantity || 1),
+                    maxQuantity: Math.max(c.maxQuantity || 1, u.maxQuantity || 1),
+                    rarity: 'uncommon',
+                });
+                processedDrops.push(...others);
+            } else {
+                processedDrops.push(...group);
+            }
+        }
+    } else {
+        processedDrops = dropTable.drops;
+    }
+
+    const out: DropEntry[] = [];
+
+    const pushOutcomes = (baseRarity: Rarity, baseProb: number, drop: DropDef) => {
+        const upgrade = Math.min(100, getDropUpgradeChance(baseRarity) * ultraMultiplier);
+        const downgrade = getDropDowngradeChance(baseRarity);
+        const same = Math.max(0, 100 - upgrade - downgrade);
+        const mul = drop.maxQuantity && drop.maxQuantity > 1 ? drop.maxQuantity : undefined;
+        if (downgrade > 0) {
+            out.push({
+                itemType: drop.itemType,
+                type: drop.type,
+                rarity: downgradeRarity(baseRarity),
+                probability: baseProb * downgrade,
+                multiplier: mul,
+            });
+        }
+        if (same > 0) {
+            out.push({
+                itemType: drop.itemType,
+                type: drop.type,
+                rarity: baseRarity,
+                probability: baseProb * same,
+                multiplier: mul,
+            });
+        }
+        if (upgrade > 0) {
+            out.push({
+                itemType: drop.itemType,
+                type: drop.type,
+                rarity: upgradeRarity(baseRarity),
+                probability: baseProb * upgrade,
+                multiplier: mul,
+            });
+        }
+    };
+
+    for (const drop of processedDrops) {
+        if (!isCommon && rarityIndex > 0 && rarityIndex < DROP_RARITY_ORDER.length) {
+            const lower = DROP_RARITY_ORDER[rarityIndex - 1] as Rarity;
+            pushOutcomes(lower, drop.probability * 0.9, drop);
+            pushOutcomes(drop.rarity as Rarity, drop.probability * 0.1, drop);
+        } else {
+            pushOutcomes(drop.rarity as Rarity, drop.probability, drop);
+        }
+    }
+    return out;
+}
 
 export type MobKills = Record<string, Record<string, number>>;
 
@@ -292,11 +430,11 @@ export class CanvasMobGalleryPanel {
                 ctx.strokeStyle = darken(rarityColor);
                 ctx.lineWidth = 3;
             } else {
-                // Locked + invalid both use the panel's accent color so the
-                // empty slots blend with the panel border / scrollbar thumb
-                // instead of a flat black overlay.
-                ctx.fillStyle = PANEL_BORDER;
-                ctx.strokeStyle = darken(PANEL_BORDER);
+                // Locked + invalid: a softly-darkened panel-bg tint with a
+                // matching darker border. Reads as "empty" against the panel
+                // without going as dark as the panel's border accent did.
+                ctx.fillStyle = darken(PANEL_BG, 15);
+                ctx.strokeStyle = darken(PANEL_BG, 30);
                 ctx.lineWidth = 2;
             }
             roundedRect(ctx, c.x, c.y, c.w, c.h, 5);
@@ -384,36 +522,76 @@ export class CanvasMobGalleryPanel {
     private drawTooltip(ctx: CanvasRenderingContext2D, cssW: number, cssH: number, c: CellRect) {
         const stats = c.stats!;
         const rarityColor = ITEM_RARITY_COLORS[c.rarity] || '#fff';
-        const lines: { text: string; color: string; bold?: boolean }[] = [];
-        const titleText = `${c.rarity.charAt(0).toUpperCase() + c.rarity.slice(1)} ${stats.name || c.mobType}`;
-        lines.push({ text: titleText, color: rarityColor, bold: true });
+
+        // Build the renderable line list: title + description (wrapped) +
+        // stats + drops section. Each line carries its own font + color.
+        type Line = { text: string; color: string; font: string };
+        const lines: Line[] = [];
+        // Match the legacy DOM tooltip's font-family: Arial, sans-serif
+        // (the inventory/mob-gallery tooltips were styled with Arial
+        // explicitly, even though the rest of the panel chrome uses Ubuntu).
+        const titleFont = 'bold 14px Arial, sans-serif';
+        const bodyFont = '12px Arial, sans-serif';
+        const headerFont = 'bold 12px Arial, sans-serif';
+
+        lines.push({
+            text: `${c.rarity.charAt(0).toUpperCase() + c.rarity.slice(1)} ${stats.name || c.mobType}`,
+            color: rarityColor,
+            font: titleFont,
+        });
         if (stats.description) {
-            for (const w of wrapText(ctx, stats.description, 280, '12px Ubuntu, sans-serif')) {
-                lines.push({ text: w, color: '#ccc' });
+            for (const w of wrapText(ctx, stats.description, 280, bodyFont)) {
+                lines.push({ text: w, color: '#ccc', font: bodyFont });
             }
         }
-        lines.push({ text: `HP: ${abbreviateNumber(stats.health)}`, color: '#4CAF50' });
-        lines.push({ text: `Damage: ${abbreviateNumber(stats.damage)}`, color: '#f44336' });
-        lines.push({ text: `Speed: ${stats.speed.toFixed(1)}`, color: '#2196F3' });
-        lines.push({ text: `XP: ${abbreviateNumber(stats.xp)}`, color: '#FF9800' });
+        lines.push({ text: `HP: ${abbreviateNumber(stats.health)}`, color: '#4CAF50', font: bodyFont });
+        lines.push({ text: `Damage: ${abbreviateNumber(stats.damage)}`, color: '#f44336', font: bodyFont });
+        lines.push({ text: `Speed: ${stats.speed.toFixed(1)}`, color: '#2196F3', font: bodyFont });
+        lines.push({ text: `XP: ${abbreviateNumber(stats.xp)}`, color: '#FF9800', font: bodyFont });
+
+        const drops = computeMobDrops(c.mobType, c.rarity);
+        if (drops.length > 0) {
+            lines.push({ text: '', color: '', font: bodyFont }); // spacer
+            lines.push({ text: 'Drops:', color: '#FFD700', font: headerFont });
+            for (const d of drops) {
+                const rc = ITEM_RARITY_COLORS[d.rarity] || '#fff';
+                const niceItem = formatItemName(d.itemType);
+                const rarityPrefix = d.rarity.charAt(0).toUpperCase() + d.rarity.slice(1);
+                const mul = d.multiplier ? ` x${d.multiplier}` : '';
+                const probStr = d.probability < 0.01
+                    ? '<0.01%'
+                    : d.probability.toFixed(2) + '%';
+                lines.push({
+                    text: `${rarityPrefix} ${niceItem}${mul}: ${probStr}`,
+                    color: rc,
+                    font: bodyFont,
+                });
+            }
+        }
 
         const padX = 10;
         const padY = 8;
-        const lineH = 18;
-        const titleH = 22;
+        const lineH = 16;
+        const titleH = 20;
+
+        // Measure widest line (use the right font for each).
         let maxW = 0;
-        ctx.font = 'bold 14px Ubuntu, sans-serif';
-        maxW = Math.max(maxW, ctx.measureText(lines[0].text).width);
-        ctx.font = '12px Ubuntu, sans-serif';
-        for (let i = 1; i < lines.length; i++) {
-            maxW = Math.max(maxW, ctx.measureText(lines[i].text).width);
+        for (const ln of lines) {
+            if (!ln.text) continue;
+            ctx.font = ln.font;
+            const w = ctx.measureText(ln.text).width;
+            if (w > maxW) maxW = w;
         }
         const w = maxW + padX * 2;
-        const h = padY * 2 + titleH + (lines.length - 1) * lineH;
+        let h = padY * 2;
+        for (const ln of lines) {
+            h += ln.font === titleFont ? titleH : lineH;
+        }
 
-        // Position next to the cell, clamped to canvas bounds.
-        let tx = c.x + c.w + 8 - this.scrollY * 0; // tooltip is in screen space
-        let ty = c.y - this.scrollY;               // adjust for scroll
+        // Position next to the cell, clamped to canvas bounds. Cell coords
+        // are in absolute (un-scrolled) canvas space, so adjust for scrollY.
+        let tx = c.x + c.w + 8;
+        let ty = c.y - this.scrollY;
         if (tx + w > cssW - 4) tx = c.x - w - 8;
         if (ty + h > cssH - 4) ty = cssH - h - 4;
         if (ty < this.contentTop()) ty = this.contentTop();
@@ -428,15 +606,14 @@ export class CanvasMobGalleryPanel {
         let cy = ty + padY;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.font = 'bold 14px Ubuntu, sans-serif';
-        ctx.fillStyle = lines[0].color;
-        ctx.fillText(lines[0].text, tx + padX, cy);
-        cy += titleH;
-        ctx.font = '12px Ubuntu, sans-serif';
-        for (let i = 1; i < lines.length; i++) {
-            ctx.fillStyle = lines[i].color;
-            ctx.fillText(lines[i].text, tx + padX, cy);
-            cy += lineH;
+        for (const ln of lines) {
+            const lh = ln.font === titleFont ? titleH : lineH;
+            if (ln.text) {
+                ctx.font = ln.font;
+                ctx.fillStyle = ln.color;
+                ctx.fillText(ln.text, tx + padX, cy);
+            }
+            cy += lh;
         }
     }
 
@@ -529,6 +706,13 @@ export class CanvasMobGalleryPanel {
 
 function pointInRect(x: number, y: number, r: { x: number; y: number; w: number; h: number }): boolean {
     return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+
+function formatItemName(itemType: string): string {
+    if (!itemType) return '';
+    return itemType
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, font: string): string[] {
