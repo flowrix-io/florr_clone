@@ -16,6 +16,7 @@ import { BackgroundAnimation } from './background';
 import { SettingsMenu, getControls } from './settings_menu';
 import { AuthForm } from './auth_form';
 import { TitleScreenSubmanagers } from './submanagers';
+import { TitleCanvasButtons, TitleButtonId } from './canvas_buttons';
 
 export { injectTitleScreenStyles, titleScreenStyles } from './styles';
 
@@ -38,14 +39,14 @@ export class TitleScreen {
     public guildMenuManager!: GuildMenuManager;
     private titleScreenInventoryManager!: TitleScreenInventoryManager;
     private submanagers!: TitleScreenSubmanagers;
-    // Canvas-based UI
-    private uiCanvas!: HTMLCanvasElement;
-    private uiCtx!: CanvasRenderingContext2D;
+    // Canvas-based UI — shares a single canvas with the background animation.
+    // `uiCanvas` / `uiCtx` are getters that point at `background`'s canvas.
+    private get uiCanvas(): HTMLCanvasElement { return this.background.getCanvas(); }
+    private get uiCtx(): CanvasRenderingContext2D { return this.background.getCtx(); }
     private playerName: string = '';
     private isNameInputFocused: boolean = false;
     private hoveredBiomeIndex: number = -1;
     private hoveredStartButton: boolean = false;
-    private animationFrameId: number | null = null;
     
     // Auth form state (canvas-based)
     private authForm: AuthForm = new AuthForm({ onAction: (action) => {
@@ -57,6 +58,9 @@ export class TitleScreen {
     private pressedButton: string | null = null; // tracks which button is currently pressed (mousedown)
 
     private settings: SettingsMenu = new SettingsMenu();
+    private canvasButtons: TitleCanvasButtons = new TitleCanvasButtons({
+        onClick: (id) => this.handleCanvasButtonClick(id),
+    });
 
     // FPS/stats tracking for title screen
     private titleFrameCount: number = 0;
@@ -74,37 +78,21 @@ export class TitleScreen {
         // Make notifications manager globally accessible
         (window as any).notificationsManager = this.notificationsManager;
         
-        // Set canvas on managers after canvas is available
-        const setupCanvas = (canvas: HTMLCanvasElement) => {
-            // Ensure canvas has proper dimensions (not just CSS sizing)
-            if (canvas.width === 0 || canvas.height === 0) {
-                applyZoomCompensation(canvas);
-            }
-            // Ensure canvas is visible on title screen
-            canvas.style.zIndex = '1';
-            canvas.style.pointerEvents = 'auto';
-            this.changelogManager.setCanvas(canvas);
-            this.notificationsManager.setCanvas(canvas);
-            this.leaderboardManager.setCanvas(canvas);
-            this.guildMenuManager.setCanvas(canvas);
-        };
-        
-        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-        if (gameCanvas) {
-            setupCanvas(gameCanvas);
-        } else {
-            // Wait for canvas to be ready
-            const checkCanvas = setInterval(() => {
-                const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-                if (canvas) {
-                    setupCanvas(canvas);
-                    clearInterval(checkCanvas);
-                }
-            }, 100);
-        }
+        // Hand the panel managers the full-screen title canvas. They draw at
+        // PANEL_X/PANEL_Y on whatever canvas they're attached to, so they
+        // composite cleanly on top of the bg + petals + UI.
+        const titleCanvas = this.background.getCanvas();
+        applyZoomCompensation(titleCanvas);
+        this.changelogManager.setCanvas(titleCanvas);
+        this.notificationsManager.setCanvas(titleCanvas);
+        this.leaderboardManager.setCanvas(titleCanvas);
+        this.guildMenuManager.setCanvas(titleCanvas);
         
         this.setupEventListeners();
         this.titleScreenInventoryManager = new TitleScreenInventoryManager();
+        // Wire the loadout bar onto the shared title canvas so it shares the
+        // single full-screen surface with bg + petals + UI + menu panels.
+        this.titleScreenInventoryManager.attachToTitleCanvas(titleCanvas);
         this.submanagers = new TitleScreenSubmanagers(this.titleScreenInventoryManager, this.guildMenuManager);
 
         // Initialize chat / skills / shop / mob gallery when the socket is available
@@ -288,11 +276,11 @@ export class TitleScreen {
             box-shadow: none;
             pointer-events: none;
         `;
-        this.centerText.innerHTML = `
-            <div id="titleScreenLoadoutWrap" style="margin-top: 20px; display: flex; justify-content: center;">
-                <canvas id="titleScreenLoadoutBar" width="900" height="210" style="background: transparent; display: block; pointer-events: auto; width: 900px; height: 211px;"></canvas>
-            </div>
-        `;
+        // centerText was historically the wrapper for the loadout-bar canvas.
+        // The loadout now paints onto the shared title canvas, so this DOM node
+        // is empty dead-weight — kept around because hide/showCenterText are
+        // still called elsewhere, but it has no children.
+        this.centerText.innerHTML = '';
 
         // Settings values load themselves in the SettingsMenu constructor.
 
@@ -449,19 +437,9 @@ export class TitleScreen {
         this.axolotlContainer = this.createElement('div', '');
         this.axolotlContainer.id = 'axolotl-container';
 
-        // Create UI canvas for title screen elements
-        this.uiCanvas = document.createElement('canvas');
-        this.uiCanvas.id = 'title-ui-canvas';
-        this.uiCanvas.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            pointer-events: auto;
-            z-index: 1000;
-        `;
-        applyZoomCompensation(this.uiCanvas);
-        this.uiCtx = this.uiCanvas.getContext('2d')!;
-        
+        // The "UI canvas" is the same element as the background canvas — see
+        // the `uiCanvas` / `uiCtx` getters above. Nothing to create here.
+
         // Load saved player name
         const savedName = localStorage.getItem('playerName') || '';
         this.playerName = savedName;
@@ -781,7 +759,6 @@ export class TitleScreen {
 
     public async appendToBody(): Promise<void> {
         this.background.mount();
-        document.body.appendChild(this.uiCanvas);
         // Hide DOM-based auth container since we're using canvas
         this.authContainer.style.display = 'none';
         document.body.appendChild(this.authContainer);
@@ -794,43 +771,49 @@ export class TitleScreen {
         document.body.appendChild(this.landContainer);
         document.body.appendChild(this.axolotlContainer);
 
-        // Load and start background animation; per-frame callback drives the
-        // changelog/notifications/leaderboard/guild canvas state.
+        // Hide the in-game canvas while on the title screen; the title canvas
+        // owns rendering until a game starts.
+        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement | null;
+        if (gameCanvas) gameCanvas.style.display = 'none';
+
+        // Hide the DOM button containers — those buttons are now drawn on the
+        // shared title canvas. The DOM containers stay around so they can be
+        // shown again in-game (when the title canvas isn't active).
+        this.exitButtonContainer.style.display = 'none';
+        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
+        if (bottomLeftButtons) bottomLeftButtons.style.display = 'none';
+
+        // Sync the changelog shake state from the DOM-class signal that
+        // initializeElements wrote based on lastSeenChangelogCount.
+        const domChangelog = this.exitButtonContainer.querySelector('#changelogButton');
+        if (domChangelog && domChangelog.classList.contains('shake')) {
+            this.canvasButtons.setShake('changelog', true);
+        }
+
+        // Load and start background animation. The per-frame callback runs all
+        // remaining canvas work on the shared canvas: title UI (gated by
+        // uiRenderingEnabled), then the changelog/notifications/leaderboard/
+        // guild overlay.
         await this.background.loadTexture();
-        this.background.start(() => this.renderInGameMenusOverlay());
+        this.uiRenderingEnabled = true;
+        this.background.start(this.titleFrame);
 
-        // Hide HTML centerText and use canvas instead
+        // Hide HTML centerText (empty dead-weight; loadout bar is on canvas now).
         this.centerText.style.display = 'none';
-        
-        // Move loadout bar out of centerText and make it visible (only if auth form is not shown)
-        // Use setTimeout to ensure DOM is ready
-        setTimeout(() => {
-            const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-            if (loadoutBar) {
-                // Remove from centerText if it's a child and append to body
-                if (loadoutBar.parentNode === this.centerText || loadoutBar.parentNode === null
-                    || (loadoutBar.parentNode as HTMLElement | null)?.id === 'titleScreenLoadoutWrap') {
-                    document.body.appendChild(loadoutBar);
-                }
-                // Position the canvas loadout bar (centered horizontally, above the instructions)
-                loadoutBar.style.position = 'absolute';
-                loadoutBar.style.top = '50%';
-                loadoutBar.style.left = '50%';
-                loadoutBar.style.transform = 'translate(-50%, 0)';
-                loadoutBar.style.marginTop = '50px';
-                loadoutBar.style.zIndex = '1001';
-                loadoutBar.style.pointerEvents = 'auto';
-                // Hide if auth form is shown
-                loadoutBar.style.display = this.authForm.isVisible() ? 'none' : 'block';
-            }
-        }, 100);
 
-        // Setup canvas UI event listeners
+        // The loadout bar now paints onto the shared title canvas via
+        // titleFrame; if the auth form is up, hide it so it doesn't draw.
+        if (this.authForm.isVisible()) {
+            this.titleScreenInventoryManager.hideLoadoutBar();
+        } else {
+            this.titleScreenInventoryManager.showLoadoutBar();
+        }
+
+        // Setup canvas UI event listeners. The render loop itself is driven by
+        // BackgroundAnimation's RAF — see the start() call above.
         this.setupCanvasUIListeners();
 
-        // Start canvas rendering loop
-        this.startCanvasRendering();
-        
+
         // If user is not logged in, show login form after a short delay
         // (in case preconnectToServer is not called)
         setTimeout(() => {
@@ -1004,15 +987,19 @@ export class TitleScreen {
      * Sets up canvas UI event listeners for mouse and keyboard input
      */
     private setupCanvasUIListeners(): void {
-        // Mouse click handling
+        // Mouse click handling. Canvas buttons run their own click logic on
+        // mouseup-over-same-button (see mousedown/mouseup handlers below) so
+        // we filter them out of the generic click path here.
         this.uiCanvas.addEventListener('click', (e) => {
             const { x, y } = canvasCoords(this.uiCanvas, e);
+            if (this.canvasButtons.isPointOnButton(x, y)) return;
             this.handleCanvasClick(x, y);
         });
 
         // Mouse move for hover effects
         this.uiCanvas.addEventListener('mousemove', (e) => {
             const { x, y } = canvasCoords(this.uiCanvas, e);
+            this.canvasButtons.setHover(x, y);
             this.settings.handleMouseMove(x);
             this.handleCanvasHover(x, y);
         });
@@ -1020,6 +1007,10 @@ export class TitleScreen {
         // Mouse down for pressed state
         this.uiCanvas.addEventListener('mousedown', (e) => {
             const { x, y } = canvasCoords(this.uiCanvas, e as MouseEvent);
+            if (this.canvasButtons.press(x, y)) {
+                this.pressedButton = null;
+                return;
+            }
             if (this.settings.handleMouseDown(x, y)) {
                 this.pressedButton = null;
                 return;
@@ -1030,10 +1021,16 @@ export class TitleScreen {
             else this.pressedButton = null;
         });
 
-        // Mouse up to clear pressed state
+        // Mouse up to clear pressed state and dispatch canvas-button clicks
+        // (which only fire when mouseup lands on the same button as mousedown).
+        this.uiCanvas.addEventListener('mouseup', (e) => {
+            const { x, y } = canvasCoords(this.uiCanvas, e as MouseEvent);
+            this.canvasButtons.releaseClick(x, y);
+        });
         document.addEventListener('mouseup', () => {
             this.pressedButton = null;
             this.settings.handleMouseUp();
+            this.canvasButtons.release();
         });
 
         // Mouse leave to clear hover
@@ -1043,6 +1040,7 @@ export class TitleScreen {
             this.authForm.clearHover();
             this.pressedButton = null;
             this.settings.clearHover();
+            this.canvasButtons.clearHover();
         });
 
         // Scroll wheel for settings panel
@@ -1233,32 +1231,16 @@ export class TitleScreen {
         }
     }
 
-    /**
-     * Starts the canvas rendering loop
-     */
+    // Title-UI rendering shares the BackgroundAnimation RAF; this flag gates
+    // whether the per-frame onFrame callback actually paints title UI.
+    private uiRenderingEnabled: boolean = false;
+
     private startCanvasRendering(): void {
-        if (!this.uiCanvas || !this.uiCtx) {
-            return;
-        }
-        // Stop any existing rendering loop
-        this.stopCanvasRendering();
-        const render = () => {
-            if (this.uiCanvas && this.uiCtx) {
-                this.renderCanvasUI();
-                this.animationFrameId = requestAnimationFrame(render);
-            }
-        };
-        render();
+        this.uiRenderingEnabled = true;
     }
 
-    /**
-     * Stops the canvas rendering loop
-     */
     private stopCanvasRendering(): void {
-        if (this.animationFrameId !== null) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
-        }
+        this.uiRenderingEnabled = false;
     }
 
     /**
@@ -1266,13 +1248,27 @@ export class TitleScreen {
      */
     private renderCanvasUI(): void {
         const ctx = this.uiCtx;
+        // Outer save/restore: this method has many early-return paths and sets
+        // textAlign/textBaseline/font/fillStyle along the way. Without this
+        // guard, the state leaks into the menu-panel render() calls that run
+        // right after — making panel titles appear shifted (textAlign='center'
+        // bleeds through, etc.).
+        ctx.save();
+        try {
+            this.renderCanvasUIInner(ctx);
+        } finally {
+            ctx.restore();
+        }
+    }
+
+    private renderCanvasUIInner(ctx: CanvasRenderingContext2D): void {
         const width = this.uiCanvas.width;
         const height = this.uiCanvas.height;
         const centerX = width / 2;
         const centerY = height / 2;
 
-        // Clear canvas
-        ctx.clearRect(0, 0, width, height);
+        // No clear: BackgroundAnimation just painted the scrolling biome and
+        // floating petals on the same canvas. We draw UI on top of that.
 
         // Track FPS
         this.titleFrameCount++;
@@ -1549,10 +1545,7 @@ export class TitleScreen {
             this.authContainer.style.display = 'none';
         }
         // Show loadout bar when auth form is hidden
-        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (loadoutBar) {
-            loadoutBar.style.display = 'block';
-        }
+        this.titleScreenInventoryManager?.showLoadoutBar();
     }
 
     public showAuthContainer(): void {
@@ -1562,10 +1555,7 @@ export class TitleScreen {
             this.authContainer.style.display = 'none';
         }
         // Hide loadout bar when auth form is shown
-        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (loadoutBar) {
-            loadoutBar.style.display = 'none';
-        }
+        this.titleScreenInventoryManager?.hideLoadoutBar();
     }
 
     /**
@@ -1801,29 +1791,19 @@ export class TitleScreen {
 
     public hideCenterText(): void {
         this.centerText.style.display = 'none';
-        // Hide canvas UI
         if (this.uiCanvas) {
             this.uiCanvas.style.display = 'none';
         }
-        // Hide loadout bar
-        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (loadoutBar) {
-            loadoutBar.style.display = 'none';
-        }
+        this.titleScreenInventoryManager?.hideLoadoutBar();
         this.stopCanvasRendering();
     }
 
     public showCenterText(): void {
         this.centerText.style.display = 'none'; // Keep HTML hidden, use canvas
-        // Show canvas UI
         if (this.uiCanvas) {
             this.uiCanvas.style.display = 'block';
         }
-        // Show loadout bar
-        const loadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (loadoutBar) {
-            loadoutBar.style.display = 'block';
-        }
+        this.titleScreenInventoryManager?.showLoadoutBar();
         this.startCanvasRendering();
     }
 
@@ -1880,12 +1860,10 @@ export class TitleScreen {
             craftingPanel.style.display = 'none';
         }
         
-        // Hide title screen loadout bar
-        const titleScreenLoadoutBar = document.getElementById('titleScreenLoadoutBar');
-        if (titleScreenLoadoutBar) {
-            titleScreenLoadoutBar.style.display = 'none';
-        }
-        
+        // Hide title screen loadout bar (now rendered on the shared canvas).
+        this.titleScreenInventoryManager?.hideLoadoutBar();
+
+
         // Hide skills panel (created by SkillsManager, no ID, so we need to find it by class)
         const skillsPanel = document.querySelector('.skills-panel');
         if (skillsPanel) {
@@ -1948,6 +1926,20 @@ export class TitleScreen {
         if (this.uiCanvas) {
             this.uiCanvas.style.display = 'block';
         }
+        // Hide the in-game canvas; the title canvas owns rendering again.
+        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement | null;
+        if (gameCanvas) gameCanvas.style.display = 'none';
+        // Re-attach panel managers to the title canvas — the in-game graphics
+        // pointed them at gameCanvas while the game was running.
+        const titleCanvas = this.background.getCanvas();
+        this.changelogManager.setCanvas(titleCanvas);
+        this.notificationsManager.setCanvas(titleCanvas);
+        this.leaderboardManager.setCanvas(titleCanvas);
+        this.guildMenuManager.setCanvas(titleCanvas);
+        // Hide the DOM button containers — canvas buttons paint on title.
+        this.exitButtonContainer.style.display = 'none';
+        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
+        if (bottomLeftButtons) bottomLeftButtons.style.display = 'none';
         // Restart canvas rendering
         this.startCanvasRendering();
         // Only show auth form if the user is not logged in
@@ -1975,37 +1967,26 @@ export class TitleScreen {
         // Re-initialize shop and mob gallery (they were torn down in hideTitleScreenPanels)
         if (!this.submanagers.shop) this.submanagers.initShop();
         if (!this.submanagers.mobGallery) this.submanagers.initMobGallery();
-
-        // Hide game canvas initially (it will be shown when menus are opened)
-        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-        if (gameCanvas) {
-            gameCanvas.style.display = 'none';
-        }
     }
 
     public showExitButton(): void {
-        this.exitButtonContainer.style.display = 'flex';
-        // Show the exit button when in game
-        const exitButton = this.exitButtonContainer.querySelector('#exitButton') as HTMLElement;
-        if (exitButton) {
-            exitButton.style.display = 'flex';
-        }
-        // Also show bottom left buttons
-        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
-        if (bottomLeftButtons) {
-            bottomLeftButtons.style.display = 'flex';
-        }
+        // Both DOM containers are hidden permanently — the canvas buttons
+        // (drawn by Graphics during the in-game render loop) take over.
+        // Just flip the exit slot on so it shows up alongside the others.
+        this.canvasButtons.setExitVisible(true);
     }
 
     public hideExitButton(): void {
-        // Don't hide the container completely, just hide the exit button
-        // Keep settings button visible on title screen
-        const exitButton = this.exitButtonContainer.querySelector('#exitButton') as HTMLElement;
-        if (exitButton) {
-            exitButton.style.display = 'none';
-        }
-        // Keep bottom left buttons visible on title screen
-        // They are now always visible
+        // Returning to the title screen — hide the exit slot on the canvas
+        // buttons. DOM containers stay hidden.
+        this.canvasButtons.setExitVisible(false);
+    }
+
+    /** Expose the canvas buttons so the in-game Graphics can draw + drive
+     *  pointer events against the same instance (no second instance with its
+     *  own state and click bookkeeping). */
+    public getCanvasButtons(): TitleCanvasButtons {
+        return this.canvasButtons;
     }
 
     public showLoadingScreen(): void {
@@ -2108,65 +2089,120 @@ export class TitleScreen {
     public showFloatingPetals(): void { this.background.showFloatingPetals(); }
     public hideBackgroundCanvas(): void { this.background.hide(); }
     public showBackgroundCanvas(): void { this.background.show(); }
-    public startBackgroundAnimation(): void { this.background.start(() => this.renderInGameMenusOverlay()); }
+    public startBackgroundAnimation(): void { this.background.start(this.titleFrame); }
     public stopBackgroundAnimation(): void { this.background.stop(); }
 
+    /** Single per-frame callback for the title canvas — matches appendToBody. */
+    private titleFrame = (): void => {
+        if (this.uiRenderingEnabled) {
+            this.renderCanvasUI();
+            this.drawTitleLoadout();
+            this.canvasButtons.draw(this.uiCtx, this.uiCanvas.width, this.uiCanvas.height);
+        }
+        this.renderInGameMenusOverlay();
+    };
+
     /**
-     * Per-frame work driven by the background animation loop: positions the
-     * shared gameCanvas as a panel for whichever in-game menu is currently
-     * open (changelog/notifications/leaderboard/guild), or hides it otherwise.
-     * Skipped while a game is in progress — the in-game Graphics class owns
-     * the canvas then.
+     * Route a canvas-button click into the same logic the DOM button handlers
+     * used to run. Closes peer panels first so the open one toggles cleanly.
+     */
+    private handleCanvasButtonClick(id: TitleButtonId): void {
+        const closeOthers = (...except: string[]) => {
+            if (!except.includes('settings')) this.settings.close();
+            if (!except.includes('changelog')) this.changelogManager.hide();
+            if (!except.includes('notifications')) this.notificationsManager.hide();
+            if (!except.includes('leaderboard')) this.leaderboardManager.hide();
+            if (!except.includes('guild')) this.guildMenuManager.hide();
+        };
+        switch (id) {
+            case 'settings':
+                closeOthers('settings');
+                this.toggleSettings();
+                break;
+            case 'changelog':
+                closeOthers('changelog');
+                this.changelogManager.toggle();
+                this.canvasButtons.setShake('changelog', false);
+                localStorage.setItem('lastSeenChangelogCount', String(CHANGELOG.length));
+                break;
+            case 'notifications':
+                closeOthers('notifications');
+                this.notificationsManager.toggle();
+                break;
+            case 'leaderboard':
+                closeOthers('leaderboard');
+                this.leaderboardManager.toggle();
+                break;
+            case 'guild':
+                closeOthers('guild');
+                this.guildMenuManager.toggle();
+                break;
+            case 'exit':
+                // The exit-to-title flow is owned by setupGameEventListeners
+                // in src/index.ts (iris animation, socket reconnect, etc.).
+                // Trigger it by clicking the hidden DOM exit button.
+                (this.exitButtonContainer.querySelector('#exitButton') as HTMLElement | null)?.click();
+                break;
+            case 'inventory':
+                // In-game routes through game.inventoryManager so the in-game
+                // panel (and keybindings) stay the source of truth. On title
+                // screen, the title-screen inventory manager handles it.
+                if (window.currentGame && (window.currentGame as any).inventoryManager) {
+                    (window.currentGame as any).inventoryManager.toggleInventory();
+                } else {
+                    this.toggleInventoryOnTitleScreen();
+                }
+                break;
+            case 'skills':
+                this.toggleSkillsOnTitleScreen();
+                break;
+            case 'mobGallery':
+                if (window.currentGame && (window.currentGame as any).inventoryManager) {
+                    (window.currentGame as any).inventoryManager.toggleMobGallery();
+                } else if (this.submanagers.mobGallery) {
+                    this.submanagers.mobGallery.toggleMobGallery();
+                }
+                break;
+            case 'shop':
+                if (window.currentGame && (window.currentGame as any).shopManager) {
+                    (window.currentGame as any).shopManager.toggleShop();
+                } else if (this.submanagers.shop) {
+                    this.submanagers.shop.toggleShop();
+                }
+                break;
+            case 'craft':
+                this.toggleCraftingOnTitleScreen();
+                break;
+        }
+    }
+
+    /** Compute the loadout-bar bounds and paint it onto the shared title canvas. */
+    private drawTitleLoadout(): void {
+        if (!this.titleScreenInventoryManager) return;
+        const ctx = this.uiCtx;
+        // Center the loadout band horizontally on screen, anchored just below
+        // the centerY (matches the legacy CSS that sat the bar at top:50%
+        // with margin-top:50px). The CanvasLoadoutBar layout uses these bounds
+        // to position slots; size mirrors the old standalone canvas.
+        const LOADOUT_W = 900;
+        const LOADOUT_H = 210;
+        const x = (this.uiCanvas.width - LOADOUT_W) / 2;
+        const y = this.uiCanvas.height / 2 + 50;
+        this.titleScreenInventoryManager.drawLoadout(ctx, { x, y, width: LOADOUT_W, height: LOADOUT_H });
+    }
+
+    /**
+     * Per-frame work driven by the background animation loop: paints whichever
+     * in-game menu (changelog/notifications/leaderboard/guild) is open onto
+     * the shared title canvas at PANEL_X/PANEL_Y. Skipped while a game is in
+     * progress — the in-game Graphics class owns the canvas then.
      */
     private renderInGameMenusOverlay(): void {
         if ((window as any).currentGame) return;
-
-        const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-        if (!gameCanvas) return;
-
-        const changelogOpen = this.changelogManager.isChangelogOpen();
-        const notificationsOpen = this.notificationsManager.isNotificationsOpen();
-        const leaderboardOpen = this.leaderboardManager.isLeaderboardOpen();
-        const guildOpen = this.guildMenuManager.isGuildMenuOpen();
-
-        if (changelogOpen || notificationsOpen || leaderboardOpen || guildOpen) {
-            const PANEL_X = 20;
-            const PANEL_Y = 72;
-            const PANEL_WIDTH = 600;
-            const PANEL_HEIGHT = 500;
-
-            if (gameCanvas.width !== PANEL_WIDTH || gameCanvas.height !== PANEL_HEIGHT) {
-                gameCanvas.width = PANEL_WIDTH;
-                gameCanvas.height = PANEL_HEIGHT;
-                this.changelogManager.setCanvas(gameCanvas);
-                this.notificationsManager.setCanvas(gameCanvas);
-                this.leaderboardManager.setCanvas(gameCanvas);
-                this.guildMenuManager.setCanvas(gameCanvas);
-            }
-
-            gameCanvas.style.position = 'absolute';
-            gameCanvas.style.left = `${PANEL_X}px`;
-            gameCanvas.style.top = `${PANEL_Y}px`;
-            gameCanvas.style.width = `${PANEL_WIDTH}px`;
-            gameCanvas.style.height = `${PANEL_HEIGHT}px`;
-            gameCanvas.style.zIndex = '2000';
-            gameCanvas.style.pointerEvents = 'auto';
-            gameCanvas.style.display = 'block';
-
-            const ctx = gameCanvas.getContext('2d');
-            if (ctx) ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-
-            this.changelogManager.render();
-            this.notificationsManager.render();
-            this.leaderboardManager.render();
-            this.guildMenuManager.render();
-        } else {
-            gameCanvas.style.display = 'none';
-            const ctx = gameCanvas.getContext('2d');
-            if (ctx && gameCanvas.width > 0 && gameCanvas.height > 0) {
-                ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-            }
-        }
+        if (this.changelogManager.isChangelogOpen()) this.changelogManager.render();
+        if (this.notificationsManager.isNotificationsOpen()) this.notificationsManager.render();
+        if (this.leaderboardManager.isLeaderboardOpen()) this.leaderboardManager.render();
+        if (this.guildMenuManager.isGuildMenuOpen()) this.guildMenuManager.render();
     }
 
     private toggleInventoryOnTitleScreen(): void {

@@ -62,6 +62,11 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     if (this.guildMenuManager) {
         this.guildMenuManager.render();
     }
+    // Draw the canvas icon-button strip on top of the menu panels so it stays
+    // accessible (same z-order as the legacy DOM buttons sat above gameCanvas).
+    if (this.titleCanvasButtons) {
+        this.titleCanvasButtons.draw(this.ctx, this.canvas.width, this.canvas.height);
+    }
     // Draw console logs overlay
     this.drawConsoleLogs();
     // Draw canvas-based death screen overlay

@@ -170,6 +170,15 @@ class Graphics {
         this.originalConsoleError = null;
         // Cached eligible petal types for garbage pile drawing
         this.cachedEligiblePetalTypes = null;
+        /**
+         * Wire the title-screen canvas-button strip into the in-game render loop
+         * so the same icon buttons (settings/changelog/.../exit + bottom-left
+         * panels) draw on top of the gameCanvas while the game is running.
+         * Mouse events on the gameCanvas are intercepted in the capture phase so
+         * a click on a button doesn't also leak through to player controls.
+         */
+        this.titleCanvasButtons = null;
+        this.titleButtonListenersAttached = false;
         this.canvas = canvas;
         this.ctx = this.canvas.getContext('2d');
         this.playerSprite = playerSprite;
@@ -451,6 +460,62 @@ class Graphics {
         if (guildMenuManager && this.canvas) {
             guildMenuManager.setCanvas(this.canvas);
         }
+    }
+    setTitleCanvasButtons(buttons) {
+        this.titleCanvasButtons = buttons;
+        if (this.titleButtonListenersAttached || !this.canvas || !buttons)
+            return;
+        this.titleButtonListenersAttached = true;
+        const toLocal = (e) => {
+            const r = this.canvas.getBoundingClientRect();
+            return {
+                x: (e.clientX - r.left) * (this.canvas.width / r.width),
+                y: (e.clientY - r.top) * (this.canvas.height / r.height),
+            };
+        };
+        // Capture phase + stopImmediatePropagation when the press/release lands
+        // on a button — that prevents the bubble-phase player-control handlers
+        // (registered later on the same canvas) from running.
+        this.canvas.addEventListener('mousedown', (e) => {
+            const { x, y } = toLocal(e);
+            if (buttons.press(x, y)) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+            }
+        }, true);
+        this.canvas.addEventListener('mouseup', (e) => {
+            const { x, y } = toLocal(e);
+            if (buttons.releaseClick(x, y)) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+            }
+        }, true);
+        // Swallow the matching `click` event when the press/release landed on
+        // a button. Without this, game.ts's click handler still fires —
+        // forwarding to settings.handleClick when settings has just opened,
+        // which interprets the off-panel click as click-outside-to-dismiss
+        // and closes settings on the same click that opened it.
+        this.canvas.addEventListener('click', (e) => {
+            const { x, y } = toLocal(e);
+            if (buttons.isPointOnButton(x, y)) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+            }
+        }, true);
+        // Hover doesn't need to block propagation — game cursor tracking still
+        // wants to see the move events.
+        this.canvas.addEventListener('mousemove', (e) => {
+            const { x, y } = toLocal(e);
+            buttons.setHover(x, y);
+        });
+        this.canvas.addEventListener('mouseleave', () => {
+            buttons.clearHover();
+        });
+        // Document-level mouseup so a press that ends outside the canvas still
+        // clears the pressed state — same pattern TitleScreen uses.
+        document.addEventListener('mouseup', () => {
+            buttons.release();
+        });
     }
     setupItemSprites(itemSprites) {
         this.itemSprites = itemSprites;

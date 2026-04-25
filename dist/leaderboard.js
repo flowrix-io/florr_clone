@@ -109,9 +109,8 @@ class LeaderboardManager {
             }
             // Scrollbar drag
             if (this.panelBounds && this.contentHeight > this.PANEL_HEIGHT - 40) {
-                const isInGame = !!window.currentGame;
-                const offsetX = isInGame ? this.PANEL_X : 0;
-                const offsetY = isInGame ? this.PANEL_Y : 0;
+                const offsetX = this.PANEL_X;
+                const offsetY = this.PANEL_Y;
                 const scrollbarX = offsetX + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
                 if (x >= scrollbarX && x <= scrollbarX + this.SCROLLBAR_WIDTH &&
                     y >= offsetY + 40 && y <= offsetY + this.PANEL_HEIGHT - 5) {
@@ -142,9 +141,8 @@ class LeaderboardManager {
             const rect = this.canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            const isInGame = !!window.currentGame;
-            const offsetX = isInGame ? this.PANEL_X : 0;
-            const offsetY = isInGame ? this.PANEL_Y : 0;
+            const offsetX = this.PANEL_X;
+            const offsetY = this.PANEL_Y;
             if (x >= offsetX && x <= offsetX + this.PANEL_WIDTH &&
                 y >= offsetY && y <= offsetY + this.PANEL_HEIGHT) {
                 e.preventDefault();
@@ -181,11 +179,14 @@ class LeaderboardManager {
                 return;
         }
         const ctx = this.ctx;
-        const isInGame = !!window.currentGame;
-        const offsetX = isInGame ? this.PANEL_X : 0;
-        const offsetY = isInGame ? this.PANEL_Y : 0;
+        const offsetX = this.PANEL_X;
+        const offsetY = this.PANEL_Y;
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Defensive: do not inherit textAlign from upstream renderers. The title
+        // header below relies on left-aligned start positioning.
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
         // Calculate content height
         const headerHeight = 50;
         const columnHeaderHeight = 30;

@@ -187,35 +187,6 @@ export const titleScreenStyles = `
         color: red;
     }
 
-    .floating-petal {
-        position: absolute;
-        pointer-events: none;
-        z-index: 100;
-        opacity: 0.7;
-        transition: opacity 0.3s ease;
-        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-    }
-
-    .floating-petal:hover {
-        opacity: 1;
-    }
-
-    .floating-petal svg {
-        width: 100%;
-        height: 100%;
-        display: block;
-    }
-
-    #floating-petals-container {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-        z-index: 50;
-        overflow: hidden;
-    }
 
     #title-background-canvas {
         position: fixed;

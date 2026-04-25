@@ -317,19 +317,23 @@ function setupGameEventListeners() {
                     currentGame.guildMenu = guildMenuManager;
                     currentGame.connectGuildMenu?.(guildMenuManager);
                 }
+                // Hand the title-screen canvas-button strip to the in-game
+                // graphics so the same icon buttons paint on the gameCanvas
+                // and route their clicks through TitleScreen's handler.
+                const canvasButtons = titleScreen.getCanvasButtons?.();
+                if (canvasButtons) {
+                    currentGame.graphics.setTitleCanvasButtons(canvasButtons);
+                }
             }
             // Capture title screen screenshot for iris transition (also stored for exit animation)
             if (currentGame?.graphics) {
-                const bgCanvas = document.getElementById('title-background-canvas');
-                const uiCanvas = document.getElementById('title-ui-canvas');
+                const titleCanvas = document.getElementById('title-background-canvas');
                 const screenshot = document.createElement('canvas');
                 screenshot.width = window.innerWidth;
                 screenshot.height = window.innerHeight;
                 const sctx = screenshot.getContext('2d');
-                if (bgCanvas)
-                    sctx.drawImage(bgCanvas, 0, 0, screenshot.width, screenshot.height);
-                if (uiCanvas)
-                    sctx.drawImage(uiCanvas, 0, 0, screenshot.width, screenshot.height);
+                if (titleCanvas)
+                    sctx.drawImage(titleCanvas, 0, 0, screenshot.width, screenshot.height);
                 currentGame.graphics.startIrisTransition(screenshot);
                 currentGame.graphics.irisTitleScreen = true;
             }
@@ -354,13 +358,10 @@ function setupGameEventListeners() {
             if (!currentGame)
                 return;
             titleScreen?.hideExitButton();
-            // Briefly show title screen canvases to capture a fresh screenshot
-            const bgCanvas = document.getElementById('title-background-canvas');
-            const uiCanvas = document.getElementById('title-ui-canvas');
-            if (bgCanvas)
-                bgCanvas.style.display = 'block';
-            if (uiCanvas)
-                uiCanvas.style.display = 'block';
+            // Briefly show title screen canvas to capture a fresh screenshot
+            const titleCanvas = document.getElementById('title-background-canvas');
+            if (titleCanvas)
+                titleCanvas.style.display = 'block';
             titleScreen?.startBackgroundAnimation();
             titleScreen?.startCanvasRendering();
             // Wait a few frames for title screen canvases to fully render
@@ -371,20 +372,16 @@ function setupGameEventListeners() {
                     requestAnimationFrame(waitForRender);
                     return;
                 }
-                // Capture screenshot from the now-rendered canvases
+                // Capture screenshot from the now-rendered title canvas
                 const screenshot = document.createElement('canvas');
                 screenshot.width = window.innerWidth;
                 screenshot.height = window.innerHeight;
                 const sctx = screenshot.getContext('2d');
-                if (bgCanvas)
-                    sctx.drawImage(bgCanvas, 0, 0, screenshot.width, screenshot.height);
-                if (uiCanvas)
-                    sctx.drawImage(uiCanvas, 0, 0, screenshot.width, screenshot.height);
-                // Hide title screen canvases so only game canvas is visible during animation
-                if (bgCanvas)
-                    bgCanvas.style.display = 'none';
-                if (uiCanvas)
-                    uiCanvas.style.display = 'none';
+                if (titleCanvas)
+                    sctx.drawImage(titleCanvas, 0, 0, screenshot.width, screenshot.height);
+                // Hide title screen canvas so only game canvas is visible during animation
+                if (titleCanvas)
+                    titleCanvas.style.display = 'none';
                 titleScreen?.stopCanvasRendering();
                 titleScreen?.stopBackgroundAnimation();
                 // Ensure game canvas is visible (animateBackground may have hidden it)

@@ -1,141 +1,125 @@
 import { PETAL_CONFIG, RARITY_LEVELS, PetalStats } from '../petals';
 
 export interface FloatingPetal {
-    element: HTMLElement;
     x: number;
     y: number;
     speedX: number;
     rotation: number;
     rotationSpeed: number;
     size: number;
+    petalType: string;
+    rarity: string;
     petalStats: PetalStats;
 }
 
+const BASE_PETAL_PIXELS = 32;
+const SPAWN_PROBABILITY = 0.02;
+
 export class FloatingPetalManager {
     private petals: FloatingPetal[] = [];
-    private container: HTMLElement;
-    private animationId: number | null = null;
+    private active: boolean = true;
+    private spawnEnabled: boolean = true;
 
-    constructor(container: HTMLElement) {
-        this.container = container;
-        this.startAnimation();
+    constructor() {
+        // Render-only manager: petals are drawn onto whatever canvas the
+        // background animation hands us each frame.
     }
 
-    private createPetal(): FloatingPetal {
-        const petal = document.createElement('div');
-        petal.className = 'floating-petal';
-
-        // Get random petal type and rarity from actual petals.ts
+    private pickPetal(): { petalType: string; rarity: string; petalStats: PetalStats } {
         const petalTypes = Object.keys(PETAL_CONFIG);
         const nonAdminPetalTypes = petalTypes.filter(type =>
             !PETAL_CONFIG[type]['common']?.isAdminPetal &&
-            !type.endsWith('_egg') // Exclude eggs from title screen
+            !type.endsWith('_egg')
         );
-        const petalType = nonAdminPetalTypes.length > 0 ? nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)] : 'basic';
+        const petalType = nonAdminPetalTypes.length > 0
+            ? nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)]
+            : 'basic';
         const rarity = RARITY_LEVELS[Math.floor(Math.random() * RARITY_LEVELS.length)];
+        const petalStats = PETAL_CONFIG[petalType]?.[rarity] ?? PETAL_CONFIG.basic?.common!;
+        return { petalType, rarity, petalStats };
+    }
 
-        // Get petal stats from actual petals.ts
-        const petalStats = PETAL_CONFIG[petalType]?.[rarity];
-        if (!petalStats) {
-            // Fallback to basic common if petal not found
-            const fallbackStats = PETAL_CONFIG.basic?.common;
-            if (fallbackStats) {
-                petal.innerHTML = fallbackStats.image || `<svg width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="${fallbackStats.color}" stroke="#d9d9d9" stroke-width="2"/></svg>`;
-            }
-        } else {
-            // Use actual petal image from petals.ts
-            petal.innerHTML = petalStats.image || `<svg width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="${petalStats.color}" stroke="#d9d9d9" stroke-width="2"/></svg>`;
-        }
-
-        // Random properties - only horizontal movement
-        const size = 0.5 + Math.random() * 1.5; // 0.5x to 2x size
-        const speedX = 0.5 + Math.random() * 2; // 0.5 to 2.5 pixels per frame (left to right only)
-        const rotationSpeed = (Math.random() - 0.5) * 4; // -2 to 2 degrees per frame (rotation around center)
-
-        petal.style.cssText = `
-            position: absolute;
-            width: ${size * 32}px;
-            height: ${size * 32}px;
-            pointer-events: none;
-            z-index: 100;
-            opacity: 1.0;
-            transform-origin: center center;
-        `;
-
+    private createPetal(viewportHeight: number): FloatingPetal {
+        const { petalType, rarity, petalStats } = this.pickPetal();
+        const size = 0.5 + Math.random() * 1.5;
+        const speedX = 0.5 + Math.random() * 2;
+        const rotationSpeed = (Math.random() - 0.5) * 4;
         return {
-            element: petal,
-            x: -50, // Start off-screen to the left
-            y: Math.random() * window.innerHeight,
+            x: -50,
+            y: Math.random() * viewportHeight,
             speedX,
             rotation: Math.random() * 360,
             rotationSpeed,
             size,
-            petalStats: petalStats || PETAL_CONFIG.basic?.common!
+            petalType,
+            rarity,
+            petalStats,
         };
     }
 
-
-    private updatePetal(petal: FloatingPetal): void {
-        petal.x += petal.speedX;
-        petal.rotation += petal.rotationSpeed;
-
-        // Apply position and rotation (rotation around center)
-        petal.element.style.left = `${petal.x}px`;
-        petal.element.style.top = `${petal.y}px`;
-        petal.element.style.transform = `rotate(${petal.rotation}deg)`;
-
-        // Remove petals that have moved off-screen
-        if (petal.x > window.innerWidth + 50) {
-            this.removePetal(petal);
+    private getPetalCanvas(petalType: string, rarity: string): HTMLCanvasElement | null {
+        const assets = (window as any).preloadedAssets;
+        if (!assets || !assets.petalImages) return null;
+        const entry = assets.petalImages[`${petalType}_${rarity}`];
+        if (!entry) return null;
+        if (Array.isArray(entry)) {
+            const frameIndex = Math.floor((Date.now() / 42) % entry.length);
+            return entry[frameIndex];
         }
+        return entry as HTMLCanvasElement;
     }
 
-    private removePetal(petal: FloatingPetal): void {
-        const index = this.petals.indexOf(petal);
-        if (index > -1) {
-            this.petals.splice(index, 1);
-            this.container.removeChild(petal.element);
-        }
-    }
+    /** Advance + draw all petals. Called once per frame by BackgroundAnimation. */
+    public draw(ctx: CanvasRenderingContext2D, viewportWidth: number, viewportHeight: number): void {
+        if (!this.active) return;
 
-    private animate(): void {
-        // Update all petals
-        this.petals.forEach(petal => this.updatePetal(petal));
-
-        // Spawn new petals occasionally
-        if (Math.random() < 0.02) { // 2% chance per frame
-            this.spawnPetal();
+        if (this.spawnEnabled && Math.random() < SPAWN_PROBABILITY) {
+            this.petals.push(this.createPetal(viewportHeight));
         }
 
-        this.animationId = requestAnimationFrame(() => this.animate());
-    }
+        for (let i = this.petals.length - 1; i >= 0; i--) {
+            const petal = this.petals[i];
+            petal.x += petal.speedX;
+            petal.rotation += petal.rotationSpeed;
+            if (petal.x > viewportWidth + 50) {
+                this.petals.splice(i, 1);
+            }
+        }
 
-    public spawnPetal(): void {
-        const petal = this.createPetal();
-        this.petals.push(petal);
-        this.container.appendChild(petal.element);
+        for (const petal of this.petals) {
+            const drawSize = petal.size * BASE_PETAL_PIXELS;
+            const cx = petal.x + drawSize / 2;
+            const cy = petal.y + drawSize / 2;
+            const sprite = this.getPetalCanvas(petal.petalType, petal.rarity);
+            if (!sprite) continue;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate((petal.rotation * Math.PI) / 180);
+            ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+            ctx.restore();
+        }
     }
 
     public startAnimation(): void {
-        if (this.animationId === null) {
-            this.animate();
-        }
+        this.active = true;
+        this.spawnEnabled = true;
     }
 
     public stopAnimation(): void {
-        if (this.animationId !== null) {
-            cancelAnimationFrame(this.animationId);
-            this.animationId = null;
-        }
+        this.spawnEnabled = false;
     }
 
     public destroy(): void {
-        this.stopAnimation();
-        this.petals.forEach(petal => {
-            if (petal.element.parentNode) {
-                petal.element.parentNode.removeChild(petal.element);
-            }
-        });
+        this.active = false;
+        this.spawnEnabled = false;
         this.petals = [];
+    }
+
+    public hide(): void {
+        this.active = false;
+    }
+
+    public show(): void {
+        this.active = true;
     }
 }

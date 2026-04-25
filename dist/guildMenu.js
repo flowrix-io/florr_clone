@@ -131,11 +131,8 @@ class GuildMenuManager {
         return this.currentGuild.leaderUsername.toLowerCase() === this.currentUsername().toLowerCase();
     }
     panelOffset() {
-        const inGame = !!window.currentGame;
-        return {
-            x: inGame ? this.PANEL_X : 0,
-            y: inGame ? this.PANEL_Y : 0,
-        };
+        // Canvas is always full-screen; panel is drawn at PANEL_X/PANEL_Y.
+        return { x: this.PANEL_X, y: this.PANEL_Y };
     }
     hitTest(x, y) {
         for (const r of this.hitRegions) {

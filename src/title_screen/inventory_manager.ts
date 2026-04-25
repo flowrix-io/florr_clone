@@ -14,9 +14,11 @@ import { TitleScreenGameAdapter } from './game_adapter';
  */
 export class TitleScreenInventoryManager {
     private inventoryPanel: HTMLDivElement | null = null;
+    /** Title canvas the loadout bar paints into (shared with bg + UI). */
     private loadoutCanvas: HTMLCanvasElement | null = null;
     private canvasLoadoutBar: CanvasLoadoutBar | null = null;
-    private loadoutRafId: number | null = null;
+    /** Last bounds the loadout bar was drawn into, used to hit-test events. */
+    private loadoutBounds: { x: number; y: number; width: number; height: number } | null = null;
     /** source slot of an in-progress canvas-to-canvas drag, -1 if none */
     private canvasDragSourceSlot: number = -1;
     /** timestamp of last local loadout mutation for optimistic-update suppression */
@@ -43,7 +45,6 @@ export class TitleScreenInventoryManager {
     constructor() {
         this.gameAdapter = new TitleScreenGameAdapter();
         this.craftingInventoryManager = new InventoryManager(this.gameAdapter, null, { craftingOnly: true });
-        this.initializeLoadoutBar();
         this.setupSocketListeners();
         this.setupGlobalDragAndDrop();
         
@@ -89,12 +90,24 @@ export class TitleScreenInventoryManager {
         document.addEventListener('dragover', (e: Event) => {
             e.preventDefault();
         });
-        
+
         document.addEventListener('drop', (e: Event) => {
             e.preventDefault();
             const dragEvent = e as DragEvent;
             const target = e.target as HTMLElement;
-            
+
+            // If the drop already landed on the title canvas inside the loadout
+            // area, the canvas-level drop handler (setupCanvasLoadoutInteractions)
+            // has already routed it (swap / trash / equip). Skip the fallback
+            // so we don't double-handle and accidentally move the item back to
+            // the inventory.
+            if (this.loadoutCanvas && target === this.loadoutCanvas && this.canvasLoadoutBar) {
+                const r = this.loadoutCanvas.getBoundingClientRect();
+                const x = (dragEvent.clientX - r.left) * (this.loadoutCanvas.width / r.width);
+                const y = (dragEvent.clientY - r.top) * (this.loadoutCanvas.height / r.height);
+                if (this.canvasLoadoutBar.hitTest(x, y) >= 0) return;
+            }
+
             // If dropped outside loadout slots and inventory grid, move item back to inventory
             if (!target.closest('.loadout-slot') && !target.closest('.inventory-grid') && !target.closest('.crafting-inventory-grid')) {
                 const loadoutSlot = dragEvent.dataTransfer?.getData('text/loadoutSlot');
@@ -105,17 +118,16 @@ export class TitleScreenInventoryManager {
         });
     }
 
-    private initializeLoadoutBar(): void {
-        // The title-screen loadout is now a <canvas> that uses the same CanvasLoadoutBar
-        // renderer as the in-game loadout.
-        const canvas = document.getElementById('titleScreenLoadoutBar') as HTMLCanvasElement | null;
-        if (!canvas) {
-            setTimeout(() => this.initializeLoadoutBar(), 100);
-            return;
-        }
+    /**
+     * Wire the loadout bar into the shared title canvas. TitleScreen calls this
+     * once after the title canvas is ready, then calls drawLoadout(ctx, bounds)
+     * each frame to paint the bar at the current layout position. Pointer/drag
+     * events are attached here and gated on hit-testing within the bounds.
+     */
+    public attachToTitleCanvas(canvas: HTMLCanvasElement): void {
+        if (this.loadoutCanvas === canvas && this.canvasLoadoutBar) return;
         this.loadoutCanvas = canvas;
 
-        // Hand CanvasLoadoutBar a minimal "game" adapter that exposes player data and sprites.
         const adapter = {
             canvas,
             getLocalPlayer: () => ({
@@ -149,35 +161,97 @@ export class TitleScreenInventoryManager {
         };
         this.canvasLoadoutBar = new CanvasLoadoutBar(adapter);
         this.canvasLoadoutBar.show();
-
-        // RAF loop to keep the bar painted (cheap: returns early when hidden)
-        const ctx = canvas.getContext('2d');
-        console.log('[TitleScreen] initializeLoadoutBar: canvas found, ctx=', !!ctx, 'bar=', !!this.canvasLoadoutBar);
-        const frame = () => {
-            if (ctx && this.canvasLoadoutBar) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                this.canvasLoadoutBar.draw(ctx);
-            }
-            this.loadoutRafId = requestAnimationFrame(frame);
-        };
-        if (this.loadoutRafId == null) this.loadoutRafId = requestAnimationFrame(frame);
-
         this.setupCanvasLoadoutInteractions(canvas);
     }
 
-    private setupCanvasLoadoutInteractions(canvas: HTMLCanvasElement): void {
-        const getLocalXY = (e: MouseEvent | DragEvent) => {
-            const r = canvas.getBoundingClientRect();
-            // Map CSS pixels back to canvas internal resolution
-            const sx = (e.clientX - r.left) * (canvas.width / r.width);
-            const sy = (e.clientY - r.top) * (canvas.height / r.height);
-            return { x: sx, y: sy };
-        };
+    /**
+     * Paint the loadout bar onto the title canvas inside the given bounds.
+     * Called from TitleScreen's per-frame onFrame after the bg + title UI pass.
+     */
+    public drawLoadout(ctx: CanvasRenderingContext2D, bounds: { x: number; y: number; width: number; height: number }): void {
+        this.loadoutBounds = bounds;
+        if (this.canvasLoadoutBar) this.canvasLoadoutBar.draw(ctx, bounds);
+    }
 
-        // Hover tracking
+    /** Hide the loadout bar's draw + interactions (no-op renderer next frame). */
+    public hideLoadoutBar(): void {
+        this.canvasLoadoutBar?.hide();
+    }
+
+    /** Show the loadout bar (visible again on subsequent frames). */
+    public showLoadoutBar(): void {
+        this.canvasLoadoutBar?.show();
+    }
+
+    /** Map a mouse/drag event to title-canvas internal coords. */
+    private titleCanvasCoords(canvas: HTMLCanvasElement, e: MouseEvent | DragEvent): { x: number; y: number } {
+        const r = canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - r.left) * (canvas.width / r.width),
+            y: (e.clientY - r.top) * (canvas.height / r.height),
+        };
+    }
+
+    /**
+     * Render a small offscreen canvas containing the item sprite and use it as
+     * the HTML5 drag image. Without this the browser falls back to a
+     * screenshot of the source element — which for the canvas-based inventory
+     * and loadout means dragging the entire canvas. Works for petals (preloaded
+     * canvases keyed by `${petalType}_${rarity}`) and for non-petal items
+     * (preloaded HTMLImageElement sprites keyed by item type).
+     */
+    private setItemDragImage(dataTransfer: DataTransfer, rarity: string, itemKey: string): void {
+        const gs = 40;
+        const ghost = document.createElement('canvas');
+        ghost.width = gs;
+        ghost.height = gs;
+        ghost.style.width = `${gs}px`;
+        ghost.style.height = `${gs}px`;
+        ghost.style.position = 'fixed';
+        ghost.style.top = '-1000px';
+        ghost.style.left = '-1000px';
+        document.body.appendChild(ghost);
+        const gctx = ghost.getContext('2d');
+        const assets = (window as any).preloadedAssets;
+
+        let drew = false;
+        if (gctx && itemKey.startsWith('petal_')) {
+            const petalType = itemKey.substring(6);
+            const entry = assets?.petalImages?.[`${petalType}_${rarity}`];
+            const petalCanvas = Array.isArray(entry)
+                ? entry[Math.floor(Date.now() / 42) % entry.length]
+                : entry;
+            if (petalCanvas) {
+                gctx.drawImage(petalCanvas, 0, 0, gs, gs);
+                drew = true;
+            }
+        } else if (gctx) {
+            const sprite = assets?.itemSprites?.[itemKey];
+            if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+                gctx.drawImage(sprite, 0, 0, gs, gs);
+                drew = true;
+            }
+        }
+
+        if (!drew && gctx) {
+            // Last-resort placeholder so we still set a tiny drag image rather
+            // than letting the browser screenshot the source canvas.
+            gctx.fillStyle = '#888';
+            gctx.fillRect(0, 0, gs, gs);
+        }
+
+        dataTransfer.setDragImage(ghost, gs / 2, gs / 2);
+        requestAnimationFrame(() => ghost.remove());
+    }
+
+    private setupCanvasLoadoutInteractions(canvas: HTMLCanvasElement): void {
+        // Hover tracking — only reacts when the cursor is over the slot grid.
         canvas.addEventListener('mousemove', (e) => {
             if (!this.canvasLoadoutBar) return;
-            const { x, y } = getLocalXY(e);
+            const { x, y } = this.titleCanvasCoords(canvas, e);
+            // hitTest is in the same canvas-coord space as the slots (which are
+            // laid out at the bounds passed to drawLoadout), so we can call it
+            // directly without translating coordinates.
             this.canvasLoadoutBar.setHover(x, y);
             if (this.canvasLoadoutBar.draggingSlotIndex >= 0) {
                 this.canvasLoadoutBar.setDragPos(x, y);
@@ -187,12 +261,14 @@ export class TitleScreenInventoryManager {
             if (this.canvasLoadoutBar) this.canvasLoadoutBar.setHover(-1, -1);
         });
 
-        // Start drag from a filled canvas slot — uses HTML5 DataTransfer so it can be
-        // dropped onto the existing DOM inventory grid.
+        // Drag-from-canvas: the title canvas itself is the drag source. We only
+        // permit drag if the press lands on a filled loadout slot — otherwise
+        // we cancel via preventDefault so other canvas UI (start button, biome
+        // picker, etc.) keeps working as click targets.
         canvas.draggable = true;
         canvas.addEventListener('dragstart', (e: DragEvent) => {
             if (!this.canvasLoadoutBar || !this.playerData) { e.preventDefault(); return; }
-            const { x, y } = getLocalXY(e);
+            const { x, y } = this.titleCanvasCoords(canvas, e);
             const hit = this.canvasLoadoutBar.hitTest(x, y);
             if (hit < 0 || hit >= this.LOADOUT_SLOTS) { e.preventDefault(); return; }
             const item = this.playerData.loadout[hit];
@@ -201,35 +277,11 @@ export class TitleScreenInventoryManager {
             this.canvasLoadoutBar.beginDrag(hit, x, y);
             e.dataTransfer?.setData('text/loadoutSlot', hit.toString());
             if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-            // Render the dragged petal onto a small offscreen canvas and use it as the drag image
-            // (some browsers render a URL icon for blank canvas drag images).
-            if (e.dataTransfer && item.type === 'petal' && item.petalType && item.rarity) {
-                const gs = 40;
-                const ghost = document.createElement('canvas');
-                ghost.width = gs; ghost.height = gs;
-                // Force CSS size to match internal resolution so the browser doesn't scale it up
-                ghost.style.width = `${gs}px`;
-                ghost.style.height = `${gs}px`;
-                ghost.style.position = 'fixed';
-                ghost.style.top = '-1000px';
-                ghost.style.left = '-1000px';
-                document.body.appendChild(ghost);
-                const gctx = ghost.getContext('2d');
-                const assets = (window as any).preloadedAssets;
-                const entry = assets?.petalImages?.[`${item.petalType}_${item.rarity}`];
-                const petalCanvas = Array.isArray(entry)
-                    ? entry[Math.floor(Date.now() / 42) % entry.length]
-                    : entry;
-                if (gctx && petalCanvas) {
-                    gctx.drawImage(petalCanvas, 0, 0, gs, gs);
-                }
-                e.dataTransfer.setDragImage(ghost, gs / 2, gs / 2);
-                requestAnimationFrame(() => ghost.remove());
-            } else {
-                // Fallback: a 1x1 transparent image
-                const img = new Image();
-                img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                e.dataTransfer?.setDragImage(img, 0, 0);
+            if (e.dataTransfer) {
+                const itemKey = item.type === 'petal' && item.petalType
+                    ? `petal_${item.petalType}`
+                    : item.type;
+                this.setItemDragImage(e.dataTransfer, item.rarity ?? 'common', itemKey);
             }
         });
         canvas.addEventListener('dragend', () => {
@@ -237,29 +289,30 @@ export class TitleScreenInventoryManager {
             this.canvasLoadoutBar?.endDrag();
         });
 
-        // Accept drops from the inventory grid OR from other canvas slots
+        // Accept drops from the inventory DOM grid or from other loadout slots.
         canvas.addEventListener('dragover', (e: DragEvent) => {
+            if (!this.canvasLoadoutBar) return;
+            const { x, y } = this.titleCanvasCoords(canvas, e);
+            const hit = this.canvasLoadoutBar.hitTest(x, y);
+            if (hit < 0) return; // not over the loadout area — let other handlers take it
             e.preventDefault();
             if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-            if (this.canvasLoadoutBar) {
-                const { x, y } = getLocalXY(e);
-                this.canvasLoadoutBar.setHover(x, y);
-                if (this.canvasLoadoutBar.draggingSlotIndex >= 0) {
-                    this.canvasLoadoutBar.setDragPos(x, y);
-                }
+            this.canvasLoadoutBar.setHover(x, y);
+            if (this.canvasLoadoutBar.draggingSlotIndex >= 0) {
+                this.canvasLoadoutBar.setDragPos(x, y);
             }
         });
         canvas.addEventListener('drop', (e: DragEvent) => {
-            e.preventDefault();
             if (!this.canvasLoadoutBar) return;
-            const { x, y } = getLocalXY(e);
+            const { x, y } = this.titleCanvasCoords(canvas, e);
             const hit = this.canvasLoadoutBar.hitTest(x, y);
+            if (hit < 0) return;
+            e.preventDefault();
 
             const itemData = e.dataTransfer?.getData('text/plain');
             const fromLoadoutSlot = e.dataTransfer?.getData('text/loadoutSlot');
 
             if (hit === CANVAS_LOADOUT_SLOT_COUNT) {
-                // Dropped on trash
                 if (fromLoadoutSlot) this.moveItemToInventory(parseInt(fromLoadoutSlot));
             } else if (hit >= 0 && hit < CANVAS_LOADOUT_SLOT_COUNT) {
                 if (itemData) {
@@ -1233,7 +1286,8 @@ export class TitleScreenInventoryManager {
 
             this.canvasInventoryPanel = new CanvasInventoryPanel(this.gameAdapter as any);
             this.canvasInventoryPanel.attachTo(inventoryPanel);
-            this.canvasInventoryPanel.onItemMouseDown = (rarity, itemType) => {
+            // Click (mouseup without drag) auto-equips to first empty loadout slot.
+            this.canvasInventoryPanel.onItemClick = (rarity, itemType) => {
                 if (!this.playerData) return;
                 let emptySlot = -1;
                 for (let i = 0; i < CANVAS_LOADOUT_SLOT_COUNT; i++) {
@@ -1242,6 +1296,17 @@ export class TitleScreenInventoryManager {
                 if (emptySlot >= 0) {
                     this.equipItemToLoadout(rarity, itemType, emptySlot);
                 }
+            };
+            // Dragstart sets text/plain so the title canvas's loadout drop
+            // handler can equip the item to the targeted slot. We must also
+            // call setDragImage with a small custom image — otherwise the
+            // browser uses a screenshot of the source element, which is the
+            // entire inventory canvas.
+            this.canvasInventoryPanel.onItemDragStart = (rarity, itemType, e) => {
+                if (!e.dataTransfer) return;
+                e.dataTransfer.setData('text/plain', JSON.stringify({ rarity, type: itemType }));
+                e.dataTransfer.effectAllowed = 'move';
+                this.setItemDragImage(e.dataTransfer, rarity, itemType);
             };
             this.canvasInventoryPanel.onItemHoverChange = (hit: InventoryHitInfo | null) => {
                 this.handleCanvasInventoryHover(hit);

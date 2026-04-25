@@ -186,9 +186,8 @@ class NotificationsManager {
             }
             // Check scrollbar
             if (this.panelBounds && this.contentHeight > this.PANEL_HEIGHT - 40) {
-                const isInGame = !!window.currentGame;
-                const offsetX = isInGame ? this.PANEL_X : 0;
-                const offsetY = isInGame ? this.PANEL_Y : 0;
+                const offsetX = this.PANEL_X;
+                const offsetY = this.PANEL_Y;
                 const scrollbarX = offsetX + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
                 if (x >= scrollbarX && x <= scrollbarX + this.SCROLLBAR_WIDTH &&
                     y >= offsetY + 40 && y <= offsetY + this.PANEL_HEIGHT - 5) {
@@ -220,9 +219,8 @@ class NotificationsManager {
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
             // Check if mouse is over panel
-            const isInGame = !!window.currentGame;
-            const offsetX = isInGame ? this.PANEL_X : 0;
-            const offsetY = isInGame ? this.PANEL_Y : 0;
+            const offsetX = this.PANEL_X;
+            const offsetY = this.PANEL_Y;
             if (x >= offsetX && x <= offsetX + this.PANEL_WIDTH &&
                 y >= offsetY && y <= offsetY + this.PANEL_HEIGHT) {
                 e.preventDefault();
@@ -251,15 +249,18 @@ class NotificationsManager {
             }
         }
         const ctx = this.ctx;
-        // Check if we're in-game (canvas is full-screen) or on title screen (canvas is resized)
-        const isInGame = !!window.currentGame;
-        const offsetX = isInGame ? this.PANEL_X : 0;
-        const offsetY = isInGame ? this.PANEL_Y : 0;
+        // The canvas is always full-screen now; the panel is drawn at PANEL_X/PANEL_Y.
+        const offsetX = this.PANEL_X;
+        const offsetY = this.PANEL_Y;
         // Save context state to restore after rendering
         ctx.save();
         // Reset any transformations that might affect text measurement
         // This ensures text measurement is accurate
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Defensive: do not inherit textAlign from upstream renderers. The title
+        // header below relies on left-aligned start positioning.
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
         // Calculate content height (accounting for text wrapping)
         // First pass: calculate without scrollbar to get approximate height
         let currentY = offsetY + 40 + this.PADDING;
@@ -711,14 +712,8 @@ class NotificationsManager {
     show() {
         this.isOpen = true;
         this.scrollY = 0;
-        // Ensure canvas is visible and on top (but below UI elements which are 3000+)
-        if (this.canvas) {
-            const isInGame = !!window.currentGame;
-            // In-game: keep canvas z-index low so UI elements stay on top
-            // Title screen: set higher z-index for menu canvas
-            this.canvas.style.zIndex = isInGame ? '100' : '2000';
-            this.canvas.style.pointerEvents = 'auto';
-        }
+        // The canvas's z-index is owned by whoever created it (title screen or
+        // in-game graphics) — don't override it here.
         // Reload notifications when opening
         this.loadNotifications();
     }
