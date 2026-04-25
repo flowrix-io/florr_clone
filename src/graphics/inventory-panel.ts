@@ -62,6 +62,16 @@ export class CanvasInventoryPanel {
     private running: boolean = false;
     private imgCache: Map<string, HTMLImageElement> = new Map();
 
+    /**
+     * True from dragstart until dragend (+ a small grace window) so we can
+     * suppress the `click` event that some browsers fire spuriously after a
+     * successful HTML5 drag of a `draggable=true` element. Without this,
+     * click-to-auto-equip fires after every drag-to-loadout, double-equipping
+     * the dragged item into the first empty slot.
+     */
+    private dragInProgress: boolean = false;
+    private suppressClickUntil: number = 0;
+
     /** Display mode toggle.
      *  - true  ("stacked"): only one slot per item *type*; the highest rarity
      *    the player owns sits on top and hides the lower-rarity copies.
@@ -152,6 +162,7 @@ export class CanvasInventoryPanel {
         this.canvas.addEventListener('mousedown', this.handleMouseDown);
         this.canvas.addEventListener('click', this.handleClick);
         this.canvas.addEventListener('dragstart', this.handleDragStart);
+        this.canvas.addEventListener('dragend', this.handleDragEnd);
         this.canvas.addEventListener('wheel', this.handleWheel, { passive: false });
         this.canvas.draggable = true;
     }
@@ -828,6 +839,10 @@ export class CanvasInventoryPanel {
         // its mousedown preventDefault'd already and click is suppressed for
         // the dragged element anyway. Skip here to avoid double-handling.
         if (this.onItemMouseDown) return;
+        // Some browsers fire `click` right after a successful HTML5 drag-and-
+        // drop on a draggable=true element. Without this guard, dragging an
+        // item to a loadout slot also auto-equips it via the click path.
+        if (this.dragInProgress || performance.now() < this.suppressClickUntil) return;
         const { x, y } = this.toLocal(e);
         if (this.pointInRect(x, y, this.closeBtnRect)) return;
         if (this.pointInRect(x, y, this.stackToggleRect)) return;
@@ -847,10 +862,20 @@ export class CanvasInventoryPanel {
             return;
         }
         if (this.onItemDragStart) {
+            this.dragInProgress = true;
             this.onItemDragStart(hit.rarity, hit.itemType, e, hit);
         } else {
             e.preventDefault();
         }
+    };
+
+    private handleDragEnd = () => {
+        if (!this.dragInProgress) return;
+        this.dragInProgress = false;
+        // Some browsers queue a phantom `click` after the dragend completes
+        // (especially Chrome on draggable=true elements). Hold off click
+        // handling for a short grace window so that phantom click is dropped.
+        this.suppressClickUntil = performance.now() + 200;
     };
 
     private handleWheel = (e: WheelEvent) => {
