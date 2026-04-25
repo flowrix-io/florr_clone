@@ -201,6 +201,10 @@ export class LeaderboardManager {
 
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Defensive: do not inherit textAlign from upstream renderers. The title
+        // header below relies on left-aligned start positioning.
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
 
         // Calculate content height
         const headerHeight = 50;

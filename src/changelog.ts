@@ -417,9 +417,13 @@ export class ChangelogManager {
         // The canvas is always full-screen now; the panel is drawn at PANEL_X/PANEL_Y.
         const offsetX = this.PANEL_X;
         const offsetY = this.PANEL_Y;
-        
+
         // Save context state to restore after rendering
         ctx.save();
+        // Defensive: do not inherit textAlign from upstream renderers. The title
+        // header below relies on left-aligned start positioning.
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
 
         const entries = [...CHANGELOG].reverse();
         

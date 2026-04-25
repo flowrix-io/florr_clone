@@ -277,13 +277,17 @@ export class NotificationsManager {
         // The canvas is always full-screen now; the panel is drawn at PANEL_X/PANEL_Y.
         const offsetX = this.PANEL_X;
         const offsetY = this.PANEL_Y;
-        
+
         // Save context state to restore after rendering
         ctx.save();
-        
+
         // Reset any transformations that might affect text measurement
         // This ensures text measurement is accurate
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Defensive: do not inherit textAlign from upstream renderers. The title
+        // header below relies on left-aligned start positioning.
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
 
         // Calculate content height (accounting for text wrapping)
         // First pass: calculate without scrollbar to get approximate height
