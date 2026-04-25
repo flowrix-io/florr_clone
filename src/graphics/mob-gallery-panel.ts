@@ -528,13 +528,13 @@ export class CanvasMobGalleryPanel {
         const stats = c.stats!;
         const rarityColor = ITEM_RARITY_COLORS[c.rarity] || '#fff';
 
-        // Build the renderable line list: title + description (wrapped) +
-        // stats + drops section. Each line carries its own font + color.
+        // === Header text lines ===
         type Line = { text: string; color: string; font: string };
         const lines: Line[] = [];
         const titleFont = 'bold 14px Ubuntu, sans-serif';
         const bodyFont = '12px Ubuntu, sans-serif';
         const headerFont = 'bold 12px Ubuntu, sans-serif';
+        const probFont = 'bold 10px Ubuntu, sans-serif';
 
         lines.push({
             text: `${c.rarity.charAt(0).toUpperCase() + c.rarity.slice(1)} ${stats.name || c.mobType}`,
@@ -552,52 +552,51 @@ export class CanvasMobGalleryPanel {
         lines.push({ text: `XP: ${abbreviateNumber(stats.xp)}`, color: '#FF9800', font: bodyFont });
 
         const drops = computeMobDrops(c.mobType, c.rarity);
-        if (drops.length > 0) {
-            lines.push({ text: '', color: '', font: bodyFont }); // spacer
-            lines.push({ text: 'Drops:', color: '#FFD700', font: headerFont });
-            for (const d of drops) {
-                const rc = ITEM_RARITY_COLORS[d.rarity] || '#fff';
-                const niceItem = formatItemName(d.itemType);
-                const rarityPrefix = d.rarity.charAt(0).toUpperCase() + d.rarity.slice(1);
-                const mul = d.multiplier ? ` x${d.multiplier}` : '';
-                const probStr = d.probability < 0.01
-                    ? '<0.01%'
-                    : d.probability.toFixed(2) + '%';
-                lines.push({
-                    text: `${rarityPrefix} ${niceItem}${mul}: ${probStr}`,
-                    color: rc,
-                    font: bodyFont,
-                });
-            }
-        }
 
+        // === Layout constants ===
         const padX = 10;
         const padY = 8;
         const lineH = 16;
         const titleH = 20;
+        const dropsHeaderH = 20;
+        const cardSize = 32;          // colored square holding the item icon
+        const cardLabelH = 14;        // probability text below card
+        const cardCellW = 60;         // per-card slot width (gives room for "100.00%")
+        const cardCellH = cardSize + 4 + cardLabelH;
+        const cardGapX = 4;
+        const cardGapY = 6;
 
-        // Measure widest line (use the right font for each).
-        let maxW = 0;
+        // === Tooltip width — text body width + cards-per-row width ===
+        let textW = 0;
         for (const ln of lines) {
             if (!ln.text) continue;
             ctx.font = ln.font;
             const w = ctx.measureText(ln.text).width;
-            if (w > maxW) maxW = w;
+            if (w > textW) textW = w;
         }
-        const w = maxW + padX * 2;
-        let h = padY * 2;
-        for (const ln of lines) {
-            h += ln.font === titleFont ? titleH : lineH;
-        }
+        // Aim for 4 cards per row. Tooltip width = max(textW, 4 cards wide).
+        const cardsPerRow = Math.max(1, Math.min(4, drops.length));
+        const cardsRowW = cardsPerRow * cardCellW + (cardsPerRow - 1) * cardGapX;
+        const w = Math.max(textW, cardsRowW) + padX * 2;
 
-        // Position next to the cell, clamped to canvas bounds. Cell coords
-        // are in absolute (un-scrolled) canvas space, so adjust for scrollY.
+        // === Tooltip height — text + drops grid ===
+        let textH = padY * 2;
+        for (const ln of lines) textH += ln.font === titleFont ? titleH : lineH;
+        const cols = Math.max(1, Math.min(cardsPerRow, drops.length));
+        const rows = drops.length === 0 ? 0 : Math.ceil(drops.length / cols);
+        const dropsH = drops.length === 0
+            ? 0
+            : dropsHeaderH + rows * cardCellH + Math.max(0, rows - 1) * cardGapY + 4;
+        const h = textH + dropsH;
+
+        // Position next to the cell, clamped to canvas bounds.
         let tx = c.x + c.w + 8;
         let ty = c.y - this.scrollY;
         if (tx + w > cssW - 4) tx = c.x - w - 8;
         if (ty + h > cssH - 4) ty = cssH - h - 4;
         if (ty < this.contentTop()) ty = this.contentTop();
 
+        // Background.
         ctx.fillStyle = 'rgba(0,0,0,0.95)';
         ctx.strokeStyle = rarityColor;
         ctx.lineWidth = 2;
@@ -605,6 +604,7 @@ export class CanvasMobGalleryPanel {
         ctx.fill();
         ctx.stroke();
 
+        // === Render text lines ===
         let cy = ty + padY;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
@@ -617,6 +617,99 @@ export class CanvasMobGalleryPanel {
             }
             cy += lh;
         }
+
+        // === Render drops grid ===
+        if (drops.length > 0) {
+            // 'Drops:' header — gold like the legacy DOM tooltip.
+            ctx.font = headerFont;
+            ctx.fillStyle = '#FFD700';
+            ctx.fillText('Drops:', tx + padX, cy);
+            cy += dropsHeaderH;
+
+            // Center the cards row inside the tooltip.
+            const totalRowW = cols * cardCellW + (cols - 1) * cardGapX;
+            const startX = tx + (w - totalRowW) / 2;
+            for (let i = 0; i < drops.length; i++) {
+                const d = drops[i];
+                const r = Math.floor(i / cols);
+                const c2 = i % cols;
+                const cx = startX + c2 * (cardCellW + cardGapX);
+                const cy2 = cy + r * (cardCellH + cardGapY);
+                this.drawDropCard(ctx, cx, cy2, cardCellW, cardSize, d, probFont);
+            }
+        }
+    }
+
+    /** Paint one drop card: rarity-colored rounded square w/ darker border,
+     *  item icon centered inside, probability text below. */
+    private drawDropCard(
+        ctx: CanvasRenderingContext2D,
+        cellX: number,
+        cellY: number,
+        cellW: number,
+        cardSize: number,
+        d: DropEntry,
+        probFont: string,
+    ) {
+        const rarityColor = ITEM_RARITY_COLORS[d.rarity] || '#fff';
+        const cardX = cellX + (cellW - cardSize) / 2;
+        const cardY = cellY;
+
+        // Card background + darker border.
+        ctx.fillStyle = rarityColor;
+        roundedRect(ctx, cardX, cardY, cardSize, cardSize, 4);
+        ctx.fill();
+        ctx.strokeStyle = darken(rarityColor);
+        ctx.lineWidth = 2;
+        roundedRect(ctx, cardX + 1, cardY + 1, cardSize - 2, cardSize - 2, 4);
+        ctx.stroke();
+
+        // Item icon — petal canvas for petals, image sprite for everything
+        // else. Same lookup pattern the loadout bar uses.
+        const iconSize = cardSize - 8;
+        const iconX = cardX + (cardSize - iconSize) / 2;
+        const iconY = cardY + (cardSize - iconSize) / 2;
+        const assets = (window as any).preloadedAssets;
+        if (d.type === 'petal' && assets?.petalImages) {
+            const entry = assets.petalImages[`${d.itemType}_${d.rarity}`];
+            const petalCanvas = Array.isArray(entry)
+                ? entry[Math.floor(Date.now() / 42) % entry.length]
+                : entry;
+            if (petalCanvas) {
+                ctx.drawImage(petalCanvas, iconX, iconY, iconSize, iconSize);
+            }
+        } else if (assets?.itemSprites) {
+            const sprite = assets.itemSprites[d.itemType];
+            if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+                ctx.drawImage(sprite, iconX, iconY, iconSize, iconSize);
+            }
+        }
+
+        // Multiplier badge in the top-right corner if quantity > 1.
+        if (d.multiplier && d.multiplier > 1) {
+            ctx.font = 'bold 9px Ubuntu, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#FFD700';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            const text = `x${d.multiplier}`;
+            ctx.strokeText(text, cardX + cardSize - 2, cardY + 2);
+            ctx.fillText(text, cardX + cardSize - 2, cardY + 2);
+        }
+
+        // Probability label below the card.
+        const probStr = d.probability < 0.01
+            ? '<0.01%'
+            : d.probability.toFixed(2) + '%';
+        ctx.font = probFont;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#fff';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.strokeText(probStr, cellX + cellW / 2, cardY + cardSize + 4);
+        ctx.fillText(probStr, cellX + cellW / 2, cardY + cardSize + 4);
     }
 
     // ===== input =====
