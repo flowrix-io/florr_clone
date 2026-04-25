@@ -46,7 +46,11 @@ const BUTTON_SIZE = 42;
 const BUTTON_GAP = 10;
 const GROUP_INSET = 20;
 const BORDER_WIDTH = 4;
-const ICON_SIZE = 32;
+// The DOM rule sets svg width/height to 32px, but the button's content box
+// (border-box 42 minus 2×4 border minus 2×5 padding = 24×24) is smaller than
+// 32, so flex shrinks the SVG main-axis size and preserveAspectRatio="meet"
+// scales the icon down uniformly. Visible icon ≈ 24×24, matching that here.
+const ICON_SIZE = 24;
 const CORNER_RADIUS = 3;
 
 const BUTTON_DEFS: ButtonDef[] = [
@@ -174,21 +178,19 @@ export class TitleCanvasButtons {
                 ctx.translate(-(b.x + b.w / 2), -(b.y + b.h / 2));
             }
 
-            // Background.
-            ctx.fillStyle = b.bg;
+            // Border + bg via two filled rects (matches CSS border-radius +
+            // border-width semantics: outer corner at radius=3, inner corner
+            // sharp because radius (3) - border-width (4) clamps to 0).
+            // A stroke would put the line CENTER on the path, blowing the
+            // outer corner radius up to 3 + half-stroke.
+            ctx.fillStyle = b.border;
             drawRoundedRect(ctx, b.x, b.y, b.w, b.h, CORNER_RADIUS);
             ctx.fill();
+            ctx.fillStyle = b.bg;
+            drawRoundedRect(ctx, b.x + BORDER_WIDTH, b.y + BORDER_WIDTH, b.w - 2 * BORDER_WIDTH, b.h - 2 * BORDER_WIDTH, 0);
+            ctx.fill();
 
-            // Border.
-            ctx.strokeStyle = b.border;
-            ctx.lineWidth = BORDER_WIDTH;
-            // Inset stroke by half the line width so the border renders inside
-            // the rect (matches the CSS box-sizing: border-box behavior).
-            const inset = BORDER_WIDTH / 2;
-            drawRoundedRect(ctx, b.x + inset, b.y + inset, b.w - BORDER_WIDTH, b.h - BORDER_WIDTH, CORNER_RADIUS);
-            ctx.stroke();
-
-            // Hover/press tint via globalAlpha overlay.
+            // Hover/press tint via globalAlpha overlay (matches CSS filter).
             if (hovered || pressed) {
                 ctx.fillStyle = pressed ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)';
                 drawRoundedRect(ctx, b.x, b.y, b.w, b.h, CORNER_RADIUS);
