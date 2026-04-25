@@ -629,7 +629,8 @@
           "petal_peas": 1,
           "petal_sparkle": 1,
           "petal_lightning": 1,
-          "petal_centipede_egg": 1
+          "petal_centipede_egg": 1,
+          "petal_basic": 1
         }
       },
       "loadout": [
@@ -640,18 +641,14 @@
         },
         {
           "type": "petal",
-          "rarity": "apex",
-          "petalType": "light"
-        },
-        {
-          "type": "petal",
-          "rarity": "apex",
-          "petalType": "basic"
-        },
-        {
-          "type": "petal",
           "rarity": "unique",
           "petalType": "stinger"
+        },
+        null,
+        {
+          "type": "petal",
+          "rarity": "apex",
+          "petalType": "light"
         },
         {
           "type": "petal",
@@ -1611,7 +1608,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1777157523535
+      "lastActiveAt": 1777160624968
     },
     "dev": {
       "id": "1g99g1gfk",

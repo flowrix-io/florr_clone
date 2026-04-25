@@ -9,6 +9,14 @@ declare module './core' {
     }
 }
 
+// Symbol-keyed so JSON.stringify skips them. The client emits its loadout to the
+// server on every change; if these caches lived on string keys they would be
+// serialized (canvases stringify to {}), round-tripped back, and the truthy-but-
+// empty value would short-circuit the cache-resolve branch on the next render.
+const PETAL_FRAMES_CACHE = Symbol('petalFramesCache');
+const PETAL_KEY_CACHE = Symbol('petalKeyCache');
+const PETAL_STATS_CACHE = Symbol('petalStatsCache');
+
 export function getThirdEyeRarity(player: Player): string | undefined {
     if (!player.loadout) return undefined;
     for (const item of player.loadout) {
@@ -150,10 +158,10 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
         // wholesale on each server snapshot, so this cache lives only as long
         // as the snapshot — which is fine, and avoids the per-frame dictionary
         // lookup in getPetalStats.
-        let stats = item._statsCache;
+        let stats = item[PETAL_STATS_CACHE];
         if (stats === undefined) {
             stats = getPetalStats(item.petalType, item.rarity) ?? null;
-            item._statsCache = stats;
+            item[PETAL_STATS_CACHE] = stats;
         }
         if (!stats) continue;
 
@@ -302,14 +310,16 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
         }
 
         // Resolve the petal frame via a cached canvas reference on the petal
-        // (no per-frame string concat or object key lookup).
-        let petalFrames = petal._petalFramesCache;
-        let petalKey: string = petal._petalKeyCache;
+        // (no per-frame string concat or object key lookup). Symbol-keyed so
+        // the cached canvas (which JSON.stringify would emit as {}) cannot
+        // ride along when the loadout is round-tripped through the server.
+        let petalFrames = petal[PETAL_FRAMES_CACHE];
+        let petalKey: string = petal[PETAL_KEY_CACHE];
         if (petalFrames === undefined) {
             petalKey = `${petal.petalType}_${petal.rarity}`;
             petalFrames = petalCache[petalKey] ?? null;
-            petal._petalFramesCache = petalFrames;
-            petal._petalKeyCache = petalKey;
+            petal[PETAL_FRAMES_CACHE] = petalFrames;
+            petal[PETAL_KEY_CACHE] = petalKey;
         }
 
         // Use Math.floor — `| 0` truncates to int32 and produces a negative
