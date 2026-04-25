@@ -192,6 +192,58 @@ export class TitleScreenInventoryManager {
         };
     }
 
+    /**
+     * Render a small offscreen canvas containing the item sprite and use it as
+     * the HTML5 drag image. Without this the browser falls back to a
+     * screenshot of the source element — which for the canvas-based inventory
+     * and loadout means dragging the entire canvas. Works for petals (preloaded
+     * canvases keyed by `${petalType}_${rarity}`) and for non-petal items
+     * (preloaded HTMLImageElement sprites keyed by item type).
+     */
+    private setItemDragImage(dataTransfer: DataTransfer, rarity: string, itemKey: string): void {
+        const gs = 40;
+        const ghost = document.createElement('canvas');
+        ghost.width = gs;
+        ghost.height = gs;
+        ghost.style.width = `${gs}px`;
+        ghost.style.height = `${gs}px`;
+        ghost.style.position = 'fixed';
+        ghost.style.top = '-1000px';
+        ghost.style.left = '-1000px';
+        document.body.appendChild(ghost);
+        const gctx = ghost.getContext('2d');
+        const assets = (window as any).preloadedAssets;
+
+        let drew = false;
+        if (gctx && itemKey.startsWith('petal_')) {
+            const petalType = itemKey.substring(6);
+            const entry = assets?.petalImages?.[`${petalType}_${rarity}`];
+            const petalCanvas = Array.isArray(entry)
+                ? entry[Math.floor(Date.now() / 42) % entry.length]
+                : entry;
+            if (petalCanvas) {
+                gctx.drawImage(petalCanvas, 0, 0, gs, gs);
+                drew = true;
+            }
+        } else if (gctx) {
+            const sprite = assets?.itemSprites?.[itemKey];
+            if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+                gctx.drawImage(sprite, 0, 0, gs, gs);
+                drew = true;
+            }
+        }
+
+        if (!drew && gctx) {
+            // Last-resort placeholder so we still set a tiny drag image rather
+            // than letting the browser screenshot the source canvas.
+            gctx.fillStyle = '#888';
+            gctx.fillRect(0, 0, gs, gs);
+        }
+
+        dataTransfer.setDragImage(ghost, gs / 2, gs / 2);
+        requestAnimationFrame(() => ghost.remove());
+    }
+
     private setupCanvasLoadoutInteractions(canvas: HTMLCanvasElement): void {
         // Hover tracking — only reacts when the cursor is over the slot grid.
         canvas.addEventListener('mousemove', (e) => {
@@ -225,31 +277,11 @@ export class TitleScreenInventoryManager {
             this.canvasLoadoutBar.beginDrag(hit, x, y);
             e.dataTransfer?.setData('text/loadoutSlot', hit.toString());
             if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-            if (e.dataTransfer && item.type === 'petal' && item.petalType && item.rarity) {
-                const gs = 40;
-                const ghost = document.createElement('canvas');
-                ghost.width = gs; ghost.height = gs;
-                ghost.style.width = `${gs}px`;
-                ghost.style.height = `${gs}px`;
-                ghost.style.position = 'fixed';
-                ghost.style.top = '-1000px';
-                ghost.style.left = '-1000px';
-                document.body.appendChild(ghost);
-                const gctx = ghost.getContext('2d');
-                const assets = (window as any).preloadedAssets;
-                const entry = assets?.petalImages?.[`${item.petalType}_${item.rarity}`];
-                const petalCanvas = Array.isArray(entry)
-                    ? entry[Math.floor(Date.now() / 42) % entry.length]
-                    : entry;
-                if (gctx && petalCanvas) {
-                    gctx.drawImage(petalCanvas, 0, 0, gs, gs);
-                }
-                e.dataTransfer.setDragImage(ghost, gs / 2, gs / 2);
-                requestAnimationFrame(() => ghost.remove());
-            } else {
-                const img = new Image();
-                img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                e.dataTransfer?.setDragImage(img, 0, 0);
+            if (e.dataTransfer) {
+                const itemKey = item.type === 'petal' && item.petalType
+                    ? `petal_${item.petalType}`
+                    : item.type;
+                this.setItemDragImage(e.dataTransfer, item.rarity ?? 'common', itemKey);
             }
         });
         canvas.addEventListener('dragend', () => {
@@ -1266,35 +1298,15 @@ export class TitleScreenInventoryManager {
                 }
             };
             // Dragstart sets text/plain so the title canvas's loadout drop
-            // handler can equip the item to the targeted slot.
+            // handler can equip the item to the targeted slot. We must also
+            // call setDragImage with a small custom image — otherwise the
+            // browser uses a screenshot of the source element, which is the
+            // entire inventory canvas.
             this.canvasInventoryPanel.onItemDragStart = (rarity, itemType, e) => {
                 if (!e.dataTransfer) return;
                 e.dataTransfer.setData('text/plain', JSON.stringify({ rarity, type: itemType }));
                 e.dataTransfer.effectAllowed = 'move';
-                // Use the petal sprite as the drag image (browsers otherwise
-                // try to drag the whole canvas as a screenshot).
-                if (itemType.startsWith('petal_')) {
-                    const petalType = itemType.substring(6);
-                    const assets = (window as any).preloadedAssets;
-                    const entry = assets?.petalImages?.[`${petalType}_${rarity}`];
-                    const petalCanvas = Array.isArray(entry)
-                        ? entry[Math.floor(Date.now() / 42) % entry.length]
-                        : entry;
-                    if (petalCanvas) {
-                        const gs = 40;
-                        const ghost = document.createElement('canvas');
-                        ghost.width = gs; ghost.height = gs;
-                        ghost.style.width = `${gs}px`;
-                        ghost.style.height = `${gs}px`;
-                        ghost.style.position = 'fixed';
-                        ghost.style.top = '-1000px';
-                        ghost.style.left = '-1000px';
-                        document.body.appendChild(ghost);
-                        ghost.getContext('2d')?.drawImage(petalCanvas, 0, 0, gs, gs);
-                        e.dataTransfer.setDragImage(ghost, gs / 2, gs / 2);
-                        requestAnimationFrame(() => ghost.remove());
-                    }
-                }
+                this.setItemDragImage(e.dataTransfer, rarity, itemType);
             };
             this.canvasInventoryPanel.onItemHoverChange = (hit: InventoryHitInfo | null) => {
                 this.handleCanvasInventoryHover(hit);
