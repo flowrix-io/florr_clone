@@ -38,14 +38,14 @@ export class TitleScreen {
     public guildMenuManager!: GuildMenuManager;
     private titleScreenInventoryManager!: TitleScreenInventoryManager;
     private submanagers!: TitleScreenSubmanagers;
-    // Canvas-based UI
-    private uiCanvas!: HTMLCanvasElement;
-    private uiCtx!: CanvasRenderingContext2D;
+    // Canvas-based UI — shares a single canvas with the background animation.
+    // `uiCanvas` / `uiCtx` are getters that point at `background`'s canvas.
+    private get uiCanvas(): HTMLCanvasElement { return this.background.getCanvas(); }
+    private get uiCtx(): CanvasRenderingContext2D { return this.background.getCtx(); }
     private playerName: string = '';
     private isNameInputFocused: boolean = false;
     private hoveredBiomeIndex: number = -1;
     private hoveredStartButton: boolean = false;
-    private animationFrameId: number | null = null;
     
     // Auth form state (canvas-based)
     private authForm: AuthForm = new AuthForm({ onAction: (action) => {
@@ -449,19 +449,9 @@ export class TitleScreen {
         this.axolotlContainer = this.createElement('div', '');
         this.axolotlContainer.id = 'axolotl-container';
 
-        // Create UI canvas for title screen elements
-        this.uiCanvas = document.createElement('canvas');
-        this.uiCanvas.id = 'title-ui-canvas';
-        this.uiCanvas.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            pointer-events: auto;
-            z-index: 1000;
-        `;
-        applyZoomCompensation(this.uiCanvas);
-        this.uiCtx = this.uiCanvas.getContext('2d')!;
-        
+        // The "UI canvas" is the same element as the background canvas — see
+        // the `uiCanvas` / `uiCtx` getters above. Nothing to create here.
+
         // Load saved player name
         const savedName = localStorage.getItem('playerName') || '';
         this.playerName = savedName;
@@ -781,7 +771,6 @@ export class TitleScreen {
 
     public async appendToBody(): Promise<void> {
         this.background.mount();
-        document.body.appendChild(this.uiCanvas);
         // Hide DOM-based auth container since we're using canvas
         this.authContainer.style.display = 'none';
         document.body.appendChild(this.authContainer);
@@ -794,10 +783,16 @@ export class TitleScreen {
         document.body.appendChild(this.landContainer);
         document.body.appendChild(this.axolotlContainer);
 
-        // Load and start background animation; per-frame callback drives the
-        // changelog/notifications/leaderboard/guild canvas state.
+        // Load and start background animation. The per-frame callback runs all
+        // remaining canvas work on the shared canvas: title UI (gated by
+        // uiRenderingEnabled), then the changelog/notifications/leaderboard/
+        // guild overlay.
         await this.background.loadTexture();
-        this.background.start(() => this.renderInGameMenusOverlay());
+        this.uiRenderingEnabled = true;
+        this.background.start(() => {
+            if (this.uiRenderingEnabled) this.renderCanvasUI();
+            this.renderInGameMenusOverlay();
+        });
 
         // Hide HTML centerText and use canvas instead
         this.centerText.style.display = 'none';
@@ -825,12 +820,11 @@ export class TitleScreen {
             }
         }, 100);
 
-        // Setup canvas UI event listeners
+        // Setup canvas UI event listeners. The render loop itself is driven by
+        // BackgroundAnimation's RAF — see the start() call above.
         this.setupCanvasUIListeners();
 
-        // Start canvas rendering loop
-        this.startCanvasRendering();
-        
+
         // If user is not logged in, show login form after a short delay
         // (in case preconnectToServer is not called)
         setTimeout(() => {
@@ -1233,32 +1227,16 @@ export class TitleScreen {
         }
     }
 
-    /**
-     * Starts the canvas rendering loop
-     */
+    // Title-UI rendering shares the BackgroundAnimation RAF; this flag gates
+    // whether the per-frame onFrame callback actually paints title UI.
+    private uiRenderingEnabled: boolean = false;
+
     private startCanvasRendering(): void {
-        if (!this.uiCanvas || !this.uiCtx) {
-            return;
-        }
-        // Stop any existing rendering loop
-        this.stopCanvasRendering();
-        const render = () => {
-            if (this.uiCanvas && this.uiCtx) {
-                this.renderCanvasUI();
-                this.animationFrameId = requestAnimationFrame(render);
-            }
-        };
-        render();
+        this.uiRenderingEnabled = true;
     }
 
-    /**
-     * Stops the canvas rendering loop
-     */
     private stopCanvasRendering(): void {
-        if (this.animationFrameId !== null) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
-        }
+        this.uiRenderingEnabled = false;
     }
 
     /**
@@ -1271,8 +1249,8 @@ export class TitleScreen {
         const centerX = width / 2;
         const centerY = height / 2;
 
-        // Clear canvas
-        ctx.clearRect(0, 0, width, height);
+        // No clear: BackgroundAnimation just painted the scrolling biome and
+        // floating petals on the same canvas. We draw UI on top of that.
 
         // Track FPS
         this.titleFrameCount++;

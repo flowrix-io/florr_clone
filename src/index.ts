@@ -387,14 +387,12 @@ function setupGameEventListeners() {
             
             // Capture title screen screenshot for iris transition (also stored for exit animation)
             if (currentGame?.graphics) {
-                const bgCanvas = document.getElementById('title-background-canvas') as HTMLCanvasElement | null;
-                const uiCanvas = document.getElementById('title-ui-canvas') as HTMLCanvasElement | null;
+                const titleCanvas = document.getElementById('title-background-canvas') as HTMLCanvasElement | null;
                 const screenshot = document.createElement('canvas');
                 screenshot.width = window.innerWidth;
                 screenshot.height = window.innerHeight;
                 const sctx = screenshot.getContext('2d')!;
-                if (bgCanvas) sctx.drawImage(bgCanvas, 0, 0, screenshot.width, screenshot.height);
-                if (uiCanvas) sctx.drawImage(uiCanvas, 0, 0, screenshot.width, screenshot.height);
+                if (titleCanvas) sctx.drawImage(titleCanvas, 0, 0, screenshot.width, screenshot.height);
                 currentGame.graphics.startIrisTransition(screenshot);
                 currentGame.graphics.irisTitleScreen = true;
             }
@@ -423,11 +421,9 @@ function setupGameEventListeners() {
 
             titleScreen?.hideExitButton();
 
-            // Briefly show title screen canvases to capture a fresh screenshot
-            const bgCanvas = document.getElementById('title-background-canvas') as HTMLCanvasElement | null;
-            const uiCanvas = document.getElementById('title-ui-canvas') as HTMLCanvasElement | null;
-            if (bgCanvas) bgCanvas.style.display = 'block';
-            if (uiCanvas) uiCanvas.style.display = 'block';
+            // Briefly show title screen canvas to capture a fresh screenshot
+            const titleCanvas = document.getElementById('title-background-canvas') as HTMLCanvasElement | null;
+            if (titleCanvas) titleCanvas.style.display = 'block';
             titleScreen?.startBackgroundAnimation();
             (titleScreen as any)?.startCanvasRendering();
 
@@ -440,17 +436,15 @@ function setupGameEventListeners() {
                     return;
                 }
 
-                // Capture screenshot from the now-rendered canvases
+                // Capture screenshot from the now-rendered title canvas
                 const screenshot = document.createElement('canvas');
                 screenshot.width = window.innerWidth;
                 screenshot.height = window.innerHeight;
                 const sctx = screenshot.getContext('2d')!;
-                if (bgCanvas) sctx.drawImage(bgCanvas, 0, 0, screenshot.width, screenshot.height);
-                if (uiCanvas) sctx.drawImage(uiCanvas, 0, 0, screenshot.width, screenshot.height);
+                if (titleCanvas) sctx.drawImage(titleCanvas, 0, 0, screenshot.width, screenshot.height);
 
-                // Hide title screen canvases so only game canvas is visible during animation
-                if (bgCanvas) bgCanvas.style.display = 'none';
-                if (uiCanvas) uiCanvas.style.display = 'none';
+                // Hide title screen canvas so only game canvas is visible during animation
+                if (titleCanvas) titleCanvas.style.display = 'none';
                 (titleScreen as any)?.stopCanvasRendering();
                 titleScreen?.stopBackgroundAnimation();
 

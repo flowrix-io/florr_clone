@@ -4,11 +4,12 @@ import { getBiomeSvgFile } from './biomes';
 import { FloatingPetalManager } from './floating_petals';
 
 /**
- * Owns the title-screen scrolling background canvas and drives the floating-petal
- * renderer. Both layers share a single canvas — the petals are drawn on top of
- * the scrolling biome each frame. `start()` accepts an optional per-frame
- * callback for unrelated work (used by TitleScreen to drive the in-game menu
- * panel overlay).
+ * Owns the title-screen canvas. Draws the scrolling biome background, runs the
+ * floating-petal renderer, and exposes the canvas/context so TitleScreen can
+ * paint UI on top of the same canvas via the per-frame `onFrame` callback.
+ *
+ * This is the single visible canvas on the title screen: bg + petals + UI all
+ * land here, and pointer events for the title UI register against it.
  */
 export class BackgroundAnimation {
     private backgroundCanvas: HTMLCanvasElement;
@@ -29,8 +30,8 @@ export class BackgroundAnimation {
             position: fixed;
             top: 0;
             left: 0;
-            pointer-events: none;
-            z-index: 1;
+            pointer-events: auto;
+            z-index: 1000;
         `;
         applyZoomCompensation(this.backgroundCanvas);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d')!;
@@ -38,7 +39,10 @@ export class BackgroundAnimation {
         this.floatingPetalManager = new FloatingPetalManager();
     }
 
-    /** Mounts the background canvas into document.body. */
+    public getCanvas(): HTMLCanvasElement { return this.backgroundCanvas; }
+    public getCtx(): CanvasRenderingContext2D { return this.backgroundCtx; }
+
+    /** Mounts the canvas into document.body. */
     public mount(): void {
         document.body.appendChild(this.backgroundCanvas);
     }
