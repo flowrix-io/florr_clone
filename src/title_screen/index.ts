@@ -775,10 +775,7 @@ export class TitleScreen {
         // guild overlay.
         await this.background.loadTexture();
         this.uiRenderingEnabled = true;
-        this.background.start(() => {
-            if (this.uiRenderingEnabled) this.renderCanvasUI();
-            this.renderInGameMenusOverlay();
-        });
+        this.background.start(this.titleFrame);
 
         // Hide HTML centerText and use canvas instead
         this.centerText.style.display = 'none';
@@ -2076,8 +2073,14 @@ export class TitleScreen {
     public showFloatingPetals(): void { this.background.showFloatingPetals(); }
     public hideBackgroundCanvas(): void { this.background.hide(); }
     public showBackgroundCanvas(): void { this.background.show(); }
-    public startBackgroundAnimation(): void { this.background.start(() => this.renderInGameMenusOverlay()); }
+    public startBackgroundAnimation(): void { this.background.start(this.titleFrame); }
     public stopBackgroundAnimation(): void { this.background.stop(); }
+
+    /** Single per-frame callback for the title canvas — matches appendToBody. */
+    private titleFrame = (): void => {
+        if (this.uiRenderingEnabled) this.renderCanvasUI();
+        this.renderInGameMenusOverlay();
+    };
 
     /**
      * Per-frame work driven by the background animation loop: paints whichever
