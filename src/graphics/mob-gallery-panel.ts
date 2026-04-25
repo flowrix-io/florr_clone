@@ -72,14 +72,39 @@ function computeMobDrops(mobType: string, mobRarity: string): DropEntry[] {
     const isCommon = mobRarity === 'common';
     const ultraMultiplier = mobRarity === 'ultra' ? 20 : 1;
 
-    // Drops listed at common/uncommon rarity in the table are "special"
-    // common-mob drops — they only apply when the mob itself is common. For
-    // any non-common mob, filter them out entirely so they don't appear in
-    // the gallery tooltip.
+    // Combine common+uncommon variants of the same item for non-common mobs
+    // (the legacy DOM did this so a single rose-listed-twice doesn't render
+    // as duplicate cards).
     type DropDef = (typeof dropTable.drops)[number];
-    const processedDrops: DropDef[] = isCommon
-        ? dropTable.drops.slice()
-        : dropTable.drops.filter((d) => d.rarity !== 'common' && d.rarity !== 'uncommon');
+    let processedDrops: DropDef[];
+    if (!isCommon) {
+        const groups = new Map<string, DropDef[]>();
+        for (const drop of dropTable.drops) {
+            const key = `${drop.type}_${drop.itemType}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(drop);
+        }
+        processedDrops = [];
+        for (const group of groups.values()) {
+            const c = group.find((d) => d.rarity === 'common');
+            const u = group.find((d) => d.rarity === 'uncommon');
+            const others = group.filter((d) => d.rarity !== 'common' && d.rarity !== 'uncommon');
+            if (c && u) {
+                processedDrops.push({
+                    ...u,
+                    probability: c.probability + u.probability,
+                    minQuantity: Math.min(c.minQuantity || 1, u.minQuantity || 1),
+                    maxQuantity: Math.max(c.maxQuantity || 1, u.maxQuantity || 1),
+                    rarity: 'uncommon',
+                });
+                processedDrops.push(...others);
+            } else {
+                processedDrops.push(...group);
+            }
+        }
+    } else {
+        processedDrops = dropTable.drops.slice();
+    }
 
     const out: DropEntry[] = [];
 
@@ -120,8 +145,14 @@ function computeMobDrops(mobType: string, mobRarity: string): DropEntry[] {
     for (const drop of processedDrops) {
         if (!isCommon && rarityIndex > 0 && rarityIndex < DROP_RARITY_ORDER.length) {
             const lower = DROP_RARITY_ORDER[rarityIndex - 1] as Rarity;
+            // 90% path: scaled to mob-rarity-1 (always shown).
             pushOutcomes(lower, drop.probability * 0.9, drop);
-            pushOutcomes(drop.rarity as Rarity, drop.probability * 0.1, drop);
+            // 10% path: scaled to the drop's listed rarity. Common/uncommon
+            // listed drop rates are common-mob-only — drops listed at those
+            // rarities don't surface for non-common mobs in the 10% branch.
+            if (drop.rarity !== 'common' && drop.rarity !== 'uncommon') {
+                pushOutcomes(drop.rarity as Rarity, drop.probability * 0.1, drop);
+            }
         } else {
             pushOutcomes(drop.rarity as Rarity, drop.probability, drop);
         }
