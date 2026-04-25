@@ -98,6 +98,11 @@ class Game {
         this.lastInterpolationTime = 0;
         this.fpsCounter = 0;
         this.fpsUpdateTime = 0;
+        // Rolling per-frame work-time average (ms). If this is well under
+        // 1000/displayHz, the FPS cap is vsync/browser, not CPU work.
+        this.frameTimeAvgMs = 0;
+        this.frameTimeSamples = 0;
+        this.frameTimeAccum = 0;
         // Connection quality tracking for slow connection optimization
         this.lastPingTime = 0;
         this.averagePing = 0;
@@ -959,18 +964,25 @@ class Game {
         // (prevents duplicate loops after exit + re-enter)
         if (window.currentGame && window.currentGame !== this)
             return;
+        const frameStartMs = this.showStats ? performance.now() : 0;
         // Calculate FPS and update stats
         if (this.showStats) {
             this.frameCount++;
-            const currentTime = performance.now();
-            if (currentTime - this.fpsUpdateTime >= 1000) {
+            if (frameStartMs - this.fpsUpdateTime >= 1000) {
                 this.fpsCounter = this.frameCount;
                 this.frameCount = 0;
-                this.fpsUpdateTime = currentTime;
+                this.fpsUpdateTime = frameStartMs;
                 this.incomingThroughput = this.bytesReceived - this.lastBytesReceived;
                 this.outgoingThroughput = this.bytesSent - this.lastBytesSent;
                 this.lastBytesReceived = this.bytesReceived;
                 this.lastBytesSent = this.bytesSent;
+                // Roll the per-frame work-time average over to the displayed
+                // value once per second alongside FPS.
+                this.frameTimeAvgMs = this.frameTimeSamples > 0
+                    ? this.frameTimeAccum / this.frameTimeSamples
+                    : 0;
+                this.frameTimeAccum = 0;
+                this.frameTimeSamples = 0;
             }
         }
         this.update();
@@ -999,6 +1011,10 @@ class Game {
         // Render canvas-based settings overlay if open
         if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
             window.titleScreen.renderSettingsOverlay(this.graphics.ctx);
+        }
+        if (this.showStats) {
+            this.frameTimeAccum += performance.now() - frameStartMs;
+            this.frameTimeSamples++;
         }
         requestAnimationFrame(() => this.gameLoop());
     }
@@ -1255,7 +1271,11 @@ class Game {
         lines.push({ text: `Mobs: ${this.enemies.size}`, color: '#ff6b6b' });
         // FPS & memory
         const memoryMB = this.getOffscreenCanvasMemoryMB();
-        lines.push({ text: `FPS: ${this.fpsCounter} | Memory: ${memoryMB.toFixed(2)} MB`, color: '#00ff00' });
+        // ms/frame is the actual work cost; FPS is gated by the browser's
+        // requestAnimationFrame cadence (typically the display refresh rate).
+        // If ms/frame is well under the FPS cap's budget the cap is vsync.
+        const ftStr = this.frameTimeAvgMs > 0 ? `${this.frameTimeAvgMs.toFixed(2)}ms` : '--';
+        lines.push({ text: `FPS: ${this.fpsCounter} (${ftStr}/frame) | Memory: ${memoryMB.toFixed(2)} MB`, color: '#00ff00' });
         // Draw from bottom up
         let y = canvas.height - 8;
         for (const line of lines) {
