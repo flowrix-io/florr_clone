@@ -16,6 +16,7 @@ export type TitleButtonId =
     | 'notifications'
     | 'leaderboard'
     | 'guild'
+    | 'exit'
     | 'inventory'
     | 'skills'
     | 'mobGallery'
@@ -40,6 +41,7 @@ interface ButtonRect extends ButtonDef {
     w: number;
     h: number;
     icon: HTMLImageElement | null;
+    visible: boolean;
 }
 
 const BUTTON_SIZE = 42;
@@ -59,6 +61,8 @@ const BUTTON_DEFS: ButtonDef[] = [
     { id: 'notifications', iconName: 'notifications', bg: '#4a90e2', border: '#3b73b5', group: 'top' },
     { id: 'leaderboard',   iconName: 'leaderboard',   bg: '#e8a023', border: '#ba801c', group: 'top' },
     { id: 'guild',         iconName: 'guild',         bg: '#27dade', border: '#1fb3b0', group: 'top' },
+    // Exit slot: only visible in-game; appended to the right of the top row.
+    { id: 'exit',          iconName: 'exit_button',   bg: '#ff0000', border: '#cc0000', group: 'top' },
 
     { id: 'inventory',  iconName: 'inventory',   bg: '#00b3ff', border: '#008fcc', group: 'bottom' },
     { id: 'skills',     iconName: 'skills',      bg: '#9d4edd', border: '#7e3eb1', group: 'bottom' },
@@ -127,17 +131,27 @@ export class TitleCanvasButtons {
             ...d,
             x: 0, y: 0, w: BUTTON_SIZE, h: BUTTON_SIZE,
             icon: loadIconImage(d.iconName),
+            // Exit is in-game only — start hidden; TitleScreen.showExitButton
+            // flips it on. Other buttons default to visible.
+            visible: d.id !== 'exit',
         }));
     }
 
-    /** Re-layout button rectangles for the current canvas size. */
+    /** Show or hide the in-game exit button. */
+    public setExitVisible(visible: boolean): void {
+        const b = this.buttons.find((x) => x.id === 'exit');
+        if (b) b.visible = visible;
+    }
+
+    /** Re-layout button rectangles for the current canvas size. Only visible
+     *  buttons participate in positioning. */
     public layout(canvasWidth: number, canvasHeight: number): void {
-        const top = this.buttons.filter((b) => b.group === 'top');
+        const top = this.buttons.filter((b) => b.group === 'top' && b.visible);
         top.forEach((b, i) => {
             b.x = GROUP_INSET + i * (BUTTON_SIZE + BUTTON_GAP);
             b.y = GROUP_INSET;
         });
-        const bottom = this.buttons.filter((b) => b.group === 'bottom');
+        const bottom = this.buttons.filter((b) => b.group === 'bottom' && b.visible);
         // Stack from top to bottom so the first entry sits at the top of the
         // column (matches the legacy flex-column layout).
         const colHeight = bottom.length * BUTTON_SIZE + (bottom.length - 1) * BUTTON_GAP;
@@ -163,6 +177,7 @@ export class TitleCanvasButtons {
         const t = performance.now();
         ctx.save();
         for (const b of this.buttons) {
+            if (!b.visible) continue;
             const hovered = this.hoveredId === b.id;
             const pressed = this.pressedId === b.id;
 
@@ -212,6 +227,7 @@ export class TitleCanvasButtons {
 
     public hitTest(x: number, y: number): TitleButtonId | null {
         for (const b of this.buttons) {
+            if (!b.visible) continue;
             if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
                 return b.id;
             }

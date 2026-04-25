@@ -383,6 +383,13 @@ function setupGameEventListeners() {
                     currentGame.guildMenu = guildMenuManager;
                     currentGame.connectGuildMenu?.(guildMenuManager);
                 }
+                // Hand the title-screen canvas-button strip to the in-game
+                // graphics so the same icon buttons paint on the gameCanvas
+                // and route their clicks through TitleScreen's handler.
+                const canvasButtons = (titleScreen as any).getCanvasButtons?.();
+                if (canvasButtons) {
+                    currentGame.graphics.setTitleCanvasButtons(canvasButtons);
+                }
             }
             
             // Capture title screen screenshot for iris transition (also stored for exit animation)

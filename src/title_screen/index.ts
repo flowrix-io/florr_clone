@@ -1970,29 +1970,23 @@ export class TitleScreen {
     }
 
     public showExitButton(): void {
-        this.exitButtonContainer.style.display = 'flex';
-        // Show the exit button when in game
-        const exitButton = this.exitButtonContainer.querySelector('#exitButton') as HTMLElement;
-        if (exitButton) {
-            exitButton.style.display = 'flex';
-        }
-        // Also show bottom left buttons
-        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
-        if (bottomLeftButtons) {
-            bottomLeftButtons.style.display = 'flex';
-        }
+        // Both DOM containers are hidden permanently — the canvas buttons
+        // (drawn by Graphics during the in-game render loop) take over.
+        // Just flip the exit slot on so it shows up alongside the others.
+        this.canvasButtons.setExitVisible(true);
     }
 
     public hideExitButton(): void {
-        // Hide the in-game DOM button containers when transitioning back to
-        // the title screen — the canvas buttons take over there.
-        const exitButton = this.exitButtonContainer.querySelector('#exitButton') as HTMLElement;
-        if (exitButton) {
-            exitButton.style.display = 'none';
-        }
-        this.exitButtonContainer.style.display = 'none';
-        const bottomLeftButtons = document.getElementById('bottomLeftButtons');
-        if (bottomLeftButtons) bottomLeftButtons.style.display = 'none';
+        // Returning to the title screen — hide the exit slot on the canvas
+        // buttons. DOM containers stay hidden.
+        this.canvasButtons.setExitVisible(false);
+    }
+
+    /** Expose the canvas buttons so the in-game Graphics can draw + drive
+     *  pointer events against the same instance (no second instance with its
+     *  own state and click bookkeeping). */
+    public getCanvasButtons(): TitleCanvasButtons {
+        return this.canvasButtons;
     }
 
     public showLoadingScreen(): void {
@@ -2142,6 +2136,12 @@ export class TitleScreen {
             case 'guild':
                 closeOthers('guild');
                 this.guildMenuManager.toggle();
+                break;
+            case 'exit':
+                // The exit-to-title flow is owned by setupGameEventListeners
+                // in src/index.ts (iris animation, socket reconnect, etc.).
+                // Trigger it by clicking the hidden DOM exit button.
+                (this.exitButtonContainer.querySelector('#exitButton') as HTMLElement | null)?.click();
                 break;
             case 'inventory':
                 this.toggleInventoryOnTitleScreen();
