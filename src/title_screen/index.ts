@@ -2144,18 +2144,29 @@ export class TitleScreen {
                 (this.exitButtonContainer.querySelector('#exitButton') as HTMLElement | null)?.click();
                 break;
             case 'inventory':
-                this.toggleInventoryOnTitleScreen();
+                // In-game routes through game.inventoryManager so the in-game
+                // panel (and keybindings) stay the source of truth. On title
+                // screen, the title-screen inventory manager handles it.
+                if (window.currentGame && (window.currentGame as any).inventoryManager) {
+                    (window.currentGame as any).inventoryManager.toggleInventory();
+                } else {
+                    this.toggleInventoryOnTitleScreen();
+                }
                 break;
             case 'skills':
                 this.toggleSkillsOnTitleScreen();
                 break;
             case 'mobGallery':
-                if (this.submanagers.mobGallery) {
+                if (window.currentGame && (window.currentGame as any).inventoryManager) {
+                    (window.currentGame as any).inventoryManager.toggleMobGallery();
+                } else if (this.submanagers.mobGallery) {
                     this.submanagers.mobGallery.toggleMobGallery();
                 }
                 break;
             case 'shop':
-                if (this.submanagers.shop) {
+                if (window.currentGame && (window.currentGame as any).shopManager) {
+                    (window.currentGame as any).shopManager.toggleShop();
+                } else if (this.submanagers.shop) {
                     this.submanagers.shop.toggleShop();
                 }
                 break;
