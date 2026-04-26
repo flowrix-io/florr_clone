@@ -295,6 +295,16 @@ exports.CHANGELOG = [
             'New petal: Soil',
             'Changed Ant Hole and Fire Ant Hole drops',
         ]
+    },
+    {
+        date: 'April 24, 2026',
+        changes: [
+            'Optimize the game',
+            'Added API keys(you can now create discord bot)',
+            'Secured the server',
+            'Roach now looks better',
+            'Added ultra zones',
+        ]
     }
 ];
 class ChangelogManager {

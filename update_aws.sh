@@ -8,8 +8,9 @@ unzip public_build_florrclone.zip
 rm public_build_florrclone.zip
 cd dist
 npm install socket.io express bcrypt
-wget https://sussybite.s3.amazonaws.com/cert.key
-wget https://sussybite.s3.amazonaws.com/cert.crt
+sudo cp /etc/letsencrypt/live/florrclone.cryodome.com/privkey.pem cert.key
+sudo cp /etc/letsencrypt/live/florrclone.cryodome.com/fullchain.pem cert.crt
+sudo chown $(id -u):$(id -g) cert.key cert.crt
 rm inventory.json
 cp ~/inventory.json inventory.json
 rm ~/inventory.json
