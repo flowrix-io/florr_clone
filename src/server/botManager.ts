@@ -152,7 +152,8 @@ const BOT_NAMES = [
       'i use scripts', 'm28 bad', 'guests', 'leech squad', 'leecher'
 ];
 
-const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder', 'javascript', 'soil'];
+// Only use passive petals, yggdrasil, and powder
+const BOT_PETAL_POOL = ['basic', 'stinger', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'powder', 'javascript', 'soil'];
 
 /**
  * Pre-defined bot-only guilds. Each entry registers a guild in the guildManager
@@ -217,6 +218,16 @@ interface BotAIState {
     // with a powder petal so the bot closes the gap faster. Original contents
     // are restored once the bot arrives / raid ends.
     raidPowderSlot?: { slot: number; original: any };
+    // Yggdrasil swap: when the bot is near other bots, slot 1 is replaced
+    // with a yggdrasil petal so it can revive a teammate that goes down.
+    // Restored when the bot is alone again.
+    yggdrasilSlot?: { slot: number; original: any };
+    // Stuck detection: position snapshot from the last check and the time it
+    // was taken. If the bot hasn't moved meaningfully between checks it gets
+    // a forced wander re-pick so it doesn't sit forever flailing into a wall.
+    lastStuckCheckTime?: number;
+    lastStuckCheckX?: number;
+    lastStuckCheckY?: number;
 }
 
 interface Waypoint { x: number; y: number }
@@ -516,38 +527,74 @@ function preferredMobTiersForBot(botIdx: number): Set<string> {
     return new Set();
 }
 
-// Mythic spawn zones — where super/unique bosses most often appear. Resolved
-// once at first use from WORLD_MAP. Ultra+ bots roam here when idle.
-interface MythicZone { cx: number; cy: number }
-let mythicZonesCache: MythicZone[] | null = null;
-function getMythicZones(): MythicZone[] {
-    if (mythicZonesCache) return mythicZonesCache;
-    const out: MythicZone[] = [];
+// Per-spawn-zone-type cache of zone centres. Resolved once at first use from
+// WORLD_MAP and reused for every bot's anchor pick.
+interface SpawnZone { cx: number; cy: number }
+const spawnZoneCache = new Map<string, SpawnZone[]>();
+function getSpawnZonesByType(zoneType: string): SpawnZone[] {
+    const cached = spawnZoneCache.get(zoneType);
+    if (cached) return cached;
+    const out: SpawnZone[] = [];
     for (const el of WORLD_MAP) {
         if (el.type !== 'spawn') continue;
-        if (el.properties?.spawnType !== 'mythic') continue;
+        if (el.properties?.spawnType !== zoneType) continue;
         if (el.width <= 0 || el.height <= 0) continue;
         out.push({
             cx: (el.x + el.width / 2) * SCALE_FACTOR,
             cy: (el.y + el.height / 2) * SCALE_FACTOR
         });
     }
-    mythicZonesCache = out;
+    spawnZoneCache.set(zoneType, out);
     return out;
 }
 
-// Pick a mythic-zone anchor for an ultra+ bot. Uses the bot id as a stable
+// Map a bot's max gear rarity to the spawn zone type it should farm in. The
+// bot already prefers to fight mobs one tier above its gear (see
+// preferredMobTiersForBot), and spawn zones spawn mobs of their declared
+// type, so the right zone for farming is the one that produces the bot's
+// preferred tier.
+function getFarmingZoneType(rarityIdx: number): string {
+    if (rarityIdx >= ULTRA_IDX) return 'mythic';        // ultra+ hunt mythic-zone bosses
+    if (rarityIdx === MYTHIC_IDX) return 'mythic';      // mythic bots stay on mythic
+    if (rarityIdx === 4) return 'mythic';               // legendary -> mythic
+    if (rarityIdx === 3) return 'legendary';            // epic -> legendary
+    if (rarityIdx === 2) return 'epic';                 // rare -> epic
+    if (rarityIdx === 1) return 'rare';                 // uncommon -> rare
+    return 'uncommon';                                  // common -> uncommon
+}
+
+// Pick a farming-zone anchor of the given type. Uses the bot id as a stable
 // hash so different bots gravitate toward different zones instead of all
-// piling onto the nearest one.
-function pickMythicZoneAnchor(bot: ServerPlayer): { x: number; y: number } | null {
-    const zones = getMythicZones();
+// piling onto the nearest one. Falls back through neighbour zone types when
+// the bot's preferred type isn't on the map (so a map without rare zones
+// still routes uncommon-tier bots somewhere sensible).
+function pickFarmingZoneAnchor(bot: ServerPlayer, rarityIdx: number): { x: number; y: number } | null {
+    // Try the bot's preferred type first, then walk down toward common, then
+    // up toward mythic. Stops as soon as some zone type has any zones.
+    const tried = new Set<string>();
+    const preferred = getFarmingZoneType(rarityIdx);
+    const candidates: string[] = [preferred];
+    for (let i = rarityIdx; i >= 0; i--) {
+        const t = getFarmingZoneType(i);
+        if (!tried.has(t)) { tried.add(t); candidates.push(t); }
+    }
+    for (let i = rarityIdx + 1; i <= 6; i++) {
+        const t = getFarmingZoneType(i);
+        if (!tried.has(t)) { tried.add(t); candidates.push(t); }
+    }
+
+    let zones: SpawnZone[] = [];
+    for (const t of candidates) {
+        zones = getSpawnZonesByType(t);
+        if (zones.length > 0) break;
+    }
     if (zones.length === 0) return null;
-    // Score = distance, with a deterministic per-bot offset so they spread.
+
     let h = 0;
     for (let i = 0; i < bot.id.length; i++) h = ((h * 31) + bot.id.charCodeAt(i)) | 0;
-    const offset = Math.abs(h) % Math.max(1, zones.length);
-    // Sort by distance, then pick the `offset`-th nearest (modulo count) so
-    // bots cluster across zones rather than all on the nearest one.
+    const offset = Math.abs(h) % zones.length;
+    // Sort by distance and pick the `offset`-th nearest so bots spread across
+    // available zones rather than all clustering on the closest one.
     const scored = zones
         .map(z => ({ z, d: (z.cx - bot.x) ** 2 + (z.cy - bot.y) ** 2 }))
         .sort((a, b) => a.d - b.d);
@@ -586,6 +633,128 @@ function unequipRaidPowder(bot: ServerPlayer, state: BotAIState): void {
         bot.loadout[slot] = original;
     }
     state.raidPowderSlot = undefined;
+}
+
+// Range within which a bot will keep yggdrasil equipped. Picked to roughly
+// match the BOT_GROUP scan range so a bot that's already moving with peers
+// also packs the heal petal. The revive range itself (in playerState.ts) is
+// only 80 px, so the petal is only useful when the bots are tight.
+const YGGDRASIL_BUDDY_RANGE = 600;
+// Range at which a bot will go out of its way to revive a downed teammate.
+// Larger than the petal's actual revive range so the bot has time to close
+// the last bit of distance before its rotating petals brush the corpse.
+const YGGDRASIL_REVIVE_SEEK_RANGE = 1500;
+
+// Returns the rarity tier the yggdrasil swap should pick. Mirrors how the
+// powder swap matches the bot's existing loadout: the new petal can't out-tier
+// what they're already wearing, otherwise apex bots would walk around with
+// permanently-rolled apex yggdrasils nobody else can craft.
+function pickYggdrasilRarity(loadout: any[]): string {
+    let maxIdx = 0;
+    if (loadout) {
+        for (const item of loadout) {
+            if (!item || item.type !== 'petal' || !item.rarity) continue;
+            const idx = RARITY_ORDER.indexOf(item.rarity);
+            if (idx > maxIdx) maxIdx = idx;
+        }
+    }
+    return RARITY_ORDER[maxIdx];
+}
+
+function equipYggdrasilSlot(bot: ServerPlayer, state: BotAIState): void {
+    if (state.yggdrasilSlot !== undefined) return;
+    if (!bot.loadout || bot.loadout.length < 2) return;
+
+    const slot = 1;
+    const current = bot.loadout[slot];
+    // Already a yggdrasil here — nothing to swap, nothing to track.
+    if (current && current.type === 'petal' && current.petalType === 'yggdrasil') return;
+    // Don't overwrite the powder swap if the powder swap also picked slot 1
+    // for any reason (currently it always uses slot 0, but keep this check so
+    // a future tweak doesn't silently clobber the saved original).
+    if (state.raidPowderSlot && state.raidPowderSlot.slot === slot) return;
+
+    const rarity = pickYggdrasilRarity(bot.loadout);
+    const stats = getPetalStats('yggdrasil', rarity);
+    if (!stats) return;
+
+    state.yggdrasilSlot = { slot, original: current };
+    bot.loadout[slot] = {
+        type: 'petal',
+        rarity: rarity as any,
+        petalType: 'yggdrasil',
+        health: stats.health,
+        maxHealth: stats.health,
+        onCooldown: false
+    };
+}
+
+function unequipYggdrasilSlot(bot: ServerPlayer, state: BotAIState): void {
+    if (state.yggdrasilSlot === undefined) return;
+    const { slot, original } = state.yggdrasilSlot;
+    if (bot.loadout && slot < bot.loadout.length) {
+        bot.loadout[slot] = original;
+    }
+    state.yggdrasilSlot = undefined;
+}
+
+// True if there's at least one other live bot within YGGDRASIL_BUDDY_RANGE.
+// Used to decide whether to keep yggdrasil equipped — there's no point
+// carrying a revive petal when the bot is alone.
+function hasNearbyBotBuddy(bot: ServerPlayer): boolean {
+    const rSq = YGGDRASIL_BUDDY_RANGE * YGGDRASIL_BUDDY_RANGE;
+    for (const id in players) {
+        if (id === bot.id) continue;
+        if (!isBot(id)) continue;
+        const other = players[id];
+        if (!other || (other as any).isDead) continue;
+        const dx = other.x - bot.x;
+        const dy = other.y - bot.y;
+        if (dx * dx + dy * dy <= rSq) return true;
+    }
+    return false;
+}
+
+// Closest dead bot inside YGGDRASIL_REVIVE_SEEK_RANGE that's worth diverting
+// to revive. Returns null if there's no such corpse or this bot has no
+// yggdrasil equipped (we'd waste the trip).
+function findReviveTarget(bot: ServerPlayer, state: BotAIState): ServerPlayer | null {
+    // No yggdrasil equipped → no revive capability. We only count the swapped
+    // slot here; if a bot happens to have yggdrasil in its native loadout the
+    // existing petal-touch revival in playerState.ts already covers it.
+    if (state.yggdrasilSlot === undefined) {
+        // Still check native loadout for yggdrasil so naturally-rolled
+        // yggdrasil bots also actively seek corpses.
+        let hasYgg = false;
+        if (bot.loadout) {
+            for (const item of bot.loadout) {
+                if (item && item.type === 'petal' && item.petalType === 'yggdrasil') {
+                    hasYgg = true;
+                    break;
+                }
+            }
+        }
+        if (!hasYgg) return null;
+    }
+
+    const rSq = YGGDRASIL_REVIVE_SEEK_RANGE * YGGDRASIL_REVIVE_SEEK_RANGE;
+    let best: ServerPlayer | null = null;
+    let bestDistSq = Infinity;
+    for (const id in players) {
+        if (id === bot.id) continue;
+        if (!isBot(id)) continue;
+        const other = players[id];
+        if (!other || !other.isDead) continue;
+        const dx = other.x - bot.x;
+        const dy = other.y - bot.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > rSq) continue;
+        if (d2 < bestDistSq) {
+            best = other;
+            bestDistSq = d2;
+        }
+    }
+    return best;
 }
 
 // Pick the single-hop teleporter whose destination minimises total travel to
@@ -1854,23 +2023,24 @@ function computeBotMode(bot: ServerPlayer, groups: Map<string, GroupInfo>): Mode
         }
     }
 
-    // Ultra+ bots roam mythic zones to hunt bosses. They ignore the normal
-    // human tether because their "job" is to patrol where super/unique bosses
-    // spawn, not to babysit humans farming lower-tier sections.
+    // Every bot heads to the spawn zone matching its band so it actually
+    // farms the mob tier its loadout was tuned for, instead of just wandering
+    // wherever it spawned. Ultra+ bots get the wider mythic-zone roam radius
+    // (they're hunting boss spawns), everyone else uses the standard tether.
     const botRarityIdx = getBotMaxRarityIdx(bot);
-    if (botRarityIdx >= ULTRA_IDX) {
-        const zone = pickMythicZoneAnchor(bot);
-        if (zone) {
-            return {
-                kind: 'normal',
-                anchor: zone,
-                tetherRadius: ULTRA_ROAM_RADIUS,
-                returnRadius: ULTRA_ROAM_RETURN
-            };
-        }
+    const zone = pickFarmingZoneAnchor(bot, botRarityIdx);
+    if (zone) {
+        const isHighTier = botRarityIdx >= ULTRA_IDX;
+        return {
+            kind: 'normal',
+            anchor: zone,
+            tetherRadius: isHighTier ? ULTRA_ROAM_RADIUS : TETHER_RADIUS,
+            returnRadius: isHighTier ? ULTRA_ROAM_RETURN : TETHER_RETURN_RADIUS
+        };
     }
 
-    // Normal: tether to nearest human player.
+    // Map has no spawn zones at all — fall back to tethering to a human if
+    // one exists, otherwise free-roam from the bot's current position.
     const human = nearestRealPlayer(bot.x, bot.y);
     return {
         kind: 'normal',
@@ -2041,8 +2211,9 @@ export function updateBotAI(io: SocketIOServer): void {
 
         if (bot.isDead) {
             // Restore the combat loadout before respawn so the bot isn't stuck
-            // with powder in slot 0 if it died mid-traversal.
+            // with the swapped petals if it died mid-traversal.
             unequipRaidPowder(bot, state);
+            unequipYggdrasilSlot(bot, state);
             if (state.respawnAt === undefined) {
                 state.respawnAt = now + BOT_RESPAWN_DELAY_MS;
             } else if (now >= state.respawnAt) {
@@ -2058,12 +2229,42 @@ export function updateBotAI(io: SocketIOServer): void {
             : 0;
         const preferredTiers = preferredMobTiersForBot(getBotMaxRarityIdx(bot));
 
-        // Swap in a powder petal during raid traversal; restore combat loadout
-        // once in engagement range (or when no longer raiding).
-        if (mode.kind === 'raid' && anchorDist > RAID_POWDER_MIN_DIST) {
+        // Swap in a powder petal whenever the bot is far enough from its
+        // anchor that traversal speed actually matters — both raid traversal
+        // (heading to a boss) and normal mode (heading to its band's farming
+        // zone) qualify. Restored once the bot is in engagement range, so
+        // combat slot 0 is back online before petals are needed.
+        if (anchorDist > RAID_POWDER_MIN_DIST) {
             equipRaidPowder(bot, state);
         } else {
             unequipRaidPowder(bot, state);
+        }
+
+        // Yggdrasil buddy swap: when another bot is close enough that they
+        // could plausibly need a revive, slot 1 is replaced with a yggdrasil
+        // petal. Restored when the bot is alone again.
+        if (hasNearbyBotBuddy(bot)) {
+            equipYggdrasilSlot(bot, state);
+        } else {
+            unequipYggdrasilSlot(bot, state);
+        }
+
+        // Revive seek: if a teammate has gone down within range and this bot
+        // is carrying a yggdrasil, head straight to the corpse. The actual
+        // revive (in playerState.ts) fires when one of our orbiting petals
+        // touches the body, so we just need to get the body inside our orbit.
+        const reviveTarget = findReviveTarget(bot, state);
+        if (reviveTarget) {
+            const dx = reviveTarget.x - bot.x;
+            const dy = reviveTarget.y - bot.y;
+            const d = Math.sqrt(dx * dx + dy * dy) || 1;
+            // Stand right on top of the corpse — the revive trigger uses the
+            // petal position, and orbiting petals sweep through the centre.
+            // Petals are extended (2.0) so they can clip the corpse from a
+            // small radius without us body-blocking nearby allies.
+            const steered = steerAroundWalls(bot.x, bot.y, dx / d, dy / d);
+            driveMove(bot, steered.x, steered.y, 0.95, 2.0);
+            continue;
         }
 
         // Long-haul raid routing: hop through a teleporter when one puts the
@@ -2265,15 +2466,68 @@ export function updateBotAI(io: SocketIOServer): void {
             continue;
         }
 
+        // Stuck detection: if the bot hasn't moved meaningfully since the last
+        // check, force a fresh wander target. Without this, bots that wander
+        // into a concave wall pocket spend the next 3-7 seconds flailing —
+        // steerAroundWalls returns the blocked direction when every offset
+        // hits a wall, and the per-tick wobble in driveMove makes it look
+        // like the bot is twitching in random directions.
+        const STUCK_CHECK_INTERVAL_MS = 1500;
+        const STUCK_MOVE_THRESHOLD = 30;
+        if (state.lastStuckCheckTime === undefined) {
+            state.lastStuckCheckTime = now;
+            state.lastStuckCheckX = bot.x;
+            state.lastStuckCheckY = bot.y;
+        } else if (now - state.lastStuckCheckTime >= STUCK_CHECK_INTERVAL_MS) {
+            const moved = Math.hypot(bot.x - (state.lastStuckCheckX ?? bot.x), bot.y - (state.lastStuckCheckY ?? bot.y));
+            if (moved < STUCK_MOVE_THRESHOLD) {
+                state.nextWanderTime = 0; // force a re-pick below
+            }
+            state.lastStuckCheckTime = now;
+            state.lastStuckCheckX = bot.x;
+            state.lastStuckCheckY = bot.y;
+        }
+
         // Wander — keep target inside the current cluster radius so raid/
         // group bots stay tight and normal bots stay tethered.
         if (now > state.nextWanderTime) {
             const center = anchor ?? { x: bot.x, y: bot.y };
-            const angle = Math.random() * Math.PI * 2;
             const maxDist = Math.max(80, mode.tetherRadius - 100);
-            const dist = Math.min(maxDist, 200) + Math.random() * Math.max(0, maxDist - 200);
-            state.wanderTargetX = clampToWorld(center.x + Math.cos(angle) * dist, 100, ACTUAL_WORLD_WIDTH);
-            state.wanderTargetY = clampToWorld(center.y + Math.sin(angle) * dist, 100, ACTUAL_WORLD_HEIGHT);
+            // Try a few random angles and pick the first one with line of
+            // sight from the bot's current position. Bots that pick a wander
+            // target through a wall have no way to actually reach it and end
+            // up parked against the wall until nextWanderTime fires again.
+            let pickedX = bot.x;
+            let pickedY = bot.y;
+            let foundClear = false;
+            for (let attempt = 0; attempt < 8; attempt++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.min(maxDist, 200) + Math.random() * Math.max(0, maxDist - 200);
+                const tx = clampToWorld(center.x + Math.cos(angle) * dist, 100, ACTUAL_WORLD_WIDTH);
+                const ty = clampToWorld(center.y + Math.sin(angle) * dist, 100, ACTUAL_WORLD_HEIGHT);
+                if (!rayHitsWall(bot.x, bot.y, tx, ty)) {
+                    pickedX = tx;
+                    pickedY = ty;
+                    foundClear = true;
+                    break;
+                }
+            }
+            // If everything is walled off, scoot a short distance in any clear
+            // direction so the bot at least moves and unsticks itself.
+            if (!foundClear) {
+                for (let attempt = 0; attempt < 8; attempt++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const tx = clampToWorld(bot.x + Math.cos(angle) * 200, 100, ACTUAL_WORLD_WIDTH);
+                    const ty = clampToWorld(bot.y + Math.sin(angle) * 200, 100, ACTUAL_WORLD_HEIGHT);
+                    if (!rayHitsWall(bot.x, bot.y, tx, ty)) {
+                        pickedX = tx;
+                        pickedY = ty;
+                        break;
+                    }
+                }
+            }
+            state.wanderTargetX = pickedX;
+            state.wanderTargetY = pickedY;
             state.nextWanderTime = now + 3000 + Math.random() * 4000;
         }
 
