@@ -10,7 +10,8 @@
     "build:client": "tsc -p tsconfig.client.json",
     "start": "npm run build:server && node dist/server.js",
     "dev": "npm run build:cpp && webpack --mode development --watch",
-    "dev:server": "ts-node-dev --respawn --transpile-only src/server.ts"
+    "dev:server": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "start_nobuild": "node dist/server.js"
   },
   "keywords": [],
   "author": "",
