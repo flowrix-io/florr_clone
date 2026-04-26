@@ -1,3 +1,4 @@
+cd ~
 pm2 delete server
 pm2 save
 cp dist/inventory.json inventory.json
