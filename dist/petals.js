@@ -1891,8 +1891,12 @@ function generatePetalStats(baseConfig, rarity, petalType) {
     let damage = baseConfig.damage * multiplier;
     let health = baseConfig.health * multiplier;
     let poison = baseConfig.poison ? baseConfig.poison * multiplier : undefined; // Scale poison with rarity
-    // Scale passiveHeal with sqrt(3) per rarity level (same as heal action)
-    let passiveHeal = baseConfig.passiveHeal ? baseConfig.passiveHeal * Math.pow(Math.sqrt(3), rarityIndex) : undefined;
+    // Scale passiveHeal: x3 per rarity up to mythic, then x sqrt(3) per rarity up to apex
+    const mythicIndex = exports.RARITY_LEVELS.indexOf('mythic');
+    const passiveHealMultiplier = rarityIndex <= mythicIndex
+        ? Math.pow(3, rarityIndex)
+        : Math.pow(3, mythicIndex) * Math.pow(Math.sqrt(3), rarityIndex - mythicIndex);
+    let passiveHeal = baseConfig.passiveHeal ? baseConfig.passiveHeal * passiveHealMultiplier : undefined;
     let cooldown = baseConfig.cooldown;
     if (petalType === 'yggdrasil') {
         damage = 1;
