@@ -152,7 +152,7 @@ const BOT_NAMES = [
       'i use scripts', 'm28 bad', 'guests', 'leech squad', 'leecher'
 ];
 
-const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder', 'javascript'];
+const BOT_PETAL_POOL = ['basic', 'stinger', 'leaf', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'rose', 'powder', 'javascript', 'soil'];
 
 /**
  * Pre-defined bot-only guilds. Each entry registers a guild in the guildManager
@@ -342,11 +342,14 @@ const RARITY_WEIGHTS_BY_BAND: Record<number, RarityWeight[]> = {
     11: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 11], ['ultra', 1]], // levels 111-120
     12: [['common', 40], ['uncommon', 40], ['rare', 40], ['epic', 40], ['legendary', 40], ['mythic', 40], ['ultra', 21], ['super', 1]], // levels 121-130
     13: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 20], ['ultra', 20], ['super', 20]], // levels 131-140
-    14: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 20], ['ultra', 20], ['super', 20], ['unique', 5]], // levels 141-199
+    14: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 20], ['ultra', 20], ['super', 20], ['unique', 1]], // levels 141-199
     // Apex band — level 200+. Loadout skews heavily toward end-game rarities,
     // with apex as the headliner. Routed by explicit level check below, not
     // the normal rawBand / LEVEL_BAND_SIZE math.
-    20: [['mythic', 10], ['ultra', 20], ['super', 20], ['unique', 20], ['apex', 30]]
+    // Unique kept rare: bots wearing any unique petal show as unique-rarity in
+    // the world, and at 10 petal slots even a small per-slot weight produces a
+    // lot of "unique" bots if it's not held down.
+    20: [['mythic', 10], ['ultra', 20], ['super', 20], ['unique', 2], ['apex', 30]]
 };
 const APEX_BAND = 20;
 const APEX_LEVEL_THRESHOLD = 200;
@@ -954,11 +957,46 @@ function clampToWorld(v: number, margin: number, max: number): number {
     return Math.max(margin, Math.min(max - margin, v));
 }
 
+// Aggregate the multiplicative speed modifier from a bot's equipped petals.
+// Matches calculatePlayerModifiers in playerManager.ts: powder, etc. multiply
+// together. Used to keep per-tick combat motion consistent regardless of how
+// much speed gear the bot is wearing — without this, a bot wearing powder
+// runs every standoff band at 2× the intended pace and oscillates.
+function getBotSpeedMod(bot: ServerPlayer): number {
+    if (!bot.loadout) return 1.0;
+    let mult = 1.0;
+    for (const item of bot.loadout) {
+        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity) continue;
+        const stats = getPetalStats(item.petalType, item.rarity);
+        const m = (stats as any)?.playerModifiers?.speed;
+        if (typeof m === 'number') mult *= m;
+    }
+    return mult;
+}
+
+// Aggregate the multiplicative range modifier from a bot's equipped petals.
+// Mirrors calculatePlayerModifiers — petals like third_eye boost everyone's
+// orbit. The server's hit math multiplies each petal's stats.range by this
+// aggregate, so the standoff math has to as well or the bot parks at a
+// distance where its petals don't actually reach the target.
+function getBotRangeMod(bot: ServerPlayer): number {
+    if (!bot.loadout) return 1.0;
+    let mult = 1.0;
+    for (const item of bot.loadout) {
+        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity) continue;
+        const stats = getPetalStats(item.petalType, item.rarity);
+        const m = (stats as any)?.playerModifiers?.range;
+        if (typeof m === 'number') mult *= m;
+    }
+    return mult;
+}
+
 // Largest distance from bot center that a petal can still strike a target
 // at, given petalExtension and this bot's equipped petals' size/range.
 function computePetalReach(bot: ServerPlayer, petalExtension: number): number {
     const sizeMult = bot.sizeMultiplier ?? 1.0;
     const baseRadius = (60 + (PLAYER_SIZE / 2) * (sizeMult - 1)) * petalExtension;
+    const playerRangeMod = getBotRangeMod(bot);
     let maxRangeMult = 1.0;
     let maxPetalHalfSize = 0;
 
@@ -970,7 +1008,13 @@ function computePetalReach(bot: ServerPlayer, petalExtension: number): number {
             const effectiveSize = (item as any).customSize ?? stats.size ?? 1.0;
             maxPetalHalfSize = Math.max(maxPetalHalfSize, (40 * effectiveSize) / 2);
             if (stats.range !== undefined) {
-                maxRangeMult = Math.max(maxRangeMult, stats.range);
+                // Server-side reach folds in playerRangeMod (e.g. third_eye)
+                // for every petal. Match that or the standoff is wrong.
+                maxRangeMult = Math.max(maxRangeMult, stats.range * playerRangeMod);
+            } else {
+                // Petals without an explicit range still sit at base orbit ×
+                // playerRangeMod, so the floor must include the modifier too.
+                maxRangeMult = Math.max(maxRangeMult, playerRangeMod);
             }
         }
     }
@@ -982,6 +1026,47 @@ function getMobRadius(enemy: { type: string; tier: string }): number {
     const stats = getMobStats(enemy.type, enemy.tier);
     const size = stats?.size ?? 1.0;
     return (size * 40) / 2;
+}
+
+// Find any non-target mob sitting inside a forward cone of the bot's movement
+// vector close enough that continuing without engaging would body-slam into
+// it. Returns the closest such mob (with distance) or null. Used to override
+// the bot's combat target when a non-target mob is in the path: the bot drops
+// into normal combat bands against the obstacle for one tick, lets its petals
+// hit it, then resumes pursuit of the original target next tick.
+function findInterceptingMob(
+    botX: number,
+    botY: number,
+    dirX: number,
+    dirY: number,
+    excludeId: string | null,
+    range: number
+): { enemy: typeof enemies[number]; dist: number } | null {
+    let best: typeof enemies[number] | null = null;
+    let bestDist = Infinity;
+    for (const enemy of enemies) {
+        if (enemy.ownerId) continue;
+        if ((enemy as any).isDead) continue;
+        if (enemy.id === excludeId) continue;
+        if (enemy.type === 'target_dummy') continue;
+        if (enemy.type === 'item_spawner') continue;
+        const dx = enemy.x - botX;
+        const dy = enemy.y - botY;
+        const d2 = dx * dx + dy * dy;
+        if (d2 === 0) continue;
+        const mobR = getMobRadius(enemy);
+        const cutoff = range + mobR;
+        if (d2 > cutoff * cutoff) continue;
+        const d = Math.sqrt(d2);
+        // Forward-cone test: > 0.3 ≈ a ~70° arc in front of the bot.
+        const dot = (dx / d) * dirX + (dy / d) * dirY;
+        if (dot < 0.3) continue;
+        if (d < bestDist) {
+            best = enemy;
+            bestDist = d;
+        }
+    }
+    return best ? { enemy: best, dist: bestDist } : null;
 }
 
 // --- Wall avoidance ---
@@ -1576,15 +1661,53 @@ function announceNewBosses(io: SocketIOServer, now: number): void {
 }
 
 function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist: number } | null {
-    // Bots all converge on the same global pick (most recent boss, tiebroken by
-    // proximity to the nearest human player). Distance back to this bot is just
-    // for the raid-slot bookkeeping; the anchor itself isn't gated by it.
-    const target = pickRaidTargetGlobal();
-    if (!target) return null;
-    const dx = target.x - bot.x;
-    const dy = target.y - bot.y;
+    // Per-bot raid pick: only consider bosses within BOSS_RAID_RANGE of THIS
+    // bot. Without the range gate, every bot in the world enters raid mode for
+    // any boss anywhere — they then equip powder, blitz across the map, and
+    // ram every mob in their path because powder mode skips the standoff
+    // bands. Among in-range bosses, prefer uniques over supers, then most
+    // recently spawned, then proximity to the nearest human player.
+    let pool: typeof enemies[number][] = [];
+    let preferUnique = false;
+    for (const enemy of enemies) {
+        if (enemy.ownerId) continue;
+        if ((enemy as any).isDead) continue;
+        if (enemy.type === 'target_dummy') continue;
+        if (!BOSS_TIERS.has(enemy.tier)) continue;
+        const dx = enemy.x - bot.x;
+        const dy = enemy.y - bot.y;
+        if (dx * dx + dy * dy > BOSS_RAID_RANGE * BOSS_RAID_RANGE) continue;
+        if (enemy.tier === 'unique') {
+            if (!preferUnique) { pool = []; preferUnique = true; }
+            pool.push(enemy);
+        } else if (enemy.tier === 'super' && !preferUnique) {
+            pool.push(enemy);
+        }
+    }
+    if (pool.length === 0) return null;
+
+    let best = pool[0];
+    let bestSpawn = best.spawnTime ?? 0;
+    let bestDistSq = distSqToNearestHumanPlayer(best.x, best.y);
+    for (let i = 1; i < pool.length; i++) {
+        const enemy = pool[i];
+        const spawn = enemy.spawnTime ?? 0;
+        if (spawn > bestSpawn) {
+            best = enemy;
+            bestSpawn = spawn;
+            bestDistSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+        } else if (spawn === bestSpawn) {
+            const distSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+            if (distSq < bestDistSq) {
+                best = enemy;
+                bestDistSq = distSq;
+            }
+        }
+    }
+    const dx = best.x - bot.x;
+    const dy = best.y - bot.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    return { x: target.x, y: target.y, dist };
+    return { x: best.x, y: best.y, dist };
 }
 
 function hasHighRarityMobNearby(bot: ServerPlayer, range: number): boolean {
@@ -1950,8 +2073,32 @@ export function updateBotAI(io: SocketIOServer): void {
             continue;
         }
 
-        const target = pickBestEnemyTarget(bot, anchor, mode.tetherRadius, preferredTiers);
-        const isBossTarget = !!(target && BOSS_TIERS.has(target.enemy.tier));
+        let target = pickBestEnemyTarget(bot, anchor, mode.tetherRadius, preferredTiers);
+        let isBossTarget = !!(target && BOSS_TIERS.has(target.enemy.tier));
+
+        // Ram interception: if a non-target mob is sitting in the bot's path
+        // close enough to body-slam, hijack the target so combat bands engage
+        // it for a tick. Without this, a bot beelining for a far-away boss
+        // (especially powdered up during raid traversal) plows straight
+        // through every mob in between without its petals ever locking on.
+        // Only fires when the bot is actually moving toward something — i.e.
+        // there's a target whose direction we can read.
+        if (target) {
+            const tdx = target.enemy.x - bot.x;
+            const tdy = target.enemy.y - bot.y;
+            const tDist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
+            const intercept = findInterceptingMob(
+                bot.x, bot.y, tdx / tDist, tdy / tDist,
+                target.enemy.id, 160
+            );
+            // Only divert when the interceptor is meaningfully closer than the
+            // real target — otherwise we'd swap to the same mob we're already
+            // engaging and clobber the boss-slot logic.
+            if (intercept && intercept.dist < tDist - 40) {
+                target = { enemy: intercept.enemy, dist: intercept.dist };
+                isBossTarget = false;
+            }
+        }
 
         // If bot has drifted outside its cluster (boss raid / group / tether),
         // abandon the current task and regroup. Skipped when raiding a boss
@@ -2075,7 +2222,8 @@ export function updateBotAI(io: SocketIOServer): void {
             } else {
                 // Far away — close distance at full speed. Raid/group bots
                 // use A* to navigate around wall clusters; normal bots use
-                // the cheap steering probe.
+                // the cheap steering probe. (No speed-mod compensation: this
+                // is the traversal branch where powder is supposed to help.)
                 if (mode.kind !== 'normal' && followPath(bot, state, now, target.enemy.x, target.enemy.y, 0.95, extendedPetalExt)) {
                     continue;
                 }
@@ -2084,9 +2232,19 @@ export function updateBotAI(io: SocketIOServer): void {
                 moveY = steered.y;
                 speedMult = 0.95;
                 petalExt = extendedPetalExt;
+                driveMove(bot, moveX, moveY, speedMult, petalExt);
+                continue;
             }
 
-            driveMove(bot, moveX, moveY, speedMult, petalExt);
+            // Close-range bands (everything except "far away"): cancel out the
+            // bot's aggregated speed modifier (powder, etc.) so per-tick
+            // movement matches what each band's speedMult was tuned for. A
+            // powder-wearing bot moving 2× through the standoff zone otherwise
+            // overshoots every band and ping-pongs between shove / retreat /
+            // strafe instead of orbiting in the sweet spot.
+            const speedMod = getBotSpeedMod(bot);
+            const effectiveSpeedMult = speedMod > 1.0 ? speedMult / speedMod : speedMult;
+            driveMove(bot, moveX, moveY, effectiveSpeedMult, petalExt);
             continue;
         }
 
