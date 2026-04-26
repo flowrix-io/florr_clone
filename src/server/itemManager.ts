@@ -113,7 +113,7 @@ export function handleMobDrops(enemyData: { type?: string, tier: string, x: numb
         }
     }
     eligiblePlayers = Array.from(expandedEligiblePlayers);
-    
+
     // Debug log to verify eligible players
     // if (eligiblePlayers.length > 0) {
     //     console.log(`[DROPS] Enemy ${enemy.id} (${enemy.type}, ${enemy.tier}) killed. Eligible players:`, eligiblePlayers);

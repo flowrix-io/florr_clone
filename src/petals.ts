@@ -10,6 +10,7 @@ export interface PlayerModifiers {
     rotationSpeed?: number; // Multiplier for global petal rotation speed (e.g., 1.5 = +50% rotation speed)
     playerRadius?: number; // Multiplier for the flower's radius/size (e.g., 1.25 = +25% radius, affecting visuals and hitbox)
     magnetism?: number; // Additive pixels added to the item pickup radius (e.g., 50 = +50px pickup range)
+    luck?: number; // Additive luck points (e.g., 0.08 = +0.08 luck). Each luck point grants +1% mob drop upgrade chance. Players have 1 luck by default.
 }
 
 export interface PetalStats {
@@ -549,6 +550,35 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
             }
         }
     },
+    clover: {
+        uncommon: {
+            playerModifiers: { luck: 0.12 }
+        },
+        rare: {
+            playerModifiers: { luck: 0.17 }
+        },
+        epic: {
+            playerModifiers: { luck: 0.24 }
+        },
+        legendary: {
+            playerModifiers: { luck: 0.35 }
+        },
+        mythic: {
+            playerModifiers: { luck: 0.5 }
+        },
+        ultra: {
+            playerModifiers: { luck: 0.72 }
+        },
+        super: {
+            playerModifiers: { luck: 1.04 }
+        },
+        unique: {
+            playerModifiers: { luck: 1.5 }
+        },
+        apex: {
+            playerModifiers: { luck: 2 }
+        }
+    },
     air: {
         uncommon: {
             playerModifiers: {playerRadius: 1.2},
@@ -707,10 +737,13 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         health: 10,
         size: 1.0,
         cooldown: 2500,
-        description: "A clover petal that provides basic protection",
+        description: "A lucky clover that grants luck to its bearer, increasing the chance of mob drops being upgraded",
         color: "#FFD700",
         count: 1,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="625 500 800 800" version="1.1"><path d="M 850 578.059 C 773.207 587.588, 692.146 681.058, 695.310 756.428 C 699.004 844.383, 782.092 905.389, 914 916.997 C 942.947 919.544, 941.226 918.367, 929.754 927.770 C 771.114 1057.800, 774.013 1216.819, 935.763 1257.379 C 1108.499 1300.694, 1189.401 1153.577, 1095.996 966 C 1089.856 953.670, 1089.139 951.442, 1091.635 952.453 C 1216.150 1002.872, 1316.924 991.912, 1369.413 922.243 C 1421.654 852.904, 1381.120 708.014, 1299.463 672.201 C 1218.326 636.617, 1129.087 680.446, 1050.964 794.250 C 1042.127 807.123, 1042.643 806.992, 1041.116 796.750 C 1019.979 654.987, 942.699 566.556, 850 578.059 M 856.841 632.077 C 801.463 637.949, 739.896 714.900, 750.336 765.196 C 763.855 830.325, 835.239 864.332, 963.381 866.693 C 1000.532 867.377, 996.988 870.764, 993.412 838 C 978.382 700.275, 928.139 624.518, 856.841 632.077 M 1230.500 714.674 C 1176.322 721.435, 1121.526 772.679, 1067.449 867.155 C 1063.352 874.312, 1060 880.385, 1060 880.649 C 1060 882.029, 1101.282 900.076, 1122.472 907.960 C 1275.620 964.937, 1370.449 911.816, 1330.485 791.438 C 1311.932 735.556, 1277.151 708.852, 1230.500 714.674 M 1009 933.808 C 894.388 1013.818, 847.951 1087.918, 873.045 1150.752 C 896.868 1210.403, 1010.642 1233.669, 1055.978 1188.161 C 1100.845 1143.124, 1090.833 1060.299, 1026.948 948 C 1014.990 926.980, 1016.767 928.385, 1009 933.808" stroke="none" fill="#2e933c" fill-rule="evenodd"/><path d="M 856.841 632.077 C 801.463 637.949, 739.896 714.900, 750.336 765.196 C 763.855 830.325, 835.239 864.332, 963.381 866.693 C 1000.532 867.377, 996.988 870.764, 993.412 838 C 978.382 700.275, 928.139 624.518, 856.841 632.077 M 1230.500 714.674 C 1176.322 721.435, 1121.526 772.679, 1067.449 867.155 C 1063.352 874.312, 1060 880.385, 1060 880.649 C 1060 882.029, 1101.282 900.076, 1122.472 907.960 C 1275.620 964.937, 1370.449 911.816, 1330.485 791.438 C 1311.932 735.556, 1277.151 708.852, 1230.500 714.674 M 1009 933.808 C 894.388 1013.818, 847.951 1087.918, 873.045 1150.752 C 896.868 1210.403, 1010.642 1233.669, 1055.978 1188.161 C 1100.845 1143.124, 1090.833 1060.299, 1026.948 948 C 1014.990 926.980, 1016.767 928.385, 1009 933.808" stroke="none" fill="#39b54a" fill-rule="evenodd"/></svg>`,
+        playerModifiers: {
+            luck: 0.08
+        }
     },
     bone: {
         name: "Bone Petal",
@@ -2082,7 +2115,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         // For modifiers, we can either:
         // 1. Use override if provided (for rarity-specific scaling) - overrides are NOT scaled
         // 2. Scale base modifiers by rarity multiplier
-        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined || overrideModifiers.magnetism !== undefined) {
+        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined || overrideModifiers.magnetism !== undefined || overrideModifiers.luck !== undefined) {
             // Use override modifiers directly (not scaled, as they're already rarity-specific)
             playerModifiers = {
                 damage: overrideModifiers.damage ?? baseModifiers.damage,
@@ -2091,9 +2124,10 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
                 range: overrideModifiers.range ?? baseModifiers.range,
                 rotationSpeed: overrideModifiers.rotationSpeed ?? baseModifiers.rotationSpeed,
                 playerRadius: overrideModifiers.playerRadius ?? baseModifiers.playerRadius,
-                magnetism: overrideModifiers.magnetism ?? baseModifiers.magnetism
+                magnetism: overrideModifiers.magnetism ?? baseModifiers.magnetism,
+                luck: overrideModifiers.luck ?? baseModifiers.luck
             };
-        } else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined || baseModifiers.magnetism !== undefined) {
+        } else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined || baseModifiers.magnetism !== undefined || baseModifiers.luck !== undefined) {
             // Scale base modifiers by rarity multiplier
             // Formula: baseValue * (1 + (rarityIndex / 8) * 3)
             // This scales from 1x at common to 4x at unique
@@ -2118,6 +2152,9 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
                     : undefined,
                 magnetism: baseModifiers.magnetism !== undefined
                     ? baseModifiers.magnetism * modifierRarityMultiplier
+                    : undefined,
+                luck: baseModifiers.luck !== undefined
+                    ? baseModifiers.luck * modifierRarityMultiplier
                     : undefined
             };
         }

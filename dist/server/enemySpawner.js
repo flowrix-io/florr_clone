@@ -15,6 +15,7 @@ const constants_2 = require("../constants");
 const map_data_1 = require("../map_data");
 const mobs_1 = require("../mobs");
 const apiKeyApi_1 = require("./apiKeyApi");
+const playerManager_1 = require("./playerManager");
 // Tier order from lowest to highest
 const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
 // Sections (0-8) where all rarities have equal spawn chance
@@ -466,6 +467,11 @@ function createEnemy(helpers) {
     let tier = 'common';
     let mobType;
     let reversed = undefined;
+    // The mob is spawning in the spawn zone of the target player (whose viewport drove
+    // this spawn). Luck grants +1% tier-upgrade chance per point on top of the base 2%.
+    const targetPlayer = constants_1.players[targetPlayerId];
+    const targetLuck = targetPlayer ? ((0, playerManager_1.calculatePlayerModifiers)(targetPlayer).luck ?? 0) : 0;
+    const luckUpgradeBonus = targetLuck * 0.01;
     if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
         // In a biome - use the biome's spawn table
         const spawnSelection = selectSpawnFromBiomeTable(biome.properties.spawnTable);
@@ -520,7 +526,7 @@ function createEnemy(helpers) {
         }
         // Tier upgrade or downgrade
         const upgradeRoll = Math.random();
-        if (upgradeRoll < 0.02) {
+        if (upgradeRoll < 0.02 + luckUpgradeBonus) {
             tier = upgradeTier(tier);
         }
         else {
@@ -563,7 +569,7 @@ function createEnemy(helpers) {
         else {
             // Tier upgrade or downgrade
             const upgradeRoll = Math.random();
-            if (upgradeRoll < 0.02) {
+            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
                 tier = upgradeTier(tier);
             }
             else {
