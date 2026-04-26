@@ -243,7 +243,7 @@ export interface MapElement {
     height: number;
     properties?: {
         teleportTo?: { x: number; y: number; serverPort?: number };
-        spawnType?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
+        spawnType?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra';
         isNoCombat?: boolean;
         isSafeZone?: boolean;
         // Biome-specific properties

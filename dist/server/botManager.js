@@ -1245,11 +1245,33 @@ function findPickupTarget(bot, anchor, tetherRadius) {
     return best ? { item: best, dist: bestDist } : null;
 }
 // --- Mode detection ---
+// Squared distance from a point to the nearest non-bot, non-dead player.
+// Returns Infinity when no human player is connected — in that case the
+// recency comparison alone decides the raid target.
+function distSqToNearestHumanPlayer(x, y) {
+    let best = Infinity;
+    for (const id in constants_1.players) {
+        if (isBot(id))
+            continue;
+        const p = constants_1.players[id];
+        if (!p || p.isDead)
+            continue;
+        const dx = p.x - x;
+        const dy = p.y - y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < best)
+            best = d2;
+    }
+    return best;
+}
 // Prefer uniques strictly; only consider supers if no uniques exist anywhere.
-// Within the chosen tier, pick the nearest instance to this bot.
+// Within the chosen tier, pick the most recently spawned boss, with proximity
+// to the nearest human player as a tiebreaker. This makes bots commit to
+// freshly-spawned bosses bothering humans rather than chasing whatever stale
+// boss happens to come first in the enemies array.
 function pickRaidTargetGlobal() {
-    let bestUnique = null;
-    let bestSuper = null;
+    let pool = [];
+    let preferUnique = false;
     for (const enemy of constants_1.enemies) {
         if (enemy.ownerId)
             continue;
@@ -1258,16 +1280,38 @@ function pickRaidTargetGlobal() {
         if (enemy.type === 'target_dummy')
             continue;
         if (enemy.tier === 'unique') {
-            if (!bestUnique)
-                bestUnique = enemy;
+            if (!preferUnique) {
+                pool = [];
+                preferUnique = true;
+            }
+            pool.push(enemy);
         }
-        else if (enemy.tier === 'super') {
-            if (!bestSuper)
-                bestSuper = enemy;
+        else if (enemy.tier === 'super' && !preferUnique) {
+            pool.push(enemy);
         }
     }
-    const pick = bestUnique ?? bestSuper;
-    return pick ? { x: pick.x, y: pick.y, tier: pick.tier } : null;
+    if (pool.length === 0)
+        return null;
+    let best = pool[0];
+    let bestSpawn = best.spawnTime ?? 0;
+    let bestDistSq = distSqToNearestHumanPlayer(best.x, best.y);
+    for (let i = 1; i < pool.length; i++) {
+        const enemy = pool[i];
+        const spawn = enemy.spawnTime ?? 0;
+        if (spawn > bestSpawn) {
+            best = enemy;
+            bestSpawn = spawn;
+            bestDistSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+        }
+        else if (spawn === bestSpawn) {
+            const distSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+            if (distSq < bestDistSq) {
+                best = enemy;
+                bestDistSq = distSq;
+            }
+        }
+    }
+    return { x: best.x, y: best.y, tier: best.tier };
 }
 /**
  * Force all bots into raid mode on the best available target (unique > super,
@@ -1408,47 +1452,16 @@ function announceNewBosses(io, now) {
     }
 }
 function findNearestBossForBot(bot) {
-    // Pass 1: look for uniques within raid range. Uniques always beat supers.
-    let best = null;
-    let bestD = BOSS_RAID_RANGE;
-    for (const enemy of constants_1.enemies) {
-        if (enemy.ownerId)
-            continue;
-        if (enemy.isDead)
-            continue;
-        if (enemy.type === 'target_dummy')
-            continue;
-        if (enemy.tier !== 'unique')
-            continue;
-        const dx = enemy.x - bot.x;
-        const dy = enemy.y - bot.y;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < bestD) {
-            bestD = d;
-            best = { x: enemy.x, y: enemy.y, dist: d };
-        }
-    }
-    if (best)
-        return best;
-    // Pass 2: no uniques nearby — fall back to supers.
-    for (const enemy of constants_1.enemies) {
-        if (enemy.ownerId)
-            continue;
-        if (enemy.isDead)
-            continue;
-        if (enemy.type === 'target_dummy')
-            continue;
-        if (enemy.tier !== 'super')
-            continue;
-        const dx = enemy.x - bot.x;
-        const dy = enemy.y - bot.y;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < bestD) {
-            bestD = d;
-            best = { x: enemy.x, y: enemy.y, dist: d };
-        }
-    }
-    return best;
+    // Bots all converge on the same global pick (most recent boss, tiebroken by
+    // proximity to the nearest human player). Distance back to this bot is just
+    // for the raid-slot bookkeeping; the anchor itself isn't gated by it.
+    const target = pickRaidTargetGlobal();
+    if (!target)
+        return null;
+    const dx = target.x - bot.x;
+    const dy = target.y - bot.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    return { x: target.x, y: target.y, dist };
 }
 function hasHighRarityMobNearby(bot, range) {
     const rSq = range * range;

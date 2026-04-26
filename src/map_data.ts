@@ -614,50 +614,10 @@ const WORLD_MAP_DATA: MapData = {
     },
     {
       "type": "spawn",
-      "x": 7409.765625,
-      "y": 215.078125,
-      "width": 1970,
-      "height": 4950,
-      "properties": {
-        "spawnType": "mythic"
-      }
-    },
-    {
-      "type": "spawn",
-      "x": 6849.765625,
-      "y": 165.078125,
-      "width": 720,
-      "height": 4370,
-      "properties": {
-        "spawnType": "mythic"
-      }
-    },
-    {
-      "type": "spawn",
       "x": 7179.765625,
       "y": 4285.078125,
       "width": 380,
       "height": 590,
-      "properties": {
-        "spawnType": "mythic"
-      }
-    },
-    {
-      "type": "spawn",
-      "x": 6179.765625,
-      "y": 195.078125,
-      "width": 730,
-      "height": 3820,
-      "properties": {
-        "spawnType": "mythic"
-      }
-    },
-    {
-      "type": "spawn",
-      "x": 229.765625,
-      "y": 235.078125,
-      "width": 6160,
-      "height": 3220,
       "properties": {
         "spawnType": "mythic"
       }
@@ -1390,16 +1350,6 @@ const WORLD_MAP_DATA: MapData = {
       "y": 145.078125,
       "width": 2370,
       "height": 4430,
-      "properties": {
-        "spawnType": "mythic"
-      }
-    },
-    {
-      "type": "spawn",
-      "x": 22849.453125,
-      "y": 165.078125,
-      "width": 9020,
-      "height": 5580,
       "properties": {
         "spawnType": "mythic"
       }
@@ -2903,16 +2853,6 @@ const WORLD_MAP_DATA: MapData = {
       }
     },
     {
-      "type": "spawn",
-      "x": 10879.453125,
-      "y": 52115.078125,
-      "width": 6420,
-      "height": 7190,
-      "properties": {
-        "spawnType": "mythic"
-      }
-    },
-    {
       "type": "biome",
       "x": 6607.96875,
       "y": 20062.578125,
@@ -3405,16 +3345,143 @@ const WORLD_MAP_DATA: MapData = {
       }
     },
     {
-      "type": "teleporter",
-      "x": 150000,
-      "y": 150000,
+      "type": "spawn",
+      "x": 249.453125,
+      "y": 275.078125,
       "width": 0,
       "height": 0,
       "properties": {
-        "teleportTo": {
-          "x": 19000,
-          "y": 17400
-        }
+        "spawnType": "mythic"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 28489.453125,
+      "y": 145.078125,
+      "width": 3750,
+      "height": 5270,
+      "properties": {
+        "spawnType": "ultra"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 169.453125,
+      "y": 245.078125,
+      "width": 5940,
+      "height": 3120,
+      "properties": {
+        "spawnType": "ultra"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 5929.453125,
+      "y": 185.078125,
+      "width": 3640,
+      "height": 2790,
+      "properties": {
+        "spawnType": "ultra"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 6039.453125,
+      "y": 2795.078125,
+      "width": 2010,
+      "height": 1180,
+      "properties": {
+        "spawnType": "ultra"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 6729.453125,
+      "y": 3775.078125,
+      "width": 1240,
+      "height": 1350,
+      "properties": {
+        "spawnType": "ultra"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 22909.453125,
+      "y": 175.078125,
+      "width": 3090,
+      "height": 1400,
+      "properties": {
+        "spawnType": "mythic"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 23859.453125,
+      "y": 1385.078125,
+      "width": 2070,
+      "height": 1790,
+      "properties": {
+        "spawnType": "mythic"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 25859.453125,
+      "y": 345.078125,
+      "width": 2670,
+      "height": 1710,
+      "properties": {
+        "spawnType": "mythic"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 23949.453125,
+      "y": 3105.078125,
+      "width": 4770,
+      "height": 2660,
+      "properties": {
+        "spawnType": "ultra"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 25879.453125,
+      "y": 1895.078125,
+      "width": 2830,
+      "height": 1350,
+      "properties": {
+        "spawnType": "ultra"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 10849.453125,
+      "y": 52185.078125,
+      "width": 4090,
+      "height": 3350,
+      "properties": {
+        "spawnType": "mythic"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 14819.453125,
+      "y": 52325.078125,
+      "width": 2550,
+      "height": 6710,
+      "properties": {
+        "spawnType": "ultra"
+      }
+    },
+    {
+      "type": "spawn",
+      "x": 10919.453125,
+      "y": 55395.078125,
+      "width": 4060,
+      "height": 3510,
+      "properties": {
+        "spawnType": "ultra"
       }
     }
   ],

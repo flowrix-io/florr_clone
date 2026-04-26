@@ -122,9 +122,10 @@ export function sendBossMobDefeatedMessage(
     io: any, 
     players: Record<string, ServerPlayer>
 ) {
-    // Check if this is a boss mob (ultra, super, or unique tier)
-    const isBossMob = ['ultra', 'super', 'unique'].includes(enemy.tier);
-    if (!isBossMob) {
+    // Check if this is a boss mob whose defeat is broadcast.
+    // Ultras spawn silently and so they also die silently — only super/unique are announced.
+    const isBroadcastBoss = ['super', 'unique'].includes(enemy.tier);
+    if (!isBroadcastBoss) {
         return;
     }
     

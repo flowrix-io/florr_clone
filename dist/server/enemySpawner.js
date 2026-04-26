@@ -553,15 +553,24 @@ function createEnemy(helpers) {
                 }
             }
         }
-        // Tier upgrade or downgrade
-        const upgradeRoll = Math.random();
-        if (upgradeRoll < 0.02) {
-            tier = upgradeTier(tier);
+        if (spawnZoneType === 'ultra') {
+            // Ultra zones spawn exactly 99% ultra and 1% super — no upgrade/
+            // downgrade noise. Special-mob bookkeeping for the resulting super
+            // (count tracking, chat broadcast, recordBossEvent) is performed by
+            // the createEnemy wrapper in server.ts when this returns a super.
+            tier = Math.random() < 0.01 ? 'super' : 'ultra';
         }
         else {
-            const downgradeChance = getMobDowngradeChance(tier);
-            if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                tier = downgradeTier(tier);
+            // Tier upgrade or downgrade
+            const upgradeRoll = Math.random();
+            if (upgradeRoll < 0.02) {
+                tier = upgradeTier(tier);
+            }
+            else {
+                const downgradeChance = getMobDowngradeChance(tier);
+                if (downgradeChance > 0 && Math.random() < downgradeChance) {
+                    tier = downgradeTier(tier);
+                }
             }
         }
         // Select mob type - filter to mobs belonging to this section
@@ -740,19 +749,35 @@ function spawnCentipedeBodySegments(head) {
 function createSpecialMob(tier, helpers, targetSection) {
     let zoneType;
     if (tier === 'ultra') {
-        zoneType = 'legendary';
+        // Ultras spawn in zones explicitly tagged as ultra spawn zones.
+        zoneType = 'ultra';
     }
     else if (tier === 'super') {
-        zoneType = 'mythic';
+        // 75% of supers spawn in ultra zones, 25% in mythic zones.
+        zoneType = Math.random() < 0.75 ? 'ultra' : 'mythic';
     }
     else { // unique
-        zoneType = 'mythic';
+        // Uniques spawn exclusively in ultra zones.
+        zoneType = 'ultra';
     }
     let position = null;
-    // For super bosses, spawn in the mythic zone within the target section
     if (tier === 'super' && targetSection !== undefined) {
-        position = getRandomPositionInZoneTypeInSection('mythic', targetSection);
-        // If no mythic zone in this section, don't spawn here
+        // Mythic supers stay section-bound (existing behaviour). Ultra-zone supers
+        // are not section-bound — there's no guarantee that an ultra zone exists
+        // in every section, so we just pick from any ultra zone.
+        if (zoneType === 'mythic') {
+            position = getRandomPositionInZoneTypeInSection('mythic', targetSection);
+        }
+        else {
+            position = getRandomPositionInZoneType('ultra');
+        }
+        // Fall back to the other zone type if the preferred one isn't available
+        // here, so a half-configured map still spawns supers somewhere.
+        if (!position) {
+            position = zoneType === 'mythic'
+                ? getRandomPositionInZoneType('ultra')
+                : getRandomPositionInZoneTypeInSection('mythic', targetSection);
+        }
         if (!position) {
             return null;
         }
@@ -869,7 +894,8 @@ function createSpecialMob(tier, helpers, targetSection) {
         knockbackX: 0,
         knockbackY: 0,
         aiType: mobStats.ai_type,
-        range: mobStats.range
+        range: mobStats.range,
+        spawnTime: currentTime
     };
 }
 /**
@@ -913,46 +939,36 @@ function updateSpecialMobCounts() {
 function spawnSpecialMobs(helpers, io) {
     // Update counts first
     updateSpecialMobCounts();
-    // Spawn ultra mob if none exists
+    // Spawn ultra mob if none exists. Ultras spawn silently — no chat broadcast.
     if (gameState_1.ultraMobCount.value === 0) {
         const ultraMob = createSpecialMob('ultra', helpers);
         if (ultraMob) {
             constants_1.enemies.push(ultraMob);
             gameState_1.ultraMobCount.value = 1;
-            // Don't send spawn notification for target dummies
-            if (ultraMob.type !== 'target_dummy') {
-                const content = `<b style="color: ${constants_2.ENEMY_TIERS.ultra.color};">An ultra ${ultraMob.type.replace('_', ' ')} has spawned in a legendary zone!</b>`;
-                const timestamp = Date.now();
-                io.emit('chatMessage', {
-                    sender: '',
-                    content,
-                    timestamp
-                });
-                (0, apiKeyApi_1.recordBossEvent)({
-                    type: 'spawn',
-                    tier: 'ultra',
-                    mobType: ultraMob.type,
-                    x: ultraMob.x,
-                    y: ultraMob.y,
-                    timestamp,
-                    message: (0, apiKeyApi_1.stripHtml)(content)
-                });
-            }
             console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
         }
     }
-    // Spawn super mob in each section that doesn't have one
+    // Spawn super mob in each section that doesn't have one. Supers land in
+    // either ultra zones (75%) or mythic zones (25%); since ultra zones aren't
+    // section-bound, an iteration's spawn may land in a different section than
+    // the one we're filling. We skip and discard if the destination section is
+    // already covered, which prevents many supers from piling into the same
+    // ultra zone when several sections happen to roll the ultra branch.
     for (let section = 0; section < 9; section++) {
         const existingSuperMobId = (0, gameState_1.getSuperMobInSection)(section);
         if (!existingSuperMobId) {
             const superMob = createSpecialMob('super', helpers, section);
             if (superMob) {
+                const mobSection = getSectionAtPosition(superMob.x, superMob.y);
+                if ((0, gameState_1.getSuperMobInSection)(mobSection)) {
+                    // Destination section already has a super; drop this spawn.
+                    continue;
+                }
                 constants_1.enemies.push(superMob);
                 gameState_1.superMobCount.value++;
-                (0, gameState_1.setSuperMobInSection)(section, superMob.id);
+                (0, gameState_1.setSuperMobInSection)(mobSection, superMob.id);
                 // Don't send spawn notification for target dummies
                 if (superMob.type !== 'target_dummy') {
-                    const mobSection = getSectionAtPosition(superMob.x, superMob.y);
                     const spawnTimestamp = Date.now();
                     // Send personalized message to each player based on their section
                     Object.entries(constants_1.players).forEach(([playerId, player]) => {

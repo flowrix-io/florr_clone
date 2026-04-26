@@ -73,6 +73,7 @@ const crossServer_1 = require("./server/crossServer");
 const enemySpawner_1 = require("./server/enemySpawner");
 const pvpArenaSpawner_1 = require("./server/pvpArenaSpawner");
 const apiKeyApi_1 = require("./server/apiKeyApi");
+const gameState_2 = require("./server/gameState");
 // Load persisted guilds into memory now that database + guildManager are both ready.
 (0, guildManager_1.loadGuildsFromDatabase)();
 (0, botManager_1.initializeBotGuilds)();
@@ -282,10 +283,10 @@ const enemySpawnerHelpers = {
 // const MAZE_CELL_SIZE = 1000;
 // const MAZE_WALL_THICKNESS = 100;
 // Initialize map obstacles - using function from gameState module
-const gameState_2 = require("./server/gameState");
+const gameState_3 = require("./server/gameState");
 // Update the server initialization code
 // Replace the old obstacle initialization with:
-constants_2.obstacles.push(...(0, gameState_2.initializeMapObstacles)());
+constants_2.obstacles.push(...(0, gameState_3.initializeMapObstacles)());
 // Viewport optimization functions moved to playerState module
 function updateEnemyViewportStatus() {
     const currentTime = Date.now();
@@ -417,7 +418,41 @@ function spawnSpecialMobs() {
 }
 // Wrapper for createEnemy
 function createEnemy() {
-    return (0, enemySpawner_1.createEnemy)(enemySpawnerHelpers);
+    const enemy = (0, enemySpawner_1.createEnemy)(enemySpawnerHelpers);
+    if (enemy && enemy.tier === 'super' && enemy.type !== 'target_dummy') {
+        // Ambient super spawn (e.g. via the 1% ultra-zone upgrade). The module
+        // function only constructs the enemy — special-mob bookkeeping and the
+        // chat broadcast that normally fire from spawnSpecialMobs need to run
+        // here so the new super is counted, section-tracked, and announced.
+        announceAmbientSuper(enemy);
+    }
+    return enemy;
+}
+function announceAmbientSuper(superMob) {
+    gameState_1.superMobCount.value++;
+    const mobSection = (0, enemySpawner_1.getSectionAtPosition)(superMob.x, superMob.y);
+    (0, gameState_2.setSuperMobInSection)(mobSection, superMob.id);
+    const spawnTimestamp = Date.now();
+    Object.entries(constants_2.players).forEach(([playerId, player]) => {
+        const playerSection = (0, enemySpawner_1.getSectionAtPosition)(player.x, player.y);
+        const somewhere = playerSection === mobSection ? '' : ' somewhere';
+        io.to(playerId).emit('chatMessage', {
+            sender: '',
+            content: `<b style="color: ${constants_2.ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned${somewhere}!</b>`,
+            timestamp: spawnTimestamp
+        });
+    });
+    const message = `A super ${superMob.type.replace('_', ' ')} has spawned!`;
+    (0, apiKeyApi_1.recordBossEvent)({
+        type: 'spawn',
+        tier: 'super',
+        mobType: superMob.type,
+        x: superMob.x,
+        y: superMob.y,
+        timestamp: spawnTimestamp,
+        message: (0, apiKeyApi_1.stripHtml)(message)
+    });
+    console.log(`[SERVER] Ambient super mob spawned: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
 }
 // Function to spawn a specific mob with a specific rarity at optional coordinates
 function spawnMob(mobType, rarity, x, y) {

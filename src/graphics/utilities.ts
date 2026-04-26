@@ -317,10 +317,10 @@ Graphics.prototype.drawBossBars = function(this: Graphics, enemies: Map<string, 
         bottom: this.cameraY + scaledHeight
     };
 
-    // Find all ultra, super, and unique mobs in view
+    // Find all super and unique mobs in view (ultras render with normal mob health bars)
     const bossMobs: Enemy[] = [];
     for (const enemy of enemies.values()) {
-        if (enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique') {
+        if (enemy.tier === 'super' || enemy.tier === 'unique') {
             // Check if enemy is in viewport (same logic as drawGameObjects)
             const mobStats = getMobStats(enemy.type, enemy.tier);
             const baseSize = mobStats ? mobStats.size * 40 : 40;

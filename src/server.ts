@@ -182,10 +182,12 @@ import {
     updateSpecialMobCounts as updateSpecialMobCountsModule,
     spawnCentipedeBodySegments,
     spawnInitialSpawns,
+    getSectionAtPosition,
     EnemySpawnerHelpers
 } from './server/enemySpawner';
 import { spawnArenaMobs } from './server/pvpArenaSpawner';
-import { registerApiKeyRoutes } from './server/apiKeyApi';
+import { registerApiKeyRoutes, recordBossEvent, stripHtml } from './server/apiKeyApi';
+import { setSuperMobInSection } from './server/gameState';
 
 // Load persisted guilds into memory now that database + guildManager are both ready.
 loadGuildsFromDatabase();
@@ -592,7 +594,44 @@ function spawnSpecialMobs() {
 
 // Wrapper for createEnemy
 function createEnemy(): Enemy | null {
-    return createEnemyModule(enemySpawnerHelpers);
+    const enemy = createEnemyModule(enemySpawnerHelpers);
+    if (enemy && enemy.tier === 'super' && enemy.type !== 'target_dummy') {
+        // Ambient super spawn (e.g. via the 1% ultra-zone upgrade). The module
+        // function only constructs the enemy — special-mob bookkeeping and the
+        // chat broadcast that normally fire from spawnSpecialMobs need to run
+        // here so the new super is counted, section-tracked, and announced.
+        announceAmbientSuper(enemy);
+    }
+    return enemy;
+}
+
+function announceAmbientSuper(superMob: Enemy): void {
+    superMobCount.value++;
+    const mobSection = getSectionAtPosition(superMob.x, superMob.y);
+    setSuperMobInSection(mobSection, superMob.id);
+
+    const spawnTimestamp = Date.now();
+    Object.entries(players).forEach(([playerId, player]) => {
+        const playerSection = getSectionAtPosition(player.x, player.y);
+        const somewhere = playerSection === mobSection ? '' : ' somewhere';
+        io.to(playerId).emit('chatMessage', {
+            sender: '',
+            content: `<b style="color: ${ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned${somewhere}!</b>`,
+            timestamp: spawnTimestamp
+        });
+    });
+
+    const message = `A super ${superMob.type.replace('_', ' ')} has spawned!`;
+    recordBossEvent({
+        type: 'spawn',
+        tier: 'super',
+        mobType: superMob.type,
+        x: superMob.x,
+        y: superMob.y,
+        timestamp: spawnTimestamp,
+        message: stripHtml(message)
+    });
+    console.log(`[SERVER] Ambient super mob spawned: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
 }
 
 // Function to spawn a specific mob with a specific rarity at optional coordinates

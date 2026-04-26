@@ -169,6 +169,7 @@
                         <option value="epic">Epic</option>
                         <option value="legendary">Legendary</option>
                         <option value="mythic">Mythic</option>
+                        <option value="ultra">Ultra</option>
                     </select>
                     <div id="teleporterProps" style="display: none;">
                         <input type="number" id="teleportX" placeholder="Teleport to X">
@@ -238,6 +239,9 @@
                         <span style="color: #FFC107;">■</span> Safe Zone
                     </div>
                     <div style="margin: 5px 0;">
+                        <span style="color: #de1f65;">■</span> Spawn Zone (Ultra) — ultra mobs spawn here
+                    </div>
+                    <div style="margin: 5px 0;">
                         <span style="color: #8040C0;">■</span> Biome (custom spawn table)
                     </div>
                     <div style="margin: 5px 0;">
@@ -274,6 +278,21 @@
             teleporter: '#2196F3',
             safe_zone: '#FFC107',
             biome: '#8040C0'
+        };
+
+        // Maps a tool button id (id without the trailing "Tool") to the canonical
+        // tool/element-type name. snake_case types match the format expected by the
+        // game server when the map is exported.
+        const TOOL_TYPE_MAP = {
+            wallTile: 'wallTile',
+            waterTile: 'waterTile',
+            airTile: 'airTile',
+            spawn: 'spawn',
+            teleporter: 'teleporter',
+            safeZone: 'safe_zone',
+            biome: 'biome',
+            select: 'select',
+            delete: 'delete'
         };
 
         // Editor state
@@ -346,17 +365,15 @@
         minimap.width = 200;
         minimap.height = 200;
 
-        // Tool selection
+        // Tool selection — only buttons whose id ends in "Tool" act as tools.
+        // (Action buttons like Export/Import/Clear/Validate must NOT change currentTool.)
         document.querySelectorAll('.tools button').forEach(button => {
+            if (!button.id.endsWith('Tool')) return;
             button.addEventListener('click', () => {
                 document.querySelectorAll('.tools button').forEach(b => b.classList.remove('selected'));
                 button.classList.add('selected');
-                const toolId = button.id.replace('Tool', '');
-                if (toolId === 'wallTile' || toolId === 'waterTile' || toolId === 'airTile') {
-                    currentTool = toolId;
-                } else {
-                    currentTool = toolId;
-                }
+                const toolId = button.id.replace(/Tool$/, '');
+                currentTool = TOOL_TYPE_MAP[toolId] || toolId;
                 updatePropertiesPanel();
             });
         });
@@ -584,20 +601,35 @@
         }
 
         function handleSelection(x, y) {
-            selectedElement = elements.find(element => isPointInElement(x, y, element));
+            // Iterate from end to start so the top-most (most recently drawn) element
+            // wins when elements overlap — otherwise large background zones swallow
+            // clicks meant for smaller elements layered on top of them.
+            selectedElement = null;
+            for (let i = elements.length - 1; i >= 0; i--) {
+                if (isPointInElement(x, y, elements[i])) {
+                    selectedElement = elements[i];
+                    break;
+                }
+            }
 
             if (selectedElement) {
                 dragOffset.x = x - selectedElement.x;
                 dragOffset.y = y - selectedElement.y;
+                updatePropertiesFromElement(selectedElement);
+            } else {
+                // Selection cleared — re-sync panels with the active tool.
+                updatePropertiesPanel();
             }
         }
 
         function handleDeletion(x, y) {
-            const index = elements.findIndex(element => isPointInElement(x, y, element));
-
-            if (index !== -1) {
-                elements.splice(index, 1);
-                updateElementList();
+            // Match selection: delete the top-most element under the cursor.
+            for (let i = elements.length - 1; i >= 0; i--) {
+                if (isPointInElement(x, y, elements[i])) {
+                    elements.splice(i, 1);
+                    updateElementList();
+                    return;
+                }
             }
         }
 
@@ -749,7 +781,9 @@
                             );
                         }
                     } else {
-                        ctx.fillStyle = COLORS[element.type];
+                        // Tint ultra spawn zones magenta so they stand out from regular spawn zones.
+                        const isUltraSpawn = element.type === 'spawn' && element.properties?.spawnType === 'ultra';
+                        ctx.fillStyle = isUltraSpawn ? '#de1f65' : COLORS[element.type];
                         ctx.fillRect(
                             element.x * scale - cameraOffset.x,
                             element.y * scale - cameraOffset.y,
@@ -813,10 +847,16 @@
             const teleporterProps = document.getElementById('teleporterProps');
             const biomeProps = document.getElementById('biomeProps');
 
-            spawnType.style.display = currentTool === 'spawn' ? 'block' : 'none';
-            teleporterProps.style.display = currentTool === 'teleporter' ? 'block' : 'none';
-            biomeProps.style.display = currentTool === 'biome' ? 'block' : 'none';
-            
+            // When an element is selected, prefer its type so the correct
+            // property inputs are visible regardless of the active tool —
+            // otherwise switching to Select would hide every property panel
+            // and the user couldn't see/edit the element they just clicked.
+            const targetType = selectedElement ? selectedElement.type : currentTool;
+
+            spawnType.style.display = targetType === 'spawn' ? 'block' : 'none';
+            teleporterProps.style.display = targetType === 'teleporter' ? 'block' : 'none';
+            biomeProps.style.display = targetType === 'biome' ? 'block' : 'none';
+
             // Reset biome properties to template when switching to biome tool (if no element selected)
             if (currentTool === 'biome' && !selectedElement) {
                 document.getElementById('biomeName').value = '';
@@ -953,8 +993,15 @@
 
         // New function to update properties panel when selecting an element
         function updatePropertiesFromElement(element) {
-            if (element.type === 'teleporter' && element.properties.teleportTo) {
-                const teleportTo = element.properties.teleportTo;
+            // Make sure the property section for this element type is visible.
+            // Without this, the inputs are display:none whenever the user is in
+            // the Select / Delete tool, so writes here go to invisible fields.
+            updatePropertiesPanel();
+
+            if (!element.properties) element.properties = {};
+
+            if (element.type === 'teleporter') {
+                const teleportTo = element.properties.teleportTo || { x: 0, y: 0 };
                 document.getElementById('teleportX').value = teleportTo.x || 0;
                 document.getElementById('teleportY').value = teleportTo.y || 0;
                 
@@ -981,17 +1028,15 @@
                     document.getElementById('serverPortInfo').textContent = 
                         'Same-server teleportation (no network transfer)';
                 }
-            } else if (element.type === 'spawn' && element.properties.spawnType) {
-                document.getElementById('spawnType').value = element.properties.spawnType;
-            } else if (element.type === 'biome' && element.properties.biomeName) {
+            } else if (element.type === 'spawn') {
+                document.getElementById('spawnType').value = element.properties.spawnType || 'common';
+            } else if (element.type === 'biome') {
                 document.getElementById('biomeName').value = element.properties.biomeName || '';
                 document.getElementById('backgroundTexture').value = element.properties.backgroundTexture || '';
-                
+
                 // Convert spawn table back to JSON format
                 const spawnTable = element.properties.spawnTable || [];
-                const spawnTableText = JSON.stringify(spawnTable, null, 2);
-                
-                document.getElementById('spawnTableEditor').value = spawnTableText;
+                document.getElementById('spawnTableEditor').value = JSON.stringify(spawnTable, null, 2);
             }
         }
 

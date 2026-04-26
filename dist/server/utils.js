@@ -108,9 +108,10 @@ function getEligiblePlayers(enemy) {
 }
 // Helper function to send boss mob defeated message in chat
 function sendBossMobDefeatedMessage(enemy, io, players) {
-    // Check if this is a boss mob (ultra, super, or unique tier)
-    const isBossMob = ['ultra', 'super', 'unique'].includes(enemy.tier);
-    if (!isBossMob) {
+    // Check if this is a boss mob whose defeat is broadcast.
+    // Ultras spawn silently and so they also die silently — only super/unique are announced.
+    const isBroadcastBoss = ['super', 'unique'].includes(enemy.tier);
+    if (!isBroadcastBoss) {
         return;
     }
     // Get the top damage dealer
