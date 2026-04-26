@@ -3904,6 +3904,14 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 probability: 0.4, // 40% chance for shield
                 minQuantity: 1,
                 maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'yin_yang',
+                rarity: 'common',
+                probability: 0.1, // 10% chance for yin yang
+                minQuantity: 1,
+                maxQuantity: 1
             }
         ]
     },

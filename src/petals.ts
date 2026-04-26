@@ -1649,6 +1649,33 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         playerModifiers: {magnetism: 500},
         isAdminPetal: false
     },
+    yin_yang: {
+        name: "Yin Yang",
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 1000,
+        description: "Reverses your petal rotation",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-110 -110 220 220" width="32" height="32">
+  <g stroke-width="3">
+    <path d="M 0 100 A 100 100 0 0 1 0 -100 A 50 50 0 0 1 0 0 A 50 50 0 0 0 0 100 Z" 
+          fill="#ffffff" stroke="#cfcfcf" />
+    
+    <path d="M 0 -100 A 100 100 0 0 1 0 100 A 50 50 0 0 1 0 0 A 50 50 0 0 0 0 -100 Z" 
+          fill="#333333" stroke="#292929" />
+    
+    <path d="M -100 0 A 100 100 0 0 1 0 -100 A 50 50 0 0 1 0 0" 
+          fill="none" stroke="#cfcfcf" />
+  </g>
+</svg>
+`,
+        isAdminPetal: false,
+        playerModifiers: {
+            rotationSpeed: -1.0,
+        }
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
