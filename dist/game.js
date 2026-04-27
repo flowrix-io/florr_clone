@@ -772,16 +772,22 @@ class Game {
             }
             const slotIndex = this.inventoryManager.getLoadoutKeyBindings().indexOf(key);
             if (slotIndex !== -1) {
-                // If a secondary slot is selected, number keys swap primary<->secondary (gardn)
+                const uHeld = this.keysPressed.has('u') || this.keysPressed.has('U');
                 const selectedSecondary = this.loadoutBar?.selectedSecondary ?? -1;
-                if (selectedSecondary >= 0) {
+                if (uHeld) {
+                    // U + slot number uses the petal in that slot
+                    this.inventoryManager.useLoadoutItem(slotIndex);
+                }
+                else if (selectedSecondary >= 0) {
+                    // If a secondary slot is selected, number keys swap primary<->secondary (gardn)
                     const secondaryIdx = 10 + selectedSecondary;
                     this.inventoryManager.swapLoadoutItems(slotIndex, secondaryIdx);
                     // Move to next non-empty secondary (or clear if exhausted)
                     this.loadoutBar?.cycleSecondaryForward();
                 }
                 else {
-                    this.inventoryManager.useLoadoutItem(slotIndex);
+                    // Swap with the petal directly below this slot in the secondary row
+                    this.inventoryManager.swapLoadoutItems(slotIndex, 10 + slotIndex);
                 }
                 return;
             }
