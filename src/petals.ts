@@ -609,6 +609,47 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
             playerModifiers: {playerRadius: 3.0},
         }
     },
+    // Lentil scales attraction force and radius linearly from 1x (common) to 5x (apex):
+    //   multiplier(i) = 1 + (i / 9) * 4, where i is the rarity index (0..9).
+    // Common values are 2000 force / 20 radius (defined in BASE_PETAL_CONFIGS).
+    lentil: {
+        uncommon: {
+            attractionForce: 2889,
+            playerModifiers: { petalAttractionRadius: 29 },
+        },
+        rare: {
+            attractionForce: 3778,
+            playerModifiers: { petalAttractionRadius: 38 },
+        },
+        epic: {
+            attractionForce: 4667,
+            playerModifiers: { petalAttractionRadius: 47 },
+        },
+        legendary: {
+            attractionForce: 5556,
+            playerModifiers: { petalAttractionRadius: 56 },
+        },
+        mythic: {
+            attractionForce: 6444,
+            playerModifiers: { petalAttractionRadius: 64 },
+        },
+        ultra: {
+            attractionForce: 7333,
+            playerModifiers: { petalAttractionRadius: 73 },
+        },
+        super: {
+            attractionForce: 8222,
+            playerModifiers: { petalAttractionRadius: 82 },
+        },
+        unique: {
+            attractionForce: 9111,
+            playerModifiers: { petalAttractionRadius: 91 },
+        },
+        apex: {
+            attractionForce: 10000,
+            playerModifiers: { petalAttractionRadius: 100 },
+        },
+    },
 };
 
 // Base petal configurations - only common rarity stats
@@ -1710,6 +1751,22 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
             rotationSpeed: -1.0,
         }
     },
+    lentil: {
+        name: "Lentil",
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 1000,
+        description: "Makes your other petals more attracted to mobs",
+        color: "#000000",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none"><ellipse cx="16" cy="16" rx="10" ry="11" fill="#ebb134" stroke="#c4942d" stroke-width="3" transform="rotate(45 16 16)"/></svg>`,
+        isAdminPetal: false,
+        attractionForce: 2000,
+        playerModifiers: {
+            petalAttractionRadius: 20,
+        }
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
@@ -2189,6 +2246,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         range: baseConfig.range ?? 1.0, // Default range multiplier
         projectile: baseConfig.projectile, // Include projectile config if present
         playerModifiers: playerModifiers, // Include player modifiers if present
+        attractionForce: overrides.attractionForce ?? baseConfig.attractionForce,
         petMobType: baseConfig.petMobType, // Include pet mob type if present
         petMobRarity: baseConfig.petMobRarity, // Include pet mob rarity if present
         fixedDirection: overrides.fixedDirection ?? baseConfig.fixedDirection,
