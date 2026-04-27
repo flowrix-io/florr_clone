@@ -188,11 +188,13 @@ function isPositionInPlayerPetalRange(x, y, mobSize) {
         const petalExtension = player.inputs?.petalExtension || 1.0;
         const sizeMult = player.sizeMultiplier ?? 1.0;
         const baseRadius = (60 + (constants_1.PLAYER_SIZE / 2) * (sizeMult - 1)) * petalExtension;
-        // Find the largest petal size and range in the player's loadout
+        // Find the largest petal size and range in the player's loadout.
+        // Secondary loadout (slots 10+) is storage only — those petals are not in orbit.
         const playerRangeMod = (0, playerManager_1.calculatePlayerModifiers)(player).range ?? 1.0;
         let maxPetalSize = 0;
         let maxPetalRange = 1.0;
-        for (const item of player.loadout) {
+        for (let i = 0; i < player.loadout.length && i < 10; i++) {
+            const item = player.loadout[i];
             if (item && item.type === 'petal' && item.petalType && item.rarity) {
                 const petalStats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
                 if (petalStats) {
@@ -413,7 +415,10 @@ function updatePlayerState(player, deltaTime, deps) {
     // Apply passive healing (base 1 HP/sec + petal bonuses)
     if (!player.isDead) {
         let totalPassiveHeal = 1.0 * deltaTime; // Base passive heal: 1 HP/sec
-        for (const petal of (player.loadout || [])) {
+        const loadout = player.loadout || [];
+        // Secondary loadout (slots 10+) is storage only — its petals don't heal.
+        for (let i = 0; i < loadout.length && i < 10; i++) {
+            const petal = loadout[i];
             if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
                 const petalStats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
                 if (petalStats && petalStats.passiveHeal) {

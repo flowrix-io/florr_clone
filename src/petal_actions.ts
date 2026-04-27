@@ -857,12 +857,14 @@ function getMemoryValue(key: string, context: ActionContext): number {
         const petalType = key.substring(13);
         let totalCount = 0;
         
-        // Count across all players
+        // Count across all players.
+        // Secondary loadout (slots 10+) is storage only — its petals are not in orbit and don't count.
         for (const playerId in players) {
             const player = players[playerId];
             if (!player || !player.loadout) continue;
-            
-            for (const item of player.loadout) {
+
+            for (let i = 0; i < player.loadout.length && i < 10; i++) {
+                const item = player.loadout[i];
                 if (item && item.type === 'petal' && item.petalType === petalType) {
                     const { getPetalStats } = require('./petals');
                     if (item.rarity) {

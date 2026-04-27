@@ -1059,6 +1059,9 @@ io.on('connection', (socket) => {
             const player = constants_2.players[socket.id];
             if (player && player.loadout) {
                 for (let i = 0; i < player.loadout.length; i++) {
+                    // Secondary loadout (slots 10+) is storage only — no pets, no cooldowns.
+                    if (i >= 10)
+                        break;
                     const petal = player.loadout[i];
                     if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
                         const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity);
@@ -4595,7 +4598,9 @@ function start_loop() {
             // Compute equipment and petal-driven face flags from loadout
             let equipFlags = 0;
             if (p.loadout) {
-                for (const item of p.loadout) {
+                // Secondary loadout (slots 10+) is storage — visual flags only come from primary.
+                for (let i = 0; i < p.loadout.length && i < 10; i++) {
+                    const item = p.loadout[i];
                     if (!item || item.type !== 'petal')
                         continue;
                     if (!item.petalType)

@@ -462,8 +462,12 @@ function calculatePlayerModifiers(player) {
     };
     if (!player.loadout)
         return modifiers;
-    // Sum up modifiers from all equipped petals
-    for (const item of player.loadout) {
+    // Sum up modifiers from all equipped petals.
+    // Secondary loadout (slots 10+) is storage only — its petals contribute no modifiers.
+    for (let i = 0; i < player.loadout.length; i++) {
+        if (i >= 10)
+            break;
+        const item = player.loadout[i];
         if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
             continue;
         const petalStats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
