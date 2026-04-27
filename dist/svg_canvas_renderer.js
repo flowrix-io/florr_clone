@@ -423,8 +423,12 @@ class SVGCanvasCompiler {
                 clipPaths.set(id, buildClipPath2D(cpList[i]));
             }
         }
-        // Compile children with SVG default inherited style
-        const children = compileChildren(svgEl, doc, ROOT_INHERITED_STYLE);
+        // Seed the inherited style from the root <svg>'s presentation
+        // attributes (fill="none" on the root must cascade into children that
+        // don't set their own fill), falling back to SVG defaults for anything
+        // unset.
+        const rootStyle = parseStyleWithInheritance(svgEl, ROOT_INHERITED_STYLE);
+        const children = compileChildren(svgEl, doc, rootStyle);
         const compiled = { viewBox, children, clipPaths };
         this.cache.set(svgString, compiled);
         return compiled;

@@ -128,6 +128,15 @@ const SPRING_FORCE = 600; // Spring force back to orbit position (pixels per sec
 const DAMPING = 0.72; // Velocity damping per frame (0-1, lower = more damping)
 const SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after spawn - reduced from 500
 
+function getEffectiveCooldown(petal: any, petalStats: any): number {
+    let cooldownTime = petalStats.cooldown || 10000;
+    if (petal.petalType === 'bubble' && petal.rarity) {
+        const rarityIdx = Math.max(0, RARITY_LEVELS.indexOf(petal.rarity as Rarity));
+        cooldownTime = Math.max(50, cooldownTime * Math.pow(0.85, rarityIdx));
+    }
+    return cooldownTime;
+}
+
 /**
  * Clean up petal physics states for a player
  */
@@ -940,7 +949,7 @@ export function updatePlayerState(
                         executePetalActions(petalStats.actions, actionContext, 'on_break');
                     }
 
-                    const cooldownTime = petalStats.cooldown || 10000;
+                    const cooldownTime = getEffectiveCooldown(petal, petalStats);
 
                     if (isClumpedMulti(petalStats)) {
                         // Clumped: only this instance breaks; other instances keep working
@@ -1163,7 +1172,7 @@ export function updatePlayerState(
             
             // Update petal position in action context
             updatePetalPosition(petalId, petalX, petalY);
-            
+
             // Store petal position for client synchronization
             player.petalPositions!.push({
                 loadoutIndex,
@@ -1172,6 +1181,68 @@ export function updatePlayerState(
                 y: petalY,
                 noPhysics: petalStats.noPhysics || false
             });
+
+            // Bubble pops in defensive position and propels the player away from where it was.
+            // Boost magnitude scales up with rarity; the slot's cooldown also scales down (handled in the break flow).
+            // Note: push newX/newY (the post-movement position that will be written back to player at the end
+            // of updatePlayerState) — modifying player.x/player.y directly here gets clobbered.
+            if (petal.petalType === 'bubble' && petalExtension < 1.0) {
+                const dx = player.x - petalX;
+                const dy = player.y - petalY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 0) {
+                    const rarityIdx = Math.max(0, RARITY_LEVELS.indexOf((petal.rarity ?? 'common') as Rarity));
+                    const boostMagnitude = 60 * (1 + rarityIdx * 0.6);
+                    // Substep so a high-rarity boost can't tunnel through walls; on each blocked
+                    // step, reflect the remaining boost across the wall normal so the player bounces.
+                    let vx = (dx / dist) * boostMagnitude;
+                    let vy = (dy / dist) * boostMagnitude;
+                    const BOUNCE_DAMPING = 0.7;
+                    let appliedX = 0;
+                    let appliedY = 0;
+                    let remaining = boostMagnitude;
+                    let safetyIterations = 32;
+                    while (remaining > 0.5 && safetyIterations-- > 0) {
+                        const stepLen = Math.min(MAX_STEP, remaining);
+                        const speed = Math.sqrt(vx * vx + vy * vy) || 1;
+                        const stepX = (vx / speed) * stepLen;
+                        const stepY = (vy / speed) * stepLen;
+                        const trialX = newX + stepX;
+                        const trialY = newY + stepY;
+                        const wallCollision = checkPlayerWallCollisions(trialX, trialY, effectivePlayerSize);
+                        const dxStep = wallCollision.x - newX;
+                        const dyStep = wallCollision.y - newY;
+                        newX = wallCollision.x;
+                        newY = wallCollision.y;
+                        appliedX += dxStep;
+                        appliedY += dyStep;
+                        remaining -= stepLen;
+                        // If the resolver clipped this step, infer the wall normal from which axis
+                        // shrank the most and reflect the corresponding velocity component.
+                        const clipX = stepX - dxStep;
+                        const clipY = stepY - dyStep;
+                        const blockedX = Math.abs(clipX) > Math.abs(stepX) * 0.5;
+                        const blockedY = Math.abs(clipY) > Math.abs(stepY) * 0.5;
+                        if (blockedX || blockedY) {
+                            if (blockedX) vx = -vx * BOUNCE_DAMPING;
+                            if (blockedY) vy = -vy * BOUNCE_DAMPING;
+                            // If both axes blocked (wedged in a corner), bail rather than spin.
+                            if (blockedX && blockedY) break;
+                        }
+                    }
+                    io.emit('playerDamaged', {
+                        playerId: player.id,
+                        health: player.health,
+                        maxHealth: player.maxHealth,
+                        isInvulnerable: player.isInvulnerable,
+                        knockbackX: appliedX,
+                        knockbackY: appliedY,
+                        damageDealt: 0
+                    });
+                }
+                setInstanceHealth(petal, instanceIndex, instancePetalStats!, 0);
+                continue;
+            }
 
             // Check if petal can shoot projectiles (only when extended)
             if (petalExtension > 1.0 && petalStats.projectile) {
@@ -1534,7 +1605,7 @@ export function updatePlayerState(
                             executePetalActions(petalStats.actions, actionContext, 'on_break');
                         }
 
-                        const cooldownTime = petalStats.cooldown || 10000;
+                        const cooldownTime = getEffectiveCooldown(petal, petalStats);
 
                         if (isClumpedMulti(petalStats)) {
                             // Clumped: only this instance breaks

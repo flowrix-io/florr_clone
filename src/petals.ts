@@ -1767,6 +1767,22 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
             petalAttractionRadius: 20,
         }
     },
+    bubble: {
+        name: "Bubble",
+        damage: 0,
+        health: 1,
+        size: 1.0,
+        cooldown: 1000,
+        description: "Pops when you defend, propelling you away. Higher rarity = stronger boost and shorter cooldown",
+        color: "rgba(255, 255, 255, 0)",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <circle cx="16" cy="16" r="16" fill="rgba(255, 255, 255, 0.2)"/>
+  <circle cx="16" cy="16" r="14.5" fill="none" stroke="rgba(255, 255, 255, 0.3)" stroke-width="3"/>
+  <circle cx="10" cy="10" r="1" fill="none" stroke="rgba(255, 255, 255, 0.3)" stroke-width="3"/>
+</svg>`,
+        isAdminPetal: false,
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,

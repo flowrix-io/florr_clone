@@ -4080,10 +4080,10 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         guaranteed: true,
         drops: [
             {
-                type: 'consumable',
-                itemType: 'speed_boost',
+                type: 'petal',
+                itemType: 'bubble',
                 rarity: 'common',
-                probability: 1.0,
+                probability: 0.5,
                 minQuantity: 1,
                 maxQuantity: 1
             },
