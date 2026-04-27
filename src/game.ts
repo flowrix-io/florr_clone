@@ -827,6 +827,18 @@ export class Game {
 
     private setupEventListeners() {
         const signal = this.abortController.signal;
+        // Map shift+digit symbols back to their digit (so loadout 1-9/0 still trigger when shift is held)
+        const SHIFT_DIGIT_MAP: { [k: string]: string } = {
+            '!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
+            '^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
+        };
+        // Normalize a KeyboardEvent.key so case/shift state doesn't change the binding identity.
+        // Single-char keys are lower-cased; shifted digits are mapped back to their digit.
+        const normalizeKey = (raw: string): string => {
+            if (raw.length !== 1) return raw;
+            if (SHIFT_DIGIT_MAP[raw]) return SHIFT_DIGIT_MAP[raw];
+            return raw.toLowerCase();
+        };
         document.addEventListener('keydown', (event) => {
             // Don't interfere if an input/textarea is focused
             const activeEl = document.activeElement;
@@ -834,66 +846,68 @@ export class Game {
                 return;
             }
 
+            const key = normalizeKey(event.key);
+
             if (this.chat && this.chat.isFocused) {
-                if (event.key === 'Escape') {
+                if (key === 'Escape') {
                     this.chat.blur();
                 }
                 return;
             }
 
             // Prevent browser shortcuts for game keys only when chat is not focused
-            const gameKeys = Object.values(this.controls);
-            if (gameKeys.includes(event.key) || event.key.match(/^[1-9]$/)) {
+            const gameKeys = Object.values(this.controls).map(normalizeKey);
+            if (gameKeys.includes(key) || /^[0-9]$/.test(key)) {
                 event.preventDefault();
             }
 
-            if (event.key === this.controls.chat) {
+            if (key === normalizeKey(this.controls.chat)) {
                 this.chat?.focus();
                 return;
             }
 
             // Zoom controls
-            if (event.key === this.controls.zoom_out) {
+            if (key === normalizeKey(this.controls.zoom_out)) {
                 this.zoomOut();
                 return;
             }
 
-            if (event.key === this.controls.zoom_in) {
+            if (key === normalizeKey(this.controls.zoom_in)) {
                 this.zoomIn();
                 return;
             }
 
-            if (event.key === this.controls.inventory) {
+            if (key === normalizeKey(this.controls.inventory)) {
                 this.closeAllMenusExcept('inventory');
                 this.inventoryManager.toggleInventory();
                 return;
             }
 
-            if (event.key === this.controls.crafting) {
+            if (key === normalizeKey(this.controls.crafting)) {
                 this.closeAllMenusExcept('crafting');
                 this.inventoryManager.toggleCrafting();
                 return;
             }
 
-            if (event.key === this.controls.skills) {
+            if (key === normalizeKey(this.controls.skills)) {
                 this.closeAllMenusExcept('skills');
                 this.skillsManager.toggle();
                 return;
             }
 
-            if (event.key === 'g' || event.key === 'G') {
+            if (key === 'g') {
                 this.closeAllMenusExcept('mobGallery');
                 this.inventoryManager.toggleMobGallery();
                 return;
             }
 
-            if (event.key === 'b' || event.key === 'B') {
+            if (key === 'b') {
                 this.closeAllMenusExcept('shop');
                 this.shopManager.toggleShop();
                 return;
             }
 
-            if (event.key === this.controls.toggle_mouse_controls) {
+            if (key === normalizeKey(this.controls.toggle_mouse_controls)) {
                 this.useMouseControls = !this.useMouseControls;
                 this.showFloatingText(
                     this.canvas.width / 2,
@@ -905,7 +919,7 @@ export class Game {
                 return;
             }
 
-            if (event.key === this.controls.toggle_hitboxes) {
+            if (key === normalizeKey(this.controls.toggle_hitboxes)) {
                 this.showHitboxes = !this.showHitboxes;
                 this.graphics.showHitboxes = this.showHitboxes;
                 this.showFloatingText(
@@ -919,30 +933,30 @@ export class Game {
             }
 
             // Minimap scroll controls
-            if (event.key === this.controls.minimap_scroll_up) {
+            if (key === normalizeKey(this.controls.minimap_scroll_up)) {
                 this.graphics.scrollMinimap(0, -1000);
                 return;
             }
-            if (event.key === this.controls.minimap_scroll_down) {
+            if (key === normalizeKey(this.controls.minimap_scroll_down)) {
                 this.graphics.scrollMinimap(0, 1000);
                 return;
             }
-            if (event.key === this.controls.minimap_scroll_left) {
+            if (key === normalizeKey(this.controls.minimap_scroll_left)) {
                 this.graphics.scrollMinimap(-1000, 0);
                 return;
             }
-            if (event.key === this.controls.minimap_scroll_right) {
+            if (key === normalizeKey(this.controls.minimap_scroll_right)) {
                 this.graphics.scrollMinimap(1000, 0);
                 return;
             }
-            if (event.key === this.controls.minimap_center_player) {
+            if (key === normalizeKey(this.controls.minimap_center_player)) {
                 const currentPlayer = this.getLocalPlayer();
                 if (currentPlayer) {
                     this.graphics.centerMinimapOnPlayer(currentPlayer.x, currentPlayer.y);
                 }
                 return;
             }
-            if (event.key === this.controls.minimap_zoom_in) {
+            if (key === normalizeKey(this.controls.minimap_zoom_in)) {
                 this.graphics.zoomInMinimap();
                 this.showFloatingText(
                     this.canvas.width / 2,
@@ -953,7 +967,7 @@ export class Game {
                 );
                 return;
             }
-            if (event.key === this.controls.minimap_zoom_out) {
+            if (key === normalizeKey(this.controls.minimap_zoom_out)) {
                 this.graphics.zoomOutMinimap();
                 this.showFloatingText(
                     this.canvas.width / 2,
@@ -966,28 +980,26 @@ export class Game {
             }
 
             // Handle exit when dead - Enter returns to title screen
-            if (event.key === 'Enter' && this.isPlayerDead) {
+            if (key === 'Enter' && this.isPlayerDead) {
                 this.hideDeathScreen();
                 const exitButton = document.getElementById('exitButton');
                 exitButton?.click();
                 return;
             }
 
-            const key = event.key;
-
             // Gardn-style Q/E secondary-row selection cycling
-            if (key === 'q' || key === 'Q') {
+            if (key === 'q') {
                 this.loadoutBar?.cycleSecondaryBackward();
                 return;
             }
-            if (key === 'e' || key === 'E') {
+            if (key === 'e') {
                 this.loadoutBar?.cycleSecondaryForward();
                 return;
             }
 
             const slotIndex = this.inventoryManager.getLoadoutKeyBindings().indexOf(key);
             if (slotIndex !== -1) {
-                const uHeld = this.keysPressed.has('u') || this.keysPressed.has('U');
+                const uHeld = this.keysPressed.has('u');
                 const selectedSecondary = this.loadoutBar?.selectedSecondary ?? -1;
                 if (uHeld) {
                     // U + slot number uses the petal in that slot
@@ -1006,7 +1018,7 @@ export class Game {
             }
 
             // T deletes the selected secondary petal (gardn)
-            if (key === 't' || key === 'T') {
+            if (key === 't') {
                 const selectedSecondary = this.loadoutBar?.selectedSecondary ?? -1;
                 if (selectedSecondary >= 0) {
                     const secondaryIdx = 10 + selectedSecondary;
@@ -1022,7 +1034,7 @@ export class Game {
                 return;
             }
 
-            this.keysPressed.add(event.key);
+            this.keysPressed.add(key);
 
             // ALT key toggles rarity glow on petals
             if (event.key === 'Alt') {
@@ -1033,7 +1045,7 @@ export class Game {
         }, { signal });
 
         document.addEventListener('keyup', (event) => {
-            this.keysPressed.delete(event.key);
+            this.keysPressed.delete(normalizeKey(event.key));
 
             // ALT key toggles rarity glow on petals
             if (event.key === 'Alt') {
