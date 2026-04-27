@@ -533,7 +533,8 @@ export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers 
         rotationSpeed: 1.0,
         playerRadius: 1.0,
         magnetism: 0,
-        luck: 1.0
+        luck: 1.0,
+        petalAttractionRadius: 30
     };
     
     if (!player.loadout) return modifiers;
@@ -571,6 +572,9 @@ export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers 
         }
         if (petalModifiers.luck !== undefined && modifiers.luck !== undefined) {
             modifiers.luck += petalModifiers.luck;
+        }
+        if (petalModifiers.petalAttractionRadius !== undefined && modifiers.petalAttractionRadius !== undefined) {
+            modifiers.petalAttractionRadius += petalModifiers.petalAttractionRadius;
         }
     }
 

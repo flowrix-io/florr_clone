@@ -11,6 +11,7 @@ export interface PlayerModifiers {
     playerRadius?: number; // Multiplier for the flower's radius/size (e.g., 1.25 = +25% radius, affecting visuals and hitbox)
     magnetism?: number; // Additive pixels added to the item pickup radius (e.g., 50 = +50px pickup range)
     luck?: number; // Additive luck points (e.g., 0.08 = +0.08 luck). Each luck point grants +1% mob drop upgrade chance. Players have 1 luck by default.
+    petalAttractionRadius?: number; // Additive pixels — petals attract toward their closest mob within this radius of the player (0 = no attraction)
 }
 
 export interface PetalStats {
@@ -2119,7 +2120,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         // For modifiers, we can either:
         // 1. Use override if provided (for rarity-specific scaling) - overrides are NOT scaled
         // 2. Scale base modifiers by rarity multiplier
-        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined || overrideModifiers.magnetism !== undefined || overrideModifiers.luck !== undefined) {
+        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined || overrideModifiers.magnetism !== undefined || overrideModifiers.luck !== undefined || overrideModifiers.petalAttractionRadius !== undefined) {
             // Use override modifiers directly (not scaled, as they're already rarity-specific)
             playerModifiers = {
                 damage: overrideModifiers.damage ?? baseModifiers.damage,
@@ -2129,9 +2130,10 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
                 rotationSpeed: overrideModifiers.rotationSpeed ?? baseModifiers.rotationSpeed,
                 playerRadius: overrideModifiers.playerRadius ?? baseModifiers.playerRadius,
                 magnetism: overrideModifiers.magnetism ?? baseModifiers.magnetism,
-                luck: overrideModifiers.luck ?? baseModifiers.luck
+                luck: overrideModifiers.luck ?? baseModifiers.luck,
+                petalAttractionRadius: overrideModifiers.petalAttractionRadius ?? baseModifiers.petalAttractionRadius
             };
-        } else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined || baseModifiers.magnetism !== undefined || baseModifiers.luck !== undefined) {
+        } else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined || baseModifiers.magnetism !== undefined || baseModifiers.luck !== undefined || baseModifiers.petalAttractionRadius !== undefined) {
             // Scale base modifiers by rarity multiplier
             // Formula: baseValue * (1 + (rarityIndex / 8) * 3)
             // This scales from 1x at common to 4x at unique
@@ -2159,6 +2161,9 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
                     : undefined,
                 luck: baseModifiers.luck !== undefined
                     ? baseModifiers.luck * modifierRarityMultiplier
+                    : undefined,
+                petalAttractionRadius: baseModifiers.petalAttractionRadius !== undefined
+                    ? baseModifiers.petalAttractionRadius * modifierRarityMultiplier
                     : undefined
             };
         }

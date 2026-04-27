@@ -218,8 +218,6 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
             petalY = Math.sin(totalAngle) * petalRadius + clumpOffsetY;
         }
         else {
-            // Linear scan for the matching server position. petalPositions is
-            // typically short (<= total instance count), so this stays cheap.
             let foundX = null;
             let foundY = null;
             if (serverPositions) {
