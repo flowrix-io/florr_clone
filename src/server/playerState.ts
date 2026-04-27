@@ -124,11 +124,8 @@ function isInstanceOnCooldown(petal: any, instanceIndex: number, petalStats: any
 }
 
 // Physics constants
-const ATTRACTION_FORCE = 120000; // Constant attraction acceleration toward the closest in-range mob (px/s^2). Sized so equilibrium displacement vs SPRING_FORCE (= ATTRACTION_FORCE / SPRING_FORCE) gives a visible lean toward the target.
-const SPRING_FORCE = 400; // Spring force back to orbit position (pixels per second^2) - reduced from 300
-const DAMPING = 0.52; // Velocity damping per frame (0-1, lower = more damping)
-const MAX_ATTRACTION_DISTANCE = 2000; // Maximum distance to attract to mobs (pixels) - increased significantly to match combat ranges
-const MIN_ATTRACTION_DISTANCE = 1; // Minimum distance to avoid division by zero (pixels) - reduced from 30
+const SPRING_FORCE = 600; // Spring force back to orbit position (pixels per second^2) - reduced from 300
+const DAMPING = 0.72; // Velocity damping per frame (0-1, lower = more damping)
 const SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after spawn - reduced from 500
 
 /**
@@ -1063,10 +1060,8 @@ export function updatePlayerState(
                 petalY = targetY;
             } else {
                 // Get per-petal physics values (use defaults if not specified)
-                const petalAttractionForce = petalStats.attractionForce ?? ATTRACTION_FORCE;
                 const petalSpringForce = petalStats.springForce ?? SPRING_FORCE;
                 const petalDamping = petalStats.damping ?? DAMPING;
-                const petalMinAttractionDistance = petalStats.minAttractionDistance ?? MIN_ATTRACTION_DISTANCE;
                 const petalSpawnSmoothTime = petalStats.spawnSmoothTime ?? SPAWN_SMOOTH_TIME;
                 
                 // Get or initialize petal physics state
@@ -1087,17 +1082,6 @@ export function updatePlayerState(
                 const timeSinceSpawn = physicsState.spawnTime ? currentTime - physicsState.spawnTime : petalSpawnSmoothTime;
                 const smoothFactor = Math.min(1.0, timeSinceSpawn / petalSpawnSmoothTime);
                 
-                // Calculate attraction force towards this petal's single closest mob.
-                // Pulling each petal toward only its nearest target (instead of summing pulls
-                // from every mob in range) keeps the orbit shape intact when multiple mobs
-                // are nearby — only individual petals lean toward their chosen target.
-                let attractionFx = 0;
-                let attractionFy = 0;
-
-                // physicsState.x and physicsState.y are already in world coordinates (since targetX/Y are in world coords)
-                const worldPetalX = physicsState.x;
-                const worldPetalY = physicsState.y;
-
                 // Pick the closest mob within playerPetalAttractionRadius of this petal's
                 // orbit position (targetX/Y). Measuring eligibility from the orbit point
                 // — not the petal's current physics-displaced position or the player —
@@ -1118,39 +1102,36 @@ export function updatePlayerState(
                     }
                 }
 
+                // The spring target is normally the petal's player-orbit position. When
+                // attracted, it gets redirected to the closest point on the mob's hitbox edge
+                // (slightly inside, so contact is continuous) along the direction of the
+                // natural orbit position from the mob. As the player's orbit rotates around
+                // the player, that projection rotates around the mob — so the petal spinning
+                // around the mob falls out as a side-effect of the existing rotation, no
+                // dedicated angular-motion code needed.
+                let effectiveTargetX = targetX;
+                let effectiveTargetY = targetY;
+
                 if (closestEnemy) {
-                    if (petalId.slice(0, petalId.indexOf('_')) !== 'bot') {
-                        console.log(`Petal ${petalId} closest enemy:`);
-                    }
                     const closestMobStats = getMobStats(closestEnemy.type, closestEnemy.tier);
                     const closestEnemyRadius = closestMobStats ? (closestMobStats.size * 40) / 2 : ENEMY_SIZE / 2;
-                    // Force direction and the hitbox cutoff use the petal's *current* position,
-                    // not the orbit reference we used for eligibility — once the petal is
-                    // already inside the mob hitbox, the constant force would otherwise keep
-                    // shoving it forward and slingshot it through the orbit on contact.
-                    const dx = closestEnemy.x - worldPetalX;
-                    const dy = closestEnemy.y - worldPetalY;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    if (distance > closestEnemyRadius && distance > petalMinAttractionDistance) {
-                        // Constant-magnitude force toward the target. Inverse-square produces
-                        // negligible accelerations at typical petal-to-mob distances given how
-                        // strong SPRING_FORCE is, so the petal would never visibly lean.
-                        const normalizedDx = dx / distance;
-                        const normalizedDy = dy / distance;
-
-                        attractionFx = normalizedDx * petalAttractionForce * deltaTime * smoothFactor;
-                        attractionFy = normalizedDy * petalAttractionForce * deltaTime * smoothFactor;
-                    }
+                    const dx = targetX - closestEnemy.x;
+                    const dy = targetY - closestEnemy.y;
+                    const len = Math.sqrt(dx * dx + dy * dy);
+                    const mobOrbitRadius = closestEnemyRadius * 0.85;
+                    // Most of the angular motion comes for free from the player orbit moving
+                    // the projection point around the mob's edge each frame; this small extra
+                    // boost on top makes the spin feel snappier without overriding the
+                    // side-effect rotation. Tunable: bigger multiplier = faster whip.
+                    const MOB_ORBIT_SPIN_BOOST = 2;
+                    const baseProjectionAngle = len > 0 ? Math.atan2(dy, dx) : totalAngle;
+                    const projectionAngle = baseProjectionAngle + rotationSpeed * MOB_ORBIT_SPIN_BOOST * (deltaTime * 1000);
+                    effectiveTargetX = closestEnemy.x + Math.cos(projectionAngle) * mobOrbitRadius;
+                    effectiveTargetY = closestEnemy.y + Math.sin(projectionAngle) * mobOrbitRadius;
                 }
-                
-                // Calculate spring force back to orbit position. While locked onto a mob the
-                // spring is greatly reduced so attraction can pull the petal off orbit and
-                // home in on the target; without this, equilibrium displacement caps at
-                // ATTRACTION_FORCE / SPRING_FORCE (a few pixels) and attraction is invisible.
-                // Once the target releases, full spring resumes and the petal settles back.
-                const springAttractionScale = closestEnemy ? 0.1 : 1.0;
-                const springDx = targetX - physicsState.x;
-                const springDy = targetY - physicsState.y;
+
+                const springDx = effectiveTargetX - physicsState.x;
+                const springDy = effectiveTargetY - physicsState.y;
                 const springDistance = Math.sqrt(springDx * springDx + springDy * springDy);
 
                 let springFx = 0;
@@ -1162,19 +1143,16 @@ export function updatePlayerState(
 
                     // Spring force is proportional to distance from target
                     // Apply smooth factor to spring force (gradually increase after spawn)
-                    springFx = normalizedSpringDx * petalSpringForce * springDistance * deltaTime * smoothFactor * springAttractionScale;
-                    springFy = normalizedSpringDy * petalSpringForce * springDistance * deltaTime * smoothFactor * springAttractionScale;
+                    springFx = normalizedSpringDx * petalSpringForce * springDistance * deltaTime * smoothFactor;
+                    springFy = normalizedSpringDy * petalSpringForce * springDistance * deltaTime * smoothFactor;
                 }
-                
-                // Apply forces to velocity
-                physicsState.vx += attractionFx + springFx;
-                physicsState.vy += attractionFy + springFy;
-                
-                // Apply damping to velocity
+
+                physicsState.vx += springFx;
+                physicsState.vy += springFy;
+
                 physicsState.vx *= petalDamping;
                 physicsState.vy *= petalDamping;
-                
-                // Update position based on velocity
+
                 physicsState.x += physicsState.vx * deltaTime;
                 physicsState.y += physicsState.vy * deltaTime;
                 
