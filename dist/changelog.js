@@ -305,6 +305,18 @@ exports.CHANGELOG = [
             'Roach now looks better',
             'Added ultra zones',
         ]
+    },
+    {
+        date: 'April 26, 2026',
+        changes: [
+            'Changed keybinds for using items from 1-10 to U+1-10',
+            'New petal: Yin Yang',
+            'New petal: Lentil',
+            'New petal: Bubble',
+            'Clover now gives luck, and increases the rarity of mobs around you',
+            'Changed petal attraction system',
+            'Special petals no longer work in inactive loadout slots',
+        ]
     }
 ];
 class ChangelogManager {
