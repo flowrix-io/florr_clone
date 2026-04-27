@@ -172,4 +172,8 @@ export interface ServerPlayer {
   lastDamagedByPlayerId?: string; // ID of the most recent player to damage this player (for PVP kill credit)
   sizeMultiplier?: number; // Multiplier applied to the flower's radius/hitbox (from equipped petal playerRadius modifiers)
   magnetism?: number;      // Additive pixels added to item pickup radius (sum of equipped petal magnetism modifiers)
+  // Continuous integral of playerRotationSpeedModifier * deltaTime. Used so that
+  // changing rotation-speed modifiers mid-flight (e.g. swapping Faster or Yin Yang)
+  // bends the orbit's rate instead of snapping its angle to a new one.
+  petalOrbitPhase?: number;
 }

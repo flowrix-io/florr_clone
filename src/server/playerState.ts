@@ -891,6 +891,12 @@ export function updatePlayerState(
         const playerModifiers = calculatePlayerModifiers(player);
         const playerRangeModifier = playerModifiers.range ?? 1.0;
         const playerRotationSpeedModifier = playerModifiers.rotationSpeed ?? 1.0;
+        // Integrate the rotation-speed modifier over time so swapping a petal that
+        // changes the modifier (Faster, Yin Yang) only bends the rate from this point
+        // forward, rather than remapping `currentTime * newSpeed` and yanking every
+        // petal to a different angle.
+        player.petalOrbitPhase = (player.petalOrbitPhase ?? 0) + playerRotationSpeedModifier * deltaTime;
+        const playerOrbitPhase = player.petalOrbitPhase;
         const playerPetalAttractionRadius = playerModifiers.petalAttractionRadius ?? 0;
 
         // Filter out pets up-front; per-petal eligibility (mob within
@@ -931,9 +937,8 @@ export function updatePlayerState(
                     if (petalStats.actions) {
                         const baseRadius = 60 + (player.level * 2);
                         const breakAngleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
-                        const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002;
                         const baseAngle = slotIndex * breakAngleStep;
-                        const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
+                        const rotationAngle = ((petalStats.speed ?? 1.0) * playerOrbitPhase * 2) % (Math.PI * 2);
                         const totalAngle = baseAngle + rotationAngle;
                         const petalRange = (petalStats.range ?? 1.0) * playerRangeModifier;
                         const petalRadius = baseRadius * petalRange;
@@ -1034,9 +1039,13 @@ export function updatePlayerState(
             // Get effective size (custom size if set, otherwise base stats)
             const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
             
-            const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002; // Convert to radians per ms
+            // Per-frame angular velocity (rad/ms) — used by the mob-orbit projection
+            // boost below, which is integrated against this frame's deltaTime.
+            const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002;
             const baseAngle = slotIndex * angleStep;
-            const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
+            // Angle is the per-petal speed times the integrated phase, *2 to preserve
+            // the original 0.002 rad/ms × 1000 ms/s rate.
+            const rotationAngle = ((petalStats.speed ?? 1.0) * playerOrbitPhase * 2) % (Math.PI * 2);
             // Fixed-direction petals don't orbit - they stay at a fixed relative position
             const totalAngle = petalStats.fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
 
