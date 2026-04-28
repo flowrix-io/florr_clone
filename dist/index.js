@@ -9,9 +9,9 @@ const petals_1 = require("./petals");
 const shaderManager_1 = require("./shader/shaderManager");
 const ws_client_1 = require("./ws_client");
 const inventoryCodec_1 = require("./inventoryCodec");
+const map_data_1 = require("./map_data");
 let currentGame = null;
 let preconnectedSocket = null; // Store preconnected socket
-let preconnectedMapData = null; // Store map data received during preconnect
 let isConnecting = false; // Flag to prevent multiple connection attempts
 window.currentGame = currentGame;
 let titleScreen = null;
@@ -113,6 +113,9 @@ const bootstrap = async () => {
         titleScreen = new title_screen_1.TitleScreen();
         window.titleScreen = titleScreen;
         await titleScreen.appendToBody();
+        // Seed biome list from the bundled map so the selector is populated
+        // before any server connection.
+        titleScreen.updateBiomesFromMapData(map_data_1.WORLD_MAP);
         // Initialize auth UI after title screen is created
         authUI = new auth_ui_1.AuthUI();
         // Preconnect if user is already logged in (showing "logging in")
@@ -184,18 +187,10 @@ function preconnectToServer() {
     preconnectedSocket.on('connect_error', (error) => {
         console.error('[Index] Preconnect connection error:', error);
     });
-    // Store map data if received during preconnect
-    preconnectedSocket.on('mapData', (mapData) => {
-        console.log('[Index] Received map data during preconnect');
-        preconnectedMapData = mapData;
-        window.preconnectedMapData = mapData;
-        // Update title screen biomes if available
-        if (titleScreen) {
-            // Handle MapData format (with elements property) or legacy array format
-            const elements = mapData.elements || mapData;
-            titleScreen.updateBiomesFromMapData(elements);
-        }
-    });
+    // Map is bundled with the client via src/map_data.ts — no longer received
+    // from the server. Seed the title screen biome list from the bundled map.
+    if (titleScreen)
+        titleScreen.updateBiomesFromMapData(map_data_1.WORLD_MAP);
     // Listen for authenticated event to update title screen inventory and skills
     preconnectedSocket.on('authenticated', (response) => {
         if (response.success && response.player && titleScreen) {
@@ -244,7 +239,6 @@ function preconnectToServer() {
     preconnectedSocket.on('disconnect', (reason) => {
         console.log(`[Index] Preconnected socket disconnected: ${reason}`);
         preconnectedSocket = null;
-        preconnectedMapData = null;
         window.preconnectedSocket = null;
         window.preconnectedMapData = null;
     });

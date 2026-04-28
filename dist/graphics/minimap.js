@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+const constants_1 = require("../constants");
 const MINIMAP_SPAWN_COLORS = {
     common: 'rgba(126, 239, 109, 0.4)',
     uncommon: 'rgba(255, 230, 93, 0.4)',
@@ -121,11 +122,13 @@ core_1.Graphics.prototype.drawMinimap = function (players, socket) {
             const scaledX = minimapX + ((worldX - this.minimapScrollX) * minimapScale.x);
             const scaledY = minimapY + ((worldY - this.minimapScrollY) * minimapScale.y);
             const tileSize = core_1.WALL_TILE_SIZE * minimapScale.x;
-            if (state === 1) {
-                this.ctx.fillStyle = '#000000'; // Black for walls
+            // Walls render as solid black for high-contrast minimap silhouettes;
+            // anything else (water, custom tile types) uses its configured color.
+            if ((0, constants_1.isTileIdSolid)(state)) {
+                this.ctx.fillStyle = '#000000';
             }
-            else if (state === 2) {
-                this.ctx.fillStyle = '#4169E1'; // Blue for water
+            else {
+                this.ctx.fillStyle = (0, constants_1.getTileTypeConfig)(state).color;
             }
             this.ctx.fillRect(scaledX, scaledY, tileSize, tileSize);
         }

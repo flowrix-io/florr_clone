@@ -3,7 +3,8 @@ import { Player, PlayerProgress, ServerPlayer, PlayerInventory } from './player'
 import { Dot, Enemy, Obstacle } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { SVGLoader } from './SVGLoader';
-import { MapElement, MapData, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, WALL_GRID } from './constants';
+import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT } from './constants';
+import { WORLD_MAP } from './map_data';
 import { ITEM_RARITY_COLORS } from './petals';
 import { Graphics } from './graphics';
 import { Chat } from './chat';
@@ -618,62 +619,17 @@ export class Game {
         this.svgLoader = new SVGLoader();
         this.assetLoader.loadAssets();
 
-        // Check if we have preconnected map data
-        if (window.preconnectedMapData) {
-            console.log('[Game] Using preconnected map data');
-            const mapData = window.preconnectedMapData;
-            // Handle MapData format (with elements property) or legacy array format
-            const elements = mapData.elements || mapData;
-            this.world_map_data = elements;
-            this.graphics.setMap(elements);
-            this.renderMap(elements);
-            // Load biome textures
-            this.assetLoader.loadBiomeTextures(elements, this.graphics);
-            // Load section textures
-            this.assetLoader.loadSectionTextures(this.graphics);
-
-            // Update title screen with available biomes
-            this.updateTitleScreenBiomes(elements);
-
-            // Update wall grid if provided
-            if (mapData.wallGrid) {
-                for (let y = 0; y < mapData.wallGrid.length && y < WALL_GRID.length; y++) {
-                    for (let x = 0; x < mapData.wallGrid[y].length && x < WALL_GRID[y].length; x++) {
-                        WALL_GRID[y][x] = mapData.wallGrid[y][x];
-                    }
-                }
-                console.log('[Game] Applied wall grid from preconnected data');
-            }
-            // Clear preconnected map data
-            window.preconnectedMapData = null;
-        }
-
-        // Listen for map data from the server (includes elements and wallGrid)
-        this.socket.on('mapData', (mapData: MapData) => {
-            //console.log('Received map data:', mapData);
-            const elements = mapData.elements;
-            this.world_map_data = elements;
-            this.graphics.setMap(elements);
-            this.renderMap(elements);
-            // Load biome textures
-            this.assetLoader.loadBiomeTextures(elements, this.graphics);
-            // Load section textures
-            this.assetLoader.loadSectionTextures(this.graphics);
-
-            // Update title screen with available biomes
-            this.updateTitleScreenBiomes(elements);
-
-            // Update wall grid if provided
-            if (mapData.wallGrid) {
-                // Copy wall grid data to the shared WALL_GRID constant
-                for (let y = 0; y < mapData.wallGrid.length && y < WALL_GRID.length; y++) {
-                    for (let x = 0; x < mapData.wallGrid[y].length && x < WALL_GRID[y].length; x++) {
-                        WALL_GRID[y][x] = mapData.wallGrid[y][x];
-                    }
-                }
-                console.log('[Game] Received wall grid data');
-            }
-        });
+        // Map is bundled with the client via src/map_data.ts (no longer streamed
+        // from the server). The wall grid is populated as a side-effect of that
+        // import, so we just need to wire the elements into the renderer.
+        this.world_map_data = WORLD_MAP;
+        this.graphics.setMap(WORLD_MAP);
+        this.renderMap(WORLD_MAP);
+        this.assetLoader.loadBiomeTextures(WORLD_MAP, this.graphics);
+        this.assetLoader.loadSectionTextures(this.graphics);
+        this.updateTitleScreenBiomes(WORLD_MAP);
+        // preconnectedMapData is legacy — clear it if the title screen ever set it.
+        if (window.preconnectedMapData) window.preconnectedMapData = null;
 
         this.socket.on('zoneUpdate', (zones: any) => {
             // ... existing code ...

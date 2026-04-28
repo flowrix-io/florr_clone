@@ -1,4 +1,5 @@
 import { Graphics, Player, MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, SECTION_CONFIGS, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState } from './core';
+import { getTileTypeConfig, isTileIdSolid } from '../constants';
 
 const MINIMAP_SPAWN_COLORS: Record<string, string> = {
     common: 'rgba(126, 239, 109, 0.4)',
@@ -156,10 +157,12 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
             const scaledY = minimapY + ((worldY - this.minimapScrollY) * minimapScale.y);
             const tileSize = WALL_TILE_SIZE * minimapScale.x;
 
-            if (state === 1) {
-                this.ctx.fillStyle = '#000000'; // Black for walls
-            } else if (state === 2) {
-                this.ctx.fillStyle = '#4169E1'; // Blue for water
+            // Walls render as solid black for high-contrast minimap silhouettes;
+            // anything else (water, custom tile types) uses its configured color.
+            if (isTileIdSolid(state)) {
+                this.ctx.fillStyle = '#000000';
+            } else {
+                this.ctx.fillStyle = getTileTypeConfig(state).color;
             }
             this.ctx.fillRect(scaledX, scaledY, tileSize, tileSize);
         }

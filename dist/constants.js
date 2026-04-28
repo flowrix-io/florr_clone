@@ -1,11 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BASE_XP_REQUIREMENT = exports.KNOCKBACK_RECOVERY_SPEED = exports.KNOCKBACK_FORCE = exports.MOUSE_NONLINEAR_EXPONENT = exports.MOUSE_NONLINEAR_SCALE = exports.MAX_SPEED = exports.RESPAWN_INVULNERABILITY_TIME = exports.MAX_INVENTORY_SIZE = exports.ENEMY_TIERS = exports.MAX_SAND_RADIUS = exports.MIN_SAND_RADIUS = exports.SAND_COUNT = exports.DECORATION_COUNT = exports.ENEMY_DAMAGE = exports.PLAYER_DAMAGE = exports.ENEMY_MAX_HEALTH = exports.PLAYER_MAX_HEALTH = exports.ENEMY_CORAL_DAMAGE = exports.ENEMY_CORAL_HEALTH = exports.ENEMY_CORAL_PROBABILITY = exports.OBSTACLE_COUNT = exports.SCALE_FACTOR = exports.PVP_WORLD_HEIGHT = exports.PVP_WORLD_WIDTH = exports.OLD_WORLD_HEIGHT = exports.OLD_WORLD_WIDTH = exports.ENEMIES_PER_VIEWPORT = exports.VIEWPORT_WITH_BUFFER_AREA = exports.ORIGINAL_ENEMY_DENSITY = exports.ORIGINAL_ENEMY_COUNT = exports.TOTAL_WORLD_AREA = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.enemies = exports.dots = exports.players = exports.VIEWPORT_AREA = exports.VIEWPORT_HEIGHT = exports.VIEWPORT_WIDTH = exports.ENEMY_DESPAWN_TIME = exports.VIEWPORT_BUFFER = exports.SERVER_PROTOCOL = exports.USE_HTTPS = void 0;
-exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.DEFAULT_SERVER_CONFIGS = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.PVP_MAX_HEALTH = exports.PVP_INVENTORY_KEEP_RATIO = exports.PVP_EXIT_RETURN_Y = exports.PVP_EXIT_RETURN_X = exports.PVP_ARENA_SPAWN_Y = exports.PVP_ARENA_SPAWN_X = exports.PVP_ARENA_RADIUS = exports.PVP_ARENA_CENTER_Y = exports.PVP_ARENA_CENTER_X = exports.TELEPORTER_COOLDOWN = exports.TELEPORTER_SUCTION_FORCE = exports.TELEPORTER_SUCTION_RADIUS = exports.TELEPORTER_RADIUS = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = void 0;
+exports.KNOCKBACK_RECOVERY_SPEED = exports.KNOCKBACK_FORCE = exports.MOUSE_NONLINEAR_EXPONENT = exports.MOUSE_NONLINEAR_SCALE = exports.MAX_SPEED = exports.RESPAWN_INVULNERABILITY_TIME = exports.MAX_INVENTORY_SIZE = exports.ENEMY_TIERS = exports.MAX_SAND_RADIUS = exports.MIN_SAND_RADIUS = exports.SAND_COUNT = exports.DECORATION_COUNT = exports.ENEMY_DAMAGE = exports.PLAYER_DAMAGE = exports.ENEMY_MAX_HEALTH = exports.PLAYER_MAX_HEALTH = exports.ENEMY_CORAL_DAMAGE = exports.ENEMY_CORAL_HEALTH = exports.ENEMY_CORAL_PROBABILITY = exports.OBSTACLE_COUNT = exports.SCALE_FACTOR = exports.PVP_WORLD_HEIGHT = exports.PVP_WORLD_WIDTH = exports.OLD_WORLD_HEIGHT = exports.OLD_WORLD_WIDTH = exports.ENEMIES_PER_VIEWPORT = exports.VIEWPORT_WITH_BUFFER_AREA = exports.ORIGINAL_ENEMY_DENSITY = exports.ORIGINAL_ENEMY_COUNT = exports.TOTAL_WORLD_AREA = exports.BUILTIN_TILE_TYPES = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.enemies = exports.dots = exports.players = exports.VIEWPORT_AREA = exports.VIEWPORT_HEIGHT = exports.VIEWPORT_WIDTH = exports.ENEMY_DESPAWN_TIME = exports.VIEWPORT_BUFFER = exports.SERVER_PROTOCOL = exports.USE_HTTPS = void 0;
+exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.DEFAULT_SERVER_CONFIGS = exports.MAZE_WALL_THICKNESS = exports.MAZE_CELL_SIZE = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.PVP_MAX_HEALTH = exports.PVP_INVENTORY_KEEP_RATIO = exports.PVP_EXIT_RETURN_Y = exports.PVP_EXIT_RETURN_X = exports.PVP_ARENA_SPAWN_Y = exports.PVP_ARENA_SPAWN_X = exports.PVP_ARENA_RADIUS = exports.PVP_ARENA_CENTER_Y = exports.PVP_ARENA_CENTER_X = exports.TELEPORTER_COOLDOWN = exports.TELEPORTER_SUCTION_FORCE = exports.TELEPORTER_SUCTION_RADIUS = exports.TELEPORTER_RADIUS = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = void 0;
 exports.getMobAnimationFramerate = getMobAnimationFramerate;
 exports.getMobAnimationFrameTime = getMobAnimationFrameTime;
 exports.getHighQualityMobs = getHighQualityMobs;
 exports.invalidateSettingsCache = invalidateSettingsCache;
+exports.registerTileType = registerTileType;
+exports.setCustomTileTypes = setCustomTileTypes;
+exports.getTileTypeConfig = getTileTypeConfig;
+exports.getAllTileTypes = getAllTileTypes;
+exports.isTileIdSolid = isTileIdSolid;
+exports.isTileIdWater = isTileIdWater;
 exports.isInPvpArena = isInPvpArena;
 exports.isWall = isWall;
 exports.isSpawn = isSpawn;
@@ -26,6 +32,10 @@ exports.seededRandom = seededRandom;
 exports.isTileEdgeExposed = isTileEdgeExposed;
 exports.generateJaggedEdgePoints = generateJaggedEdgePoints;
 exports.getTileJaggedEdges = getTileJaggedEdges;
+exports.encodeTileGridRLE = encodeTileGridRLE;
+exports.decodeTileGridRLE = decodeTileGridRLE;
+exports.tilesToWallGrid = tilesToWallGrid;
+exports.wallGridToFlat = wallGridToFlat;
 exports.getMaxJaggedOffset = getMaxJaggedOffset;
 // Mob animation framerate utility - cached to avoid localStorage reads per frame
 let _cachedMobAnimFPS = null;
@@ -81,6 +91,61 @@ exports.ACTUAL_WORLD_HEIGHT = 60000;
 exports.WALL_TILE_SIZE = 300; // Size of each wall tile in pixels (3x larger for better performance)
 exports.WALL_GRID_WIDTH = Math.ceil(exports.ACTUAL_WORLD_WIDTH / exports.WALL_TILE_SIZE);
 exports.WALL_GRID_HEIGHT = Math.ceil(exports.ACTUAL_WORLD_HEIGHT / exports.WALL_TILE_SIZE);
+/** Built-in tile types — IDs 0-2 are reserved and always present. */
+exports.BUILTIN_TILE_TYPES = [
+    { id: 0, name: 'air', solid: false, water: false, color: '#00000000', style: 'flat' },
+    { id: 1, name: 'wall', solid: true, water: false, color: '#666666', style: 'wall' },
+    { id: 2, name: 'water', solid: false, water: true, color: '#4169E1', borderColor: '#2a4fa0', style: 'water' },
+];
+/** Mutable registry: built-ins + custom types loaded from the map bundle. */
+const TILE_TYPE_REGISTRY = (() => {
+    const m = new Map();
+    for (const t of exports.BUILTIN_TILE_TYPES)
+        m.set(t.id, t);
+    return m;
+})();
+/** Register or override a tile type (typically called once at startup with custom map types). */
+function registerTileType(config) {
+    if (config.id < 0 || config.id > 255 || !Number.isInteger(config.id)) {
+        throw new Error(`TileTypeConfig.id must be an integer in [0, 255], got ${config.id}`);
+    }
+    if (config.id < exports.BUILTIN_TILE_TYPES.length) {
+        // Allow overriding built-in colors/styles but keep semantic flags (solid/water) sane.
+        const builtin = exports.BUILTIN_TILE_TYPES[config.id];
+        if (config.solid !== builtin.solid || config.water !== builtin.water) {
+            console.warn(`[TileRegistry] Refusing to change solid/water flags of built-in tile ${builtin.name} (id=${builtin.id})`);
+            config = { ...config, solid: builtin.solid, water: builtin.water };
+        }
+    }
+    TILE_TYPE_REGISTRY.set(config.id, config);
+}
+/** Replace the entire custom-tile portion of the registry. Built-ins are restored first. */
+function setCustomTileTypes(configs) {
+    TILE_TYPE_REGISTRY.clear();
+    for (const t of exports.BUILTIN_TILE_TYPES)
+        TILE_TYPE_REGISTRY.set(t.id, t);
+    for (const c of configs) {
+        if (c.id < exports.BUILTIN_TILE_TYPES.length)
+            continue; // skip attempts to redefine built-ins via this path
+        registerTileType(c);
+    }
+}
+/** Look up a tile type by ID. Falls back to air for unknown IDs (so forward-compat reads don't crash). */
+function getTileTypeConfig(id) {
+    return TILE_TYPE_REGISTRY.get(id) || exports.BUILTIN_TILE_TYPES[0];
+}
+/** Iterate all currently registered tile types (built-in + custom). */
+function getAllTileTypes() {
+    return Array.from(TILE_TYPE_REGISTRY.values()).sort((a, b) => a.id - b.id);
+}
+/** True if the given tile ID is solid (blocks movement). */
+function isTileIdSolid(id) {
+    return getTileTypeConfig(id).solid;
+}
+/** True if the given tile ID is water. */
+function isTileIdWater(id) {
+    return getTileTypeConfig(id).water;
+}
 // Density calculation constants (defined after world dimensions)
 exports.TOTAL_WORLD_AREA = exports.ACTUAL_WORLD_WIDTH * exports.ACTUAL_WORLD_HEIGHT; // 400,000,000 pixels²
 exports.ORIGINAL_ENEMY_COUNT = 9000;
@@ -291,13 +356,13 @@ function setTileState(grid, worldX, worldY, state) {
         grid[tileY][tileX] = state;
     }
 }
-// Check if a point collides with a wall tile
+// Check if a point collides with a wall tile (any solid tile type)
 function collidesWithWallTile(grid, worldX, worldY) {
-    return getTileState(grid, worldX, worldY) === 1;
+    return isTileIdSolid(getTileState(grid, worldX, worldY));
 }
-// Check if a point is in water
+// Check if a point is in water (any water-flagged tile type)
 function isInWater(grid, worldX, worldY) {
-    return getTileState(grid, worldX, worldY) === 2;
+    return isTileIdWater(getTileState(grid, worldX, worldY));
 }
 // --- Jagged Edge System (shared between client and server) ---
 /** Deterministic seeded random number generator */
@@ -308,7 +373,7 @@ function seededRandom(seed) {
 exports.JAGGED_MAX_OFFSET = 20;
 exports.JAGGED_NUM_SEGMENTS = 7;
 const JAGGED_EDGE_CACHE = new Map();
-/** Check if a tile edge is exposed (adjacent tile is air, or wall adjacent to water) */
+/** Check if a tile edge is exposed (adjacent tile is air, or solid adjacent to water) */
 function isTileEdgeExposed(grid, tileX, tileY, edge) {
     let adjX = tileX, adjY = tileY;
     if (edge === 'top')
@@ -325,9 +390,9 @@ function isTileEdgeExposed(grid, tileX, tileY, edge) {
     const adjState = grid[adjY][adjX];
     if (adjState === 0)
         return true; // Adjacent to air = exposed
-    // Wall tiles (dirt) show edges against water
+    // Solid (wall-style) tiles show edges against water; water doesn't draw edges against solid.
     const currentState = grid[tileY]?.[tileX] || 0;
-    if (currentState === 1 && adjState === 2)
+    if (isTileIdSolid(currentState) && isTileIdWater(adjState))
         return true;
     return false;
 }
@@ -367,6 +432,112 @@ function getTileJaggedEdges(grid, tileX, tileY) {
     };
     JAGGED_EDGE_CACHE.set(key, edges);
     return edges;
+}
+// --- Tile grid RLE codec (used to bundle the wall grid as a compact base64 blob) ---
+/**
+ * Run-length encode a flat array of 8-bit tile IDs into a base64 string.
+ *
+ * Wire format: a sequence of variable-length records.
+ *   byte 0: high 7 bits = run length (1-127), low 1 bit = continuation flag
+ *   if continuation: next 2 bytes are an extra big-endian count to add
+ *   final byte: tile id (0-255)
+ *
+ * For typical tile grids (large air/water runs), this hits ~1% of the raw size.
+ */
+function encodeTileGridRLE(flat) {
+    const out = [];
+    let i = 0;
+    const len = flat.length;
+    while (i < len) {
+        const v = flat[i] & 0xff;
+        let run = 1;
+        while (i + run < len && (flat[i + run] & 0xff) === v && run < 0x7fffff)
+            run++;
+        i += run;
+        if (run <= 127) {
+            out.push((run << 1) & 0xff, v);
+        }
+        else {
+            // 7-bit base length + 16-bit extension; total max = 127 + 65535 = 65662 (we cap at 0x7fffff above just in case)
+            while (run > 0) {
+                const base = Math.min(127, run);
+                const ext = Math.min(0xffff, run - base);
+                if (ext > 0) {
+                    out.push(((base << 1) | 1) & 0xff, (ext >> 8) & 0xff, ext & 0xff, v);
+                    run -= base + ext;
+                }
+                else {
+                    out.push((base << 1) & 0xff, v);
+                    run -= base;
+                }
+            }
+        }
+    }
+    return bytesToBase64(new Uint8Array(out));
+}
+/** Decode a base64 RLE string back into a flat Uint8Array of tile IDs. */
+function decodeTileGridRLE(b64, expectedLength) {
+    const buf = base64ToBytes(b64);
+    const out = [];
+    let p = 0;
+    while (p < buf.length) {
+        const header = buf[p++];
+        const cont = header & 1;
+        let count = header >>> 1;
+        if (cont) {
+            count += (buf[p++] << 8) | buf[p++];
+        }
+        const v = buf[p++];
+        for (let k = 0; k < count; k++)
+            out.push(v);
+    }
+    const arr = Uint8Array.from(out);
+    if (expectedLength !== undefined && arr.length !== expectedLength) {
+        console.warn(`[decodeTileGridRLE] length mismatch: got ${arr.length}, expected ${expectedLength}`);
+    }
+    return arr;
+}
+/** Decode a flat tile array into a 2D WallGrid of the configured dimensions. */
+function tilesToWallGrid(flat, width = exports.WALL_GRID_WIDTH, height = exports.WALL_GRID_HEIGHT) {
+    const grid = new Array(height);
+    for (let y = 0; y < height; y++) {
+        const row = new Array(width);
+        const base = y * width;
+        for (let x = 0; x < width; x++)
+            row[x] = flat[base + x] | 0;
+        grid[y] = row;
+    }
+    return grid;
+}
+/** Flatten a WallGrid into a Uint8Array (row-major). */
+function wallGridToFlat(grid, width = exports.WALL_GRID_WIDTH, height = exports.WALL_GRID_HEIGHT) {
+    const flat = new Uint8Array(width * height);
+    for (let y = 0; y < height; y++) {
+        const row = grid[y] || [];
+        for (let x = 0; x < width; x++)
+            flat[y * width + x] = (row[x] | 0) & 0xff;
+    }
+    return flat;
+}
+// Tiny base64 helpers that work in both Node and the browser.
+function bytesToBase64(bytes) {
+    const B = globalThis.Buffer;
+    if (B)
+        return B.from(bytes).toString('base64');
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++)
+        bin += String.fromCharCode(bytes[i]);
+    return (typeof btoa === 'function' ? btoa(bin) : '');
+}
+function base64ToBytes(b64) {
+    const B = globalThis.Buffer;
+    if (B)
+        return new Uint8Array(B.from(b64, 'base64'));
+    const bin = (typeof atob === 'function' ? atob(b64) : '');
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++)
+        out[i] = bin.charCodeAt(i);
+    return out;
 }
 /** Get the maximum jagged protrusion within a range [minT, maxT] on an edge */
 function getMaxJaggedOffset(points, minT, maxT) {

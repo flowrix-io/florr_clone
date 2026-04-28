@@ -1,4 +1,5 @@
 import { Graphics, MapElement, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState, WallTileState, getTileJaggedEdges, SECTION_CONFIGS } from './core';
+import { getTileTypeConfig } from '../constants';
 
 declare module './core' {
     interface Graphics {
@@ -81,31 +82,30 @@ Graphics.prototype.drawWallGrid = function(this: Graphics, viewport: { left: num
     // Slight overlap prevents sub-pixel background bleed between adjacent tiles
     const OVERLAP = 1.5;
     const OVERLAP_SIZE = WALL_TILE_SIZE + OVERLAP * 2;
+    const wallPattern = this.ctx.createPattern(this.wallTexture, 'repeat');
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
             const state = WALL_GRID[tileY]?.[tileX] || 0;
             if (state === 0) continue;
 
+            const cfg = getTileTypeConfig(state);
             const worldX = tileToWorldX(tileX);
             const worldY = tileToWorldY(tileY);
             const drawX = worldX - OVERLAP;
             const drawY = worldY - OVERLAP;
 
-            if (state === 1) {
-                const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
-                if (pattern) {
-                    this.ctx.save();
-                    this.ctx.fillStyle = pattern;
-                    this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
-                    this.ctx.restore();
-                } else {
-                    this.ctx.fillStyle = '#666666';
-                    this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
-                }
-            } else if (state === 2) {
-                this.ctx.fillStyle = '#4169E1';
+            if (cfg.style === 'wall' && wallPattern) {
+                this.ctx.save();
+                this.ctx.fillStyle = wallPattern;
+                this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
+                this.ctx.restore();
+            } else if (cfg.style === 'water') {
+                this.ctx.fillStyle = cfg.color;
                 this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
                 this.ctx.fillStyle = 'rgba(65, 105, 225, 0.3)';
+                this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
+            } else {
+                this.ctx.fillStyle = cfg.color;
                 this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
             }
         }
@@ -117,26 +117,24 @@ Graphics.prototype.drawWallGrid = function(this: Graphics, viewport: { left: num
             const state = WALL_GRID[tileY]?.[tileX] || 0;
             if (state === 0) continue;
 
+            const cfg = getTileTypeConfig(state);
             const worldX = tileToWorldX(tileX);
             const worldY = tileToWorldY(tileY);
 
-            if (state === 1) {
-                const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
-                if (pattern) {
-                    const jaggedEdges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
-                    if (jaggedEdges.top) this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, pattern);
-                    if (jaggedEdges.bottom) this.drawJaggedEdge(worldX, worldY, 'bottom', jaggedEdges.bottom, pattern);
-                    if (jaggedEdges.left) this.drawJaggedEdge(worldX, worldY, 'left', jaggedEdges.left, pattern);
-                    if (jaggedEdges.right) this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, pattern);
-                }
-            } else if (state === 2) {
-                const waterEdges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
-                const waterFill = '#4169E1';
-                const waterStroke = '#2a4fa0';
-                if (waterEdges.top) this.drawSmoothedEdge(worldX, worldY, 'top', waterEdges.top, waterFill, waterStroke);
-                if (waterEdges.bottom) this.drawSmoothedEdge(worldX, worldY, 'bottom', waterEdges.bottom, waterFill, waterStroke);
-                if (waterEdges.left) this.drawSmoothedEdge(worldX, worldY, 'left', waterEdges.left, waterFill, waterStroke);
-                if (waterEdges.right) this.drawSmoothedEdge(worldX, worldY, 'right', waterEdges.right, waterFill, waterStroke);
+            if (cfg.style === 'wall' && wallPattern) {
+                const jaggedEdges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
+                if (jaggedEdges.top) this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, wallPattern);
+                if (jaggedEdges.bottom) this.drawJaggedEdge(worldX, worldY, 'bottom', jaggedEdges.bottom, wallPattern);
+                if (jaggedEdges.left) this.drawJaggedEdge(worldX, worldY, 'left', jaggedEdges.left, wallPattern);
+                if (jaggedEdges.right) this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, wallPattern);
+            } else if (cfg.style === 'water') {
+                const edges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
+                const fill = cfg.color;
+                const stroke = cfg.borderColor || cfg.color;
+                if (edges.top) this.drawSmoothedEdge(worldX, worldY, 'top', edges.top, fill, stroke);
+                if (edges.bottom) this.drawSmoothedEdge(worldX, worldY, 'bottom', edges.bottom, fill, stroke);
+                if (edges.left) this.drawSmoothedEdge(worldX, worldY, 'left', edges.left, fill, stroke);
+                if (edges.right) this.drawSmoothedEdge(worldX, worldY, 'right', edges.right, fill, stroke);
             }
         }
     }

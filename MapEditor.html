@@ -119,10 +119,10 @@
             <div class="tool-section">
                 <h2>Tools</h2>
                 <div style="margin-bottom: 10px;">
-                    <strong>Wall Grid:</strong>
-                    <button id="wallTileTool">Wall Tile</button>
-                    <button id="waterTileTool">Water Tile</button>
-                    <button id="airTileTool">Air/Erase</button>
+                    <strong>Tile Palette:</strong>
+                    <div id="tilePalette" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;"></div>
+                    <button id="airTileTool" style="margin-top: 6px;">Erase (Air)</button>
+                    <button id="manageTileTypes" style="margin-top: 6px; background: #607d8b;">Manage Tile Types…</button>
                 </div>
                 <div style="margin-bottom: 10px;">
                     <strong>Brush Size:</strong>
@@ -217,10 +217,15 @@
 
             <div class="tool-section">
                 <h2>Actions</h2>
-                <button id="exportMap">Export Map</button>
+                <button id="exportMap">Export Map (JSON)</button>
+                <button id="exportMapCompressed">Export Map (Compressed)</button>
                 <button id="importMap">Import Map</button>
                 <button id="validateMap">Validate Map</button>
                 <button id="clearMap">Clear Map</button>
+                <div style="font-size: 11px; color: #888; margin-top: 6px;">
+                    Compressed format encodes the wall grid as RLE base64 (8 bits/tile)
+                    and embeds the tile palette — much smaller than raw JSON.
+                </div>
             </div>
 
             <div class="tool-section">
@@ -262,6 +267,44 @@
 
     <div class="coordinates" id="coordinates">X: 0, Y: 0</div>
 
+    <div id="tileTypeModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;">
+        <div style="background:#222; padding:20px; border-radius:8px; width:560px; max-height:80vh; overflow-y:auto;">
+            <h2 style="margin-top:0; color:#4CAF50;">Tile Types</h2>
+            <p style="font-size:12px; color:#aaa; margin-top:0;">
+                IDs 0-2 are built-in (air / wall / water) and cannot be changed.
+                Add your own tile types here — they'll be embedded in the exported map and
+                registered at runtime so the same map can introduce new terrain layers.
+            </p>
+            <div id="tileTypeList" style="background:#333; padding:8px; border-radius:4px; margin-bottom:10px;"></div>
+            <div style="border-top:1px solid #444; padding-top:10px;">
+                <strong>Add new tile type</strong>
+                <div style="display:grid; grid-template-columns:80px 1fr 1fr 80px 80px; gap:6px; margin-top:6px; align-items:center;">
+                    <label style="font-size:12px;">ID (3-255)</label>
+                    <label style="font-size:12px;">Name</label>
+                    <label style="font-size:12px;">Color</label>
+                    <label style="font-size:12px;">Solid</label>
+                    <label style="font-size:12px;">Water</label>
+                    <input type="number" id="newTileId" min="3" max="255" placeholder="3">
+                    <input type="text" id="newTileName" placeholder="lava">
+                    <input type="color" id="newTileColor" value="#ff5500">
+                    <input type="checkbox" id="newTileSolid">
+                    <input type="checkbox" id="newTileWater">
+                </div>
+                <div style="display:grid; grid-template-columns:80px 1fr 1fr; gap:6px; margin-top:6px; align-items:center;">
+                    <label style="font-size:12px;">Style</label>
+                    <select id="newTileStyle">
+                        <option value="flat">flat (colored fill)</option>
+                        <option value="wall">wall (textured + jagged edges)</option>
+                        <option value="water">water (smooth edges + border)</option>
+                    </select>
+                    <input type="color" id="newTileBorder" value="#000000" title="Border color (water style only)">
+                </div>
+                <button id="addTileType" style="margin-top:8px;">Add</button>
+                <button id="closeTileTypeModal" style="margin-top:8px; background:#666;">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Constants from your game
         const WORLD_WIDTH = 60000;
@@ -272,21 +315,40 @@
         const SECTION_SIZE = 20000; // Each 9th section is 20000x20000
         const TELEPORTER_RADIUS = 60; // Matches game constant
         const COLORS = {
-            wall: '#666',
-            water: '#4169E1',
             spawn: '#4CAF50',
             teleporter: '#2196F3',
             safe_zone: '#FFC107',
             biome: '#8040C0'
         };
 
+        // ----- Tile palette: built-in + custom tile types (0-255) -----
+        const BUILTIN_TILE_TYPES = [
+            { id: 0, name: 'air',   solid: false, water: false, color: '#00000000', style: 'flat'  },
+            { id: 1, name: 'wall',  solid: true,  water: false, color: '#666666',   style: 'wall'  },
+            { id: 2, name: 'water', solid: false, water: true,  color: '#4169E1',   borderColor: '#2a4fa0', style: 'water' },
+        ];
+        // tileTypes is keyed by ID. Custom entries (id >= 3) ride along with the exported map.
+        let tileTypes = new Map(BUILTIN_TILE_TYPES.map(t => [t.id, { ...t }]));
+
+        function getTileTypeConfig(id) {
+            return tileTypes.get(id) || BUILTIN_TILE_TYPES[0];
+        }
+        function getCustomTileTypes() {
+            return Array.from(tileTypes.values()).filter(t => t.id >= 3).sort((a, b) => a.id - b.id);
+        }
+        function setCustomTileTypes(list) {
+            tileTypes = new Map(BUILTIN_TILE_TYPES.map(t => [t.id, { ...t }]));
+            for (const t of (list || [])) {
+                if (!t || !Number.isInteger(t.id) || t.id < 3 || t.id > 255) continue;
+                tileTypes.set(t.id, { style: 'flat', ...t });
+            }
+        }
+
         // Maps a tool button id (id without the trailing "Tool") to the canonical
-        // tool/element-type name. snake_case types match the format expected by the
-        // game server when the map is exported.
+        // tool/element-type name. Tile-painting tools use 'tile:<id>' so any 8-bit
+        // tile ID (built-in or custom) routes through the same paint path.
         const TOOL_TYPE_MAP = {
-            wallTile: 'wallTile',
-            waterTile: 'waterTile',
-            airTile: 'airTile',
+            airTile: 'tile:0',
             spawn: 'spawn',
             teleporter: 'teleporter',
             safeZone: 'safe_zone',
@@ -296,9 +358,9 @@
         };
 
         // Editor state
-        let currentTool = 'wallTile';
+        let currentTool = 'tile:1'; // default: paint wall
         let elements = [];
-        let wallGrid = []; // 2D array: wallGrid[y][x] = 0 (air), 1 (wall), 2 (water)
+        let wallGrid = []; // 2D array: wallGrid[y][x] = 8-bit tile ID (0-255)
         let selectedElement = null;
         let isDragging = false;
         let dragStart = { x: 0, y: 0 };
@@ -415,8 +477,8 @@
                 handleSelection(x, y);
             } else if (currentTool === 'delete') {
                 handleDeletion(x, y);
-            } else if (currentTool === 'wallTile' || currentTool === 'waterTile' || currentTool === 'airTile') {
-                // Handle wall grid tile placement
+            } else if (currentTool.startsWith('tile:')) {
+                // Handle wall grid tile placement (any tile ID 0-255)
                 handleTilePlacement(x, y);
             } else {
                 createNewElement(x, y);
@@ -439,12 +501,8 @@
             const centerTileX = worldToTileX(worldX);
             const centerTileY = worldToTileY(worldY);
 
-            let state = 0; // air
-            if (currentTool === 'wallTile') {
-                state = 1; // wall
-            } else if (currentTool === 'waterTile') {
-                state = 2; // water
-            }
+            // currentTool is "tile:<id>" — pull the 8-bit tile ID off the end.
+            const state = parseInt(currentTool.slice('tile:'.length), 10) || 0;
 
             // Calculate brush offset (center the brush on the cursor)
             const halfBrush = Math.floor(brushSize / 2);
@@ -458,7 +516,7 @@
                     // Check bounds
                     if (tileY >= 0 && tileY < wallGrid.length &&
                         tileX >= 0 && tileX < wallGrid[tileY].length) {
-                        wallGrid[tileY][tileX] = state;
+                        wallGrid[tileY][tileX] = state & 0xff;
                     }
                 }
             }
@@ -471,7 +529,7 @@
             const x = (e.clientX - rect.left + cameraOffset.x) / scale;
             const y = (e.clientY - rect.top + cameraOffset.y) / scale;
 
-            if (currentTool === 'wallTile' || currentTool === 'waterTile' || currentTool === 'airTile') {
+            if (currentTool.startsWith('tile:')) {
                 // Continue placing tiles while dragging
                 handleTilePlacement(x, y);
                 render();
@@ -686,11 +744,7 @@
                         const screenY = worldY * scale - cameraOffset.y;
                         const tileSize = WALL_TILE_SIZE * scale;
 
-                        if (state === 1) {
-                            ctx.fillStyle = COLORS.wall;
-                        } else if (state === 2) {
-                            ctx.fillStyle = COLORS.water;
-                        }
+                        ctx.fillStyle = getTileTypeConfig(state).color || '#888';
                         ctx.fillRect(screenX, screenY, tileSize, tileSize);
                     }
                 }
@@ -1040,19 +1094,98 @@
             }
         }
 
+        // ----- RLE codec (mirrors src/constants.ts encodeTileGridRLE / decodeTileGridRLE) -----
+        function encodeTileGridRLE(flat) {
+            const out = [];
+            let i = 0;
+            const len = flat.length;
+            while (i < len) {
+                const v = flat[i] & 0xff;
+                let run = 1;
+                while (i + run < len && (flat[i + run] & 0xff) === v && run < 0x7fffff) run++;
+                i += run;
+                while (run > 0) {
+                    const base = Math.min(127, run);
+                    const ext = Math.min(0xffff, run - base);
+                    if (ext > 0) {
+                        out.push(((base << 1) | 1) & 0xff, (ext >> 8) & 0xff, ext & 0xff, v);
+                        run -= base + ext;
+                    } else {
+                        out.push((base << 1) & 0xff, v);
+                        run -= base;
+                    }
+                }
+            }
+            let bin = '';
+            for (let k = 0; k < out.length; k++) bin += String.fromCharCode(out[k]);
+            return btoa(bin);
+        }
+        function decodeTileGridRLE(b64) {
+            const bin = atob(b64);
+            const buf = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+            const out = [];
+            let p = 0;
+            while (p < buf.length) {
+                const header = buf[p++];
+                const cont = header & 1;
+                let count = header >>> 1;
+                if (cont) count += (buf[p++] << 8) | buf[p++];
+                const v = buf[p++];
+                for (let k = 0; k < count; k++) out.push(v);
+            }
+            return out;
+        }
+        function flattenWallGrid() {
+            const flat = new Uint8Array(WALL_GRID_WIDTH * WALL_GRID_HEIGHT);
+            for (let y = 0; y < WALL_GRID_HEIGHT; y++) {
+                const row = wallGrid[y] || [];
+                for (let x = 0; x < WALL_GRID_WIDTH; x++) flat[y * WALL_GRID_WIDTH + x] = (row[x] | 0) & 0xff;
+            }
+            return flat;
+        }
+        function inflateFlatToGrid(flat, w, h) {
+            const grid = [];
+            for (let y = 0; y < h; y++) {
+                const row = new Array(w);
+                for (let x = 0; x < w; x++) row[x] = flat[y * w + x] | 0;
+                grid[y] = row;
+            }
+            return grid;
+        }
+
         // Export/Import functionality
-        document.getElementById('exportMap').onclick = () => {
-            const mapData = {
-                elements: elements,
-                wallGrid: wallGrid
-            };
-            const jsonData = JSON.stringify(mapData, null, 2);
-            const blob = new Blob([jsonData], { type: 'application/json' });
+        function downloadJson(name, obj) {
+            const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
-            a.download = 'map.json';
-            a.click();
+            a.href = url; a.download = name; a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        document.getElementById('exportMap').onclick = () => {
+            // Verbose JSON form — keeps the wallGrid as a 2D array for human inspection.
+            downloadJson('map.json', {
+                elements: elements,
+                wallGrid: wallGrid,
+                customTileTypes: getCustomTileTypes(),
+            });
+        };
+
+        document.getElementById('exportMapCompressed').onclick = () => {
+            const flat = flattenWallGrid();
+            const rle = encodeTileGridRLE(flat);
+            const sizeRaw = flat.length;
+            const sizeRle = atob(rle).length;
+            downloadJson('map.compressed.json', {
+                version: 2,
+                elements: elements,
+                customTileTypes: getCustomTileTypes(),
+                gridWidth: WALL_GRID_WIDTH,
+                gridHeight: WALL_GRID_HEIGHT,
+                tileRLE: rle,
+                _info: `8-bit tiles, RLE base64; raw=${sizeRaw}B rle=${sizeRle}B (${(100 * sizeRle / sizeRaw).toFixed(1)}%)`,
+            });
         };
 
         document.getElementById('importMap').onclick = () => {
@@ -1064,18 +1197,35 @@
                 const reader = new FileReader();
                 reader.onload = event => {
                     const data = JSON.parse(event.target.result);
-                    // Support both old format (array) and new format (object with elements and wallGrid)
+                    // Three formats supported:
+                    //   1. Legacy array  → elements only, wall grid reset
+                    //   2. Verbose JSON  → { elements, wallGrid, customTileTypes? }
+                    //   3. Compressed v2 → { elements, tileRLE, customTileTypes?, gridWidth?, gridHeight? }
                     if (Array.isArray(data)) {
                         elements = data;
-                        initializeWallGrid(); // Reset wall grid for old format
+                        initializeWallGrid();
+                        setCustomTileTypes([]);
+                    } else if (data.tileRLE) {
+                        elements = data.elements || [];
+                        setCustomTileTypes(data.customTileTypes || []);
+                        const flat = decodeTileGridRLE(data.tileRLE);
+                        const w = data.gridWidth || WALL_GRID_WIDTH;
+                        const h = data.gridHeight || WALL_GRID_HEIGHT;
+                        const decoded = inflateFlatToGrid(flat, w, h);
+                        // Clamp to runtime grid dimensions if the imported map differs.
+                        initializeWallGrid();
+                        const cw = Math.min(w, WALL_GRID_WIDTH), ch = Math.min(h, WALL_GRID_HEIGHT);
+                        for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) wallGrid[y][x] = decoded[y][x];
                     } else {
                         elements = data.elements || [];
-                        if (data.wallGrid) {
+                        setCustomTileTypes(data.customTileTypes || []);
+                        if (Array.isArray(data.wallGrid)) {
                             wallGrid = data.wallGrid;
                         } else {
                             initializeWallGrid();
                         }
                     }
+                    rebuildTilePalette();
                     updateElementList();
                     render();
                 };
@@ -1304,6 +1454,170 @@
         document.getElementById('customServerPort').addEventListener('blur', updateElementFromProperties);
         document.getElementById('spawnType').addEventListener('change', updateElementFromProperties);
 
+        // ----- Tile palette UI -----
+        function rebuildTilePalette() {
+            const root = document.getElementById('tilePalette');
+            root.innerHTML = '';
+            const all = Array.from(tileTypes.values()).sort((a, b) => a.id - b.id);
+            for (const t of all) {
+                if (t.id === 0) continue; // air has its own dedicated Erase button
+                const btn = document.createElement('button');
+                btn.id = `tileBtn_${t.id}`;
+                btn.title = `${t.name} (id ${t.id}${t.solid ? ', solid' : ''}${t.water ? ', water' : ''})`;
+                btn.textContent = `${t.id}: ${t.name}`;
+                btn.style.background = t.color && t.color !== '#00000000' ? t.color : '#444';
+                btn.style.color = '#fff';
+                btn.style.border = '1px solid #555';
+                btn.style.padding = '4px 8px';
+                btn.style.borderRadius = '4px';
+                btn.style.cursor = 'pointer';
+                btn.style.fontSize = '12px';
+                btn.style.margin = '0';
+                if (t.id >= 3) {
+                    const del = document.createElement('span');
+                    del.textContent = ' ✕';
+                    del.style.marginLeft = '4px';
+                    del.style.opacity = '0.7';
+                    del.title = 'Delete this custom tile type';
+                    del.onclick = (ev) => { ev.stopPropagation(); deleteTileType(t.id); };
+                    btn.appendChild(del);
+                }
+                btn.onclick = () => selectTileTool(t.id);
+                root.appendChild(btn);
+            }
+            highlightSelectedTool();
+        }
+
+        function selectTileTool(id) {
+            currentTool = `tile:${id}`;
+            highlightSelectedTool();
+            updatePropertiesPanel();
+        }
+
+        function highlightSelectedTool() {
+            document.querySelectorAll('.tools button').forEach(b => b.classList.remove('selected'));
+            if (currentTool.startsWith('tile:')) {
+                const id = parseInt(currentTool.slice('tile:'.length), 10);
+                if (id === 0) {
+                    document.getElementById('airTileTool')?.classList.add('selected');
+                } else {
+                    document.getElementById(`tileBtn_${id}`)?.classList.add('selected');
+                }
+            } else {
+                const toolBtn = Object.entries(TOOL_TYPE_MAP).find(([, v]) => v === currentTool)?.[0];
+                if (toolBtn) document.getElementById(`${toolBtn}Tool`)?.classList.add('selected');
+            }
+        }
+
+        document.getElementById('airTileTool').onclick = () => selectTileTool(0);
+
+        // ----- Tile-types modal -----
+        const tileTypeModal = document.getElementById('tileTypeModal');
+        document.getElementById('manageTileTypes').onclick = () => {
+            tileTypeModal.style.display = 'flex';
+            renderTileTypeList();
+        };
+        document.getElementById('closeTileTypeModal').onclick = () => {
+            tileTypeModal.style.display = 'none';
+        };
+
+        function nextFreeTileId() {
+            for (let i = 3; i <= 255; i++) if (!tileTypes.has(i)) return i;
+            return -1;
+        }
+
+        function renderTileTypeList() {
+            const list = document.getElementById('tileTypeList');
+            list.innerHTML = '';
+            const all = Array.from(tileTypes.values()).sort((a, b) => a.id - b.id);
+            for (const t of all) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px; border-bottom:1px solid #444;';
+                const swatch = document.createElement('span');
+                swatch.style.cssText = `display:inline-block; width:20px; height:20px; background:${t.color}; border:1px solid #777; border-radius:3px;`;
+                row.appendChild(swatch);
+                const meta = document.createElement('span');
+                meta.style.flex = '1';
+                meta.textContent = `[${t.id}] ${t.name} — ${t.style || 'flat'}${t.solid ? ', solid' : ''}${t.water ? ', water' : ''}`;
+                row.appendChild(meta);
+                if (t.id >= 3) {
+                    const del = document.createElement('button');
+                    del.textContent = 'Delete';
+                    del.style.background = '#a33';
+                    del.onclick = () => deleteTileType(t.id);
+                    row.appendChild(del);
+                } else {
+                    const built = document.createElement('span');
+                    built.textContent = 'built-in';
+                    built.style.cssText = 'font-size:11px; color:#888;';
+                    row.appendChild(built);
+                }
+                list.appendChild(row);
+            }
+            const free = nextFreeTileId();
+            if (free > 0) document.getElementById('newTileId').value = free;
+        }
+
+        function deleteTileType(id) {
+            if (id < 3) return;
+            // Refuse if any tile in the grid still uses this ID — would silently turn into "unknown air".
+            for (let y = 0; y < wallGrid.length; y++) {
+                const row = wallGrid[y];
+                for (let x = 0; x < row.length; x++) {
+                    if (row[x] === id) {
+                        if (!confirm(`Tile ${id} is still painted on the map. Delete the type and convert those tiles to air?`)) return;
+                        // erase any cells using this tile
+                        for (let yy = 0; yy < wallGrid.length; yy++) {
+                            for (let xx = 0; xx < wallGrid[yy].length; xx++) {
+                                if (wallGrid[yy][xx] === id) wallGrid[yy][xx] = 0;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            tileTypes.delete(id);
+            // If the deleted tile was the selected tool, fall back to wall (id 1).
+            if (currentTool === `tile:${id}`) selectTileTool(1);
+            rebuildTilePalette();
+            renderTileTypeList();
+            render();
+        }
+
+        document.getElementById('addTileType').onclick = () => {
+            const idEl = document.getElementById('newTileId');
+            const nameEl = document.getElementById('newTileName');
+            const colorEl = document.getElementById('newTileColor');
+            const solidEl = document.getElementById('newTileSolid');
+            const waterEl = document.getElementById('newTileWater');
+            const styleEl = document.getElementById('newTileStyle');
+            const borderEl = document.getElementById('newTileBorder');
+
+            const id = parseInt(idEl.value, 10);
+            if (!Number.isInteger(id) || id < 3 || id > 255) {
+                alert('ID must be an integer between 3 and 255');
+                return;
+            }
+            if (tileTypes.has(id)) {
+                if (!confirm(`Tile id ${id} already exists. Overwrite?`)) return;
+            }
+            const name = (nameEl.value || `tile_${id}`).trim();
+            const config = {
+                id,
+                name,
+                color: colorEl.value,
+                solid: !!solidEl.checked,
+                water: !!waterEl.checked,
+                style: styleEl.value,
+            };
+            if (config.style === 'water') config.borderColor = borderEl.value;
+            tileTypes.set(id, config);
+            // Reset form for the next entry.
+            nameEl.value = '';
+            renderTileTypeList();
+            rebuildTilePalette();
+        };
+
         // Animation loop for teleporter rotating squares
         function animationLoop() {
             if (elements.some(e => e.type === 'teleporter')) {
@@ -1313,6 +1627,7 @@
         }
 
         // Initial render
+        rebuildTilePalette();
         render();
         requestAnimationFrame(animationLoop);
     </script>

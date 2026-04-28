@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+const constants_1 = require("../constants");
 core_1.Graphics.prototype.drawMap = function (world_map_data) {
     // Calculate viewport accounting for zoom level
     const scaledWidth = this.canvas.width / this.zoomLevel;
@@ -62,32 +63,31 @@ core_1.Graphics.prototype.drawWallGrid = function (viewport) {
     // Slight overlap prevents sub-pixel background bleed between adjacent tiles
     const OVERLAP = 1.5;
     const OVERLAP_SIZE = core_1.WALL_TILE_SIZE + OVERLAP * 2;
+    const wallPattern = this.ctx.createPattern(this.wallTexture, 'repeat');
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
             const state = core_1.WALL_GRID[tileY]?.[tileX] || 0;
             if (state === 0)
                 continue;
+            const cfg = (0, constants_1.getTileTypeConfig)(state);
             const worldX = (0, core_1.tileToWorldX)(tileX);
             const worldY = (0, core_1.tileToWorldY)(tileY);
             const drawX = worldX - OVERLAP;
             const drawY = worldY - OVERLAP;
-            if (state === 1) {
-                const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
-                if (pattern) {
-                    this.ctx.save();
-                    this.ctx.fillStyle = pattern;
-                    this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
-                    this.ctx.restore();
-                }
-                else {
-                    this.ctx.fillStyle = '#666666';
-                    this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
-                }
+            if (cfg.style === 'wall' && wallPattern) {
+                this.ctx.save();
+                this.ctx.fillStyle = wallPattern;
+                this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
+                this.ctx.restore();
             }
-            else if (state === 2) {
-                this.ctx.fillStyle = '#4169E1';
+            else if (cfg.style === 'water') {
+                this.ctx.fillStyle = cfg.color;
                 this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
                 this.ctx.fillStyle = 'rgba(65, 105, 225, 0.3)';
+                this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
+            }
+            else {
+                this.ctx.fillStyle = cfg.color;
                 this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
             }
         }
@@ -98,34 +98,32 @@ core_1.Graphics.prototype.drawWallGrid = function (viewport) {
             const state = core_1.WALL_GRID[tileY]?.[tileX] || 0;
             if (state === 0)
                 continue;
+            const cfg = (0, constants_1.getTileTypeConfig)(state);
             const worldX = (0, core_1.tileToWorldX)(tileX);
             const worldY = (0, core_1.tileToWorldY)(tileY);
-            if (state === 1) {
-                const pattern = this.ctx.createPattern(this.wallTexture, 'repeat');
-                if (pattern) {
-                    const jaggedEdges = (0, core_1.getTileJaggedEdges)(core_1.WALL_GRID, tileX, tileY);
-                    if (jaggedEdges.top)
-                        this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, pattern);
-                    if (jaggedEdges.bottom)
-                        this.drawJaggedEdge(worldX, worldY, 'bottom', jaggedEdges.bottom, pattern);
-                    if (jaggedEdges.left)
-                        this.drawJaggedEdge(worldX, worldY, 'left', jaggedEdges.left, pattern);
-                    if (jaggedEdges.right)
-                        this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, pattern);
-                }
+            if (cfg.style === 'wall' && wallPattern) {
+                const jaggedEdges = (0, core_1.getTileJaggedEdges)(core_1.WALL_GRID, tileX, tileY);
+                if (jaggedEdges.top)
+                    this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, wallPattern);
+                if (jaggedEdges.bottom)
+                    this.drawJaggedEdge(worldX, worldY, 'bottom', jaggedEdges.bottom, wallPattern);
+                if (jaggedEdges.left)
+                    this.drawJaggedEdge(worldX, worldY, 'left', jaggedEdges.left, wallPattern);
+                if (jaggedEdges.right)
+                    this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, wallPattern);
             }
-            else if (state === 2) {
-                const waterEdges = (0, core_1.getTileJaggedEdges)(core_1.WALL_GRID, tileX, tileY);
-                const waterFill = '#4169E1';
-                const waterStroke = '#2a4fa0';
-                if (waterEdges.top)
-                    this.drawSmoothedEdge(worldX, worldY, 'top', waterEdges.top, waterFill, waterStroke);
-                if (waterEdges.bottom)
-                    this.drawSmoothedEdge(worldX, worldY, 'bottom', waterEdges.bottom, waterFill, waterStroke);
-                if (waterEdges.left)
-                    this.drawSmoothedEdge(worldX, worldY, 'left', waterEdges.left, waterFill, waterStroke);
-                if (waterEdges.right)
-                    this.drawSmoothedEdge(worldX, worldY, 'right', waterEdges.right, waterFill, waterStroke);
+            else if (cfg.style === 'water') {
+                const edges = (0, core_1.getTileJaggedEdges)(core_1.WALL_GRID, tileX, tileY);
+                const fill = cfg.color;
+                const stroke = cfg.borderColor || cfg.color;
+                if (edges.top)
+                    this.drawSmoothedEdge(worldX, worldY, 'top', edges.top, fill, stroke);
+                if (edges.bottom)
+                    this.drawSmoothedEdge(worldX, worldY, 'bottom', edges.bottom, fill, stroke);
+                if (edges.left)
+                    this.drawSmoothedEdge(worldX, worldY, 'left', edges.left, fill, stroke);
+                if (edges.right)
+                    this.drawSmoothedEdge(worldX, worldY, 'right', edges.right, fill, stroke);
             }
         }
     }

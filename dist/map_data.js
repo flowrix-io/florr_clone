@@ -43934,5 +43934,25 @@ function elementsOverlap(a, b) {
         a.y + a.height < b.y ||
         b.y + b.height < a.y);
 }
-// Wall grid populated from map data (server-side only)
-exports.WALL_GRID = WORLD_MAP_DATA.wallGrid || (0, constants_1.createEmptyWallGrid)();
+// Copy the literal wallGrid into the shared WALL_GRID from constants.ts in
+// place. We must mutate (not re-export a fresh array) because client-side
+// modules — graphics/map-drawing.ts and others — already imported the
+// constants reference; pointing this export at a different array would leave
+// those callers staring at the empty grid and the map would render blank.
+function populateSharedWallGrid() {
+    const src = WORLD_MAP_DATA.wallGrid;
+    if (!src)
+        return;
+    const h = Math.min(src.length, constants_1.WALL_GRID_HEIGHT, constants_1.WALL_GRID.length);
+    for (let y = 0; y < h; y++) {
+        const srcRow = src[y] || [];
+        const dstRow = constants_1.WALL_GRID[y];
+        const w = Math.min(srcRow.length, constants_1.WALL_GRID_WIDTH, dstRow.length);
+        for (let x = 0; x < w; x++)
+            dstRow[x] = srcRow[x] | 0;
+    }
+}
+populateSharedWallGrid();
+// Wall grid — re-exports the same shared array so server modules importing
+// from './map_data' see the populated grid (legacy API kept for compatibility).
+exports.WALL_GRID = constants_1.WALL_GRID;

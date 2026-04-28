@@ -4,6 +4,7 @@ exports.Game = void 0;
 const zoom_compensation_1 = require("./zoom-compensation");
 const SVGLoader_1 = require("./SVGLoader");
 const constants_1 = require("./constants");
+const map_data_1 = require("./map_data");
 const petals_1 = require("./petals");
 const graphics_1 = require("./graphics");
 const chat_1 = require("./chat");
@@ -474,57 +475,18 @@ class Game {
         this.shopManager = new shop_1.ShopManager(this);
         this.svgLoader = new SVGLoader_1.SVGLoader();
         this.assetLoader.loadAssets();
-        // Check if we have preconnected map data
-        if (window.preconnectedMapData) {
-            console.log('[Game] Using preconnected map data');
-            const mapData = window.preconnectedMapData;
-            // Handle MapData format (with elements property) or legacy array format
-            const elements = mapData.elements || mapData;
-            this.world_map_data = elements;
-            this.graphics.setMap(elements);
-            this.renderMap(elements);
-            // Load biome textures
-            this.assetLoader.loadBiomeTextures(elements, this.graphics);
-            // Load section textures
-            this.assetLoader.loadSectionTextures(this.graphics);
-            // Update title screen with available biomes
-            this.updateTitleScreenBiomes(elements);
-            // Update wall grid if provided
-            if (mapData.wallGrid) {
-                for (let y = 0; y < mapData.wallGrid.length && y < constants_1.WALL_GRID.length; y++) {
-                    for (let x = 0; x < mapData.wallGrid[y].length && x < constants_1.WALL_GRID[y].length; x++) {
-                        constants_1.WALL_GRID[y][x] = mapData.wallGrid[y][x];
-                    }
-                }
-                console.log('[Game] Applied wall grid from preconnected data');
-            }
-            // Clear preconnected map data
+        // Map is bundled with the client via src/map_data.ts (no longer streamed
+        // from the server). The wall grid is populated as a side-effect of that
+        // import, so we just need to wire the elements into the renderer.
+        this.world_map_data = map_data_1.WORLD_MAP;
+        this.graphics.setMap(map_data_1.WORLD_MAP);
+        this.renderMap(map_data_1.WORLD_MAP);
+        this.assetLoader.loadBiomeTextures(map_data_1.WORLD_MAP, this.graphics);
+        this.assetLoader.loadSectionTextures(this.graphics);
+        this.updateTitleScreenBiomes(map_data_1.WORLD_MAP);
+        // preconnectedMapData is legacy — clear it if the title screen ever set it.
+        if (window.preconnectedMapData)
             window.preconnectedMapData = null;
-        }
-        // Listen for map data from the server (includes elements and wallGrid)
-        this.socket.on('mapData', (mapData) => {
-            //console.log('Received map data:', mapData);
-            const elements = mapData.elements;
-            this.world_map_data = elements;
-            this.graphics.setMap(elements);
-            this.renderMap(elements);
-            // Load biome textures
-            this.assetLoader.loadBiomeTextures(elements, this.graphics);
-            // Load section textures
-            this.assetLoader.loadSectionTextures(this.graphics);
-            // Update title screen with available biomes
-            this.updateTitleScreenBiomes(elements);
-            // Update wall grid if provided
-            if (mapData.wallGrid) {
-                // Copy wall grid data to the shared WALL_GRID constant
-                for (let y = 0; y < mapData.wallGrid.length && y < constants_1.WALL_GRID.length; y++) {
-                    for (let x = 0; x < mapData.wallGrid[y].length && x < constants_1.WALL_GRID[y].length; x++) {
-                        constants_1.WALL_GRID[y][x] = mapData.wallGrid[y][x];
-                    }
-                }
-                console.log('[Game] Received wall grid data');
-            }
-        });
         this.socket.on('zoneUpdate', (zones) => {
             // ... existing code ...
         });

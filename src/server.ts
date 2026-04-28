@@ -1104,12 +1104,9 @@ const playerStateDeps: PlayerStateDependencies = {
 io.on('connection', (socket: AuthenticatedSocket) => {
     console.log('A user connected');
 
-    // Send map data to the client (includes elements and wallGrid)
-    const mapData: MapData = {
-        elements: WORLD_MAP,
-        wallGrid: WALL_GRID
-    };
-    socket.emit('mapData', mapData);
+    // Map is bundled with the client via src/map_data.ts — no longer streamed
+    // here. The server still imports WORLD_MAP / WALL_GRID locally for
+    // collision, spawn, and pathfinding logic.
 
     socket.on('playerInput', (inputData: any) => {
         const player = players[socket.id];

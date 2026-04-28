@@ -69,11 +69,97 @@ export const WALL_TILE_SIZE = 300; // Size of each wall tile in pixels (3x large
 export const WALL_GRID_WIDTH = Math.ceil(ACTUAL_WORLD_WIDTH / WALL_TILE_SIZE);
 export const WALL_GRID_HEIGHT = Math.ceil(ACTUAL_WORLD_HEIGHT / WALL_TILE_SIZE);
 
-// Wall tile states: 0 = air, 1 = wall, 2 = water
-export type WallTileState = 0 | 1 | 2;
+// Tile state is now an 8-bit value (0-255). Built-in IDs: 0 = air, 1 = wall, 2 = water.
+// User-configurable tile types (3-255) can be added via the map's tile palette config.
+export type WallTileState = number;
 
-// Wall grid type: 2D array where [y][x] = tile state
+// Wall grid type: 2D array where [y][x] = tile state (0-255)
 export type WallGrid = WallTileState[][];
+
+// --- Tile type registry (8-bit per tile, 256 types max) ---
+
+/** Configuration for a single tile type. */
+export interface TileTypeConfig {
+    /** 0-255 numeric ID stored in the tile grid. */
+    id: number;
+    /** Human-readable name for editors / debugging. */
+    name: string;
+    /** Whether the tile blocks movement (collision). */
+    solid: boolean;
+    /** Whether the tile counts as water for swimming logic. */
+    water: boolean;
+    /** Primary fill color (hex). */
+    color: string;
+    /** Optional secondary border / stroke color (used by water-style edges). */
+    borderColor?: string;
+    /**
+     * Optional texture name for the renderer. Recognized values:
+     *   - "wall" (uses the bundled wall texture pattern, jagged edges)
+     *   - "water" (uses smoothed jagged edges with borderColor)
+     * Default (undefined) = flat colored fill, no edges.
+     */
+    style?: 'wall' | 'water' | 'flat';
+}
+
+/** Built-in tile types — IDs 0-2 are reserved and always present. */
+export const BUILTIN_TILE_TYPES: TileTypeConfig[] = [
+    { id: 0, name: 'air',   solid: false, water: false, color: '#00000000', style: 'flat' },
+    { id: 1, name: 'wall',  solid: true,  water: false, color: '#666666',   style: 'wall' },
+    { id: 2, name: 'water', solid: false, water: true,  color: '#4169E1',   borderColor: '#2a4fa0', style: 'water' },
+];
+
+/** Mutable registry: built-ins + custom types loaded from the map bundle. */
+const TILE_TYPE_REGISTRY: Map<number, TileTypeConfig> = (() => {
+    const m = new Map<number, TileTypeConfig>();
+    for (const t of BUILTIN_TILE_TYPES) m.set(t.id, t);
+    return m;
+})();
+
+/** Register or override a tile type (typically called once at startup with custom map types). */
+export function registerTileType(config: TileTypeConfig): void {
+    if (config.id < 0 || config.id > 255 || !Number.isInteger(config.id)) {
+        throw new Error(`TileTypeConfig.id must be an integer in [0, 255], got ${config.id}`);
+    }
+    if (config.id < BUILTIN_TILE_TYPES.length) {
+        // Allow overriding built-in colors/styles but keep semantic flags (solid/water) sane.
+        const builtin = BUILTIN_TILE_TYPES[config.id];
+        if (config.solid !== builtin.solid || config.water !== builtin.water) {
+            console.warn(`[TileRegistry] Refusing to change solid/water flags of built-in tile ${builtin.name} (id=${builtin.id})`);
+            config = { ...config, solid: builtin.solid, water: builtin.water };
+        }
+    }
+    TILE_TYPE_REGISTRY.set(config.id, config);
+}
+
+/** Replace the entire custom-tile portion of the registry. Built-ins are restored first. */
+export function setCustomTileTypes(configs: TileTypeConfig[]): void {
+    TILE_TYPE_REGISTRY.clear();
+    for (const t of BUILTIN_TILE_TYPES) TILE_TYPE_REGISTRY.set(t.id, t);
+    for (const c of configs) {
+        if (c.id < BUILTIN_TILE_TYPES.length) continue; // skip attempts to redefine built-ins via this path
+        registerTileType(c);
+    }
+}
+
+/** Look up a tile type by ID. Falls back to air for unknown IDs (so forward-compat reads don't crash). */
+export function getTileTypeConfig(id: number): TileTypeConfig {
+    return TILE_TYPE_REGISTRY.get(id) || BUILTIN_TILE_TYPES[0];
+}
+
+/** Iterate all currently registered tile types (built-in + custom). */
+export function getAllTileTypes(): TileTypeConfig[] {
+    return Array.from(TILE_TYPE_REGISTRY.values()).sort((a, b) => a.id - b.id);
+}
+
+/** True if the given tile ID is solid (blocks movement). */
+export function isTileIdSolid(id: number): boolean {
+    return getTileTypeConfig(id).solid;
+}
+
+/** True if the given tile ID is water. */
+export function isTileIdWater(id: number): boolean {
+    return getTileTypeConfig(id).water;
+}
 
 // Density calculation constants (defined after world dimensions)
 export const TOTAL_WORLD_AREA = ACTUAL_WORLD_WIDTH * ACTUAL_WORLD_HEIGHT;  // 400,000,000 pixels²
@@ -257,6 +343,11 @@ export interface MapElement {
 export interface MapData {
     elements: MapElement[];
     wallGrid?: WallGrid;
+    /**
+     * Optional palette of custom tile types layered on top of the built-ins.
+     * Each entry must use an ID >= 3 (built-ins reserve 0-2: air/wall/water).
+     */
+    customTileTypes?: TileTypeConfig[];
 }
 
 
@@ -321,7 +412,7 @@ export function getServerConfigByPort(port: number): ServerConfig | undefined {
 export function createEmptyWallGrid(): WallGrid {
     const grid: WallGrid = [];
     for (let y = 0; y < WALL_GRID_HEIGHT; y++) {
-        grid[y] = new Array(WALL_GRID_WIDTH).fill(0) as WallTileState[];
+        grid[y] = new Array(WALL_GRID_WIDTH).fill(0) as number[];
     }
     return grid;
 }
@@ -365,14 +456,14 @@ export function setTileState(grid: WallGrid, worldX: number, worldY: number, sta
     }
 }
 
-// Check if a point collides with a wall tile
+// Check if a point collides with a wall tile (any solid tile type)
 export function collidesWithWallTile(grid: WallGrid, worldX: number, worldY: number): boolean {
-    return getTileState(grid, worldX, worldY) === 1;
+    return isTileIdSolid(getTileState(grid, worldX, worldY));
 }
 
-// Check if a point is in water
+// Check if a point is in water (any water-flagged tile type)
 export function isInWater(grid: WallGrid, worldX: number, worldY: number): boolean {
-    return getTileState(grid, worldX, worldY) === 2;
+    return isTileIdWater(getTileState(grid, worldX, worldY));
 }
 
 // --- Jagged Edge System (shared between client and server) ---
@@ -404,7 +495,7 @@ export const JAGGED_NUM_SEGMENTS = 7;
 
 const JAGGED_EDGE_CACHE: Map<string, TileJaggedEdges> = new Map();
 
-/** Check if a tile edge is exposed (adjacent tile is air, or wall adjacent to water) */
+/** Check if a tile edge is exposed (adjacent tile is air, or solid adjacent to water) */
 export function isTileEdgeExposed(
     grid: WallGrid, tileX: number, tileY: number,
     edge: 'top' | 'bottom' | 'left' | 'right'
@@ -420,9 +511,9 @@ export function isTileEdgeExposed(
     }
     const adjState = grid[adjY][adjX];
     if (adjState === 0) return true; // Adjacent to air = exposed
-    // Wall tiles (dirt) show edges against water
+    // Solid (wall-style) tiles show edges against water; water doesn't draw edges against solid.
     const currentState = grid[tileY]?.[tileX] || 0;
-    if (currentState === 1 && adjState === 2) return true;
+    if (isTileIdSolid(currentState) && isTileIdWater(adjState)) return true;
     return false;
 }
 
@@ -472,6 +563,108 @@ export function getTileJaggedEdges(grid: WallGrid, tileX: number, tileY: number)
 
     JAGGED_EDGE_CACHE.set(key, edges);
     return edges;
+}
+
+// --- Tile grid RLE codec (used to bundle the wall grid as a compact base64 blob) ---
+
+/**
+ * Run-length encode a flat array of 8-bit tile IDs into a base64 string.
+ *
+ * Wire format: a sequence of variable-length records.
+ *   byte 0: high 7 bits = run length (1-127), low 1 bit = continuation flag
+ *   if continuation: next 2 bytes are an extra big-endian count to add
+ *   final byte: tile id (0-255)
+ *
+ * For typical tile grids (large air/water runs), this hits ~1% of the raw size.
+ */
+export function encodeTileGridRLE(flat: ArrayLike<number>): string {
+    const out: number[] = [];
+    let i = 0;
+    const len = flat.length;
+    while (i < len) {
+        const v = flat[i] & 0xff;
+        let run = 1;
+        while (i + run < len && (flat[i + run] & 0xff) === v && run < 0x7fffff) run++;
+        i += run;
+        if (run <= 127) {
+            out.push((run << 1) & 0xff, v);
+        } else {
+            // 7-bit base length + 16-bit extension; total max = 127 + 65535 = 65662 (we cap at 0x7fffff above just in case)
+            while (run > 0) {
+                const base = Math.min(127, run);
+                const ext = Math.min(0xffff, run - base);
+                if (ext > 0) {
+                    out.push(((base << 1) | 1) & 0xff, (ext >> 8) & 0xff, ext & 0xff, v);
+                    run -= base + ext;
+                } else {
+                    out.push((base << 1) & 0xff, v);
+                    run -= base;
+                }
+            }
+        }
+    }
+    return bytesToBase64(new Uint8Array(out));
+}
+
+/** Decode a base64 RLE string back into a flat Uint8Array of tile IDs. */
+export function decodeTileGridRLE(b64: string, expectedLength?: number): Uint8Array {
+    const buf = base64ToBytes(b64);
+    const out: number[] = [];
+    let p = 0;
+    while (p < buf.length) {
+        const header = buf[p++];
+        const cont = header & 1;
+        let count = header >>> 1;
+        if (cont) {
+            count += (buf[p++] << 8) | buf[p++];
+        }
+        const v = buf[p++];
+        for (let k = 0; k < count; k++) out.push(v);
+    }
+    const arr = Uint8Array.from(out);
+    if (expectedLength !== undefined && arr.length !== expectedLength) {
+        console.warn(`[decodeTileGridRLE] length mismatch: got ${arr.length}, expected ${expectedLength}`);
+    }
+    return arr;
+}
+
+/** Decode a flat tile array into a 2D WallGrid of the configured dimensions. */
+export function tilesToWallGrid(flat: Uint8Array | number[], width = WALL_GRID_WIDTH, height = WALL_GRID_HEIGHT): WallGrid {
+    const grid: WallGrid = new Array(height);
+    for (let y = 0; y < height; y++) {
+        const row = new Array<number>(width);
+        const base = y * width;
+        for (let x = 0; x < width; x++) row[x] = flat[base + x] | 0;
+        grid[y] = row;
+    }
+    return grid;
+}
+
+/** Flatten a WallGrid into a Uint8Array (row-major). */
+export function wallGridToFlat(grid: WallGrid, width = WALL_GRID_WIDTH, height = WALL_GRID_HEIGHT): Uint8Array {
+    const flat = new Uint8Array(width * height);
+    for (let y = 0; y < height; y++) {
+        const row = grid[y] || [];
+        for (let x = 0; x < width; x++) flat[y * width + x] = (row[x] | 0) & 0xff;
+    }
+    return flat;
+}
+
+// Tiny base64 helpers that work in both Node and the browser.
+function bytesToBase64(bytes: Uint8Array): string {
+    const B = (globalThis as any).Buffer;
+    if (B) return B.from(bytes).toString('base64');
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return (typeof btoa === 'function' ? btoa(bin) : '');
+}
+function base64ToBytes(b64: string): Uint8Array {
+    const B = (globalThis as any).Buffer;
+    if (B) return new Uint8Array(B.from(b64, 'base64'));
+    const bin = (typeof atob === 'function' ? atob(b64) : '');
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
 }
 
 /** Get the maximum jagged protrusion within a range [minT, maxT] on an edge */
