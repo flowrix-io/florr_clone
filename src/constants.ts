@@ -88,17 +88,27 @@ export interface TileTypeConfig {
     solid: boolean;
     /** Whether the tile counts as water for swimming logic. */
     water: boolean;
-    /** Primary fill color (hex). */
+    /** Primary fill color (hex). Used when no texture is set, or as a fallback while a textureSvg loads. */
     color: string;
     /** Optional secondary border / stroke color (used by water-style edges). */
     borderColor?: string;
     /**
-     * Optional texture name for the renderer. Recognized values:
-     *   - "wall" (uses the bundled wall texture pattern, jagged edges)
-     *   - "water" (uses smoothed jagged edges with borderColor)
-     * Default (undefined) = flat colored fill, no edges.
+     * Visual style for the renderer:
+     *   - "wall"  → textured fill (uses textureSvg if set, else the built-in wall texture) + jagged edges
+     *   - "water" → flat fill + smoothed edges with borderColor
+     *   - "flat"  → solid colored fill, no edges
+     * Default (undefined) is treated as "flat".
      */
     style?: 'wall' | 'water' | 'flat';
+    /**
+     * Optional inline SVG markup (e.g. "<svg xmlns=…><rect…/></svg>") used as the
+     * tile's repeat-pattern texture. The renderer rasterizes this once at the
+     * size given by textureTileSize (default WALL_TILE_SIZE) and tiles it across
+     * each cell of this type. Bundled with the map so any client can render it.
+     */
+    textureSvg?: string;
+    /** Pixel size at which textureSvg is rasterized. Defaults to WALL_TILE_SIZE. */
+    textureTileSize?: number;
 }
 
 /** Built-in tile types — IDs 0-2 are reserved and always present. */

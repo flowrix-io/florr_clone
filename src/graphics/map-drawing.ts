@@ -1,5 +1,92 @@
 import { Graphics, MapElement, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState, WallTileState, getTileJaggedEdges, SECTION_CONFIGS } from './core';
-import { getTileTypeConfig } from '../constants';
+import { getTileTypeConfig, TileTypeConfig } from '../constants';
+
+// --- SVG-string tile texture cache ---
+//
+// Tile types may carry an inline SVG string in `textureSvg`. We rasterize each
+// unique SVG once (Blob → Image → offscreen canvas at WALL_TILE_SIZE), cache
+// the resulting CanvasPattern keyed by tile ID + ctx, and reuse it every frame.
+// Without caching, createPattern() runs once per visible tile per frame and
+// tanks FPS; without offscreen rasterization at WALL_TILE_SIZE, the SVG's
+// native viewBox doesn't match the tile pitch and the pattern visibly wraps
+// inside each cell (e.g. a 256-wide SVG inside a 300-wide tile shows 44px of
+// the next repeat at the right/bottom of every cell).
+interface TileTextureEntry {
+    canvas: HTMLCanvasElement | null;   // offscreen rasterization at tile size
+    pattern: CanvasPattern | null;      // pattern bound to a specific ctx
+    patternCtx: CanvasRenderingContext2D | null;
+    ready: boolean;
+    failed: boolean;
+}
+const tileTextureCache = new Map<number, TileTextureEntry>();
+
+/** Inject `xmlns="http://www.w3.org/2000/svg"` into the root <svg> tag if it's
+ *  missing — without it, browsers refuse to rasterize SVG loaded as an Image. */
+function normalizeSvgForImage(svg: string): string {
+    if (svg.includes('xmlns="http://www.w3.org/2000/svg"') || svg.includes("xmlns='http://www.w3.org/2000/svg'")) {
+        return svg;
+    }
+    return svg.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+}
+
+/**
+ * Look up (and lazily create) the CanvasPattern for a tile type, scaled to
+ * exactly fit one game tile so the pattern repeats seamlessly without visible
+ * wrap-around inside each cell. Returns null until the SVG finishes loading.
+ */
+function getTileTexturePattern(
+    cfg: TileTypeConfig,
+    ctx: CanvasRenderingContext2D,
+    onReady?: () => void
+): CanvasPattern | null {
+    if (!cfg.textureSvg) return null;
+    let entry = tileTextureCache.get(cfg.id);
+    if (entry) {
+        if (entry.failed || !entry.ready) return null;
+        // If the bound context is the one we have a cached pattern for, reuse it.
+        if (entry.pattern && entry.patternCtx === ctx) return entry.pattern;
+        // Different ctx (or no pattern yet) — create one bound to this ctx.
+        if (entry.canvas) {
+            entry.pattern = ctx.createPattern(entry.canvas, 'repeat');
+            entry.patternCtx = ctx;
+            return entry.pattern;
+        }
+        return null;
+    }
+
+    entry = { canvas: null, pattern: null, patternCtx: null, ready: false, failed: false };
+    tileTextureCache.set(cfg.id, entry);
+    const tileSize = cfg.textureTileSize && cfg.textureTileSize > 0 ? cfg.textureTileSize : WALL_TILE_SIZE;
+    try {
+        const svg = normalizeSvgForImage(cfg.textureSvg);
+        const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const off = document.createElement('canvas');
+            off.width = tileSize;
+            off.height = tileSize;
+            const offCtx = off.getContext('2d');
+            if (!offCtx) { entry!.failed = true; return; }
+            // Stretch the SVG to exactly one tile so adjacent cells line up.
+            offCtx.drawImage(img, 0, 0, tileSize, tileSize);
+            entry!.canvas = off;
+            entry!.ready = true;
+            onReady?.();
+        };
+        img.onerror = () => {
+            entry!.failed = true;
+            URL.revokeObjectURL(url);
+            console.warn(`[tile texture] failed to load SVG for tile ${cfg.id} (${cfg.name})`);
+        };
+        img.src = url;
+    } catch (err) {
+        entry.failed = true;
+        console.warn(`[tile texture] error preparing SVG for tile ${cfg.id}:`, err);
+    }
+    return null;
+}
 
 declare module './core' {
     interface Graphics {
@@ -83,6 +170,20 @@ Graphics.prototype.drawWallGrid = function(this: Graphics, viewport: { left: num
     const OVERLAP = 1.5;
     const OVERLAP_SIZE = WALL_TILE_SIZE + OVERLAP * 2;
     const wallPattern = this.ctx.createPattern(this.wallTexture, 'repeat');
+
+    // Resolve the pattern for a tile type: prefer its custom SVG texture if
+    // loaded (cached, scaled to one tile), else fall back to the bundled wall
+    // texture (for "wall" style only). Returns null when no pattern is
+    // available — caller should use the configured color.
+    const resolveTilePattern = (cfg: TileTypeConfig): CanvasPattern | null => {
+        if (cfg.textureSvg) {
+            const pat = getTileTexturePattern(cfg, this.ctx, () => { /* next frame redraws automatically */ });
+            if (pat) return pat;
+        }
+        if (cfg.style === 'wall' && wallPattern) return wallPattern;
+        return null;
+    };
+
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
             const state = WALL_GRID[tileY]?.[tileX] || 0;
@@ -93,10 +194,11 @@ Graphics.prototype.drawWallGrid = function(this: Graphics, viewport: { left: num
             const worldY = tileToWorldY(tileY);
             const drawX = worldX - OVERLAP;
             const drawY = worldY - OVERLAP;
+            const pattern = resolveTilePattern(cfg);
 
-            if (cfg.style === 'wall' && wallPattern) {
+            if (pattern) {
                 this.ctx.save();
-                this.ctx.fillStyle = wallPattern;
+                this.ctx.fillStyle = pattern;
                 this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
                 this.ctx.restore();
             } else if (cfg.style === 'water') {
@@ -121,12 +223,14 @@ Graphics.prototype.drawWallGrid = function(this: Graphics, viewport: { left: num
             const worldX = tileToWorldX(tileX);
             const worldY = tileToWorldY(tileY);
 
-            if (cfg.style === 'wall' && wallPattern) {
+            if (cfg.style === 'wall') {
+                const pattern = resolveTilePattern(cfg);
+                if (!pattern) continue;
                 const jaggedEdges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
-                if (jaggedEdges.top) this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, wallPattern);
-                if (jaggedEdges.bottom) this.drawJaggedEdge(worldX, worldY, 'bottom', jaggedEdges.bottom, wallPattern);
-                if (jaggedEdges.left) this.drawJaggedEdge(worldX, worldY, 'left', jaggedEdges.left, wallPattern);
-                if (jaggedEdges.right) this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, wallPattern);
+                if (jaggedEdges.top) this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, pattern);
+                if (jaggedEdges.bottom) this.drawJaggedEdge(worldX, worldY, 'bottom', jaggedEdges.bottom, pattern);
+                if (jaggedEdges.left) this.drawJaggedEdge(worldX, worldY, 'left', jaggedEdges.left, pattern);
+                if (jaggedEdges.right) this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, pattern);
             } else if (cfg.style === 'water') {
                 const edges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
                 const fill = cfg.color;

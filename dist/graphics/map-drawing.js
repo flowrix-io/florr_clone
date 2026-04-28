@@ -2,6 +2,75 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const constants_1 = require("../constants");
+const tileTextureCache = new Map();
+/** Inject `xmlns="http://www.w3.org/2000/svg"` into the root <svg> tag if it's
+ *  missing — without it, browsers refuse to rasterize SVG loaded as an Image. */
+function normalizeSvgForImage(svg) {
+    if (svg.includes('xmlns="http://www.w3.org/2000/svg"') || svg.includes("xmlns='http://www.w3.org/2000/svg'")) {
+        return svg;
+    }
+    return svg.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+}
+/**
+ * Look up (and lazily create) the CanvasPattern for a tile type, scaled to
+ * exactly fit one game tile so the pattern repeats seamlessly without visible
+ * wrap-around inside each cell. Returns null until the SVG finishes loading.
+ */
+function getTileTexturePattern(cfg, ctx, onReady) {
+    if (!cfg.textureSvg)
+        return null;
+    let entry = tileTextureCache.get(cfg.id);
+    if (entry) {
+        if (entry.failed || !entry.ready)
+            return null;
+        // If the bound context is the one we have a cached pattern for, reuse it.
+        if (entry.pattern && entry.patternCtx === ctx)
+            return entry.pattern;
+        // Different ctx (or no pattern yet) — create one bound to this ctx.
+        if (entry.canvas) {
+            entry.pattern = ctx.createPattern(entry.canvas, 'repeat');
+            entry.patternCtx = ctx;
+            return entry.pattern;
+        }
+        return null;
+    }
+    entry = { canvas: null, pattern: null, patternCtx: null, ready: false, failed: false };
+    tileTextureCache.set(cfg.id, entry);
+    const tileSize = cfg.textureTileSize && cfg.textureTileSize > 0 ? cfg.textureTileSize : core_1.WALL_TILE_SIZE;
+    try {
+        const svg = normalizeSvgForImage(cfg.textureSvg);
+        const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const off = document.createElement('canvas');
+            off.width = tileSize;
+            off.height = tileSize;
+            const offCtx = off.getContext('2d');
+            if (!offCtx) {
+                entry.failed = true;
+                return;
+            }
+            // Stretch the SVG to exactly one tile so adjacent cells line up.
+            offCtx.drawImage(img, 0, 0, tileSize, tileSize);
+            entry.canvas = off;
+            entry.ready = true;
+            onReady?.();
+        };
+        img.onerror = () => {
+            entry.failed = true;
+            URL.revokeObjectURL(url);
+            console.warn(`[tile texture] failed to load SVG for tile ${cfg.id} (${cfg.name})`);
+        };
+        img.src = url;
+    }
+    catch (err) {
+        entry.failed = true;
+        console.warn(`[tile texture] error preparing SVG for tile ${cfg.id}:`, err);
+    }
+    return null;
+}
 core_1.Graphics.prototype.drawMap = function (world_map_data) {
     // Calculate viewport accounting for zoom level
     const scaledWidth = this.canvas.width / this.zoomLevel;
@@ -64,6 +133,20 @@ core_1.Graphics.prototype.drawWallGrid = function (viewport) {
     const OVERLAP = 1.5;
     const OVERLAP_SIZE = core_1.WALL_TILE_SIZE + OVERLAP * 2;
     const wallPattern = this.ctx.createPattern(this.wallTexture, 'repeat');
+    // Resolve the pattern for a tile type: prefer its custom SVG texture if
+    // loaded (cached, scaled to one tile), else fall back to the bundled wall
+    // texture (for "wall" style only). Returns null when no pattern is
+    // available — caller should use the configured color.
+    const resolveTilePattern = (cfg) => {
+        if (cfg.textureSvg) {
+            const pat = getTileTexturePattern(cfg, this.ctx, () => { });
+            if (pat)
+                return pat;
+        }
+        if (cfg.style === 'wall' && wallPattern)
+            return wallPattern;
+        return null;
+    };
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
             const state = core_1.WALL_GRID[tileY]?.[tileX] || 0;
@@ -74,9 +157,10 @@ core_1.Graphics.prototype.drawWallGrid = function (viewport) {
             const worldY = (0, core_1.tileToWorldY)(tileY);
             const drawX = worldX - OVERLAP;
             const drawY = worldY - OVERLAP;
-            if (cfg.style === 'wall' && wallPattern) {
+            const pattern = resolveTilePattern(cfg);
+            if (pattern) {
                 this.ctx.save();
-                this.ctx.fillStyle = wallPattern;
+                this.ctx.fillStyle = pattern;
                 this.ctx.fillRect(drawX, drawY, OVERLAP_SIZE, OVERLAP_SIZE);
                 this.ctx.restore();
             }
@@ -101,16 +185,19 @@ core_1.Graphics.prototype.drawWallGrid = function (viewport) {
             const cfg = (0, constants_1.getTileTypeConfig)(state);
             const worldX = (0, core_1.tileToWorldX)(tileX);
             const worldY = (0, core_1.tileToWorldY)(tileY);
-            if (cfg.style === 'wall' && wallPattern) {
+            if (cfg.style === 'wall') {
+                const pattern = resolveTilePattern(cfg);
+                if (!pattern)
+                    continue;
                 const jaggedEdges = (0, core_1.getTileJaggedEdges)(core_1.WALL_GRID, tileX, tileY);
                 if (jaggedEdges.top)
-                    this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, wallPattern);
+                    this.drawJaggedEdge(worldX, worldY, 'top', jaggedEdges.top, pattern);
                 if (jaggedEdges.bottom)
-                    this.drawJaggedEdge(worldX, worldY, 'bottom', jaggedEdges.bottom, wallPattern);
+                    this.drawJaggedEdge(worldX, worldY, 'bottom', jaggedEdges.bottom, pattern);
                 if (jaggedEdges.left)
-                    this.drawJaggedEdge(worldX, worldY, 'left', jaggedEdges.left, wallPattern);
+                    this.drawJaggedEdge(worldX, worldY, 'left', jaggedEdges.left, pattern);
                 if (jaggedEdges.right)
-                    this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, wallPattern);
+                    this.drawJaggedEdge(worldX, worldY, 'right', jaggedEdges.right, pattern);
             }
             else if (cfg.style === 'water') {
                 const edges = (0, core_1.getTileJaggedEdges)(core_1.WALL_GRID, tileX, tileY);

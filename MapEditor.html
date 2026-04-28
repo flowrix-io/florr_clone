@@ -299,6 +299,17 @@
                     </select>
                     <input type="color" id="newTileBorder" value="#000000" title="Border color (water style only)">
                 </div>
+                <div style="margin-top:8px;">
+                    <label style="font-size:12px; display:block; margin-bottom:2px;">
+                        Texture SVG <span style="color:#888;">(optional — paste an &lt;svg&gt;…&lt;/svg&gt; markup; tiled across the cell)</span>
+                    </label>
+                    <textarea id="newTileSvg" rows="4" placeholder='&lt;svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"&gt;&lt;rect width="64" height="64" fill="#553311"/&gt;&lt;circle cx="32" cy="32" r="6" fill="#ffaa00"/&gt;&lt;/svg&gt;' style="width:100%; font-family:monospace; font-size:11px; resize:vertical; box-sizing:border-box;"></textarea>
+                    <div style="display:flex; gap:6px; margin-top:4px;">
+                        <button id="newTileSvgUpload" style="background:#555; font-size:12px;">Load .svg file…</button>
+                        <button id="newTileSvgClear" style="background:#555; font-size:12px;">Clear</button>
+                        <input type="number" id="newTileSvgSize" placeholder="texture size px (default 300)" style="flex:1; font-size:12px;">
+                    </div>
+                </div>
                 <button id="addTileType" style="margin-top:8px;">Add</button>
                 <button id="closeTileTypeModal" style="margin-top:8px; background:#666;">Close</button>
             </div>
@@ -738,13 +749,34 @@
                         const state = wallGrid[tileY]?.[tileX] || 0;
                         if (state === 0) continue; // Skip air tiles
 
+                        const cfg = getTileTypeConfig(state);
                         const worldX = tileToWorldX(tileX);
                         const worldY = tileToWorldY(tileY);
                         const screenX = worldX * scale - cameraOffset.x;
                         const screenY = worldY * scale - cameraOffset.y;
                         const tileSize = WALL_TILE_SIZE * scale;
 
-                        ctx.fillStyle = getTileTypeConfig(state).color || '#888';
+                        // If this tile type has an SVG texture and the rasterized
+                        // image is ready, tile it as a pattern; otherwise fall back to
+                        // the flat color (which also matches what the game renders
+                        // before the SVG finishes loading).
+                        const tex = cfg.textureSvg ? getEditorTileTexture(cfg) : null;
+                        if (tex) {
+                            const pat = ctx.createPattern(tex, 'repeat');
+                            if (pat) {
+                                ctx.save();
+                                ctx.translate(screenX, screenY);
+                                const previewSize = Math.max(8, (cfg.textureTileSize || 64) * scale);
+                                // Re-scale the pattern so it visually matches what the game shows.
+                                const patternScale = previewSize / (cfg.textureTileSize || 64);
+                                ctx.scale(patternScale, patternScale);
+                                ctx.fillStyle = pat;
+                                ctx.fillRect(0, 0, tileSize / patternScale, tileSize / patternScale);
+                                ctx.restore();
+                                continue;
+                            }
+                        }
+                        ctx.fillStyle = cfg.color || '#888';
                         ctx.fillRect(screenX, screenY, tileSize, tileSize);
                     }
                 }
@@ -1454,19 +1486,73 @@
         document.getElementById('customServerPort').addEventListener('blur', updateElementFromProperties);
         document.getElementById('spawnType').addEventListener('change', updateElementFromProperties);
 
+        // Browsers require xmlns="http://www.w3.org/2000/svg" on the root <svg>
+        // when loading SVG markup as an Image source — without it, the rasterizer
+        // silently produces a blank texture. Inject it transparently.
+        function normalizeSvgForImage(svg) {
+            if (!svg) return svg;
+            if (svg.indexOf('xmlns="http://www.w3.org/2000/svg"') !== -1 ||
+                svg.indexOf("xmlns='http://www.w3.org/2000/svg'") !== -1) return svg;
+            return svg.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+        }
+
+        // Cache SVG → blob URL so the palette swatches don't re-encode on every render.
+        const tileSvgUrlCache = new Map();
+        function getTileSvgUrl(t) {
+            if (!t.textureSvg) return null;
+            const key = `${t.id}::${t.textureSvg.length}`;
+            if (tileSvgUrlCache.has(key)) return tileSvgUrlCache.get(key);
+            try {
+                const svg = normalizeSvgForImage(t.textureSvg);
+                const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+                tileSvgUrlCache.set(key, url);
+                return url;
+            } catch (e) { return null; }
+        }
+
+        // Cache the rasterized SVG used to draw textured tiles on the editor canvas.
+        // Returns the Image once loaded, or null while loading. Triggers re-render
+        // when the image finishes so the canvas updates without manual refresh.
+        const tileTextureImgCache = new Map();
+        function getEditorTileTexture(t) {
+            if (!t.textureSvg) return null;
+            const cached = tileTextureImgCache.get(t.id);
+            if (cached) return cached.ready ? cached.img : null;
+            const img = new Image();
+            const entry = { img, ready: false };
+            tileTextureImgCache.set(t.id, entry);
+            const url = getTileSvgUrl(t);
+            if (!url) return null;
+            img.onload = () => { entry.ready = true; render(); };
+            img.onerror = () => { tileTextureImgCache.delete(t.id); };
+            img.src = url;
+            return null;
+        }
+
         // ----- Tile palette UI -----
         function rebuildTilePalette() {
             const root = document.getElementById('tilePalette');
             root.innerHTML = '';
+            // Old SVG blob URLs become stale when configs change — drop the cache.
+            for (const u of tileSvgUrlCache.values()) URL.revokeObjectURL(u);
+            tileSvgUrlCache.clear();
+            tileTextureImgCache.clear();
             const all = Array.from(tileTypes.values()).sort((a, b) => a.id - b.id);
             for (const t of all) {
                 if (t.id === 0) continue; // air has its own dedicated Erase button
                 const btn = document.createElement('button');
                 btn.id = `tileBtn_${t.id}`;
-                btn.title = `${t.name} (id ${t.id}${t.solid ? ', solid' : ''}${t.water ? ', water' : ''})`;
-                btn.textContent = `${t.id}: ${t.name}`;
-                btn.style.background = t.color && t.color !== '#00000000' ? t.color : '#444';
+                btn.title = `${t.name} (id ${t.id}${t.solid ? ', solid' : ''}${t.water ? ', water' : ''}${t.textureSvg ? ', svg' : ''})`;
+                btn.textContent = `${t.id}: ${t.name}${t.textureSvg ? ' 🖼' : ''}`;
+                const svgUrl = getTileSvgUrl(t);
+                if (svgUrl) {
+                    btn.style.background = `${t.color || '#444'} url("${svgUrl}") repeat`;
+                    btn.style.backgroundSize = '24px 24px';
+                } else {
+                    btn.style.background = t.color && t.color !== '#00000000' ? t.color : '#444';
+                }
                 btn.style.color = '#fff';
+                btn.style.textShadow = '0 0 2px rgba(0,0,0,0.8)';
                 btn.style.border = '1px solid #555';
                 btn.style.padding = '4px 8px';
                 btn.style.borderRadius = '4px';
@@ -1538,7 +1624,8 @@
                 row.appendChild(swatch);
                 const meta = document.createElement('span');
                 meta.style.flex = '1';
-                meta.textContent = `[${t.id}] ${t.name} — ${t.style || 'flat'}${t.solid ? ', solid' : ''}${t.water ? ', water' : ''}`;
+                const svgInfo = t.textureSvg ? `, svg ${t.textureSvg.length}B` : '';
+                meta.textContent = `[${t.id}] ${t.name} — ${t.style || 'flat'}${t.solid ? ', solid' : ''}${t.water ? ', water' : ''}${svgInfo}`;
                 row.appendChild(meta);
                 if (t.id >= 3) {
                     const del = document.createElement('button');
@@ -1584,6 +1671,26 @@
             render();
         }
 
+        document.getElementById('newTileSvgUpload').onclick = () => {
+            const inp = document.createElement('input');
+            inp.type = 'file';
+            inp.accept = '.svg,image/svg+xml';
+            inp.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    document.getElementById('newTileSvg').value = ev.target.result;
+                };
+                reader.readAsText(file);
+            };
+            inp.click();
+        };
+        document.getElementById('newTileSvgClear').onclick = () => {
+            document.getElementById('newTileSvg').value = '';
+            document.getElementById('newTileSvgSize').value = '';
+        };
+
         document.getElementById('addTileType').onclick = () => {
             const idEl = document.getElementById('newTileId');
             const nameEl = document.getElementById('newTileName');
@@ -1592,6 +1699,8 @@
             const waterEl = document.getElementById('newTileWater');
             const styleEl = document.getElementById('newTileStyle');
             const borderEl = document.getElementById('newTileBorder');
+            const svgEl = document.getElementById('newTileSvg');
+            const svgSizeEl = document.getElementById('newTileSvgSize');
 
             const id = parseInt(idEl.value, 10);
             if (!Number.isInteger(id) || id < 3 || id > 255) {
@@ -1611,9 +1720,21 @@
                 style: styleEl.value,
             };
             if (config.style === 'water') config.borderColor = borderEl.value;
+            const svg = (svgEl.value || '').trim();
+            if (svg) {
+                if (svg.indexOf('<svg') === -1) {
+                    alert('Texture SVG must contain a <svg> element.');
+                    return;
+                }
+                config.textureSvg = svg;
+                const sz = parseInt(svgSizeEl.value, 10);
+                if (Number.isFinite(sz) && sz > 0) config.textureTileSize = sz;
+            }
             tileTypes.set(id, config);
             // Reset form for the next entry.
             nameEl.value = '';
+            svgEl.value = '';
+            svgSizeEl.value = '';
             renderTileTypeList();
             rebuildTilePalette();
         };

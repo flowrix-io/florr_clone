@@ -7967,13 +7967,13 @@ const WORLD_MAP_DATA = {
             0,
             0,
             0,
-            2,
-            2,
-            2,
-            2,
-            2,
-            2,
-            2,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
             0,
             0,
             0,
@@ -43889,12 +43889,27 @@ const WORLD_MAP_DATA = {
             0,
             0
         ]
+    ],
+    "customTileTypes": [
+        {
+            "id": 3,
+            "name": "bridge",
+            "color": "#ff5500",
+            "solid": false,
+            "water": false,
+            "style": "flat",
+            "textureSvg": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 400\" width=\"400px\" height=\"400px\">\n  <rect x=\"0\" width=\"400\" height=\"400\" fill=\"#bbbbbb\" transform=\"matrix(1, 0, 0, 1, 7.105427357601002e-15, 1.4210854715202004e-14)\"/>\n  <rect fill=\"#999999\" x=\"2.5\" y=\"2.5\" width=\"395\" height=\"50\" stroke=\"#666666\" stroke-width=\"5\" style=\"stroke-width: 5;\" transform=\"matrix(1, 0, 0, 1, 7.105427357601002e-15, 1.4210854715202004e-14)\"/>\n  <rect fill=\"#999999\" x=\"2.5\" y=\"347.5\" width=\"395\" height=\"50\" stroke=\"#666666\" stroke-width=\"5\" style=\"stroke-width: 5;\" transform=\"matrix(1, 0, 0, 1, 7.105427357601002e-15, 1.4210854715202004e-14)\"/>\n  <rect x=\"40.016\" y=\"99.169\" width=\"30\" height=\"30\" fill=\"#999999\" stroke=\"none\" style=\"transform-origin: 55.016px 114.169px;\" transform=\"matrix(0.96592611, 0.25881901, -0.25881901, 0.96592611, 0.00002197, 0.00003074)\"/>\n  <rect x=\"40.016\" y=\"99.169\" width=\"30\" height=\"30\" fill=\"#999999\" stroke=\"none\" style=\"stroke-width: 1; transform-origin: 55.016px 114.169px;\" transform=\"matrix(0.96592611, -0.25881901, 0.25881901, 0.96592611, -7.42307753, 92.82544271)\"/>\n  <rect x=\"40.016\" y=\"99.169\" width=\"30\" height=\"30\" fill=\"#999999\" stroke=\"none\" style=\"stroke-width: 1; transform-origin: 55.016px 114.169px;\" transform=\"matrix(0.86602509, 0.5, -0.5, 0.86602509, 213.97814985, -3.157633)\"/>\n  <rect x=\"40.016\" y=\"99.169\" width=\"30\" height=\"30\" fill=\"#999999\" stroke=\"none\" style=\"stroke-width: 1; transform-origin: 55.016px 114.169px;\" transform=\"matrix(0.86602509, 0.5, -0.5, 0.86602509, 285.62555152, 98.37867727)\"/>\n  <rect x=\"40.016\" y=\"99.169\" width=\"30\" height=\"30\" fill=\"#999999\" stroke=\"none\" style=\"stroke-width: 1; transform-origin: 55.016px 114.169px;\" transform=\"matrix(0.86602509, 0.5, -0.5, 0.86602509, 83.05020515, 163.52988615)\"/>\n  <rect x=\"40.016\" y=\"99.169\" width=\"30\" height=\"30\" fill=\"#999999\" stroke=\"none\" style=\"stroke-width: 1; transform-origin: 55.016px 114.169px;\" transform=\"matrix(0.96592611, -0.25881901, 0.25881901, 0.96592611, 82.78269289, 33.52177018)\"/>\n  <rect x=\"40.016\" y=\"99.169\" width=\"30\" height=\"30\" fill=\"#999999\" stroke=\"none\" style=\"stroke-width: 1; transform-origin: 55.016px 114.169px;\" transform=\"matrix(0.96592611, -0.25881901, 0.25881901, 0.96592611, 188.49224553, 189.4312388)\"/>\n</svg>"
+        }
     ]
 };
 // Export elements array for backward compatibility (most code expects an array)
 exports.WORLD_MAP = WORLD_MAP_DATA.elements;
 // Export the full map data structure (includes wallGrid if present)
 exports.WORLD_MAP_FULL = WORLD_MAP_DATA;
+// Register the map's custom tile palette (e.g. SVG-textured tiles) into the
+// shared registry so the renderer and collision code see them. Must run before
+// any tile lookup; module-level call ensures this happens at first import.
+(0, constants_1.setCustomTileTypes)(WORLD_MAP_DATA.customTileTypes || []);
 // Add map validation function
 function validateWorldMap(map) {
     // Check for required border walls
