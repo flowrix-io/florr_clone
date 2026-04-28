@@ -1287,7 +1287,7 @@ export class TitleScreen {
         ctx.lineWidth = 6;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const titleText = 'flowrix.pro';
+        const titleText = 'flowrix beta';
         // Render connecting state, auth form, or game menu
         if (this.authForm.isConnectingState()) {
             this.renderConnecting(ctx, centerX, centerY);
@@ -1424,7 +1424,8 @@ export class TitleScreen {
             'Arrow keys to move',
             'Hold space to extend petals',
             'Press Z to open the inventory.',
-            'Press number keys 1-9 to use items.',
+            'Press U + number keys 1-9 to use items.',
+            'Press number keys 1-9 to swap items with secondary loadout',
             'Press K to switch between mouse and keyboard controls',
             'Use Q and E to swap petals',
             'Use T to unequip the selected petal'
@@ -1494,7 +1495,7 @@ export class TitleScreen {
         ctx.lineWidth = 6;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const titleText = 'flowrix.pro';
+        const titleText = 'flowrix beta';
         ctx.strokeText(titleText, centerX, centerY - 200);
         ctx.fillText(titleText, centerX, centerY - 200);
         ctx.restore();
