@@ -1150,7 +1150,7 @@ function rayHitsWall(x0, y0, x1, y1) {
         const x = x0 + dx * t;
         const y = y0 + dy * t;
         const s = (0, constants_1.getTileState)(map_data_1.WALL_GRID, x, y);
-        if (s === 1 || s === 2)
+        if ((0, constants_1.isTileIdBlocking)(s))
             return true;
     }
     return false;
@@ -1211,7 +1211,7 @@ function tileBlocked(tx, ty) {
     if (!row || tx >= row.length)
         return true;
     const s = row[tx];
-    return s === 1 || s === 2;
+    return (0, constants_1.isTileIdBlocking)(s);
 }
 function octileHeuristic(ax, ay, bx, by) {
     const dx = Math.abs(ax - bx);

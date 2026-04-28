@@ -171,6 +171,19 @@ export function isTileIdWater(id: number): boolean {
     return getTileTypeConfig(id).water;
 }
 
+/**
+ * True if a tile blocks player/enemy positioning — i.e. it is either solid
+ * (collides) or water (not walkable). Used for movement collision, spawn
+ * validation, line-of-sight, and pathfinding obstacle checks. Equivalent to
+ * `isTileIdSolid(id) || isTileIdWater(id)`, exposed as a single helper so
+ * custom tile types automatically participate everywhere the legacy 0/1/2
+ * system used `state === 1 || state === 2`.
+ */
+export function isTileIdBlocking(id: number): boolean {
+    const cfg = getTileTypeConfig(id);
+    return cfg.solid || cfg.water;
+}
+
 // Density calculation constants (defined after world dimensions)
 export const TOTAL_WORLD_AREA = ACTUAL_WORLD_WIDTH * ACTUAL_WORLD_HEIGHT;  // 400,000,000 pixels²
 export const ORIGINAL_ENEMY_COUNT = 9000;

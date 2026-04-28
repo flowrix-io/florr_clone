@@ -26,6 +26,7 @@ import {
     MapElement,
     BiomeSpawnEntry,
     getTileState,
+    isTileIdBlocking,
     WALL_TILE_SIZE
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
@@ -433,7 +434,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
 
         // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
         const tileState = getTileState(WALL_GRID, x, y);
-        const collidesWithWall = tileState === 1 || tileState === 2;
+        const collidesWithWall = isTileIdBlocking(tileState);
 
         if (!inSafeZone && !collidesWithWall) {
             validPosition = true;
@@ -486,7 +487,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
                 y <= (element.y + element.height) * SCALE_FACTOR
             );
             const tileState = getTileState(WALL_GRID, x, y);
-            const collidesWithWall = tileState === 1 || tileState === 2;
+            const collidesWithWall = isTileIdBlocking(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
 
             if (!inSafeZone && !collidesWithWall && !inPetalRange) {
@@ -547,7 +548,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
                 y <= (element.y + element.height) * SCALE_FACTOR
             );
             const tileState = getTileState(WALL_GRID, x, y);
-            const collidesWithWall = tileState === 1 || tileState === 2;
+            const collidesWithWall = isTileIdBlocking(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
             const tooClose = enemies.some((otherEnemy: Enemy) => {
                 const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);

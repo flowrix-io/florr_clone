@@ -352,7 +352,7 @@ function createEnemy(helpers) {
             y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
         // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
         const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
-        const collidesWithWall = tileState === 1 || tileState === 2;
+        const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
         if (!inSafeZone && !collidesWithWall) {
             validPosition = true;
         }
@@ -393,7 +393,7 @@ function createEnemy(helpers) {
                 y >= element.y * constants_2.SCALE_FACTOR &&
                 y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
             const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
-            const collidesWithWall = tileState === 1 || tileState === 2;
+            const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
             if (!inSafeZone && !collidesWithWall && !inPetalRange) {
                 newValidPosition = true;
@@ -442,7 +442,7 @@ function createEnemy(helpers) {
                 y >= element.y * constants_2.SCALE_FACTOR &&
                 y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
             const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
-            const collidesWithWall = tileState === 1 || tileState === 2;
+            const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
             const tooClose = constants_1.enemies.some((otherEnemy) => {
                 const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);

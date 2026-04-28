@@ -44,7 +44,7 @@ import { ServerPlayer, PlayerProgress, PlayerInventory, FaceFlags, EquipmentFlag
 import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
 import { updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet, despawnAllPlayerPets } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
-import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState, SECTION_CONFIGS, isInPvpArena } from './constants';
+import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
 import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { MobProjectile, PlayerProjectile } from './enemy';
@@ -696,7 +696,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
 
             // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
             const tileState = getTileState(WALL_GRID, spawnX!, spawnY!);
-            const collidesWithWall = tileState === 1 || tileState === 2;
+            const collidesWithWall = isTileIdBlocking(tileState);
 
             if (!inSafeZone && !collidesWithWall) {
                 validPosition = true;
@@ -756,7 +756,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
 
             // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
             const tileState2 = getTileState(WALL_GRID, spawnX!, spawnY!);
-            const collidesWithWall = tileState2 === 1 || tileState2 === 2;
+            const collidesWithWall = isTileIdBlocking(tileState2);
 
             if (!inSafeZone && !collidesWithWall) {
                 validPosition = true;
@@ -791,7 +791,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
 
                 // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
                 const tileState3 = getTileState(WALL_GRID, spawnX!, spawnY!);
-                const collidesWithWall = tileState3 === 1 || tileState3 === 2;
+                const collidesWithWall = isTileIdBlocking(tileState3);
 
                 if (!inSafeZone && !collidesWithWall) {
                     validPosition = true;
@@ -3965,7 +3965,7 @@ function moveEnemies() {
                         
                         // Check if teleport position is in a wall tile
                         const teleportTileState = getTileState(WALL_GRID, teleportX, teleportY);
-                        const isInWall = teleportTileState === 1 || teleportTileState === 2;
+                        const isInWall = isTileIdBlocking(teleportTileState);
 
                         // If position is safe and has line of sight, teleport there
                         if (!isInWall && hasLineOfSight(teleportX, teleportY, owner.x, owner.y)) {
@@ -3985,7 +3985,7 @@ function moveEnemies() {
                     if (!teleported) {
                         // Check if owner's position is safe for pet (not in wall tile)
                         const ownerTileState = getTileState(WALL_GRID, owner.x, owner.y);
-                        const isOwnerPosInWall = ownerTileState === 1 || ownerTileState === 2;
+                        const isOwnerPosInWall = isTileIdBlocking(ownerTileState);
 
                         if (!isOwnerPosInWall) {
                             enemy.x = owner.x;

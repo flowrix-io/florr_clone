@@ -139,8 +139,8 @@ function isPositionInsideWall(x, y, playerSize = constants_1.PLAYER_SIZE) {
             const tileWorldX = tileX * constants_1.WALL_TILE_SIZE;
             const tileWorldY = tileY * constants_1.WALL_TILE_SIZE;
             const state = (0, constants_1.getTileState)(map_data_1.WALL_GRID, tileWorldX, tileWorldY);
-            // State 1 = wall, State 2 = water - both block spawning
-            if (state === 1 || state === 2) {
+            // Any blocking tile (solid/water — built-in or custom) blocks spawning
+            if ((0, constants_1.isTileIdBlocking)(state)) {
                 return true;
             }
         }

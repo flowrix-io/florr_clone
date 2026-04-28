@@ -12,6 +12,7 @@ exports.getTileTypeConfig = getTileTypeConfig;
 exports.getAllTileTypes = getAllTileTypes;
 exports.isTileIdSolid = isTileIdSolid;
 exports.isTileIdWater = isTileIdWater;
+exports.isTileIdBlocking = isTileIdBlocking;
 exports.isInPvpArena = isInPvpArena;
 exports.isWall = isWall;
 exports.isSpawn = isSpawn;
@@ -145,6 +146,18 @@ function isTileIdSolid(id) {
 /** True if the given tile ID is water. */
 function isTileIdWater(id) {
     return getTileTypeConfig(id).water;
+}
+/**
+ * True if a tile blocks player/enemy positioning — i.e. it is either solid
+ * (collides) or water (not walkable). Used for movement collision, spawn
+ * validation, line-of-sight, and pathfinding obstacle checks. Equivalent to
+ * `isTileIdSolid(id) || isTileIdWater(id)`, exposed as a single helper so
+ * custom tile types automatically participate everywhere the legacy 0/1/2
+ * system used `state === 1 || state === 2`.
+ */
+function isTileIdBlocking(id) {
+    const cfg = getTileTypeConfig(id);
+    return cfg.solid || cfg.water;
 }
 // Density calculation constants (defined after world dimensions)
 exports.TOTAL_WORLD_AREA = exports.ACTUAL_WORLD_WIDTH * exports.ACTUAL_WORLD_HEIGHT; // 400,000,000 pixels²

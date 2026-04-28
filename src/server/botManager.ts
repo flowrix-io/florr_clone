@@ -16,6 +16,7 @@ import {
     WALL_TILE_SIZE,
     TELEPORTER_RADIUS,
     getTileState,
+    isTileIdBlocking,
     worldToTileX,
     worldToTileY
 } from '../constants';
@@ -1253,7 +1254,7 @@ function rayHitsWall(x0: number, y0: number, x1: number, y1: number): boolean {
         const x = x0 + dx * t;
         const y = y0 + dy * t;
         const s = getTileState(WALL_GRID, x, y);
-        if (s === 1 || s === 2) return true;
+        if (isTileIdBlocking(s)) return true;
     }
     return false;
 }
@@ -1322,7 +1323,7 @@ function tileBlocked(tx: number, ty: number): boolean {
     const row = WALL_GRID[ty];
     if (!row || tx >= row.length) return true;
     const s = row[tx];
-    return s === 1 || s === 2;
+    return isTileIdBlocking(s);
 }
 
 function octileHeuristic(ax: number, ay: number, bx: number, by: number): number {

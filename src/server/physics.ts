@@ -17,7 +17,9 @@ import {
     WallTileState,
     getTileJaggedEdges,
     getMaxJaggedOffset,
-    JAGGED_MAX_OFFSET
+    JAGGED_MAX_OFFSET,
+    isTileIdBlocking,
+    getTileTypeConfig
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { getMobStats } from '../mobs';
@@ -183,7 +185,8 @@ function checkTileCollision(worldX: number, worldY: number, halfSize: number): T
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
             const state = getTileState(WALL_GRID, tileToWorldX(tileX), tileToWorldY(tileY));
-            if (state !== 1 && state !== 2) continue;
+            // Skip non-blocking tiles (air or any custom tile that's neither solid nor water).
+            if (!isTileIdBlocking(state)) continue;
 
             const tileWorldX = tileToWorldX(tileX);
             const tileWorldY = tileToWorldY(tileY);
@@ -194,8 +197,14 @@ function checkTileCollision(worldX: number, worldY: number, halfSize: number): T
             let effectiveTop = tileWorldY;
             let effectiveBottom = tileWorldY + WALL_TILE_SIZE;
 
-            // For wall tiles (state=1) and water tiles (state=2), extend boundaries with jagged/curved edges
-            if (state === 1 || state === 2) {
+            // Only "wall" and "water" styles draw jagged/smoothed edges visually,
+            // so only those should expand their collision past the cell boundary.
+            // A "flat" (or default) style is drawn as a clean rectangle and must
+            // collide as one — otherwise the random jagged offsets push the
+            // collision past the visible edge and entities clip into thin air.
+            const cfg = getTileTypeConfig(state);
+            const usesJaggedEdges = cfg.style === 'wall' || cfg.style === 'water';
+            if (usesJaggedEdges) {
                 const jaggedEdges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
 
                 if (jaggedEdges.top) {
@@ -395,9 +404,9 @@ export function hasLineOfSight(x1: number, y1: number, x2: number, y2: number, s
         const sampleX = x1 + dx * t;
         const sampleY = y1 + dy * t;
         
-        // Check if this sample point is in a wall or water tile
+        // Any blocking tile (solid/water — built-in or custom) blocks line of sight
         const state = getTileState(WALL_GRID, sampleX, sampleY);
-        if (state === 1 || state === 2) { // Wall or water blocks line of sight
+        if (isTileIdBlocking(state)) {
             return false;
         }
     }
