@@ -497,7 +497,7 @@ function createEnemy(helpers) {
                     if (type === 'target_dummy')
                         return false;
                     const stats = (0, mobs_1.getMobStats)(type, tier);
-                    return stats && stats.section === currentSection;
+                    return stats && stats.section.includes(currentSection);
                 });
                 if (eligibleMobTypes.length === 0) {
                     return null;
@@ -517,7 +517,7 @@ function createEnemy(helpers) {
                 if ((0, server_utils_1.isCentipedeBodyType)(type))
                     return false;
                 const stats = (0, mobs_1.getMobStats)(type, 'common');
-                return stats && stats.section === currentSection;
+                return stats && stats.section.includes(currentSection);
             });
             if (eligibleMobTypes.length === 0) {
                 return null;
@@ -591,7 +591,7 @@ function createEnemy(helpers) {
             if ((0, server_utils_1.isCentipedeBodyType)(type))
                 return false;
             const stats = (0, mobs_1.getMobStats)(type, tier);
-            return stats && stats.section === currentSection;
+            return stats && stats.section.includes(currentSection);
         });
         if (eligibleMobTypes.length === 0) {
             return null;
@@ -809,7 +809,7 @@ function createSpecialMob(tier, helpers, targetSection) {
             return false; // Never spawn target dummies as boss mobs
         }
         const stats = (0, mobs_1.getMobStats)(type, tier);
-        return stats && stats.section === spawnSection;
+        return stats && stats.section.includes(spawnSection);
     });
     // If no mobs for this section, fall back to any eligible mob
     let mobType;

@@ -1454,412 +1454,149 @@ export const MAP_ELEMENTS: MapElement[] = [
       "spawnTable": [
         {
           "tier": "common",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "common",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "common",
-          "weight": 10,
-          "mobType": "baby_ant"
+          "weight": 1
         }
       ]
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 26965.46875,
     "y": 32625.078125,
     "width": 5220,
     "height": 4610,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "uncommon",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "uncommon",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "uncommon",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "uncommon"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 32185.46875,
     "y": 34615.078125,
     "width": 300,
     "height": 2620,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "uncommon",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "uncommon",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "uncommon",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "uncommon"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 32485.46875,
     "y": 34615.078125,
     "width": 0,
     "height": 0,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "uncommon",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "uncommon",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "uncommon",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "uncommon"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 22165.46875,
     "y": 32325.078125,
     "width": 4850,
     "height": 4730,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "rare",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "rare",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "rare",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "rare"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 32245.46875,
     "y": 31470.078125,
     "width": 5790,
     "height": 6420,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "rare",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "rare",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "rare",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "rare"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 22695.46875,
     "y": 28460.078125,
     "width": 4380,
     "height": 3870,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "epic",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "epic",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "epic",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "epic"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 26925.46875,
     "y": 27375.078125,
     "width": 5200,
     "height": 5120,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "legendary",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "legendary",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "legendary",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "legendary"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 28605.46875,
     "y": 26935.078125,
     "width": 1790,
     "height": 720,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "legendary",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "legendary",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "legendary",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "legendary"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 24065.46875,
     "y": 24290.078125,
     "width": 5120,
     "height": 3150,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "mythic",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "mythic"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 29005.46875,
     "y": 26000.078125,
     "width": 510,
     "height": 470,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "mythic",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "mythic"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 25135.46875,
     "y": 27220.078125,
     "width": 2160,
     "height": 770,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "mythic",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "mythic"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 24785.46875,
     "y": 23350.078125,
     "width": 4390,
     "height": 1150,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "mythic",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "mythic"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 26055.46875,
     "y": 22960.078125,
     "width": 2270,
     "height": 430,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "mythic",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "mythic"
     }
   },
   {
-    "type": "biome",
+    "type": "spawn",
     "x": 26615.46875,
     "y": 22790.078125,
     "width": 1090,
     "height": 250,
     "properties": {
-      "biomeName": "ant_hell",
-      "backgroundTexture": "ant_hell.svg",
-      "spawnTable": [
-        {
-          "tier": "mythic",
-          "weight": 60,
-          "mobType": "soldier_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 30,
-          "mobType": "worker_ant"
-        },
-        {
-          "tier": "mythic",
-          "weight": 10,
-          "mobType": "baby_ant"
-        }
-      ]
+      "spawnType": "mythic"
     }
   },
   {

@@ -627,6 +627,7 @@ exports.BASE_MOB_CONFIGS = {
 
 </svg>`,
         ai_type: 'hostile',
+        section: [4],
         range: 300
     },
     worker_ant: {
@@ -655,7 +656,7 @@ exports.BASE_MOB_CONFIGS = {
   <circle cx="4" cy="0" r="14" fill="#555555" stroke="#444444" stroke-width="7" />
 </svg>`,
         ai_type: 'neutral',
-        section: 4,
+        section: [4],
         range: 300
     },
     baby_ant: {
@@ -687,7 +688,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>
 `,
         ai_type: 'passive',
-        section: 4,
+        section: [4],
         range: 300
     },
     ant_hole: {
@@ -706,7 +707,7 @@ exports.BASE_MOB_CONFIGS = {
   <circle cx="0" cy="0" r="13" fill="#5c4300" />
 </svg>`,
         ai_type: 'passive',
-        section: 0,
+        section: [0],
         range: 0,
         hideRotation: true,
         noEggDrop: true,
@@ -744,7 +745,7 @@ exports.BASE_MOB_CONFIGS = {
   <circle cx="0" cy="0" r="13" fill="#3d1512" />
 </svg>`,
         ai_type: 'passive',
-        section: 1,
+        section: [1],
         range: 0,
         hideRotation: true,
         noEggDrop: true,
@@ -792,7 +793,6 @@ exports.BASE_MOB_CONFIGS = {
   <circle cx="4" cy="0" r="14" fill="#b02a22" stroke="#8c221b" stroke-width="7" />
 </svg>`,
         ai_type: 'neutral',
-        section: 4,
         range: 300
     },
     baby_fire_ant: {
@@ -824,7 +824,6 @@ exports.BASE_MOB_CONFIGS = {
 </svg>
 `,
         ai_type: 'passive',
-        section: 4,
         range: 300
     },
     rock: {
@@ -912,7 +911,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 600,
-        section: 1
+        section: [1]
     },
     shiny_ladybug: {
         name: "Shiny Ladybug",
@@ -949,7 +948,7 @@ exports.BASE_MOB_CONFIGS = {
         ai_type: 'neutral',
         range: 200,
         spawn_weight: 0.05,
-        section: 1
+        section: [1]
     },
     dark_ladybug: {
         name: "Dark Ladybug",
@@ -1056,7 +1055,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'sandstorm',
         range: 100,
-        section: 1,
+        section: [1],
         hideRotation: true,
     },
     cactus: {
@@ -1076,7 +1075,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 1
+        section: [1]
     },
     beetle: {
         name: "Beetle",
@@ -1131,7 +1130,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 300,
-        section: 1
+        section: [1]
     },
     hel_beetle: {
         name: "Hel Beetle",
@@ -1186,7 +1185,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 300,
-        section: 2
+        section: [2]
     },
     jellyfish: {
         name: "Jellyfish",
@@ -1252,7 +1251,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 400,
-        section: 3,
+        section: [3],
         hideRotation: true,
     },
     bubble: {
@@ -1268,7 +1267,7 @@ exports.BASE_MOB_CONFIGS = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="110" height="110" viewBox="27.5 27.5 55 55"><clipPath id="a"><path d="M13.333 9.167h83.334q4.166 0 4.166 4.166v83.334q0 4.166-4.166 4.166H13.333q-4.166 0-4.166-4.166V13.333q0-4.166 4.166-4.166"/></clipPath><g clip-path="url(#a)"><path fill="none" stroke="#fff" stroke-linejoin="round" stroke-opacity=".698" stroke-width="2.083" d="M37.322 37.322q.434-.434.89-.846.454-.412.928-.801t.968-.755 1.003-.707q.51-.34 1.036-.656.527-.316 1.068-.605.541-.29 1.096-.552t1.122-.497 1.145-.442 1.165-.385 1.183-.327q.595-.149 1.197-.269t1.209-.21 1.218-.15 1.223-.09T55 30t1.227.03 1.223.09 1.218.15 1.21.21q.601.12 1.196.27.596.148 1.183.326t1.165.385 1.145.442 1.122.497 1.096.552 1.068.605 1.036.656 1.003.707.968.755.929.801.889.846.846.89.801.928.755.968.707 1.003q.34.51.656 1.036.316.527.605 1.068.29.541.552 1.096t.497 1.122.442 1.145.385 1.165.327 1.183q.149.595.269 1.197t.21 1.209.15 1.218.09 1.223T80 55t-.03 1.227-.09 1.223-.15 1.218-.21 1.21q-.12.601-.27 1.196-.148.596-.326 1.183t-.385 1.165-.442 1.145-.497 1.123-.552 1.096-.605 1.068q-.315.526-.656 1.036t-.707 1.003-.755.968-.801.929-.846.889-.89.846-.928.801-.968.755-1.003.707q-.51.34-1.036.656-.527.316-1.068.605-.541.29-1.096.552t-1.122.497-1.145.442-1.165.385-1.183.327q-.595.149-1.197.269t-1.209.21-1.218.15-1.223.09T55 80q-.614 0-1.227-.03t-1.223-.09-1.218-.15-1.21-.21q-.601-.12-1.196-.27-.596-.148-1.183-.326t-1.165-.385-1.145-.442-1.123-.497-1.096-.552-1.068-.605q-.526-.315-1.036-.656t-1.003-.707-.968-.755-.929-.801-.889-.846-.846-.89-.801-.928-.755-.968-.707-1.003q-.34-.51-.656-1.036-.316-.527-.605-1.068-.29-.541-.552-1.096t-.497-1.122-.442-1.145-.385-1.165-.327-1.183q-.149-.595-.269-1.197t-.21-1.209-.15-1.218-.09-1.223T30 55t.03-1.227.09-1.223.15-1.218.21-1.21q.12-.601.27-1.196.148-.596.326-1.183t.385-1.165.442-1.145.497-1.122.552-1.096.605-1.068.656-1.036.707-1.003.755-.968.801-.929.846-.889"/><path fill="#fff" fill-opacity=".349" d="M38.059 38.059q.416-.416.852-.81.435-.396.89-.769t.927-.723.962-.678q.488-.326.993-.629.504-.302 1.023-.58t1.05-.528 1.076-.477q.543-.225 1.097-.423t1.116-.369 1.134-.313 1.147-.258 1.159-.201q.581-.086 1.167-.144.585-.058 1.172-.086.588-.03 1.176-.03t1.176.03 1.172.086q.586.058 1.167.144t1.159.201 1.147.258 1.134.313 1.116.37 1.097.422 1.076.477 1.05.529 1.023.58.993.628.962.678.927.723.89.768.852.81.81.853q.396.435.769.89t.723.927.678.962q.326.488.629.993.302.504.58 1.023t.528 1.05.477 1.076q.225.543.423 1.097t.369 1.116.313 1.134.258 1.147.201 1.159q.086.581.144 1.167.058.585.086 1.172.03.588.03 1.176t-.03 1.176-.086 1.172q-.058.586-.144 1.167t-.201 1.159-.258 1.147-.313 1.134-.37 1.116-.422 1.097-.477 1.076-.529 1.05-.58 1.023-.628.993-.678.962-.723.927-.768.89-.81.852-.853.81q-.435.396-.89.769t-.927.723-.962.678q-.488.326-.993.629-.504.302-1.023.58t-1.05.528-1.076.477q-.543.225-1.097.423t-1.116.369-1.134.313-1.147.258-1.159.201q-.581.086-1.167.144-.585.058-1.172.086-.588.03-1.176.03t-1.176-.03-1.172-.086q-.586-.058-1.167-.144t-1.159-.201-1.147-.258-1.134-.313-1.116-.37-1.097-.422-1.076-.477-1.05-.529-1.023-.58-.993-.628-.962-.678-.927-.723-.89-.768-.852-.81-.81-.853q-.396-.435-.769-.89t-.723-.927-.678-.962q-.326-.488-.629-.993-.302-.504-.58-1.023t-.528-1.05-.477-1.076q-.225-.543-.423-1.097t-.369-1.116-.313-1.134-.258-1.147-.201-1.159q-.086-.581-.144-1.167-.058-.585-.086-1.172-.03-.588-.03-1.176t.03-1.176.086-1.172q.058-.586.144-1.167t.201-1.159.258-1.147.313-1.134.37-1.116.422-1.097.477-1.076.529-1.05.58-1.023.628-.993.678-.962.723-.927.768-.89.81-.852"/><path fill="#fff" fill-opacity=".349" d="M38.795 50.58q.218-.217.455-.411.237-.195.493-.366.255-.17.526-.315.27-.145.554-.262t.578-.207.595-.149q.3-.06.606-.09t.613-.03.612.03.607.09.595.15q.294.088.578.206.283.117.554.262.27.145.526.315.255.17.493.366.237.194.454.412t.412.454.366.493q.17.255.315.526.145.27.262.554t.207.578.149.595q.06.3.09.606t.03.613-.03.613q-.03.305-.09.606t-.15.595q-.088.294-.206.578-.117.283-.262.554t-.315.526q-.171.256-.366.493t-.412.454-.454.412-.493.366-.526.315q-.27.145-.554.262t-.578.207-.595.149q-.3.06-.607.09-.305.03-.612.03t-.613-.03-.606-.09-.595-.15q-.294-.088-.578-.206t-.554-.262q-.271-.145-.526-.315-.256-.17-.493-.366-.237-.194-.455-.412-.217-.217-.411-.454-.195-.237-.366-.493-.17-.255-.315-.526-.145-.27-.262-.554t-.207-.578-.149-.595q-.06-.3-.09-.606t-.03-.613.03-.613q.03-.305.09-.606t.149-.595.207-.578q.117-.283.262-.554t.315-.526.366-.493q.194-.237.411-.454"/></g></svg>`,
         ai_type: 'passive',
         range: 200,
-        section: 3
+        section: [3]
     },
     starfish: {
         name: "Starfish",
@@ -1336,7 +1335,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 300,
-        section: 3,
+        section: [3],
         hideRotation: true,
     },
     sponge_2: {
@@ -1652,7 +1651,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 3,
+        section: [3],
     },
     sponge_1: {
         name: "Sponge",
@@ -1967,7 +1966,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 3,
+        section: [3],
     },
     shell: {
         name: "Shell",
@@ -1982,7 +1981,7 @@ exports.BASE_MOB_CONFIGS = {
         color: "#b5b200",
         image: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6.627 -6.627 45.255 45.255" width="45.255" height="45.255"><clipPath id="a"><rect width="91.667" height="91.667" x="9.167" y="9.167" rx="4.167" ry="4.167"/></clipPath><g clip-path="url(#a)" transform="rotate(135 -11.275 -27.22)scale(.58449)" style="transform-origin:54.4955px 54.4955px"><path fill="#ccb36d" d="M60.657 81.87q7.07-14.142 21.213-21.213L59.243 55 55 59.243z"/><path fill="none" stroke="#ccb36d" stroke-linecap="round" stroke-linejoin="round" stroke-width="5" d="M60.657 81.87q7.07-14.142 21.213-21.213L59.243 55 55 59.243z"/><path fill="#fcdd86" d="M30.391 70.741q-.334-.656-.636-1.328t-.57-1.358-.503-1.384-.434-1.406q-.2-.71-.365-1.427t-.294-1.443-.224-1.455q-.093-.73-.151-1.465-.058-.734-.08-1.47t-.007-1.473.065-1.47.137-1.467.21-1.457q.121-.727.28-1.446.157-.72.35-1.43t.42-1.411q.228-.7.49-1.39.262-.687.557-1.362t.623-1.334.687-1.302q.36-.643.751-1.267t.812-1.228.872-1.187.928-1.143.984-1.096 1.036-1.046 1.086-.995 1.133-.94q.579-.455 1.179-.882t1.22-.824 1.26-.763 1.295-.7q.787-.402 1.597-.756t1.639-.66 1.675-.563 1.705-.463 1.73-.361q.87-.156 1.747-.26t1.76-.156 1.766-.052 1.766.052 1.76.156 1.748.26 1.73.361 1.705.463 1.675.563 1.639.66 1.597.755q.522 12.588 2.644 31.68-2.122 9.192-11.314 11.314-19.092-2.122-31.68-2.644"/><path fill="none" stroke="#ccb36d" stroke-linecap="round" stroke-linejoin="round" stroke-width="5" d="M30.391 70.741q-.334-.656-.636-1.328t-.57-1.358-.503-1.384-.434-1.406q-.2-.71-.365-1.427t-.294-1.443-.224-1.455q-.093-.73-.151-1.465-.058-.734-.08-1.47t-.007-1.473.065-1.47.137-1.467.21-1.457q.121-.727.28-1.446.157-.72.35-1.43t.42-1.411q.228-.7.49-1.39.262-.687.557-1.362t.623-1.334.687-1.302q.36-.643.751-1.267t.812-1.228.872-1.187.928-1.143.984-1.096 1.036-1.046 1.086-.995 1.133-.94q.579-.455 1.179-.882t1.22-.824 1.26-.763 1.295-.7q.787-.402 1.597-.756t1.639-.66 1.675-.563 1.705-.463 1.73-.361q.87-.156 1.747-.26t1.76-.156 1.766-.052 1.766.052 1.76.156 1.748.26 1.73.361 1.705.463 1.675.563 1.639.66 1.597.755q.522 12.588 2.644 31.68-2.122 9.192-11.314 11.314-19.092-2.122-31.68-2.644"/><path fill="none" stroke="#ccb36d" stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M59.243 38.03q3.535 13.434 7.07 21.213M49.06 40.575q10.324 14.284 13.86 19.516M40.575 49.06q14.284 10.324 19.516 13.86M38.03 59.243q13.434 3.535 21.213 7.07"/></g></svg>`,
         ai_type: "neutral",
-        section: 3,
+        section: [3],
     },
     hornet: {
         name: "Hornet",
@@ -2033,7 +2032,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 300,
-        section: 0,
+        section: [0],
         projectile: {
             count: 1,
             distance: 500,
@@ -2153,7 +2152,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 500,
-        section: 5,
+        section: [5],
         projectile: {
             count: 1,
             distance: 500,
@@ -2311,7 +2310,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 5,
+        section: [5],
     },
     bush: {
         name: "Bush",
@@ -2354,7 +2353,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 5,
+        section: [5],
     },
     target_dummy: {
         name: "Target Dummy",
@@ -2383,7 +2382,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 7,
+        section: [7],
         hideRotation: true,
         noEggDrop: true,
     },
@@ -2422,7 +2421,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 300,
-        section: 6,
+        section: [6],
         reversed: true,
     },
     roach: {
@@ -2447,7 +2446,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'neutral',
         range: 300,
-        section: 6,
+        section: [6],
         reversed: true,
     },
     garbage: {
@@ -2463,7 +2462,7 @@ exports.BASE_MOB_CONFIGS = {
         image: `<svg></svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 6,
+        section: [6],
         reversed: true,
         hideRotation: true,
     },
@@ -2504,7 +2503,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'neutral',
         range: 400,
-        section: 6,
+        section: [6],
         reversed: true,
     },
     item_spawner: {
@@ -2528,7 +2527,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 8,
+        section: [8],
         noEggDrop: true,
     },
     spider: {
@@ -2594,7 +2593,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 600,
-        section: 6,
+        section: [6],
     },
     soldier_ant_pet: {
         name: "Soldier Ant Pet",
@@ -2646,7 +2645,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 300,
-        section: 8,
+        section: [8],
     },
     soldier_fire_ant_pet: {
         name: "Soldier Fire Ant Pet",
@@ -2698,7 +2697,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 300,
-        section: 8,
+        section: [8],
     },
     javascript: {
         name: "JavaScript",
@@ -2713,7 +2712,7 @@ exports.BASE_MOB_CONFIGS = {
         image: `<svg width="32px" height="32px" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMin meet"><path d="M0 0h256v256H0V0z" fill="#F7DF1E"/><path d="M67.312 213.932l19.59-11.856c3.78 6.701 7.218 12.371 15.465 12.371 7.905 0 12.89-3.092 12.89-15.12v-81.798h24.057v82.138c0 24.917-14.606 36.259-35.916 36.259-19.245 0-30.416-9.967-36.087-21.996M152.381 211.354l19.588-11.341c5.157 8.421 11.859 14.607 23.715 14.607 9.969 0 16.325-4.984 16.325-11.858 0-8.248-6.53-11.17-17.528-15.98l-6.013-2.58c-17.357-7.387-28.87-16.667-28.87-36.257 0-18.044 13.747-31.792 35.228-31.792 15.294 0 26.292 5.328 34.196 19.247L210.29 147.43c-4.125-7.389-8.591-10.31-15.465-10.31-7.046 0-11.514 4.468-11.514 10.31 0 7.217 4.468 10.14 14.778 14.608l6.014 2.577c20.45 8.765 31.963 17.7 31.963 37.804 0 21.654-17.012 33.51-39.867 33.51-22.339 0-36.774-10.654-43.819-24.574"/></svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 7,
+        section: [7],
         hideRotation: true,
     },
     dust: {
@@ -2730,7 +2729,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: 7,
+        section: [7],
         color: "#ffffff",
     },
     glitch: {
@@ -2747,7 +2746,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 300,
-        section: 7,
+        section: [7],
         color: "#ffffff",
         projectile: {
             count: 1,
@@ -2833,7 +2832,7 @@ exports.BASE_MOB_CONFIGS = {
         color: "#ff0000",
         ai_type: 'passive',
         range: 100,
-        section: 7,
+        section: [7],
         hideRotation: true,
     },
     sun: {
@@ -2852,7 +2851,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         light_color: "#ffff00",
-        section: 7,
+        section: [7],
         spawn_weight: 0.05,
         emissive: true,
         light_radius: 2000,
@@ -2880,7 +2879,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 500,
-        section: 0,
+        section: [0],
         spawn_weight: 0.4,
     },
     centipede_body: {
@@ -2900,7 +2899,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 0,
-        section: 0,
+        section: [0],
         spawn_weight: 0,
         noEggDrop: true,
     },
@@ -2925,7 +2924,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 500,
-        section: 1,
+        section: [1],
         spawn_weight: 0.4,
     },
     desert_centipede_body: {
@@ -2945,7 +2944,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 0,
-        section: 1,
+        section: [1],
         spawn_weight: 0,
         noEggDrop: true,
     },
@@ -3391,7 +3390,7 @@ function generateMobStats(baseConfig, rarity, mobType) {
         ai_type: overrides.ai_type ?? baseConfig.ai_type,
         range: overrides.range ?? baseConfig.range,
         xp,
-        section: overrides.section ?? baseConfig.section ?? 0,
+        section: overrides.section ?? baseConfig.section ?? [],
         visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0,
         reversed: overrides.reversed ?? baseConfig.reversed ?? false,
         hideRotation: overrides.hideRotation ?? baseConfig.hideRotation ?? false,
@@ -3433,7 +3432,7 @@ function getMobTypesBySection(section) {
     for (const mobType of Object.keys(exports.MOB_CONFIG)) {
         // Check the common rarity to get the section (all rarities share the same section)
         const stats = exports.MOB_CONFIG[mobType]?.common;
-        if (stats && stats.section === section) {
+        if (stats && stats.section.includes(section)) {
             result.push(mobType);
         }
     }
