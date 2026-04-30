@@ -3,6 +3,7 @@ import { createServer } from 'https';
 import { createServer as createHttpServer } from 'http';
 import { Server, Socket } from './ws_server';
 import path from 'path';
+import v8 from 'v8';
 import fs from 'fs';
 import https from 'https';
 import http from 'http';
@@ -5288,6 +5289,129 @@ server.listen(PORT, () => {
 });
 
 start_loop();
+
+// Scheduled restart system: warns connected players before exiting so pm2 restarts the process.
+const RESTART_WARNINGS_MS = [10 * 60 * 1000, 5 * 60 * 1000, 60 * 1000, 10 * 1000];
+let scheduledRestartInProgress = false;
+let scheduledRestartTimers: NodeJS.Timeout[] = [];
+let scheduledRestartTargetMs: number | null = null;
+let scheduledRestartReason: string = '';
+const broadcastSystemMessage = (content: string) => {
+    try {
+        for (const s of io.sockets.sockets.values()) {
+            try {
+                s.emit('chatMessage', { sender: 'System', content, timestamp: Date.now() });
+            } catch {}
+        }
+    } catch (e) {
+        console.error('[RESTART] Error broadcasting system message', e);
+    }
+};
+const formatRestartWarning = (ms: number, reason: string): string => {
+    const reasonText = reason === 'daily' ? 'daily maintenance' : reason;
+    if (ms >= 60000) {
+        const m = Math.round(ms / 60000);
+        return `<span style="color:#ffb74d;">⚠ Server will restart in ${m} minute${m === 1 ? '' : 's'} (${reasonText}).</span>`;
+    }
+    const s = Math.round(ms / 1000);
+    return `<span style="color:#ff6b6b;">⚠ Server restarting in ${s} second${s === 1 ? '' : 's'}!</span>`;
+};
+
+/** Schedule a server restart in `delayMs` milliseconds. Replaces any existing scheduled restart. */
+export function scheduleRestart(delayMs: number, reason: string = 'admin'): boolean {
+    if (scheduledRestartInProgress) return false;
+    if (delayMs < 0) delayMs = 0;
+
+    for (const t of scheduledRestartTimers) clearTimeout(t);
+    scheduledRestartTimers = [];
+    scheduledRestartTargetMs = Date.now() + delayMs;
+    scheduledRestartReason = reason;
+    console.log(`[RESTART] Scheduled restart in ${delayMs}ms (reason: ${reason})`);
+
+    for (const warnMs of RESTART_WARNINGS_MS) {
+        if (warnMs >= delayMs) continue;
+        scheduledRestartTimers.push(setTimeout(() => {
+            if (scheduledRestartInProgress) return;
+            broadcastSystemMessage(formatRestartWarning(warnMs, reason));
+        }, delayMs - warnMs));
+    }
+
+    scheduledRestartTimers.push(setTimeout(() => {
+        scheduledRestartInProgress = true;
+        console.warn(`[RESTART] Scheduled restart triggered (reason: ${reason})`);
+        broadcastSystemMessage(`<span style="color:#ff6b6b;">Server restarting now (${reason === 'daily' ? 'daily maintenance' : reason}). Reconnecting shortly...</span>`);
+        try {
+            for (const s of io.sockets.sockets.values()) {
+                try { s.emit('serverRestarting', { reason }); } catch {}
+            }
+        } catch {}
+        setTimeout(() => {
+            console.warn('[RESTART] Exiting process for restart');
+            process.exit(0);
+        }, 1000);
+    }, delayMs));
+    return true;
+}
+
+/** Cancel a pending scheduled restart. */
+export function cancelScheduledRestart(): boolean {
+    if (scheduledRestartInProgress) return false;
+    if (scheduledRestartTimers.length === 0) return false;
+    for (const t of scheduledRestartTimers) clearTimeout(t);
+    scheduledRestartTimers = [];
+    scheduledRestartTargetMs = null;
+    scheduledRestartReason = '';
+    return true;
+}
+
+/** Info about the pending restart, or null if none scheduled. */
+export function getScheduledRestartInfo(): { remainingMs: number; reason: string } | null {
+    if (scheduledRestartTargetMs === null) return null;
+    return { remainingMs: Math.max(0, scheduledRestartTargetMs - Date.now()), reason: scheduledRestartReason };
+}
+
+// Daily restart: 24h after startup
+scheduleRestart(24 * 60 * 60 * 1000, 'daily');
+
+// Memory watchdog: log every 10s, restart process if heap usage > 80% of V8 heap limit.
+// Requires a process supervisor (systemd, pm2, docker --restart, etc.) to actually bring the server back up.
+const MEMORY_RESTART_THRESHOLD = 0.8;
+const MEMORY_CHECK_INTERVAL = 10000;
+let memoryRestartInProgress = false;
+setInterval(() => {
+    const mem = process.memoryUsage();
+    const heapLimit = v8.getHeapStatistics().heap_size_limit;
+    const heapUsedPct = mem.heapUsed / heapLimit;
+    const rssMB = (mem.rss / 1024 / 1024).toFixed(1);
+    const heapUsedMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
+    const heapLimitMB = (heapLimit / 1024 / 1024).toFixed(1);
+    const playerCount = Object.keys(players).length;
+    console.log(`[MEMORY] rss=${rssMB}MB heapUsed=${heapUsedMB}MB/${heapLimitMB}MB (${(heapUsedPct * 100).toFixed(1)}%) players=${playerCount}`);
+
+    if (heapUsedPct >= MEMORY_RESTART_THRESHOLD && !memoryRestartInProgress) {
+        memoryRestartInProgress = true;
+        console.warn(`[MEMORY] Heap usage ${(heapUsedPct * 100).toFixed(1)}% >= ${MEMORY_RESTART_THRESHOLD * 100}% — restarting server`);
+
+        // Notify connected players so the client can show a friendly message and reconnect
+        try {
+            const sockets = Array.from(io.sockets.sockets.values());
+            for (const s of sockets) {
+                try {
+                    s.emit('chatMessage', { sender: 'System', content: '<span style="color:#ff6b6b;">Server is restarting to recover memory. You will be reconnected shortly.</span>', timestamp: Date.now() });
+                    s.emit('serverRestarting', { reason: 'memory' });
+                } catch {}
+            }
+        } catch (e) {
+            console.error('[MEMORY] Error notifying clients of restart', e);
+        }
+
+        // Give the notify packets a moment to flush, then exit non-zero so the supervisor restarts us.
+        setTimeout(() => {
+            console.warn('[MEMORY] Exiting process for restart');
+            process.exit(1);
+        }, 1000);
+    }
+}, MEMORY_CHECK_INTERVAL);
 
 // Add density maintenance interval (every 0.5 seconds) to spawn enemies as viewport moves
 setInterval(() => {

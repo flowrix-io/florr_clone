@@ -5,7 +5,7 @@ import { database, RedeemedCode, Notification } from '../database';
 import { getAllMobTypes } from '../mobs';
 import { players, enemies, ENEMIES_PER_VIEWPORT } from '../constants';
 import { ENEMY_COUNT } from './gameState';
-import { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase } from '../server';
+import { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase, scheduleRestart, cancelScheduledRestart, getScheduledRestartInfo } from '../server';
 import { getAllPetalTypes, getPetalStats, RARITY_LEVELS } from '../petals';
 import { addItem } from './playerManager';
 import { setTargetBotCount, getTargetBotCount, MAX_BOT_COUNT } from './botManager';
@@ -523,6 +523,55 @@ export function executeServerCommand(
                 sendOutput(`  ${username} — ${when}`, socketId, io);
             });
         }
+    } else if (trimmedCommand === 'restart' || trimmedCommand.startsWith('restart ')) {
+        // restart                       -> default 60s
+        // restart <seconds>             -> seconds
+        // restart <number>(s|m|h)       -> with unit
+        // restart cancel                -> cancel pending restart
+        // restart status                -> show pending restart info
+        const arg = trimmedCommand.slice('restart'.length).trim();
+        if (arg === 'status' || arg === '') {
+            if (arg === '') {
+                // No arg = schedule default 60s
+                const ok = scheduleRestart(60 * 1000, 'admin');
+                if (ok) sendOutput('Restart scheduled in 60 seconds. Use "restart cancel" to abort.', socketId, io);
+                else sendOutput('Cannot schedule: a restart is already firing.', socketId, io);
+            } else {
+                const info = getScheduledRestartInfo();
+                if (!info) sendOutput('No restart scheduled.', socketId, io);
+                else {
+                    const m = Math.floor(info.remainingMs / 60000);
+                    const s = Math.floor((info.remainingMs % 60000) / 1000);
+                    sendOutput(`Restart scheduled in ${m}m ${s}s (reason: ${info.reason}).`, socketId, io);
+                }
+            }
+        } else if (arg === 'cancel' || arg === 'abort') {
+            const ok = cancelScheduledRestart();
+            sendOutput(ok ? 'Pending restart cancelled.' : 'No pending restart to cancel.', socketId, io);
+        } else {
+            // Parse number with optional s/m/h suffix
+            const match = arg.match(/^(\d+)\s*(s|sec|secs|m|min|mins|h|hr|hrs)?$/i);
+            if (!match) {
+                sendOutput('Usage: restart [<seconds>|<N>(s|m|h)|cancel|status]', socketId, io);
+            } else {
+                const n = parseInt(match[1], 10);
+                const unit = (match[2] || 's').toLowerCase();
+                let ms = n * 1000;
+                if (unit.startsWith('m') && !unit.startsWith('ms')) ms = n * 60 * 1000;
+                else if (unit.startsWith('h')) ms = n * 60 * 60 * 1000;
+                if (ms < 0 || !Number.isFinite(ms)) {
+                    sendOutput('Invalid duration.', socketId, io);
+                } else {
+                    const ok = scheduleRestart(ms, 'admin');
+                    if (ok) {
+                        const totalSec = Math.round(ms / 1000);
+                        sendOutput(`Restart scheduled in ${totalSec}s. Use "restart cancel" to abort.`, socketId, io);
+                    } else {
+                        sendOutput('Cannot schedule: a restart is already firing.', socketId, io);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -587,6 +636,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status]';
 }
 

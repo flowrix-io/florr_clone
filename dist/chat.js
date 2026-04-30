@@ -58,6 +58,7 @@ const COMMANDS = [
     { command: '/admin guild_force_join', description: 'Force a player into a guild', isAdmin: true },
     { command: '/admin guild_list', description: 'List all guilds', isAdmin: true },
     { command: '/admin guild_info', description: 'Show info for a guild by id', isAdmin: true },
+    { command: '/admin restart', description: 'Schedule server restart: restart [<N>(s|m|h)|cancel|status]', isAdmin: true },
     { command: '/level-from-string', description: 'Show what level a player named &lt;name&gt; would roll', isAdmin: false },
     { command: '/loadout-from-string', description: 'Show the loadout a player named &lt;name&gt; would roll', isAdmin: false },
 ];
