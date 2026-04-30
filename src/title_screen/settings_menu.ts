@@ -39,6 +39,7 @@ export class SettingsMenu {
     private editingControl: string | null = null;
     private pressedButton: string | null = null;
     private sliderDragging: string | null = null;
+    private contentBottomY = 0;
 
     private showHitboxes = false;
     private shadersEnabled = false;
@@ -49,6 +50,8 @@ export class SettingsMenu {
     private mobDeathAnimation = true;
     private interpolation = 0.15;
     private showConsoleLogs = false;
+    private showAdminCommands = false;
+    private numberKeysUseItems = false;
     private serverIP = '';
     private serverIPFocused = false;
 
@@ -85,6 +88,8 @@ export class SettingsMenu {
         this.mobDeathAnimation = localStorage.getItem('mobDeathAnimation') !== 'false';
         this.interpolation = parseFloat(localStorage.getItem('interpolationAmount') || '0.15');
         this.showConsoleLogs = localStorage.getItem('showConsoleLogs') === 'true';
+        this.showAdminCommands = localStorage.getItem('showAdminCommands') === 'true';
+        this.numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
         this.serverIP = localStorage.getItem('serverIP') || window.location.origin;
     }
 
@@ -259,6 +264,9 @@ export class SettingsMenu {
                 'Reset to Default', 13, 3, 3);
             cy += btnH + 10;
 
+            this.drawCheckbox(ctx, contentX, cy, 22, this.numberKeysUseItems, 'Number Keys Use Items (off = swap loadout)', this.hoveredItem === 'cb_numberKeysUseItems');
+            cy += rowH;
+
         } else if (this.tab === 'advanced') {
             ctx.font = 'bold 13px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
@@ -298,15 +306,19 @@ export class SettingsMenu {
 
             this.drawCheckbox(ctx, contentX, cy, 22, this.showConsoleLogs, 'Show Console Logs on Screen', this.hoveredItem === 'cb_showConsoleLogs_adv');
             cy += rowH;
+            this.drawCheckbox(ctx, contentX, cy, 22, this.showAdminCommands, 'Show Admin Commands', this.hoveredItem === 'cb_showAdminCommands');
+            cy += rowH;
         } else if (this.tab === 'credits') {
-            this.renderCreditsTab(ctx, contentX, contentW, cy);
+            cy = this.renderCreditsTab(ctx, contentX, contentW, cy);
         }
+
+        this.contentBottomY = cy;
 
         ctx.restore();
         ctx.restore();
     }
 
-    private renderCreditsTab(ctx: CanvasRenderingContext2D, contentX: number, contentW: number, startY: number): void {
+    private renderCreditsTab(ctx: CanvasRenderingContext2D, contentX: number, contentW: number, startY: number): number {
         let cy = startY;
         const drawText = (text: string, font: string, color: string, y: number, align: CanvasTextAlign = 'left') => {
             ctx.font = font;
@@ -347,6 +359,7 @@ export class SettingsMenu {
         drawText('• UI style by Bismuth(https://github.com/trigonal-bacon/gardn)', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
         drawText('Thanks for playing!', 'bold 13px Ubuntu, sans-serif', '#cccccc', cy + 8, 'center');
+        return cy + 20;
     }
 
     private drawCheckbox(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, checked: boolean, label: string, hovered: boolean): void {
@@ -486,6 +499,11 @@ export class SettingsMenu {
                     return true;
                 }
             }
+            cy += btnH + 10;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleCheckbox('numberKeysUseItems');
+                return true;
+            }
         } else if (this.tab === 'advanced') {
             cy += 25;
             const ipInputH = 32;
@@ -496,6 +514,11 @@ export class SettingsMenu {
             cy += ipInputH + 15;
             if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                 this.toggleCheckbox('showConsoleLogs');
+                return true;
+            }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleCheckbox('showAdminCommands');
                 return true;
             }
         }
@@ -588,6 +611,11 @@ export class SettingsMenu {
                     return;
                 }
             }
+            cy += btnH + 10;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'cb_numberKeysUseItems';
+                return;
+            }
         } else if (this.tab === 'advanced') {
             cy += 25;
             if (y >= cy && y <= cy + 32 && x >= contentX && x <= contentX + contentW) {
@@ -597,6 +625,11 @@ export class SettingsMenu {
             cy += 32 + 15;
             if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                 this.hoveredItem = 'cb_showConsoleLogs_adv';
+                return;
+            }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'cb_showAdminCommands';
                 return;
             }
         }
@@ -631,8 +664,12 @@ export class SettingsMenu {
 
     public handleWheel(deltaY: number): void {
         if (!this.isOpen) return;
+        const { contentTop, contentBottom } = this.getLayout();
+        const viewportH = contentBottom - contentTop;
+        const contentH = this.contentBottomY - (contentTop + this.scrollY);
+        const minScroll = Math.min(0, viewportH - contentH);
         this.scrollY -= deltaY;
-        this.scrollY = Math.min(0, this.scrollY);
+        this.scrollY = Math.max(minScroll, Math.min(0, this.scrollY));
     }
 
     /** Returns true if event was consumed. */
@@ -737,6 +774,14 @@ export class SettingsMenu {
                 if (window.currentGame && window.currentGame.graphics) {
                     window.currentGame.graphics.setShowConsoleLogs(this.showConsoleLogs);
                 }
+                break;
+            case 'showAdminCommands':
+                this.showAdminCommands = !this.showAdminCommands;
+                localStorage.setItem('showAdminCommands', this.showAdminCommands.toString());
+                break;
+            case 'numberKeysUseItems':
+                this.numberKeysUseItems = !this.numberKeysUseItems;
+                localStorage.setItem('numberKeysUseItems', this.numberKeysUseItems.toString());
                 break;
         }
     }

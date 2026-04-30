@@ -1294,13 +1294,18 @@ class TitleScreen {
         ctx.lineWidth = 3;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
+        const numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
         const controlsText = [
             'Controls:',
             'Arrow keys to move',
             'Hold space to extend petals',
             'Press Z to open the inventory.',
-            'Press U + number keys 1-9 to use items.',
-            'Press number keys 1-9 to swap items with secondary loadout',
+            numberKeysUseItems
+                ? 'Press number keys 1-9 to use items.'
+                : 'Press U + number keys 1-9 to use items.',
+            numberKeysUseItems
+                ? 'Press U + number keys 1-9 to swap items with secondary loadout'
+                : 'Press number keys 1-9 to swap items with secondary loadout',
             'Press K to switch between mouse and keyboard controls',
             'Use Q and E to swap petals',
             'Use T to unequip the selected petal'

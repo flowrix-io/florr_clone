@@ -386,7 +386,8 @@ export class Chat {
             const value = this.chatInput?.value || '';
             if (value.startsWith('/')) {
                 const query = value.toLowerCase();
-                const matches = COMMANDS.filter(cmd => cmd.command.toLowerCase().startsWith(query));
+                const showAdmin = localStorage.getItem('showAdminCommands') === 'true';
+                const matches = COMMANDS.filter(cmd => cmd.command.toLowerCase().startsWith(query) && (showAdmin || !cmd.isAdmin));
                 if (matches.length > 0 && value !== '') {
                     this.showSuggestions(matches);
                 } else {

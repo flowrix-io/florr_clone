@@ -40,6 +40,7 @@ class SettingsMenu {
         this.editingControl = null;
         this.pressedButton = null;
         this.sliderDragging = null;
+        this.contentBottomY = 0;
         this.showHitboxes = false;
         this.shadersEnabled = false;
         this.showStats = false;
@@ -49,6 +50,8 @@ class SettingsMenu {
         this.mobDeathAnimation = true;
         this.interpolation = 0.15;
         this.showConsoleLogs = false;
+        this.showAdminCommands = false;
+        this.numberKeysUseItems = false;
         this.serverIP = '';
         this.serverIPFocused = false;
         this.loadValues();
@@ -79,6 +82,8 @@ class SettingsMenu {
         this.mobDeathAnimation = localStorage.getItem('mobDeathAnimation') !== 'false';
         this.interpolation = parseFloat(localStorage.getItem('interpolationAmount') || '0.15');
         this.showConsoleLogs = localStorage.getItem('showConsoleLogs') === 'true';
+        this.showAdminCommands = localStorage.getItem('showAdminCommands') === 'true';
+        this.numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
         this.serverIP = localStorage.getItem('serverIP') || window.location.origin;
     }
     getLayout() {
@@ -226,6 +231,8 @@ class SettingsMenu {
             (0, render_utils_1.drawGardnButton)(ctx, contentX, cy, btnW, btnH, '#5a9fdb', this.hoveredItem === 'saveControls', this.pressedButton === 'settings_saveControls', 'Save Controls', 13, 3, 3);
             (0, render_utils_1.drawGardnButton)(ctx, contentX + btnW + 10, cy, btnW, btnH, '#a3a3a3', this.hoveredItem === 'resetControls', this.pressedButton === 'settings_resetControls', 'Reset to Default', 13, 3, 3);
             cy += btnH + 10;
+            this.drawCheckbox(ctx, contentX, cy, 22, this.numberKeysUseItems, 'Number Keys Use Items (off = swap loadout)', this.hoveredItem === 'cb_numberKeysUseItems');
+            cy += rowH;
         }
         else if (this.tab === 'advanced') {
             ctx.font = 'bold 13px Ubuntu, sans-serif';
@@ -262,10 +269,13 @@ class SettingsMenu {
             cy += ipInputH + 15;
             this.drawCheckbox(ctx, contentX, cy, 22, this.showConsoleLogs, 'Show Console Logs on Screen', this.hoveredItem === 'cb_showConsoleLogs_adv');
             cy += rowH;
+            this.drawCheckbox(ctx, contentX, cy, 22, this.showAdminCommands, 'Show Admin Commands', this.hoveredItem === 'cb_showAdminCommands');
+            cy += rowH;
         }
         else if (this.tab === 'credits') {
-            this.renderCreditsTab(ctx, contentX, contentW, cy);
+            cy = this.renderCreditsTab(ctx, contentX, contentW, cy);
         }
+        this.contentBottomY = cy;
         ctx.restore();
         ctx.restore();
     }
@@ -309,6 +319,7 @@ class SettingsMenu {
         drawText('• UI style by Bismuth(https://github.com/trigonal-bacon/gardn)', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
         drawText('Thanks for playing!', 'bold 13px Ubuntu, sans-serif', '#cccccc', cy + 8, 'center');
+        return cy + 20;
     }
     drawCheckbox(ctx, x, y, size, checked, label, hovered) {
         ctx.fillStyle = (0, render_utils_1.hsvAdjust)('#666666', 0.4);
@@ -438,6 +449,11 @@ class SettingsMenu {
                     return true;
                 }
             }
+            cy += btnH + 10;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleCheckbox('numberKeysUseItems');
+                return true;
+            }
         }
         else if (this.tab === 'advanced') {
             cy += 25;
@@ -449,6 +465,11 @@ class SettingsMenu {
             cy += ipInputH + 15;
             if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                 this.toggleCheckbox('showConsoleLogs');
+                return true;
+            }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleCheckbox('showAdminCommands');
                 return true;
             }
         }
@@ -535,6 +556,11 @@ class SettingsMenu {
                     return;
                 }
             }
+            cy += btnH + 10;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'cb_numberKeysUseItems';
+                return;
+            }
         }
         else if (this.tab === 'advanced') {
             cy += 25;
@@ -545,6 +571,11 @@ class SettingsMenu {
             cy += 32 + 15;
             if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                 this.hoveredItem = 'cb_showConsoleLogs_adv';
+                return;
+            }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'cb_showAdminCommands';
                 return;
             }
         }
@@ -578,8 +609,12 @@ class SettingsMenu {
     handleWheel(deltaY) {
         if (!this.isOpen)
             return;
+        const { contentTop, contentBottom } = this.getLayout();
+        const viewportH = contentBottom - contentTop;
+        const contentH = this.contentBottomY - (contentTop + this.scrollY);
+        const minScroll = Math.min(0, viewportH - contentH);
         this.scrollY -= deltaY;
-        this.scrollY = Math.min(0, this.scrollY);
+        this.scrollY = Math.max(minScroll, Math.min(0, this.scrollY));
     }
     /** Returns true if event was consumed. */
     handleKeyDown(e) {
@@ -682,6 +717,14 @@ class SettingsMenu {
                 if (window.currentGame && window.currentGame.graphics) {
                     window.currentGame.graphics.setShowConsoleLogs(this.showConsoleLogs);
                 }
+                break;
+            case 'showAdminCommands':
+                this.showAdminCommands = !this.showAdminCommands;
+                localStorage.setItem('showAdminCommands', this.showAdminCommands.toString());
+                break;
+            case 'numberKeysUseItems':
+                this.numberKeysUseItems = !this.numberKeysUseItems;
+                localStorage.setItem('numberKeysUseItems', this.numberKeysUseItems.toString());
                 break;
         }
     }

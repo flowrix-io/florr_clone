@@ -693,6 +693,7 @@ class Game {
             if (key === normalizeKey(this.controls.toggle_hitboxes)) {
                 this.showHitboxes = !this.showHitboxes;
                 this.graphics.showHitboxes = this.showHitboxes;
+                localStorage.setItem('showHitboxes', this.showHitboxes.toString());
                 this.showFloatingText(this.canvas.width / 2, 50, `Hitboxes: ${this.showHitboxes ? 'ON' : 'OFF'}`, '#FFFFFF', 20);
                 return;
             }
@@ -749,9 +750,12 @@ class Game {
             const slotIndex = this.inventoryManager.getLoadoutKeyBindings().indexOf(key);
             if (slotIndex !== -1) {
                 const uHeld = this.keysPressed.has('u');
+                const numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
+                // When the setting is enabled, number keys default to "use item" and U inverts to swap.
+                const useMode = numberKeysUseItems ? !uHeld : uHeld;
                 const selectedSecondary = this.loadoutBar?.selectedSecondary ?? -1;
-                if (uHeld) {
-                    // U + slot number uses the petal in that slot
+                if (useMode) {
+                    // Use the petal in that slot
                     this.inventoryManager.useLoadoutItem(slotIndex);
                 }
                 else if (selectedSecondary >= 0) {
