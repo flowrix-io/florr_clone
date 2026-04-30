@@ -3852,9 +3852,8 @@ function moveEnemies() {
                     }
                     enemy.x += moveX * speed;
                     enemy.y += moveY * speed;
-                    // Only update angle if mob has speed > 0
-                    if (enemy.speed > 0) {
-                        enemy.angle = Math.atan2(moveY, moveX);
+                    if (enemy.speed !== 0) {
+                        enemy.angle = Math.atan2(moveY * speed, moveX * speed);
                     }
                 }
                 // Check if mob can shoot projectiles
@@ -4008,9 +4007,8 @@ function moveEnemies() {
                         }
                         enemy.x += moveX * speed;
                         enemy.y += moveY * speed;
-                        // Only update angle if mob has speed > 0
-                        if (enemy.speed > 0) {
-                            enemy.angle = Math.atan2(moveY, moveX);
+                        if (enemy.speed !== 0) {
+                            enemy.angle = Math.atan2(moveY * speed, moveX * speed);
                         }
                     }
                 }
