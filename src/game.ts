@@ -146,7 +146,7 @@ export class Game {
         rotation: number;
     }> = [];
     // Add control mode property
-    private useMouseControls: boolean = false;
+    private useMouseControls: boolean = localStorage.getItem('useMouseControls') === 'true';
     private mouseX: number = 0;
     private mouseY: number = 0;
     private normalizedMouseXOnScreen: number = 0;
@@ -865,6 +865,7 @@ export class Game {
 
             if (key === normalizeKey(this.controls.toggle_mouse_controls)) {
                 this.useMouseControls = !this.useMouseControls;
+                localStorage.setItem('useMouseControls', this.useMouseControls.toString());
                 this.showFloatingText(
                     this.canvas.width / 2,
                     50,
@@ -1049,6 +1050,10 @@ export class Game {
             if (this.mobDeathAnimation !== mobDeath) {
                 this.mobDeathAnimation = mobDeath;
                 this.graphics.mobDeathAnimation = mobDeath;
+            }
+            const mouse = localStorage.getItem('useMouseControls') === 'true';
+            if (this.useMouseControls !== mouse) {
+                this.useMouseControls = mouse;
             }
         };
         // Check every 500ms
@@ -1739,7 +1744,7 @@ export class Game {
         this.speedBoostActive = false;
         this.shieldActive = false;
         this.isPlayerDead = false;
-        this.useMouseControls = false;
+        this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
 
         // Remove all dynamically created DOM elements
         for (const el of this.createdElements) {

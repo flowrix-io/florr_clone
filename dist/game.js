@@ -84,7 +84,7 @@ class Game {
         // Add sand property
         this.sands = [];
         // Add control mode property
-        this.useMouseControls = false;
+        this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
         this.mouseX = 0;
         this.mouseY = 0;
         this.normalizedMouseXOnScreen = 0;
@@ -687,6 +687,7 @@ class Game {
             }
             if (key === normalizeKey(this.controls.toggle_mouse_controls)) {
                 this.useMouseControls = !this.useMouseControls;
+                localStorage.setItem('useMouseControls', this.useMouseControls.toString());
                 this.showFloatingText(this.canvas.width / 2, 50, `Controls: ${this.useMouseControls ? 'Mouse' : 'Keyboard'}`, '#FFFFFF', 20);
                 return;
             }
@@ -835,6 +836,10 @@ class Game {
             if (this.mobDeathAnimation !== mobDeath) {
                 this.mobDeathAnimation = mobDeath;
                 this.graphics.mobDeathAnimation = mobDeath;
+            }
+            const mouse = localStorage.getItem('useMouseControls') === 'true';
+            if (this.useMouseControls !== mouse) {
+                this.useMouseControls = mouse;
             }
         };
         // Check every 500ms
@@ -1449,7 +1454,7 @@ class Game {
         this.speedBoostActive = false;
         this.shieldActive = false;
         this.isPlayerDead = false;
-        this.useMouseControls = false;
+        this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
         // Remove all dynamically created DOM elements
         for (const el of this.createdElements) {
             el.remove();

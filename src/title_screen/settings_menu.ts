@@ -52,6 +52,7 @@ export class SettingsMenu {
     private showConsoleLogs = false;
     private showAdminCommands = false;
     private numberKeysUseItems = false;
+    private useMouseControls = false;
     private serverIP = '';
     private serverIPFocused = false;
 
@@ -90,6 +91,7 @@ export class SettingsMenu {
         this.showConsoleLogs = localStorage.getItem('showConsoleLogs') === 'true';
         this.showAdminCommands = localStorage.getItem('showAdminCommands') === 'true';
         this.numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
+        this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
         this.serverIP = localStorage.getItem('serverIP') || window.location.origin;
     }
 
@@ -265,6 +267,8 @@ export class SettingsMenu {
             cy += btnH + 10;
 
             this.drawCheckbox(ctx, contentX, cy, 22, this.numberKeysUseItems, 'Number Keys Use Items (off = swap loadout)', this.hoveredItem === 'cb_numberKeysUseItems');
+            cy += rowH;
+            this.drawCheckbox(ctx, contentX, cy, 22, this.useMouseControls, 'Use Mouse Controls (K toggles in-game)', this.hoveredItem === 'cb_useMouseControls');
             cy += rowH;
 
         } else if (this.tab === 'advanced') {
@@ -504,6 +508,11 @@ export class SettingsMenu {
                 this.toggleCheckbox('numberKeysUseItems');
                 return true;
             }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleCheckbox('useMouseControls');
+                return true;
+            }
         } else if (this.tab === 'advanced') {
             cy += 25;
             const ipInputH = 32;
@@ -614,6 +623,11 @@ export class SettingsMenu {
             cy += btnH + 10;
             if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                 this.hoveredItem = 'cb_numberKeysUseItems';
+                return;
+            }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'cb_useMouseControls';
                 return;
             }
         } else if (this.tab === 'advanced') {
@@ -782,6 +796,10 @@ export class SettingsMenu {
             case 'numberKeysUseItems':
                 this.numberKeysUseItems = !this.numberKeysUseItems;
                 localStorage.setItem('numberKeysUseItems', this.numberKeysUseItems.toString());
+                break;
+            case 'useMouseControls':
+                this.useMouseControls = !this.useMouseControls;
+                localStorage.setItem('useMouseControls', this.useMouseControls.toString());
                 break;
         }
     }
