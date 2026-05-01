@@ -187,6 +187,7 @@ import {
     EnemySpawnerHelpers
 } from './server/enemySpawner';
 import { spawnArenaMobs } from './server/pvpArenaSpawner';
+import { rebuildEnemyGrid } from './server/enemyGrid';
 import { registerApiKeyRoutes, recordBossEvent, stripHtml } from './server/apiKeyApi';
 import { setSuperMobInSection } from './server/gameState';
 
@@ -4992,6 +4993,10 @@ function start_loop() {
         // Populate bot inputs before running the normal update pipeline so
         // bots move/attack just like real players.
         updateBotAI(io);
+
+        // Build a spatial grid of enemies once per tick. Player/petal collision
+        // loops in updatePlayerState query this instead of scanning all enemies.
+        rebuildEnemyGrid(enemies);
 
         for (const id in players) {
             updatePlayerState(players[id], deltaTime, playerStateDeps);

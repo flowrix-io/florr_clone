@@ -76,6 +76,7 @@ const playerManager_1 = require("./server/playerManager");
 const crossServer_1 = require("./server/crossServer");
 const enemySpawner_1 = require("./server/enemySpawner");
 const pvpArenaSpawner_1 = require("./server/pvpArenaSpawner");
+const enemyGrid_1 = require("./server/enemyGrid");
 const apiKeyApi_1 = require("./server/apiKeyApi");
 const gameState_2 = require("./server/gameState");
 // Load persisted guilds into memory now that database + guildManager are both ready.
@@ -4480,6 +4481,9 @@ function start_loop() {
         // Populate bot inputs before running the normal update pipeline so
         // bots move/attack just like real players.
         (0, botManager_1.updateBotAI)(io);
+        // Build a spatial grid of enemies once per tick. Player/petal collision
+        // loops in updatePlayerState query this instead of scanning all enemies.
+        (0, enemyGrid_1.rebuildEnemyGrid)(constants_2.enemies);
         for (const id in constants_2.players) {
             (0, playerState_1.updatePlayerState)(constants_2.players[id], deltaTime, playerStateDeps);
         }

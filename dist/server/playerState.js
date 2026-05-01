@@ -18,6 +18,9 @@ const physics_1 = require("./physics");
 const physics_2 = require("./physics");
 const petal_actions_1 = require("../petal_actions");
 const mobs_1 = require("../mobs");
+const enemyGrid_1 = require("./enemyGrid");
+// Reusable per-call buffer for enemy grid queries; avoids per-petal array allocs.
+const _enemyQueryBuffer = [];
 const playerManager_1 = require("./playerManager");
 const inventoryCodec_1 = require("../inventoryCodec");
 const utils_1 = require("./utils");
@@ -513,11 +516,12 @@ function updatePlayerState(player, deltaTime, deps) {
         newY = wallCollision.y;
     }
     let collision = false;
-    for (const enemy of constants_1.enemies) {
-        // Skip pets (enemies with ownerId) - they don't damage players
-        if (enemy.ownerId) {
-            continue;
-        }
+    // Spatial-grid broad-phase: only test enemies whose center is within
+    // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
+    const _playerRadius = effectivePlayerSize / 2;
+    const _candidates = (0, enemyGrid_1.queryEnemiesNear)(newX, newY, _playerRadius + (0, enemyGrid_1.getMaxEnemyRadius)(), _enemyQueryBuffer);
+    for (let _ci = 0; _ci < _candidates.length; _ci++) {
+        const enemy = _candidates[_ci];
         const collisionInfo = (0, physics_1.checkPlayerEnemyCollision)(newX, newY, effectivePlayerSize, enemy);
         if (collisionInfo.collided) {
             collision = true;
@@ -1121,25 +1125,25 @@ function updatePlayerState(player, deltaTime, deps) {
                     gameState_1.petalLastProjectileTime.set(petalId, currentTime);
                 }
             }
-            // Check collision with enemies
-            for (const enemy of constants_1.enemies) {
-                // Skip all pets (pets should not be damaged by any player's petals)
-                if (enemy.ownerId) {
-                    continue;
-                }
-                // Get mob stats to determine proper hitbox size
-                const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-                const enemySize = mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE; // Use mob size or fallback to base size
-                const petalSize = 40 * effectiveSize; // Use effective size (custom or base)
-                // Use circular hitbox collision (matching player-to-mob and mob-to-mob collision)
-                // Both petal and enemy positions are center points
-                const enemyRadius = enemySize / 2;
-                const petalRadius = petalSize / 2;
+            // Check collision with enemies — broad-phase via spatial grid (built
+            // once per tick in start_loop), then precise per-enemy distance test.
+            // Pets and dead enemies are excluded by the grid.
+            const _petalSize = 40 * effectiveSize;
+            const _petalRadius = _petalSize / 2;
+            const candidates = (0, enemyGrid_1.queryEnemiesNear)(petalX, petalY, _petalRadius + (0, enemyGrid_1.getMaxEnemyRadius)(), _enemyQueryBuffer);
+            for (let _ei = 0; _ei < candidates.length; _ei++) {
+                const enemy = candidates[_ei];
+                // Cached on the enemy by rebuildEnemyGrid — type/tier never change after spawn.
+                const mobStats = enemy._mobStats || (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                const enemyRadius = enemy._radius ?? (constants_1.ENEMY_SIZE / 2);
+                const petalSize = _petalSize;
+                const petalRadius = _petalRadius;
                 const dx = enemy.x - petalX;
                 const dy = enemy.y - petalY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
+                const distSq = dx * dx + dy * dy;
                 const minDistance = enemyRadius + petalRadius;
-                if (distance < minDistance && distance > 0) {
+                const minDistSq = minDistance * minDistance;
+                if (distSq < minDistSq && distSq > 0) {
                     // Check if petal has a damage cooldown and is still on cooldown
                     const damageCooldownKey = `${player.id}_${loadoutIndex}_${instanceIndex}`;
                     if (petalStats.damageCooldown) {

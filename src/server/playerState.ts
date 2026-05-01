@@ -58,6 +58,10 @@ import {
     despawnAllPlayerPets
 } from '../petal_actions';
 import { getMobStats } from '../mobs';
+import { queryEnemiesNear, getMaxEnemyRadius } from './enemyGrid';
+
+// Reusable per-call buffer for enemy grid queries; avoids per-petal array allocs.
+const _enemyQueryBuffer: Enemy[] = [];
 import { addItem, applyPetalHealthBonus, calculatePlayerModifiers, enterPvpArena, exitPvpArena } from './playerManager';
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { trackDamage, sendBossMobDefeatedMessage, cleanupEnemy, trackMobKill } from './utils';
@@ -652,12 +656,12 @@ export function updatePlayerState(
     }
 
     let collision = false;
-    for (const enemy of enemies) {
-        // Skip pets (enemies with ownerId) - they don't damage players
-        if (enemy.ownerId) {
-            continue;
-        }
-        
+    // Spatial-grid broad-phase: only test enemies whose center is within
+    // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
+    const _playerRadius = effectivePlayerSize / 2;
+    const _candidates = queryEnemiesNear(newX, newY, _playerRadius + getMaxEnemyRadius(), _enemyQueryBuffer);
+    for (let _ci = 0; _ci < _candidates.length; _ci++) {
+        const enemy = _candidates[_ci];
         const collisionInfo = checkPlayerEnemyCollision(newX, newY, effectivePlayerSize, enemy);
         
         if (collisionInfo.collided) {
@@ -1312,29 +1316,28 @@ export function updatePlayerState(
                 }
             }
 
-            // Check collision with enemies
-            for (const enemy of enemies) {
-                // Skip all pets (pets should not be damaged by any player's petals)
-                if (enemy.ownerId) {
-                    continue;
-                }
-                
-                // Get mob stats to determine proper hitbox size
-                const mobStats = getMobStats(enemy.type, enemy.tier);
-                const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE; // Use mob size or fallback to base size
-                const petalSize = 40 * effectiveSize; // Use effective size (custom or base)
+            // Check collision with enemies — broad-phase via spatial grid (built
+            // once per tick in start_loop), then precise per-enemy distance test.
+            // Pets and dead enemies are excluded by the grid.
+            const _petalSize = 40 * effectiveSize;
+            const _petalRadius = _petalSize / 2;
+            const candidates = queryEnemiesNear(petalX, petalY, _petalRadius + getMaxEnemyRadius(), _enemyQueryBuffer);
+            for (let _ei = 0; _ei < candidates.length; _ei++) {
+                const enemy = candidates[_ei];
 
-                // Use circular hitbox collision (matching player-to-mob and mob-to-mob collision)
-                // Both petal and enemy positions are center points
-                const enemyRadius = enemySize / 2;
-                const petalRadius = petalSize / 2;
-                
+                // Cached on the enemy by rebuildEnemyGrid — type/tier never change after spawn.
+                const mobStats = (enemy as any)._mobStats || getMobStats(enemy.type, enemy.tier);
+                const enemyRadius = (enemy as any)._radius ?? (ENEMY_SIZE / 2);
+                const petalSize = _petalSize;
+                const petalRadius = _petalRadius;
+
                 const dx = enemy.x - petalX;
                 const dy = enemy.y - petalY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
+                const distSq = dx * dx + dy * dy;
                 const minDistance = enemyRadius + petalRadius;
+                const minDistSq = minDistance * minDistance;
 
-                if (distance < minDistance && distance > 0) {
+                if (distSq < minDistSq && distSq > 0) {
                     // Check if petal has a damage cooldown and is still on cooldown
                     const damageCooldownKey = `${player.id}_${loadoutIndex}_${instanceIndex}`;
                     if (petalStats.damageCooldown) {
