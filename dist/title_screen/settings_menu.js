@@ -4,6 +4,29 @@ exports.SettingsMenu = exports.DEFAULT_CONTROLS = void 0;
 exports.getControls = getControls;
 const constants_1 = require("../constants");
 const render_utils_1 = require("./render_utils");
+const zoom_compensation_1 = require("../zoom-compensation");
+/**
+ * Push the persisted renderScale + antialiasing settings to the live game's
+ * canvas so changes apply without a reload. Called on slider drag and
+ * checkbox toggle.
+ */
+function applyRenderScaleToActiveGame() {
+    const game = window.currentGame;
+    if (!game || !game.canvas)
+        return;
+    const renderScale = parseFloat(localStorage.getItem('renderScale') || '1');
+    const antialiasing = localStorage.getItem('antialiasing') !== 'false';
+    const safeScale = isNaN(renderScale) ? 1 : Math.max(0.25, Math.min(1, renderScale));
+    if (game.graphics) {
+        game.graphics.renderScale = safeScale;
+        game.graphics.antialiasing = antialiasing;
+        game.graphics.syncWorldCanvasSize();
+    }
+    (0, zoom_compensation_1.applyZoomCompensation)(game.canvas, antialiasing);
+    if (game.graphics?.ctx) {
+        game.graphics.ctx.imageSmoothingEnabled = antialiasing;
+    }
+}
 exports.DEFAULT_CONTROLS = {
     move_up: 'w',
     move_down: 's',
@@ -53,6 +76,8 @@ class SettingsMenu {
         this.showAdminCommands = false;
         this.numberKeysUseItems = false;
         this.useMouseControls = false;
+        this.antialiasing = true;
+        this.renderScale = 1.0;
         this.serverIP = '';
         this.serverIPFocused = false;
         this.loadValues();
@@ -86,6 +111,9 @@ class SettingsMenu {
         this.showAdminCommands = localStorage.getItem('showAdminCommands') === 'true';
         this.numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
         this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
+        this.antialiasing = localStorage.getItem('antialiasing') !== 'false';
+        const savedScale = parseFloat(localStorage.getItem('renderScale') || '1');
+        this.renderScale = isNaN(savedScale) ? 1 : Math.max(0.25, Math.min(1, savedScale));
         this.serverIP = localStorage.getItem('serverIP') || window.location.origin;
     }
     getLayout() {
@@ -156,6 +184,7 @@ class SettingsMenu {
                 { id: 'showStats', label: 'Show Performance Stats', value: this.showStats },
                 { id: 'dynamicSkybox', label: 'Dynamic Skybox', value: this.dynamicSkybox },
                 { id: 'mobDeathAnimation', label: 'Mob Death Animation', value: this.mobDeathAnimation },
+                { id: 'antialiasing', label: 'Anti-aliasing', value: this.antialiasing },
                 { id: 'showConsoleLogs', label: 'Show Console Logs', value: this.showConsoleLogs },
             ];
             for (const cb of checkboxes) {
@@ -168,6 +197,13 @@ class SettingsMenu {
             ctx.textBaseline = 'middle';
             ctx.strokeStyle = '#000000';
             ctx.lineWidth = 2;
+            const scalePct = Math.round(this.renderScale * 100);
+            ctx.strokeText(`Render Resolution: ${scalePct}%`, contentX, cy + 8);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`Render Resolution: ${scalePct}%`, contentX, cy + 8);
+            cy += 22;
+            this.drawSlider(ctx, contentX, cy, contentW, sliderH, (this.renderScale - 0.25) / 0.75, 'renderScale');
+            cy += 25;
             ctx.strokeText(`Mob Animation FPS: ${this.mobFramerate}`, contentX, cy + 8);
             ctx.fillStyle = '#ffffff';
             ctx.fillText(`Mob Animation FPS: ${this.mobFramerate}`, contentX, cy + 8);
@@ -395,7 +431,7 @@ class SettingsMenu {
         const rowH = 32;
         let cy = contentTop + this.scrollY;
         if (this.tab === 'graphics') {
-            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'showConsoleLogs'];
+            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'antialiasing', 'showConsoleLogs'];
             for (const id of checkboxIds) {
                 if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                     this.toggleCheckbox(id);
@@ -404,6 +440,12 @@ class SettingsMenu {
                 cy += rowH;
             }
             cy += 5 + 22;
+            if (y >= cy - 10 && y <= cy + 20 && x >= contentX && x <= contentX + contentW) {
+                this.sliderDragging = 'renderScale';
+                this.applySliderDrag(x);
+                return true;
+            }
+            cy += 25 + 22;
             if (y >= cy - 10 && y <= cy + 20 && x >= contentX && x <= contentX + contentW) {
                 this.sliderDragging = 'mobFramerate';
                 this.applySliderDrag(x);
@@ -514,7 +556,7 @@ class SettingsMenu {
         const rowH = 32;
         let cy = contentTop + this.scrollY;
         if (this.tab === 'graphics') {
-            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'showConsoleLogs'];
+            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'antialiasing', 'showConsoleLogs'];
             for (const id of checkboxIds) {
                 if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                     this.hoveredItem = `cb_${id}`;
@@ -523,6 +565,11 @@ class SettingsMenu {
                 cy += rowH;
             }
             cy += 5 + 22;
+            if (y >= cy - 10 && y <= cy + 20 && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'slider_renderScale';
+                return;
+            }
+            cy += 25 + 22;
             if (y >= cy - 10 && y <= cy + 20 && x >= contentX && x <= contentX + contentW) {
                 this.hoveredItem = 'slider_mobFramerate';
                 return;
@@ -600,7 +647,7 @@ class SettingsMenu {
             return false;
         if (this.hoveredItem) {
             this.pressedButton = `settings_${this.hoveredItem}`;
-            if (this.hoveredItem === 'slider_mobFramerate' || this.hoveredItem === 'slider_interpolation') {
+            if (this.hoveredItem === 'slider_mobFramerate' || this.hoveredItem === 'slider_interpolation' || this.hoveredItem === 'slider_renderScale') {
                 this.sliderDragging = this.hoveredItem.replace('slider_', '');
                 this.applySliderDrag(x);
             }
@@ -688,6 +735,13 @@ class SettingsMenu {
                 window.currentGame.interpolationAmount = this.interpolation;
             }
         }
+        else if (this.sliderDragging === 'renderScale') {
+            // Snap to 5% increments so the slider lands on intuitive values.
+            const raw = 0.25 + ratio * 0.75;
+            this.renderScale = Math.round(raw * 20) / 20;
+            localStorage.setItem('renderScale', this.renderScale.toString());
+            applyRenderScaleToActiveGame();
+        }
     }
     toggleCheckbox(id) {
         switch (id) {
@@ -724,6 +778,11 @@ class SettingsMenu {
                 if (window.currentGame) {
                     window.currentGame.mobDeathAnimation = this.mobDeathAnimation;
                 }
+                break;
+            case 'antialiasing':
+                this.antialiasing = !this.antialiasing;
+                localStorage.setItem('antialiasing', this.antialiasing.toString());
+                applyRenderScaleToActiveGame();
                 break;
             case 'showConsoleLogs':
                 this.showConsoleLogs = !this.showConsoleLogs;

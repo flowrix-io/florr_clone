@@ -48,6 +48,23 @@ function blendHexWithWhite(hex, amount) {
     return `rgb(${br},${bg},${bb})`;
 }
 class Graphics {
+    syncWorldCanvasSize() {
+        if (this.renderScale >= 1) {
+            this.worldCanvas = null;
+            this.worldCtx = null;
+            return;
+        }
+        const w = Math.max(1, Math.round(this.canvas.width * this.renderScale));
+        const h = Math.max(1, Math.round(this.canvas.height * this.renderScale));
+        if (!this.worldCanvas) {
+            this.worldCanvas = document.createElement('canvas');
+        }
+        if (this.worldCanvas.width !== w || this.worldCanvas.height !== h) {
+            this.worldCanvas.width = w;
+            this.worldCanvas.height = h;
+        }
+        this.worldCtx = this.worldCanvas.getContext('2d');
+    }
     constructor(canvas, playerSprite, wallTexture, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
         this.cameraX = 0;
         this.cameraY = 0;
@@ -144,6 +161,16 @@ class Graphics {
         this.showHitboxes = false;
         this.showRarityGlow = false;
         this.altKeyPressed = false;
+        // Render scale (1.0 = full window resolution, lower = lower-res buffer
+        // stretched to fill the screen). Trades sharpness for GPU work — useful
+        // when many drops/effects are on screen.
+        this.renderScale = 1.0;
+        this.antialiasing = true;
+        // Offscreen canvas the world is rendered into when renderScale < 1, then
+        // blitted (stretched) to the main canvas. UI keeps drawing to the main
+        // canvas at full resolution so it stays crisp and the right size.
+        this.worldCanvas = null;
+        this.worldCtx = null;
         this.dynamicSkybox = false;
         this.mobDeathAnimation = true;
         this.itemSprites = {};
@@ -272,6 +299,9 @@ class Graphics {
     setMap(mapData) {
         this.mapData = mapData;
         this.spawnZoneElements = mapData.filter(e => e.type === 'spawn');
+        // The cached chunks were rendered against the previous map data —
+        // biome boundaries and section colors may have shifted, so flush.
+        this.invalidateStaticMapCache?.();
     }
     showFloatingText(x, y, text, color, fontSize) {
         if (this.floatingTexts.length >= this.MAX_FLOATING_TEXTS) {
@@ -455,9 +485,13 @@ class Graphics {
     }
     setBiomeTexture(biomeName, texture) {
         this.biomeTextures.set(biomeName, texture);
+        // Any cached chunks rendered before this texture arrived used the
+        // fallback color — drop them so they get re-baked with the texture.
+        this.invalidateStaticMapCache?.();
     }
     setSectionTexture(sectionIndex, texture) {
         this.sectionTextures.set(sectionIndex, texture);
+        this.invalidateStaticMapCache?.();
     }
     setChangelogManager(changelogManager) {
         this.changelogManager = changelogManager;

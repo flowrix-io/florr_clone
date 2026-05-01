@@ -17,6 +17,7 @@ require("./items");
 require("./effects");
 require("./minimap");
 require("./background");
+require("./static-map-cache");
 require("./game-objects");
 require("./pvp-arena");
 require("./render");

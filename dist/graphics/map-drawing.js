@@ -81,8 +81,8 @@ core_1.Graphics.prototype.drawMap = function (world_map_data) {
         right: this.cameraX + scaledWidth,
         bottom: this.cameraY + scaledHeight
     };
-    // Draw wall grid tiles
-    this.drawWallGrid(viewport);
+    // Wall grid is rendered via the static map cache (see render.ts) —
+    // skip it here so we don't redraw it on top per frame.
     // Draw all map elements (spawn areas, biomes, teleporters, safe zones)
     world_map_data.forEach(element => {
         const x = element.x;

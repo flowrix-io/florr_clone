@@ -1450,7 +1450,18 @@ class Game {
         this.graphics.drawMap(mapData);
     }
     resizeCanvas() {
-        (0, zoom_compensation_1.applyZoomCompensation)(this.canvas);
+        const renderScale = parseFloat(localStorage.getItem('renderScale') || '1');
+        const antialiasing = localStorage.getItem('antialiasing') !== 'false';
+        const safeScale = isNaN(renderScale) ? 1 : Math.max(0.25, Math.min(1, renderScale));
+        if (this.graphics) {
+            this.graphics.renderScale = safeScale;
+            this.graphics.antialiasing = antialiasing;
+            this.graphics.syncWorldCanvasSize();
+        }
+        (0, zoom_compensation_1.applyZoomCompensation)(this.canvas, antialiasing);
+        if (this.graphics?.ctx) {
+            this.graphics.ctx.imageSmoothingEnabled = antialiasing;
+        }
     }
     // Change from private to public
     connectGuildMenu(menu) {

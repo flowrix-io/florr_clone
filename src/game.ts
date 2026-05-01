@@ -1106,7 +1106,7 @@ export class Game {
         // Center camera on player with zoom
         const scaledWidth = this.canvas.width / this.zoomLevel;
         const scaledHeight = this.canvas.height / this.zoomLevel;
-        
+
         const targetX = player.x - scaledWidth / 2;
         const targetY = player.y - scaledHeight / 2;
 
@@ -1132,7 +1132,7 @@ export class Game {
         this.animationStartPos = { x: this.cameraX, y: this.cameraY };
         const scaledWidth = this.canvas.width / this.zoomLevel;
         const scaledHeight = this.canvas.height / this.zoomLevel;
-        
+
         this.animationTargetPos = {
             x: Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - scaledWidth, mobX - scaledWidth / 2)),
             y: Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - scaledHeight, mobY - scaledHeight / 2))
@@ -1165,7 +1165,7 @@ export class Game {
             if (elapsed >= this.animationDuration) {
                 // Set up animation back to player
                 this.animationStartPos = { x: this.cameraX, y: this.cameraY };
-                
+
                 const scaledWidth = this.canvas.width / this.zoomLevel;
                 const scaledHeight = this.canvas.height / this.zoomLevel;
                 
@@ -1733,7 +1733,18 @@ export class Game {
 
 
     private resizeCanvas() {
-        applyZoomCompensation(this.canvas);
+        const renderScale = parseFloat(localStorage.getItem('renderScale') || '1');
+        const antialiasing = localStorage.getItem('antialiasing') !== 'false';
+        const safeScale = isNaN(renderScale) ? 1 : Math.max(0.25, Math.min(1, renderScale));
+        if (this.graphics) {
+            this.graphics.renderScale = safeScale;
+            this.graphics.antialiasing = antialiasing;
+            this.graphics.syncWorldCanvasSize();
+        }
+        applyZoomCompensation(this.canvas, antialiasing);
+        if (this.graphics?.ctx) {
+            this.graphics.ctx.imageSmoothingEnabled = antialiasing;
+        }
     }
 
     // Change from private to public

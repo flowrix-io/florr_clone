@@ -18,8 +18,16 @@ export function getBrowserZoom(): number {
  * Resizes a canvas to fill the viewport, compensating for browser zoom.
  * Sets canvas buffer size, CSS size, and transform so the canvas always
  * appears at the "100% zoom" dimensions.
+ *
+ * `antialiasing = false` switches the CSS scaler to nearest-neighbor so any
+ * stretched textures (including the lower-res world buffer used by the
+ * Render Resolution setting) don't get blurred by the browser.
+ *
+ * Note: render-resolution scaling lives separately in Graphics — it renders
+ * the world into a smaller offscreen canvas and blits it here, so the main
+ * canvas stays at full screen size for crisp UI.
  */
-export function applyZoomCompensation(canvas: HTMLCanvasElement): void {
+export function applyZoomCompensation(canvas: HTMLCanvasElement, antialiasing: boolean = true): void {
     const zoom = getBrowserZoom();
     const width = Math.round(window.innerWidth * zoom);
     const height = Math.round(window.innerHeight * zoom);
@@ -29,6 +37,7 @@ export function applyZoomCompensation(canvas: HTMLCanvasElement): void {
     canvas.style.height = height + 'px';
     canvas.style.transform = `scale(${1 / zoom})`;
     canvas.style.transformOrigin = '0 0';
+    canvas.style.imageRendering = antialiasing ? 'auto' : 'pixelated';
 }
 
 /**
