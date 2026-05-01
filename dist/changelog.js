@@ -317,7 +317,21 @@ exports.CHANGELOG = [
             'Changed petal attraction system',
             'Special petals no longer work in inactive loadout slots',
         ]
-    }
+    },
+    {
+        date: 'April 30, 2026',
+        changes: [
+            'Server now restarts every 24 hours',
+            'Optimizations and bug fixes',
+            'The keybinds for using items can now be swapped between U+1-10 and 1-10 in the settings menu',
+            'New setting: Show Admin Commands',
+            'Fixed show hitboxes not working',
+            'Fixed moth rendering bug',
+            'Ant Hell can now spawn bosses',
+            'Added a bridge to the Mythic zone in Garden',
+            'Changed sewers wall textures'
+        ]
+    },
 ];
 class ChangelogManager {
     constructor() {
