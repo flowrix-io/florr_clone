@@ -34,6 +34,19 @@ Object.defineProperty(exports, "getMobTypesBySection", { enumerable: true, get: 
 Object.defineProperty(exports, "MOB_CONFIG", { enumerable: true, get: function () { return mobs_1.MOB_CONFIG; } });
 var svg_renderer_2 = require("../svg_renderer");
 Object.defineProperty(exports, "getSVGRenderer", { enumerable: true, get: function () { return svg_renderer_2.getSVGRenderer; } });
+// Blend a #rrggbb hex color toward white by `amount` in [0, 1] and return
+// an `rgb(r,g,b)` string ready to assign to `ctx.fillStyle`. Used for drop
+// burst particles so the per-frame draw loop stays free of string parsing.
+function blendHexWithWhite(hex, amount) {
+    const h = hex.charCodeAt(0) === 35 /* '#' */ ? hex.slice(1) : hex;
+    const cr = parseInt(h.substring(0, 2), 16);
+    const cg = parseInt(h.substring(2, 4), 16);
+    const cb = parseInt(h.substring(4, 6), 16);
+    const br = Math.round(cr + (255 - cr) * amount);
+    const bg = Math.round(cg + (255 - cg) * amount);
+    const bb = Math.round(cb + (255 - cb) * amount);
+    return `rgb(${br},${bg},${bb})`;
+}
 class Graphics {
     constructor(canvas, playerSprite, wallTexture, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
         this.cameraX = 0;
@@ -170,6 +183,13 @@ class Graphics {
         this.originalConsoleError = null;
         // Cached eligible petal types for garbage pile drawing
         this.cachedEligiblePetalTypes = null;
+        // Per-section timing for the stats overlay. Filled in by drawGameObjects;
+        // accumulated and rolled over once per second by Game.gameLoop alongside
+        // the existing frame-time average.
+        this.perfItemsMs = 0;
+        this.perfItemsCount = 0;
+        this.perfMobsMs = 0;
+        this.perfProjectilesMs = 0;
         /**
          * Wire the title-screen canvas-button strip into the in-game render loop
          * so the same icon buttons (settings/changelog/.../exit + bottom-left
@@ -376,11 +396,12 @@ class Graphics {
         }
         const particles = [];
         const particleCount = 8;
+        const rarityColor = this.ITEM_RARITY_COLORS[rarity] || '#ffffff';
+        const blendedColor = blendHexWithWhite(rarityColor, 0.5);
         for (let i = 0; i < particleCount; i++) {
             const angle = (Math.PI * 2 * i) / particleCount + Math.random() * 0.3;
             const speed = 0.5 + Math.random() * 0.5;
             const particleLife = 2000 + Math.random() * 1000;
-            const rarityColor = this.ITEM_RARITY_COLORS[rarity] || '#ffffff';
             particles.push({
                 x: x + (Math.random() - 0.5) * 4,
                 y: y + (Math.random() - 0.5) * 4,
@@ -389,7 +410,7 @@ class Graphics {
                 life: particleLife,
                 maxLife: particleLife,
                 size: 1 + Math.random() * 2,
-                color: rarityColor,
+                color: blendedColor,
                 baseColor: '#ffffff'
             });
         }
@@ -404,6 +425,7 @@ class Graphics {
     }
     showItemDropBurst(x, y, rarity) {
         const rarityColor = this.ITEM_RARITY_COLORS[rarity] || '#ffffff';
+        const blendedColor = blendHexWithWhite(rarityColor, 0.5);
         const particles = [];
         const particleCount = 10;
         for (let i = 0; i < particleCount; i++) {
@@ -418,8 +440,8 @@ class Graphics {
                 life: particleLife,
                 maxLife: particleLife,
                 size: 2 + Math.random() * 2,
-                color: rarityColor,
-                baseColor: rarityColor
+                color: blendedColor,
+                baseColor: blendedColor
             });
         }
         this.petalParticleEffects.push({

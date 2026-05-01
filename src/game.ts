@@ -1563,6 +1563,14 @@ export class Game {
         const ftStr = this.frameTimeAvgMs > 0 ? `${this.frameTimeAvgMs.toFixed(2)}ms` : '--';
         lines.push({ text: `FPS: ${this.fpsCounter} (${ftStr}/frame) | Memory: ${memoryMB.toFixed(2)} MB`, color: '#00ff00' });
 
+        // Per-section render time (last frame). Helps isolate which subsystem
+        // is eating frame budget when something feels slow.
+        const g = this.graphics;
+        lines.push({
+            text: `Render: items ${g.perfItemsMs.toFixed(2)}ms (${g.perfItemsCount}) | mobs ${g.perfMobsMs.toFixed(2)}ms | proj ${g.perfProjectilesMs.toFixed(2)}ms`,
+            color: '#facc15'
+        });
+
         // Draw from bottom up
         let y = canvas.height - 8;
         for (const line of lines) {

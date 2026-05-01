@@ -69,6 +69,19 @@ Graphics.prototype.getItemCanvas = function(this: Graphics, item: WorldItem): HT
         if (sprite) {
             ctx.drawImage(sprite, -15, -15, 30, 30);
         }
+    } else if (item.petalType && item.rarity) {
+        // Bake the petal sprite into the cached canvas. Ground drops don't
+        // need the 24fps animation, and combining bg+petal into a single
+        // texture eliminates a per-drop drawImage call AND the texture
+        // switch between bg canvas and petal canvas — which on the GPU was
+        // the actual bottleneck (JS was already fast).
+        const petalEntry = this.petalImageCache[`${item.petalType}_${item.rarity}`];
+        const petalCanvas = Array.isArray(petalEntry) ? petalEntry[0] : petalEntry;
+        const stats = getPetalStats(item.petalType, item.rarity);
+        if (petalCanvas && stats) {
+            const petalSize = 12 * stats.size;
+            ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
+        }
     }
 
     // Draw item name
@@ -146,40 +159,17 @@ Graphics.prototype.drawItem = function(this: Graphics, item: WorldItem, players?
         }
     }
 
-    // Build/fetch per-item render cache once. Subsequent frames skip the
-    // string-key build, the itemCanvasCache Map.get, and the getPetalStats
-    // lookup that would otherwise run for every drop every frame.
+    // Build/fetch per-item render cache once. The petal sprite is now baked
+    // into `bg` by getItemCanvas, so the per-frame draw is a single
+    // drawImage of one cached texture per drop.
     let cache: ItemRenderCache | undefined = (item as any)._renderCache;
     if (!cache) {
         const bg = this.getItemCanvas(item);
-        let petalFrames: HTMLCanvasElement | HTMLCanvasElement[] | null = null;
-        let petalSize = 0;
-        if (item.type === 'petal' && item.petalType && item.rarity) {
-            const stats = getPetalStats(item.petalType, item.rarity);
-            if (stats) {
-                petalFrames = this.petalImageCache[`${item.petalType}_${item.rarity}`] ?? null;
-                petalSize = 12 * stats.size;
-            }
-        }
-        cache = { bg, petalFrames, petalSize };
+        cache = { bg, petalFrames: null, petalSize: 0 };
         (item as any)._renderCache = cache;
     }
 
     if (cache.bg) {
-        // Resolve current petal animation frame (cheap when static).
-        // Use Math.floor — `| 0` truncates to int32 and produces a negative
-        // index for Date.now()-scale timestamps, which would land on an
-        // undefined frame and silently drop the petal back to the fallback.
-        let petalFrame: HTMLCanvasElement | null = null;
-        if (cache.petalFrames) {
-            if (Array.isArray(cache.petalFrames)) {
-                const arr = cache.petalFrames;
-                petalFrame = arr[Math.floor((this.frameTimestamp / 42) % arr.length)];
-            } else {
-                petalFrame = cache.petalFrames;
-            }
-        }
-
         const needsTransform = rotation !== 0 || scale !== 1 || alpha !== 1;
         if (needsTransform) {
             this.ctx.save();
@@ -188,20 +178,11 @@ Graphics.prototype.drawItem = function(this: Graphics, item: WorldItem, players?
             if (rotation !== 0) this.ctx.rotate(rotation);
             if (scale !== 1) this.ctx.scale(scale, scale);
             this.ctx.drawImage(cache.bg, -ITEM_CANVAS_CENTER, -ITEM_CANVAS_CENTER);
-            if (petalFrame) {
-                const half = cache.petalSize / 2;
-                this.ctx.drawImage(petalFrame, -half, -half, cache.petalSize, cache.petalSize);
-            }
             this.ctx.restore();
         } else {
-            // Fast path: no transforms required, so no save/restore — just
-            // draw directly at world coordinates. With many drops on screen
-            // this avoids ~2 ctx state saves per item per frame.
+            // Fast path: one drawImage per drop, no transform state churn,
+            // and no second texture bind (petal is baked into bg).
             this.ctx.drawImage(cache.bg, drawX - ITEM_CANVAS_CENTER, drawY - ITEM_CANVAS_CENTER);
-            if (petalFrame) {
-                const half = cache.petalSize / 2;
-                this.ctx.drawImage(petalFrame, drawX - half, drawY - half, cache.petalSize, cache.petalSize);
-            }
         }
         if (this.showHitboxes) {
             this.ctx.save();

@@ -20,6 +20,7 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
     // Draw enemies first (including pets) - below players and petals
     const enemyCount = enemies.size;
 
+    const mobsT0 = performance.now();
     for (const enemy of enemies.values()) {
         // Calculate actual enemy size for accurate culling
         const mobStats = getMobStats(enemy.type, enemy.tier);
@@ -78,7 +79,11 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
         }
     }
 
+    this.perfMobsMs = performance.now() - mobsT0;
+
     // Draw items (with viewport culling)
+    const itemsT0 = performance.now();
+    let itemsDrawn = 0;
     const ITEM_CULL_BUFFER = 50; // Item size ~50px + text
     for (const item of items.values()) {
         if (item.x + ITEM_CULL_BUFFER < viewport.left ||
@@ -88,7 +93,11 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
             continue;
         }
         this.drawItem(item, players);
+        itemsDrawn++;
     }
+    this.perfItemsMs = performance.now() - itemsT0;
+    this.perfItemsCount = itemsDrawn;
+    const projT0 = performance.now();
 
     // Cache current time once per frame for animated projectiles
     const currentTime = Date.now();
@@ -175,4 +184,5 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
     for (const { projectile, petalStats } of otherProjectiles) {
         this.drawMobProjectile(projectile, currentTime, petalStats);
     }
+    this.perfProjectilesMs = performance.now() - projT0;
 };
