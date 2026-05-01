@@ -1323,9 +1323,37 @@ export class Game {
         // Interpolate all enemies' positions (skip dying enemies)
         for (const enemy of this.enemies.values()) {
             if (enemy.deathAnimationStartTime) continue;
+            const prevX = enemy.x;
+            const prevY = enemy.y;
             if (enemy.targetX !== undefined && enemy.targetY !== undefined) {
                 enemy.x += (enemy.targetX - enemy.x) * smoothingFactor;
                 enemy.y += (enemy.targetY - enemy.y) * smoothingFactor;
+            }
+            // Derive facing. Centipede body segments don't move in their facing direction
+            // (they trail sideways as the chain curves), so motion-based facing wobbles —
+            // for those, point toward the segment ahead in the chain instead.
+            if (enemy.leaderId) {
+                const leader = this.enemies.get(enemy.leaderId);
+                if (leader) {
+                    enemy.targetAngle = Math.atan2(leader.y - enemy.y, leader.x - enemy.x);
+                }
+            } else {
+                // Non-chained mobs: derive from a smoothed per-frame velocity. The raw
+                // per-frame velocity tracks toward the *quantized* target, so when a slow
+                // mob's target jumps in 1-unit increments along different axes, the
+                // instantaneous direction wobbles. Low-pass filtering the velocity at
+                // 60fps (blend 0.08, ~0.2s time constant) cancels that without slowing
+                // genuine direction changes noticeably.
+                const frameDx = enemy.x - prevX;
+                const frameDy = enemy.y - prevY;
+                const blend = 0.08;
+                enemy.smoothedVelX = (enemy.smoothedVelX ?? 0) * (1 - blend) + frameDx * blend;
+                enemy.smoothedVelY = (enemy.smoothedVelY ?? 0) * (1 - blend) + frameDy * blend;
+                const svx = enemy.smoothedVelX;
+                const svy = enemy.smoothedVelY;
+                if (svx * svx + svy * svy > 0.0004) {
+                    enemy.targetAngle = Math.atan2(svy, svx);
+                }
             }
             if (enemy.targetAngle !== undefined) {
                 let angleDiff = enemy.targetAngle - enemy.angle;

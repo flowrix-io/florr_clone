@@ -80,6 +80,9 @@ export interface Enemy {
   targetX?: number;
   targetY?: number;
   targetAngle?: number;
+  // Smoothed velocity used to derive facing direction without quantization twitches
+  smoothedVelX?: number;
+  smoothedVelY?: number;
   // Centipede chain tracking
   leaderId?: string;
   headId?: string;

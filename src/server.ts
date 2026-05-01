@@ -905,7 +905,7 @@ interface AuthenticatedSocket extends Socket {
     lastUpdateTime?: number;
     lastGameState?: any; // For delta compression
     lastStateHash?: number; // Lightweight hash for skip-if-unchanged
-    lastSentEnemies?: Map<string, { x: number; y: number; a: number; h: number; H: number; t: any; T: any }>;
+    lastSentEnemies?: Map<string, { x: number; y: number; h: number; H: number; t: any; T: any; L: string | undefined }>;
     lastSentPlayers?: Map<string, {
         x: number; y: number; a: number;
         h: number; H: number;
@@ -5248,9 +5248,9 @@ function start_loop() {
                 currentEnemyIds.add(e.id);
                 const ex = quantize(e.x, 1);
                 const ey = quantize(e.y, 1);
-                const ea = quantize(e.angle, 0.05);
                 const eh = Math.round(e.health);
                 const eH = Math.round(e.maxHealth);
+                const eL = e.leaderId;
                 const prev = lastEnemies.get(e.id);
 
                 // Default maxHealth comes from the mob config for (type, tier). When the
@@ -5261,22 +5261,22 @@ function start_loop() {
                 if (!prev) {
                     const ed: any = { i: e.id, t: e.type, x: ex, y: ey };
                     if (e.tier !== 'common') ed.T = e.tier;
-                    if (ea !== 0) ed.a = ea;
                     ed.h = eh;
                     if (eH !== defaultMaxH) ed.H = eH;
+                    if (eL !== undefined) ed.L = eL;
                     changedEnemies.push(ed);
-                    lastEnemies.set(e.id, { x: ex, y: ey, a: ea, h: eh, H: eH, t: e.type, T: e.tier });
-                } else if (prev.x !== ex || prev.y !== ey || prev.a !== ea || prev.h !== eh || prev.H !== eH || prev.t !== e.type || prev.T !== e.tier) {
+                    lastEnemies.set(e.id, { x: ex, y: ey, h: eh, H: eH, t: e.type, T: e.tier, L: eL });
+                } else if (prev.x !== ex || prev.y !== ey || prev.h !== eh || prev.H !== eH || prev.t !== e.type || prev.T !== e.tier || prev.L !== eL) {
                     const ed: any = { i: e.id };
                     if (prev.x !== ex) ed.x = ex;
                     if (prev.y !== ey) ed.y = ey;
-                    if (prev.a !== ea) ed.a = ea;
                     if (prev.h !== eh) ed.h = eh;
                     if (prev.H !== eH) ed.H = eH;
                     if (prev.t !== e.type) ed.t = e.type;
                     if (prev.T !== e.tier) ed.T = e.tier;
+                    if (prev.L !== eL) ed.L = eL ?? null;
                     changedEnemies.push(ed);
-                    lastEnemies.set(e.id, { x: ex, y: ey, a: ea, h: eh, H: eH, t: e.type, T: e.tier });
+                    lastEnemies.set(e.id, { x: ex, y: ey, h: eh, H: eH, t: e.type, T: e.tier, L: eL });
                 } else {
                     unchangedIds.push(e.id);
                 }

@@ -690,20 +690,23 @@ function setupSocketListeners(game: any) {
         }
 
         if (existingEnemy) {
-            // Update existing enemy: set interpolation targets instead of snapping
+            // Update existing enemy: set interpolation targets instead of snapping.
+            // Facing direction is derived from the rendered position delta in the
+            // interpolation loop (game.ts), not from the raw quantized server delta.
             existingEnemy.targetX = enemy.x;
             existingEnemy.targetY = enemy.y;
-            existingEnemy.targetAngle = enemy.angle;
             existingEnemy.health = enemy.health;
             existingEnemy.maxHealth = enemy.maxHealth;
             // Update other fields directly
             if (enemy.type) existingEnemy.type = enemy.type;
             if (enemy.tier) existingEnemy.tier = enemy.tier;
+            existingEnemy.leaderId = enemy.leaderId;
         } else {
             // New enemy: set position immediately (no interpolation on first appearance)
             enemy.targetX = enemy.x;
             enemy.targetY = enemy.y;
-            enemy.targetAngle = enemy.angle;
+            enemy.angle = 0;
+            enemy.targetAngle = 0;
             game.enemies.set(enemy.id, enemy);
         }
     }
@@ -1463,14 +1466,19 @@ function setupSocketListeners(game: any) {
                         tier: e.T !== undefined ? e.T : existing.tier,
                         x: e.x !== undefined ? e.x : (existing.targetX ?? existing.x),
                         y: e.y !== undefined ? e.y : (existing.targetY ?? existing.y),
-                        angle: e.a !== undefined ? e.a : existing.angle,
+                        angle: existing.angle,
                         health: e.h !== undefined ? e.h : existing.health,
                         maxHealth: e.H !== undefined ? e.H : existing.maxHealth,
                     };
+                    if (e.L !== undefined) {
+                        merged.leaderId = e.L === null ? undefined : e.L;
+                    } else {
+                        merged.leaderId = existing.leaderId;
+                    }
                     handleEnemyUpdate(merged);
                 } else {
                     // First sight (or recovery if existing was malformed). Server omits
-                    // tier/maxHealth/angle when they match defaults — apply fallbacks.
+                    // tier/maxHealth when they match defaults — apply fallbacks.
                     if (e.t === undefined) {
                         // Defensive: drop malformed entries rather than render an undefined-typed mob.
                         continue;
@@ -1484,9 +1492,10 @@ function setupSocketListeners(game: any) {
                         tier,
                         x: e.x,
                         y: e.y,
-                        angle: e.a ?? 0,
+                        angle: 0,
                         health: e.h,
                         maxHealth,
+                        leaderId: e.L ?? undefined,
                     } as any);
                 }
             }
