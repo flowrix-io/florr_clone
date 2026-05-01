@@ -1115,6 +1115,9 @@ function updatePlayerState(player, deltaTime, deps) {
                         gameState_1.playerProjectiles.push(projectile);
                     }
                     // Update last shot time for this petal instance
+                    // delete-then-set so the key moves to the end of insertion order;
+                    // server.ts evicts from the front of the map as an O(1) LRU.
+                    gameState_1.petalLastProjectileTime.delete(petalId);
                     gameState_1.petalLastProjectileTime.set(petalId, currentTime);
                 }
             }

@@ -1305,6 +1305,9 @@ export function updatePlayerState(
                     }
 
                     // Update last shot time for this petal instance
+                    // delete-then-set so the key moves to the end of insertion order;
+                    // server.ts evicts from the front of the map as an O(1) LRU.
+                    petalLastProjectileTime.delete(petalId);
                     petalLastProjectileTime.set(petalId, currentTime);
                 }
             }

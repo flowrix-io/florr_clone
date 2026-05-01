@@ -4439,7 +4439,15 @@ function updatePlayerProjectiles(deltaTimeMs) {
             continue;
         const vw = (player.viewportWidth || constants_2.VIEWPORT_WIDTH) * 1.5;
         const vh = (player.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 1.5;
-        const filtered = gameState_1.playerProjectiles.filter(p => Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh);
+        const filtered = [];
+        const ppx = player.x, ppy = player.y;
+        for (let pi = 0; pi < gameState_1.playerProjectiles.length; pi++) {
+            const proj = gameState_1.playerProjectiles[pi];
+            const dx = proj.x - ppx;
+            const dy = proj.y - ppy;
+            if ((dx < 0 ? -dx : dx) < vw && (dy < 0 ? -dy : dy) < vh)
+                filtered.push(proj);
+        }
         io.to(playerId).emit('playerProjectilesUpdate', filtered);
     }
 }
@@ -4448,12 +4456,20 @@ function start_loop() {
     const TICK_RATE = 30;
     const TICK_INTERVAL = 1000 / TICK_RATE;
     const deltaTime = 1 / TICK_RATE;
+    // Reused per tick to avoid per-tick allocation of the authenticated-id array
+    // and an associated socket lookup that was previously done twice.
+    const authenticatedPlayerIds = [];
+    const authenticatedSockets = [];
     setInterval(() => {
-        // Get count of authenticated players (players with userId)
-        const authenticatedPlayerIds = Object.keys(constants_2.players).filter(id => {
+        authenticatedPlayerIds.length = 0;
+        authenticatedSockets.length = 0;
+        for (const id in constants_2.players) {
             const socket = io.sockets.sockets.get(id);
-            return socket && socket.userId;
-        });
+            if (socket && socket.userId) {
+                authenticatedPlayerIds.push(id);
+                authenticatedSockets.push(socket);
+            }
+        }
         // Keep bot population aligned with real player count. Despawns all bots
         // when nobody is online so the server goes fully idle.
         (0, botManager_1.maintainBotCount)(io, authenticatedPlayerIds.length);
@@ -4566,25 +4582,62 @@ function start_loop() {
             }
         }
         // Periodic cleanup: Clean up old petalLastProjectileTime entries (keep only last 1000 entries)
+        // JS Maps preserve insertion order, so the oldest entries are at the front. Evict
+        // from the front in O(k) instead of doing an O(n log n) sort + clear + reinsert.
         if (gameState_1.petalLastProjectileTime.size > 1000) {
-            // Sort by value (time) and keep only the most recent 1000
-            const entries = Array.from(gameState_1.petalLastProjectileTime.entries())
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 1000);
-            gameState_1.petalLastProjectileTime.clear();
-            entries.forEach(([key, value]) => gameState_1.petalLastProjectileTime.set(key, value));
+            let toRemove = gameState_1.petalLastProjectileTime.size - 1000;
+            for (const key of gameState_1.petalLastProjectileTime.keys()) {
+                if (toRemove-- <= 0)
+                    break;
+                gameState_1.petalLastProjectileTime.delete(key);
+            }
         }
         // Helper function to quantize positions (reduce precision to save bandwidth)
         const quantize = (value, precision = 1) => {
             return Math.round(value / precision) * precision;
         };
+        const playerSnapshots = [];
+        for (const p of Object.values(constants_2.players)) {
+            const petalExtension = p.inputs?.petalExtension || 1.0;
+            let faceFlags = 0;
+            let mouth = 14.5;
+            if (petalExtension > 1.0) {
+                faceFlags |= player_1.FaceFlags.Attacking;
+                mouth = 4;
+            }
+            if (petalExtension < 1.0) {
+                faceFlags |= player_1.FaceFlags.Defending;
+                mouth = 4;
+            }
+            let equipFlags = 0;
+            if (p.loadout) {
+                const loadoutLen = Math.min(p.loadout.length, 10);
+                for (let i = 0; i < loadoutLen; i++) {
+                    const item = p.loadout[i];
+                    if (!item || item.type !== 'petal' || !item.petalType)
+                        continue;
+                    const stats = (0, petals_2.getPetalStats)(item.petalType, item.rarity ?? 'common');
+                    if (stats?.equipFlags)
+                        equipFlags |= stats.equipFlags;
+                    if (stats?.faceFlags)
+                        faceFlags |= stats.faceFlags;
+                }
+            }
+            playerSnapshots.push({
+                p,
+                faceFlags,
+                equipFlags,
+                mouth,
+                petalExtension,
+                petalsRaw: p.petalPositions || [],
+            });
+        }
         // Send compact delta updates per client. Protocol uses short keys and
         // omits fields that haven't changed since the last send to that client.
         // See client handler in socket.ts for the matching format.
-        for (const playerId of authenticatedPlayerIds) {
-            const socket = io.sockets.sockets.get(playerId);
-            if (!socket || !socket.userId)
-                continue;
+        for (let pi = 0; pi < authenticatedPlayerIds.length; pi++) {
+            const playerId = authenticatedPlayerIds[pi];
+            const socket = authenticatedSockets[pi];
             const quality = socket.connectionQuality || 'good';
             const now = Date.now();
             // Adaptive update rate: 30 TPS for good, lower for weaker connections
@@ -4608,33 +4661,14 @@ function start_loop() {
             const lastPlayers = socket.lastSentPlayers;
             const changedPlayers = [];
             const currentPlayerIds = new Set();
-            for (const p of Object.values(constants_2.players)) {
+            for (const snap of playerSnapshots) {
+                const p = snap.p;
                 currentPlayerIds.add(p.id);
                 const isSelf = p.id === playerId;
-                const petalExtension = p.inputs?.petalExtension || 1.0;
-                let faceFlags = 0;
-                let mouth = 14.5;
-                if (petalExtension > 1.0) {
-                    faceFlags |= player_1.FaceFlags.Attacking;
-                    mouth = 4;
-                }
-                if (petalExtension < 1.0) {
-                    faceFlags |= player_1.FaceFlags.Defending;
-                    mouth = 4;
-                }
-                let equipFlags = 0;
-                if (p.loadout) {
-                    for (let i = 0; i < p.loadout.length && i < 10; i++) {
-                        const item = p.loadout[i];
-                        if (!item || item.type !== 'petal' || !item.petalType)
-                            continue;
-                        const stats = (0, petals_2.getPetalStats)(item.petalType, item.rarity ?? 'common');
-                        if (stats?.equipFlags)
-                            equipFlags |= stats.equipFlags;
-                        if (stats?.faceFlags)
-                            faceFlags |= stats.faceFlags;
-                    }
-                }
+                const faceFlags = snap.faceFlags;
+                const equipFlags = snap.equipFlags;
+                const mouth = snap.mouth;
+                const petalExtension = snap.petalExtension;
                 const sx = isSelf ? p.x : quantize(p.x, precision);
                 const sy = isSelf ? p.y : quantize(p.y, precision);
                 const sa = isSelf ? p.angle : quantize(p.angle, anglePrecision);
@@ -4647,15 +4681,23 @@ function start_loop() {
                 const sV = p.pvpScore || 0;
                 const sz = p.sizeMultiplier ?? 1.0;
                 const sn = p.name;
-                // Build petal positions array and a signature to detect changes cheaply.
-                const petalsRaw = p.petalPositions || [];
+                // Build petal positions array and a numeric signature to detect changes.
+                // Numeric rolling hash avoids per-petal string allocations that previously
+                // dominated the broadcast loop's GC pressure.
+                const petalsRaw = snap.petalsRaw;
                 const petalsOut = [];
-                let petalsSig = '';
-                for (const pos of petalsRaw) {
+                let petalsSig = 0;
+                for (let pi2 = 0; pi2 < petalsRaw.length; pi2++) {
+                    const pos = petalsRaw[pi2];
                     const px = quantize(pos.x, precision);
                     const py = quantize(pos.y, precision);
                     const np = pos.noPhysics ? 1 : 0;
-                    petalsSig += pos.loadoutIndex + ',' + pos.instanceIndex + ',' + px + ',' + py + ',' + np + ';';
+                    // FNV-1a-style mix; values fit in int32 after Math.imul.
+                    petalsSig = Math.imul(petalsSig ^ pos.loadoutIndex, 16777619);
+                    petalsSig = Math.imul(petalsSig ^ pos.instanceIndex, 16777619);
+                    petalsSig = Math.imul(petalsSig ^ (px | 0), 16777619);
+                    petalsSig = Math.imul(petalsSig ^ (py | 0), 16777619);
+                    petalsSig = Math.imul(petalsSig ^ np, 16777619);
                     const petal = { L: pos.loadoutIndex, I: pos.instanceIndex, x: px, y: py };
                     if (np)
                         petal.N = 1;
@@ -4752,7 +4794,14 @@ function start_loop() {
             const vh = (player?.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 2;
             const px0 = player?.x || 0;
             const py0 = player?.y || 0;
-            const viewportEnemies = constants_2.enemies.filter(e => Math.abs(e.x - px0) < vw && Math.abs(e.y - py0) < vh);
+            const viewportEnemies = [];
+            for (let ei = 0; ei < constants_2.enemies.length; ei++) {
+                const e = constants_2.enemies[ei];
+                const dx = e.x - px0;
+                const dy = e.y - py0;
+                if ((dx < 0 ? -dx : dx) < vw && (dy < 0 ? -dy : dy) < vh)
+                    viewportEnemies.push(e);
+            }
             if (!socket.lastSentEnemies)
                 socket.lastSentEnemies = new Map();
             const lastEnemies = socket.lastSentEnemies;
