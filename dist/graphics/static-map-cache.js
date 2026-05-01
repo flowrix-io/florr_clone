@@ -47,25 +47,60 @@ class StaticMapCache {
         const maxCx = Math.floor(viewport.right / CHUNK_SIZE);
         const minCy = Math.floor(viewport.top / CHUNK_SIZE);
         const maxCy = Math.floor(viewport.bottom / CHUNK_SIZE);
+        // Snap chunk blits to integer screen pixels.
+        //
+        // The caller has already applied scale(zoom*renderScale) +
+        // translate(-cameraX, -cameraY). If we drawImage at world coords, the
+        // transform turns chunk seams into fractional screen positions, and
+        // bilinear sampling at the seam yields partial alpha — a thin gap.
+        //
+        // We read the current transform, draw under identity at
+        // floor(screenPos) with ceil(screenSize). For consecutive chunks
+        // (start, start+s):
+        //   chunkA right edge = floor(start) + ceil(s)
+        //   chunkB left edge  = floor(start + s)
+        // Algebra: their difference is either 0 (perfect tile) or +1
+        // (one-pixel overlap), never negative — so no gap is possible. The
+        // ≤1px stretch per chunk is invisible (1/CHUNK_SIZE_in_pixels).
         const targetCtx = g.ctx;
-        for (let cy = minCy; cy <= maxCy; cy++) {
-            for (let cx = minCx; cx <= maxCx; cx++) {
-                const key = `${cx},${cy}`;
-                if (this.failed.has(key))
-                    continue;
-                let canvas = this.chunks.get(key);
-                if (!canvas) {
-                    const generated = this.renderChunk(g, cx, cy);
-                    if (!generated) {
-                        this.failed.add(key);
+        const m = targetCtx.getTransform();
+        // Pure scale + translate (no rotation/skew) — game camera never rotates.
+        const sx = m.a;
+        const sy = m.d;
+        const tx = m.e;
+        const ty = m.f;
+        targetCtx.save();
+        targetCtx.setTransform(1, 0, 0, 1, 0, 0);
+        try {
+            for (let cy = minCy; cy <= maxCy; cy++) {
+                for (let cx = minCx; cx <= maxCx; cx++) {
+                    const key = `${cx},${cy}`;
+                    if (this.failed.has(key))
                         continue;
+                    let canvas = this.chunks.get(key);
+                    if (!canvas) {
+                        // renderChunk re-enters draw code that uses g.ctx —
+                        // it sets its own transform on its own offscreen ctx,
+                        // so our identity transform on targetCtx is fine.
+                        const generated = this.renderChunk(g, cx, cy);
+                        if (!generated) {
+                            this.failed.add(key);
+                            continue;
+                        }
+                        canvas = generated;
+                        this.evictIfFull();
+                        this.chunks.set(key, canvas);
                     }
-                    canvas = generated;
-                    this.evictIfFull();
-                    this.chunks.set(key, canvas);
+                    const screenX = cx * CHUNK_SIZE * sx + tx;
+                    const screenY = cy * CHUNK_SIZE * sy + ty;
+                    const screenW = CHUNK_SIZE * sx;
+                    const screenH = CHUNK_SIZE * sy;
+                    targetCtx.drawImage(canvas, Math.floor(screenX), Math.floor(screenY), Math.ceil(screenW), Math.ceil(screenH));
                 }
-                targetCtx.drawImage(canvas, cx * CHUNK_SIZE, cy * CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE);
             }
+        }
+        finally {
+            targetCtx.restore();
         }
     }
     evictIfFull() {
