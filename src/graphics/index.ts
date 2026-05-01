@@ -20,3 +20,9 @@ import './game-objects';
 import './pvp-arena';
 import './render';
 import './utilities';
+
+import { preloadCustomTileTextures } from './map-drawing';
+// Eagerly rasterize all tile-type SVGs so the cache is hot before the first
+// frame any tile enters the viewport (avoids fallback-color flicker on the
+// player's first encounter with a custom-textured tile).
+preloadCustomTileTextures();

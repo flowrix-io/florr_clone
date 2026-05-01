@@ -22,3 +22,8 @@ require("./game-objects");
 require("./pvp-arena");
 require("./render");
 require("./utilities");
+const map_drawing_1 = require("./map-drawing");
+// Eagerly rasterize all tile-type SVGs so the cache is hot before the first
+// frame any tile enters the viewport (avoids fallback-color flicker on the
+// player's first encounter with a custom-textured tile).
+(0, map_drawing_1.preloadCustomTileTextures)();

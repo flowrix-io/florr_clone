@@ -1,5 +1,5 @@
 import { Graphics, MapElement, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState, WallTileState, getTileJaggedEdges, SECTION_CONFIGS } from './core';
-import { getTileTypeConfig, TileTypeConfig } from '../constants';
+import { getAllTileTypes, getTileTypeConfig, TileTypeConfig } from '../constants';
 
 // --- SVG-string tile texture cache ---
 //
@@ -30,31 +30,15 @@ function normalizeSvgForImage(svg: string): string {
 }
 
 /**
- * Look up (and lazily create) the CanvasPattern for a tile type, scaled to
- * exactly fit one game tile so the pattern repeats seamlessly without visible
- * wrap-around inside each cell. Returns null until the SVG finishes loading.
+ * Kick off the (idempotent) Blob → Image → offscreen-canvas rasterization for
+ * a tile type's textureSvg. ctx-free so it can run at startup before any
+ * canvas exists. Pattern binding happens later in getTileTexturePattern.
  */
-function getTileTexturePattern(
-    cfg: TileTypeConfig,
-    ctx: CanvasRenderingContext2D,
-    onReady?: () => void
-): CanvasPattern | null {
-    if (!cfg.textureSvg) return null;
-    let entry = tileTextureCache.get(cfg.id);
-    if (entry) {
-        if (entry.failed || !entry.ready) return null;
-        // If the bound context is the one we have a cached pattern for, reuse it.
-        if (entry.pattern && entry.patternCtx === ctx) return entry.pattern;
-        // Different ctx (or no pattern yet) — create one bound to this ctx.
-        if (entry.canvas) {
-            entry.pattern = ctx.createPattern(entry.canvas, 'repeat');
-            entry.patternCtx = ctx;
-            return entry.pattern;
-        }
-        return null;
-    }
+function ensureTileTextureLoaded(cfg: TileTypeConfig, onReady?: () => void): void {
+    if (!cfg.textureSvg) return;
+    if (tileTextureCache.has(cfg.id)) return;
 
-    entry = { canvas: null, pattern: null, patternCtx: null, ready: false, failed: false };
+    const entry: TileTextureEntry = { canvas: null, pattern: null, patternCtx: null, ready: false, failed: false };
     tileTextureCache.set(cfg.id, entry);
     const tileSize = cfg.textureTileSize && cfg.textureTileSize > 0 ? cfg.textureTileSize : WALL_TILE_SIZE;
     try {
@@ -68,15 +52,15 @@ function getTileTexturePattern(
             off.width = tileSize;
             off.height = tileSize;
             const offCtx = off.getContext('2d');
-            if (!offCtx) { entry!.failed = true; return; }
+            if (!offCtx) { entry.failed = true; return; }
             // Stretch the SVG to exactly one tile so adjacent cells line up.
             offCtx.drawImage(img, 0, 0, tileSize, tileSize);
-            entry!.canvas = off;
-            entry!.ready = true;
+            entry.canvas = off;
+            entry.ready = true;
             onReady?.();
         };
         img.onerror = () => {
-            entry!.failed = true;
+            entry.failed = true;
             URL.revokeObjectURL(url);
             console.warn(`[tile texture] failed to load SVG for tile ${cfg.id} (${cfg.name})`);
         };
@@ -85,6 +69,46 @@ function getTileTexturePattern(
         entry.failed = true;
         console.warn(`[tile texture] error preparing SVG for tile ${cfg.id}:`, err);
     }
+}
+
+/**
+ * Eagerly rasterize every registered tile type's textureSvg so the cache is
+ * hot before the player ever sees one. Without this, the first frame a tile
+ * enters the viewport falls back to cfg.color until the async image load
+ * finishes — visible as a brief flicker on the user's first encounter.
+ */
+export function preloadCustomTileTextures(): void {
+    for (const cfg of getAllTileTypes()) {
+        ensureTileTextureLoaded(cfg);
+    }
+}
+
+/**
+ * Look up (and lazily create) the CanvasPattern for a tile type, scaled to
+ * exactly fit one game tile so the pattern repeats seamlessly without visible
+ * wrap-around inside each cell. Returns null until the SVG finishes loading.
+ */
+function getTileTexturePattern(
+    cfg: TileTypeConfig,
+    ctx: CanvasRenderingContext2D,
+    onReady?: () => void
+): CanvasPattern | null {
+    if (!cfg.textureSvg) return null;
+    const entry = tileTextureCache.get(cfg.id);
+    if (entry) {
+        if (entry.failed || !entry.ready) return null;
+        // If the bound context is the one we have a cached pattern for, reuse it.
+        if (entry.pattern && entry.patternCtx === ctx) return entry.pattern;
+        // Different ctx (or no pattern yet) — create one bound to this ctx.
+        if (entry.canvas) {
+            entry.pattern = ctx.createPattern(entry.canvas, 'repeat');
+            entry.patternCtx = ctx;
+            return entry.pattern;
+        }
+        return null;
+    }
+
+    ensureTileTextureLoaded(cfg, onReady);
     return null;
 }
 
