@@ -2,6 +2,7 @@ import { io, Socket } from './ws_client';
 import { Player, PlayerInventory, ServerPlayer } from './player';
 import { Enemy, Obstacle } from './enemy';
 import { Item, WorldItem } from './item';
+import { getMobStats } from './mobs';
 
 function padLoadout(arr: (Item | null)[] | undefined, size: number): (Item | null)[] {
     const out: (Item | null)[] = new Array(size).fill(null);
@@ -1325,122 +1326,170 @@ function setupSocketListeners(game: any) {
     });
 
     // Listen for server game state updates for better synchronization
-    game.socket.on('gameStateUpdate', (data: { players: Player[], enemies: any[], unchanged?: string[], timestamp: number }) => {
-        const serverPlayers = data.players;
-        const serverEnemies = data.enemies;
+    // Compact delta protocol: payload uses short keys and omits unchanged fields.
+    // P=changed players, E=changed enemies, U=unchanged enemy ids (still in viewport), t=timestamp.
+    // Per-player keys: i,n,x,y,a,h,H,l,s,e,f,q,m,v,V,z, p (petalPositions array).
+    // Per-petal keys: L=loadoutIndex,I=instanceIndex,x,y,N=noPhysics.
+    // Per-enemy keys: i,t=type,T=tier,x,y,a,h,H. Missing fields = unchanged.
+    game.socket.on('gameStateUpdate', (data: any) => {
+        const serverPlayers: any[] | undefined = data.P;
+        const serverEnemies: any[] | undefined = data.E;
+        const unchangedEnemyIds: string[] | undefined = data.U;
 
-        serverPlayers.forEach(serverPlayer => {
-            const existingPlayer = game.players.get(serverPlayer.id);
-            if (existingPlayer) {
-                existingPlayer.targetX = serverPlayer.x;
-                existingPlayer.targetY = serverPlayer.y;
-                existingPlayer.angle = serverPlayer.angle;
-                existingPlayer.health = serverPlayer.health;
-                existingPlayer.maxHealth = serverPlayer.maxHealth;
-                existingPlayer.level = serverPlayer.level;
-                // Sync face/equipment flags and mouth (skip if locally forced)
-                if (!existingPlayer.forcedFlags) {
-                    existingPlayer.faceFlags = (serverPlayer as any).faceFlags || 0;
-                    existingPlayer.equipFlags = (serverPlayer as any).equipFlags || 0;
-                    if ('mouth' in serverPlayer) {
-                        existingPlayer.mouth = (serverPlayer as any).mouth;
+        if (serverPlayers) {
+            for (const sp of serverPlayers) {
+                const id = sp.i;
+                const existing = game.players.get(id);
+                if (existing) {
+                    if (sp.x !== undefined) existing.targetX = sp.x;
+                    if (sp.y !== undefined) existing.targetY = sp.y;
+                    if (sp.a !== undefined) existing.angle = sp.a;
+                    if (sp.h !== undefined) existing.health = sp.h;
+                    if (sp.H !== undefined) existing.maxHealth = sp.H;
+                    if (sp.l !== undefined) existing.level = sp.l;
+                    if (sp.n !== undefined) existing.name = sp.n;
+                    if (!existing.forcedFlags) {
+                        if (sp.f !== undefined) existing.faceFlags = sp.f;
+                        if (sp.q !== undefined) existing.equipFlags = sp.q;
+                        if (sp.m !== undefined) existing.mouth = sp.m;
                     }
-                }
-                // Sync PVP arena state for the leaderboard / boundary rendering.
-                (existingPlayer as any).inPvpArena = !!(serverPlayer as any).inPvpArena;
-                (existingPlayer as any).pvpScore = (serverPlayer as any).pvpScore || 0;
-                // Sync petal extension from server (if available in gameStateUpdate)
-                if ('petalExtension' in serverPlayer) {
-                    existingPlayer.petalExtension = (serverPlayer as any).petalExtension || 1.0;
-                }
-                // Sync petal positions from server for interpolation
-                if ('petalPositions' in serverPlayer && Array.isArray((serverPlayer as any).petalPositions)) {
-                    const serverPetalPositions = (serverPlayer as any).petalPositions;
-                    if (!existingPlayer.petalPositions) {
-                        // Initialize with current positions
-                        existingPlayer.petalPositions = serverPetalPositions.map((pos: any) => ({
-                            ...pos,
-                            targetX: pos.x,
-                            targetY: pos.y
-                        }));
-                    } else {
-                        // Update target positions for interpolation
-                        serverPetalPositions.forEach((serverPos: any) => {
-                            const existingPos = existingPlayer.petalPositions!.find(
-                                (p: any) => p.loadoutIndex === serverPos.loadoutIndex && p.instanceIndex === serverPos.instanceIndex
+                    if (sp.v !== undefined) (existing as any).inPvpArena = !!sp.v;
+                    if (sp.V !== undefined) (existing as any).pvpScore = sp.V;
+                    if (sp.z !== undefined) (existing as any).sizeMultiplier = sp.z;
+                    if (sp.s !== undefined) (existing as any).score = sp.s;
+                    if (sp.e !== undefined) existing.petalExtension = sp.e || 1.0;
+                    if (Array.isArray(sp.p)) {
+                        const serverPetalPositions = sp.p;
+                        if (!existing.petalPositions) {
+                            existing.petalPositions = serverPetalPositions.map((pos: any) => ({
+                                loadoutIndex: pos.L,
+                                instanceIndex: pos.I,
+                                x: pos.x,
+                                y: pos.y,
+                                noPhysics: !!pos.N,
+                                targetX: pos.x,
+                                targetY: pos.y,
+                            }));
+                        } else {
+                            serverPetalPositions.forEach((serverPos: any) => {
+                                const existingPos = existing.petalPositions!.find(
+                                    (p: any) => p.loadoutIndex === serverPos.L && p.instanceIndex === serverPos.I
+                                );
+                                if (existingPos) {
+                                    existingPos.targetX = serverPos.x;
+                                    existingPos.targetY = serverPos.y;
+                                    existingPos.noPhysics = !!serverPos.N;
+                                } else {
+                                    existing.petalPositions!.push({
+                                        loadoutIndex: serverPos.L,
+                                        instanceIndex: serverPos.I,
+                                        x: serverPos.x,
+                                        y: serverPos.y,
+                                        noPhysics: !!serverPos.N,
+                                        targetX: serverPos.x,
+                                        targetY: serverPos.y,
+                                    } as any);
+                                }
+                            });
+                            existing.petalPositions = existing.petalPositions!.filter((pos: any) =>
+                                serverPetalPositions.some((sp2: any) =>
+                                    sp2.L === pos.loadoutIndex && sp2.I === pos.instanceIndex
+                                )
                             );
-                            if (existingPos) {
-                                existingPos.targetX = serverPos.x;
-                                existingPos.targetY = serverPos.y;
-                                existingPos.noPhysics = serverPos.noPhysics;
-                            } else {
-                                // New petal position
-                                existingPlayer.petalPositions!.push({
-                                    ...serverPos,
-                                    targetX: serverPos.x,
-                                    targetY: serverPos.y
-                                });
-                            }
-                        });
-                        // Remove positions that no longer exist
-                        existingPlayer.petalPositions = existingPlayer.petalPositions!.filter((pos: any) =>
-                            serverPetalPositions.some((sp: any) => 
-                                sp.loadoutIndex === pos.loadoutIndex && sp.instanceIndex === pos.instanceIndex
-                            )
-                        );
+                        }
                     }
+                } else {
+                    // First sight: server omits fields equal to defaults. Apply matching defaults here.
+                    const newPlayer: any = {
+                        id,
+                        name: sp.n,
+                        x: sp.x,
+                        y: sp.y,
+                        angle: sp.a ?? 0,
+                        health: sp.h,
+                        maxHealth: sp.H,
+                        level: sp.l ?? 1,
+                        score: sp.s ?? 0,
+                        petalExtension: sp.e ?? 1.0,
+                        faceFlags: sp.f ?? 0,
+                        equipFlags: sp.q ?? 0,
+                        mouth: sp.m ?? 14.5,
+                        inPvpArena: !!sp.v,
+                        pvpScore: sp.V ?? 0,
+                        sizeMultiplier: sp.z ?? 1.0,
+                        imageLoaded: true,
+                        velocityX: 0,
+                        velocityY: 0,
+                        targetX: sp.x,
+                        targetY: sp.y,
+                        xp: 0,
+                        xpToNextLevel: 100,
+                    };
+                    if (Array.isArray(sp.p)) {
+                        newPlayer.petalPositions = sp.p.map((pos: any) => ({
+                            loadoutIndex: pos.L,
+                            instanceIndex: pos.I,
+                            x: pos.x,
+                            y: pos.y,
+                            noPhysics: !!pos.N,
+                            targetX: pos.x,
+                            targetY: pos.y,
+                        }));
+                    }
+                    game.players.set(id, newPlayer);
                 }
-                // Preserve XP values - don't overwrite them from gameStateUpdate
-                // as they are managed separately by xpGained events
-            } else {
-                const newPlayer: any = {
-                    ...serverPlayer,
-                    imageLoaded: true,
-                    score: 0,
-                    velocityX: 0,
-                    velocityY: 0,
-                    targetX: serverPlayer.x,
-                    targetY: serverPlayer.y,
-                    // Initialize XP values for new players
-                    xp: 0,
-                    xpToNextLevel: 100
-                };
-                // Sync petal extension if available
-                if ('petalExtension' in serverPlayer) {
-                    newPlayer.petalExtension = (serverPlayer as any).petalExtension || 1.0;
-                }
-                // Initialize petal positions if available
-                if ('petalPositions' in serverPlayer && Array.isArray((serverPlayer as any).petalPositions)) {
-                    newPlayer.petalPositions = (serverPlayer as any).petalPositions.map((pos: any) => ({
-                        ...pos,
-                        targetX: pos.x,
-                        targetY: pos.y
-                    }));
-                }
-                game.players.set(serverPlayer.id, newPlayer);
             }
-        });
+        }
+
+        // Always run cleanup, even when the payload has no enemy fields — a tick with
+        // no visible enemies must still drop ones that left the viewport.
+        const serverEnemyIds = new Set<string>();
+        if (serverEnemies) for (const e of serverEnemies) serverEnemyIds.add(e.i);
+        if (unchangedEnemyIds) for (const id of unchangedEnemyIds) serverEnemyIds.add(id);
+        for (const [enemyId] of game.enemies) {
+            if (!serverEnemyIds.has(enemyId)) {
+                handleEnemyOutOfView(enemyId);
+            }
+        }
 
         if (serverEnemies) {
-            // Build set of all enemy IDs still in viewport (changed + unchanged)
-            const serverEnemyIds = new Set(serverEnemies.map((e: any) => e.id));
-            if (data.unchanged) {
-                for (const id of data.unchanged) {
-                    serverEnemyIds.add(id);
+            for (const e of serverEnemies) {
+                const existing = game.enemies.get(e.i);
+                if (existing && existing.type && existing.tier) {
+                    // Partial update - merge only fields that are present.
+                    const merged: any = {
+                        id: e.i,
+                        type: e.t !== undefined ? e.t : existing.type,
+                        tier: e.T !== undefined ? e.T : existing.tier,
+                        x: e.x !== undefined ? e.x : (existing.targetX ?? existing.x),
+                        y: e.y !== undefined ? e.y : (existing.targetY ?? existing.y),
+                        angle: e.a !== undefined ? e.a : existing.angle,
+                        health: e.h !== undefined ? e.h : existing.health,
+                        maxHealth: e.H !== undefined ? e.H : existing.maxHealth,
+                    };
+                    handleEnemyUpdate(merged);
+                } else {
+                    // First sight (or recovery if existing was malformed). Server omits
+                    // tier/maxHealth/angle when they match defaults — apply fallbacks.
+                    if (e.t === undefined) {
+                        // Defensive: drop malformed entries rather than render an undefined-typed mob.
+                        continue;
+                    }
+                    const tier = e.T ?? 'common';
+                    const defaultStats = getMobStats(e.t, tier);
+                    const maxHealth = e.H ?? (defaultStats ? defaultStats.health : e.h);
+                    handleEnemyUpdate({
+                        id: e.i,
+                        type: e.t,
+                        tier,
+                        x: e.x,
+                        y: e.y,
+                        angle: e.a ?? 0,
+                        health: e.h,
+                        maxHealth,
+                    } as any);
                 }
             }
-
-            // Remove enemies that left the viewport - no death animation
-            for (const [enemyId] of game.enemies) {
-                if (!serverEnemyIds.has(enemyId)) {
-                    handleEnemyOutOfView(enemyId);
-                }
-            }
-
-            // Update or add enemies that changed - unchanged ones keep their current state
-            serverEnemies.forEach((enemy: any) => {
-                handleEnemyUpdate(enemy);
-            });
         }
     });
 

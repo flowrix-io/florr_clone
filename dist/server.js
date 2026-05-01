@@ -4578,80 +4578,9 @@ function start_loop() {
         const quantize = (value, precision = 1) => {
             return Math.round(value / precision) * precision;
         };
-        // Helper function to create optimized player data
-        // Only send fields that change frequently; name/level/score are sent via playerUpdated
-        const createPlayerData = (p, quality) => {
-            const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
-            const petalExtension = p.inputs?.petalExtension || 1.0;
-            // Compute face flags and mouth
-            let faceFlags = 0;
-            let mouth = 14.5; // Default smile
-            if (petalExtension > 1.0) {
-                faceFlags |= player_1.FaceFlags.Attacking;
-                mouth = 4; // Closed mouth, positions angry triangle over eyes
-            }
-            if (petalExtension < 1.0) {
-                faceFlags |= player_1.FaceFlags.Defending;
-                mouth = 4; // Closed mouth for defensive face
-            }
-            // Compute equipment and petal-driven face flags from loadout
-            let equipFlags = 0;
-            if (p.loadout) {
-                // Secondary loadout (slots 10+) is storage — visual flags only come from primary.
-                for (let i = 0; i < p.loadout.length && i < 10; i++) {
-                    const item = p.loadout[i];
-                    if (!item || item.type !== 'petal')
-                        continue;
-                    if (!item.petalType)
-                        continue;
-                    const stats = (0, petals_2.getPetalStats)(item.petalType, item.rarity ?? 'common');
-                    if (stats?.equipFlags)
-                        equipFlags |= stats.equipFlags;
-                    if (stats?.faceFlags)
-                        faceFlags |= stats.faceFlags;
-                }
-            }
-            return {
-                id: p.id,
-                name: p.name,
-                x: quantize(p.x, precision),
-                y: quantize(p.y, precision),
-                angle: quantize(p.angle, quality === 'slow' ? 0.1 : 0.05),
-                health: Math.round(p.health),
-                maxHealth: Math.round(p.maxHealth),
-                level: p.level,
-                score: p.score,
-                petalExtension: quantize(petalExtension, 0.1),
-                petalPositions: (p.petalPositions || []).map((pos) => ({
-                    loadoutIndex: pos.loadoutIndex,
-                    instanceIndex: pos.instanceIndex,
-                    x: quantize(pos.x, precision),
-                    y: quantize(pos.y, precision),
-                    noPhysics: pos.noPhysics || undefined
-                })),
-                faceFlags,
-                equipFlags,
-                mouth,
-                inPvpArena: !!p.inPvpArena,
-                pvpScore: p.pvpScore || 0,
-                sizeMultiplier: p.sizeMultiplier ?? 1.0,
-            };
-        };
-        // Helper function to create optimized enemy data
-        const createEnemyData = (e, quality) => {
-            const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
-            return {
-                id: e.id,
-                type: e.type,
-                tier: e.tier,
-                x: quantize(e.x, precision),
-                y: quantize(e.y, precision),
-                angle: quantize(e.angle, quality === 'slow' ? 0.1 : 0.05),
-                health: Math.round(e.health),
-                maxHealth: Math.round(e.maxHealth)
-            };
-        };
-        // Send optimized updates to each player based on their connection quality
+        // Send compact delta updates per client. Protocol uses short keys and
+        // omits fields that haven't changed since the last send to that client.
+        // See client handler in socket.ts for the matching format.
         for (const playerId of authenticatedPlayerIds) {
             const socket = io.sockets.sockets.get(playerId);
             if (!socket || !socket.userId)
@@ -4662,74 +4591,234 @@ function start_loop() {
             let shouldUpdate = true;
             if (socket.lastUpdateTime) {
                 const timeSinceLastUpdate = now - socket.lastUpdateTime;
-                if (quality === 'slow' && timeSinceLastUpdate < 100) { // ~10 TPS for slow
+                if (quality === 'slow' && timeSinceLastUpdate < 100) {
                     shouldUpdate = false;
                 }
-                else if (quality === 'medium' && timeSinceLastUpdate < 67) { // ~15 TPS for medium
+                else if (quality === 'medium' && timeSinceLastUpdate < 67) {
                     shouldUpdate = false;
                 }
-                // 'good' quality: send every tick (~30 TPS)
             }
             if (!shouldUpdate)
                 continue;
+            const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
+            const anglePrecision = quality === 'slow' ? 0.1 : 0.05;
             const player = constants_2.players[playerId];
-            // Create optimized player data
-            // Send full-precision position for the player's own data to avoid quantization jitter
-            const playersForBroadcast = Object.values(constants_2.players).map(p => {
-                const data = createPlayerData(p, quality);
-                if (p.id === playerId) {
-                    // Override with full-precision position for self
-                    data.x = p.x;
-                    data.y = p.y;
-                    data.angle = p.angle;
+            if (!socket.lastSentPlayers)
+                socket.lastSentPlayers = new Map();
+            const lastPlayers = socket.lastSentPlayers;
+            const changedPlayers = [];
+            const currentPlayerIds = new Set();
+            for (const p of Object.values(constants_2.players)) {
+                currentPlayerIds.add(p.id);
+                const isSelf = p.id === playerId;
+                const petalExtension = p.inputs?.petalExtension || 1.0;
+                let faceFlags = 0;
+                let mouth = 14.5;
+                if (petalExtension > 1.0) {
+                    faceFlags |= player_1.FaceFlags.Attacking;
+                    mouth = 4;
                 }
-                return data;
-            });
+                if (petalExtension < 1.0) {
+                    faceFlags |= player_1.FaceFlags.Defending;
+                    mouth = 4;
+                }
+                let equipFlags = 0;
+                if (p.loadout) {
+                    for (let i = 0; i < p.loadout.length && i < 10; i++) {
+                        const item = p.loadout[i];
+                        if (!item || item.type !== 'petal' || !item.petalType)
+                            continue;
+                        const stats = (0, petals_2.getPetalStats)(item.petalType, item.rarity ?? 'common');
+                        if (stats?.equipFlags)
+                            equipFlags |= stats.equipFlags;
+                        if (stats?.faceFlags)
+                            faceFlags |= stats.faceFlags;
+                    }
+                }
+                const sx = isSelf ? p.x : quantize(p.x, precision);
+                const sy = isSelf ? p.y : quantize(p.y, precision);
+                const sa = isSelf ? p.angle : quantize(p.angle, anglePrecision);
+                const sh = Math.round(p.health);
+                const sH = Math.round(p.maxHealth);
+                const sl = p.level;
+                const ss = p.score;
+                const se = quantize(petalExtension, 0.1);
+                const sv = p.inPvpArena ? 1 : 0;
+                const sV = p.pvpScore || 0;
+                const sz = p.sizeMultiplier ?? 1.0;
+                const sn = p.name;
+                // Build petal positions array and a signature to detect changes cheaply.
+                const petalsRaw = p.petalPositions || [];
+                const petalsOut = [];
+                let petalsSig = '';
+                for (const pos of petalsRaw) {
+                    const px = quantize(pos.x, precision);
+                    const py = quantize(pos.y, precision);
+                    const np = pos.noPhysics ? 1 : 0;
+                    petalsSig += pos.loadoutIndex + ',' + pos.instanceIndex + ',' + px + ',' + py + ',' + np + ';';
+                    const petal = { L: pos.loadoutIndex, I: pos.instanceIndex, x: px, y: py };
+                    if (np)
+                        petal.N = 1;
+                    petalsOut.push(petal);
+                }
+                const prev = lastPlayers.get(p.id);
+                const delta = { i: p.id };
+                let changed = false;
+                // For each field: when prev exists, send only if value changed (so transitions
+                // back to default are still emitted). When prev is missing (first send), send
+                // only if non-default — the client applies defaults to missing fields.
+                if (prev ? prev.x !== sx : true) {
+                    delta.x = sx;
+                    changed = true;
+                }
+                if (prev ? prev.y !== sy : true) {
+                    delta.y = sy;
+                    changed = true;
+                }
+                if (prev ? prev.a !== sa : sa !== 0) {
+                    delta.a = sa;
+                    changed = true;
+                }
+                if (prev ? prev.h !== sh : true) {
+                    delta.h = sh;
+                    changed = true;
+                }
+                if (prev ? prev.H !== sH : true) {
+                    delta.H = sH;
+                    changed = true;
+                }
+                if (prev ? prev.l !== sl : sl !== 1) {
+                    delta.l = sl;
+                    changed = true;
+                }
+                if (prev ? prev.s !== ss : ss !== 0) {
+                    delta.s = ss;
+                    changed = true;
+                }
+                if (prev ? prev.e !== se : se !== 1.0) {
+                    delta.e = se;
+                    changed = true;
+                }
+                if (prev ? prev.f !== faceFlags : faceFlags !== 0) {
+                    delta.f = faceFlags;
+                    changed = true;
+                }
+                if (prev ? prev.q !== equipFlags : equipFlags !== 0) {
+                    delta.q = equipFlags;
+                    changed = true;
+                }
+                if (prev ? prev.m !== mouth : mouth !== 14.5) {
+                    delta.m = mouth;
+                    changed = true;
+                }
+                if (prev ? prev.v !== sv : sv !== 0) {
+                    delta.v = sv;
+                    changed = true;
+                }
+                if (prev ? prev.V !== sV : sV !== 0) {
+                    delta.V = sV;
+                    changed = true;
+                }
+                if (prev ? prev.z !== sz : sz !== 1.0) {
+                    delta.z = sz;
+                    changed = true;
+                }
+                if (prev ? prev.n !== sn : true) {
+                    delta.n = sn;
+                    changed = true;
+                }
+                if (prev ? prev.petalsSig !== petalsSig : petalsOut.length > 0) {
+                    delta.p = petalsOut;
+                    changed = true;
+                }
+                if (changed) {
+                    changedPlayers.push(delta);
+                    lastPlayers.set(p.id, {
+                        x: sx, y: sy, a: sa, h: sh, H: sH,
+                        l: sl, s: ss, e: se,
+                        f: faceFlags, q: equipFlags, m: mouth,
+                        v: sv, V: sV, z: sz, n: sn,
+                        petalsSig,
+                    });
+                }
+            }
+            // Drop tracking for players that are no longer present (disconnects).
+            for (const id of lastPlayers.keys()) {
+                if (!currentPlayerIds.has(id))
+                    lastPlayers.delete(id);
+            }
             // Filter enemies to this player's viewport (200% buffer)
             const vw = (player?.viewportWidth || constants_2.VIEWPORT_WIDTH) * 2;
             const vh = (player?.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 2;
-            const px = player?.x || 0;
-            const py = player?.y || 0;
-            const viewportEnemies = constants_2.enemies.filter(e => Math.abs(e.x - px) < vw && Math.abs(e.y - py) < vh);
-            // Delta compression: only send full data for enemies that changed
-            if (!socket.lastSentEnemies) {
+            const px0 = player?.x || 0;
+            const py0 = player?.y || 0;
+            const viewportEnemies = constants_2.enemies.filter(e => Math.abs(e.x - px0) < vw && Math.abs(e.y - py0) < vh);
+            if (!socket.lastSentEnemies)
                 socket.lastSentEnemies = new Map();
-            }
-            const lastSent = socket.lastSentEnemies;
+            const lastEnemies = socket.lastSentEnemies;
             const changedEnemies = [];
             const unchangedIds = [];
             const currentEnemyIds = new Set();
             for (const e of viewportEnemies) {
                 currentEnemyIds.add(e.id);
-                const prev = lastSent.get(e.id);
                 const ex = quantize(e.x, 1);
                 const ey = quantize(e.y, 1);
                 const ea = quantize(e.angle, 0.05);
                 const eh = Math.round(e.health);
-                if (!prev || prev.x !== ex || prev.y !== ey || prev.a !== ea || prev.h !== eh) {
-                    changedEnemies.push(createEnemyData(e, quality));
-                    lastSent.set(e.id, { x: ex, y: ey, a: ea, h: eh });
+                const eH = Math.round(e.maxHealth);
+                const prev = lastEnemies.get(e.id);
+                // Default maxHealth comes from the mob config for (type, tier). When the
+                // server-side enemy matches that default, omit H entirely; the client looks
+                // it up the same way. Same for the default tier 'common'.
+                const defaultStats = (0, mobs_2.getMobStats)(e.type, e.tier);
+                const defaultMaxH = defaultStats ? Math.round(defaultStats.health) : eH;
+                if (!prev) {
+                    const ed = { i: e.id, t: e.type, x: ex, y: ey };
+                    if (e.tier !== 'common')
+                        ed.T = e.tier;
+                    if (ea !== 0)
+                        ed.a = ea;
+                    ed.h = eh;
+                    if (eH !== defaultMaxH)
+                        ed.H = eH;
+                    changedEnemies.push(ed);
+                    lastEnemies.set(e.id, { x: ex, y: ey, a: ea, h: eh, H: eH, t: e.type, T: e.tier });
+                }
+                else if (prev.x !== ex || prev.y !== ey || prev.a !== ea || prev.h !== eh || prev.H !== eH || prev.t !== e.type || prev.T !== e.tier) {
+                    const ed = { i: e.id };
+                    if (prev.x !== ex)
+                        ed.x = ex;
+                    if (prev.y !== ey)
+                        ed.y = ey;
+                    if (prev.a !== ea)
+                        ed.a = ea;
+                    if (prev.h !== eh)
+                        ed.h = eh;
+                    if (prev.H !== eH)
+                        ed.H = eH;
+                    if (prev.t !== e.type)
+                        ed.t = e.type;
+                    if (prev.T !== e.tier)
+                        ed.T = e.tier;
+                    changedEnemies.push(ed);
+                    lastEnemies.set(e.id, { x: ex, y: ey, a: ea, h: eh, H: eH, t: e.type, T: e.tier });
                 }
                 else {
                     unchangedIds.push(e.id);
                 }
             }
-            // Clean up enemies that left viewport
-            for (const id of lastSent.keys()) {
-                if (!currentEnemyIds.has(id)) {
-                    lastSent.delete(id);
-                }
+            for (const id of lastEnemies.keys()) {
+                if (!currentEnemyIds.has(id))
+                    lastEnemies.delete(id);
             }
-            // Build compact game state
-            const gameState = {
-                players: playersForBroadcast,
-                enemies: changedEnemies,
-                timestamp: now
-            };
-            // Only include unchanged IDs if there are any (client uses this to know they're still in view)
-            if (unchangedIds.length > 0) {
-                gameState.unchanged = unchangedIds;
-            }
+            // Build compact payload. Omit empty fields entirely.
+            const gameState = { t: now };
+            if (changedPlayers.length > 0)
+                gameState.P = changedPlayers;
+            if (changedEnemies.length > 0)
+                gameState.E = changedEnemies;
+            if (unchangedIds.length > 0)
+                gameState.U = unchangedIds;
             socket.lastUpdateTime = now;
             io.to(playerId).emit('gameStateUpdate', gameState);
         }
