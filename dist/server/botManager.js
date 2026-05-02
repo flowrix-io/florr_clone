@@ -194,7 +194,9 @@ let bossAnnounceInitialized = false;
 // punctuated on purpose so bot chatter blends in with the usual player chat.
 // Every template must include "super" or "unique" as a bare word so human-
 // typed versions of these messages still trigger the chat-handler raid.
-// {tier} = "super" | "unique", {mob} = e.g. "beetle".
+// {tier} = "super" | "unique", {mob} = e.g. "beetle", {code} = squad ID.
+// Templates containing {code} are only used when the announcing bot is in a
+// squad — they're filtered out otherwise.
 const BOSS_SHOUT_TEMPLATES_SUPER = [
     '{tier} {mob}',
     '{tier} {mob} come',
@@ -215,6 +217,10 @@ const BOSS_SHOUT_TEMPLATES_SUPER = [
     's{mob} unfree',
     'less than 20 ppl at {tier} {mob}',
     '{tier} {mob} free carry',
+    'I have previously said things which I regret. Now I ponder in silence.',
+    'pls carry',
+    'free carry {code}',
+    '{tier} {mob} carry code {code}',
 ];
 const BOSS_SHOUT_TEMPLATES_UNIQUE = [
     'q{mob}',
@@ -231,7 +237,11 @@ const BOSS_SHOUT_TEMPLATES_UNIQUE = [
     '{tier} {mob} pls carry',
     '{tier} {mob} pls loot',
     'q{mob} so free',
-    'less than 20 ppl at {tier} {mob}'
+    'less than 20 ppl at {tier} {mob}',
+    'I have previously said things which I regret. Now I ponder in silence.',
+    'pls carry',
+    'free carry {code}',
+    '{tier} {mob} carry code {code}',
 ];
 function isBot(id) {
     return id.startsWith(BOT_ID_PREFIX);
@@ -1687,10 +1697,15 @@ function announceNewBosses(io, now) {
             return;
         const bot = constants_1.players[announcerId];
         const tierWord = enemy.tier === 'unique' ? 'unique' : 'super';
-        const pool = tierWord === 'unique' ? BOSS_SHOUT_TEMPLATES_UNIQUE : BOSS_SHOUT_TEMPLATES_SUPER;
-        const shout = pool[Math.floor(Math.random() * pool.length)]
+        const fullPool = tierWord === 'unique' ? BOSS_SHOUT_TEMPLATES_UNIQUE : BOSS_SHOUT_TEMPLATES_SUPER;
+        // {code} templates only make sense when the bot is in a squad.
+        const squadId = bot.squadId;
+        const pool = squadId ? fullPool : fullPool.filter(t => !t.includes('{code}'));
+        let shout = pool[Math.floor(Math.random() * pool.length)]
             .replace('{tier}', tierWord)
             .replace('{mob}', enemy.type.replace(/_/g, ' '));
+        if (squadId)
+            shout = shout.replace('{code}', squadId);
         io.emit('chatMessage', {
             sender: bot.name,
             content: `[<span style="color: yellow;">${bot.name}</span>] ${shout}`,
@@ -2050,7 +2065,8 @@ function updateBotSquadMembership(io, now) {
             }
             continue;
         }
-        // Occasionally host a new public squad.
+        // Occasionally host a new public squad. The bot will advertise the
+        // code on its next boss callout via the {code} templates.
         if (Math.random() < BOT_SQUAD_CREATE_CHANCE) {
             const squad = (0, squadManager_1.createSquad)(id, true);
             if (squad) {
