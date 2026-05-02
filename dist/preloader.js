@@ -60,16 +60,12 @@ class Preloader {
         this.totalAssets = Object.keys(assets.sprites).length + 1; // sprites + background
         this.loadedAssets = 0;
         try {
-            // Load all sprites in parallel
+            // Only the three consumable item PNGs remain — everything else is
+            // procedural / SVG-driven now.
             await Promise.all([
-                this.loadSprite(assets.sprites.player, 'player.png'),
-                this.loadSprite(assets.sprites.coral, 'coral.png'),
-                this.loadSprite(assets.sprites.palm, 'palm.png'),
                 this.loadSprite(assets.sprites.healthPotion, 'health_potion.png'),
                 this.loadSprite(assets.sprites.speedBoost, 'speed_boost.png'),
                 this.loadSprite(assets.sprites.shield, 'shield.png'),
-                this.loadSprite(assets.sprites.wall, 'wall.png'),
-                this.loadSprite(assets.sprites.exit, 'exit.png'),
             ]);
             // Load background
             await this.loadBackground(assets.backgroundTexture);

@@ -187,7 +187,6 @@ export class Game {
     private exitButtonContainer: HTMLElement | null;
     private playerHue: number = 0;
     private playerColor: string = 'hsl(0, 100%, 50%)';
-    private colorPreviewCanvas: HTMLCanvasElement;
     private readonly LOADOUT_SLOTS = 10;
     private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
     // Add to class properties
@@ -288,22 +287,6 @@ export class Game {
         // Add resize listener (also fires on browser zoom changes)
         window.addEventListener('resize', () => this.resizeCanvas(), { signal: this.abortController.signal });
 
-        // Create and set up preview canvas BEFORE using it
-        this.colorPreviewCanvas = document.createElement('canvas');
-        this.colorPreviewCanvas.width = 64;  // Set fixed size for preview
-        this.colorPreviewCanvas.height = 64;
-        this.colorPreviewCanvas.style.width = '64px';
-        this.colorPreviewCanvas.style.height = '64px';
-        this.colorPreviewCanvas.style.imageRendering = 'pixelated';
-
-        // Add preview canvas to the color picker
-        const previewContainer = document.createElement('div');
-        previewContainer.style.display = 'flex';
-        previewContainer.style.justifyContent = 'center';
-        previewContainer.style.marginTop = '10px';
-        previewContainer.appendChild(this.colorPreviewCanvas);
-        document.querySelector('.color-picker')?.appendChild(previewContainer);
-
         // Register as the active game instance before starting the loop
         // (so any previous game loop will detect it's no longer active and stop)
         window.currentGame = this;
@@ -322,7 +305,6 @@ export class Game {
                 console.log('[Game] Petal images not preloaded, loading dynamically');
                 this.graphics.preloadPetalImages().catch(console.error);
             }
-            this.updateColorPreview();
             this.gameLoop();
         } else {
             // Load sprites dynamically (fallback)
@@ -334,7 +316,6 @@ export class Game {
             ]).then(() => {
                 console.log('[Game] All sprites loaded successfully');
                 this.graphics.setupItemSprites(this.assetLoader.itemSprites);
-                this.updateColorPreview();
                 this.gameLoop();
             }).catch(console.error);
         }
@@ -351,7 +332,6 @@ export class Game {
                 hueSlider.value = savedHue;
                 this.playerColor = `hsl(${this.playerHue}, 100%, 50%)`;
                 colorPreview.style.backgroundColor = this.playerColor;
-                this.updateColorPreview();
             }
 
             // Preview color while sliding without saving
@@ -372,10 +352,6 @@ export class Game {
                     // Update game state after saving
                     this.playerHue = parseInt(value);
                     this.playerColor = `hsl(${this.playerHue}, 100%, 50%)`;
-
-                    if (this.assetLoader.playerSprite.complete) {
-                        this.updateColorPreview();
-                    }
 
                     // Show confirmation message
                     this.showFloatingText(
@@ -647,9 +623,6 @@ export class Game {
 
         // Load background image from land.svg
         this.assetLoader.loadBackgroundFromSVG();
-
-        // Load wall texture
-        this.assetLoader.loadWallTexture();
 
         this.gameStartTime = Date.now();
 
@@ -1841,33 +1814,6 @@ export class Game {
 
     private handleExit() {
         this.cleanup();
-    }
-
-
-    private updateColorPreview() {
-        if (!this.assetLoader.playerSprite.complete) return;
-
-        const ctx = this.colorPreviewCanvas.getContext('2d')!;
-        ctx.clearRect(0, 0, this.colorPreviewCanvas.width, this.colorPreviewCanvas.height);
-
-        // Draw the sprite centered in the preview
-        const scale = Math.min(
-            this.colorPreviewCanvas.width / this.assetLoader.playerSprite.width,
-            this.colorPreviewCanvas.height / this.assetLoader.playerSprite.height
-        );
-
-        const x = (this.colorPreviewCanvas.width - this.assetLoader.playerSprite.width * scale) / 2;
-        const y = (this.colorPreviewCanvas.height - this.assetLoader.playerSprite.height * scale) / 2;
-
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.scale(scale, scale);
-        ctx.drawImage(this.assetLoader.playerSprite, 0, 0);
-
-        const imageData = ctx.getImageData(0, 0, this.colorPreviewCanvas.width, this.colorPreviewCanvas.height);
-        this.assetLoader.applyHueRotation(ctx, imageData, this.playerHue);
-        ctx.putImageData(imageData, 0, 0);
-        ctx.restore();
     }
 
 

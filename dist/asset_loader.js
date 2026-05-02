@@ -47,39 +47,10 @@ class AssetLoader {
         };
     }
     /**
-     * Load sprites dynamically (fallback when preloaded assets not available)
+     * No-op now that player/coral/palm are procedural — only item sprites
+     * (loaded separately via setupItemSprites) still come from PNGs.
      */
-    async loadSprites() {
-        console.log('[AssetLoader] Loading sprites dynamically');
-        const loadSprite = async (sprite, filename) => {
-            try {
-                sprite.crossOrigin = "anonymous";
-                sprite.src = await this.getAssetUrl(filename);
-                return new Promise((resolve, reject) => {
-                    sprite.onload = () => resolve();
-                    sprite.onerror = (e) => {
-                        console.error(`Failed to load sprite: ${filename}`, e);
-                        reject(e);
-                    };
-                });
-            }
-            catch (error) {
-                console.error(`Error loading sprite ${filename}:`, error);
-                // Don't throw error, just log it and continue
-            }
-        };
-        try {
-            await Promise.allSettled([
-                loadSprite(this.assets.sprites.player, 'player.png'),
-                loadSprite(this.assets.sprites.coral, 'coral.png'),
-                loadSprite(this.assets.sprites.palm, 'palm.png')
-            ]);
-        }
-        catch (error) {
-            console.error('Error loading sprites:', error);
-            // Continue even if some sprites fail to load
-        }
-    }
+    async loadSprites() { }
     /**
      * Set up item sprites from preloaded assets
      */
@@ -349,102 +320,6 @@ class AssetLoader {
      */
     async getAssetUrl(filename) {
         return `./assets/${filename}`;
-    }
-    /**
-     * Apply hue rotation to image data
-     */
-    applyHueRotation(ctx, imageData, playerHue) {
-        const data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-            // Skip fully transparent pixels
-            if (data[i + 3] === 0)
-                continue;
-            // Convert RGB to HSL
-            const r = data[i] / 255;
-            const g = data[i + 1] / 255;
-            const b = data[i + 2] / 255;
-            const max = Math.max(r, g, b);
-            const min = Math.min(r, g, b);
-            let h, s, l = (max + min) / 2;
-            if (max === min) {
-                h = s = 0; // achromatic
-            }
-            else {
-                const d = max - min;
-                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-                switch (max) {
-                    case r:
-                        h = (g - b) / d + (g < b ? 6 : 0);
-                        break;
-                    case g:
-                        h = (b - r) / d + 2;
-                        break;
-                    case b:
-                        h = (r - g) / d + 4;
-                        break;
-                    default: h = 0;
-                }
-                h /= 6;
-            }
-            // Only adjust hue if the pixel has some saturation
-            if (s > 0.1) { // Threshold for considering a pixel colored
-                h = (h + playerHue / 360) % 1;
-                // Convert back to RGB
-                if (s === 0) {
-                    data[i] = data[i + 1] = data[i + 2] = l * 255;
-                }
-                else {
-                    const hue2rgb = (p, q, t) => {
-                        if (t < 0)
-                            t += 1;
-                        if (t > 1)
-                            t -= 1;
-                        if (t < 1 / 6)
-                            return p + (q - p) * 6 * t;
-                        if (t < 1 / 2)
-                            return q;
-                        if (t < 2 / 3)
-                            return p + (q - p) * (2 / 3 - t) * 6;
-                        return p;
-                    };
-                    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-                    const p = 2 * l - q;
-                    data[i] = hue2rgb(p, q, h + 1 / 3) * 255;
-                    data[i + 1] = hue2rgb(p, q, h) * 255;
-                    data[i + 2] = hue2rgb(p, q, h - 1 / 3) * 255;
-                }
-            }
-        }
-    }
-    /**
-     * Update color preview canvas
-     */
-    updateColorPreview(colorPreviewCanvas, playerHue) {
-        if (!this.assets.sprites.player.complete)
-            return;
-        const ctx = colorPreviewCanvas.getContext('2d');
-        ctx.clearRect(0, 0, colorPreviewCanvas.width, colorPreviewCanvas.height);
-        // Draw the sprite centered in the preview
-        const scale = Math.min(colorPreviewCanvas.width / this.assets.sprites.player.width, colorPreviewCanvas.height / this.assets.sprites.player.height);
-        const x = (colorPreviewCanvas.width - this.assets.sprites.player.width * scale) / 2;
-        const y = (colorPreviewCanvas.height - this.assets.sprites.player.height * scale) / 2;
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.scale(scale, scale);
-        ctx.drawImage(this.assets.sprites.player, 0, 0);
-        const imageData = ctx.getImageData(0, 0, colorPreviewCanvas.width, colorPreviewCanvas.height);
-        this.applyHueRotation(ctx, imageData, playerHue);
-        ctx.putImageData(imageData, 0, 0);
-        ctx.restore();
-    }
-    /**
-     * Load wall texture
-     */
-    loadWallTexture() {
-        this.assets.sprites.wall.src = './assets/wall.png';
-        this.assets.sprites.wall.onload = () => {
-            console.log('Wall texture loaded successfully');
-        };
     }
     // Getters for accessing assets
     get sprites() {

@@ -111,10 +111,19 @@ export interface TileTypeConfig {
     textureTileSize?: number;
 }
 
+const BUILTIN_WALL_TEXTURE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 124 124" fill="none">
+<rect x="0" y="0" width="400" height="400" fill="#99550c"/>
+<circle cx="25.2109" cy="51.5391" r="5.1641" fill="#783f01"/>
+<circle cx="105.5341" cy="25.5207" r="5.1641" fill="#783f01"/>
+<circle cx="51.5308" cy="85.3607" r="5.1641" fill="#783f01"/>
+<circle cx="64.5341" cy="15.5207" r="5.1641" fill="#783f01"/>
+<circle cx="103.5341" cy="102.5207" r="5.1641" fill="#783f01"/>
+</svg>`;
+
 /** Built-in tile types — IDs 0-2 are reserved and always present. */
 export const BUILTIN_TILE_TYPES: TileTypeConfig[] = [
     { id: 0, name: 'air',   solid: false, water: false, color: '#00000000', style: 'flat' },
-    { id: 1, name: 'wall',  solid: true,  water: false, color: '#666666',   style: 'wall' },
+    { id: 1, name: 'wall',  solid: true,  water: false, color: '#99550c',   style: 'wall', textureSvg: BUILTIN_WALL_TEXTURE_SVG },
     { id: 2, name: 'water', solid: false, water: true,  color: '#4169E1',   borderColor: '#2a4fa0', style: 'water' },
 ];
 

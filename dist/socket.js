@@ -1395,10 +1395,6 @@ function setupSocketListeners(game) {
                     targetY: serverPlayer.y,
                 };
                 player.loadout = padLoadout(serverPlayer.loadout, 20);
-                player.image.src = 'assets/player.png';
-                player.image.onload = () => {
-                    player.imageLoaded = true;
-                };
                 game.players.set(serverPlayer.id, player);
             }
         });

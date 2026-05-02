@@ -193,18 +193,14 @@ Graphics.prototype.drawWallGrid = function(this: Graphics, viewport: { left: num
     // Slight overlap prevents sub-pixel background bleed between adjacent tiles
     const OVERLAP = 1.5;
     const OVERLAP_SIZE = WALL_TILE_SIZE + OVERLAP * 2;
-    const wallPattern = this.ctx.createPattern(this.wallTexture, 'repeat');
 
-    // Resolve the pattern for a tile type: prefer its custom SVG texture if
-    // loaded (cached, scaled to one tile), else fall back to the bundled wall
-    // texture (for "wall" style only). Returns null when no pattern is
-    // available — caller should use the configured color.
+    // Resolve the pattern for a tile type from its inline SVG texture.
+    // Returns null until the SVG finishes rasterizing — caller falls back
+    // to the configured color for that one frame.
     const resolveTilePattern = (cfg: TileTypeConfig): CanvasPattern | null => {
         if (cfg.textureSvg) {
-            const pat = getTileTexturePattern(cfg, this.ctx, () => { /* next frame redraws automatically */ });
-            if (pat) return pat;
+            return getTileTexturePattern(cfg, this.ctx, () => { /* next frame redraws automatically */ });
         }
-        if (cfg.style === 'wall' && wallPattern) return wallPattern;
         return null;
     };
 
