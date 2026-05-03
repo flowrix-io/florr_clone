@@ -1442,6 +1442,62 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false,
         playerModifiers: { range: 1.15 }
     },
+    antennae: {
+        name: "Antennae",
+        damage: 0,
+        health: Infinity,
+        size: 1.0,
+        speed: 0.0,
+        range: 0.0,
+        cooldown: 1,
+        fixedDirection: 0,
+        visualOffsetY: -1e100,
+        description: "Allows your flower to sense foes from farther away",
+        color: "#000000",
+        count: 0,
+        equipFlags: player_1.EquipmentFlags.Antennae,
+        noPhysics: true,
+        image: `<svg width="32" height="32" viewBox="-16 -16 32 32" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 5 12.5 Q 10 -2.5 15 -12.5 Q 5 -2.5 5 12.5 Z M -5 12.5 Q -10 -2.5 -15 -12.5 Q -5 -2.5 -5 12.5 Z"
+        fill="#333333"
+        stroke="#222222"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>`,
+        isAdminPetal: false,
+        playerModifiers: { magnetism: 50 },
+        cameraZoom: 0.92
+    },
+    observer: {
+        name: "Observer",
+        damage: 0,
+        health: Infinity,
+        size: 1.0,
+        speed: 0.0,
+        range: 0.0,
+        cooldown: 1,
+        fixedDirection: 0,
+        visualOffsetY: -1e100,
+        description: "The one who sees all",
+        color: "#000000",
+        count: 0,
+        equipFlags: player_1.EquipmentFlags.Observer,
+        noPhysics: true,
+        image: `<svg width="32" height="32" viewBox="-16 -16 32 32" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 5 12.5 Q 10 -2.5 15 -12.5 Q 5 -2.5 5 12.5 Z M -5 12.5 Q -10 -2.5 -15 -12.5 Q -5 -2.5 -5 12.5 Z"
+        fill="#333333"
+        stroke="#222222"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+  <circle cx="15" cy="-12.5" r="2.5" fill="#d01c1d"/>
+  <circle cx="-15" cy="-12.5" r="2.5" fill="#d01c1d"/>
+</svg>`,
+        isAdminPetal: false,
+        playerModifiers: { magnetism: 100 },
+        cameraZoom: 0.85
+    },
     faster: {
         name: "Faster",
         damage: 5,
@@ -2080,6 +2136,12 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         emissive: overrides.emissive ?? baseConfig.emissive,
         lightRadius: overrides.lightRadius ?? baseConfig.lightRadius,
         lightColor: overrides.lightColor ?? baseConfig.lightColor,
+        cameraZoom: baseConfig.cameraZoom !== undefined
+            // Same shape as multiplicative playerModifiers (range/damage/etc.):
+            // delta from 1 widens 1x at common to 4x at unique. Floor at 0.3 so
+            // higher rarities can't invert the camera or zoom past a sane limit.
+            ? Math.max(0.3, 1 + (baseConfig.cameraZoom - 1) * (1 + (rarityIndex / 8) * 3))
+            : undefined,
     };
 }
 // Generate the full petal configuration

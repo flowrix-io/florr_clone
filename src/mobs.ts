@@ -4150,7 +4150,15 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 probability: 1.0,
                 minQuantity: 1,
                 maxQuantity: 1
-            }
+            },
+            {
+                type: 'petal',
+                itemType: 'antennae',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
         ]
     },
     leafbug: {

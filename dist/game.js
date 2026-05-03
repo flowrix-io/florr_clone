@@ -290,8 +290,9 @@ class Game {
             // This gives the absolute world position of the mouse cursor
             const screenX = sx;
             const screenY = sy;
-            const worldX = screenX / this.zoomLevel + this.cameraX;
-            const worldY = screenY / this.zoomLevel + this.cameraY;
+            const effectiveZoom = this.getEffectiveZoom();
+            const worldX = screenX / effectiveZoom + this.cameraX;
+            const worldY = screenY / effectiveZoom + this.cameraY;
             // Calculate normalized screen coordinates (-1 to 1, where 0,0 is center of screen)
             // X: -1 is left edge, 0 is center, 1 is right edge
             // Y: -1 is top edge, 0 is center, 1 is bottom edge
@@ -830,6 +831,26 @@ class Game {
     getOffscreenCanvasMemoryMB() {
         return this.graphics.getOffscreenCanvasMemoryMB();
     }
+    // Camera zoom multiplier from equipped petals (Antennae/Observer). Values <1 zoom out.
+    // Petals don't stack — only the smallest equipped value applies.
+    getEquippedZoomMultiplier() {
+        const local = this.getLocalPlayer();
+        if (!local || !local.loadout)
+            return 1.0;
+        let minZoom = 1.0;
+        for (const item of local.loadout) {
+            if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
+                continue;
+            const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+            if (stats?.cameraZoom !== undefined && stats.cameraZoom < minZoom) {
+                minZoom = stats.cameraZoom;
+            }
+        }
+        return minZoom;
+    }
+    getEffectiveZoom() {
+        return this.zoomLevel * this.getEquippedZoomMultiplier();
+    }
     zoomIn() {
         this.zoomLevel = Math.min(this.zoomLevel + this.ZOOM_STEP, this.MAX_ZOOM);
         this.showFloatingText(this.canvas.width / 2, 50, `Zoom: ${Math.round(this.zoomLevel * 100)}%`, '#FFFFFF', 20);
@@ -850,8 +871,9 @@ class Game {
             return;
         }
         // Center camera on player with zoom
-        const scaledWidth = this.canvas.width / this.zoomLevel;
-        const scaledHeight = this.canvas.height / this.zoomLevel;
+        const effectiveZoom = this.getEffectiveZoom();
+        const scaledWidth = this.canvas.width / effectiveZoom;
+        const scaledHeight = this.canvas.height / effectiveZoom;
         const targetX = player.x - scaledWidth / 2;
         const targetY = player.y - scaledHeight / 2;
         // Clamp camera to world bounds with proper dimensions
@@ -859,7 +881,7 @@ class Game {
         // this.cameraY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT - scaledHeight, targetY));
         this.cameraX = targetX;
         this.cameraY = targetY;
-        this.graphics.setCamera(this.cameraX, this.cameraY, this.zoomLevel);
+        this.graphics.setCamera(this.cameraX, this.cameraY, effectiveZoom);
         // Automatically follow player on minimap
         this.graphics.followPlayerOnMinimap(player.x, player.y);
     }
@@ -871,8 +893,9 @@ class Game {
         this.savedPlayerPos = { x: localPlayer.x, y: localPlayer.y };
         // Set up animation to mob
         this.animationStartPos = { x: this.cameraX, y: this.cameraY };
-        const scaledWidth = this.canvas.width / this.zoomLevel;
-        const scaledHeight = this.canvas.height / this.zoomLevel;
+        const effectiveZoom = this.getEffectiveZoom();
+        const scaledWidth = this.canvas.width / effectiveZoom;
+        const scaledHeight = this.canvas.height / effectiveZoom;
         this.animationTargetPos = {
             x: Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH - scaledWidth, mobX - scaledWidth / 2)),
             y: Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - scaledHeight, mobY - scaledHeight / 2))
@@ -901,8 +924,9 @@ class Game {
             if (elapsed >= this.animationDuration) {
                 // Set up animation back to player
                 this.animationStartPos = { x: this.cameraX, y: this.cameraY };
-                const scaledWidth = this.canvas.width / this.zoomLevel;
-                const scaledHeight = this.canvas.height / this.zoomLevel;
+                const effectiveZoom = this.getEffectiveZoom();
+                const scaledWidth = this.canvas.width / effectiveZoom;
+                const scaledHeight = this.canvas.height / effectiveZoom;
                 this.animationTargetPos = {
                     x: Math.max(0, Math.min(constants_1.ACTUAL_WORLD_WIDTH - scaledWidth, this.savedPlayerPos.x - scaledWidth / 2)),
                     y: Math.max(0, Math.min(constants_1.ACTUAL_WORLD_HEIGHT - scaledHeight, this.savedPlayerPos.y - scaledHeight / 2))
@@ -923,7 +947,7 @@ class Game {
                 this.animationPhase = 'none';
             }
         }
-        this.graphics.setCamera(this.cameraX, this.cameraY, this.zoomLevel);
+        this.graphics.setCamera(this.cameraX, this.cameraY, this.getEffectiveZoom());
     }
     easeInOutCubic(t) {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -1147,8 +1171,8 @@ class Game {
         const inputData = {
             keys: Array.from(this.keysPressed),
             petalExtension: this.petalExtension,
-            viewportWidth: this.canvas.width / this.zoomLevel,
-            viewportHeight: this.canvas.height / this.zoomLevel
+            viewportWidth: this.canvas.width / this.getEffectiveZoom(),
+            viewportHeight: this.canvas.height / this.getEffectiveZoom()
         };
         // Calculate mouse movement direction on client when mouse controls are enabled
         if (this.useMouseControls && !isAnyMenuOpen) {

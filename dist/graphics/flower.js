@@ -156,6 +156,37 @@ core_1.Graphics.prototype.drawFlower = function (attrs) {
         ctx.fill();
         ctx.restore();
     }
+    // ── Equipment: Antennae / Observer ────────────────────────
+    if (equipFlags & (core_1.EquipmentFlags.Antennae | core_1.EquipmentFlags.Observer)) {
+        ctx.save();
+        ctx.translate(0, -35);
+        ctx.fillStyle = '#333333';
+        ctx.strokeStyle = '#222222';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(5, 12.5);
+        ctx.quadraticCurveTo(10, -2.5, 15, -12.5);
+        ctx.quadraticCurveTo(5, -2.5, 5, 12.5);
+        ctx.closePath();
+        ctx.moveTo(-5, 12.5);
+        ctx.quadraticCurveTo(-10, -2.5, -15, -12.5);
+        ctx.quadraticCurveTo(-5, -2.5, -5, 12.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        if (equipFlags & core_1.EquipmentFlags.Observer) {
+            ctx.fillStyle = '#d01c1d';
+            ctx.beginPath();
+            ctx.arc(15, -12.5, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(-15, -12.5, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
     // ── Equipment: Third Eye ──────────────────────────────────
     if (equipFlags & core_1.EquipmentFlags.ThirdEye) {
         // Prefer drawing the real Third Eye petal canvas when a rarity is provided
