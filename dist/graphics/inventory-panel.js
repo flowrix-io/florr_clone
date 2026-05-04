@@ -6,6 +6,7 @@ exports.CanvasInventoryPanel = void 0;
 // testing / hover callbacks so InventoryManager can drive drag/drop & tooltips.
 const inventoryCodec_1 = require("../inventoryCodec");
 const petals_1 = require("../petals");
+const petal_icon_1 = require("./petal-icon");
 const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
 function darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
@@ -796,7 +797,8 @@ class CanvasInventoryPanel {
             const petalType = r.itemType.replace('petal_', '');
             const pc = this.game.getPetalCanvas?.(petalType, r.rarity, time);
             if (pc) {
-                ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+                const stats = this.game.getPetalStats?.(petalType, r.rarity);
+                (0, petal_icon_1.drawPetalGroup)(ctx, pc, stats?.count, cx, cy, iconSize);
             }
         }
         else {

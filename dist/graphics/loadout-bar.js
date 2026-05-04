@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CanvasLoadoutBar = exports.LOADOUT_SLOT_COUNT = exports.LOADOUT_SECONDARY_COUNT = exports.LOADOUT_PRIMARY_COUNT = void 0;
 const petals_1 = require("../petals");
+const petal_icon_1 = require("./petal-icon");
 function darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
     const r = (num >> 16) & 255;
@@ -394,8 +395,10 @@ class CanvasLoadoutBar {
         // Draw at design-size 60x60 centered on origin
         if (item.type === 'petal' && item.petalType && item.rarity) {
             const pc = this.game.getPetalCanvas?.(item.petalType, item.rarity, performance.now());
-            if (pc)
-                ctx.drawImage(pc, -30, -30, 60, 60);
+            if (pc) {
+                const stats = this.game.getPetalStats?.(item.petalType, item.rarity);
+                (0, petal_icon_1.drawPetalGroup)(ctx, pc, stats?.count, 0, 0, 60);
+            }
         }
         else {
             const dataUrl = this.game.getItemSpriteDataUrl?.(item.type);

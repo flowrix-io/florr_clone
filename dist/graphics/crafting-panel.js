@@ -6,6 +6,7 @@ exports.CanvasCraftingPanel = void 0;
 // into a single <canvas>, following the same pattern as CanvasInventoryPanel.
 const inventoryCodec_1 = require("../inventoryCodec");
 const petals_1 = require("../petals");
+const petal_icon_1 = require("./petal-icon");
 const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
 /** Column order for the crafting inventory grid: common on left, no apex. */
 const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
@@ -616,7 +617,8 @@ class CanvasCraftingPanel {
             if (this.successResult.petalType) {
                 const pc = this.game.getPetalCanvas?.(this.successResult.petalType, this.successResult.rarity, now);
                 if (pc) {
-                    ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+                    const stats = this.game.getPetalStats?.(this.successResult.petalType, this.successResult.rarity);
+                    (0, petal_icon_1.drawPetalGroup)(ctx, pc, stats?.count, cx, cy, iconSize);
                 }
             }
             else {
@@ -667,7 +669,8 @@ class CanvasCraftingPanel {
         if (item.type === 'petal' && item.petalType) {
             const pc = this.game.getPetalCanvas?.(item.petalType, item.rarity, time);
             if (pc) {
-                ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+                const stats = this.game.getPetalStats?.(item.petalType, item.rarity);
+                (0, petal_icon_1.drawPetalGroup)(ctx, pc, stats?.count, cx, cy, iconSize);
             }
         }
         else {
@@ -811,7 +814,8 @@ class CanvasCraftingPanel {
             const petalType = r.itemType.replace('petal_', '');
             const pc = this.game.getPetalCanvas?.(petalType, r.rarity, time);
             if (pc) {
-                ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+                const stats = this.game.getPetalStats?.(petalType, r.rarity);
+                (0, petal_icon_1.drawPetalGroup)(ctx, pc, stats?.count, cx, cy, iconSize);
             }
         }
         else {

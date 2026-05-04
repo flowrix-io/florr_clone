@@ -1,6 +1,7 @@
 // Canvas-based loadout bar inspired by gardn/Client/Ui/InGame/Loadout
 import { Item } from '../item';
 import { ITEM_RARITY_COLORS } from '../petals';
+import { drawPetalGroup } from './petal-icon';
 
 interface SlotRect { x: number; y: number; w: number; h: number }
 
@@ -8,6 +9,7 @@ interface GameAPI {
     canvas: HTMLCanvasElement;
     getLocalPlayer(): any;
     getPetalCanvas?(petalType: string, rarity: string, time?: number): HTMLCanvasElement | null;
+    getPetalStats?(petalType: string, rarity: string): any;
     getItemSpriteDataUrl?(itemType: string): string | null;
     inventoryManager: any;
 }
@@ -445,7 +447,10 @@ export class CanvasLoadoutBar {
         // Draw at design-size 60x60 centered on origin
         if (item.type === 'petal' && item.petalType && item.rarity) {
             const pc = this.game.getPetalCanvas?.(item.petalType, item.rarity, performance.now());
-            if (pc) ctx.drawImage(pc, -30, -30, 60, 60);
+            if (pc) {
+                const stats = this.game.getPetalStats?.(item.petalType, item.rarity);
+                drawPetalGroup(ctx, pc, stats?.count, 0, 0, 60);
+            }
         } else {
             const dataUrl = this.game.getItemSpriteDataUrl?.(item.type);
             if (dataUrl) {

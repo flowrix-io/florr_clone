@@ -9,6 +9,7 @@ import { inventoryToDict, addItem as codecAddItem, removeItem as codecRemoveItem
 import { CanvasInventoryPanel, InventoryHitInfo } from './graphics/inventory-panel';
 import { CanvasCraftingPanel, CraftingItem } from './graphics/crafting-panel';
 import { CanvasMobGalleryPanel } from './graphics/mob-gallery-panel';
+import { drawPetalGroup } from './graphics/petal-icon';
 
 interface CraftingSlot {
     index: number;
@@ -1821,7 +1822,8 @@ export class InventoryManager {
             const petalType = itemType.replace('petal_', '');
             const petalCanvas = this.game.getPetalCanvas?.(petalType, rarity || 'common', Date.now());
             if (petalCanvas) {
-                ctx.drawImage(petalCanvas, 10, 10, 30, 30);
+                const stats = getPetalStats(petalType, rarity || 'common');
+                drawPetalGroup(ctx, petalCanvas, stats?.count, 25, 25, 30);
             }
         } else if (itemType) {
             const dataUrl = this.game.getItemSpriteDataUrl?.(itemType);

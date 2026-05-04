@@ -3,6 +3,7 @@
 // into a single <canvas>, following the same pattern as CanvasInventoryPanel.
 import { inventoryToDict, ITEM_KEY_TO_ID } from '../inventoryCodec';
 import { ITEM_RARITY_COLORS } from '../petals';
+import { drawPetalGroup } from './petal-icon';
 
 interface ItemRect {
     x: number;
@@ -17,6 +18,7 @@ interface ItemRect {
 interface GameAPI {
     getLocalPlayer(): any;
     getPetalCanvas?(petalType: string, rarity: string, time?: number): HTMLCanvasElement | null;
+    getPetalStats?(petalType: string, rarity: string): any;
     getItemSpriteDataUrl?(itemType: string): string | null;
 }
 
@@ -649,7 +651,8 @@ export class CanvasCraftingPanel {
             if (this.successResult.petalType) {
                 const pc = this.game.getPetalCanvas?.(this.successResult.petalType, this.successResult.rarity, now);
                 if (pc) {
-                    ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+                    const stats = this.game.getPetalStats?.(this.successResult.petalType, this.successResult.rarity);
+                    drawPetalGroup(ctx, pc, stats?.count, cx, cy, iconSize);
                 }
             } else {
                 const dataUrl = this.game.getItemSpriteDataUrl?.(this.successResult.type);
@@ -703,7 +706,8 @@ export class CanvasCraftingPanel {
         if (item.type === 'petal' && item.petalType) {
             const pc = this.game.getPetalCanvas?.(item.petalType, item.rarity, time);
             if (pc) {
-                ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+                const stats = this.game.getPetalStats?.(item.petalType, item.rarity);
+                drawPetalGroup(ctx, pc, stats?.count, cx, cy, iconSize);
             }
         } else {
             const dataUrl = this.game.getItemSpriteDataUrl?.(item.type);
@@ -870,7 +874,8 @@ export class CanvasCraftingPanel {
             const petalType = r.itemType.replace('petal_', '');
             const pc = this.game.getPetalCanvas?.(petalType, r.rarity, time);
             if (pc) {
-                ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+                const stats = this.game.getPetalStats?.(petalType, r.rarity);
+                drawPetalGroup(ctx, pc, stats?.count, cx, cy, iconSize);
             }
         } else {
             const dataUrl = this.game.getItemSpriteDataUrl?.(r.itemType);

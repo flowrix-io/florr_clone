@@ -3,6 +3,7 @@
 // testing / hover callbacks so InventoryManager can drive drag/drop & tooltips.
 import { inventoryToDict, ITEM_KEY_TO_ID } from '../inventoryCodec';
 import { ITEM_RARITY_COLORS } from '../petals';
+import { drawPetalGroup } from './petal-icon';
 
 interface ItemRect {
     x: number;
@@ -17,6 +18,7 @@ interface ItemRect {
 interface GameAPI {
     getLocalPlayer(): any;
     getPetalCanvas?(petalType: string, rarity: string, time?: number): HTMLCanvasElement | null;
+    getPetalStats?(petalType: string, rarity: string): any;
     getItemSpriteDataUrl?(itemType: string): string | null;
 }
 
@@ -754,7 +756,8 @@ export class CanvasInventoryPanel {
             const petalType = r.itemType.replace('petal_', '');
             const pc = this.game.getPetalCanvas?.(petalType, r.rarity, time);
             if (pc) {
-                ctx.drawImage(pc, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+                const stats = this.game.getPetalStats?.(petalType, r.rarity);
+                drawPetalGroup(ctx, pc, stats?.count, cx, cy, iconSize);
             }
         } else {
             const dataUrl = this.game.getItemSpriteDataUrl?.(r.itemType);

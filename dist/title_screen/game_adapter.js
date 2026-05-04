@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TitleScreenGameAdapter = void 0;
 const zoom_compensation_1 = require("../zoom-compensation");
+const petals_1 = require("../petals");
 /**
  * Adapter that provides a GameInterface for using InventoryManager on the title screen.
  * Wraps the title screen's player data and preconnected socket.
@@ -51,6 +52,10 @@ class TitleScreenGameAdapter {
             return entry[frameIndex];
         }
         return entry;
+    }
+    /** Used by preview renderers to look up the per-petal spawn count. */
+    getPetalStats(petalType, rarity) {
+        return (0, petals_1.getPetalStats)(petalType, rarity);
     }
     /** Used by CanvasInventoryPanel — converts a preloaded sprite into a data URL. */
     getItemSpriteDataUrl(itemType) {

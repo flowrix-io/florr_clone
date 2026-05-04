@@ -137,6 +137,7 @@ class TitleScreenInventoryManager {
                 }
                 return entry;
             },
+            getPetalStats: (petalType, rarity) => (0, petals_1.getPetalStats)(petalType, rarity),
             getItemSpriteDataUrl: (itemType) => {
                 const assets = window.preloadedAssets;
                 if (!assets || !assets.itemSprites)

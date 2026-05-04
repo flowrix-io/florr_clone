@@ -144,6 +144,7 @@ export class TitleScreenInventoryManager {
                 }
                 return entry;
             },
+            getPetalStats: (petalType: string, rarity: string): any => getPetalStats(petalType, rarity),
             getItemSpriteDataUrl: (itemType: string): string | null => {
                 const assets = (window as any).preloadedAssets;
                 if (!assets || !assets.itemSprites) return null;

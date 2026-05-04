@@ -2,6 +2,7 @@ import { Item } from '../item';
 import { Player, PlayerInventory } from '../player';
 import { GameInterface } from '../inventory';
 import { applyZoomCompensation } from '../zoom-compensation';
+import { getPetalStats } from '../petals';
 
 /**
  * Adapter that provides a GameInterface for using InventoryManager on the title screen.
@@ -56,6 +57,11 @@ export class TitleScreenGameAdapter implements GameInterface {
             return entry[frameIndex];
         }
         return entry;
+    }
+
+    /** Used by preview renderers to look up the per-petal spawn count. */
+    getPetalStats(petalType: string, rarity: string): any {
+        return getPetalStats(petalType, rarity);
     }
 
     /** Used by CanvasInventoryPanel — converts a preloaded sprite into a data URL. */

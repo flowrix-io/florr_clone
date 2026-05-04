@@ -7,6 +7,7 @@ const inventoryCodec_1 = require("./inventoryCodec");
 const inventory_panel_1 = require("./graphics/inventory-panel");
 const crafting_panel_1 = require("./graphics/crafting-panel");
 const mob_gallery_panel_1 = require("./graphics/mob-gallery-panel");
+const petal_icon_1 = require("./graphics/petal-icon");
 class InventoryManager {
     getIsInventoryOpen() {
         return this.isInventoryOpen;
@@ -1631,7 +1632,8 @@ class InventoryManager {
             const petalType = itemType.replace('petal_', '');
             const petalCanvas = this.game.getPetalCanvas?.(petalType, rarity || 'common', Date.now());
             if (petalCanvas) {
-                ctx.drawImage(petalCanvas, 10, 10, 30, 30);
+                const stats = (0, petals_1.getPetalStats)(petalType, rarity || 'common');
+                (0, petal_icon_1.drawPetalGroup)(ctx, petalCanvas, stats?.count, 25, 25, 30);
             }
         }
         else if (itemType) {
