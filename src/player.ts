@@ -15,6 +15,7 @@ export enum EquipmentFlags {
     ThirdEye = 1 << 1,
     Observer = 1 << 2,
     Antennae = 1 << 3,
+    Test1 = 1 << 4, // Unused/test flag for bitmask expansion
 }
 
 // Compact inventory: flat number array of [rarityId, itemId, count, ...] triplets

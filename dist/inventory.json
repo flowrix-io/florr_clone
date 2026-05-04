@@ -1,10 +1,10 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 482413275,
+      "totalXP": 482420637,
       "inventory": {
         "common": {
-          "petal_light": 155,
+          "petal_light": 156,
           "petal_dandelion": 50,
           "petal_stinger": 86,
           "petal_yggdrasil": 22,
@@ -17,27 +17,27 @@
           "petal_iris": 27,
           "petal_poison_cactus": 23,
           "petal_lightning": 76,
-          "petal_missile": 371,
+          "petal_missile": 372,
           "petal_jelly": 55,
           "petal_leaf": 60,
           "petal_cutter": 2,
           "petal_wing": 353,
-          "petal_rose": 248,
+          "petal_rose": 249,
           "health_potion": 80,
           "petal_basic": 83,
           "petal_square": 44,
           "petal_shield": 1,
           "petal_golden_leaf": 53,
           "petal_yucca": 44,
-          "petal_hornet_egg": 295,
+          "petal_hornet_egg": 296,
           "petal_dandelion_egg": 210,
-          "petal_ladybug_egg": 209,
+          "petal_ladybug_egg": 210,
           "petal_soldier_ant_egg": 283,
-          "petal_dark_ladybug_egg": 212,
+          "petal_dark_ladybug_egg": 214,
           "petal_bee_egg": 205,
           "petal_fly_egg": 114,
           "petal_bubble_egg": 51,
-          "petal_rock_egg": 196,
+          "petal_rock_egg": 197,
           "petal_bush_egg": 15,
           "petal_roach_egg": 44,
           "petal_cactus_egg": 27,
@@ -73,10 +73,10 @@
           "petal_faster": 91,
           "petal_shell_egg": 34,
           "petal_pollen": 5,
-          "petal_centipede_egg": 51,
+          "petal_centipede_egg": 52,
           "petal_powder": 20,
           "petal_desert_centipede_egg": 11,
-          "petal_peas": 214,
+          "petal_peas": 215,
           "petal_baby_ant_egg": 51,
           "petal_worker_ant_egg": 35,
           "petal_worker_fire_ant_egg": 20,
@@ -157,7 +157,7 @@
           "petal_cutter": 5,
           "petal_clover": 13,
           "petal_lightning_cutter": 1,
-          "petal_square": 46,
+          "petal_square": 47,
           "petal_wing": 17,
           "petal_jelly": 4,
           "petal_golden_leaf": 4,
@@ -213,13 +213,13 @@
           "petal_antennae": 4
         },
         "uncommon": {
-          "petal_rose": 164,
+          "petal_rose": 165,
           "petal_dandelion": 120,
           "petal_basic": 134,
           "petal_sand": 21,
           "speed_boost": 190,
           "petal_stinger": 64,
-          "shield": 208,
+          "shield": 209,
           "petal_clover": 99,
           "petal_light": 93,
           "health_potion": 44,
@@ -783,7 +783,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 972,
+          "common": 973,
           "legendary": 754,
           "uncommon": 275,
           "mythic": 607,
@@ -812,12 +812,12 @@
           "mythic": 530,
           "epic": 126,
           "rare": 130,
-          "uncommon": 246,
+          "uncommon": 247,
           "super": 4,
           "unique": 3
         },
         "dark_ladybug": {
-          "common": 1145,
+          "common": 1147,
           "legendary": 539,
           "mythic": 507,
           "uncommon": 320,
@@ -828,7 +828,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 1427,
+          "common": 1428,
           "legendary": 1067,
           "mythic": 1009,
           "uncommon": 534,
@@ -850,7 +850,7 @@
           "super": 13
         },
         "bee": {
-          "common": 973,
+          "common": 974,
           "epic": 208,
           "mythic": 562,
           "uncommon": 260,
@@ -885,7 +885,7 @@
           "legendary": 4,
           "common": 40,
           "mythic": 44,
-          "ultra": 132,
+          "ultra": 133,
           "super": 174,
           "uncommon": 34,
           "rare": 119,
@@ -1144,7 +1144,7 @@
           "uncommon": 6
         },
         "centipede": {
-          "common": 197,
+          "common": 198,
           "uncommon": 56,
           "legendary": 236,
           "epic": 54,
@@ -1237,7 +1237,7 @@
           "epic": 2
         }
       },
-      "stars": 147661,
+      "stars": 147666,
       "dailyStreak": 13,
       "lastStreakDate": "2026-05-04"
     },
@@ -1693,7 +1693,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1777924312611
+      "lastActiveAt": 1777929343206
     },
     "dev": {
       "id": "1g99g1gfk",

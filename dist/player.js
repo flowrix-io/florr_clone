@@ -16,4 +16,5 @@ var EquipmentFlags;
     EquipmentFlags[EquipmentFlags["ThirdEye"] = 2] = "ThirdEye";
     EquipmentFlags[EquipmentFlags["Observer"] = 4] = "Observer";
     EquipmentFlags[EquipmentFlags["Antennae"] = 8] = "Antennae";
+    EquipmentFlags[EquipmentFlags["Test1"] = 16] = "Test1";
 })(EquipmentFlags || (exports.EquipmentFlags = EquipmentFlags = {}));

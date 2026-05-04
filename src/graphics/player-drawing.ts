@@ -33,16 +33,18 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
 
     const sizeMultiplier = player.sizeMultiplier ?? 1.0;
     const flowerRadius = 25 * sizeMultiplier;
-    const hitboxSize = PLAYER_SIZE * sizeMultiplier;
+    const hitboxRadius = (PLAYER_SIZE / 2) * sizeMultiplier;
 
-    // Draw hitbox if enabled
+    // Draw hitbox if enabled — circular, matches checkPlayerEnemyCollision
     if (this.showHitboxes) {
         this.ctx.save();
         this.ctx.strokeStyle = 'red';
         this.ctx.lineWidth = 2;
-        this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
-        this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
-        this.ctx.strokeRect(-hitboxSize / 2, -hitboxSize / 2, hitboxSize, hitboxSize);
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.shadowBlur = 0;
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, hitboxRadius, 0, Math.PI * 2);
+        this.ctx.stroke();
         this.ctx.restore();
     }
 
@@ -278,6 +280,19 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
 
         ctx.save();
         ctx.translate(petalX, petalY);
+
+        if (this.showHitboxes) {
+            const petalHitboxRadius = 20 * effectiveSize;
+            ctx.save();
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = 1.0;
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.arc(0, 0, petalHitboxRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
 
         if (stats.emissive) {
             const hex = stats.lightColor || stats.color || '#ffffff';

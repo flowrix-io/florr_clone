@@ -1858,6 +1858,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 <circle cx="27" cy="3" r="3" fill="#00ff00"/>
 <circle cx="27" cy="15" r="3" fill="#ff00ff"/>
 </svg>`,
+        equipFlags: EquipmentFlags.Test1,
         isAdminPetal: true
     },
     healing: {// test petal
