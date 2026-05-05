@@ -3230,6 +3230,32 @@ const WORLD_MAP_DATA: MapData = {
       "properties": {
         "spawnType": "ultra"
       }
+    },
+    {
+      "type": "teleporter",
+      "x": 17687.96875,
+      "y": 47690,
+      "width": 0,
+      "height": 0,
+      "properties": {
+        "teleportTo": {
+          "x": 27500,
+          "y": 54998
+        }
+      }
+    },
+    {
+      "type": "teleporter",
+      "x": 27707.96875,
+      "y": 55230,
+      "width": 0,
+      "height": 0,
+      "properties": {
+        "teleportTo": {
+          "x": 17688,
+          "y": 47690
+        }
+      }
     }
   ],
   "wallGrid": [
@@ -43654,12 +43680,12 @@ const WORLD_MAP_DATA: MapData = {
       "textureSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"400\" viewBox=\"0 0 400 400\" fill=\"none\">\n  <rect x=\"0\" y=\"0\" width=\"400\" height=\"400\" fill=\"#786828\"/>\n</svg>"
     },
     {
+      "style": "flat",
       "id": 5,
       "name": "block",
       "color": "#00ff00",
       "solid": true,
-      "water": false,
-      "style": "flat"
+      "water": false
     }
   ]
 };
