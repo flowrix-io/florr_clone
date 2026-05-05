@@ -76,6 +76,7 @@ const playerManager_1 = require("./server/playerManager");
 const crossServer_1 = require("./server/crossServer");
 const enemySpawner_1 = require("./server/enemySpawner");
 const pvpArenaSpawner_1 = require("./server/pvpArenaSpawner");
+const spawnZoneManager_1 = require("./server/spawnZoneManager");
 const enemyGrid_1 = require("./server/enemyGrid");
 const apiKeyApi_1 = require("./server/apiKeyApi");
 const gameState_2 = require("./server/gameState");
@@ -5125,6 +5126,11 @@ setInterval(() => {
         }
     }
 }, 500); // 0.5 seconds
+// Spawn-zone manager tick: drives wave-based spawning inside spawn zones.
+// The density loop above handles open-world spawns and skips spawn zones.
+setInterval(() => {
+    (0, spawnZoneManager_1.updateSpawnZones)(enemySpawnerHelpers);
+}, 1000); // 1 second
 // Add special mob spawning timer (every 1 minute)
 setInterval(() => {
     const playerCount = Object.keys(constants_2.players).length;

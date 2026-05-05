@@ -2,7 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EQUAL_RARITY_SECTIONS = void 0;
 exports.getSectionAtPosition = getSectionAtPosition;
+exports.getAllSpawnZones = getAllSpawnZones;
+exports.isZoneNearAnyViewport = isZoneNearAnyViewport;
+exports.countMobsInZone = countMobsInZone;
 exports.createEnemy = createEnemy;
+exports.createEnemyInZone = createEnemyInZone;
 exports.spawnInitialSpawns = spawnInitialSpawns;
 exports.spawnCentipedeBodySegments = spawnCentipedeBodySegments;
 exports.createSpecialMob = createSpecialMob;
@@ -131,6 +135,42 @@ function getSpawnZoneType(x, y) {
         }
     }
     return null; // Not in any spawn zone
+}
+// True if position falls in any spawn zone — used to keep the density loop
+// out of zones now that the zone manager owns wave-based spawning.
+function isPositionInAnySpawnZone(x, y) {
+    return getSpawnZoneType(x, y) !== null;
+}
+function getAllSpawnZones() {
+    return map_data_1.WORLD_MAP.filter(el => el.type === 'spawn' && !!el.properties?.spawnType);
+}
+function isZoneNearAnyViewport(zone, viewports) {
+    const zMinX = zone.x * constants_2.SCALE_FACTOR;
+    const zMaxX = (zone.x + zone.width) * constants_2.SCALE_FACTOR;
+    const zMinY = zone.y * constants_2.SCALE_FACTOR;
+    const zMaxY = (zone.y + zone.height) * constants_2.SCALE_FACTOR;
+    for (const v of viewports) {
+        const vMinX = v.x - constants_2.VIEWPORT_BUFFER;
+        const vMaxX = v.x + v.width + constants_2.VIEWPORT_BUFFER;
+        const vMinY = v.y - constants_2.VIEWPORT_BUFFER;
+        const vMaxY = v.y + v.height + constants_2.VIEWPORT_BUFFER;
+        if (zMinX < vMaxX && zMaxX > vMinX && zMinY < vMaxY && zMaxY > vMinY) {
+            return true;
+        }
+    }
+    return false;
+}
+function countMobsInZone(zone) {
+    const minX = zone.x * constants_2.SCALE_FACTOR;
+    const maxX = (zone.x + zone.width) * constants_2.SCALE_FACTOR;
+    const minY = zone.y * constants_2.SCALE_FACTOR;
+    const maxY = (zone.y + zone.height) * constants_2.SCALE_FACTOR;
+    let count = 0;
+    for (const e of constants_1.enemies) {
+        if (e.x >= minX && e.x <= maxX && e.y >= minY && e.y <= maxY)
+            count++;
+    }
+    return count;
 }
 // Helper function to get biome at a given position
 function getBiomeAtPosition(x, y) {
@@ -353,7 +393,10 @@ function createEnemy(helpers) {
         // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
         const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
         const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
-        if (!inSafeZone && !collidesWithWall) {
+        // Spawn zones are populated by spawnZoneManager (wave-based), so the
+        // density loop must skip them or it would double-fill the area.
+        const inSpawnZone = isPositionInAnySpawnZone(x, y);
+        if (!inSafeZone && !collidesWithWall && !inSpawnZone) {
             validPosition = true;
         }
     }
@@ -395,7 +438,8 @@ function createEnemy(helpers) {
             const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
             const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
-            if (!inSafeZone && !collidesWithWall && !inPetalRange) {
+            const inSpawnZone = isPositionInAnySpawnZone(x, y);
+            if (!inSafeZone && !collidesWithWall && !inPetalRange && !inSpawnZone) {
                 newValidPosition = true;
             }
         }
@@ -444,6 +488,7 @@ function createEnemy(helpers) {
             const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
             const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
+            const inSpawnZone = isPositionInAnySpawnZone(x, y);
             const tooClose = constants_1.enemies.some((otherEnemy) => {
                 const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
                 const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
@@ -453,7 +498,7 @@ function createEnemy(helpers) {
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
             });
-            if (!inSafeZone && !collidesWithWall && !inPetalRange && !tooClose) {
+            if (!inSafeZone && !collidesWithWall && !inPetalRange && !inSpawnZone && !tooClose) {
                 newValidPosition = true;
             }
         }
@@ -649,6 +694,234 @@ function createEnemy(helpers) {
         spawnCentipedeBodySegments(enemy);
     }
     // Pre-spawn configured mobs around this one (e.g. ant-hole guardians).
+    if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
+        spawnInitialSpawns(enemy);
+    }
+    return enemy;
+}
+/**
+ * Create an enemy inside the given spawn zone. Used by the spawnZoneManager
+ * to fill zones during initial spawn / wave / trickle phases.
+ *
+ * Picks a random position inside zone bounds (rejecting safe zones, walls,
+ * petal range, and mob-spacing conflicts) and then runs the same Phase 3
+ * tier-and-mob-type selection used by createEnemy. Tier comes from the
+ * zone's spawnType (or the biome's spawn table if one overlays the zone).
+ */
+function createEnemyInZone(helpers, zone) {
+    const playerCount = Object.keys(constants_1.players).length;
+    if (playerCount === 0)
+        return null;
+    const realPlayerIds = Object.keys(constants_1.players).filter(id => !id.startsWith('bot_'));
+    if (realPlayerIds.length === 0)
+        return null;
+    // Pick the player closest to the zone center for luck/section attribution.
+    const zoneCenterX = (zone.x + zone.width / 2) * constants_2.SCALE_FACTOR;
+    const zoneCenterY = (zone.y + zone.height / 2) * constants_2.SCALE_FACTOR;
+    let targetPlayerId = realPlayerIds[0];
+    let bestDist = Infinity;
+    for (const pid of realPlayerIds) {
+        const p = constants_1.players[pid];
+        if (!p)
+            continue;
+        const dx = p.x - zoneCenterX;
+        const dy = p.y - zoneCenterY;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bestDist) {
+            bestDist = d2;
+            targetPlayerId = pid;
+        }
+    }
+    const zMinX = zone.x * constants_2.SCALE_FACTOR;
+    const zMaxX = (zone.x + zone.width) * constants_2.SCALE_FACTOR;
+    const zMinY = zone.y * constants_2.SCALE_FACTOR;
+    const zMaxY = (zone.y + zone.height) * constants_2.SCALE_FACTOR;
+    const PRELIMINARY_MOB_SIZE = 40;
+    const MIN_MOB_SPAWN_DISTANCE = 80;
+    const halfPrelimSize = PRELIMINARY_MOB_SIZE / 2;
+    const MAX_ATTEMPTS = 60;
+    let x = 0;
+    let y = 0;
+    let validPosition = false;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        x = zMinX + Math.random() * (zMaxX - zMinX);
+        y = zMinY + Math.random() * (zMaxY - zMinY);
+        x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
+        y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
+        if (isInOutOfBoundsZone(x, y))
+            continue;
+        const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
+            x >= element.x * constants_2.SCALE_FACTOR &&
+            x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
+            y >= element.y * constants_2.SCALE_FACTOR &&
+            y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
+        if (inSafeZone)
+            continue;
+        const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
+        if ((0, constants_2.isTileIdBlocking)(tileState))
+            continue;
+        if (helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE))
+            continue;
+        const tooClose = constants_1.enemies.some((otherEnemy) => {
+            const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
+            const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
+            const otherHalfSize = otherMobSize / 2;
+            const dx = otherEnemy.x - x;
+            const dy = otherEnemy.y - y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
+        });
+        if (tooClose)
+            continue;
+        validPosition = true;
+        break;
+    }
+    if (!validPosition)
+        return null;
+    // --- Phase 3: tier + mob type, mirroring createEnemy's logic ---
+    const biome = getBiomeAtPosition(x, y);
+    let tier = 'common';
+    let mobType;
+    let reversed = undefined;
+    const targetPlayer = constants_1.players[targetPlayerId];
+    const targetLuck = targetPlayer ? ((0, playerManager_1.calculatePlayerModifiers)(targetPlayer).luck ?? 0) : 0;
+    const luckUpgradeBonus = targetLuck * 0.01;
+    if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
+        const spawnSelection = selectSpawnFromBiomeTable(biome.properties.spawnTable);
+        if (spawnSelection) {
+            tier = spawnSelection.tier;
+            reversed = spawnSelection.reversed;
+            if (spawnSelection.mobType) {
+                mobType = spawnSelection.mobType;
+                if (mobType === 'target_dummy') {
+                    const existingDummy = constants_1.enemies.find((e) => e.type === 'target_dummy' && e.tier === tier);
+                    if (existingDummy)
+                        return null;
+                }
+            }
+            else {
+                const allMobTypes = (0, mobs_1.getAllMobTypes)();
+                if (allMobTypes.length === 0)
+                    return null;
+                const currentSection = getSectionAtPosition(x, y);
+                const eligibleMobTypes = allMobTypes.filter(type => {
+                    if (type === 'target_dummy')
+                        return false;
+                    const stats = (0, mobs_1.getMobStats)(type, tier);
+                    return stats && stats.section.includes(currentSection);
+                });
+                if (eligibleMobTypes.length === 0)
+                    return null;
+                mobType = selectWeightedMobType(eligibleMobTypes, tier);
+            }
+        }
+        else {
+            const allMobTypes = (0, mobs_1.getAllMobTypes)();
+            if (allMobTypes.length === 0)
+                return null;
+            const currentSection = getSectionAtPosition(x, y);
+            const eligibleMobTypes = allMobTypes.filter(type => {
+                if (type === 'target_dummy')
+                    return false;
+                if ((0, server_utils_1.isCentipedeBodyType)(type))
+                    return false;
+                const stats = (0, mobs_1.getMobStats)(type, 'common');
+                return stats && stats.section.includes(currentSection);
+            });
+            if (eligibleMobTypes.length === 0)
+                return null;
+            mobType = selectWeightedMobType(eligibleMobTypes, tier);
+        }
+        const upgradeRoll = Math.random();
+        if (upgradeRoll < 0.02 + luckUpgradeBonus) {
+            tier = upgradeTier(tier);
+        }
+        else {
+            const downgradeChance = getMobDowngradeChance(tier);
+            if (downgradeChance > 0 && Math.random() < downgradeChance) {
+                tier = downgradeTier(tier);
+            }
+        }
+    }
+    else {
+        // Force the explicit zone we were asked to spawn for, so overlapping
+        // zones don't get cross-tier spawns from getSpawnZoneType's first-match.
+        tier = (zone.properties?.spawnType ?? 'common');
+        if (tier === 'ultra') {
+            tier = Math.random() < 0.01 ? 'super' : 'ultra';
+        }
+        else {
+            const upgradeRoll = Math.random();
+            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
+                tier = upgradeTier(tier);
+            }
+            else {
+                const downgradeChance = getMobDowngradeChance(tier);
+                if (downgradeChance > 0 && Math.random() < downgradeChance) {
+                    tier = downgradeTier(tier);
+                }
+            }
+        }
+        const allMobTypes = (0, mobs_1.getAllMobTypes)();
+        if (allMobTypes.length === 0)
+            return null;
+        const currentSection = getSectionAtPosition(x, y);
+        const eligibleMobTypes = allMobTypes.filter(type => {
+            if (type === 'target_dummy')
+                return false;
+            if ((0, server_utils_1.isCentipedeBodyType)(type))
+                return false;
+            const stats = (0, mobs_1.getMobStats)(type, tier);
+            return stats && stats.section.includes(currentSection);
+        });
+        if (eligibleMobTypes.length === 0)
+            return null;
+        mobType = selectWeightedMobType(eligibleMobTypes, tier);
+    }
+    const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
+    if (!mobStats)
+        return null;
+    const actualMobSize = mobStats.size * 40;
+    const actualHalfSize = actualMobSize / 2;
+    const overlapsExistingMob = constants_1.enemies.some((otherEnemy) => {
+        const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
+        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
+        const otherHalfSize = otherMobSize / 2;
+        const dx = otherEnemy.x - x;
+        const dy = otherEnemy.y - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        return distance < actualHalfSize + otherHalfSize;
+    });
+    if (overlapsExistingMob)
+        return null;
+    const currentTime = Date.now();
+    const enemy = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: mobType,
+        tier,
+        x,
+        y,
+        angle: Math.random() * Math.PI * 2,
+        health: mobStats.health,
+        maxHealth: mobStats.health,
+        speed: mobStats.speed,
+        damage: mobStats.damage,
+        knockbackX: 0,
+        knockbackY: 0,
+        aiType: mobStats.ai_type,
+        range: mobStats.range,
+        reversed: reversed ?? mobStats.reversed ?? false,
+        spawnTime: currentTime,
+        lastViewportCheck: currentTime
+    };
+    if (mobType === 'target_dummy') {
+        enemy.dpsStartTime = currentTime;
+        enemy.dpsHistory = [];
+        enemy.currentDPS = 0;
+    }
+    if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
+        spawnCentipedeBodySegments(enemy);
+    }
     if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
         spawnInitialSpawns(enemy);
     }

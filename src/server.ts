@@ -189,6 +189,7 @@ import {
     EnemySpawnerHelpers
 } from './server/enemySpawner';
 import { spawnArenaMobs } from './server/pvpArenaSpawner';
+import { updateSpawnZones } from './server/spawnZoneManager';
 import { rebuildEnemyGrid } from './server/enemyGrid';
 import { registerApiKeyRoutes, recordBossEvent, stripHtml } from './server/apiKeyApi';
 import { setSuperMobInSection } from './server/gameState';
@@ -5615,6 +5616,12 @@ setInterval(() => {
         }
     }
 }, 500); // 0.5 seconds
+
+// Spawn-zone manager tick: drives wave-based spawning inside spawn zones.
+// The density loop above handles open-world spawns and skips spawn zones.
+setInterval(() => {
+    updateSpawnZones(enemySpawnerHelpers);
+}, 1000); // 1 second
 
 // Add special mob spawning timer (every 1 minute)
 setInterval(() => {
