@@ -3616,6 +3616,14 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 minQuantity: 1,
                 maxQuantity: 1
             },
+            {
+                type: 'petal',
+                itemType: 'pollen',
+                rarity: 'common',
+                probability: 0.8,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
         ]
     },
     ladybug: {

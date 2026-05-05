@@ -332,6 +332,21 @@ exports.CHANGELOG = [
             'Changed sewers wall textures'
         ]
     },
+    {
+        date: 'May 3, 2026',
+        changes: [
+            'New petal: Antennae',
+            'New petal: Observer',
+        ]
+    },
+    {
+        date: 'May 4, 2026',
+        changes: [
+            'Pollen drops on the ground now',
+            'Changed mob spawning algorithm',
+            'Bee now drops pollen',
+        ]
+    }
 ];
 class ChangelogManager {
     constructor() {
