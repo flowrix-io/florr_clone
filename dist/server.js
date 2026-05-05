@@ -4452,6 +4452,70 @@ function updatePlayerProjectiles(deltaTimeMs) {
         io.to(playerId).emit('playerProjectilesUpdate', filtered);
     }
 }
+// Tick ground pollen drops: deal damage to enemies in radius (rate-limited per
+// enemy so a mob standing on it takes recurring chip damage rather than a
+// single hit), expire after lifetime, and emit state to nearby players.
+function updateGroundPollens() {
+    const currentTime = Date.now();
+    for (let i = gameState_1.groundPollens.length - 1; i >= 0; i--) {
+        const pollen = gameState_1.groundPollens[i];
+        if (currentTime >= pollen.expiresAt) {
+            gameState_1.groundPollens.splice(i, 1);
+            io.emit('groundPollenRemoved', pollen.id);
+            continue;
+        }
+        const player = constants_2.players[pollen.playerId];
+        const damageMultiplier = player ? (0, petal_actions_1.getDamageMultiplier)(player) : 1;
+        const finalDamage = pollen.damage * damageMultiplier;
+        for (let j = constants_2.enemies.length - 1; j >= 0; j--) {
+            const enemy = constants_2.enemies[j];
+            if (enemy.ownerId)
+                continue;
+            if (enemy.isDead)
+                continue;
+            const dx = enemy.x - pollen.x;
+            const dy = enemy.y - pollen.y;
+            const mobStats = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
+            const enemyRadius = mobStats ? (mobStats.size * 40) / 2 : constants_2.ENEMY_SIZE / 2;
+            const minDistance = pollen.radius + enemyRadius;
+            if (dx * dx + dy * dy >= minDistance * minDistance)
+                continue;
+            const lastDmg = pollen.lastDamageByEnemy.get(enemy.id) || 0;
+            if (currentTime - lastDmg < gameState_1.GROUND_POLLEN_DAMAGE_INTERVAL_MS)
+                continue;
+            pollen.lastDamageByEnemy.set(enemy.id, currentTime);
+            if (player)
+                (0, utils_1.trackDamage)(enemy, pollen.playerId, finalDamage);
+            enemy.health = Math.max(0, enemy.health - finalDamage);
+            if (!enemy.pendingDamageUpdate) {
+                enemy.pendingDamageUpdate = true;
+            }
+            enemy.lastDamageHealth = enemy.health;
+            if (enemy.health <= 0 && !enemy.isDead) {
+                enemy.isDead = true;
+                if (player) {
+                    const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
+                    addXPToPlayer(player, xpGained, pollen.playerId);
+                    handleMobDrops(enemy);
+                    (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
+                    updateSpecialMobCounts();
+                }
+                const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+                (0, utils_1.cleanupEnemy)(enemy);
+                constants_2.enemies.splice(j, 1);
+                io.emit('enemyDestroyed', enemy.id);
+                if (damageContributorsCopy && player) {
+                    const enemyDataForTracking = {
+                        type: enemy.type,
+                        tier: enemy.tier,
+                        damageContributors: damageContributorsCopy
+                    };
+                    (0, utils_1.trackMobKill)(enemyDataForTracking, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
+                }
+            }
+        }
+    }
+}
 // updatePlayerState moved to playerState module - using imported function
 function start_loop() {
     const TICK_RATE = 30;
@@ -4496,6 +4560,8 @@ function start_loop() {
         updateMobProjectiles(TICK_INTERVAL); // Pass milliseconds
         // Update player projectiles
         updatePlayerProjectiles(TICK_INTERVAL); // Pass milliseconds
+        // Update ground pollen drops (damage zones from broken pollen petals)
+        updateGroundPollens();
         // Update viewport status for all enemies
         updateEnemyViewportStatus();
         // Spawn wave mobs from damaged spawners (e.g. ant holes) before emitting damage batch

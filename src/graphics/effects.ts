@@ -8,8 +8,32 @@ declare module './core' {
         drawLightningEffects(): void;
         drawPetalParticleEffects(): void;
         drawFallingStars(): void;
+        drawGroundPollens(groundPollens: Map<string, any>): void;
     }
 }
+
+Graphics.prototype.drawGroundPollens = function(this: Graphics, groundPollens: Map<string, any>): void {
+    const now = Date.now();
+    this.ctx.save();
+    for (const pollen of groundPollens.values()) {
+        const elapsed = now - (pollen.spawnedAt || now);
+        const lifetime = pollen.lifetime || 5000;
+        if (elapsed >= lifetime) continue;
+        // Hold full opacity for first 70% of life, then fade.
+        const fadeStart = lifetime * 0.7;
+        const alpha = elapsed < fadeStart ? 1 : 1 - (elapsed - fadeStart) / (lifetime - fadeStart);
+
+        this.ctx.globalAlpha = alpha;
+        this.ctx.fillStyle = '#ffe763';
+        this.ctx.strokeStyle = '#cfbb50';
+        this.ctx.lineWidth = 3;
+        this.ctx.beginPath();
+        this.ctx.arc(pollen.x, pollen.y, pollen.radius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+    }
+    this.ctx.restore();
+};
 
 Graphics.prototype.drawFloatingTexts = function(this: Graphics): void {
     this.floatingTexts = this.floatingTexts.filter(text => {

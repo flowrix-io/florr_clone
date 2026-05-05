@@ -36,7 +36,9 @@ import {
     playerProjectiles,
     petalLastProjectileTime,
     itemExpirationTimeouts,
-    ITEM_EXPIRATION_TIMES
+    ITEM_EXPIRATION_TIMES,
+    groundPollens,
+    GROUND_POLLEN_LIFETIME_MS
 } from './gameState';
 import {
     checkPlayerWallCollisions,
@@ -81,6 +83,34 @@ const petalPhysicsStates = new Map<string, PetalPhysicsState>();
 
 // Map to track last damage time for petals with damageCooldown (keyed by petalId)
 const petalLastDamageTime = new Map<string, number>();
+
+// Drop a damaging pollen puff at the given position. Pollen petals call this
+// when they break so the petal still goes through the normal cooldown/reload
+// cycle while leaving a short-lived AoE behind.
+function spawnGroundPollen(io: any, player: ServerPlayer, petalStats: any, petal: any, petalX: number, petalY: number, petalSize: number) {
+    const now = Date.now();
+    const id = `pollen_${player.id}_${now}_${Math.random().toString(36).slice(2, 7)}`;
+    groundPollens.push({
+        id,
+        playerId: player.id,
+        x: petalX,
+        y: petalY,
+        damage: petalStats.damage,
+        radius: petalSize / 2,
+        rarity: petal.rarity,
+        expiresAt: now + GROUND_POLLEN_LIFETIME_MS,
+        lastDamageByEnemy: new Map<string, number>()
+    });
+    io.emit('groundPollenSpawned', {
+        id,
+        playerId: player.id,
+        x: petalX,
+        y: petalY,
+        radius: petalSize / 2,
+        rarity: petal.rarity,
+        lifetime: GROUND_POLLEN_LIFETIME_MS
+    });
+}
 
 // --- Clumped-petal per-instance health/cooldown helpers ---
 // Clumped petals (e.g. sand) spawn multiple instances that share one orbit slot.
@@ -918,6 +948,50 @@ export function updatePlayerState(
         // Initialize petal positions array
         player.petalPositions = [];
 
+        // Pollen pre-pass: when the player attacks/defends, every alive pollen
+        // instance drops a puff at its own orbit position. Health is zeroed in
+        // a second pass so non-clumped multi-count petals (which share
+        // petal.health) don't have instance 0 short-circuit the others.
+        {
+            const playerExt = player.inputs?.petalExtension || 1.0;
+            if (playerExt !== 1.0) {
+                const baseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMult - 1)) * playerExt;
+                const dropsToBreak: Array<{petal: any, instanceIndex: number, stats: any}> = [];
+                for (let idx = 0; idx < petalInstances.length; idx++) {
+                    const {petal, instanceIndex, slotIndex} = petalInstances[idx];
+                    if (!petal || petal.petalType !== 'pollen') continue;
+                    const stats = getPetalStats(petal.petalType, petal.rarity);
+                    if (!stats) continue;
+                    if (isInstanceOnCooldown(petal, instanceIndex, stats)) continue;
+                    if (getInstanceHealth(petal, instanceIndex, stats) <= 0) continue;
+
+                    const rotationAngle = ((stats.speed ?? 1.0) * playerOrbitPhase * 2) % (Math.PI * 2);
+                    const totalAngle = stats.fixedDirection !== undefined
+                        ? slotIndex * angleStep
+                        : slotIndex * angleStep + rotationAngle;
+                    const range = (stats.range ?? 1.0) * playerRangeModifier;
+                    const orbitR = baseRadius * range;
+                    let dropX = player.x + Math.cos(totalAngle) * orbitR;
+                    let dropY = player.y + Math.sin(totalAngle) * orbitR;
+
+                    const eSize = (petal as any).customSize !== undefined ? (petal as any).customSize : stats.size;
+                    const clumpCount = stats.count || 1;
+                    if (stats.clumped && clumpCount > 1) {
+                        const clumpSpacing = eSize * 40 * 0.5;
+                        const subAngle = (instanceIndex / clumpCount) * Math.PI * 2 + totalAngle;
+                        dropX += Math.cos(subAngle) * clumpSpacing;
+                        dropY += Math.sin(subAngle) * clumpSpacing;
+                    }
+
+                    spawnGroundPollen(io, player, stats, petal, dropX, dropY, 12 * eSize);
+                    dropsToBreak.push({petal, instanceIndex, stats});
+                }
+                for (const d of dropsToBreak) {
+                    setInstanceHealth(d.petal, d.instanceIndex, d.stats, 0);
+                }
+            }
+        }
+
         for (let idx = 0; idx < petalInstances.length; idx++) {
             const {petal, instanceIndex, loadoutIndex, slotIndex} = petalInstances[idx];
 
@@ -950,7 +1024,7 @@ export function updatePlayerState(
                         const petalY = player.y + Math.sin(totalAngle) * petalRadius;
                         const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
                         const petalSize = 40 * effectiveSize;
-                        
+
                         const actionContext = {
                             player: player,
                             petalX: petalX,

@@ -2,11 +2,11 @@ import { Graphics, Player, Enemy, WorldItem } from './core';
 
 declare module './core' {
     interface Graphics {
-        render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension?: number): void;
+        render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension?: number, groundPollens?: Map<string, any>): void;
     }
 }
 
-Graphics.prototype.render = function(this: Graphics, players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0): void {
+Graphics.prototype.render = function(this: Graphics, players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0, groundPollens?: Map<string, any>): void {
     // Cache timestamp for this frame to avoid Date.now() per enemy
     this.frameTimestamp = Date.now();
 
@@ -85,6 +85,11 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
 
     // Draw PVP arena boundary in world space (visible from inside the arena)
     this.drawPvpArenaBoundary();
+
+    // Draw ground pollen drops below enemies/items so they sit on the ground
+    if (groundPollens && groundPollens.size > 0) {
+        this.drawGroundPollens(groundPollens);
+    }
 
     // Draw game objects
     this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);

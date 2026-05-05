@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
-core_1.Graphics.prototype.render = function (players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0) {
+core_1.Graphics.prototype.render = function (players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0, groundPollens) {
     // Cache timestamp for this frame to avoid Date.now() per enemy
     this.frameTimestamp = Date.now();
     // Apply the antialiasing preference at the start of every frame so
@@ -68,6 +68,10 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     this.drawMap(this.mapData);
     // Draw PVP arena boundary in world space (visible from inside the arena)
     this.drawPvpArenaBoundary();
+    // Draw ground pollen drops below enemies/items so they sit on the ground
+    if (groundPollens && groundPollens.size > 0) {
+        this.drawGroundPollens(groundPollens);
+    }
     // Draw game objects
     this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
     // Draw explosion effects (in world coordinates, before camera restore)

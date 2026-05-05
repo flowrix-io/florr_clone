@@ -482,6 +482,35 @@ const RARITY_OVERRIDES = {
             playerModifiers: { petalAttractionRadius: 100 },
         },
     },
+    pollen: {
+        uncommon: {
+            count: 2
+        },
+        rare: {
+            count: 2,
+        },
+        epic: {
+            count: 2,
+        },
+        legendary: {
+            count: 3,
+        },
+        mythic: {
+            count: 3,
+        },
+        ultra: {
+            count: 5,
+        },
+        super: {
+            count: 5,
+        },
+        unique: {
+            count: 5,
+        },
+        apex: {
+            count: 7,
+        }
+    }
 };
 // Base petal configurations - only common rarity stats
 const BASE_PETAL_CONFIGS = {
@@ -1519,8 +1548,7 @@ const BASE_PETAL_CONFIGS = {
         health: 10,
         size: 1.0,
         cooldown: 1000,
-        // todo: make it drop on ground
-        description: "A petal that releases pollen",
+        description: "Falls on the ground",
         color: "#000000",
         count: 1,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">

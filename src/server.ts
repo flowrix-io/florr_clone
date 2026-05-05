@@ -130,9 +130,9 @@ import {
     CommandHandlerDependencies
 } from './server/commands';
 import { 
-    items, 
-    ultraMobCount, 
-    superMobCount, 
+    items,
+    ultraMobCount,
+    superMobCount,
     uniqueMobCount,
     decorations,
     sands,
@@ -144,6 +144,8 @@ import {
     itemExpirationTimeouts,
     petalCooldownTimeouts,
     ITEM_EXPIRATION_TIMES,
+    groundPollens,
+    GROUND_POLLEN_DAMAGE_INTERVAL_MS,
     getItems,
     getMobProjectiles,
     getPlayerProjectiles,
@@ -4958,6 +4960,74 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
     }
 }
 
+// Tick ground pollen drops: deal damage to enemies in radius (rate-limited per
+// enemy so a mob standing on it takes recurring chip damage rather than a
+// single hit), expire after lifetime, and emit state to nearby players.
+function updateGroundPollens() {
+    const currentTime = Date.now();
+
+    for (let i = groundPollens.length - 1; i >= 0; i--) {
+        const pollen = groundPollens[i];
+
+        if (currentTime >= pollen.expiresAt) {
+            groundPollens.splice(i, 1);
+            io.emit('groundPollenRemoved', pollen.id);
+            continue;
+        }
+
+        const player = players[pollen.playerId];
+        const damageMultiplier = player ? getDamageMultiplier(player) : 1;
+        const finalDamage = pollen.damage * damageMultiplier;
+
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const enemy = enemies[j];
+            if (enemy.ownerId) continue;
+            if ((enemy as any).isDead) continue;
+
+            const dx = enemy.x - pollen.x;
+            const dy = enemy.y - pollen.y;
+            const mobStats = getMobStats(enemy.type, enemy.tier);
+            const enemyRadius = mobStats ? (mobStats.size * 40) / 2 : ENEMY_SIZE / 2;
+            const minDistance = pollen.radius + enemyRadius;
+            if (dx * dx + dy * dy >= minDistance * minDistance) continue;
+
+            const lastDmg = pollen.lastDamageByEnemy.get(enemy.id) || 0;
+            if (currentTime - lastDmg < GROUND_POLLEN_DAMAGE_INTERVAL_MS) continue;
+            pollen.lastDamageByEnemy.set(enemy.id, currentTime);
+
+            if (player) trackDamage(enemy, pollen.playerId, finalDamage);
+            enemy.health = Math.max(0, enemy.health - finalDamage);
+            if (!(enemy as any).pendingDamageUpdate) {
+                (enemy as any).pendingDamageUpdate = true;
+            }
+            (enemy as any).lastDamageHealth = enemy.health;
+
+            if (enemy.health <= 0 && !(enemy as any).isDead) {
+                (enemy as any).isDead = true;
+                if (player) {
+                    const xpGained = getXPFromEnemy(enemy);
+                    addXPToPlayer(player, xpGained, pollen.playerId);
+                    handleMobDrops(enemy);
+                    sendBossMobDefeatedMessage(enemy, io, players);
+                    updateSpecialMobCounts();
+                }
+                const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+                cleanupEnemy(enemy);
+                enemies.splice(j, 1);
+                io.emit('enemyDestroyed', enemy.id);
+                if (damageContributorsCopy && player) {
+                    const enemyDataForTracking = {
+                        type: enemy.type,
+                        tier: enemy.tier,
+                        damageContributors: damageContributorsCopy
+                    };
+                    trackMobKill(enemyDataForTracking as Enemy, players, playerUserIds, database, io, savePlayerProgress);
+                }
+            }
+        }
+    }
+}
+
 // updatePlayerState moved to playerState module - using imported function
 
 function start_loop() {
@@ -5015,6 +5085,9 @@ function start_loop() {
         
         // Update player projectiles
         updatePlayerProjectiles(TICK_INTERVAL); // Pass milliseconds
+
+        // Update ground pollen drops (damage zones from broken pollen petals)
+        updateGroundPollens();
 
         // Update viewport status for all enemies
         updateEnemyViewportStatus();

@@ -72,6 +72,22 @@ export const mobProjectiles: MobProjectile[] = []; // Track all active mob proje
 export const playerProjectiles: PlayerProjectile[] = []; // Track all active player projectiles
 export const petalLastProjectileTime: Map<string, number> = new Map(); // Track last projectile time per petal instance
 
+// Pollen petals leave a damaging puff on the ground when they break.
+export interface GroundPollen {
+    id: string;
+    playerId: string;
+    x: number;
+    y: number;
+    damage: number;
+    radius: number;       // pixel radius for collision + render
+    rarity: string;
+    expiresAt: number;
+    lastDamageByEnemy: Map<string, number>;
+}
+export const groundPollens: GroundPollen[] = [];
+export const GROUND_POLLEN_LIFETIME_MS = 5000;
+export const GROUND_POLLEN_DAMAGE_INTERVAL_MS = 500;
+
 // Track item expiration timeouts for cleanup
 export const itemExpirationTimeouts: Map<string, NodeJS.Timeout> = new Map();
 

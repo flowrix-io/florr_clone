@@ -96,6 +96,7 @@ export class Game {
     private enemies: Map<string, Enemy> = new Map();
     private mobProjectiles: Map<string, any> = new Map(); // Store mob projectiles
     private playerProjectiles: Map<string, any> = new Map(); // Store player projectiles
+    public groundPollens: Map<string, any> = new Map(); // Store ground pollen drops from broken pollen petals
     private readonly PLAYER_MAX_HEALTH = 100;
     private readonly PLAYER_DAMAGE = 10;
     private readonly ENEMY_DAMAGE = 5;
@@ -1238,7 +1239,7 @@ export class Game {
         
         // Use active player ID for rendering (or socket.id if not split)
         const activePlayerId = this.activePlayerId || this.socket?.id || '';
-        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension);
+        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension, this.groundPollens);
         // Draw canvas loadout bar on top of game UI
         if (this.loadoutBar) {
             const localPlayer = this.getLocalPlayer();

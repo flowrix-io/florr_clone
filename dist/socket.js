@@ -551,6 +551,15 @@ function setupSocketListeners(game) {
         game.playerProjectiles.clear();
         projectiles.forEach(projectile => game.playerProjectiles.set(projectile.id, projectile));
     });
+    game.socket.on('groundPollenSpawned', (pollen) => {
+        game.groundPollens.set(pollen.id, {
+            ...pollen,
+            spawnedAt: Date.now()
+        });
+    });
+    game.socket.on('groundPollenRemoved', (id) => {
+        game.groundPollens.delete(id);
+    });
     game.socket.on('enemyMoved', (enemy) => {
         // Enemy movement update - uses same path as all enemy updates
         handleEnemyUpdate(enemy);

@@ -54,6 +54,7 @@ class Game {
         this.enemies = new Map();
         this.mobProjectiles = new Map(); // Store mob projectiles
         this.playerProjectiles = new Map(); // Store player projectiles
+        this.groundPollens = new Map(); // Store ground pollen drops from broken pollen petals
         this.PLAYER_MAX_HEALTH = 100;
         this.PLAYER_DAMAGE = 10;
         this.ENEMY_DAMAGE = 5;
@@ -988,7 +989,7 @@ class Game {
         }
         // Use active player ID for rendering (or socket.id if not split)
         const activePlayerId = this.activePlayerId || this.socket?.id || '';
-        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension);
+        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension, this.groundPollens);
         // Draw canvas loadout bar on top of game UI
         if (this.loadoutBar) {
             const localPlayer = this.getLocalPlayer();
