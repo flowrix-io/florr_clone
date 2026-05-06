@@ -138,7 +138,11 @@ class WSServer {
             sockets: this.sockets_map
         };
         this.sockets.sockets = this.sockets_map;
-        this.wss = new ws_1.WebSocketServer({ server: httpServer, path: '/ws' });
+        // perMessageDeflate is disabled: ws's default zlib context is ~300 KB
+        // per connection and compression only helps on large/repetitive frames.
+        // This protocol's frames are small, frequent JSON arrays — the per-peer
+        // memory cost outweighs the bandwidth savings.
+        this.wss = new ws_1.WebSocketServer({ server: httpServer, path: '/ws', perMessageDeflate: false });
         this.wss.on('connection', (ws, _req) => {
             const id = (0, crypto_1.randomUUID)().replace(/-/g, '').slice(0, 20);
             const socket = new WSSocket(ws, id, this);

@@ -60,7 +60,8 @@ export interface Enemy {
   damage: number;
   knockbackX?: number;
   knockbackY?: number;
-  wanderTarget?: { x: number; y: number };
+  wanderTargetX?: number;
+  wanderTargetY?: number;
   lastWanderTime?: number;
   aiType?: 'passive' | 'neutral' | 'hostile' | 'sandstorm';
   isChasing?: boolean;  // Whether the enemy is currently chasing a player
@@ -73,7 +74,6 @@ export interface Enemy {
   petImage?: string;  // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
   // DPS tracking for target dummies
   currentDPS?: number;  // Current calculated DPS
-  dpsHistory?: Array<{ time: number; dps: number }>;  // History of DPS values over time
   // Death animation
   deathAnimationStartTime?: number;  // Timestamp when death animation started
   // Client-side interpolation targets

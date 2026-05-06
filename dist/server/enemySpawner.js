@@ -683,12 +683,7 @@ function createEnemy(helpers) {
         spawnTime: currentTime,
         lastViewportCheck: currentTime // Mark as in viewport since we spawned it there
     };
-    // Initialize DPS tracking for target dummies
-    if (mobType === 'target_dummy') {
-        enemy.dpsStartTime = currentTime;
-        enemy.dpsHistory = [];
-        enemy.currentDPS = 0;
-    }
+    // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
     // Spawn centipede body segments as a chain trailing the head
     if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
         spawnCentipedeBodySegments(enemy);
@@ -914,11 +909,7 @@ function createEnemyInZone(helpers, zone) {
         spawnTime: currentTime,
         lastViewportCheck: currentTime
     };
-    if (mobType === 'target_dummy') {
-        enemy.dpsStartTime = currentTime;
-        enemy.dpsHistory = [];
-        enemy.currentDPS = 0;
-    }
+    // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
     if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
         spawnCentipedeBodySegments(enemy);
     }

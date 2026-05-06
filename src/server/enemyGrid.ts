@@ -19,9 +19,9 @@ function key(cx: number, cy: number): number {
  * Rebuild the spatial grid from the current enemies array. Pets (ownerId set) and
  * dead enemies are excluded so callers don't need to filter them.
  *
- * Side-effect: caches mob radius/damage on each enemy as `_radius` / `_mobDamage`
- * so per-collision lookups don't have to call getMobStats again. type/tier never
- * change after spawn, so the cache is safe.
+ * Side-effect: caches mob radius / mobStats on each enemy as `_radius` /
+ * `_mobStats` so per-collision lookups don't have to call getMobStats again.
+ * type/tier never change after spawn, so the cache is safe.
  */
 export function rebuildEnemyGrid(enemies: Enemy[]): void {
     grid.clear();
@@ -35,7 +35,6 @@ export function rebuildEnemyGrid(enemies: Enemy[]): void {
         if ((e as any)._radius === undefined) {
             const mobStats = getMobStats(e.type, e.tier);
             (e as any)._radius = mobStats ? (mobStats.size * 40) / 2 : ENEMY_SIZE / 2;
-            (e as any)._mobDamage = mobStats ? mobStats.damage : 1;
             (e as any)._mobStats = mobStats;
         }
         const r = (e as any)._radius as number;

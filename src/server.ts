@@ -60,7 +60,9 @@ import {
     getEligiblePlayers,
     sendBossMobDefeatedMessage,
     cleanupEnemy,
-    trackMobKill
+    trackMobKill,
+    markEnemyDamaged,
+    pendingEnemyDamageUpdates
 } from './server/utils';
 import {
     createSquad,
@@ -832,12 +834,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
         lastViewportCheck: currentTime
     };
 
-    // Initialize DPS tracking for target dummies
-    if (mobType === 'target_dummy') {
-        enemy.dpsStartTime = currentTime;
-        enemy.dpsHistory = [];
-        enemy.currentDPS = 0;
-    }
+    // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
 
     // Add to enemies array
     enemies.push(enemy);
@@ -3743,11 +3740,8 @@ function updatePoisonEffects(deltaTime: number) {
             });
             
             // Mark enemy for batched damage update at end of frame
-            if (!(enemy as any).pendingDamageUpdate) {
-                (enemy as any).pendingDamageUpdate = true;
-            }
-            (enemy as any).lastDamageHealth = enemy.health;
-            
+            markEnemyDamaged(enemy);
+
             // Check if enemy dies from poison (only process once per enemy)
             if (enemy.health <= 0 && !(enemy as any).isDead) {
                 // Mark enemy as dead to prevent multiple death handlers
@@ -4053,19 +4047,17 @@ function moveEnemies() {
             } else {
                 // Owner is dead or disconnected, pet wanders
                 enemy.isChasing = false;
-                if (!enemy.wanderTarget || currentTime - (enemy.lastWanderTime || 0) > 3000) {
-                    enemy.wanderTarget = {
-                        x: enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE,
-                        y: enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE
-                    };
+                if (enemy.wanderTargetX === undefined || currentTime - (enemy.lastWanderTime || 0) > 3000) {
+                    enemy.wanderTargetX = enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
+                    enemy.wanderTargetY = enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
                     enemy.lastWanderTime = currentTime;
                 }
-                
-                if (enemy.wanderTarget && enemy.speed > 0) {
-                    const dx = enemy.wanderTarget.x - enemy.x;
-                    const dy = enemy.wanderTarget.y - enemy.y;
+
+                if (enemy.wanderTargetX !== undefined && enemy.speed > 0) {
+                    const dx = enemy.wanderTargetX - enemy.x;
+                    const dy = enemy.wanderTargetY! - enemy.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
-                    
+
                     if (distance > 5) {
                         const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5;
                         enemy.x += (dx / distance) * speed;
@@ -4358,20 +4350,18 @@ function moveEnemies() {
             // Sandstorm AI: fast random movement, changes direction frequently
             enemy.isChasing = false;
             const SANDSTORM_DIRECTION_CHANGE_INTERVAL = 300; // Change direction every 300ms
-            if (!enemy.wanderTarget || currentTime - (enemy.lastWanderTime || 0) > SANDSTORM_DIRECTION_CHANGE_INTERVAL) {
+            if (enemy.wanderTargetX === undefined || currentTime - (enemy.lastWanderTime || 0) > SANDSTORM_DIRECTION_CHANGE_INTERVAL) {
                 // Pick a random direction and move far in that direction
                 const randomAngle = Math.random() * Math.PI * 2;
                 const wanderDistance = ENEMY_WANDER_RANGE * 2;
-                enemy.wanderTarget = {
-                    x: enemy.x + Math.cos(randomAngle) * wanderDistance,
-                    y: enemy.y + Math.sin(randomAngle) * wanderDistance
-                };
+                enemy.wanderTargetX = enemy.x + Math.cos(randomAngle) * wanderDistance;
+                enemy.wanderTargetY = enemy.y + Math.sin(randomAngle) * wanderDistance;
                 enemy.lastWanderTime = currentTime;
             }
 
-            if (enemy.wanderTarget && enemy.speed > 0) {
-                const dx = enemy.wanderTarget.x - enemy.x;
-                const dy = enemy.wanderTarget.y - enemy.y;
+            if (enemy.wanderTargetX !== undefined && enemy.speed > 0) {
+                const dx = enemy.wanderTargetX - enemy.x;
+                const dy = enemy.wanderTargetY! - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
                 if (distance > 5) {
@@ -4421,17 +4411,15 @@ function moveEnemies() {
                 }
             }
             // Wander randomly
-            if (!enemy.wanderTarget || currentTime - (enemy.lastWanderTime || 0) > 3000) {
-                enemy.wanderTarget = {
-                    x: enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE,
-                    y: enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE
-                };
+            if (enemy.wanderTargetX === undefined || currentTime - (enemy.lastWanderTime || 0) > 3000) {
+                enemy.wanderTargetX = enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
+                enemy.wanderTargetY = enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
                 enemy.lastWanderTime = currentTime;
             }
 
-            if (enemy.wanderTarget) {
-                const dx = enemy.wanderTarget.x - enemy.x;
-                const dy = enemy.wanderTarget.y - enemy.y;
+            if (enemy.wanderTargetX !== undefined) {
+                const dx = enemy.wanderTargetX - enemy.x;
+                const dy = enemy.wanderTargetY! - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
                 if (distance > 5) {
@@ -4878,11 +4866,8 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
                 
                 enemy.health = Math.max(0, enemy.health - finalDamage);
                 // Mark enemy for batched damage update at end of frame
-            if (!(enemy as any).pendingDamageUpdate) {
-                (enemy as any).pendingDamageUpdate = true;
-            }
-            (enemy as any).lastDamageHealth = enemy.health;
-                
+                markEnemyDamaged(enemy);
+
                 // Apply knockback, accounting for mass (heavier mobs are harder to knock back)
                 if (distance > 0) {
                     const knockbackForce = 20;
@@ -4998,10 +4983,7 @@ function updateGroundPollens() {
 
             if (player) trackDamage(enemy, pollen.playerId, finalDamage);
             enemy.health = Math.max(0, enemy.health - finalDamage);
-            if (!(enemy as any).pendingDamageUpdate) {
-                (enemy as any).pendingDamageUpdate = true;
-            }
-            (enemy as any).lastDamageHealth = enemy.health;
+            markEnemyDamaged(enemy);
 
             if (enemy.health <= 0 && !(enemy as any).isDead) {
                 (enemy as any).isDead = true;
@@ -5096,19 +5078,17 @@ function start_loop() {
         // Spawn wave mobs from damaged spawners (e.g. ant holes) before emitting damage batch
         spawnWaveMobs();
 
-        // Batch all enemy damage updates into a single event
-        const damagedEnemies: Array<{ enemyId: string, health: number }> = [];
-        for (const enemy of enemies) {
-            if ((enemy as any).pendingDamageUpdate) {
-                const health = (enemy as any).lastDamageHealth !== undefined ? (enemy as any).lastDamageHealth : enemy.health;
-                damagedEnemies.push({ enemyId: enemy.id, health: health });
-                delete (enemy as any).pendingDamageUpdate;
-                delete (enemy as any).lastDamageHealth;
-            }
-        }
-        
-        // Emit batched enemy damage updates in a single event
-        if (damagedEnemies.length > 0) {
+        // Emit batched enemy damage updates in a single event. The pending Map
+        // is keyed by enemy.id with the post-damage health snapshot — this avoids
+        // monkey-patching `pendingDamageUpdate`/`lastDamageHealth` onto every
+        // damaged enemy and the per-tick `delete` (which forces V8 to put the
+        // enemy into dictionary mode for the rest of its life).
+        if (pendingEnemyDamageUpdates.size > 0) {
+            const damagedEnemies: Array<{ enemyId: string, health: number }> = [];
+            pendingEnemyDamageUpdates.forEach((health, enemyId) => {
+                damagedEnemies.push({ enemyId, health });
+            });
+            pendingEnemyDamageUpdates.clear();
             io.emit('enemiesDamaged', damagedEnemies);
         }
         
@@ -5546,7 +5526,7 @@ setInterval(() => {
     const playerCount = Object.keys(players).length;
     console.log(`[MEMORY] rss=${rssMB}MB heapUsed=${heapUsedMB}MB/${heapLimitMB}MB (${(heapUsedPct * 100).toFixed(1)}%) players=${playerCount}`);
 
-    if (heapUsedPct >= MEMORY_RESTART_THRESHOLD && !memoryRestartInProgress) {
+    if ((heapUsedPct >= MEMORY_RESTART_THRESHOLD && !memoryRestartInProgress) || (mem.rss > 600 * 1024 * 1024 && !memoryRestartInProgress)) {
         memoryRestartInProgress = true;
         console.warn(`[MEMORY] Heap usage ${(heapUsedPct * 100).toFixed(1)}% >= ${MEMORY_RESTART_THRESHOLD * 100}% — restarting server`);
 

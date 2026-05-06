@@ -12,5 +12,5 @@
     "moduleResolution": "node"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "src/server.ts", "src/database.ts"]
+  "exclude": ["node_modules", "src/server.ts", "src/database.ts", "src/map_source.ts"]
 } 

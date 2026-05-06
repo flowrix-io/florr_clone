@@ -9,10 +9,10 @@
     "build:all": "npm run build:cpp && npm run build",
     "build:server": "tsc -p tsconfig.server.json",
     "build:client": "tsc -p tsconfig.client.json",
-    "start": "npm run build:server && node dist/server.js",
+    "start": "npm run build:server && node --max-old-space-size=192 --optimize-for-size dist/server.js",
     "dev": "npm run build:cpp && webpack --mode development --watch",
     "dev:server": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "start_nobuild": "node dist/server.js"
+    "start_nobuild": "node --max-old-space-size=192 --optimize-for-size dist/server.js"
   },
   "keywords": [],
   "author": "",

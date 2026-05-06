@@ -43,7 +43,8 @@ export interface Enemy {
   isChasing?: boolean;  // Whether the enemy is currently chasing a player
   targetPlayerId?: string;  // ID of the player currently being targeted (persists until player is out of range)
   range?: number;
-  wanderTarget?: { x: number; y: number };
+  wanderTargetX?: number;
+  wanderTargetY?: number;
   lastWanderTime?: number;
   spawnTime?: number;  // Timestamp when enemy was spawned
   lastViewportCheck?: number;  // Last time this enemy was in any player's viewport
@@ -54,8 +55,9 @@ export interface Enemy {
   reversed?: boolean;  // Whether the mob image should be flipped horizontally
   ownerId?: string;  // ID of the player who owns this pet (if this is a pet)
   petImage?: string;  // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
-  // DPS tracking for target dummies
-  dpsHistory?: Array<{ time: number; damage: number }>;  // History of damage events with timestamps
+  // DPS tracking for target dummies — parallel arrays avoid per-event object allocations
+  dpsHistoryTimes?: number[];
+  dpsHistoryDamages?: number[];
   dpsStartTime?: number;  // When DPS tracking started
   currentDPS?: number;  // Current calculated DPS
   // Challenge mob tracking

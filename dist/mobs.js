@@ -3419,6 +3419,21 @@ for (const mobType in exports.BASE_MOB_CONFIGS) {
         exports.MOB_CONFIG[mobType][rarity] = generateMobStats(exports.BASE_MOB_CONFIGS[mobType], rarity, mobType);
     }
 }
+// Server-only memory trim: drop the embedded SVG image strings (~100KB of source,
+// ~200KB resident as UTF-16 in V8) — the server never renders mobs and only the
+// client's bundle consults `image`. petImage stays because it's emitted to clients
+// alongside spawned pets.
+if (typeof window === 'undefined' && typeof process !== 'undefined') {
+    for (const mobType in exports.BASE_MOB_CONFIGS) {
+        exports.BASE_MOB_CONFIGS[mobType].image = '';
+    }
+    for (const mobType in exports.MOB_CONFIG) {
+        const tiers = exports.MOB_CONFIG[mobType];
+        for (const rarity in tiers) {
+            tiers[rarity].image = '';
+        }
+    }
+}
 function getMobStats(mobType, rarity) {
     return exports.MOB_CONFIG[mobType]?.[rarity] || null;
 }

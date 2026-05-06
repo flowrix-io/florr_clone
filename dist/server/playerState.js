@@ -619,10 +619,7 @@ function updatePlayerState(player, deltaTime, deps) {
                 const oldHealth = enemy.health;
                 enemy.health = Math.max(0, enemy.health - player.damage);
                 // Mark enemy for batched damage update at end of frame
-                if (!enemy.pendingDamageUpdate) {
-                    enemy.pendingDamageUpdate = true;
-                }
-                enemy.lastDamageHealth = enemy.health;
+                (0, utils_1.markEnemyDamaged)(enemy);
                 if (enemy.health <= 0 && !enemy.isDead) {
                     // console.log('[Server] Enemy health reached 0 from petal damage', {
                     //     enemyId: enemy.id,
@@ -1294,10 +1291,7 @@ function updatePlayerState(player, deltaTime, deps) {
                         enemy.knockbackY = normalizedDy * effectiveKnockback;
                     }
                     // Mark enemy for batched damage update at end of frame
-                    if (!enemy.pendingDamageUpdate) {
-                        enemy.pendingDamageUpdate = true;
-                    }
-                    enemy.lastDamageHealth = enemy.health;
+                    (0, utils_1.markEnemyDamaged)(enemy);
                     // Check if item spawner was hit and has 1% chance to spawn a random petal
                     if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
                         // Get all petal types and filter out admin petals

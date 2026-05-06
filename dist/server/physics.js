@@ -12,6 +12,7 @@ const server_utils_1 = require("../server_utils");
 const constants_1 = require("../constants");
 const map_data_1 = require("../map_data");
 const mobs_1 = require("../mobs");
+const utils_1 = require("./utils");
 // Boundary threshold for wall extension (same as out-of-bounds zone)
 const BOUNDARY_THRESHOLD = 100;
 const COLLISION_BUFFER = 5; // Buffer between entities and walls
@@ -398,13 +399,8 @@ function checkEnemyEnemyCollisions(enemies, io) {
                             const { trackDamage } = require('../server');
                             trackDamage(otherEnemy, enemy.ownerId, enemy.damage);
                             otherEnemy.health = Math.max(0, otherEnemy.health - enemy.damage);
-                            if (io) {
-                                // Mark enemy for batched damage update at end of frame
-                                if (!otherEnemy.pendingDamageUpdate) {
-                                    otherEnemy.pendingDamageUpdate = true;
-                                }
-                                otherEnemy.lastDamageHealth = otherEnemy.health;
-                            }
+                            if (io)
+                                (0, utils_1.markEnemyDamaged)(otherEnemy);
                             if (otherEnemy.health <= 0) {
                                 otherEnemy.isDead = true;
                                 if (io) {
@@ -417,13 +413,8 @@ function checkEnemyEnemyCollisions(enemies, io) {
                         // Enemy (wild mob) attacks otherEnemy (pet)
                         if (!otherEnemy.isDead && otherEnemy.health > 0) {
                             otherEnemy.health = Math.max(0, otherEnemy.health - enemy.damage);
-                            if (io) {
-                                // Mark enemy for batched damage update at end of frame
-                                if (!otherEnemy.pendingDamageUpdate) {
-                                    otherEnemy.pendingDamageUpdate = true;
-                                }
-                                otherEnemy.lastDamageHealth = otherEnemy.health;
-                            }
+                            if (io)
+                                (0, utils_1.markEnemyDamaged)(otherEnemy);
                             if (otherEnemy.health <= 0) {
                                 otherEnemy.isDead = true;
                                 if (io) {
@@ -440,13 +431,8 @@ function checkEnemyEnemyCollisions(enemies, io) {
                             const { trackDamage } = require('../server');
                             trackDamage(enemy, otherEnemy.ownerId, otherEnemy.damage);
                             enemy.health = Math.max(0, enemy.health - otherEnemy.damage);
-                            if (io) {
-                                // Mark enemy for batched damage update at end of frame
-                                if (!enemy.pendingDamageUpdate) {
-                                    enemy.pendingDamageUpdate = true;
-                                }
-                                enemy.lastDamageHealth = enemy.health;
-                            }
+                            if (io)
+                                (0, utils_1.markEnemyDamaged)(enemy);
                             if (enemy.health <= 0) {
                                 enemy.isDead = true;
                                 if (io) {
@@ -459,13 +445,8 @@ function checkEnemyEnemyCollisions(enemies, io) {
                         // otherEnemy (wild mob) attacks enemy (pet)
                         if (!enemy.isDead && enemy.health > 0) {
                             enemy.health = Math.max(0, enemy.health - otherEnemy.damage);
-                            if (io) {
-                                // Mark enemy for batched damage update at end of frame
-                                if (!enemy.pendingDamageUpdate) {
-                                    enemy.pendingDamageUpdate = true;
-                                }
-                                enemy.lastDamageHealth = enemy.health;
-                            }
+                            if (io)
+                                (0, utils_1.markEnemyDamaged)(enemy);
                             if (enemy.health <= 0) {
                                 enemy.isDead = true;
                                 if (io) {

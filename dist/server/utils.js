@@ -1,5 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.pendingEnemyDamageUpdates = void 0;
+exports.markEnemyDamaged = markEnemyDamaged;
 exports.trackDamage = trackDamage;
 exports.calculateDPS = calculateDPS;
 exports.getOriginalSocketId = getOriginalSocketId;
@@ -13,6 +15,15 @@ const petal_actions_1 = require("../petal_actions");
 const squadManager_1 = require("./squadManager");
 const botManager_1 = require("./botManager");
 const apiKeyApi_1 = require("./apiKeyApi");
+// Per-tick batch of enemies that took damage. Keyed by enemy.id with the
+// post-damage health snapshot. Using a module-level Map (cleared on flush)
+// avoids monkey-patching `pendingDamageUpdate` / `lastDamageHealth` onto
+// every damaged enemy and the per-tick `delete` that follows — both of which
+// V8 punishes by transitioning the enemy object to dictionary (slow) mode.
+exports.pendingEnemyDamageUpdates = new Map();
+function markEnemyDamaged(enemy) {
+    exports.pendingEnemyDamageUpdates.set(enemy.id, enemy.health);
+}
 // Helper function to track damage dealt to an enemy
 function trackDamage(enemy, playerId, damage) {
     if (!enemy.damageContributors) {
@@ -41,32 +52,44 @@ function trackDamage(enemy, playerId, damage) {
         const now = Date.now();
         if (!enemy.dpsStartTime) {
             enemy.dpsStartTime = now;
-            enemy.dpsHistory = [];
         }
-        if (!enemy.dpsHistory) {
-            enemy.dpsHistory = [];
+        if (!enemy.dpsHistoryTimes) {
+            enemy.dpsHistoryTimes = [];
+            enemy.dpsHistoryDamages = [];
         }
-        enemy.dpsHistory.push({ time: now, damage: damage });
-        // Keep only last 60 seconds of history
-        const cutoffTime = now - 60000;
-        enemy.dpsHistory = enemy.dpsHistory.filter(entry => entry.time > cutoffTime);
+        const times = enemy.dpsHistoryTimes;
+        const damages = enemy.dpsHistoryDamages;
+        times.push(now);
+        damages.push(damage);
+        // Drop entries older than 60s by trimming the front in place — avoids
+        // reallocating a fresh array on every damage tick.
+        const cutoff = now - 60000;
+        let drop = 0;
+        while (drop < times.length && times[drop] <= cutoff)
+            drop++;
+        if (drop > 0) {
+            times.splice(0, drop);
+            damages.splice(0, drop);
+        }
     }
 }
 // Calculate DPS for target dummies
 function calculateDPS(enemy) {
-    if (enemy.type !== 'target_dummy' || !enemy.dpsHistory || enemy.dpsHistory.length === 0) {
+    const times = enemy.dpsHistoryTimes;
+    const damages = enemy.dpsHistoryDamages;
+    if (enemy.type !== 'target_dummy' || !times || !damages || times.length === 0) {
         return 0;
     }
     const now = Date.now();
     const timeWindow = 10000; // 10 seconds window
     const cutoffTime = now - timeWindow;
-    // Sum damage in the last 10 seconds
-    const recentDamage = enemy.dpsHistory
-        .filter(entry => entry.time > cutoffTime)
-        .reduce((sum, entry) => sum + entry.damage, 0);
-    // Calculate DPS (damage per second)
-    const dps = recentDamage / (timeWindow / 1000);
-    return dps;
+    let recentDamage = 0;
+    for (let i = times.length - 1; i >= 0; i--) {
+        if (times[i] <= cutoffTime)
+            break;
+        recentDamage += damages[i];
+    }
+    return recentDamage / (timeWindow / 1000);
 }
 // Helper function to get the original socket ID from a split player ID
 // Split players have IDs like "socketId_split2", but sockets are keyed by the original socket ID
@@ -241,31 +264,36 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
         }
     }
 }
-// Helper function to clean up enemy data structures before removal
-// This helps prevent memory leaks by clearing Maps and arrays
+// Helper function to drop references the enemy holds before it leaves the
+// `enemies` array. The point is to release the auxiliary heap (the Maps,
+// arrays, and pooled damage tracker) — NOT to alter the enemy's V8 shape.
+// We assign `undefined` instead of `delete`-ing so the enemy stays in fast
+// hidden-class mode if anything (squad damage copies, centipede chain refs,
+// pending kill credits) happens to keep the corpse alive a bit longer.
 function cleanupEnemy(enemy) {
-    // Clear damage contributors Map
     if (enemy.damageContributors) {
         enemy.damageContributors.clear();
-        delete enemy.damageContributors;
+        enemy.damageContributors = undefined;
     }
-    // Clear poison effects array
     if (enemy.poisonEffects) {
         enemy.poisonEffects.length = 0;
-        delete enemy.poisonEffects;
+        enemy.poisonEffects = undefined;
     }
-    // Clear DPS history for target dummies
-    if (enemy.dpsHistory) {
-        enemy.dpsHistory.length = 0;
-        delete enemy.dpsHistory;
+    if (enemy.dpsHistoryTimes) {
+        enemy.dpsHistoryTimes.length = 0;
+        enemy.dpsHistoryTimes = undefined;
     }
-    // Clear other optional properties
-    delete enemy.dpsStartTime;
-    delete enemy.currentDPS;
-    delete enemy.wanderTarget;
-    delete enemy.lastWanderTime;
-    delete enemy.lastViewportCheck;
-    delete enemy.lastProjectileTime;
-    delete enemy.lastMeleeAttackTime;
+    if (enemy.dpsHistoryDamages) {
+        enemy.dpsHistoryDamages.length = 0;
+        enemy.dpsHistoryDamages = undefined;
+    }
+    enemy.dpsStartTime = undefined;
+    enemy.currentDPS = undefined;
+    enemy.wanderTargetX = undefined;
+    enemy.wanderTargetY = undefined;
+    enemy.lastWanderTime = undefined;
+    enemy.lastViewportCheck = undefined;
+    enemy.lastProjectileTime = undefined;
+    enemy.lastMeleeAttackTime = undefined;
 }
 // Collision detection functions have been moved to physics.ts

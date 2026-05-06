@@ -17,7 +17,9 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
-let input = path.join(ROOT, 'src', 'map_data.ts');
+// Default input is map_source.ts (the hand-edited canonical literal). The old
+// map_data.ts is now a thin runtime shim that re-exports the compact bundle.
+let input = path.join(ROOT, 'src', 'map_source.ts');
 let output = path.join(ROOT, 'src', 'map_bundle.ts');
 for (let i = 0; i < args.length; i++) {
     const a = args[i];

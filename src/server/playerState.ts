@@ -66,7 +66,7 @@ import { queryEnemiesNear, getMaxEnemyRadius } from './enemyGrid';
 const _enemyQueryBuffer: Enemy[] = [];
 import { addItem, applyPetalHealthBonus, calculatePlayerModifiers, enterPvpArena, exitPvpArena } from './playerManager';
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
-import { trackDamage, sendBossMobDefeatedMessage, cleanupEnemy, trackMobKill } from './utils';
+import { trackDamage, sendBossMobDefeatedMessage, cleanupEnemy, trackMobKill, markEnemyDamaged } from './utils';
 import { transferPlayerToServer as transferPlayerToServerModule } from './crossServer';
 
 // Petal physics state interface
@@ -775,10 +775,7 @@ export function updatePlayerState(
                 const oldHealth = enemy.health;
                 enemy.health = Math.max(0, enemy.health - player.damage);
                 // Mark enemy for batched damage update at end of frame
-                if (!(enemy as any).pendingDamageUpdate) {
-                    (enemy as any).pendingDamageUpdate = true;
-                }
-                (enemy as any).lastDamageHealth = enemy.health;
+                markEnemyDamaged(enemy);
 
                 if (enemy.health <= 0 && !(enemy as any).isDead) {
                     // console.log('[Server] Enemy health reached 0 from petal damage', {
@@ -1501,10 +1498,7 @@ export function updatePlayerState(
                     }
 
                     // Mark enemy for batched damage update at end of frame
-                    if (!(enemy as any).pendingDamageUpdate) {
-                        (enemy as any).pendingDamageUpdate = true;
-                    }
-                    (enemy as any).lastDamageHealth = enemy.health;
+                    markEnemyDamaged(enemy);
 
                     // Check if item spawner was hit and has 1% chance to spawn a random petal
                     if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
