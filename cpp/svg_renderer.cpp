@@ -12,6 +12,88 @@
 
 using namespace emscripten;
 
+SVGRenderer renderer;
+
+std::string toeCharacter = R"(
+
+<svg width="240"
+     height="200"
+     viewBox="0 0 240 200"
+     xmlns="http://www.w3.org/2000/svg">
+
+    <!-- Speech Bubble -->
+    <g>
+        <rect x="120"
+              y="20"
+              width="90"
+              height="50"
+              rx="15"
+              fill="white"
+              stroke="black"
+              stroke-width="3"/>
+
+        <polygon points="130,70 145,85 155,70"
+                 fill="white"
+                 stroke="black"
+                 stroke-width="3"/>
+
+        <text x="132"
+              y="50"
+              font-size="12"
+              font-family="Arial"
+              fill="black">
+            I LOVE TOES
+        </text>
+    </g>
+
+    <!-- Toe -->
+    <g id="toe">
+
+        <!-- Body -->
+        <ellipse cx="80"
+                 cy="120"
+                 rx="35"
+                 ry="50"
+                 fill="#f2c29b"/>
+
+        <!-- Nail -->
+        <ellipse cx="80"
+                 cy="78"
+                 rx="18"
+                 ry="12"
+                 fill="#ffe6f2"/>
+
+        <!-- Eyes -->
+        <circle cx="68"
+                cy="118"
+                r="4"
+                fill="black"/>
+
+        <circle cx="92"
+                cy="118"
+                r="4"
+                fill="black"/>
+
+        <!-- Smile -->
+        <path d="M68 138 Q80 148 92 138"
+              stroke="black"
+              stroke-width="3"
+              fill="none"/>
+
+        <!-- Animation -->
+        <animateTransform
+            attributeName="transform"
+            type="rotate"
+            values="-8 80 120;8 80 120;-8 80 120"
+            dur="700ms"
+            repeatCount="indefinite"/>
+
+    </g>
+
+</svg>
+
+)";
+
 // Updated to support multi-dimensional keyframes (X, Y pairs)
 struct SVGAnimation {
     std::string attributeName;
@@ -30,6 +112,8 @@ struct SVGElement {
     double lastRenderTime;
     SVGElement() : lastRenderTime(0) {}
 };
+
+
 
 class SVGRenderer {
 private:
@@ -210,10 +294,29 @@ public:
     int getCacheSize() { return cache.size(); }
 };
 
+void renderLoop() {
+    double time = emscripten_get_now();
+
+    std::string frame =
+        renderer.renderSVG(toeCharacter, time);
+
+    val document = val::global("document");
+
+    document.call<val>(
+        "getElementById",
+        std::string("app")
+    ).set("innerHTML", frame);
+}
+
 EMSCRIPTEN_BINDINGS(svg_renderer) {
     class_<SVGRenderer>("SVGRenderer")
         .constructor<>()
         .function("renderSVG", &SVGRenderer::renderSVG)
         .function("clearCache", &SVGRenderer::clearCache)
         .function("getCacheSize", &SVGRenderer::getCacheSize);
+}
+
+int main() {
+    emscripten_set_main_loop(renderLoop, 0, 1);
+    return 0;
 }
