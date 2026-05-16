@@ -171,6 +171,12 @@ export interface ServerPlayer {
   regularInventory?: PlayerInventory;
   regularLoadout?: (Item | null)[];
   lastDamagedByPlayerId?: string; // ID of the most recent player to damage this player (for PVP kill credit)
+  spongeDamageEffects?: Array<{
+    remainingDamage: number;
+    damagePerSecond: number;
+    sourcePlayerId?: string;
+    killedBy?: { type: string; tier: string };
+  }>;
   sizeMultiplier?: number; // Multiplier applied to the flower's radius/hitbox (from equipped petal playerRadius modifiers)
   magnetism?: number;      // Additive pixels added to item pickup radius (sum of equipped petal magnetism modifiers)
   // Continuous integral of playerRotationSpeedModifier * deltaTime. Used so that

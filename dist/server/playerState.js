@@ -108,6 +108,75 @@ function getEffectiveCooldown(petal, petalStats) {
     }
     return cooldownTime;
 }
+function getSpongeAbsorbDuration(player) {
+    let duration = 0;
+    const loadout = player.loadout || [];
+    for (let i = 0; i < loadout.length && i < 10; i++) {
+        const petal = loadout[i];
+        if (!petal || petal.type !== 'petal' || petal.petalType !== 'sponge' || !petal.rarity || petal.onCooldown)
+            continue;
+        const stats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
+        if (stats?.spongeDamageDuration) {
+            duration = Math.max(duration, stats.spongeDamageDuration);
+        }
+    }
+    return duration;
+}
+function queueSpongeDamage(player, damage, durationMs, killedBy, sourcePlayerId) {
+    if (damage <= 0 || durationMs <= 0)
+        return;
+    const durationSec = durationMs / 1000;
+    if (!player.spongeDamageEffects) {
+        player.spongeDamageEffects = [];
+    }
+    player.spongeDamageEffects.push({
+        remainingDamage: damage,
+        damagePerSecond: damage / durationSec,
+        sourcePlayerId,
+        killedBy
+    });
+    player.lastDamageTime = Date.now();
+    if (sourcePlayerId) {
+        player.lastDamagedByPlayerId = sourcePlayerId;
+    }
+}
+function updateSpongeDamage(player, deltaTime, io) {
+    if (!player.spongeDamageEffects?.length || player.isDead || player.isInvulnerable)
+        return;
+    let totalDamage = 0;
+    const remainingEffects = [];
+    for (const effect of player.spongeDamageEffects) {
+        const damageThisFrame = Math.min(effect.remainingDamage, effect.damagePerSecond * deltaTime);
+        if (damageThisFrame <= 0)
+            continue;
+        totalDamage += damageThisFrame;
+        effect.remainingDamage -= damageThisFrame;
+        if (effect.sourcePlayerId) {
+            player.lastDamagedByPlayerId = effect.sourcePlayerId;
+        }
+        if (effect.killedBy) {
+            player.killedBy = effect.killedBy;
+        }
+        if (effect.remainingDamage > 0.001) {
+            remainingEffects.push(effect);
+        }
+    }
+    player.spongeDamageEffects = remainingEffects;
+    if (totalDamage <= 0)
+        return;
+    player.health -= totalDamage;
+    player.lastDamageTime = Date.now();
+    const secondChanceTriggered = player.health <= 0 && trySecondChance(player, io);
+    if (secondChanceTriggered) {
+        player.spongeDamageEffects = [];
+    }
+    io.emit('playerDamaged', {
+        playerId: player.id,
+        health: player.health,
+        maxHealth: player.maxHealth,
+        isInvulnerable: player.isInvulnerable
+    });
+}
 /**
  * Clean up petal physics states for a player
  */
@@ -355,11 +424,24 @@ function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
         return;
     const shieldAmount = (0, petal_actions_1.getShieldAmount)(victim);
     const damageToVictim = Math.max(0, damage - shieldAmount);
-    victim.health -= damageToVictim;
-    victim.lastDamageTime = Date.now();
+    const spongeDuration = getSpongeAbsorbDuration(victim);
     victim.lastDamagedByPlayerId = attacker.id;
+    if (damageToVictim > 0 && spongeDuration > 0) {
+        queueSpongeDamage(victim, damageToVictim, spongeDuration, { type: 'player', tier: 'common' }, attacker.id);
+        victim.isInvulnerable = true;
+        setTimeout(() => {
+            if (constants_1.players[victim.id]) {
+                constants_1.players[victim.id].isInvulnerable = false;
+                io.emit('playerInvulnerabilityEnded', { playerId: victim.id });
+            }
+        }, 50);
+    }
+    else {
+        victim.health -= damageToVictim;
+        victim.lastDamageTime = Date.now();
+    }
     const secondChanceTriggered = victim.health <= 0 && trySecondChance(victim, io);
-    if (!secondChanceTriggered) {
+    if (!secondChanceTriggered && !(damageToVictim > 0 && spongeDuration > 0)) {
         if (victim.health <= 0) {
             victim.killedBy = { type: 'player', tier: 'common' };
         }
@@ -442,6 +524,7 @@ function updatePlayerState(player, deltaTime, deps) {
     const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, createEnemy, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database, trackMobKill } = deps;
     // Update player effects
     (0, petal_actions_1.updatePlayerEffects)(player, deltaTime);
+    updateSpongeDamage(player, deltaTime, io);
     // Apply passive healing (base 1 HP/sec + petal bonuses)
     if (!player.isDead) {
         let totalPassiveHeal = 1.0 * deltaTime; // Base passive heal: 1 HP/sec
@@ -570,24 +653,37 @@ function updatePlayerState(player, deltaTime, deps) {
                 if (!player.isInvulnerable && enemy.type !== 'item_spawner') {
                     const shieldAmount = (0, petal_actions_1.getShieldAmount)(player);
                     const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
-                    player.health -= damageToPlayer;
-                    player.lastDamageTime = Date.now();
-                    // Second Chance: if health dropped to 0 or below, try to save the player
-                    const secondChanceTriggered = player.health <= 0 && trySecondChance(player, io);
-                    if (!secondChanceTriggered) {
-                        // Track which enemy dealt the killing blow
-                        if (player.health <= 0) {
-                            player.killedBy = { type: enemy.type, tier: enemy.tier };
-                        }
+                    const spongeDuration = getSpongeAbsorbDuration(player);
+                    if (damageToPlayer > 0 && spongeDuration > 0) {
+                        queueSpongeDamage(player, damageToPlayer, spongeDuration, { type: enemy.type, tier: enemy.tier });
                         player.isInvulnerable = true;
-                        // Set invulnerability timer (50ms after taking damage)
                         setTimeout(() => {
                             if (constants_1.players[player.id]) {
                                 constants_1.players[player.id].isInvulnerable = false;
-                                // Notify client that invulnerability has ended
                                 io.emit('playerInvulnerabilityEnded', { playerId: player.id });
                             }
                         }, 50);
+                    }
+                    else {
+                        player.health -= damageToPlayer;
+                        player.lastDamageTime = Date.now();
+                        // Second Chance: if health dropped to 0 or below, try to save the player
+                        const secondChanceTriggered = player.health <= 0 && trySecondChance(player, io);
+                        if (!secondChanceTriggered) {
+                            // Track which enemy dealt the killing blow
+                            if (player.health <= 0) {
+                                player.killedBy = { type: enemy.type, tier: enemy.tier };
+                            }
+                            player.isInvulnerable = true;
+                            // Set invulnerability timer (50ms after taking damage)
+                            setTimeout(() => {
+                                if (constants_1.players[player.id]) {
+                                    constants_1.players[player.id].isInvulnerable = false;
+                                    // Notify client that invulnerability has ended
+                                    io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                                }
+                            }, 50);
+                        }
                     }
                 }
                 // Always emit knockback (and current health state)

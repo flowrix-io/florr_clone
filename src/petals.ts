@@ -53,6 +53,7 @@ export interface PetalStats {
     visualOffsetX?: number; // X shift for the petal visual relative to its center (pixels, default: 0)
     visualOffsetY?: number; // Y shift for the petal visual relative to its center (pixels, default: 0)
     damageCooldown?: number; // Time in ms between damage hits (petal stays active but can't deal damage during cooldown)
+    spongeDamageDuration?: number; // Time in ms for sponge petals to drip absorbed player damage back over time
     // Appearance flags applied to the player when this petal is equipped
     faceFlags?: number; // Bitmask of FaceFlags to apply (e.g., FaceFlags.SquareEyes)
     equipFlags?: number; // Bitmask of EquipmentFlags to apply (e.g., EquipmentFlags.ThirdEye)
@@ -161,6 +162,7 @@ interface BasePetalConfig {
     visualOffsetX?: number; // X shift for the petal visual relative to its center (pixels, default: 0)
     visualOffsetY?: number; // Y shift for the petal visual relative to its center (pixels, default: 0)
     damageCooldown?: number; // Time in ms between damage hits (petal stays active but can't deal damage during cooldown)
+    spongeDamageDuration?: number; // Time in ms for sponge petals to drip absorbed player damage back over time
     // Appearance flags applied to the player when this petal is equipped
     faceFlags?: number; // Bitmask of FaceFlags to apply (e.g., FaceFlags.SquareEyes)
     equipFlags?: number; // Bitmask of EquipmentFlags to apply (e.g., EquipmentFlags.ThirdEye)
@@ -201,6 +203,7 @@ interface RarityOverride {
     visualOffsetX?: number;
     visualOffsetY?: number;
     damageCooldown?: number;
+    spongeDamageDuration?: number;
     clumped?: boolean;
     // Emissive light properties
     emissive?: boolean;
@@ -1252,9 +1255,10 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         health: 10,
         size: 1.0,
         cooldown: 2000,
-        description: "Absorbs damage",
+        description: "Absorbs damage and returns it over time",
         color: "#000000",
         count: 1,
+        spongeDamageDuration: 1000,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-40 -40 80 80">
   
   <path fill="#ff96e0" d="
@@ -2357,6 +2361,9 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         visualOffsetX: overrides.visualOffsetX ?? baseConfig.visualOffsetX,
         visualOffsetY: overrides.visualOffsetY ?? baseConfig.visualOffsetY,
         damageCooldown: overrides.damageCooldown ?? baseConfig.damageCooldown,
+        spongeDamageDuration: baseConfig.spongeDamageDuration !== undefined
+            ? (overrides.spongeDamageDuration ?? baseConfig.spongeDamageDuration * (1 + rarityIndex * 0.5))
+            : undefined,
         faceFlags: baseConfig.faceFlags,
         equipFlags: baseConfig.equipFlags,
         noPhysics: baseConfig.noPhysics,
