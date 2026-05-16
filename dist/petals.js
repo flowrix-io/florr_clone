@@ -947,7 +947,7 @@ const BASE_PETAL_CONFIGS = {
         health: 10,
         size: 1.0,
         cooldown: 1000,
-        description: "It's a square",
+        description: "Something very rare and useless",
         color: "#000000",
         count: 1,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -1697,6 +1697,34 @@ const BASE_PETAL_CONFIGS = {
   <circle cx="16" cy="16" r="14.5" fill="none" stroke="rgba(255, 255, 255, 0.3)" stroke-width="3"/>
   <circle cx="10" cy="10" r="1" fill="none" stroke="rgba(255, 255, 255, 0.3)" stroke-width="3"/>
 </svg>`,
+        isAdminPetal: false,
+    },
+    rainbow: {
+        name: "Rainbow",
+        damage: 10,
+        health: Infinity,
+        size: 2.0,
+        cooldown: 800,
+        description: "Gas but more powerful",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="16" cy="16" r="16">
+    <animate 
+      attributeName="fill" 
+      values="#ff0000;#ff7f00;#ffff00;#00ff00;#0000ff;#4b0082;#9400d3;#ff0000" 
+      dur="4s" 
+      repeatCount="indefinite" 
+    />
+  </circle>
+</svg>
+`,
+        projectile: {
+            count: 10,
+            distance: 500,
+            speed: 50,
+            spreadAngle: 1.0
+        },
         isAdminPetal: false,
     },
     sparkle: {

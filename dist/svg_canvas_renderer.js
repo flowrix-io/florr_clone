@@ -158,6 +158,51 @@ function parsePathAnimations(el) {
     }
     return anims;
 }
+function parseAttributeAnimations(el) {
+    const anims = [];
+    for (let i = 0; i < el.children.length; i++) {
+        const child = el.children[i];
+        if (child.tagName !== 'animate')
+            continue;
+        const attributeName = child.getAttribute('attributeName');
+        if (!attributeName || attributeName === 'd')
+            continue;
+        let values;
+        const valuesAttr = child.getAttribute('values');
+        if (valuesAttr) {
+            values = valuesAttr.split(';').map((s) => s.trim()).filter(Boolean);
+        }
+        else {
+            const from = child.getAttribute('from') ?? el.getAttribute(attributeName) ?? '';
+            const to = child.getAttribute('to');
+            if (!to)
+                continue;
+            values = [from, to];
+        }
+        if (values.length < 2)
+            continue;
+        let keyTimes = null;
+        const ktAttr = child.getAttribute('keyTimes');
+        if (ktAttr) {
+            keyTimes = ktAttr.split(';').map((s) => parseFloat(s.trim()));
+        }
+        let keySplines = null;
+        const ksAttr = child.getAttribute('keySplines');
+        if (ksAttr) {
+            keySplines = ksAttr.split(';').map((s) => s.trim().split(/[\s,]+/).map(Number));
+        }
+        anims.push({
+            attributeName,
+            values,
+            dur: parseDuration(child.getAttribute('dur') || '1s'),
+            begin: parseBegin(child.getAttribute('begin')),
+            keyTimes,
+            calcMode: child.getAttribute('calcMode') || 'linear',
+            keySplines,
+        });
+    }
+    return anims;
+}
 function polygonPointsToD(points) {
     const nums = points.trim().split(/[\s,]+/).map(Number);
     let d = '';
@@ -236,7 +281,7 @@ function parseTransformOrigin(el) {
 function makeEmptyNode(tag, style) {
     return {
         tag, style, transform: null, transformOrigin: null, clipPathId: null,
-        transformAnimations: [], pathAnimations: [], children: [],
+        transformAnimations: [], attributeAnimations: [], pathAnimations: [], children: [],
         cx: 0, cy: 0, r: 0, rx: 0, ry: 0,
         x: 0, y: 0, width: 0, height: 0,
         x1: 0, y1: 0, x2: 0, y2: 0,
@@ -261,6 +306,7 @@ function compileElement(el, doc, inherited) {
     node.transformOrigin = parseTransformOrigin(el);
     node.clipPathId = parseClipPathRef(el.getAttribute('clip-path'));
     node.transformAnimations = parseTransformAnimations(el);
+    node.attributeAnimations = parseAttributeAnimations(el);
     switch (tag) {
         case 'g':
         case 'svg':
@@ -459,20 +505,14 @@ function cubicBezierEase(t, p1x, p1y, p2x, p2y) {
         + 3 * p2y * (1 - tt) * tt * tt
         + tt * tt * tt;
 }
-function interpolateTransformAnim(anim, time) {
-    const effectiveTime = time - anim.begin;
-    const progress = (((effectiveTime % anim.dur) + anim.dur) % anim.dur) / anim.dur;
-    const values = anim.values;
-    const n = values.length;
-    let kt;
-    if (anim.keyTimes && anim.keyTimes.length === n) {
-        kt = anim.keyTimes;
-    }
-    else {
-        kt = values.map((_, i) => i / (n - 1));
-    }
+function getAnimationSegment(valueCount, keyTimes, calcMode, keySplines, time, dur, begin) {
+    const effectiveTime = time - begin;
+    const progress = (((effectiveTime % dur) + dur) % dur) / dur;
+    const kt = keyTimes && keyTimes.length === valueCount
+        ? keyTimes
+        : Array.from({ length: valueCount }, (_, i) => i / (valueCount - 1));
     let seg = 0;
-    for (let i = 0; i < n - 1; i++) {
+    for (let i = 0; i < valueCount - 1; i++) {
         if (progress >= kt[i] && progress <= kt[i + 1]) {
             seg = i;
             break;
@@ -481,48 +521,141 @@ function interpolateTransformAnim(anim, time) {
     const segStart = kt[seg];
     const segEnd = kt[seg + 1];
     let lp = segEnd > segStart ? (progress - segStart) / (segEnd - segStart) : 0;
-    if (anim.calcMode === 'spline' && anim.keySplines && anim.keySplines[seg]) {
-        const sp = anim.keySplines[seg];
+    if (calcMode === 'spline' && keySplines && keySplines[seg]) {
+        const sp = keySplines[seg];
         lp = cubicBezierEase(lp, sp[0], sp[1], sp[2], sp[3]);
     }
-    else if (anim.calcMode === 'discrete') {
+    else if (calcMode === 'discrete') {
         lp = 0;
     }
+    return { seg, lp };
+}
+function interpolateTransformAnim(anim, time) {
+    const values = anim.values;
+    const { seg, lp } = getAnimationSegment(values.length, anim.keyTimes, anim.calcMode, anim.keySplines, time, anim.dur, anim.begin);
     const from = values[seg];
     const to = values[seg + 1] || from;
     return from.map((v, i) => v + ((to[i] ?? v) - v) * lp);
 }
-function interpolatePathAnim(anim, time) {
-    const effectiveTime = time - anim.begin;
-    const progress = (((effectiveTime % anim.dur) + anim.dur) % anim.dur) / anim.dur;
-    const n = anim.keyframes.length;
-    // Determine keyframe positions
-    let kt;
-    if (anim.keyTimes && anim.keyTimes.length === n) {
-        kt = anim.keyTimes;
+function parseColor(value) {
+    const v = value.trim().toLowerCase();
+    if (v === 'none')
+        return null;
+    const hex = v.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (hex) {
+        const h = hex[1].length === 3
+            ? hex[1].split('').map(c => c + c).join('')
+            : hex[1];
+        return [
+            parseInt(h.slice(0, 2), 16),
+            parseInt(h.slice(2, 4), 16),
+            parseInt(h.slice(4, 6), 16),
+            1
+        ];
     }
-    else {
-        kt = anim.keyframes.map((_, i) => i / (n - 1));
+    const rgba = v.match(/^rgba?\(([^)]+)\)$/);
+    if (rgba) {
+        const parts = rgba[1].split(/[\s,]+/).map(Number);
+        return [parts[0] || 0, parts[1] || 0, parts[2] || 0, parts[3] ?? 1];
     }
-    // Find active segment
-    let seg = 0;
-    for (let i = 0; i < n - 1; i++) {
-        if (progress >= kt[i] && progress <= kt[i + 1]) {
-            seg = i;
-            break;
+    return null;
+}
+function interpolateColor(from, to, lp) {
+    const c1 = parseColor(from);
+    const c2 = parseColor(to);
+    if (!c1 || !c2)
+        return lp < 1 ? from : to;
+    const r = Math.round(c1[0] + (c2[0] - c1[0]) * lp);
+    const g = Math.round(c1[1] + (c2[1] - c1[1]) * lp);
+    const b = Math.round(c1[2] + (c2[2] - c1[2]) * lp);
+    const a = c1[3] + (c2[3] - c1[3]) * lp;
+    return a >= 0.999 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+function interpolateAttributeAnim(anim, time) {
+    const { seg, lp } = getAnimationSegment(anim.values.length, anim.keyTimes, anim.calcMode, anim.keySplines, time, anim.dur, anim.begin);
+    const from = anim.values[seg];
+    const to = anim.values[seg + 1] || from;
+    const fromNum = parseFloat(from);
+    const toNum = parseFloat(to);
+    if (!isNaN(fromNum) && !isNaN(toNum)) {
+        const value = fromNum + (toNum - fromNum) * lp;
+        return value % 1 === 0 ? value.toString() : value.toFixed(3);
+    }
+    if (anim.attributeName === 'fill' || anim.attributeName === 'stroke') {
+        return interpolateColor(from, to, lp) ?? (lp < 1 ? from : to);
+    }
+    return lp < 1 ? from : to;
+}
+function getAnimatedAttribute(node, name, time) {
+    const anim = node.attributeAnimations.find(a => a.attributeName === name);
+    return anim ? interpolateAttributeAnim(anim, time) : null;
+}
+function getAnimatedNumber(node, name, fallback, time) {
+    const value = getAnimatedAttribute(node, name, time);
+    return value === null ? fallback : num(value, fallback);
+}
+function getAnimatedStyle(node, time) {
+    const style = { ...node.style };
+    const fill = getAnimatedAttribute(node, 'fill', time);
+    if (fill !== null)
+        style.fill = fill === 'none' ? null : fill;
+    const stroke = getAnimatedAttribute(node, 'stroke', time);
+    if (stroke !== null)
+        style.stroke = stroke === 'none' ? null : stroke;
+    style.opacity = getAnimatedNumber(node, 'opacity', style.opacity, time);
+    style.fillOpacity = getAnimatedNumber(node, 'fill-opacity', style.fillOpacity, time);
+    style.strokeOpacity = getAnimatedNumber(node, 'stroke-opacity', style.strokeOpacity, time);
+    style.strokeWidth = getAnimatedNumber(node, 'stroke-width', style.strokeWidth, time);
+    return style;
+}
+function buildAnimatedShapePath(node, time) {
+    const path = new Path2D();
+    try {
+        switch (node.tag) {
+            case 'circle': {
+                const cx = getAnimatedNumber(node, 'cx', node.cx, time);
+                const cy = getAnimatedNumber(node, 'cy', node.cy, time);
+                const r = getAnimatedNumber(node, 'r', node.r, time);
+                if (r <= 0)
+                    return null;
+                path.arc(cx, cy, r, 0, Math.PI * 2);
+                return path;
+            }
+            case 'ellipse': {
+                const cx = getAnimatedNumber(node, 'cx', node.cx, time);
+                const cy = getAnimatedNumber(node, 'cy', node.cy, time);
+                const rx = getAnimatedNumber(node, 'rx', node.rx, time);
+                const ry = getAnimatedNumber(node, 'ry', node.ry, time);
+                if (rx <= 0 || ry <= 0)
+                    return null;
+                path.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+                return path;
+            }
+            case 'rect': {
+                const x = getAnimatedNumber(node, 'x', node.x, time);
+                const y = getAnimatedNumber(node, 'y', node.y, time);
+                const width = getAnimatedNumber(node, 'width', node.width, time);
+                const height = getAnimatedNumber(node, 'height', node.height, time);
+                const rx = getAnimatedNumber(node, 'rx', node.rx, time);
+                const ry = getAnimatedNumber(node, 'ry', node.ry, time);
+                if (width <= 0 || height <= 0)
+                    return null;
+                if (rx > 0 || ry > 0)
+                    path.roundRect(x, y, width, height, [rx || ry]);
+                else
+                    path.rect(x, y, width, height);
+                return path;
+            }
         }
     }
-    const segStart = kt[seg];
-    const segEnd = kt[seg + 1];
-    let lp = segEnd > segStart ? (progress - segStart) / (segEnd - segStart) : 0;
-    // Apply spline easing
-    if (anim.calcMode === 'spline' && anim.keySplines && anim.keySplines[seg]) {
-        const sp = anim.keySplines[seg];
-        lp = cubicBezierEase(lp, sp[0], sp[1], sp[2], sp[3]);
+    catch {
+        return null;
     }
-    else if (anim.calcMode === 'discrete') {
-        lp = 0;
-    }
+    return node.path2d;
+}
+function interpolatePathAnim(anim, time) {
+    const n = anim.keyframes.length;
+    const { seg, lp } = getAnimationSegment(n, anim.keyTimes, anim.calcMode, anim.keySplines, time, anim.dur, anim.begin);
     const idx = seg;
     const nums1 = anim.keyframeNums[idx];
     const nums2 = anim.keyframeNums[idx + 1];
@@ -638,9 +771,10 @@ function fillStrokePath(ctx, path, style) {
 }
 function drawNode(ctx, node, time, clipPaths) {
     ctx.save();
+    const style = node.attributeAnimations.length > 0 ? getAnimatedStyle(node, time) : node.style;
     // Apply opacity
-    if (node.style.opacity < 1) {
-        ctx.globalAlpha *= node.style.opacity;
+    if (style.opacity < 1) {
+        ctx.globalAlpha *= style.opacity;
     }
     // Apply transform-origin: translate to origin, apply transforms, translate back
     const to = node.transformOrigin;
@@ -679,12 +813,15 @@ function drawNode(ctx, node, time, clipPaths) {
             path = node.path2d;
         }
         if (path) {
-            fillStrokePath(ctx, path, node.style);
+            fillStrokePath(ctx, path, style);
         }
     }
     else if (tag === 'circle' || tag === 'ellipse' || tag === 'rect' || tag === 'polygon') {
-        if (node.path2d) {
-            fillStrokePath(ctx, node.path2d, node.style);
+        const path = node.attributeAnimations.length > 0
+            ? buildAnimatedShapePath(node, time)
+            : node.path2d;
+        if (path) {
+            fillStrokePath(ctx, path, style);
         }
     }
     else if (tag === 'image') {
@@ -693,14 +830,14 @@ function drawNode(ctx, node, time, clipPaths) {
         }
     }
     else if (tag === 'line') {
-        if (node.style.stroke) {
+        if (style.stroke) {
             const lp = new Path2D();
-            lp.moveTo(node.x1, node.y1);
-            lp.lineTo(node.x2, node.y2);
-            ctx.strokeStyle = node.style.stroke;
-            ctx.lineWidth = node.style.strokeWidth;
-            ctx.lineCap = node.style.strokeLinecap;
-            ctx.lineJoin = node.style.strokeLinejoin;
+            lp.moveTo(getAnimatedNumber(node, 'x1', node.x1, time), getAnimatedNumber(node, 'y1', node.y1, time));
+            lp.lineTo(getAnimatedNumber(node, 'x2', node.x2, time), getAnimatedNumber(node, 'y2', node.y2, time));
+            ctx.strokeStyle = style.stroke;
+            ctx.lineWidth = style.strokeWidth;
+            ctx.lineCap = style.strokeLinecap;
+            ctx.lineJoin = style.strokeLinejoin;
             ctx.stroke(lp);
         }
     }

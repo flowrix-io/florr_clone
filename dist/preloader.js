@@ -181,24 +181,24 @@ class Preloader {
      * Check if SVG has animations
      */
     hasAnimations(svgString) {
-        return svgString.includes('<animateTransform') || svgString.includes('<animate');
+        return /<animate(?:Transform)?\b/i.test(svgString);
     }
     /**
      * Get animation duration from SVG (in milliseconds)
      */
     getAnimationDuration(svgString) {
-        // Look for dur attribute in animateTransform
-        const durMatch = svgString.match(/dur="([^"]*)"/);
-        if (durMatch) {
-            const dur = durMatch[1];
-            if (dur.includes('s')) {
-                return parseFloat(dur) * 1000;
+        const matches = svgString.matchAll(/\bdur=(["'])(.*?)\1/gi);
+        let maxDuration = 0;
+        for (const match of matches) {
+            const dur = match[2].trim();
+            if (dur.endsWith('ms')) {
+                maxDuration = Math.max(maxDuration, parseFloat(dur));
             }
-            else if (dur.includes('ms')) {
-                return parseFloat(dur);
+            else if (dur.endsWith('s')) {
+                maxDuration = Math.max(maxDuration, parseFloat(dur) * 1000);
             }
         }
-        return 2000; // Default 2 seconds
+        return maxDuration || 2000; // Default 2 seconds
     }
     /**
      * Load petal images from PETAL_CONFIG and render to offscreen canvases
