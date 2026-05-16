@@ -515,7 +515,7 @@ const RARITY_OVERRIDES = {
 // Base petal configurations - only common rarity stats
 const BASE_PETAL_CONFIGS = {
     basic: {
-        name: "Basic Petal",
+        name: "Basic",
         damage: 10,
         health: 10,
         size: 2.0,
@@ -529,7 +529,7 @@ const BASE_PETAL_CONFIGS = {
 </svg>`
     },
     rose: {
-        name: "Rose Petal",
+        name: "Rose",
         damage: 5,
         health: 5,
         size: 0.9,
@@ -556,7 +556,7 @@ const BASE_PETAL_CONFIGS = {
 </svg>`
     },
     light: {
-        name: "Light Petal",
+        name: "Light",
         damage: 5,
         health: 5,
         size: 1.0,
@@ -569,7 +569,7 @@ const BASE_PETAL_CONFIGS = {
 </svg>`
     },
     rock: {
-        name: "Rock Petal",
+        name: "Rock",
         damage: 15,
         health: 45,
         size: 1.0,
@@ -588,7 +588,7 @@ const BASE_PETAL_CONFIGS = {
 </svg>`
     },
     sand: {
-        name: "Sand Petal",
+        name: "Sand",
         damage: 10,
         health: 3,
         size: 1.0,
@@ -609,7 +609,7 @@ const BASE_PETAL_CONFIGS = {
 </svg>`
     },
     yggdrasil: {
-        name: "Yggdrasil Petal",
+        name: "Yggdrasil",
         damage: 1,
         health: 1,
         size: 1.0,
@@ -623,7 +623,7 @@ const BASE_PETAL_CONFIGS = {
 </svg>`
     },
     dandelion: {
-        name: "Dandelion Petal",
+        name: "Dandelion",
         damage: 8,
         health: 8,
         size: 1.0,
@@ -634,7 +634,7 @@ const BASE_PETAL_CONFIGS = {
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="300 270 400 400" version="1.1"><path d="M 502 414.084 C 479.881 416.255, 458.437 426.472, 442.455 442.455 C 404.085 480.824, 404.085 543.176, 442.455 581.545 C 480.824 619.915, 543.176 619.915, 581.545 581.545 C 619.915 543.176, 619.915 480.824, 581.545 442.455 C 566.244 427.153, 544.357 416.370, 524.848 414.519 C 511.962 413.297, 510.330 413.266, 502 414.084" stroke="none" fill="#ffffff" fill-rule="evenodd"/><path d="M 387.265 289.475 C 375.100 292.905, 363.007 302.031, 357.747 311.751 C 351.060 324.107, 350.046 340.963, 355.303 352.383 C 356.793 355.619, 367.945 373.712, 380.086 392.589 L 402.161 426.912 413.331 415.648 C 430.397 398.436, 448.887 387.064, 470.735 380.342 C 475.814 378.779, 479.977 377.191, 479.985 376.813 C 480.010 375.690, 436.991 308.877, 433.216 304.175 C 423.467 292.033, 402.258 285.248, 387.265 289.475" stroke="none" fill="#343434" fill-rule="evenodd"/><path d="M 502.500 373.602 C 486.120 375.150, 464.288 381.305, 450.437 388.280 C 430.609 398.265, 408.255 417.790, 396.606 435.298 C 373.700 469.723, 367.539 512.446, 379.631 553 C 390.185 588.393, 417.442 620.069, 451.500 636.521 C 471.575 646.218, 489.516 650.306, 512 650.306 C 549.430 650.306, 583.633 636.197, 609.915 609.915 C 636.197 583.633, 650.306 549.430, 650.306 512 C 650.306 489.516, 646.218 471.575, 636.521 451.500 C 617.370 411.853, 580.183 383.647, 536.500 375.636 C 528.065 374.090, 509.255 372.964, 502.500 373.602 M 502 414.084 C 479.881 416.255, 458.437 426.472, 442.455 442.455 C 404.085 480.824, 404.085 543.176, 442.455 581.545 C 480.824 619.915, 543.176 619.915, 581.545 581.545 C 619.915 543.176, 619.915 480.824, 581.545 442.455 C 566.244 427.153, 544.357 416.370, 524.848 414.519 C 511.962 413.297, 510.330 413.266, 502 414.084" stroke="none" fill="#e4e4e4" fill-rule="evenodd"/></svg>`
     },
     clover: {
-        name: "Clover Petal",
+        name: "Clover",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -648,7 +648,7 @@ const BASE_PETAL_CONFIGS = {
         }
     },
     bone: {
-        name: "Bone Petal",
+        name: "Bone",
         health: 15,
         damage: 12,
         size: 1.0,
@@ -679,7 +679,7 @@ const BASE_PETAL_CONFIGS = {
 </svg>`
     },
     cactus: {
-        name: "Cactus Petal",
+        name: "Cactus",
         damage: 15,
         health: 15,
         size: 1.0,
@@ -705,7 +705,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     poison_cactus: {
-        name: "Poison Cactus Petal",
+        name: "Poison Cactus",
         damage: 15,
         health: 15,
         size: 1.0,
@@ -733,7 +733,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     iris: {
-        name: "Iris Petal",
+        name: "Iris",
         damage: 0,
         health: 1,
         size: 0.7,
@@ -749,7 +749,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     lightning: {
-        name: "Lightning Petal",
+        name: "Lightning",
         damage: 25, // Base damage that will scale with rarity (25 × rarity multiplier)
         health: 10, // Increased health so it doesn't break immediately
         cooldown: 700,
@@ -761,7 +761,7 @@ const BASE_PETAL_CONFIGS = {
         actions: `wait_until_collision; lightning 1000;`
     },
     missile: {
-        name: "Missile Petal",
+        name: "Missile",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -789,7 +789,7 @@ const BASE_PETAL_CONFIGS = {
         }
     },
     jelly: {
-        name: "Jelly Petal",
+        name: "Jelly",
         damage: 1,
         health: 100,
         size: 1.0,
@@ -807,7 +807,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     yucca: {
-        name: "Yucca Petal",
+        name: "Yucca",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -834,7 +834,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     leaf: {
-        name: "Leaf Petal",
+        name: "Leaf",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -864,7 +864,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     cutter: {
-        name: "Cutter Petal",
+        name: "Cutter",
         damage: 1,
         health: Infinity,
         size: 7.0,
@@ -895,7 +895,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     lightning_cutter: {
-        name: "Lightning Cutter Petal",
+        name: "Lightning Cutter",
         damage: 1,
         health: Infinity,
         size: 7.0,
@@ -927,7 +927,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     wing: {
-        name: "Wing Petal",
+        name: "Wing",
         damage: 20,
         health: 10,
         size: 1.0,
@@ -942,7 +942,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     square: {
-        name: "Square Petal",
+        name: "Square",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -957,7 +957,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     golden_leaf: {
-        name: "Golden Leaf Petal",
+        name: "Golden Leaf",
         damage: 1,
         health: 100,
         size: 1.2,
@@ -986,7 +986,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     blood_leaf: {
-        name: "Blood Leaf Petal",
+        name: "Blood Leaf",
         damage: 0.6,
         health: 500,
         size: 1.5,
@@ -1016,7 +1016,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     bulb: {
-        name: "Bulb Petal",
+        name: "Bulb",
         damage: 8,
         health: 10,
         size: 1.5,
@@ -1036,7 +1036,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     gas: {
-        name: "Gas Petal",
+        name: "Gas",
         damage: 0.0,
         health: Infinity,
         poison: 0.002,
@@ -1057,7 +1057,7 @@ const BASE_PETAL_CONFIGS = {
         }
     },
     starfish: {
-        name: "Starfish Petal",
+        name: "Starfish",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -1075,7 +1075,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     sponge: {
-        name: "Sponge Petal",
+        name: "Sponge",
         damage: 10,
         health: 10,
         size: 1.0,
@@ -1388,7 +1388,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     javascript: {
-        name: "JavaScript Petal",
+        name: "JavaScript",
         damage: 10,
         health: 128,
         size: 1.0,
@@ -1400,7 +1400,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     glitch: {
-        name: "Glitch Petal",
+        name: "Glitch",
         damage: -1,
         health: 128,
         size: 1.0,
@@ -1414,12 +1414,12 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     corn: {
-        name: "Corn Petal",
+        name: "Corn",
         damage: 5,
         health: 100,
         size: 1.0,
         cooldown: 3500,
-        description: "Corn",
+        description: "Extremely durable, but takes a while to recharge",
         color: "#000000",
         count: 1,
         image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
@@ -1436,7 +1436,7 @@ const BASE_PETAL_CONFIGS = {
         isAdminPetal: false
     },
     third_eye: {
-        name: "Third Eye Petal",
+        name: "Third Eye",
         damage: 0,
         health: Infinity,
         size: 1.0,
@@ -1578,7 +1578,7 @@ const BASE_PETAL_CONFIGS = {
         health: 10,
         size: 1.0,
         cooldown: 1000,
-        description: "Makes you faster",
+        description: "Shoots out in 4 directions",
         color: "#000000",
         count: 1,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -1973,7 +1973,7 @@ for (const mobType in mobs_1.BASE_MOB_CONFIGS) {
     const petMobType = mobs_1.BASE_MOB_CONFIGS[`${mobType}_pet`] ? `${mobType}_pet` : mobType;
     // Create the egg config
     BASE_PETAL_CONFIGS[eggName] = {
-        name: `${mobConfig.name} Egg Petal`,
+        name: `${mobConfig.name} Egg`,
         damage: 10,
         health: 10,
         size: 1.0,
