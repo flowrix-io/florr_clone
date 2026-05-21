@@ -91,6 +91,9 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
         this.drawGroundPollens(groundPollens);
     }
 
+    // Draw raindrop auras (grass + droplets) below enemies and players
+    this.drawRaindropAuras(players);
+
     // Draw game objects
     this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
 

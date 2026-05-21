@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.cleanupPetalPhysicsStates = cleanupPetalPhysicsStates;
+exports.getRaindropAuraRadius = getRaindropAuraRadius;
 exports.getPlayerViewports = getPlayerViewports;
 exports.isPositionInAnyViewport = isPositionInAnyViewport;
 exports.isPositionInAnyViewport200Percent = isPositionInAnyViewport200Percent;
@@ -28,6 +29,13 @@ const utils_1 = require("./utils");
 const petalPhysicsStates = new Map();
 // Map to track last damage time for petals with damageCooldown (keyed by petalId)
 const petalLastDamageTime = new Map();
+// Raindrop aura: tracks the last time each (player, enemy) pair took aura damage,
+// so an enemy sitting inside the field takes chip damage on an interval rather
+// than every server tick. Keyed by playerId -> (enemyId -> lastDamageTime).
+const raindropAuraLastDamage = new Map();
+const RAINDROP_AURA_DAMAGE_INTERVAL_MS = 500;
+const RAINDROP_AURA_BASE_RADIUS = 180;
+const RAINDROP_AURA_RADIUS_PER_RARITY = 18;
 // Drop a damaging pollen puff at the given position. Pollen petals call this
 // when they break so the petal still goes through the normal cooldown/reload
 // cycle while leaving a short-lived AoE behind.
@@ -191,6 +199,112 @@ function cleanupPetalPhysicsStates(playerId) {
         petalPhysicsStates.delete(key);
         petalLastDamageTime.delete(key);
     });
+    raindropAuraLastDamage.delete(playerId);
+}
+/**
+ * Compute the raindrop aura radius for a given rarity. Returns 0 if the
+ * player has no raindrop petal equipped on the primary loadout. Picks the
+ * largest radius among equipped raindrops so duplicates don't fight each
+ * other and the visual matches the damage range.
+ */
+function getRaindropAuraRadius(player) {
+    if (!player || !player.loadout)
+        return 0;
+    let bestRadius = 0;
+    for (let i = 0; i < player.loadout.length && i < 10; i++) {
+        const petal = player.loadout[i];
+        if (!petal || petal.type !== 'petal' || petal.petalType !== 'raindrop' || !petal.rarity)
+            continue;
+        if (petal.onCooldown)
+            continue;
+        const rarityIndex = Math.max(0, petals_1.RARITY_LEVELS.indexOf(petal.rarity));
+        const radius = RAINDROP_AURA_BASE_RADIUS + rarityIndex * RAINDROP_AURA_RADIUS_PER_RARITY;
+        if (radius > bestRadius)
+            bestRadius = radius;
+    }
+    return bestRadius;
+}
+/**
+ * Apply raindrop aura damage from this player to enemies in range. The
+ * field damages each enemy on a fixed interval (per player/enemy pair)
+ * so dwelling inside the field deals continuous chip damage rather than
+ * one massive hit per tick. Uses the equipped petal's damage stat, which
+ * already scales by rarity in generatePetalStats.
+ */
+function applyRaindropAuraDamage(player, deps) {
+    if (!player || !player.loadout || player.isDead)
+        return;
+    // Pick the strongest equipped raindrop (highest rarity damage wins).
+    let bestDamage = 0;
+    let bestRadius = 0;
+    for (let i = 0; i < player.loadout.length && i < 10; i++) {
+        const petal = player.loadout[i];
+        if (!petal || petal.type !== 'petal' || petal.petalType !== 'raindrop' || !petal.rarity)
+            continue;
+        if (petal.onCooldown)
+            continue;
+        const stats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
+        if (!stats)
+            continue;
+        const rarityIndex = Math.max(0, petals_1.RARITY_LEVELS.indexOf(petal.rarity));
+        const radius = RAINDROP_AURA_BASE_RADIUS + rarityIndex * RAINDROP_AURA_RADIUS_PER_RARITY;
+        if (stats.damage > bestDamage)
+            bestDamage = stats.damage;
+        if (radius > bestRadius)
+            bestRadius = radius;
+    }
+    if (bestRadius <= 0 || bestDamage <= 0)
+        return;
+    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, trackMobKill, database, savePlayerProgress } = deps;
+    const now = Date.now();
+    const damageMultiplier = (0, petal_actions_1.getDamageMultiplier)(player);
+    const finalDamage = bestDamage * damageMultiplier;
+    let lastDamageMap = raindropAuraLastDamage.get(player.id);
+    if (!lastDamageMap) {
+        lastDamageMap = new Map();
+        raindropAuraLastDamage.set(player.id, lastDamageMap);
+    }
+    const candidates = (0, enemyGrid_1.queryEnemiesNear)(player.x, player.y, bestRadius + (0, enemyGrid_1.getMaxEnemyRadius)(), _enemyQueryBuffer);
+    for (let i = 0; i < candidates.length; i++) {
+        const enemy = candidates[i];
+        if (enemy.isDead)
+            continue;
+        const dx = enemy.x - player.x;
+        const dy = enemy.y - player.y;
+        const enemyRadius = enemy._radius ?? (constants_1.ENEMY_SIZE / 2);
+        const hitDist = bestRadius + enemyRadius;
+        if (dx * dx + dy * dy >= hitDist * hitDist)
+            continue;
+        const lastDmg = lastDamageMap.get(enemy.id) || 0;
+        if (now - lastDmg < RAINDROP_AURA_DAMAGE_INTERVAL_MS)
+            continue;
+        lastDamageMap.set(enemy.id, now);
+        (0, utils_1.trackDamage)(enemy, player.id, finalDamage);
+        enemy.health = Math.max(0, enemy.health - finalDamage);
+        (0, utils_1.markEnemyDamaged)(enemy);
+        if (enemy.health <= 0 && !enemy.isDead) {
+            enemy.isDead = true;
+            const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
+            addXPToPlayer(player, xpGained, player.id);
+            handleMobDrops(enemy);
+            sendBossMobDefeatedMessage(enemy, io, constants_1.players);
+            updateSpecialMobCounts();
+            const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
+            (0, utils_1.cleanupEnemy)(enemy);
+            const idx = constants_1.enemies.findIndex(e => e.id === enemy.id);
+            if (idx !== -1)
+                constants_1.enemies.splice(idx, 1);
+            io.emit('enemyDestroyed', enemy.id);
+            if (damageContributorsCopy) {
+                const enemyDataForTracking = {
+                    type: enemy.type,
+                    tier: enemy.tier,
+                    damageContributors: damageContributorsCopy
+                };
+                trackMobKill(enemyDataForTracking, constants_1.players, gameState_1.playerUserIds, database, io, savePlayerProgress);
+            }
+        }
+    }
 }
 /**
  * Get viewports for all players
@@ -563,6 +677,8 @@ function updatePlayerState(player, deltaTime, deps) {
             player.health = Math.min(player.maxHealth, player.health + totalPassiveHeal);
         }
     }
+    // Apply raindrop aura damage to mobs around the player
+    applyRaindropAuraDamage(player, deps);
     let targetVelocityX = 0;
     let targetVelocityY = 0;
     if (player.inputs.useMouse &&

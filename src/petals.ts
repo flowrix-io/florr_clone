@@ -1902,6 +1902,162 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         },
         isAdminPetal: false,
     },
+    bomb: {
+        name: "Bomb",
+        damage: 0,
+        health: 10,
+        size: 2.0,
+        cooldown: 1500,
+        description: "Boom",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+  <!-- Transparent background -->
+
+  <!-- Spark -->
+  <rect x="25" y="2" width="2" height="2" fill="#FFD54A"/>
+  <rect x="27" y="4" width="2" height="2" fill="#FFB300"/>
+  <rect x="23" y="4" width="2" height="2" fill="#FFB300"/>
+  <rect x="25" y="6" width="2" height="2" fill="#FFD54A"/>
+
+  <!-- Fuse -->
+  <rect x="21" y="6" width="2" height="2" fill="#A85D1A"/>
+  <rect x="19" y="8" width="2" height="2" fill="#A85D1A"/>
+  <rect x="17" y="10" width="2" height="2" fill="#A85D1A"/>
+
+  <!-- Bomb body -->
+  <rect x="8" y="10" width="16" height="2" fill="#111"/>
+  <rect x="6" y="12" width="20" height="2" fill="#111"/>
+  <rect x="4" y="14" width="24" height="12" fill="#111"/>
+  <rect x="6" y="26" width="20" height="2" fill="#111"/>
+  <rect x="8" y="28" width="16" height="2" fill="#111"/>
+
+  <!-- Highlights -->
+  <rect x="10" y="14" width="4" height="2" fill="#555"/>
+  <rect x="8" y="16" width="4" height="2" fill="#444"/>
+  <rect x="8" y="18" width="2" height="2" fill="#666"/>
+
+  <!-- Cap -->
+  <rect x="16" y="8" width="6" height="2" fill="#666"/>
+  <rect x="18" y="6" width="2" height="2" fill="#777"/>
+
+  <!-- Bottom shadow -->
+  <rect x="10" y="30" width="12" height="2" fill="#00000033"/>
+</svg>`,
+        actions: "wait_until_collision; explode 30; break;",
+        isAdminPetal: false,
+    },
+    flower: {
+        name: "Flower",
+        damage: 5,
+        health: 15,
+        size: 1.0,
+        cooldown: 2000,
+        description: "Why is it whole???",
+        color: "#9B59B6",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="-30 -30 60 60" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="eye-clip">
+      <ellipse cx="-7" cy="-4.8" rx="3.2" ry="6.5" />
+      <ellipse cx="7" cy="-4.8" rx="3.2" ry="6.5" />
+    </clipPath>
+  </defs>
+
+  <circle cx="0" cy="0" r="26.5" fill="#CFBB50" />
+
+  <circle cx="0" cy="0" r="23.5" fill="#FFE763" />
+
+  <path d="M -6 10 Q 0 14.5 6 10" fill="none" stroke="#000" stroke-width="1.7" stroke-linecap="round" />
+
+  <ellipse cx="-7" cy="-4.8" rx="3.2" ry="6.5" fill="#000" />
+  <ellipse cx="7" cy="-4.8" rx="3.2" ry="6.5" fill="#000" />
+
+  <g clip-path="url(#eye-clip)">
+    <circle cx="-5.2" cy="-4.8" r="3" fill="#fff" />
+    <circle cx="8.8" cy="-4.8" r="3" fill="#fff" />
+  </g>
+
+  <ellipse cx="-7" cy="-4.8" rx="3.2" ry="6.5" fill="none" stroke="#000" stroke-width="1" />
+  <ellipse cx="7" cy="-4.8" rx="3.2" ry="6.5" fill="none" stroke="#000" stroke-width="1" />
+</svg>`,
+        projectile: {
+            count: 5,
+            distance: 100,
+            speed: 200,
+            spreadAngle: 72,
+        },
+        isAdminPetal: false
+    },
+    raindrop: {
+        name: "Raindrop",
+        damage: 5,
+        health: 15,
+        size: 1.0,
+        cooldown: 2000,
+        description: "The grass grows and damages mobs around you",
+        color: "#00ffff",
+        count: 1,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-70.5 -72 144 144">
+  <path fill="#308eb0" d="
+    M -63.56 6.62 
+    C -63.56 -29.24 -34.46 -58.32 1.44 -58.32 
+    C 18.67 -58.32 35.21 -51.47 47.39 -39.30 
+    C 59.58 -27.12 66.43 -10.60 66.43 6.62 
+    C 66.43 42.49 37.33 71.56 1.44 71.56 
+    C -34.46 71.56 -63.56 42.49 -63.56 6.62 Z" />
+
+  <path fill="#308eb0" d="
+    M -21.97 -48.36 
+    C -21.97 -61.28 -11.49 -71.74 1.44 -71.74 
+    C 7.64 -71.74 13.59 -69.28 17.98 -64.90 
+    C 22.37 -60.51 24.84 -54.56 24.84 -48.36 
+    C 24.84 -35.45 14.36 -24.98 1.44 -24.98 
+    C -11.49 -24.98 -21.97 -35.45 -21.97 -48.36 Z" />
+
+  <path fill="#308eb0" d="
+    M -39.79 -43.45 
+    L -12.95 -66.93 
+    L -14.86 -50.15 Z" />
+
+  <path fill="#308eb0" d="
+    M 42.66 -43.45 
+    L 15.82 -66.93 
+    L 17.73 -50.15 Z" />
+
+  <path fill="#43a6c9" d="
+    M -31.06 39.12 
+    C -49.01 21.17 -49.01 -7.93 -31.06 -25.88 
+    Q -16.50 -40.43 1.44 -51.61 
+    Q 19.38 -40.43 33.93 -25.88 
+    C 51.88 -7.93 51.88 21.17 33.93 39.12 
+    C 15.99 57.07 -13.11 57.07 -31.06 39.12 Z" />
+
+  <path fill="#97d7ed" d="
+    M -48.69 27.06 
+    C -57.95 5.00 -51.21 -20.54 -32.27 -35.16 
+    L -22.35 -22.32 
+    C -35.48 -12.19 -40.14 5.50 -33.73 20.79 Z" />
+
+  <path fill="#97d7ed" d="
+    M -34.85 -31.57 
+    C -33.18 -35.66 -28.52 -37.62 -24.43 -35.95 
+    C -22.47 -35.15 -20.91 -33.60 -20.09 -31.64 
+    C -19.27 -29.69 -19.26 -27.49 -20.06 -25.53 
+    C -21.73 -21.44 -26.39 -19.49 -30.48 -21.16 
+    C -34.56 -22.83 -36.52 -27.49 -34.85 -31.57 Z" />
+
+  <path fill="#97d7ed" d="
+    M -48.63 20.85 
+    C -46.96 16.77 -42.30 14.81 -38.21 16.48 
+    C -36.25 17.28 -34.69 18.83 -33.87 20.78 
+    C -33.05 22.74 -33.04 24.94 -33.84 26.90 
+    C -35.51 30.98 -40.17 32.94 -44.26 31.27 
+    C -48.34 29.60 -50.30 24.94 -48.63 20.85 Z" />
+</svg>
+`,
+        isAdminPetal: false
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,

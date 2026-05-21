@@ -1,6 +1,189 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+// Rarity ordering kept in sync with petals.RARITY_LEVELS so the client computes
+// the same aura radius the server uses. Duplicating it (rather than importing
+// petals.ts) keeps this draw layer free of heavy dependencies and matches the
+// pattern used elsewhere in the graphics module.
+const RAINDROP_RARITY_INDEX = {
+    common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4,
+    mythic: 5, ultra: 6, super: 7, unique: 8, apex: 9
+};
+const RAINDROP_AURA_BASE_RADIUS = 180;
+const RAINDROP_AURA_RADIUS_PER_RARITY = 18;
+function getRaindropAuraRadiusFromLoadout(player) {
+    if (!player.loadout)
+        return 0;
+    let best = 0;
+    for (let i = 0; i < player.loadout.length && i < 10; i++) {
+        const item = player.loadout[i];
+        if (!item || item.type !== 'petal' || item.petalType !== 'raindrop' || !item.rarity)
+            continue;
+        if (item.onCooldown)
+            continue;
+        const idx = RAINDROP_RARITY_INDEX[item.rarity] ?? 0;
+        const r = RAINDROP_AURA_BASE_RADIUS + idx * RAINDROP_AURA_RADIUS_PER_RARITY;
+        if (r > best)
+            best = r;
+    }
+    return best;
+}
+const raindropTrails = new Map();
+const RAINDROP_TILE_LIFETIME_MS = 7000;
+const RAINDROP_DOT_LIFETIME_MS = 1200;
+const RAINDROP_TILE_SPAWN_INTERVAL_MS = 120;
+const RAINDROP_DOT_SPAWN_INTERVAL_MS = 90;
+// Cap memory in the (rare) case a player camps in one spot with a huge aura.
+const RAINDROP_MAX_TILES_PER_PLAYER = 400;
+const RAINDROP_MAX_DOTS_PER_PLAYER = 80;
+const FLOWER_COLORS = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#00ffff", "#ff00ff"];
+core_1.Graphics.prototype.drawRaindropAuras = function (players) {
+    const now = Date.now();
+    const viewW = this.canvas.width / (this.zoomLevel * this.renderScale);
+    const viewH = this.canvas.height / (this.zoomLevel * this.renderScale);
+    const viewLeft = this.cameraX;
+    const viewTop = this.cameraY;
+    const viewRight = viewLeft + viewW;
+    const viewBottom = viewTop + viewH;
+    // Spawn new tiles/dots for any player currently emitting an aura. Cleanup
+    // for players who no longer have raindrop (or who disconnected) happens
+    // naturally when their trails finish fading and we drop the empty entry.
+    for (const player of players.values()) {
+        if (player.isDead)
+            continue;
+        const radius = getRaindropAuraRadiusFromLoadout(player);
+        if (radius <= 0)
+            continue;
+        let trail = raindropTrails.get(player.id);
+        if (!trail) {
+            trail = { tiles: [], dots: [], lastTileSpawn: 0, lastDotSpawn: 0 };
+            raindropTrails.set(player.id, trail);
+        }
+        if (now - trail.lastTileSpawn >= RAINDROP_TILE_SPAWN_INTERVAL_MS) {
+            trail.lastTileSpawn = now;
+            const ang = Math.random() * Math.PI * 2;
+            const r = Math.sqrt(Math.random()) * radius * 0.92;
+            trail.tiles.push({
+                x: player.x + Math.cos(ang) * r,
+                y: player.y + Math.sin(ang) * r,
+                spawnedAt: now,
+                kind: Math.random() < 0.45 ? 1 : 0,
+                seedA: Math.random(),
+                seedB: Math.random(),
+                colorIndex: Math.floor(Math.random() * FLOWER_COLORS.length)
+            });
+            if (trail.tiles.length > RAINDROP_MAX_TILES_PER_PLAYER) {
+                trail.tiles.splice(0, trail.tiles.length - RAINDROP_MAX_TILES_PER_PLAYER);
+            }
+        }
+        if (now - trail.lastDotSpawn >= RAINDROP_DOT_SPAWN_INTERVAL_MS) {
+            trail.lastDotSpawn = now;
+            const ang = Math.random() * Math.PI * 2;
+            const r = Math.sqrt(Math.random()) * radius * 0.9;
+            trail.dots.push({
+                x: player.x + Math.cos(ang) * r,
+                y: player.y + Math.sin(ang) * r,
+                spawnedAt: now
+            });
+            if (trail.dots.length > RAINDROP_MAX_DOTS_PER_PLAYER) {
+                trail.dots.splice(0, trail.dots.length - RAINDROP_MAX_DOTS_PER_PLAYER);
+            }
+        }
+    }
+    // Render and age all trails (including those whose owner no longer has
+    // raindrop equipped — their tiles still fade out gracefully).
+    for (const [playerId, trail] of raindropTrails) {
+        // Drop expired entries
+        let tileWrite = 0;
+        for (let i = 0; i < trail.tiles.length; i++) {
+            const t = trail.tiles[i];
+            if (now - t.spawnedAt < RAINDROP_TILE_LIFETIME_MS) {
+                trail.tiles[tileWrite++] = t;
+            }
+        }
+        trail.tiles.length = tileWrite;
+        let dotWrite = 0;
+        for (let i = 0; i < trail.dots.length; i++) {
+            const d = trail.dots[i];
+            if (now - d.spawnedAt < RAINDROP_DOT_LIFETIME_MS) {
+                trail.dots[dotWrite++] = d;
+            }
+        }
+        trail.dots.length = dotWrite;
+        if (trail.tiles.length === 0 && trail.dots.length === 0) {
+            raindropTrails.delete(playerId);
+            continue;
+        }
+        this.ctx.save();
+        for (let i = 0; i < trail.tiles.length; i++) {
+            const tile = trail.tiles[i];
+            if (tile.x + 8 < viewLeft || tile.x - 8 > viewRight ||
+                tile.y + 8 < viewTop || tile.y - 8 > viewBottom)
+                continue;
+            const age = now - tile.spawnedAt;
+            // Grow for the first 200ms, hold, fade over the final 30%.
+            const growT = Math.min(1, age / 200);
+            const fadeT = age < RAINDROP_TILE_LIFETIME_MS * 0.7
+                ? 1
+                : 1 - (age - RAINDROP_TILE_LIFETIME_MS * 0.7) / (RAINDROP_TILE_LIFETIME_MS * 0.3);
+            const alpha = Math.max(0, Math.min(1, fadeT));
+            const scale = growT;
+            this.ctx.globalAlpha = alpha;
+            if (tile.kind === 1) {
+                // Tiny 5-petal flower.
+                const petalR = (2.2 + tile.seedA * 1.0) * scale;
+                this.ctx.fillStyle = FLOWER_COLORS[tile.colorIndex];
+                this.ctx.lineWidth = 1;
+                const base = tile.seedB * Math.PI * 2;
+                for (let p = 0; p < 5; p++) {
+                    const pa = base + (p / 5) * Math.PI * 2;
+                    this.ctx.beginPath();
+                    this.ctx.arc(tile.x + Math.cos(pa) * petalR, tile.y + Math.sin(pa) * petalR, petalR, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                }
+                this.ctx.fillStyle = '#f4d65a';
+                this.ctx.beginPath();
+                this.ctx.arc(tile.x, tile.y, 1.4 * scale, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            else {
+                // Grass blade.
+                const lean = (tile.seedA - 0.5) * 6;
+                const height = (5 + tile.seedB * 3) * scale;
+                this.ctx.strokeStyle = '#3aa15c';
+                this.ctx.lineWidth = 1.6;
+                this.ctx.lineCap = 'round';
+                this.ctx.beginPath();
+                this.ctx.moveTo(tile.x, tile.y + 3 * scale);
+                this.ctx.quadraticCurveTo(tile.x + lean * 0.5, tile.y - 1, tile.x + lean, tile.y - height);
+                this.ctx.stroke();
+            }
+        }
+        for (let i = 0; i < trail.dots.length; i++) {
+            const dot = trail.dots[i];
+            if (dot.x + 6 < viewLeft || dot.x - 6 > viewRight ||
+                dot.y + 12 < viewTop || dot.y - 6 > viewBottom)
+                continue;
+            const age = now - dot.spawnedAt;
+            const t = age / RAINDROP_DOT_LIFETIME_MS;
+            if (t >= 1)
+                continue;
+            const alpha = 1 - t;
+            const rise = t * 8;
+            this.ctx.globalAlpha = 0.55 * alpha;
+            this.ctx.fillStyle = '#bce7ff';
+            this.ctx.strokeStyle = '#5fb6e8';
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            this.ctx.arc(dot.x, dot.y - rise, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+        }
+        this.ctx.globalAlpha = 1;
+        this.ctx.restore();
+    }
+};
 core_1.Graphics.prototype.drawGroundPollens = function (groundPollens) {
     const now = Date.now();
     this.ctx.save();

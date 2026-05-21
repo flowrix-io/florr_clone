@@ -72,6 +72,8 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     if (groundPollens && groundPollens.size > 0) {
         this.drawGroundPollens(groundPollens);
     }
+    // Draw raindrop auras (grass + droplets) below enemies and players
+    this.drawRaindropAuras(players);
     // Draw game objects
     this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
     // Draw explosion effects (in world coordinates, before camera restore)
