@@ -2,9 +2,17 @@
  * Lightweight WebSocket client wrapper that provides a socket.io-compatible API.
  * Uses browser-native WebSocket for minimal overhead.
  *
- * Message format: JSON arrays: ["eventName", ...args]
- * System events: ["__sys", type, data] for connection handshake
+ * Wire format: custom tag-based binary encoding of [eventName, ...args] arrays
+ * (see binary_codec.ts). Frames are sent as binary WebSocket messages.
+ * System events: ["__sys", type, data] for connection handshake.
  */
+
+import { encode, decode } from './binary_codec';
+
+// Per-event bandwidth profiling. The wrapper records the true wire-byte size of every
+// frame (encoded length, not a JSON estimate) split by event name and direction.
+// game.ts reads these via getEventStats() to render a top-consumers overlay.
+export interface EventByteStats { in: number; out: number; }
 
 export class WSClientSocket {
     id: string | null = null;
@@ -19,7 +27,25 @@ export class WSClientSocket {
     private reconnectDelay: number = 1000;
     private maxReconnectDelay: number = 10000;
     private currentReconnectDelay: number = 1000;
-    private pendingMessages: string[] = [];
+    private pendingMessages: Uint8Array[] = [];
+
+    private eventBytes: Map<string, EventByteStats> = new Map();
+
+    /** Return a snapshot of per-event byte counts since last reset. */
+    getEventStats(): Map<string, EventByteStats> {
+        return this.eventBytes;
+    }
+
+    /** Reset all per-event byte counts (typically called once per second). */
+    resetEventStats(): void {
+        this.eventBytes.clear();
+    }
+
+    private recordBytes(event: string, bytes: number, dir: 'in' | 'out') {
+        let s = this.eventBytes.get(event);
+        if (!s) { s = { in: 0, out: 0 }; this.eventBytes.set(event, s); }
+        if (dir === 'in') s.in += bytes; else s.out += bytes;
+    }
 
     constructor(url: string, _options?: any) {
         this.url = url;
@@ -31,6 +57,9 @@ export class WSClientSocket {
             // Convert http(s) to ws(s)
             const wsUrl = this.url.replace(/^http/, 'ws') + '/ws';
             this.ws = new WebSocket(wsUrl);
+            // Receive binary frames as ArrayBuffer rather than Blob (Blob would force
+            // an async decode path); msgpack accepts Uint8Array views.
+            this.ws.binaryType = 'arraybuffer';
 
             this.ws.onopen = () => {
                 // Wait for __sys id message before firing 'connect'
@@ -39,10 +68,21 @@ export class WSClientSocket {
 
             this.ws.onmessage = (event: MessageEvent) => {
                 try {
-                    const msg = JSON.parse(event.data);
+                    // Binary frames arrive as ArrayBuffer (binaryType set above).
+                    let msg: any;
+                    let wireBytes = 0;
+                    if (event.data instanceof ArrayBuffer) {
+                        wireBytes = event.data.byteLength;
+                        msg = decode(new Uint8Array(event.data));
+                    } else {
+                        return;
+                    }
                     if (!Array.isArray(msg) || msg.length < 1) return;
 
                     const [eventName, ...args] = msg;
+                    if (typeof eventName === 'string') {
+                        this.recordBytes(eventName, wireBytes, 'in');
+                    }
 
                     // Handle system events
                     if (eventName === '__sys') {
@@ -152,7 +192,8 @@ export class WSClientSocket {
     }
 
     emit(event: string, ...args: any[]): this {
-        const msg = JSON.stringify([event, ...args]);
+        const msg = encode([event, ...args]);
+        this.recordBytes(event, msg.byteLength, 'out');
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(msg);
         } else {

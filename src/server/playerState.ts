@@ -35,6 +35,7 @@ import {
     mobProjectiles,
     playerProjectiles,
     petalLastProjectileTime,
+    allocatePlayerProjectileId,
     itemExpirationTimeouts,
     ITEM_EXPIRATION_TIMES,
     groundPollens,
@@ -1574,7 +1575,7 @@ export function updatePlayerState(
                         }
 
                         const projectile: PlayerProjectile = {
-                            id: `${petalId}_projectile_${currentTime}_${i}`,
+                            id: allocatePlayerProjectileId(),
                             playerId: player.id,
                             x: petalX,
                             y: petalY,

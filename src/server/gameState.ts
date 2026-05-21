@@ -75,8 +75,15 @@ export const petalLastProjectileTime: Map<string, number> = new Map(); // Track 
 // Delta sync: for each player, the set of projectile IDs they currently "know about" (i.e. were
 // told about via a spawn event and not yet told to remove). Used so we only re-broadcast a
 // projectile's full state once on spawn / viewport-enter, instead of every tick.
-export const knownMobProjectilesByPlayer: Map<string, Set<string>> = new Map();
-export const knownPlayerProjectilesByPlayer: Map<string, Set<string>> = new Map();
+export const knownMobProjectilesByPlayer: Map<string, Set<number>> = new Map();
+export const knownPlayerProjectilesByPlayer: Map<string, Set<number>> = new Map();
+
+// Monotonic counters for projectile IDs. Numeric IDs encode as 1-5 bytes in the binary codec
+// versus ~52 bytes for a 50-char string ID — a huge win for high-volume petals (gas/rainbow).
+let _nextMobProjectileId = 1;
+let _nextPlayerProjectileId = 1;
+export function allocateMobProjectileId(): number { return _nextMobProjectileId++; }
+export function allocatePlayerProjectileId(): number { return _nextPlayerProjectileId++; }
 
 // Pollen petals leave a damaging puff on the ground when they break.
 export interface GroundPollen {

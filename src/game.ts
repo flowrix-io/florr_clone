@@ -176,12 +176,11 @@ export class Game {
     private readonly MIN_INPUT_INTERVAL = 33; // ~30 TPS (match server tick rate)
     private connectionQuality: 'good' | 'medium' | 'slow' = 'good';
     private frameCount: number = 0;
-    private bytesReceived: number = 0;
-    private bytesSent: number = 0;
-    private lastBytesReceived: number = 0;
-    private lastBytesSent: number = 0;
     private incomingThroughput: number = 0;
     private outgoingThroughput: number = 0;
+    // Top per-event consumers (bytes/sec) refreshed once per second by the FPS counter,
+    // displayed in the stats overlay. Helps isolate which event is eating bandwidth.
+    private topBandwidthEvents: { event: string; bytes: number; dir: 'in' | 'out' }[] = [];
     private titleScreen: HTMLElement | null;
     private nameInput: HTMLInputElement | null;
     private exitButton: HTMLElement | null;
@@ -1212,10 +1211,26 @@ export class Game {
                 this.frameCount = 0;
                 this.fpsUpdateTime = frameStartMs;
 
-                this.incomingThroughput = this.bytesReceived - this.lastBytesReceived;
-                this.outgoingThroughput = this.bytesSent - this.lastBytesSent;
-                this.lastBytesReceived = this.bytesReceived;
-                this.lastBytesSent = this.bytesSent;
+                // Pull per-event wire-byte counters from the socket wrapper. These are
+                // *real* encoded byte sizes, not phantom JSON. We snapshot, total, sort
+                // the top consumers for the overlay, then reset so we report bytes/sec.
+                let inBytes = 0;
+                let outBytes = 0;
+                const topEvents: { event: string; bytes: number; dir: 'in' | 'out' }[] = [];
+                if (this.socket && (this.socket as any).getEventStats) {
+                    const stats = (this.socket as any).getEventStats() as Map<string, { in: number; out: number }>;
+                    for (const [event, s] of stats) {
+                        inBytes += s.in;
+                        outBytes += s.out;
+                        if (s.in > 0) topEvents.push({ event, bytes: s.in, dir: 'in' });
+                        if (s.out > 0) topEvents.push({ event, bytes: s.out, dir: 'out' });
+                    }
+                    topEvents.sort((a, b) => b.bytes - a.bytes);
+                    this.topBandwidthEvents = topEvents.slice(0, 5);
+                    (this.socket as any).resetEventStats?.();
+                }
+                this.incomingThroughput = inBytes;
+                this.outgoingThroughput = outBytes;
 
                 // Roll the per-frame work-time average over to the displayed
                 // value once per second alongside FPS.
@@ -1580,6 +1595,15 @@ export class Game {
         const pingStr = this.averagePing > 0 ? `${Math.round(this.averagePing)}ms` : '--';
         lines.push({ text: `Ping: ${pingStr} | In: ${this.formatBytes(this.incomingThroughput)}/s | Out: ${this.formatBytes(this.outgoingThroughput)}/s`, color: '#a78bfa' });
 
+        // Top per-event bandwidth consumers (real wire bytes/sec from the prior 1s window).
+        // Arrow indicates direction: ← incoming, → outgoing.
+        if (this.topBandwidthEvents.length > 0) {
+            const parts = this.topBandwidthEvents.map(e =>
+                `${e.dir === 'in' ? '←' : '→'} ${e.event} ${this.formatBytes(e.bytes)}/s`
+            );
+            lines.push({ text: `Top: ${parts.join(' | ')}`, color: '#a78bfa' });
+        }
+
         // Counters
         lines.push({ text: `Players: ${this.players.size}`, color: '#4ecdc4' });
         lines.push({ text: `Mobs: ${this.enemies.size}`, color: '#ff6b6b' });
@@ -1611,13 +1635,8 @@ export class Game {
         ctx.restore();
     }
 
-    public trackSocketBytes(bytes: number, direction: 'in' | 'out'): void {
-        if (direction === 'in') {
-            this.bytesReceived += bytes;
-        } else {
-            this.bytesSent += bytes;
-        }
-    }
+    // Bandwidth is tracked inside the WSClientSocket wrapper now (true wire bytes).
+    // game.ts pulls per-event counters in gameLoop() once per second.
 
     public updateConnectionQuality(ping: number): void {
         // Add ping to samples

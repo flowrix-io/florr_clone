@@ -114,12 +114,11 @@ class Game {
         this.MIN_INPUT_INTERVAL = 33; // ~30 TPS (match server tick rate)
         this.connectionQuality = 'good';
         this.frameCount = 0;
-        this.bytesReceived = 0;
-        this.bytesSent = 0;
-        this.lastBytesReceived = 0;
-        this.lastBytesSent = 0;
         this.incomingThroughput = 0;
         this.outgoingThroughput = 0;
+        // Top per-event consumers (bytes/sec) refreshed once per second by the FPS counter,
+        // displayed in the stats overlay. Helps isolate which event is eating bandwidth.
+        this.topBandwidthEvents = [];
         this.playerHue = 0;
         this.playerColor = 'hsl(0, 100%, 50%)';
         this.LOADOUT_SLOTS = 10;
@@ -966,10 +965,28 @@ class Game {
                 this.fpsCounter = this.frameCount;
                 this.frameCount = 0;
                 this.fpsUpdateTime = frameStartMs;
-                this.incomingThroughput = this.bytesReceived - this.lastBytesReceived;
-                this.outgoingThroughput = this.bytesSent - this.lastBytesSent;
-                this.lastBytesReceived = this.bytesReceived;
-                this.lastBytesSent = this.bytesSent;
+                // Pull per-event wire-byte counters from the socket wrapper. These are
+                // *real* encoded byte sizes, not phantom JSON. We snapshot, total, sort
+                // the top consumers for the overlay, then reset so we report bytes/sec.
+                let inBytes = 0;
+                let outBytes = 0;
+                const topEvents = [];
+                if (this.socket && this.socket.getEventStats) {
+                    const stats = this.socket.getEventStats();
+                    for (const [event, s] of stats) {
+                        inBytes += s.in;
+                        outBytes += s.out;
+                        if (s.in > 0)
+                            topEvents.push({ event, bytes: s.in, dir: 'in' });
+                        if (s.out > 0)
+                            topEvents.push({ event, bytes: s.out, dir: 'out' });
+                    }
+                    topEvents.sort((a, b) => b.bytes - a.bytes);
+                    this.topBandwidthEvents = topEvents.slice(0, 5);
+                    this.socket.resetEventStats?.();
+                }
+                this.incomingThroughput = inBytes;
+                this.outgoingThroughput = outBytes;
                 // Roll the per-frame work-time average over to the displayed
                 // value once per second alongside FPS.
                 this.frameTimeAvgMs = this.frameTimeSamples > 0
@@ -1321,6 +1338,12 @@ class Game {
         // Network
         const pingStr = this.averagePing > 0 ? `${Math.round(this.averagePing)}ms` : '--';
         lines.push({ text: `Ping: ${pingStr} | In: ${this.formatBytes(this.incomingThroughput)}/s | Out: ${this.formatBytes(this.outgoingThroughput)}/s`, color: '#a78bfa' });
+        // Top per-event bandwidth consumers (real wire bytes/sec from the prior 1s window).
+        // Arrow indicates direction: ← incoming, → outgoing.
+        if (this.topBandwidthEvents.length > 0) {
+            const parts = this.topBandwidthEvents.map(e => `${e.dir === 'in' ? '←' : '→'} ${e.event} ${this.formatBytes(e.bytes)}/s`);
+            lines.push({ text: `Top: ${parts.join(' | ')}`, color: '#a78bfa' });
+        }
         // Counters
         lines.push({ text: `Players: ${this.players.size}`, color: '#4ecdc4' });
         lines.push({ text: `Mobs: ${this.enemies.size}`, color: '#ff6b6b' });
@@ -1348,14 +1371,8 @@ class Game {
         }
         ctx.restore();
     }
-    trackSocketBytes(bytes, direction) {
-        if (direction === 'in') {
-            this.bytesReceived += bytes;
-        }
-        else {
-            this.bytesSent += bytes;
-        }
-    }
+    // Bandwidth is tracked inside the WSClientSocket wrapper now (true wire bytes).
+    // game.ts pulls per-event counters in gameLoop() once per second.
     updateConnectionQuality(ping) {
         // Add ping to samples
         this.pingSamples.push(ping);

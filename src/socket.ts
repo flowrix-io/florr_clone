@@ -109,43 +109,9 @@ export function initMultiPlayerMode(game: any, serverIp: string) {
 }
 
 function setupSocketListeners(game: any) {
-    // Track incoming bytes for network stats
-    game.socket.onAny((_event: string, ...args: any[]) => {
-        if (game.trackSocketBytes) {
-            let bytes = 0;
-            for (const arg of args) {
-                if (typeof arg === 'string') {
-                    bytes += arg.length;
-                } else if (arg instanceof ArrayBuffer) {
-                    bytes += arg.byteLength;
-                } else if (arg !== undefined) {
-                    try { bytes += JSON.stringify(arg).length; } catch { bytes += 64; }
-                }
-            }
-            game.trackSocketBytes(bytes, 'in');
-        }
-    });
-
-    // Track outgoing bytes by wrapping emit
-    const originalEmit = game.socket.emit.bind(game.socket);
-    game.socket.emit = (event: string, ...args: any[]) => {
-        if (game.trackSocketBytes) {
-            let bytes = event.length;
-            for (const arg of args) {
-                if (typeof arg === 'string') {
-                    bytes += arg.length;
-                } else if (arg instanceof ArrayBuffer) {
-                    bytes += arg.byteLength;
-                } else if (typeof arg === 'function') {
-                    // callback, skip
-                } else if (arg !== undefined) {
-                    try { bytes += JSON.stringify(arg).length; } catch { bytes += 64; }
-                }
-            }
-            game.trackSocketBytes(bytes, 'out');
-        }
-        return originalEmit(event, ...args);
-    };
+    // Per-event wire-byte counters now live on the WSClientSocket wrapper (see
+    // ws_client.ts getEventStats). The wrapper records true encoded byte sizes,
+    // so we no longer need the old JSON-stringify estimator here.
 
     game.socket.on('connect', () => {
         const connectTime = performance.now();
@@ -595,94 +561,46 @@ function setupSocketListeners(game: any) {
     });
 
     // Delta projectile protocol — see server.ts updateMobProjectiles for the wire format.
-    // The client adds projectiles on mpSpawn / ppSpawn, removes them on mpRemove / ppRemove,
-    // optionally corrects their position on mpSync / ppSync, and dead-reckons positions each
-    // frame in Game.update() using the angle/speed stored on the projectile.
-    const expandMobSpawn = (s: any) => ({
+    // The client adds projectiles on mpSpawn / ppSpawn, removes them on mpRemove /
+    // ppRemove, and dead-reckons positions each frame in Game.update() using the
+    // angle/speed stored on the projectile. No periodic re-sync: straight-line motion
+    // is deterministic, and sync packets only ever caused stutter under latency jitter.
+    const expandSpawn = (s: any) => ({
         id: s.i,
-        enemyId: s.e,
         x: s.x,
         y: s.y,
-        startX: s.x,
-        startY: s.y,
         angle: s.a,
         speed: s.s,
-        distance: s.d,
+        distance: 0,
         maxDistance: s.mD,
         petalType: s.pT,
         petalRarity: s.pR,
-        damage: s.dm,
         size: s.sz,
-        health: s.h,
-        maxHealth: s.mH,
-        spawnTime: s.t,
-        _lastClientTickMs: performance.now()
-    });
-    const expandPlayerSpawn = (s: any) => ({
-        id: s.i,
-        playerId: s.p,
-        x: s.x,
-        y: s.y,
-        startX: s.x,
-        startY: s.y,
-        angle: s.a,
-        speed: s.s,
-        distance: s.d,
-        maxDistance: s.mD,
-        petalType: s.pT,
-        petalRarity: s.pR,
-        damage: s.dm,
-        size: s.sz,
-        health: s.h,
-        maxHealth: s.mH,
-        spawnTime: s.t,
         _lastClientTickMs: performance.now()
     });
 
     game.socket.on('mpSpawn', (spawned: any[]) => {
         const nowMs = performance.now();
         for (const s of spawned) {
-            const proj = expandMobSpawn(s);
+            const proj = expandSpawn(s);
             proj._lastClientTickMs = nowMs;
             game.mobProjectiles.set(proj.id, proj);
         }
     });
-    game.socket.on('mpRemove', (ids: string[]) => {
+    game.socket.on('mpRemove', (ids: number[]) => {
         for (const id of ids) game.mobProjectiles.delete(id);
-    });
-    game.socket.on('mpSync', (entries: any[]) => {
-        const nowMs = performance.now();
-        for (const e of entries) {
-            const proj = game.mobProjectiles.get(e.i);
-            if (!proj) continue;
-            proj.x = e.x;
-            proj.y = e.y;
-            proj.distance = e.d;
-            proj._lastClientTickMs = nowMs;
-        }
     });
 
     game.socket.on('ppSpawn', (spawned: any[]) => {
         const nowMs = performance.now();
         for (const s of spawned) {
-            const proj = expandPlayerSpawn(s);
+            const proj = expandSpawn(s);
             proj._lastClientTickMs = nowMs;
             game.playerProjectiles.set(proj.id, proj);
         }
     });
-    game.socket.on('ppRemove', (ids: string[]) => {
+    game.socket.on('ppRemove', (ids: number[]) => {
         for (const id of ids) game.playerProjectiles.delete(id);
-    });
-    game.socket.on('ppSync', (entries: any[]) => {
-        const nowMs = performance.now();
-        for (const e of entries) {
-            const proj = game.playerProjectiles.get(e.i);
-            if (!proj) continue;
-            proj.x = e.x;
-            proj.y = e.y;
-            proj.distance = e.d;
-            proj._lastClientTickMs = nowMs;
-        }
     });
 
     game.socket.on('groundPollenSpawned', (pollen: any) => {
@@ -1420,16 +1338,19 @@ function setupSocketListeners(game: any) {
         }
     });
 
-    // Listen for server game state updates for better synchronization
-    // Compact delta protocol: payload uses short keys and omits unchanged fields.
-    // P=changed players, E=changed enemies, U=unchanged enemy ids (still in viewport), t=timestamp.
+    // Listen for server game state updates for better synchronization.
+    // Pure delta protocol — server only sends what *changed* this tick:
+    //   P = newly-changed players (delta fields)
+    //   E = newly-changed enemies (delta fields, or full fields on first sight)
+    //   R = enemies to remove (left viewport or died)
+    // Unmentioned entities keep their current state.
     // Per-player keys: i,n,x,y,a,h,H,l,s,e,f,q,m,v,V,z, p (petalPositions array).
     // Per-petal keys: L=loadoutIndex,I=instanceIndex,x,y,N=noPhysics.
     // Per-enemy keys: i,t=type,T=tier,x,y,a,h,H. Missing fields = unchanged.
     game.socket.on('gameStateUpdate', (data: any) => {
         const serverPlayers: any[] | undefined = data.P;
         const serverEnemies: any[] | undefined = data.E;
-        const unchangedEnemyIds: string[] | undefined = data.U;
+        const removedEnemyIds: string[] | undefined = data.R;
 
         if (serverPlayers) {
             for (const sp of serverPlayers) {
@@ -1536,15 +1457,10 @@ function setupSocketListeners(game: any) {
             }
         }
 
-        // Always run cleanup, even when the payload has no enemy fields — a tick with
-        // no visible enemies must still drop ones that left the viewport.
-        const serverEnemyIds = new Set<string>();
-        if (serverEnemies) for (const e of serverEnemies) serverEnemyIds.add(e.i);
-        if (unchangedEnemyIds) for (const id of unchangedEnemyIds) serverEnemyIds.add(id);
-        for (const [enemyId] of game.enemies) {
-            if (!serverEnemyIds.has(enemyId)) {
-                handleEnemyOutOfView(enemyId);
-            }
+        // Explicit removes only: drop just the enemies the server told us to drop.
+        // Stationary / unchanged enemies aren't mentioned at all and stay as-is.
+        if (removedEnemyIds) {
+            for (const id of removedEnemyIds) handleEnemyOutOfView(id);
         }
 
         if (serverEnemies) {

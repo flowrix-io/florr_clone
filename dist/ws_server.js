@@ -3,13 +3,39 @@
  * Lightweight WebSocket server wrapper that provides a socket.io-compatible API.
  * Uses raw WebSocket (ws) for minimal protocol overhead.
  *
- * Message format: JSON arrays: ["eventName", ...args]
- * System events: ["__sys", type, data] for connection handshake
+ * Wire format: custom tag-based binary encoding of [eventName, ...args] arrays
+ * (see binary_codec.ts). Sent as binary WebSocket frames. ~50–70% smaller than
+ * the previous JSON-array format because numbers travel as 1–9 raw bytes
+ * (vs. their decimal-string length) and repeated short property names cost
+ * 1 + N bytes instead of `"name":` plus quotes.
+ *
+ * System events: ["__sys", type, data] for connection handshake.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Server = exports.WSServer = exports.WSSocket = void 0;
+exports.getServerEventStats = getServerEventStats;
+exports.resetServerEventStats = resetServerEventStats;
 const ws_1 = require("ws");
 const crypto_1 = require("crypto");
+const binary_codec_1 = require("./binary_codec");
+const eventByteStats = new Map();
+function recordBytes(event, bytes, dir) {
+    let s = eventByteStats.get(event);
+    if (!s) {
+        s = { in: 0, out: 0, count_in: 0, count_out: 0 };
+        eventByteStats.set(event, s);
+    }
+    if (dir === 'in') {
+        s.in += bytes;
+        s.count_in++;
+    }
+    else {
+        s.out += bytes;
+        s.count_out++;
+    }
+}
+function getServerEventStats() { return eventByteStats; }
+function resetServerEventStats() { eventByteStats.clear(); }
 class WSSocket {
     constructor(ws, id, server) {
         this.handlers = new Map();
@@ -21,9 +47,23 @@ class WSSocket {
         this.server = server;
         ws.on('message', (raw) => {
             try {
-                const msg = JSON.parse(raw.toString());
+                // `raw` is a Buffer, an array of fragmented Buffers, or an ArrayBuffer
+                // depending on ws config. Normalize to a single Uint8Array for the codec.
+                let bytes;
+                if (Array.isArray(raw)) {
+                    bytes = Buffer.concat(raw);
+                }
+                else if (raw instanceof ArrayBuffer) {
+                    bytes = new Uint8Array(raw);
+                }
+                else {
+                    bytes = raw;
+                }
+                const msg = (0, binary_codec_1.decode)(bytes);
                 if (!Array.isArray(msg) || msg.length < 1)
                     return;
+                if (typeof msg[0] === 'string')
+                    recordBytes(msg[0], bytes.byteLength, 'in');
                 const [event, ...args] = msg;
                 // Fire onAny handlers
                 for (const handler of this.anyHandlers) {
@@ -88,7 +128,24 @@ class WSSocket {
         if (this.ws.readyState !== ws_1.WebSocket.OPEN)
             return false;
         try {
-            this.ws.send(JSON.stringify([event, ...args]));
+            // Binary frame; ws sends Uint8Array as a binary WebSocket message.
+            const payload = (0, binary_codec_1.encode)([event, ...args]);
+            recordBytes(event, payload.byteLength, 'out');
+            this.ws.send(payload);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+    /** @internal Send a pre-encoded payload (used by WSServer.emit for broadcasts). */
+    sendRaw(payload, event) {
+        if (this.ws.readyState !== ws_1.WebSocket.OPEN)
+            return false;
+        try {
+            this.ws.send(payload);
+            if (event)
+                recordBytes(event, payload.byteLength, 'out');
             return true;
         }
         catch {
@@ -148,7 +205,7 @@ class WSServer {
             const socket = new WSSocket(ws, id, this);
             this.sockets_map.set(id, socket);
             // Send the client its ID
-            ws.send(JSON.stringify(['__sys', 'id', id]));
+            ws.send((0, binary_codec_1.encode)(['__sys', 'id', id]));
             // Notify connection handlers
             for (const handler of this.connectionHandlers) {
                 handler(socket);
@@ -163,11 +220,13 @@ class WSServer {
     }
     /** Broadcast to all connected clients */
     emit(event, ...args) {
-        const msg = JSON.stringify([event, ...args]);
+        // Encode once, send to all peers. WSSocket.emit would re-encode per peer; here
+        // we send the shared buffer directly to avoid N redundant encodes for broadcasts.
+        const payload = (0, binary_codec_1.encode)([event, ...args]);
         for (const [, socket] of this.sockets_map) {
             if (socket.connected) {
                 try {
-                    socket.emit(event, ...args);
+                    socket.sendRaw(payload, event);
                 }
                 catch {
                     // Skip failed sends

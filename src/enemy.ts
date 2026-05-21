@@ -10,7 +10,7 @@ export interface PoisonEffect {
 }
 
 export interface MobProjectile {
-  id: string;
+  id: number;
   enemyId: string;
   x: number;
   y: number;
@@ -31,7 +31,7 @@ export interface MobProjectile {
 }
 
 export interface PlayerProjectile {
-  id: string;
+  id: number;
   playerId: string;
   x: number;
   y: number;

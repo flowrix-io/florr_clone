@@ -1379,7 +1379,7 @@ function updatePlayerState(player, deltaTime, deps) {
                             finalAngle = projectileAngle + spreadOffset;
                         }
                         const projectile = {
-                            id: `${petalId}_projectile_${currentTime}_${i}`,
+                            id: (0, gameState_1.allocatePlayerProjectileId)(),
                             playerId: player.id,
                             x: petalX,
                             y: petalY,

@@ -3,13 +3,34 @@
  * Lightweight WebSocket client wrapper that provides a socket.io-compatible API.
  * Uses browser-native WebSocket for minimal overhead.
  *
- * Message format: JSON arrays: ["eventName", ...args]
- * System events: ["__sys", type, data] for connection handshake
+ * Wire format: custom tag-based binary encoding of [eventName, ...args] arrays
+ * (see binary_codec.ts). Frames are sent as binary WebSocket messages.
+ * System events: ["__sys", type, data] for connection handshake.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WSClientSocket = void 0;
 exports.io = io;
+const binary_codec_1 = require("./binary_codec");
 class WSClientSocket {
+    /** Return a snapshot of per-event byte counts since last reset. */
+    getEventStats() {
+        return this.eventBytes;
+    }
+    /** Reset all per-event byte counts (typically called once per second). */
+    resetEventStats() {
+        this.eventBytes.clear();
+    }
+    recordBytes(event, bytes, dir) {
+        let s = this.eventBytes.get(event);
+        if (!s) {
+            s = { in: 0, out: 0 };
+            this.eventBytes.set(event, s);
+        }
+        if (dir === 'in')
+            s.in += bytes;
+        else
+            s.out += bytes;
+    }
     constructor(url, _options) {
         this.id = null;
         this.connected = false;
@@ -23,6 +44,7 @@ class WSClientSocket {
         this.maxReconnectDelay = 10000;
         this.currentReconnectDelay = 1000;
         this.pendingMessages = [];
+        this.eventBytes = new Map();
         this.url = url;
         this.connect();
     }
@@ -31,16 +53,31 @@ class WSClientSocket {
             // Convert http(s) to ws(s)
             const wsUrl = this.url.replace(/^http/, 'ws') + '/ws';
             this.ws = new WebSocket(wsUrl);
+            // Receive binary frames as ArrayBuffer rather than Blob (Blob would force
+            // an async decode path); msgpack accepts Uint8Array views.
+            this.ws.binaryType = 'arraybuffer';
             this.ws.onopen = () => {
                 // Wait for __sys id message before firing 'connect'
                 this.currentReconnectDelay = this.reconnectDelay;
             };
             this.ws.onmessage = (event) => {
                 try {
-                    const msg = JSON.parse(event.data);
+                    // Binary frames arrive as ArrayBuffer (binaryType set above).
+                    let msg;
+                    let wireBytes = 0;
+                    if (event.data instanceof ArrayBuffer) {
+                        wireBytes = event.data.byteLength;
+                        msg = (0, binary_codec_1.decode)(new Uint8Array(event.data));
+                    }
+                    else {
+                        return;
+                    }
                     if (!Array.isArray(msg) || msg.length < 1)
                         return;
                     const [eventName, ...args] = msg;
+                    if (typeof eventName === 'string') {
+                        this.recordBytes(eventName, wireBytes, 'in');
+                    }
                     // Handle system events
                     if (eventName === '__sys') {
                         const [type, data] = args;
@@ -134,7 +171,8 @@ class WSClientSocket {
         return this;
     }
     emit(event, ...args) {
-        const msg = JSON.stringify([event, ...args]);
+        const msg = (0, binary_codec_1.encode)([event, ...args]);
+        this.recordBytes(event, msg.byteLength, 'out');
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(msg);
         }

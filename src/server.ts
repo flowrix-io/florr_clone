@@ -1,7 +1,7 @@
 import express from 'express';
 import { createServer } from 'https';
 import { createServer as createHttpServer } from 'http';
-import { Server, Socket } from './ws_server';
+import { Server, Socket, getServerEventStats, resetServerEventStats } from './ws_server';
 import path from 'path';
 import v8 from 'v8';
 import fs from 'fs';
@@ -145,6 +145,8 @@ import {
     petalLastProjectileTime,
     knownMobProjectilesByPlayer,
     knownPlayerProjectilesByPlayer,
+    allocateMobProjectileId,
+    allocatePlayerProjectileId,
     itemExpirationTimeouts,
     petalCooldownTimeouts,
     ITEM_EXPIRATION_TIMES,
@@ -4128,7 +4130,7 @@ function moveEnemies() {
                                 const scaledSize = petalStats.size * sizeScale;
 
                                 const projectile: MobProjectile = {
-                                    id: `${enemy.id}_projectile_${currentTime}_${i}`,
+                                    id: allocateMobProjectileId(),
                                     enemyId: enemy.id,
                                     x: enemy.x,
                                     y: enemy.y,
@@ -4327,7 +4329,7 @@ function moveEnemies() {
                             const scaledSize = petalStats.size * sizeScale;
 
                             const projectile: MobProjectile = {
-                                id: `${enemy.id}_projectile_${currentTime}_${i}`,
+                                id: allocateMobProjectileId(),
                                 enemyId: enemy.id,
                                 x: enemy.x,
                                 y: enemy.y,
@@ -4740,28 +4742,14 @@ function updateMobProjectiles(deltaTimeMs: number) {
         }
     }
 
-    // Delta-sync mob projectiles to nearby players. Instead of broadcasting every
-    // projectile's full state every tick (~200 B JSON each at 30 TPS), we only emit:
-    //   mpSpawn — projectiles that have just entered this player's viewport (full data)
+    // Delta-sync mob projectiles to nearby players. Projectiles travel in straight lines
+    // at constant velocity, so the client can dead-reckon their positions perfectly from
+    // a single spawn message — no periodic re-syncs needed. (Earlier we sent re-sync
+    // packets to "correct" client positions; they only ever snapped projectiles to a
+    // stale server position under latency jitter, producing visible stutter.)
+    //
+    //   mpSpawn  — projectiles newly in this player's viewport (slim spawn payload)
     //   mpRemove — projectiles that have left viewport or been destroyed (ids only)
-    //   mpSync  — periodic position correction whose cadence scales with speed
-    // The client dead-reckons positions between events using angle/speed.
-
-    const nowSync = Date.now();
-    // Determine which projectiles need a position re-sync this tick. Faster projectiles
-    // get more frequent re-syncs (250 ms at high speed, capped at 2000 ms for slow ones).
-    const projectilesNeedingSync = new Set<string>();
-    for (let i = 0; i < mobProjectiles.length; i++) {
-        const proj = mobProjectiles[i];
-        const safeSpeed = proj.speed > 0.005 ? proj.speed : 0.005;
-        const syncInterval = Math.min(2000, Math.max(250, 100 / safeSpeed));
-        const lastSync = proj.lastSyncTime || proj.spawnTime;
-        if (nowSync - lastSync >= syncInterval) {
-            projectilesNeedingSync.add(proj.id);
-            proj.lastSyncTime = nowSync;
-        }
-    }
-
     for (const playerId of Object.keys(players)) {
         const player = players[playerId];
         if (!player) continue;
@@ -4777,8 +4765,7 @@ function updateMobProjectiles(deltaTimeMs: number) {
         }
 
         const spawned: any[] = [];
-        const synced: any[] = [];
-        const stillKnown = new Set<string>();
+        const stillKnown = new Set<number>();
         const ppx = player.x, ppy = player.y;
 
         for (let pi = 0; pi < mobProjectiles.length; pi++) {
@@ -4788,31 +4775,24 @@ function updateMobProjectiles(deltaTimeMs: number) {
             if ((dx < 0 ? -dx : dx) >= vw || (dy < 0 ? -dy : dy) >= vh) continue;
             stillKnown.add(proj.id);
             if (!known.has(proj.id)) {
-                // Compact spawn payload with short keys. Client reconstructs trajectory
-                // from (x,y) at time t with angle a and speed s.
+                // Only the fields the client actually renders / dead-reckons with.
+                // enemyId, startX/Y, damage, health/maxHealth, distance, spawnTime are
+                // not read on the client and would just inflate the payload.
                 spawned.push({
                     i: proj.id,
-                    e: proj.enemyId,
                     x: proj.x,
                     y: proj.y,
                     a: proj.angle,
                     s: proj.speed,
-                    d: proj.distance,
                     mD: proj.maxDistance,
                     pT: proj.petalType,
                     pR: proj.petalRarity,
-                    dm: proj.damage,
-                    sz: proj.size,
-                    h: proj.health,
-                    mH: proj.maxHealth,
-                    t: proj.spawnTime
+                    sz: proj.size
                 });
-            } else if (projectilesNeedingSync.has(proj.id)) {
-                synced.push({ i: proj.id, x: proj.x, y: proj.y, d: proj.distance });
             }
         }
 
-        const removed: string[] = [];
+        const removed: number[] = [];
         for (const id of known) {
             if (!stillKnown.has(id)) removed.push(id);
         }
@@ -4821,7 +4801,6 @@ function updateMobProjectiles(deltaTimeMs: number) {
 
         if (spawned.length) io.to(playerId).emit('mpSpawn', spawned);
         if (removed.length) io.to(playerId).emit('mpRemove', removed);
-        if (synced.length) io.to(playerId).emit('mpSync', synced);
     }
 }
 
@@ -5005,21 +4984,8 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
         }
     }
     
-    // Delta-sync player projectiles using the same protocol as mob projectiles.
-    // See updateMobProjectiles for the rationale.
-    const nowSync = Date.now();
-    const projectilesNeedingSync = new Set<string>();
-    for (let i = 0; i < playerProjectiles.length; i++) {
-        const proj = playerProjectiles[i];
-        const safeSpeed = proj.speed > 0.005 ? proj.speed : 0.005;
-        const syncInterval = Math.min(2000, Math.max(250, 100 / safeSpeed));
-        const lastSync = proj.lastSyncTime || proj.spawnTime;
-        if (nowSync - lastSync >= syncInterval) {
-            projectilesNeedingSync.add(proj.id);
-            proj.lastSyncTime = nowSync;
-        }
-    }
-
+    // See updateMobProjectiles for the rationale — straight-line dead-reckoning
+    // on the client means we only need spawn + remove events.
     for (const playerId of Object.keys(players)) {
         const player = players[playerId];
         if (!player) continue;
@@ -5035,8 +5001,7 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
         }
 
         const spawned: any[] = [];
-        const synced: any[] = [];
-        const stillKnown = new Set<string>();
+        const stillKnown = new Set<number>();
         const ppx = player.x, ppy = player.y;
 
         for (let pi = 0; pi < playerProjectiles.length; pi++) {
@@ -5048,27 +5013,19 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
             if (!known.has(proj.id)) {
                 spawned.push({
                     i: proj.id,
-                    p: proj.playerId,
                     x: proj.x,
                     y: proj.y,
                     a: proj.angle,
                     s: proj.speed,
-                    d: proj.distance,
                     mD: proj.maxDistance,
                     pT: proj.petalType,
                     pR: proj.petalRarity,
-                    dm: proj.damage,
-                    sz: proj.size,
-                    h: proj.health,
-                    mH: proj.maxHealth,
-                    t: proj.spawnTime
+                    sz: proj.size
                 });
-            } else if (projectilesNeedingSync.has(proj.id)) {
-                synced.push({ i: proj.id, x: proj.x, y: proj.y, d: proj.distance });
             }
         }
 
-        const removed: string[] = [];
+        const removed: number[] = [];
         for (const id of known) {
             if (!stillKnown.has(id)) removed.push(id);
         }
@@ -5077,7 +5034,6 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
 
         if (spawned.length) io.to(playerId).emit('ppSpawn', spawned);
         if (removed.length) io.to(playerId).emit('ppRemove', removed);
-        if (synced.length) io.to(playerId).emit('ppSync', synced);
     }
 }
 
@@ -5414,26 +5370,35 @@ function start_loop() {
                 const sz = p.sizeMultiplier ?? 1.0;
                 const sn = p.name;
 
-                // Build petal positions array and a numeric signature to detect changes.
-                // Numeric rolling hash avoids per-petal string allocations that previously
-                // dominated the broadcast loop's GC pressure.
-                const petalsRaw = snap.petalsRaw;
-                const petalsOut: any[] = [];
+                // Petal positions: only sent to the local player for their *own* petals.
+                // For other players we omit the entire `p` array — the recipient's client
+                // already computes canonical orbit positions itself from the player's angle,
+                // slot index, and extension (see player-drawing.ts ~line 272). Skipping this
+                // for non-self players removes ~150–200 bytes per other-player delta, which
+                // was the dominant cost in busy scenes since the petalsSig flips every tick
+                // as players aim. Physics-displaced petals on other players will visually
+                // snap to canonical orbit, which is the acceptable tradeoff.
+                let petalsOut: any[] | null = null;
                 let petalsSig = 0;
-                for (let pi2 = 0; pi2 < petalsRaw.length; pi2++) {
-                    const pos = petalsRaw[pi2];
-                    const px = quantize(pos.x, precision);
-                    const py = quantize(pos.y, precision);
-                    const np = pos.noPhysics ? 1 : 0;
-                    // FNV-1a-style mix; values fit in int32 after Math.imul.
-                    petalsSig = Math.imul(petalsSig ^ pos.loadoutIndex, 16777619);
-                    petalsSig = Math.imul(petalsSig ^ pos.instanceIndex, 16777619);
-                    petalsSig = Math.imul(petalsSig ^ (px | 0), 16777619);
-                    petalsSig = Math.imul(petalsSig ^ (py | 0), 16777619);
-                    petalsSig = Math.imul(petalsSig ^ np, 16777619);
-                    const petal: any = { L: pos.loadoutIndex, I: pos.instanceIndex, x: px, y: py };
-                    if (np) petal.N = 1;
-                    petalsOut.push(petal);
+                if (isSelf) {
+                    const petalPrecision = quality === 'slow' ? 6 : quality === 'medium' ? 4 : 3;
+                    const petalsRaw = snap.petalsRaw;
+                    petalsOut = [];
+                    for (let pi2 = 0; pi2 < petalsRaw.length; pi2++) {
+                        const pos = petalsRaw[pi2];
+                        const px = quantize(pos.x, petalPrecision);
+                        const py = quantize(pos.y, petalPrecision);
+                        const np = pos.noPhysics ? 1 : 0;
+                        // FNV-1a-style mix; values fit in int32 after Math.imul.
+                        petalsSig = Math.imul(petalsSig ^ pos.loadoutIndex, 16777619);
+                        petalsSig = Math.imul(petalsSig ^ pos.instanceIndex, 16777619);
+                        petalsSig = Math.imul(petalsSig ^ (px | 0), 16777619);
+                        petalsSig = Math.imul(petalsSig ^ (py | 0), 16777619);
+                        petalsSig = Math.imul(petalsSig ^ np, 16777619);
+                        const petal: any = { L: pos.loadoutIndex, I: pos.instanceIndex, x: px, y: py };
+                        if (np) petal.N = 1;
+                        petalsOut.push(petal);
+                    }
                 }
 
                 const prev = lastPlayers.get(p.id);
@@ -5457,7 +5422,12 @@ function start_loop() {
                 if (prev ? prev.V !== sV : sV !== 0) { delta.V = sV; changed = true; }
                 if (prev ? prev.z !== sz : sz !== 1.0) { delta.z = sz; changed = true; }
                 if (prev ? prev.n !== sn : true) { delta.n = sn; changed = true; }
-                if (prev ? prev.petalsSig !== petalsSig : petalsOut.length > 0) { delta.p = petalsOut; changed = true; }
+                // petalsOut is null for non-self players (their clients dead-reckon orbit
+                // positions). Only self gets the per-tick petal array.
+                if (petalsOut && (prev ? prev.petalsSig !== petalsSig : petalsOut.length > 0)) {
+                    delta.p = petalsOut;
+                    changed = true;
+                }
 
                 if (changed) {
                     changedPlayers.push(delta);
@@ -5490,7 +5460,6 @@ function start_loop() {
             if (!socket.lastSentEnemies) socket.lastSentEnemies = new Map();
             const lastEnemies = socket.lastSentEnemies;
             const changedEnemies: any[] = [];
-            const unchangedIds: string[] = [];
             const currentEnemyIds = new Set<string>();
 
             for (const e of viewportEnemies) {
@@ -5526,20 +5495,32 @@ function start_loop() {
                     if (prev.L !== eL) ed.L = eL ?? null;
                     changedEnemies.push(ed);
                     lastEnemies.set(e.id, { x: ex, y: ey, h: eh, H: eH, t: e.type, T: e.tier, L: eL });
-                } else {
-                    unchangedIds.push(e.id);
+                }
+                // Unchanged enemies are NOT mentioned — the client keeps them as-is.
+            }
+
+            // Explicit-remove list: anything we previously sent that is no longer in
+            // viewport (or no longer alive on the server). Replaces the old per-tick
+            // U-array, which mentioned every still-visible enemy on every tick.
+            const removedEnemyIds: string[] = [];
+            for (const id of lastEnemies.keys()) {
+                if (!currentEnemyIds.has(id)) {
+                    removedEnemyIds.push(id);
+                    lastEnemies.delete(id);
                 }
             }
 
-            for (const id of lastEnemies.keys()) {
-                if (!currentEnemyIds.has(id)) lastEnemies.delete(id);
+            // Skip emit entirely when nothing changed this tick — quiet scenes use
+            // zero bandwidth instead of an empty-but-still-emitted heartbeat.
+            if (changedPlayers.length === 0 && changedEnemies.length === 0 && removedEnemyIds.length === 0) {
+                socket.lastUpdateTime = now;
+                continue;
             }
 
-            // Build compact payload. Omit empty fields entirely.
-            const gameState: any = { t: now };
+            const gameState: any = {};
             if (changedPlayers.length > 0) gameState.P = changedPlayers;
             if (changedEnemies.length > 0) gameState.E = changedEnemies;
-            if (unchangedIds.length > 0) gameState.U = unchangedIds;
+            if (removedEnemyIds.length > 0) gameState.R = removedEnemyIds;
 
             socket.lastUpdateTime = now;
             io.to(playerId).emit('gameStateUpdate', gameState);
@@ -5766,3 +5747,27 @@ setInterval(() => {
         }
     });
 }, SAVE_INTERVAL);
+
+// Periodic bandwidth profiling. Logs the top per-event wire-byte totals (real encoded
+// sizes, not phantom JSON) every 5 seconds so we can see exactly what's eating
+// bandwidth. Aggregates across all sockets — divide by player count for per-player.
+// const BW_LOG_INTERVAL_MS = 5000;
+// setInterval(() => {
+//     const stats = getServerEventStats();
+//     if (stats.size === 0) return;
+//     const rows = Array.from(stats.entries())
+//         .map(([event, s]) => ({ event, ...s, total: s.in + s.out }))
+//         .sort((a, b) => b.total - a.total)
+//         .slice(0, 10);
+//     let totalIn = 0, totalOut = 0;
+//     for (const [, s] of stats) { totalIn += s.in; totalOut += s.out; }
+//     const fmt = (b: number) => b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}KB`;
+//     const perSec = BW_LOG_INTERVAL_MS / 1000;
+//     console.log(`[bandwidth] total ${fmt(totalOut / perSec)}/s out, ${fmt(totalIn / perSec)}/s in (aggregate across all sockets)`);
+//     for (const r of rows) {
+//         const inPerSec = fmt(r.in / perSec);
+//         const outPerSec = fmt(r.out / perSec);
+//         console.log(`  ${r.event.padEnd(24)} out=${outPerSec.padStart(8)}/s (${r.count_out} msg) in=${inPerSec.padStart(8)}/s (${r.count_in} msg)`);
+//     }
+//     resetServerEventStats();
+// }, BW_LOG_INTERVAL_MS);

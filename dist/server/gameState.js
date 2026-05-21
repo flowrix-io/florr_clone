@@ -11,6 +11,8 @@ exports.getSuperMobPerSection = getSuperMobPerSection;
 exports.setSuperMobInSection = setSuperMobInSection;
 exports.getSuperMobInSection = getSuperMobInSection;
 exports.clearSuperMobFromSection = clearSuperMobFromSection;
+exports.allocateMobProjectileId = allocateMobProjectileId;
+exports.allocatePlayerProjectileId = allocatePlayerProjectileId;
 exports.initializeMapObstacles = initializeMapObstacles;
 exports.getPlayers = getPlayers;
 exports.getEnemies = getEnemies;
@@ -77,6 +79,12 @@ exports.petalLastProjectileTime = new Map(); // Track last projectile time per p
 // projectile's full state once on spawn / viewport-enter, instead of every tick.
 exports.knownMobProjectilesByPlayer = new Map();
 exports.knownPlayerProjectilesByPlayer = new Map();
+// Monotonic counters for projectile IDs. Numeric IDs encode as 1-5 bytes in the binary codec
+// versus ~52 bytes for a 50-char string ID — a huge win for high-volume petals (gas/rainbow).
+let _nextMobProjectileId = 1;
+let _nextPlayerProjectileId = 1;
+function allocateMobProjectileId() { return _nextMobProjectileId++; }
+function allocatePlayerProjectileId() { return _nextPlayerProjectileId++; }
 exports.groundPollens = [];
 exports.GROUND_POLLEN_LIFETIME_MS = 5000;
 exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = 500;

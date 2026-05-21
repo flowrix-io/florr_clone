@@ -346,7 +346,16 @@ exports.CHANGELOG = [
             'Changed mob spawning algorithm',
             'Bee now drops pollen',
         ]
-    }
+    },
+    {
+        date: 'May 20, 2026',
+        changes: [
+            'New petal: Bomb',
+            'New petal: Flower',
+            'New petal: Raindrop',
+            'Optimize game',
+        ]
+    },
 ];
 class ChangelogManager {
     constructor() {
