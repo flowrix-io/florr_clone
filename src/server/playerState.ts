@@ -1589,7 +1589,8 @@ export function updatePlayerState(
                             damage: petalStats.damage,
                             size: effectiveSize,
                             health: petalStats.health,
-                            maxHealth: petalStats.health
+                            maxHealth: petalStats.health,
+                            spawnTime: currentTime
                         };
 
                         playerProjectiles.push(projectile);

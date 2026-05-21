@@ -26,6 +26,8 @@ export interface MobProjectile {
   size: number;
   health: number; // Health of the projectile (can be destroyed by player petals)
   maxHealth: number; // Maximum health of the projectile
+  spawnTime: number; // ms timestamp (server clock) when the projectile was created
+  lastSyncTime?: number; // ms timestamp of the most recent position re-sync broadcast (server-only)
 }
 
 export interface PlayerProjectile {
@@ -45,6 +47,8 @@ export interface PlayerProjectile {
   size: number;
   health: number; // Health of the projectile (can be destroyed by enemy petals)
   maxHealth: number; // Maximum health of the projectile
+  spawnTime: number; // ms timestamp (server clock) when the projectile was created
+  lastSyncTime?: number; // ms timestamp of the most recent position re-sync broadcast (server-only)
 }
 
 export interface Enemy {

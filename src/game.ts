@@ -1361,6 +1361,37 @@ export class Game {
             }
         }
 
+        // Dead-reckon projectiles locally so the server doesn't need to broadcast their
+        // positions every tick. Projectiles travel in straight lines at constant velocity;
+        // the server only sends spawn/remove events plus speed-throttled position re-syncs.
+        const nowMs = performance.now();
+        for (const proj of this.mobProjectiles.values()) {
+            const last = proj._lastClientTickMs ?? nowMs;
+            const dt = nowMs - last;
+            proj._lastClientTickMs = nowMs;
+            if (dt <= 0) continue;
+            const move = proj.speed * dt;
+            proj.x += Math.cos(proj.angle) * move;
+            proj.y += Math.sin(proj.angle) * move;
+            proj.distance += move;
+            if (proj.maxDistance && proj.distance >= proj.maxDistance) {
+                this.mobProjectiles.delete(proj.id);
+            }
+        }
+        for (const proj of this.playerProjectiles.values()) {
+            const last = proj._lastClientTickMs ?? nowMs;
+            const dt = nowMs - last;
+            proj._lastClientTickMs = nowMs;
+            if (dt <= 0) continue;
+            const move = proj.speed * dt;
+            proj.x += Math.cos(proj.angle) * move;
+            proj.y += Math.sin(proj.angle) * move;
+            proj.distance += move;
+            if (proj.maxDistance && proj.distance >= proj.maxDistance) {
+                this.playerProjectiles.delete(proj.id);
+            }
+        }
+
         // Update petal extension based on key presses
         this.updatePetalExtension();
 

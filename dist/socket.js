@@ -543,13 +543,97 @@ function setupSocketListeners(game) {
         // Add newly spawned enemy - uses same path as all enemy updates
         handleEnemyUpdate(enemy);
     });
-    game.socket.on('mobProjectilesUpdate', (projectiles) => {
-        game.mobProjectiles.clear();
-        projectiles.forEach(projectile => game.mobProjectiles.set(projectile.id, projectile));
+    // Delta projectile protocol — see server.ts updateMobProjectiles for the wire format.
+    // The client adds projectiles on mpSpawn / ppSpawn, removes them on mpRemove / ppRemove,
+    // optionally corrects their position on mpSync / ppSync, and dead-reckons positions each
+    // frame in Game.update() using the angle/speed stored on the projectile.
+    const expandMobSpawn = (s) => ({
+        id: s.i,
+        enemyId: s.e,
+        x: s.x,
+        y: s.y,
+        startX: s.x,
+        startY: s.y,
+        angle: s.a,
+        speed: s.s,
+        distance: s.d,
+        maxDistance: s.mD,
+        petalType: s.pT,
+        petalRarity: s.pR,
+        damage: s.dm,
+        size: s.sz,
+        health: s.h,
+        maxHealth: s.mH,
+        spawnTime: s.t,
+        _lastClientTickMs: performance.now()
     });
-    game.socket.on('playerProjectilesUpdate', (projectiles) => {
-        game.playerProjectiles.clear();
-        projectiles.forEach(projectile => game.playerProjectiles.set(projectile.id, projectile));
+    const expandPlayerSpawn = (s) => ({
+        id: s.i,
+        playerId: s.p,
+        x: s.x,
+        y: s.y,
+        startX: s.x,
+        startY: s.y,
+        angle: s.a,
+        speed: s.s,
+        distance: s.d,
+        maxDistance: s.mD,
+        petalType: s.pT,
+        petalRarity: s.pR,
+        damage: s.dm,
+        size: s.sz,
+        health: s.h,
+        maxHealth: s.mH,
+        spawnTime: s.t,
+        _lastClientTickMs: performance.now()
+    });
+    game.socket.on('mpSpawn', (spawned) => {
+        const nowMs = performance.now();
+        for (const s of spawned) {
+            const proj = expandMobSpawn(s);
+            proj._lastClientTickMs = nowMs;
+            game.mobProjectiles.set(proj.id, proj);
+        }
+    });
+    game.socket.on('mpRemove', (ids) => {
+        for (const id of ids)
+            game.mobProjectiles.delete(id);
+    });
+    game.socket.on('mpSync', (entries) => {
+        const nowMs = performance.now();
+        for (const e of entries) {
+            const proj = game.mobProjectiles.get(e.i);
+            if (!proj)
+                continue;
+            proj.x = e.x;
+            proj.y = e.y;
+            proj.distance = e.d;
+            proj._lastClientTickMs = nowMs;
+        }
+    });
+    game.socket.on('ppSpawn', (spawned) => {
+        const nowMs = performance.now();
+        for (const s of spawned) {
+            const proj = expandPlayerSpawn(s);
+            proj._lastClientTickMs = nowMs;
+            game.playerProjectiles.set(proj.id, proj);
+        }
+    });
+    game.socket.on('ppRemove', (ids) => {
+        for (const id of ids)
+            game.playerProjectiles.delete(id);
+    });
+    game.socket.on('ppSync', (entries) => {
+        const nowMs = performance.now();
+        for (const e of entries) {
+            const proj = game.playerProjectiles.get(e.i);
+            if (!proj)
+                continue;
+            proj.x = e.x;
+            proj.y = e.y;
+            proj.distance = e.d;
+            proj._lastClientTickMs = nowMs;
+        }
     });
     game.socket.on('groundPollenSpawned', (pollen) => {
         game.groundPollens.set(pollen.id, {

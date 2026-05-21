@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.petalLastProjectileTime = exports.playerProjectiles = exports.mobProjectiles = exports.playerUserIds = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
+exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.knownPlayerProjectilesByPlayer = exports.knownMobProjectilesByPlayer = exports.petalLastProjectileTime = exports.playerProjectiles = exports.mobProjectiles = exports.playerUserIds = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
 exports.getUltraMobCount = getUltraMobCount;
 exports.setUltraMobCount = setUltraMobCount;
 exports.getSuperMobCount = getSuperMobCount;
@@ -72,6 +72,11 @@ exports.playerUserIds = {}; // Maps player ID to user ID
 exports.mobProjectiles = []; // Track all active mob projectiles
 exports.playerProjectiles = []; // Track all active player projectiles
 exports.petalLastProjectileTime = new Map(); // Track last projectile time per petal instance
+// Delta sync: for each player, the set of projectile IDs they currently "know about" (i.e. were
+// told about via a spawn event and not yet told to remove). Used so we only re-broadcast a
+// projectile's full state once on spawn / viewport-enter, instead of every tick.
+exports.knownMobProjectilesByPlayer = new Map();
+exports.knownPlayerProjectilesByPlayer = new Map();
 exports.groundPollens = [];
 exports.GROUND_POLLEN_LIFETIME_MS = 5000;
 exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = 500;

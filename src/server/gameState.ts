@@ -72,6 +72,12 @@ export const mobProjectiles: MobProjectile[] = []; // Track all active mob proje
 export const playerProjectiles: PlayerProjectile[] = []; // Track all active player projectiles
 export const petalLastProjectileTime: Map<string, number> = new Map(); // Track last projectile time per petal instance
 
+// Delta sync: for each player, the set of projectile IDs they currently "know about" (i.e. were
+// told about via a spawn event and not yet told to remove). Used so we only re-broadcast a
+// projectile's full state once on spawn / viewport-enter, instead of every tick.
+export const knownMobProjectilesByPlayer: Map<string, Set<string>> = new Map();
+export const knownPlayerProjectilesByPlayer: Map<string, Set<string>> = new Map();
+
 // Pollen petals leave a damaging puff on the ground when they break.
 export interface GroundPollen {
     id: string;

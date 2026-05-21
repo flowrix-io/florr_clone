@@ -1260,6 +1260,8 @@ io.on('connection', (socket) => {
                 // Remove player from players map
                 delete constants_2.players[playerId];
                 delete gameState_1.playerUserIds[playerId];
+                gameState_1.knownMobProjectilesByPlayer.delete(playerId);
+                gameState_1.knownPlayerProjectilesByPlayer.delete(playerId);
                 // Emit playerDisconnected event for this split player
                 io.emit('playerDisconnected', playerId);
             }
@@ -1299,6 +1301,8 @@ io.on('connection', (socket) => {
             (0, petal_actions_1.despawnAllPlayerPets)(socket.id, io);
             delete constants_2.players[socket.id];
             delete gameState_1.playerUserIds[socket.id]; // Clean up the mapping
+            gameState_1.knownMobProjectilesByPlayer.delete(socket.id);
+            gameState_1.knownPlayerProjectilesByPlayer.delete(socket.id);
         }
         // Remove all event listeners to prevent memory leaks
         // Socket.IO will handle cleanup, but we can be explicit for unauthenticated connections
@@ -3716,7 +3720,8 @@ function moveEnemies() {
                                     damage: petalStats.damage,
                                     size: scaledSize, // Mob projectiles scale size with rarity
                                     health: petalStats.health,
-                                    maxHealth: petalStats.health
+                                    maxHealth: petalStats.health,
+                                    spawnTime: currentTime
                                 };
                                 gameState_1.mobProjectiles.push(projectile);
                             }
@@ -3895,7 +3900,8 @@ function moveEnemies() {
                                     damage: petalStats.damage,
                                     size: scaledSize, // Mob projectiles scale size with rarity
                                     health: petalStats.health,
-                                    maxHealth: petalStats.health
+                                    maxHealth: petalStats.health,
+                                    spawnTime: currentTime
                                 };
                                 gameState_1.mobProjectiles.push(projectile);
                             }
@@ -4251,7 +4257,26 @@ function updateMobProjectiles(deltaTimeMs) {
             continue;
         }
     }
-    // Emit projectile updates to nearby players only (spatial filtering)
+    // Delta-sync mob projectiles to nearby players. Instead of broadcasting every
+    // projectile's full state every tick (~200 B JSON each at 30 TPS), we only emit:
+    //   mpSpawn — projectiles that have just entered this player's viewport (full data)
+    //   mpRemove — projectiles that have left viewport or been destroyed (ids only)
+    //   mpSync  — periodic position correction whose cadence scales with speed
+    // The client dead-reckons positions between events using angle/speed.
+    const nowSync = Date.now();
+    // Determine which projectiles need a position re-sync this tick. Faster projectiles
+    // get more frequent re-syncs (250 ms at high speed, capped at 2000 ms for slow ones).
+    const projectilesNeedingSync = new Set();
+    for (let i = 0; i < gameState_1.mobProjectiles.length; i++) {
+        const proj = gameState_1.mobProjectiles[i];
+        const safeSpeed = proj.speed > 0.005 ? proj.speed : 0.005;
+        const syncInterval = Math.min(2000, Math.max(250, 100 / safeSpeed));
+        const lastSync = proj.lastSyncTime || proj.spawnTime;
+        if (nowSync - lastSync >= syncInterval) {
+            projectilesNeedingSync.add(proj.id);
+            proj.lastSyncTime = nowSync;
+        }
+    }
     for (const playerId of Object.keys(constants_2.players)) {
         const player = constants_2.players[playerId];
         if (!player)
@@ -4261,8 +4286,59 @@ function updateMobProjectiles(deltaTimeMs) {
             continue;
         const vw = (player.viewportWidth || constants_2.VIEWPORT_WIDTH) * 1.5;
         const vh = (player.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 1.5;
-        const filtered = gameState_1.mobProjectiles.filter(p => Math.abs(p.x - player.x) < vw && Math.abs(p.y - player.y) < vh);
-        io.to(playerId).emit('mobProjectilesUpdate', filtered);
+        let known = gameState_1.knownMobProjectilesByPlayer.get(playerId);
+        if (!known) {
+            known = new Set();
+            gameState_1.knownMobProjectilesByPlayer.set(playerId, known);
+        }
+        const spawned = [];
+        const synced = [];
+        const stillKnown = new Set();
+        const ppx = player.x, ppy = player.y;
+        for (let pi = 0; pi < gameState_1.mobProjectiles.length; pi++) {
+            const proj = gameState_1.mobProjectiles[pi];
+            const dx = proj.x - ppx;
+            const dy = proj.y - ppy;
+            if ((dx < 0 ? -dx : dx) >= vw || (dy < 0 ? -dy : dy) >= vh)
+                continue;
+            stillKnown.add(proj.id);
+            if (!known.has(proj.id)) {
+                // Compact spawn payload with short keys. Client reconstructs trajectory
+                // from (x,y) at time t with angle a and speed s.
+                spawned.push({
+                    i: proj.id,
+                    e: proj.enemyId,
+                    x: proj.x,
+                    y: proj.y,
+                    a: proj.angle,
+                    s: proj.speed,
+                    d: proj.distance,
+                    mD: proj.maxDistance,
+                    pT: proj.petalType,
+                    pR: proj.petalRarity,
+                    dm: proj.damage,
+                    sz: proj.size,
+                    h: proj.health,
+                    mH: proj.maxHealth,
+                    t: proj.spawnTime
+                });
+            }
+            else if (projectilesNeedingSync.has(proj.id)) {
+                synced.push({ i: proj.id, x: proj.x, y: proj.y, d: proj.distance });
+            }
+        }
+        const removed = [];
+        for (const id of known) {
+            if (!stillKnown.has(id))
+                removed.push(id);
+        }
+        gameState_1.knownMobProjectilesByPlayer.set(playerId, stillKnown);
+        if (spawned.length)
+            io.to(playerId).emit('mpSpawn', spawned);
+        if (removed.length)
+            io.to(playerId).emit('mpRemove', removed);
+        if (synced.length)
+            io.to(playerId).emit('mpSync', synced);
     }
 }
 // Update and move player projectiles
@@ -4414,7 +4490,20 @@ function updatePlayerProjectiles(deltaTimeMs) {
             }
         }
     }
-    // Emit projectile updates to nearby players only (spatial filtering)
+    // Delta-sync player projectiles using the same protocol as mob projectiles.
+    // See updateMobProjectiles for the rationale.
+    const nowSync = Date.now();
+    const projectilesNeedingSync = new Set();
+    for (let i = 0; i < gameState_1.playerProjectiles.length; i++) {
+        const proj = gameState_1.playerProjectiles[i];
+        const safeSpeed = proj.speed > 0.005 ? proj.speed : 0.005;
+        const syncInterval = Math.min(2000, Math.max(250, 100 / safeSpeed));
+        const lastSync = proj.lastSyncTime || proj.spawnTime;
+        if (nowSync - lastSync >= syncInterval) {
+            projectilesNeedingSync.add(proj.id);
+            proj.lastSyncTime = nowSync;
+        }
+    }
     for (const playerId of Object.keys(constants_2.players)) {
         const player = constants_2.players[playerId];
         if (!player)
@@ -4424,16 +4513,57 @@ function updatePlayerProjectiles(deltaTimeMs) {
             continue;
         const vw = (player.viewportWidth || constants_2.VIEWPORT_WIDTH) * 1.5;
         const vh = (player.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 1.5;
-        const filtered = [];
+        let known = gameState_1.knownPlayerProjectilesByPlayer.get(playerId);
+        if (!known) {
+            known = new Set();
+            gameState_1.knownPlayerProjectilesByPlayer.set(playerId, known);
+        }
+        const spawned = [];
+        const synced = [];
+        const stillKnown = new Set();
         const ppx = player.x, ppy = player.y;
         for (let pi = 0; pi < gameState_1.playerProjectiles.length; pi++) {
             const proj = gameState_1.playerProjectiles[pi];
             const dx = proj.x - ppx;
             const dy = proj.y - ppy;
-            if ((dx < 0 ? -dx : dx) < vw && (dy < 0 ? -dy : dy) < vh)
-                filtered.push(proj);
+            if ((dx < 0 ? -dx : dx) >= vw || (dy < 0 ? -dy : dy) >= vh)
+                continue;
+            stillKnown.add(proj.id);
+            if (!known.has(proj.id)) {
+                spawned.push({
+                    i: proj.id,
+                    p: proj.playerId,
+                    x: proj.x,
+                    y: proj.y,
+                    a: proj.angle,
+                    s: proj.speed,
+                    d: proj.distance,
+                    mD: proj.maxDistance,
+                    pT: proj.petalType,
+                    pR: proj.petalRarity,
+                    dm: proj.damage,
+                    sz: proj.size,
+                    h: proj.health,
+                    mH: proj.maxHealth,
+                    t: proj.spawnTime
+                });
+            }
+            else if (projectilesNeedingSync.has(proj.id)) {
+                synced.push({ i: proj.id, x: proj.x, y: proj.y, d: proj.distance });
+            }
         }
-        io.to(playerId).emit('playerProjectilesUpdate', filtered);
+        const removed = [];
+        for (const id of known) {
+            if (!stillKnown.has(id))
+                removed.push(id);
+        }
+        gameState_1.knownPlayerProjectilesByPlayer.set(playerId, stillKnown);
+        if (spawned.length)
+            io.to(playerId).emit('ppSpawn', spawned);
+        if (removed.length)
+            io.to(playerId).emit('ppRemove', removed);
+        if (synced.length)
+            io.to(playerId).emit('ppSync', synced);
     }
 }
 // Tick ground pollen drops: deal damage to enemies in radius (rate-limited per
