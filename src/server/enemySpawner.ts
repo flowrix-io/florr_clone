@@ -8,7 +8,6 @@ import {
     ultraMobCount,
     superMobCount,
     uniqueMobCount,
-    superMobPerSection,
     setSuperMobInSection,
     getSuperMobInSection,
     clearSuperMobFromSection
@@ -26,12 +25,11 @@ import {
     MapElement,
     BiomeSpawnEntry,
     getTileState,
-    isTileIdBlocking,
-    WALL_TILE_SIZE
+    isTileIdBlocking
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { getMobStats, getAllMobTypes } from '../mobs';
-import { recordBossEvent, stripHtml } from './apiKeyApi';
+import { recordBossEvent } from './apiKeyApi';
 import { calculatePlayerModifiers } from './playerManager';
 
 // Tier order from lowest to highest
@@ -465,15 +463,6 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
             continue;
         }
 
-        // Check if position is in a safe zone
-        const inSafeZone = WORLD_MAP.some(element =>
-            element.type === 'safe_zone' &&
-            x >= element.x * SCALE_FACTOR &&
-            x <= (element.x + element.width) * SCALE_FACTOR &&
-            y >= element.y * SCALE_FACTOR &&
-            y <= (element.y + element.height) * SCALE_FACTOR
-        );
-
         // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
         const tileState = getTileState(WALL_GRID, x, y);
         const collidesWithWall = isTileIdBlocking(tileState);
@@ -482,7 +471,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         // density loop must skip them or it would double-fill the area.
         const inSpawnZone = isPositionInAnySpawnZone(x, y);
 
-        if (!inSafeZone && !collidesWithWall && !inSpawnZone) {
+        if (!collidesWithWall && !inSpawnZone) {
             validPosition = true;
         }
     }
@@ -525,19 +514,12 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
 
             if (isInOutOfBoundsZone(x, y)) continue;
 
-            const inSafeZone = WORLD_MAP.some(element =>
-                element.type === 'safe_zone' &&
-                x >= element.x * SCALE_FACTOR &&
-                x <= (element.x + element.width) * SCALE_FACTOR &&
-                y >= element.y * SCALE_FACTOR &&
-                y <= (element.y + element.height) * SCALE_FACTOR
-            );
             const tileState = getTileState(WALL_GRID, x, y);
             const collidesWithWall = isTileIdBlocking(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
             const inSpawnZone = isPositionInAnySpawnZone(x, y);
 
-            if (!inSafeZone && !collidesWithWall && !inPetalRange && !inSpawnZone) {
+            if (!collidesWithWall && !inPetalRange && !inSpawnZone) {
                 newValidPosition = true;
             }
         }
@@ -587,13 +569,6 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
 
             if (isInOutOfBoundsZone(x, y)) continue;
 
-            const inSafeZone = WORLD_MAP.some(element =>
-                element.type === 'safe_zone' &&
-                x >= element.x * SCALE_FACTOR &&
-                x <= (element.x + element.width) * SCALE_FACTOR &&
-                y >= element.y * SCALE_FACTOR &&
-                y <= (element.y + element.height) * SCALE_FACTOR
-            );
             const tileState = getTileState(WALL_GRID, x, y);
             const collidesWithWall = isTileIdBlocking(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
@@ -608,7 +583,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
                 return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
             });
 
-            if (!inSafeZone && !collidesWithWall && !inPetalRange && !inSpawnZone && !tooClose) {
+            if (!collidesWithWall && !inPetalRange && !inSpawnZone && !tooClose) {
                 newValidPosition = true;
             }
         }
@@ -819,10 +794,10 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
  * Create an enemy inside the given spawn zone. Used by the spawnZoneManager
  * to fill zones during initial spawn / wave / trickle phases.
  *
- * Picks a random position inside zone bounds (rejecting safe zones, walls,
- * petal range, and mob-spacing conflicts) and then runs the same Phase 3
- * tier-and-mob-type selection used by createEnemy. Tier comes from the
- * zone's spawnType (or the biome's spawn table if one overlays the zone).
+ * Picks a random position inside zone bounds (rejecting walls, petal range,
+ * and mob-spacing conflicts) and then runs the same Phase 3 tier-and-mob-type
+ * selection used by createEnemy. Tier comes from the zone's spawnType (or
+ * the biome's spawn table if one overlays the zone).
  */
 export function createEnemyInZone(
     helpers: EnemySpawnerHelpers,
@@ -872,15 +847,6 @@ export function createEnemyInZone(
         y = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, y));
 
         if (isInOutOfBoundsZone(x, y)) continue;
-
-        const inSafeZone = WORLD_MAP.some(element =>
-            element.type === 'safe_zone' &&
-            x >= element.x * SCALE_FACTOR &&
-            x <= (element.x + element.width) * SCALE_FACTOR &&
-            y >= element.y * SCALE_FACTOR &&
-            y <= (element.y + element.height) * SCALE_FACTOR
-        );
-        if (inSafeZone) continue;
 
         const tileState = getTileState(WALL_GRID, x, y);
         if (isTileIdBlocking(tileState)) continue;

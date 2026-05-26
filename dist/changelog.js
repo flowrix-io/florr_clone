@@ -29,7 +29,6 @@ exports.CHANGELOG = [
         changes: [
             'Overhauled the settings menu',
             'Ultra+ petals now have particle effects',
-            'Shaders are now available in the settings menu',
         ]
     },
     {

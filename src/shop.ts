@@ -1,8 +1,6 @@
-import { Item, ItemWithRarity } from './item';
-import { Player, PlayerInventory } from './player';
+import { Player } from './player';
 import { Socket } from './socket';
 import { getPetalStats, getAllPetalTypes, RARITY_LEVELS, Rarity, ITEM_RARITY_COLORS } from './petals';
-import { Game } from './game';
 import { GAME_ICONS_NET_ICONS } from './game-icons-net-icons';
 
 interface GameInterface {
@@ -15,12 +13,6 @@ interface GameInterface {
     getItemSprites?(): Record<string, HTMLImageElement>;
     getItemSpriteDataUrl?(itemType: string): string | null;
     getPetalCanvas?(petalType: string, rarity: string, time?: number): HTMLCanvasElement | null;
-}
-
-interface ShopItem {
-    petalType: string;
-    rarity: Rarity;
-    price: number;
 }
 
 // Shop pricing configuration - single base price per petal type (applies to all rarities)

@@ -97,7 +97,6 @@ export class Chat {
     private pendingScripts: Map<string, SandboxedScript> = new Map();
     private pendingIframes: Map<string, PendingIframe> = new Map();
     private socket: Socket;
-    private currentSquad: { squadId: string; memberIds: string[]; leaderId: string } | null = null;
 
     constructor(socket: Socket) {
         this.socket = socket;
@@ -135,7 +134,6 @@ export class Chat {
         });
 
         this.socket.on('squadUpdate', (data: { squadId: string; memberIds: string[]; leaderId: string } | null) => {
-            this.currentSquad = data;
             // Expose member IDs so the minimap can render squadmates as pink dots without ALT.
             (window as any).squadMemberIds = data ? data.memberIds : [];
         });

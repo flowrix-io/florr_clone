@@ -85,7 +85,7 @@ function emitBundle({ elements, customTileTypes, rle, width, height, sourceTiles
     const body = `${banner}
 import { MapElement, TileTypeConfig } from './constants';
 
-/** Map elements (spawn zones, biomes, teleporters, safe zones). */
+/** Map elements (spawn zones, biomes, teleporters). */
 export const MAP_ELEMENTS: MapElement[] = ${elementsJson};
 
 /** Custom tile palette layered on top of the built-in air/wall/water set. */

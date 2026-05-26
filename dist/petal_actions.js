@@ -1411,7 +1411,6 @@ function executeNextAction(petalId, deltaTime) {
 }
 // Update all active petal actions (call this in game loop with consistent rate)
 function updatePetalActions(deltaTime) {
-    const currentTime = Date.now();
     // Update all active petal actions
     for (const [petalId, actionState] of petalActionStates.entries()) {
         if (!actionState.isActive)

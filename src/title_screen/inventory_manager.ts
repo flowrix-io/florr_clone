@@ -17,10 +17,6 @@ export class TitleScreenInventoryManager {
     /** Title canvas the loadout bar paints into (shared with bg + UI). */
     private loadoutCanvas: HTMLCanvasElement | null = null;
     private canvasLoadoutBar: CanvasLoadoutBar | null = null;
-    /** Last bounds the loadout bar was drawn into, used to hit-test events. */
-    private loadoutBounds: { x: number; y: number; width: number; height: number } | null = null;
-    /** source slot of an in-progress canvas-to-canvas drag, -1 if none */
-    private canvasDragSourceSlot: number = -1;
     /** timestamp of last local loadout mutation for optimistic-update suppression */
     public lastLocalLoadoutChange: number = 0;
     public readonly LOADOUT_SYNC_SUPPRESS_MS: number = 600;
@@ -170,7 +166,6 @@ export class TitleScreenInventoryManager {
      * Called from TitleScreen's per-frame onFrame after the bg + title UI pass.
      */
     public drawLoadout(ctx: CanvasRenderingContext2D, bounds: { x: number; y: number; width: number; height: number }): void {
-        this.loadoutBounds = bounds;
         if (this.canvasLoadoutBar) this.canvasLoadoutBar.draw(ctx, bounds);
     }
 
@@ -274,7 +269,6 @@ export class TitleScreenInventoryManager {
             if (hit < 0 || hit >= this.LOADOUT_SLOTS) { e.preventDefault(); return; }
             const item = this.playerData.loadout[hit];
             if (!item) { e.preventDefault(); return; }
-            this.canvasDragSourceSlot = hit;
             this.canvasLoadoutBar.beginDrag(hit, x, y);
             e.dataTransfer?.setData('text/loadoutSlot', hit.toString());
             if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
@@ -286,7 +280,6 @@ export class TitleScreenInventoryManager {
             }
         });
         canvas.addEventListener('dragend', () => {
-            this.canvasDragSourceSlot = -1;
             this.canvasLoadoutBar?.endDrag();
         });
 
@@ -327,7 +320,6 @@ export class TitleScreenInventoryManager {
                 }
             }
             this.canvasLoadoutBar.endDrag();
-            this.canvasDragSourceSlot = -1;
         });
     }
 

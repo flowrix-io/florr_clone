@@ -72,7 +72,6 @@ class Chat {
         this.isChatFocused = false;
         this.pendingScripts = new Map();
         this.pendingIframes = new Map();
-        this.currentSquad = null;
         this.socket = socket;
         this.initialize();
         this.setupSocketListeners();
@@ -100,7 +99,6 @@ class Chat {
             history.forEach(message => this.addChatMessage(message));
         });
         this.socket.on('squadUpdate', (data) => {
-            this.currentSquad = data;
             // Expose member IDs so the minimap can render squadmates as pink dots without ALT.
             window.squadMemberIds = data ? data.memberIds : [];
         });

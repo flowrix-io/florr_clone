@@ -5,7 +5,7 @@
 
 import { MapElement, TileTypeConfig } from './constants';
 
-/** Map elements (spawn zones, biomes, teleporters, safe zones). */
+/** Map elements (spawn zones, biomes, teleporters). */
 export const MAP_ELEMENTS: MapElement[] = [
   {
     "type": "spawn",

@@ -29,7 +29,7 @@ function sendOutput(message, socketId, io) {
  */
 function executeServerCommand(command, executor, deps, socketId) {
     const trimmedCommand = command.trim();
-    const { io, savePlayerProgress, spawnMob, spawnSpecialMobs, createEnemy, adjustEnemyCount } = deps;
+    const { io, savePlayerProgress, spawnMob, spawnSpecialMobs, adjustEnemyCount } = deps;
     if (executor) {
         sendOutput(`[ADMIN] ${executor} executed: ${trimmedCommand}`, socketId, io);
     }

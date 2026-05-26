@@ -384,19 +384,13 @@ function createEnemy(helpers) {
         if (isInOutOfBoundsZone(x, y)) {
             continue;
         }
-        // Check if position is in a safe zone
-        const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
-            x >= element.x * constants_2.SCALE_FACTOR &&
-            x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-            y >= element.y * constants_2.SCALE_FACTOR &&
-            y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
         // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
         const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
         const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
         // Spawn zones are populated by spawnZoneManager (wave-based), so the
         // density loop must skip them or it would double-fill the area.
         const inSpawnZone = isPositionInAnySpawnZone(x, y);
-        if (!inSafeZone && !collidesWithWall && !inSpawnZone) {
+        if (!collidesWithWall && !inSpawnZone) {
             validPosition = true;
         }
     }
@@ -430,16 +424,11 @@ function createEnemy(helpers) {
             y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
             if (isInOutOfBoundsZone(x, y))
                 continue;
-            const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
-                x >= element.x * constants_2.SCALE_FACTOR &&
-                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-                y >= element.y * constants_2.SCALE_FACTOR &&
-                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
             const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
             const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
             const inSpawnZone = isPositionInAnySpawnZone(x, y);
-            if (!inSafeZone && !collidesWithWall && !inPetalRange && !inSpawnZone) {
+            if (!collidesWithWall && !inPetalRange && !inSpawnZone) {
                 newValidPosition = true;
             }
         }
@@ -480,11 +469,6 @@ function createEnemy(helpers) {
             y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
             if (isInOutOfBoundsZone(x, y))
                 continue;
-            const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
-                x >= element.x * constants_2.SCALE_FACTOR &&
-                x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-                y >= element.y * constants_2.SCALE_FACTOR &&
-                y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
             const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
             const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
@@ -498,7 +482,7 @@ function createEnemy(helpers) {
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
             });
-            if (!inSafeZone && !collidesWithWall && !inPetalRange && !inSpawnZone && !tooClose) {
+            if (!collidesWithWall && !inPetalRange && !inSpawnZone && !tooClose) {
                 newValidPosition = true;
             }
         }
@@ -698,10 +682,10 @@ function createEnemy(helpers) {
  * Create an enemy inside the given spawn zone. Used by the spawnZoneManager
  * to fill zones during initial spawn / wave / trickle phases.
  *
- * Picks a random position inside zone bounds (rejecting safe zones, walls,
- * petal range, and mob-spacing conflicts) and then runs the same Phase 3
- * tier-and-mob-type selection used by createEnemy. Tier comes from the
- * zone's spawnType (or the biome's spawn table if one overlays the zone).
+ * Picks a random position inside zone bounds (rejecting walls, petal range,
+ * and mob-spacing conflicts) and then runs the same Phase 3 tier-and-mob-type
+ * selection used by createEnemy. Tier comes from the zone's spawnType (or
+ * the biome's spawn table if one overlays the zone).
  */
 function createEnemyInZone(helpers, zone) {
     const playerCount = Object.keys(constants_1.players).length;
@@ -744,13 +728,6 @@ function createEnemyInZone(helpers, zone) {
         x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
         y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
         if (isInOutOfBoundsZone(x, y))
-            continue;
-        const inSafeZone = map_data_1.WORLD_MAP.some(element => element.type === 'safe_zone' &&
-            x >= element.x * constants_2.SCALE_FACTOR &&
-            x <= (element.x + element.width) * constants_2.SCALE_FACTOR &&
-            y >= element.y * constants_2.SCALE_FACTOR &&
-            y <= (element.y + element.height) * constants_2.SCALE_FACTOR);
-        if (inSafeZone)
             continue;
         const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
         if ((0, constants_2.isTileIdBlocking)(tileState))

@@ -1,4 +1,4 @@
-import { Graphics, Enemy, getPetalStats, getAllPetalTypes, getMobStats, MOB_CONFIG } from './core';
+import { Graphics, Enemy, getPetalStats, getAllPetalTypes, getMobStats } from './core';
 
 declare module './core' {
     interface Graphics {

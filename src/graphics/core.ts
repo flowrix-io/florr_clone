@@ -1,11 +1,8 @@
-import { Player, FaceFlags, EquipmentFlags } from '../player';
 import { Enemy } from '../enemy';
-import { Item, WorldItem } from '../item';
-import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE, getMobAnimationFrameTime, getHighQualityMobs, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState, WallTileState, SECTION_CONFIGS, seededRandom, getTileJaggedEdges, JaggedPoint } from '../constants';
-import { getPetalStats, getAllPetalTypes, ITEM_RARITY_COLORS } from '../petals';
-import { getMobStats, getAllMobTypes, getMobTypesBySection, MOB_CONFIG } from '../mobs';
+import { MapElement } from '../constants';
+import { ITEM_RARITY_COLORS } from '../petals';
 import { getSVGRenderer } from '../svg_renderer';
-import { FloatingText, ExplosionEffect, ExplosionParticle, PetalBreakEffect, LightningEffect, PetalParticleEffect, PetalParticle, FallingStar, FlowerRenderAttributes } from './types';
+import { FloatingText, ExplosionEffect, ExplosionParticle, PetalBreakEffect, LightningEffect, PetalParticleEffect, PetalParticle, FallingStar } from './types';
 
 export { Player, FaceFlags, EquipmentFlags } from '../player';
 export { Enemy } from '../enemy';
@@ -85,7 +82,6 @@ export class Graphics {
         wall: 'rgba(102, 102, 102, 0.0)',
         spawn: 'rgba(76, 175, 80, 0.0)',
         teleporter: 'rgba(33, 150, 243, 0.0)',
-        safe_zone: 'rgba(255, 193, 7, 0.0)',
         biome: 'rgba(128, 64, 192, 0.0)'
     };
     public readonly ENEMY_COLORS = {

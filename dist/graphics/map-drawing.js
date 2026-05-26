@@ -107,7 +107,7 @@ core_1.Graphics.prototype.drawMap = function (world_map_data) {
     };
     // Wall grid is rendered via the static map cache (see render.ts) —
     // skip it here so we don't redraw it on top per frame.
-    // Draw all map elements (spawn areas, biomes, teleporters, safe zones)
+    // Draw all map elements (spawn areas, biomes, teleporters)
     world_map_data.forEach(element => {
         const x = element.x;
         const y = element.y;

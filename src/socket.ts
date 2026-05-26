@@ -1,5 +1,5 @@
 import { io, Socket } from './ws_client';
-import { Player, PlayerInventory, ServerPlayer } from './player';
+import { Player, ServerPlayer } from './player';
 import { Enemy, Obstacle } from './enemy';
 import { Item, WorldItem } from './item';
 import { getMobStats } from './mobs';
@@ -24,7 +24,6 @@ export function initMultiPlayerMode(game: any, serverIp: string) {
         console.log(`[CLIENT] Using preconnected socket (ID: ${window.preconnectedSocket.id})`);
         game.socket = window.preconnectedSocket;
         // Remove only the mapData listener from preconnect, keep all other listeners
-        const mapDataListeners = game.socket.listeners('mapData');
         game.socket.removeAllListeners('mapData');
         // Clear the preconnected socket reference since we're now using it
         window.preconnectedSocket = null;
@@ -852,7 +851,6 @@ function setupSocketListeners(game: any) {
     game.socket.on('playerHealed', (data: { playerId: string, health: number, healAmount: number }) => {
         const player = game.players.get(data.playerId);
         if (player) {
-            const oldHealth = player.health;
             player.health = data.health;
             
             // Show healing effect

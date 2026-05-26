@@ -229,7 +229,6 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
 export class CanvasMobGalleryPanel {
     public canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
-    private parentEl: HTMLElement | null = null;
 
     private kills: MobKills = {};
     private rarities: string[] = RARITY_LEVELS.filter((r) => r !== 'apex');
@@ -275,7 +274,6 @@ export class CanvasMobGalleryPanel {
     };
 
     public attachTo(parent: HTMLElement) {
-        this.parentEl = parent;
         parent.appendChild(this.canvas);
     }
 
@@ -877,13 +875,6 @@ export class CanvasMobGalleryPanel {
 
 function pointInRect(x: number, y: number, r: { x: number; y: number; w: number; h: number }): boolean {
     return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-}
-
-function formatItemName(itemType: string): string {
-    if (!itemType) return '';
-    return itemType
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, font: string): string[] {

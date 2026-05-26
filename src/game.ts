@@ -1,9 +1,8 @@
 import { applyZoomCompensation, canvasCoords } from './zoom-compensation';
-import { Player, PlayerProgress, ServerPlayer, PlayerInventory } from './player';
-import { Dot, Enemy, Obstacle } from './enemy';
-import { Item, ItemWithRarity, WorldItem } from './item';
-import { SVGLoader } from './SVGLoader';
-import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT } from './constants';
+import { Player, PlayerInventory } from './player';
+import { Enemy } from './enemy';
+import { WorldItem } from './item';
+import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, MOUSE_NONLINEAR_EXPONENT } from './constants';
 import { WORLD_MAP } from './map_data';
 import { ITEM_RARITY_COLORS, getPetalStats } from './petals';
 import { Graphics } from './graphics';
@@ -15,67 +14,18 @@ import { SkillsManager } from './skills';
 import { ShopManager } from './shop';
 import { PreloadedAssets } from './preloader';
 import { Tutorial } from './tutorial';
-import { ShaderManager } from './shader/shaderManager';
 import { AssetLoader } from './asset_loader';
 import { CanvasLoadoutBar, LOADOUT_SLOT_COUNT } from './graphics/loadout-bar';
 
-// Global interface declarations
-declare global {
-    interface Window {
-        shaderManager?: ShaderManager | null;
-    }
-}
-
-// Add these interfaces at the top of the file
-interface SandboxedScript {
-    id: string;
-    code: string;
-    sender: string;
-}
-
-// Add this interface to properly type our sandbox window
-interface SandboxWindow extends Window {
-    safeContext?: any;
-    eval?: (code: string) => any;
-}
-
-// Add these interfaces near the top of the file where other interfaces are defined
-interface ItemRarityColors {
-    common: string;
-    uncommon: string;
-    rare: string;
-    epic: string;
-    legendary: string;
-    mythic: string;
-    ultra: string;
-    super: string;
-    unique: string;
-}
-
-// Add after other interfaces at the top
-interface CraftingSlot {
-    index: number;
-    item: Item | null;
-}
-
 export class Game {
-    private speedBoostActive: boolean = false;
-    private shieldActive: boolean = false;
-    private debugCollision: boolean = false; // Toggle for collision debugging
     public canvas: HTMLCanvasElement;
     public graphics: Graphics;
     private socket!: Socket;  // Using the definite assignment assertion
     private players: Map<string, Player> = new Map();
     private activePlayerId: string | null = null; // Track active player ID for split players
-    private dots: { x: number, y: number }[] = [];
-    private readonly DOT_SIZE = 5;
-    private readonly DOT_COUNT = 20;
-    private readonly PLAYER_ACCELERATION = 0.5;  // Adjusted for smoother acceleration
-    private readonly MAX_SPEED = 120;            // Further increased speed for better responsiveness
     private cameraX = 0;
     private cameraY = 0;
     private playerEye: { x: number, y: number } = { x: 0, y: 0 };
-    private targetEye: { x: number, y: number } = { x: 0, y: 0 };
     private zoomLevel = 1.0;
     // Viewport animation properties
     private isAnimatingViewport = false;
@@ -88,8 +38,6 @@ export class Game {
     private readonly MIN_ZOOM = 0.5;
     private readonly MAX_ZOOM = 3.0;
     private readonly ZOOM_STEP = 0.1;
-    private readonly WORLD_WIDTH = ACTUAL_WORLD_WIDTH;  // Increased from 2000 to 10000
-    private readonly WORLD_HEIGHT = ACTUAL_WORLD_HEIGHT;  // Keep height the same
     private keysPressed: Set<string> = new Set();
     private mouseButtonsPressed: Set<number> = new Set(); // Track mouse buttons: 0 = left, 2 = right
     private petalExtension: number = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
@@ -97,55 +45,15 @@ export class Game {
     private mobProjectiles: Map<string, any> = new Map(); // Store mob projectiles
     private playerProjectiles: Map<string, any> = new Map(); // Store player projectiles
     public groundPollens: Map<string, any> = new Map(); // Store ground pollen drops from broken pollen petals
-    private readonly PLAYER_MAX_HEALTH = 100;
-    private readonly PLAYER_DAMAGE = 10;
-    private readonly ENEMY_DAMAGE = 5;
-    private readonly DAMAGE_COOLDOWN = 1000; // 1 second cooldown
-    private lastDamageTime: number = 0;
-    private obstacles: Obstacle[] = [];
-    private readonly ENEMY_CORAL_MAX_HEALTH = 50;
     private items: Map<string, WorldItem> = new Map();
     private pickedUpItems: Set<string> = new Set(); // Track items picked up by this player
     get isInventoryOpen(): boolean {
         return this.inventoryManager?.getIsInventoryOpen() ?? false;
     }
     private gameLoopId: number | null = null;
-    private socketHandlers: Map<string, Function> = new Map();
-    private readonly BASE_XP_REQUIREMENT = 100;
-    private readonly XP_MULTIPLIER = 1.5;
-    private readonly MAX_LEVEL = 50;
-    private readonly HEALTH_PER_LEVEL = 20;
-    private readonly DAMAGE_PER_LEVEL = 2;
-    // Add this property to store floating texts
-    private floatingTexts: Array<{
-        x: number;
-        y: number;
-        text: string;
-        color: string;
-        fontSize: number;
-        alpha: number;
-        lifetime: number;
-    }> = [];
     // Add enemy size multipliers as a class property
     // Add property to track if player is dead
     private isPlayerDead: boolean = false;
-    // Add minimap properties
-    private readonly MINIMAP_WIDTH = 200;  // Increased from 40
-    private readonly MINIMAP_HEIGHT = 200; // Made square for better visibility
-    private readonly MINIMAP_PADDING = 10;
-    // Add decoration-related properties
-    private decorations: Array<{
-        x: number;
-        y: number;
-        scale: number;
-    }> = [];
-    // Add sand property
-    private sands: Array<{
-        x: number;
-        y: number;
-        radius: number;
-        rotation: number;
-    }> = [];
     // Add control mode property
     private useMouseControls: boolean = localStorage.getItem('useMouseControls') === 'true';
     private mouseX: number = 0;
@@ -168,7 +76,6 @@ export class Game {
     private frameTimeSamples: number = 0;
     private frameTimeAccum: number = 0;
     // Connection quality tracking for slow connection optimization
-    private lastPingTime: number = 0;
     private averagePing: number = 0;
     private pingSamples: number[] = [];
     private readonly MAX_PING_SAMPLES = 10;
@@ -181,52 +88,25 @@ export class Game {
     // Top per-event consumers (bytes/sec) refreshed once per second by the FPS counter,
     // displayed in the stats overlay. Helps isolate which event is eating bandwidth.
     private topBandwidthEvents: { event: string; bytes: number; dir: 'in' | 'out' }[] = [];
-    private titleScreen: HTMLElement | null;
     private nameInput: HTMLInputElement | null;
     private exitButton: HTMLElement | null;
-    private exitButtonContainer: HTMLElement | null;
     private playerHue: number = 0;
     private playerColor: string = 'hsl(0, 100%, 50%)';
-    private readonly LOADOUT_SLOTS = 10;
-    private readonly LOADOUT_KEY_BINDINGS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
     // Add to class properties
     private inventoryPanel: HTMLDivElement | null = null;
     private saveIndicator: HTMLDivElement | null = null;
     private saveIndicatorTimeout: NodeJS.Timeout | null = null;
-    // Add to class properties
-    private chatContainer: HTMLDivElement | null = null;
-    private chatInput: HTMLInputElement | null = null;
-    private chatMessages: HTMLDivElement | null = null;
-    private isChatFocused: boolean = false;
-    // Add to Game class properties
-    private pendingScripts: Map<string, SandboxedScript> = new Map();
     // Add to Game class properties
     public readonly ITEM_RARITY_COLORS = ITEM_RARITY_COLORS;
     // Add to Game class properties
-    private craftingPanel: HTMLDivElement | null = null;
-    private craftingSlots: CraftingSlot[] = Array(4).fill(null).map((_, i) => ({ index: i, item: null }));
     private isCraftingOpen: boolean = false;
-    private svgLoader: SVGLoader;
-    private readonly WALL_SPACING = 500; // Distance between walls
-    private world_map_data: MapElement[] = [];
 
     // Add map rendering properties
 
-    private lastUpdateTime: number = 0;         // Add this property for delta time
-    private lastServerUpdate: number = 0;
-    private lastHeartbeat: number = 0;
     private heartbeatInterval: NodeJS.Timeout | null = null;       // Add this property for server update time
 
     // Asset loader instance
     private assetLoader: AssetLoader;
-
-    private lastDeathTime: number = 0;
-    private deathCooldown: number = 3000; // 3 seconds
-
-    private lastMessageTime: number = 0; // Add this line
-    private messageCooldown: number = 1000; // 1 second cooldown
-
-    private gameStartTime: number = 0;
 
     // Add chat property
     private chat: Chat | null = null;
@@ -243,12 +123,12 @@ export class Game {
     private abortController: AbortController = new AbortController();
     private createdElements: HTMLElement[] = []; // Track DOM elements for cleanup
 
-    constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null, shadersEnabled: boolean = false, showStats: boolean = false, dynamicSkybox: boolean = false) {
+    constructor(showHitboxes: boolean, serverIp: string, preloadedAssets?: PreloadedAssets | null, showStats: boolean = false, dynamicSkybox: boolean = false) {
         this.showHitboxes = showHitboxes;
         this.showStats = showStats;
         this.interpolationAmount = parseFloat(localStorage.getItem('interpolationAmount') || '0.15');
         this.loadControls();
-        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'shaders enabled:', shadersEnabled, 'show stats:', showStats, 'dynamic skybox:', dynamicSkybox);
+        console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'show stats:', showStats, 'dynamic skybox:', dynamicSkybox);
         
         // Initialize asset loader
         this.assetLoader = new AssetLoader();
@@ -275,11 +155,6 @@ export class Game {
         this.graphics.showHitboxes = this.showHitboxes;
         this.graphics.dynamicSkybox = dynamicSkybox;
         this.graphics.mobDeathAnimation = this.mobDeathAnimation;
-
-        // Initialize shaders if enabled
-        if (shadersEnabled && window.shaderManager) {
-            window.shaderManager.setShadersEnabled(true);
-        }
 
         // Set initial canvas size
         this.resizeCanvas();
@@ -368,7 +243,6 @@ export class Game {
         this.setupEventListeners();
 
         // Get title screen elements
-        this.titleScreen = document.querySelector('.center_text');
         this.nameInput = document.getElementById('nameInput') as HTMLInputElement;
 
         // Initialize multiplayer mode after resource loading
@@ -526,7 +400,6 @@ export class Game {
 
         // Initialize exit button
         this.exitButton = document.getElementById('exitButton');
-        this.exitButtonContainer = document.getElementById('exitButtonContainer');
 
         // Add exit button click handler
         this.exitButton?.addEventListener('click', () => this.handleExit(), { signal: this.abortController.signal });
@@ -593,13 +466,11 @@ export class Game {
         this.skillsManager = new SkillsManager(this);
         this.shopManager = new ShopManager(this);
 
-        this.svgLoader = new SVGLoader();
         this.assetLoader.loadAssets();
 
         // Map is bundled with the client via src/map_data.ts (no longer streamed
         // from the server). The wall grid is populated as a side-effect of that
         // import, so we just need to wire the elements into the renderer.
-        this.world_map_data = WORLD_MAP;
         this.graphics.setMap(WORLD_MAP);
         this.renderMap(WORLD_MAP);
         this.assetLoader.loadBiomeTextures(WORLD_MAP, this.graphics);
@@ -624,8 +495,6 @@ export class Game {
 
         // Load background image from land.svg
         this.assetLoader.loadBackgroundFromSVG();
-
-        this.gameStartTime = Date.now();
 
         // In constructor, after this.socket = io(...), around line 572
         // this.socket = io(prompt("Enter the server URL eg https://localhost:3000: \n Join a public server: https://54.151.123.177:3000/") || "", {
@@ -1446,7 +1315,6 @@ export class Game {
     }
 
     private updatePlayerMovement(player: Player, deltaTime: number) {
-        const speed = 5 * (player.speed_boost ? 2 : 1);
         let dx = 0;
         let dy = 0;
 
@@ -1478,14 +1346,9 @@ export class Game {
         if (this.useMouseControls && !isAnyMenuOpen) {
             // Always use the stored target position (in world coordinates)
             // This ensures the target doesn't drift as the camera moves
-            let targetX: number;
-            let targetY: number;
-            
-            if (this.hasValidMouseTarget && 
+            if (this.hasValidMouseTarget &&
                 isFinite(this.lastMouseTargetX) && isFinite(this.lastMouseTargetY) &&
                 !isNaN(this.lastMouseTargetX) && !isNaN(this.lastMouseTargetY)) {
-                targetX = this.lastMouseTargetX;
-                targetY = this.lastMouseTargetY;
             } else {
                 // If no valid target yet, use current mouse position and set it as target
                 if (isFinite(this.mouseX) && isFinite(this.mouseY) &&
@@ -1493,8 +1356,6 @@ export class Game {
                     this.lastMouseTargetX = this.mouseX;
                     this.lastMouseTargetY = this.mouseY;
                     this.hasValidMouseTarget = true;
-                    targetX = this.mouseX;
-                    targetY = this.mouseY;
                 } else {
                     inputData.useMouse = false;
                     // Throttle input sending
@@ -1774,7 +1635,6 @@ export class Game {
 
     private renderMap(mapData: MapElement[]) {
         // Store the map data and render it
-        this.world_map_data = mapData;
         this.graphics.drawMap(mapData);
     }
 
@@ -1826,18 +1686,10 @@ export class Game {
         // Clear all game data
         this.players.clear();
         this.enemies.clear();
-        this.dots = [];
-        this.obstacles = [];
         this.items = new Map();
-        this.world_map_data = [];
-        this.floatingTexts = [];
-        this.decorations = [];
-        this.sands = [];
 
         // Reset game state
         this.isCraftingOpen = false;
-        this.speedBoostActive = false;
-        this.shieldActive = false;
         this.isPlayerDead = false;
         this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
 
@@ -1879,12 +1731,6 @@ export class Game {
         this.shopManager.cleanup();
         this.chat?.cleanup();
         this.tutorial.cleanup();
-    }
-
-    private hideExitButton() {
-        if (this.exitButtonContainer) {
-            this.exitButtonContainer.style.display = 'none';
-        }
     }
 
     private handleExit() {

@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 512532810,
+      "totalXP": 512535532,
       "inventory": {
         "common": {
           "petal_light": 169,
@@ -34,10 +34,10 @@
           "petal_ladybug_egg": 232,
           "petal_soldier_ant_egg": 290,
           "petal_dark_ladybug_egg": 239,
-          "petal_bee_egg": 225,
+          "petal_bee_egg": 227,
           "petal_fly_egg": 120,
           "petal_bubble_egg": 53,
-          "petal_rock_egg": 214,
+          "petal_rock_egg": 215,
           "petal_bush_egg": 15,
           "petal_roach_egg": 46,
           "petal_cactus_egg": 28,
@@ -70,13 +70,13 @@
           "petal_glass": 154,
           "petal_cube_egg": 33,
           "petal_corn": 37,
-          "petal_faster": 99,
+          "petal_faster": 100,
           "petal_shell_egg": 37,
-          "petal_pollen": 22,
-          "petal_centipede_egg": 60,
+          "petal_pollen": 24,
+          "petal_centipede_egg": 61,
           "petal_powder": 20,
           "petal_desert_centipede_egg": 11,
-          "petal_peas": 249,
+          "petal_peas": 250,
           "petal_baby_ant_egg": 61,
           "petal_worker_ant_egg": 41,
           "petal_worker_fire_ant_egg": 21,
@@ -226,7 +226,7 @@
           "petal_clover": 99,
           "petal_light": 100,
           "health_potion": 46,
-          "petal_rock": 75,
+          "petal_rock": 76,
           "petal_yggdrasil": 10,
           "petal_bone": 174,
           "petal_poison_cactus": 148,
@@ -234,7 +234,7 @@
           "petal_lightning": 52,
           "petal_missile": 203,
           "petal_jelly": 34,
-          "petal_leaf": 52,
+          "petal_leaf": 53,
           "petal_cactus": 14,
           "petal_cutter": 4,
           "petal_lightning_cutter": 1,
@@ -289,9 +289,9 @@
           "petal_powder": 21,
           "petal_desert_centipede_egg": 5,
           "petal_leafbug_egg": 4,
-          "petal_peas": 126,
+          "petal_peas": 128,
           "petal_baby_ant_egg": 41,
-          "petal_worker_ant_egg": 36,
+          "petal_worker_ant_egg": 37,
           "petal_worker_fire_ant_egg": 15,
           "petal_baby_fire_ant_egg": 10,
           "petal_soil": 11,
@@ -793,9 +793,9 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 1023,
+          "common": 1028,
           "legendary": 766,
-          "uncommon": 319,
+          "uncommon": 320,
           "mythic": 649,
           "rare": 155,
           "ultra": 110,
@@ -806,7 +806,7 @@
         "soldier_ant": {
           "epic": 314,
           "legendary": 1202,
-          "common": 1402,
+          "common": 1403,
           "rare": 442,
           "mythic": 1244,
           "ultra": 128,
@@ -818,19 +818,19 @@
         "rock": {
           "legendary": 551,
           "ultra": 90,
-          "common": 931,
+          "common": 936,
           "mythic": 563,
           "epic": 144,
-          "rare": 143,
-          "uncommon": 297,
+          "rare": 145,
+          "uncommon": 302,
           "super": 6,
           "unique": 3
         },
         "dark_ladybug": {
-          "common": 1197,
+          "common": 1200,
           "legendary": 546,
           "mythic": 542,
-          "uncommon": 369,
+          "uncommon": 372,
           "rare": 170,
           "epic": 143,
           "ultra": 132,
@@ -838,10 +838,10 @@
           "unique": 2
         },
         "hornet": {
-          "common": 1486,
+          "common": 1489,
           "legendary": 1094,
           "mythic": 1073,
-          "uncommon": 611,
+          "uncommon": 612,
           "rare": 293,
           "epic": 294,
           "ultra": 267,
@@ -850,22 +850,22 @@
         },
         "dandelion": {
           "legendary": 616,
-          "common": 875,
+          "common": 878,
           "mythic": 525,
-          "uncommon": 283,
+          "uncommon": 286,
           "unique": 7,
           "ultra": 112,
-          "rare": 160,
-          "epic": 135,
+          "rare": 162,
+          "epic": 136,
           "super": 14
         },
         "bee": {
-          "common": 1017,
+          "common": 1020,
           "epic": 220,
           "mythic": 602,
           "uncommon": 316,
           "legendary": 640,
-          "rare": 169,
+          "rare": 170,
           "ultra": 114,
           "super": 15,
           "unique": 3
@@ -1156,21 +1156,21 @@
         },
         "centipede": {
           "common": 220,
-          "uncommon": 75,
+          "uncommon": 77,
           "legendary": 241,
           "epic": 64,
           "mythic": 260,
-          "rare": 54,
+          "rare": 55,
           "ultra": 78,
           "super": 3
         },
         "centipede_body": {
           "common": 1584,
-          "uncommon": 598,
+          "uncommon": 615,
           "legendary": 1712,
           "mythic": 1575,
           "epic": 502,
-          "rare": 470,
+          "rare": 479,
           "ultra": 439
         },
         "desert_centipede_body": {
@@ -1197,7 +1197,7 @@
           "rare": 65,
           "epic": 56,
           "legendary": 115,
-          "common": 127,
+          "common": 130,
           "mythic": 179,
           "ultra": 53,
           "unique": 1
@@ -1207,7 +1207,7 @@
           "rare": 53,
           "epic": 68,
           "legendary": 102,
-          "common": 159,
+          "common": 163,
           "mythic": 148,
           "ultra": 26,
           "unique": 2
@@ -1232,7 +1232,7 @@
         },
         "ant_hole": {
           "uncommon": 22,
-          "common": 39,
+          "common": 40,
           "legendary": 27,
           "ultra": 9,
           "unique": 1,
@@ -1248,9 +1248,9 @@
           "epic": 2
         }
       },
-      "stars": 151217,
+      "stars": 151218,
       "dailyStreak": 1,
-      "lastStreakDate": "2026-05-21"
+      "lastStreakDate": "2026-05-26"
     },
     "1g99g1gfk": {
       "totalXP": 345,
@@ -1704,7 +1704,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1779338133989
+      "lastActiveAt": 1779758470060
     },
     "dev": {
       "id": "1g99g1gfk",

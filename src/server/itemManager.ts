@@ -1,7 +1,7 @@
 import { Server as SocketIOServer } from '../ws_server';
 import { Enemy } from '../server_utils';
 import { WorldItem, Item } from '../item';
-import { calculateMobDrops, DropItem } from '../mobs';
+import { calculateMobDrops } from '../mobs';
 import { items, ITEM_EXPIRATION_TIMES, itemExpirationTimeouts } from './gameState';
 import { getEligiblePlayers, getOriginalSocketId } from './utils';
 

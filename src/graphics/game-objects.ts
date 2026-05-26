@@ -18,8 +18,6 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
     };
 
     // Draw enemies first (including pets) - below players and petals
-    const enemyCount = enemies.size;
-
     const mobsT0 = performance.now();
     for (const enemy of enemies.values()) {
         // Calculate actual enemy size for accurate culling

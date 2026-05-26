@@ -30,11 +30,6 @@ const RARITY_TP_COSTS = {
     super: 25,
     unique: 26
 };
-/** Second Chance invulnerability durations per tier (seconds). */
-const SECOND_CHANCE_DURATIONS = {
-    common: 0.3,
-    uncommon: 1.5,
-};
 const SKILLS = [
     { id: 'damage', name: 'Damage', icon: 'swirl', spiral: true },
     { id: 'petalHealth', name: 'Petal Health', icon: 'curve', spiral: true },

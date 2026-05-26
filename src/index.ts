@@ -5,17 +5,9 @@ import { AuthUI } from './auth_ui';
 import { TitleScreen, injectTitleScreenStyles } from './title_screen';
 import { Preloader, PreloadedAssets } from './preloader';
 import { PETAL_CONFIG } from './petals';
-import { ShaderManager } from './shader/shaderManager';
 import { io } from './ws_client';
 import { dictToInventory } from './inventoryCodec';
 import { WORLD_MAP } from './map_data';
-
-// Add interfaces before the workerCode string
-interface Decoration {
-    x: number;
-    y: number;
-    scale: number;  // For random sizes
-}
 
 let currentGame: Game | null = null;
 let preconnectedSocket: any = null; // Store preconnected socket
@@ -26,7 +18,6 @@ declare global {
     interface Window {
         currentGame: Game | null;
         titleScreen: TitleScreen | null;
-        shaderManager?: ShaderManager | null;
         preconnectedSocket?: any;
         preconnectedMapData?: any;
     }
@@ -35,50 +26,7 @@ declare global {
 window.currentGame = currentGame;
 let titleScreen: TitleScreen | null = null;
 window.titleScreen = titleScreen;
-let authUI: AuthUI | null = null;
 let preloadedAssets: PreloadedAssets | null = null;
-let shaderManager: ShaderManager | null = null;
-
-// Create and show loading screen
-function createLoadingScreen(): HTMLDivElement {
-    const loadingScreen = document.createElement('div');
-    loadingScreen.id = 'preloadScreen';
-    loadingScreen.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(135deg, #00d885 0%, #02c278 100%);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-        font-family: Ubuntu, sans-serif;
-    `;
-    
-    loadingScreen.innerHTML = `
-        <div style="text-align: center;">
-            <h1 style="color: white; font-size: 48px; margin-bottom: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
-                florr.io clone
-            </h1>
-            <p style="color: rgba(255,255,255,0.9); font-size: 20px; margin-bottom: 30px;">
-                Loading assets...
-            </p>
-            <div style="width: 300px; height: 30px; background: rgba(255,255,255,0.3); border-radius: 15px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.2);">
-                <div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%); transition: width 0.3s ease; border-radius: 15px;"></div>
-            </div>
-            <p id="progressText" style="color: white; font-size: 16px; margin-top: 15px;">0%</p>
-            <div style="margin-top: 30px; color: rgba(255,255,255,0.7); font-size: 14px;">
-                <p>Loading sprites, textures, and game systems...</p>
-            </div>
-        </div>
-    `;
-    
-    // document.body.appendChild(loadingScreen);
-    return loadingScreen;
-}
 
 // Update loading screen progress
 function updateLoadingProgress(progress: number) {
@@ -108,10 +56,7 @@ function removeLoadingScreen() {
 
 const bootstrap = async () => {
     console.log('[Index] Starting application initialization...');
-    
-    // Show loading screen
-    const loadingScreen = createLoadingScreen();
-    
+
     try {
         // Create preloader
         const preloader = new Preloader((progress) => {
@@ -136,12 +81,7 @@ const bootstrap = async () => {
         
         // Remove loading screen
         removeLoadingScreen();
-        
-        // Initialize shader manager
-        console.log('[Index] Initializing shader manager...');
-        shaderManager = new ShaderManager();
-        window.shaderManager = shaderManager;
-        
+
         // Initialize title screen
         console.log('[Index] Initializing title screen...');
         injectTitleScreenStyles();
@@ -153,7 +93,7 @@ const bootstrap = async () => {
         titleScreen.updateBiomesFromMapData(WORLD_MAP);
         
         // Initialize auth UI after title screen is created
-        authUI = new AuthUI();
+        new AuthUI();
         
         // Preconnect if user is already logged in (showing "logging in")
         // Use setTimeout to ensure titleScreen is fully initialized
@@ -349,11 +289,10 @@ function setupGameEventListeners() {
             
             const showHitboxes = titleScreen?.getShowHitboxes() || false;
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
-            const shadersEnabled = titleScreen?.getShadersEnabled() || false;
             const showStats = titleScreen?.getShowStats() || false;
             const dynamicSkybox = titleScreen?.getDynamicSkybox() || false;
-            
-            currentGame = new Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled, showStats, dynamicSkybox);
+
+            currentGame = new Game(showHitboxes, serverIp, preloadedAssets, showStats, dynamicSkybox);
             window.currentGame = currentGame;
             
             // Set changelog and notifications managers on graphics

@@ -24,7 +24,6 @@ class GuildMenuManager {
         this.dragStartScroll = 0;
         this.textInput = null; // shared input for create/invite/kick prompts
         this.promptMode = 'none';
-        this.promptMemberHint = null;
         this.mouseDownHandler = null;
         this.mouseMoveHandler = null;
         this.mouseUpHandler = null;
@@ -247,11 +246,10 @@ class GuildMenuManager {
                 break;
         }
     }
-    openPrompt(mode, memberHint) {
+    openPrompt(mode, _memberHint) {
         if (this.textInput)
             this.closePrompt();
         this.promptMode = mode;
-        this.promptMemberHint = memberHint || null;
         const input = document.createElement('input');
         input.type = 'text';
         input.maxLength = mode === 'create' ? 32 : 24;
@@ -308,7 +306,6 @@ class GuildMenuManager {
             this.textInput = null;
         }
         this.promptMode = 'none';
-        this.promptMemberHint = null;
     }
     toast(text) {
         // Lightweight fallback: we'd normally have a toast system, but the

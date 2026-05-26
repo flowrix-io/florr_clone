@@ -1,5 +1,5 @@
 import { Server as SocketIOServer } from '../ws_server';
-import { ServerPlayer, PlayerInventory } from '../player';
+import { ServerPlayer } from '../player';
 import { Item } from '../item';
 import { getPetalStats, PlayerModifiers } from '../petals';
 import {
@@ -13,7 +13,6 @@ import {
     DAMAGE_PER_LEVEL,
     BASE_XP_REQUIREMENT,
     XP_MULTIPLIER,
-    players,
     enemies,
     PLAYER_SIZE,
     getTileState,
@@ -31,7 +30,6 @@ import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { playerUserIds } from './gameState';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { MapElement } from '../constants';
-import { RARITY_LEVELS, Rarity } from '../petals';
 import {
     addItem,
     removeItem,
@@ -39,7 +37,6 @@ import {
     createInitialInventory,
     inventoryToDict
 } from '../inventoryCodec';
-import { getDamageMultiplier } from '../petal_actions';
 import { getMobStats } from '../mobs';
 
 // Re-export inventory functions so existing imports keep working

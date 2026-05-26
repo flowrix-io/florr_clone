@@ -635,7 +635,7 @@ function updatePlayerState(player, deltaTime, deps) {
     if (player.isDead) {
         return;
     }
-    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, createEnemy, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database, trackMobKill } = deps;
+    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database, trackMobKill } = deps;
     // Update player effects
     (0, petal_actions_1.updatePlayerEffects)(player, deltaTime);
     updateSpongeDamage(player, deltaTime, io);
@@ -741,7 +741,6 @@ function updatePlayerState(player, deltaTime, deps) {
         newX = wallCollision.x;
         newY = wallCollision.y;
     }
-    let collision = false;
     // Spatial-grid broad-phase: only test enemies whose center is within
     // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
     const _playerRadius = effectivePlayerSize / 2;
@@ -750,7 +749,6 @@ function updatePlayerState(player, deltaTime, deps) {
         const enemy = _candidates[_ci];
         const collisionInfo = (0, physics_1.checkPlayerEnemyCollision)(newX, newY, effectivePlayerSize, enemy);
         if (collisionInfo.collided) {
-            collision = true;
             // Don't interact with dead players (corpses)
             if (!player.isDead) {
                 // Calculate knockback direction
@@ -828,7 +826,6 @@ function updatePlayerState(player, deltaTime, deps) {
                 if (enemy.isDead) {
                     continue;
                 }
-                const oldHealth = enemy.health;
                 enemy.health = Math.max(0, enemy.health - player.damage);
                 // Mark enemy for batched damage update at end of frame
                 (0, utils_1.markEnemyDamaged)(enemy);

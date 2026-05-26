@@ -3,10 +3,10 @@ import { ServerPlayer } from '../player';
 import { Enemy } from '../server_utils';
 import { database, RedeemedCode, Notification } from '../database';
 import { getAllMobTypes } from '../mobs';
-import { players, enemies, ENEMIES_PER_VIEWPORT } from '../constants';
+import { players } from '../constants';
 import { ENEMY_COUNT } from './gameState';
 import { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase, scheduleRestart, cancelScheduledRestart, getScheduledRestartInfo } from '../server';
-import { getAllPetalTypes, getPetalStats, RARITY_LEVELS } from '../petals';
+import { getPetalStats, RARITY_LEVELS } from '../petals';
 import { addItem } from './playerManager';
 import { setTargetBotCount, getTargetBotCount, MAX_BOT_COUNT } from './botManager';
 import {
@@ -58,7 +58,7 @@ export function executeServerCommand(
     socketId?: string
 ): void {
     const trimmedCommand = command.trim();
-    const { io, savePlayerProgress, spawnMob, spawnSpecialMobs, createEnemy, adjustEnemyCount } = deps;
+    const { io, savePlayerProgress, spawnMob, spawnSpecialMobs, adjustEnemyCount } = deps;
     
     if (executor) {
         sendOutput(`[ADMIN] ${executor} executed: ${trimmedCommand}`, socketId, io);

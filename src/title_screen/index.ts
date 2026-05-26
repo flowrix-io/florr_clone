@@ -528,7 +528,6 @@ export class TitleScreen {
         const notificationsButton = this.exitButtonContainer.querySelector('#notificationsButton');
         const leaderboardButton = this.exitButtonContainer.querySelector('#leaderboardButton');
         const guildButton = this.exitButtonContainer.querySelector('#guildButton');
-        const exitButton = this.exitButtonContainer.querySelector('#exitButton');
 
         console.log('Setting up buttons - changelogButton:', !!changelogButton, 'notificationsButton:', !!notificationsButton);
 
@@ -2064,7 +2063,6 @@ export class TitleScreen {
     }
 
     public getShowHitboxes(): boolean { return this.settings.getShowHitboxes(); }
-    public getShadersEnabled(): boolean { return this.settings.getShadersEnabled(); }
     public getShowStats(): boolean { return this.settings.getShowStats(); }
     public getDynamicSkybox(): boolean { return this.settings.getDynamicSkybox(); }
     public getServerIP(): string { return this.settings.getServerIP(); }

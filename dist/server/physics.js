@@ -59,73 +59,6 @@ function getExtendedWallForCollision(wall) {
     return extendedWall;
 }
 /**
- * Check if two rectangles overlap
- */
-function rectanglesOverlap(left1, right1, top1, bottom1, left2, right2, top2, bottom2) {
-    return right1 > left2 && left1 < right2 && bottom1 > top2 && top1 < bottom2;
-}
-/**
- * Resolve rectangle-rectangle collision by pushing entity away from wall
- */
-function resolveRectangleCollision(entityX, entityY, entityHalfSize, wallLeft, wallRight, wallTop, wallBottom) {
-    const entityLeft = entityX - entityHalfSize;
-    const entityRight = entityX + entityHalfSize;
-    const entityTop = entityY - entityHalfSize;
-    const entityBottom = entityY + entityHalfSize;
-    // Calculate overlap amounts
-    const overlapLeft = entityRight - wallLeft;
-    const overlapRight = wallRight - entityLeft;
-    const overlapTop = entityBottom - wallTop;
-    const overlapBottom = wallBottom - entityTop;
-    // Find the minimum overlap to determine push direction
-    const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
-    let newX = entityX;
-    let newY = entityY;
-    // Push entity away from wall in the direction of minimum overlap
-    if (minOverlap === overlapLeft) {
-        newX = wallLeft - entityHalfSize - COLLISION_BUFFER;
-    }
-    else if (minOverlap === overlapRight) {
-        newX = wallRight + entityHalfSize + COLLISION_BUFFER;
-    }
-    else if (minOverlap === overlapTop) {
-        newY = wallTop - entityHalfSize - COLLISION_BUFFER;
-    }
-    else if (minOverlap === overlapBottom) {
-        newY = wallBottom + entityHalfSize + COLLISION_BUFFER;
-    }
-    return { x: newX, y: newY };
-}
-/**
- * Resolve player-wall collision using penetration depth method
- */
-function resolvePlayerWallCollision(playerX, playerY, playerSize, wallX, wallY, wallWidth, wallHeight) {
-    const overlapX = (playerX + playerSize / 2) - (wallX + wallWidth / 2);
-    const overlapY = (playerY + playerSize / 2) - (wallY + wallHeight / 2);
-    const combinedHalfWidths = playerSize / 2 + wallWidth / 2;
-    const combinedHalfHeights = playerSize / 2 + wallHeight / 2;
-    if (Math.abs(overlapX) < combinedHalfWidths && Math.abs(overlapY) < combinedHalfHeights) {
-        const penX = combinedHalfWidths - Math.abs(overlapX);
-        const penY = combinedHalfHeights - Math.abs(overlapY);
-        let newX = playerX;
-        let newY = playerY;
-        if (penX < penY) {
-            if (overlapX > 0)
-                newX += penX;
-            else
-                newX -= penX;
-        }
-        else {
-            if (overlapY > 0)
-                newY += penY;
-            else
-                newY -= penY;
-        }
-        return { x: newX, y: newY };
-    }
-    return { x: playerX, y: playerY };
-}
-/**
  * Check if a position collides with a wall or water tile, accounting for jagged edges
  */
 function checkTileCollision(worldX, worldY, halfSize) {
@@ -335,8 +268,6 @@ function hasLineOfSight(x1, y1, x2, y2, sampleCount = 20) {
  */
 function checkEnemyEnemyCollisions(enemies, io) {
     const MOB_COLLISION_BUFFER = 5; // Buffer between mobs
-    const MELEE_ATTACK_COOLDOWN = 1000; // 1 second cooldown between melee attacks
-    const currentTime = Date.now();
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
         const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);

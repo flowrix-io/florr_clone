@@ -21,7 +21,6 @@ function initMultiPlayerMode(game, serverIp) {
         console.log(`[CLIENT] Using preconnected socket (ID: ${window.preconnectedSocket.id})`);
         game.socket = window.preconnectedSocket;
         // Remove only the mapData listener from preconnect, keep all other listeners
-        const mapDataListeners = game.socket.listeners('mapData');
         game.socket.removeAllListeners('mapData');
         // Clear the preconnected socket reference since we're now using it
         window.preconnectedSocket = null;
@@ -742,7 +741,6 @@ function setupSocketListeners(game) {
     game.socket.on('playerHealed', (data) => {
         const player = game.players.get(data.playerId);
         if (player) {
-            const oldHealth = player.health;
             player.health = data.health;
             // Show healing effect
             if (data.healAmount > 0) {

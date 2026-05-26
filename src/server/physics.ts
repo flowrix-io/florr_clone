@@ -1,9 +1,6 @@
 import { Enemy, isCentipedeHeadType } from '../server_utils';
-import { ServerPlayer } from '../player';
 import { WorldItem } from '../item';
 import {
-    isWall,
-    SCALE_FACTOR,
     ACTUAL_WORLD_WIDTH,
     ACTUAL_WORLD_HEIGHT,
     PLAYER_SIZE,
@@ -21,7 +18,7 @@ import {
     isTileIdBlocking,
     getTileTypeConfig
 } from '../constants';
-import { WORLD_MAP, WALL_GRID } from '../map_data';
+import { WALL_GRID } from '../map_data';
 import { getMobStats } from '../mobs';
 import { markEnemyDamaged } from './utils';
 
@@ -73,85 +70,6 @@ export function getExtendedWallForCollision(wall: { x: number; y: number; width:
     }
     
     return extendedWall;
-}
-
-/**
- * Check if two rectangles overlap
- */
-function rectanglesOverlap(
-    left1: number, right1: number, top1: number, bottom1: number,
-    left2: number, right2: number, top2: number, bottom2: number
-): boolean {
-    return right1 > left2 && left1 < right2 && bottom1 > top2 && top1 < bottom2;
-}
-
-/**
- * Resolve rectangle-rectangle collision by pushing entity away from wall
- */
-function resolveRectangleCollision(
-    entityX: number, entityY: number, entityHalfSize: number,
-    wallLeft: number, wallRight: number, wallTop: number, wallBottom: number
-): { x: number; y: number } {
-    const entityLeft = entityX - entityHalfSize;
-    const entityRight = entityX + entityHalfSize;
-    const entityTop = entityY - entityHalfSize;
-    const entityBottom = entityY + entityHalfSize;
-
-    // Calculate overlap amounts
-    const overlapLeft = entityRight - wallLeft;
-    const overlapRight = wallRight - entityLeft;
-    const overlapTop = entityBottom - wallTop;
-    const overlapBottom = wallBottom - entityTop;
-
-    // Find the minimum overlap to determine push direction
-    const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
-
-    let newX = entityX;
-    let newY = entityY;
-
-    // Push entity away from wall in the direction of minimum overlap
-    if (minOverlap === overlapLeft) {
-        newX = wallLeft - entityHalfSize - COLLISION_BUFFER;
-    } else if (minOverlap === overlapRight) {
-        newX = wallRight + entityHalfSize + COLLISION_BUFFER;
-    } else if (minOverlap === overlapTop) {
-        newY = wallTop - entityHalfSize - COLLISION_BUFFER;
-    } else if (minOverlap === overlapBottom) {
-        newY = wallBottom + entityHalfSize + COLLISION_BUFFER;
-    }
-
-    return { x: newX, y: newY };
-}
-
-/**
- * Resolve player-wall collision using penetration depth method
- */
-function resolvePlayerWallCollision(
-    playerX: number, playerY: number, playerSize: number,
-    wallX: number, wallY: number, wallWidth: number, wallHeight: number
-): { x: number; y: number } {
-    const overlapX = (playerX + playerSize / 2) - (wallX + wallWidth / 2);
-    const overlapY = (playerY + playerSize / 2) - (wallY + wallHeight / 2);
-    const combinedHalfWidths = playerSize / 2 + wallWidth / 2;
-    const combinedHalfHeights = playerSize / 2 + wallHeight / 2;
-
-    if (Math.abs(overlapX) < combinedHalfWidths && Math.abs(overlapY) < combinedHalfHeights) {
-        const penX = combinedHalfWidths - Math.abs(overlapX);
-        const penY = combinedHalfHeights - Math.abs(overlapY);
-
-        let newX = playerX;
-        let newY = playerY;
-
-        if (penX < penY) {
-            if (overlapX > 0) newX += penX; else newX -= penX;
-        } else {
-            if (overlapY > 0) newY += penY; else newY -= penY;
-        }
-
-        return { x: newX, y: newY };
-    }
-
-    return { x: playerX, y: playerY };
 }
 
 /**
@@ -420,8 +338,6 @@ export function hasLineOfSight(x1: number, y1: number, x2: number, y2: number, s
  */
 export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
     const MOB_COLLISION_BUFFER = 5; // Buffer between mobs
-    const MELEE_ATTACK_COOLDOWN = 1000; // 1 second cooldown between melee attacks
-    const currentTime = Date.now();
 
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];

@@ -54,7 +54,6 @@ import {
     getSpeedMultiplier,
     getShieldAmount,
     executePetalActionsOnSpawn,
-    updatePetalActions,
     handlePetalCollision,
     updatePetalPosition,
     executePetalActions,
@@ -67,8 +66,7 @@ import { queryEnemiesNear, getMaxEnemyRadius } from './enemyGrid';
 const _enemyQueryBuffer: Enemy[] = [];
 import { addItem, applyPetalHealthBonus, calculatePlayerModifiers, enterPvpArena, exitPvpArena } from './playerManager';
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
-import { trackDamage, sendBossMobDefeatedMessage, cleanupEnemy, trackMobKill, markEnemyDamaged } from './utils';
-import { transferPlayerToServer as transferPlayerToServerModule } from './crossServer';
+import { trackDamage, cleanupEnemy, markEnemyDamaged } from './utils';
 
 // Petal physics state interface
 interface PetalPhysicsState {
@@ -773,7 +771,7 @@ export function updatePlayerState(
         return;
     }
 
-    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, createEnemy, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database, trackMobKill } = deps;
+    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database, trackMobKill } = deps;
 
     // Update player effects
     updatePlayerEffects(player, deltaTime);
@@ -890,7 +888,6 @@ export function updatePlayerState(
         newY = wallCollision.y;
     }
 
-    let collision = false;
     // Spatial-grid broad-phase: only test enemies whose center is within
     // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
     const _playerRadius = effectivePlayerSize / 2;
@@ -898,10 +895,9 @@ export function updatePlayerState(
     for (let _ci = 0; _ci < _candidates.length; _ci++) {
         const enemy = _candidates[_ci];
         const collisionInfo = checkPlayerEnemyCollision(newX, newY, effectivePlayerSize, enemy);
-        
+
         if (collisionInfo.collided) {
-            collision = true;
-            
+
             // Don't interact with dead players (corpses)
             if (!player.isDead) {
                 // Calculate knockback direction
@@ -989,7 +985,6 @@ export function updatePlayerState(
                     continue;
                 }
                 
-                const oldHealth = enemy.health;
                 enemy.health = Math.max(0, enemy.health - player.damage);
                 // Mark enemy for batched damage update at end of frame
                 markEnemyDamaged(enemy);

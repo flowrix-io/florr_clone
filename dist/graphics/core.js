@@ -115,7 +115,6 @@ class Graphics {
             wall: 'rgba(102, 102, 102, 0.0)',
             spawn: 'rgba(76, 175, 80, 0.0)',
             teleporter: 'rgba(33, 150, 243, 0.0)',
-            safe_zone: 'rgba(255, 193, 7, 0.0)',
             biome: 'rgba(128, 64, 192, 0.0)'
         };
         this.ENEMY_COLORS = {

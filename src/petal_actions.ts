@@ -1,6 +1,5 @@
 import { PetalAction, parsePetalActions, RARITY_LEVELS } from './petals';
 import { ServerPlayer } from './player';
-import { PlayerInventory } from './player';
 import { Item } from './item';
 import { Enemy, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
@@ -1615,8 +1614,6 @@ function executeNextAction(petalId: string, deltaTime: number): void {
 
 // Update all active petal actions (call this in game loop with consistent rate)
 export function updatePetalActions(deltaTime: number): void {
-    const currentTime = Date.now();
-    
     // Update all active petal actions
     for (const [petalId, actionState] of petalActionStates.entries()) {
         if (!actionState.isActive) continue;

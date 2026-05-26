@@ -339,10 +339,6 @@ export const DROP_CHANCES = {
     unique: 1.0       // 100% chance
 };
 
-// Add maze configuration
-export const MAZE_CELL_SIZE = 1000;  // Size of each maze cell
-export const MAZE_WALL_THICKNESS = 100;  // Thickness of maze walls
-
 // Add map configuration
 
 // Define spawn table entry for biomes
@@ -354,7 +350,7 @@ export interface BiomeSpawnEntry {
 }
 
 export interface MapElement {
-    type: 'wall' | 'spawn' | 'teleporter' | 'safe_zone' | 'biome';
+    type: 'wall' | 'spawn' | 'teleporter' | 'biome';
     x: number;
     y: number;
     width: number;
@@ -363,7 +359,6 @@ export interface MapElement {
         teleportTo?: { x: number; y: number; serverPort?: number };
         spawnType?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra';
         isNoCombat?: boolean;
-        isSafeZone?: boolean;
         // Biome-specific properties
         biomeName?: string;  // Unique identifier for the biome
         spawnTable?: BiomeSpawnEntry[];  // Spawn table for this biome
@@ -394,10 +389,6 @@ export function isSpawn(element: MapElement): boolean {
 
 export function isTeleporter(element: MapElement): boolean {
     return element.type === 'teleporter';
-}
-
-export function isSafeZone(element: MapElement): boolean {
-    return element.type === 'safe_zone';
 }
 
 // Server configuration for cross-server teleportation

@@ -5,7 +5,7 @@
 // Raw size: 40000 bytes  →  RLE+base64: 7750 bytes (19.4%).
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAP_TILE_RLE = exports.MAP_GRID_HEIGHT = exports.MAP_GRID_WIDTH = exports.MAP_CUSTOM_TILE_TYPES = exports.MAP_ELEMENTS = void 0;
-/** Map elements (spawn zones, biomes, teleporters, safe zones). */
+/** Map elements (spawn zones, biomes, teleporters). */
 exports.MAP_ELEMENTS = [
     {
         "type": "spawn",

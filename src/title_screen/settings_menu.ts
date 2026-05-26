@@ -65,7 +65,6 @@ export class SettingsMenu {
     private contentBottomY = 0;
 
     private showHitboxes = false;
-    private shadersEnabled = false;
     private showStats = false;
     private mobFramerate = 15;
     private highQualityMobs = false;
@@ -99,14 +98,12 @@ export class SettingsMenu {
     }
 
     public getShowHitboxes(): boolean { return this.showHitboxes; }
-    public getShadersEnabled(): boolean { return this.shadersEnabled; }
     public getShowStats(): boolean { return this.showStats; }
     public getDynamicSkybox(): boolean { return this.dynamicSkybox; }
     public getServerIP(): string { return this.serverIP || window.location.origin; }
 
     private loadValues(): void {
         this.showHitboxes = localStorage.getItem('showHitboxes') === 'true';
-        this.shadersEnabled = localStorage.getItem('shadersEnabled') === 'true';
         this.showStats = localStorage.getItem('showStats') === 'true';
         this.mobFramerate = parseInt(localStorage.getItem('mobAnimationFramerate') || '15', 10);
         this.highQualityMobs = localStorage.getItem('highQualityMobs') === 'true';
@@ -805,13 +802,6 @@ export class SettingsMenu {
             case 'showHitboxes':
                 this.showHitboxes = !this.showHitboxes;
                 localStorage.setItem('showHitboxes', this.showHitboxes.toString());
-                break;
-            case 'enableShaders':
-                this.shadersEnabled = !this.shadersEnabled;
-                localStorage.setItem('shadersEnabled', this.shadersEnabled.toString());
-                if (window.shaderManager) {
-                    window.shaderManager.setShadersEnabled(this.shadersEnabled);
-                }
                 break;
             case 'showStats':
                 this.showStats = !this.showStats;

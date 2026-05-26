@@ -18,10 +18,6 @@ class TitleScreenInventoryManager {
         /** Title canvas the loadout bar paints into (shared with bg + UI). */
         this.loadoutCanvas = null;
         this.canvasLoadoutBar = null;
-        /** Last bounds the loadout bar was drawn into, used to hit-test events. */
-        this.loadoutBounds = null;
-        /** source slot of an in-progress canvas-to-canvas drag, -1 if none */
-        this.canvasDragSourceSlot = -1;
         /** timestamp of last local loadout mutation for optimistic-update suppression */
         this.lastLocalLoadoutChange = 0;
         this.LOADOUT_SYNC_SUPPRESS_MS = 600;
@@ -167,7 +163,6 @@ class TitleScreenInventoryManager {
      * Called from TitleScreen's per-frame onFrame after the bg + title UI pass.
      */
     drawLoadout(ctx, bounds) {
-        this.loadoutBounds = bounds;
         if (this.canvasLoadoutBar)
             this.canvasLoadoutBar.draw(ctx, bounds);
     }
@@ -275,7 +270,6 @@ class TitleScreenInventoryManager {
                 e.preventDefault();
                 return;
             }
-            this.canvasDragSourceSlot = hit;
             this.canvasLoadoutBar.beginDrag(hit, x, y);
             e.dataTransfer?.setData('text/loadoutSlot', hit.toString());
             if (e.dataTransfer)
@@ -288,7 +282,6 @@ class TitleScreenInventoryManager {
             }
         });
         canvas.addEventListener('dragend', () => {
-            this.canvasDragSourceSlot = -1;
             this.canvasLoadoutBar?.endDrag();
         });
         // Accept drops from the inventory DOM grid or from other loadout slots.
@@ -337,7 +330,6 @@ class TitleScreenInventoryManager {
                 }
             }
             this.canvasLoadoutBar.endDrag();
-            this.canvasDragSourceSlot = -1;
         });
     }
     setupSocketListeners() {

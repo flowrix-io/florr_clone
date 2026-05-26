@@ -488,7 +488,6 @@ class TitleScreen {
         const notificationsButton = this.exitButtonContainer.querySelector('#notificationsButton');
         const leaderboardButton = this.exitButtonContainer.querySelector('#leaderboardButton');
         const guildButton = this.exitButtonContainer.querySelector('#guildButton');
-        const exitButton = this.exitButtonContainer.querySelector('#exitButton');
         console.log('Setting up buttons - changelogButton:', !!changelogButton, 'notificationsButton:', !!notificationsButton);
         if (settingsButton) {
             settingsButton.addEventListener('click', (e) => {
@@ -1876,7 +1875,6 @@ class TitleScreen {
         this.settings.handleWheel(deltaY);
     }
     getShowHitboxes() { return this.settings.getShowHitboxes(); }
-    getShadersEnabled() { return this.settings.getShadersEnabled(); }
     getShowStats() { return this.settings.getShowStats(); }
     getDynamicSkybox() { return this.settings.getDynamicSkybox(); }
     getServerIP() { return this.settings.getServerIP(); }

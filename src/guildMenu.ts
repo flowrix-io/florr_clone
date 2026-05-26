@@ -55,7 +55,6 @@ export class GuildMenuManager {
 
     private textInput: HTMLInputElement | null = null; // shared input for create/invite/kick prompts
     private promptMode: 'none' | 'create' | 'invite' | 'kick' = 'none';
-    private promptMemberHint: string | null = null;
 
     private mouseDownHandler: ((e: MouseEvent) => void) | null = null;
     private mouseMoveHandler: ((e: MouseEvent) => void) | null = null;
@@ -286,10 +285,9 @@ export class GuildMenuManager {
         }
     }
 
-    private openPrompt(mode: 'create' | 'invite' | 'kick', memberHint?: string): void {
+    private openPrompt(mode: 'create' | 'invite' | 'kick', _memberHint?: string): void {
         if (this.textInput) this.closePrompt();
         this.promptMode = mode;
-        this.promptMemberHint = memberHint || null;
 
         const input = document.createElement('input');
         input.type = 'text';
@@ -339,7 +337,6 @@ export class GuildMenuManager {
             this.textInput = null;
         }
         this.promptMode = 'none';
-        this.promptMemberHint = null;
     }
 
     private toast(text: string): void {

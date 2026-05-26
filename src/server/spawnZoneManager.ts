@@ -1,4 +1,3 @@
-import { Enemy } from '../server_utils';
 import {
     enemies,
     MapElement,

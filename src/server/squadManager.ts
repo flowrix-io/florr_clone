@@ -1,5 +1,4 @@
 import { Server as SocketIOServer } from '../ws_server';
-import { ServerPlayer } from '../player';
 import { players } from '../constants';
 
 export const MAX_SQUAD_SIZE = 4;

@@ -133,7 +133,7 @@ core_1.Graphics.prototype.drawMinimap = function (players, socket) {
             this.ctx.fillRect(scaledX, scaledY, tileSize, tileSize);
         }
     }
-    // Draw map elements (spawn, biome, teleporter, safe_zone) on minimap
+    // Draw map elements (spawn, biome, teleporter) on minimap
     this.mapData.forEach(element => {
         const scaledX = minimapX + ((element.x - this.minimapScrollX) * minimapScale.x);
         const scaledY = minimapY + ((element.y - this.minimapScrollY) * minimapScale.y);
@@ -153,10 +153,6 @@ core_1.Graphics.prototype.drawMinimap = function (players, socket) {
                 this.ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
                 this.ctx.fill();
                 this.ctx.stroke();
-            }
-            else if (element.type === 'safe_zone') {
-                this.ctx.fillStyle = '#FFC107'; // Yellow for safe zone
-                this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
             }
             else {
                 return; // Skip unknown types

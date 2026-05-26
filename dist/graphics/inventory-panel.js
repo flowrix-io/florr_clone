@@ -77,7 +77,6 @@ class CanvasInventoryPanel {
          *  matches gardn's TextInput approach (canvas paints the background, the
          *  HTML input handles all keyboard input, IME, copy/paste, etc.). */
         this.searchInputEl = null;
-        this.parentEl = null;
         /**
          * Callback fired on item mousedown. If set, the panel calls preventDefault
          * to suppress the browser's HTML5 drag and `click` won't fire — use this
@@ -239,7 +238,6 @@ class CanvasInventoryPanel {
         this.canvas.draggable = true;
     }
     attachTo(parent) {
-        this.parentEl = parent;
         parent.appendChild(this.canvas);
         // Mount a real <input> for the search field, positioned absolutely on
         // top of the canvas. The canvas paints the background; the input

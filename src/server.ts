@@ -1,7 +1,7 @@
 import express from 'express';
 import { createServer } from 'https';
 import { createServer as createHttpServer } from 'http';
-import { Server, Socket, getServerEventStats, resetServerEventStats } from './ws_server';
+import { Server, Socket } from './ws_server';
 import path from 'path';
 import v8 from 'v8';
 import fs from 'fs';
@@ -41,23 +41,22 @@ if (invalidEggTypes.size > 0) {
     }
 }
 
-import { ServerPlayer, PlayerProgress, PlayerInventory, FaceFlags, EquipmentFlags } from './player';
+import { ServerPlayer, PlayerInventory, FaceFlags } from './player';
 import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
-import { updatePlayerEffects, getDamageMultiplier, getSpeedMultiplier, getShieldAmount, executePetalActionsOnSpawn, updatePetalActions, handlePetalCollision, cleanupPetalActions, updatePetalPosition, spawnPet, despawnPet, despawnAllPlayerPets } from './petal_actions';
+import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
-import { PLAYER_DAMAGE, WORLD_WIDTH, WORLD_HEIGHT, ZONE_BOUNDARIES, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, KNOCKBACK_FORCE, DROP_CHANCES, PLAYER_MAX_HEALTH, HEALTH_PER_LEVEL, DAMAGE_PER_LEVEL, BASE_XP_REQUIREMENT, XP_MULTIPLIER, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, OBSTACLE_COUNT, ENEMY_CORAL_PROBABILITY, ENEMY_CORAL_HEALTH, SAND_COUNT, DECORATION_COUNT, MapElement, MapData, BiomeSpawnEntry, isWall, isTeleporter, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, MAX_SPEED, MOUSE_NONLINEAR_SCALE, MOUSE_NONLINEAR_EXPONENT, VIEWPORT_BUFFER, ENEMY_DESPAWN_TIME, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigs, getServerConfigByPort, ServerConfig, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
+import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
-import { Enemy, Obstacle, createDecoration, getRandomPositionInZone, Decoration, Sand, createSand, getXPFromEnemy, PoisonEffect, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
-import { MobProjectile, PlayerProjectile } from './enemy';
+import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
+import { MobProjectile } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
-import { getAllPetalTypes, getPetalStats } from './petals';
-import { MOB_CONFIG, getMobStats, getAllMobTypes, calculateMobDrops, DropItem, SIZE_SCALING } from './mobs';
+import { getPetalStats } from './petals';
+import { getMobStats, getAllMobTypes, SIZE_SCALING } from './mobs';
 
 // Import from refactored modules
 import {
     trackDamage,
     calculateDPS,
-    getEligiblePlayers,
     sendBossMobDefeatedMessage,
     cleanupEnemy,
     trackMobKill,
@@ -76,7 +75,6 @@ import {
     findPlayerByUsername,
     findBotByName,
     handlePlayerDisconnect as handleSquadDisconnect,
-    playerSquadMap,
     listPublicSquads,
     joinPublicSquad,
     setSquadVisibility,
@@ -91,7 +89,6 @@ import {
     declineGuildInvite,
     leaveGuild as leaveGuildFn,
     kickFromGuild,
-    forceJoinGuild,
     getGuildForUsername,
     listGuilds,
     buildGuildUpdate,
@@ -99,19 +96,15 @@ import {
     sendGuildSystemMessage,
     sendGuildChatMessage,
     findSocketIdByUsername as findGuildSocketIdByUsername,
-    pendingGuildInvites,
     syncGuildToOnlineMembers,
-    MAX_GUILD_SIZE,
-    Guild
+    MAX_GUILD_SIZE
 } from './server/guildManager';
 import {
-    checkPlayerWallCollisions,
     checkEnemyWallCollisions,
     checkItemWallCollisions,
     checkProjectileWallCollision,
     hasLineOfSight,
-    checkEnemyEnemyCollisions,
-    checkPlayerEnemyCollision
+    checkEnemyEnemyCollisions
 } from './server/physics';
 import {
     updatePlayerState,
@@ -125,17 +118,13 @@ import {
     cleanupPetalPhysicsStates
 } from './server/playerState';
 import {
-    executeServerCommand,
     handleAdminCommand,
-    setupStdinCommandHandler,
     getAdminHelpText,
     CommandHandlerDependencies
 } from './server/commands';
-import { 
+import {
     items,
-    ultraMobCount,
     superMobCount,
-    uniqueMobCount,
     decorations,
     sands,
     ENEMY_COUNT,
@@ -146,17 +135,11 @@ import {
     knownMobProjectilesByPlayer,
     knownPlayerProjectilesByPlayer,
     allocateMobProjectileId,
-    allocatePlayerProjectileId,
     itemExpirationTimeouts,
     petalCooldownTimeouts,
     ITEM_EXPIRATION_TIMES,
     groundPollens,
-    GROUND_POLLEN_DAMAGE_INTERVAL_MS,
-    getItems,
-    getMobProjectiles,
-    getPlayerProjectiles,
-    setEnemyCount,
-    getEnemyCount
+    GROUND_POLLEN_DAMAGE_INTERVAL_MS
 } from './server/gameState';
 import { handleMobDrops as handleMobDropsModule } from './server/itemManager';
 import { updateBotAI, maintainBotCount, triggerBotRaid, initializeBotGuilds, getBotLevelForName, getBotLoadoutForName } from './server/botManager';
@@ -168,10 +151,8 @@ import {
     hasItem,
     respawnPlayer as respawnPlayerModule,
     getSpawnPositionInBiome,
-    isBiomeSafeForSpawn,
     findSafeSpawnPosition,
     calculateXPRequirement,
-    calculateTotalXP,
     calculateLevelFromTotalXP,
     calculateCurrentLevelXP,
     calculateMaxHealthFromLevel,
@@ -186,7 +167,6 @@ import {
 import { setupTransferEndpoints, transferPlayerToServer as transferPlayerToServerModule } from './server/crossServer';
 import {
     createEnemy as createEnemyModule,
-    createSpecialMob as createSpecialMobModule,
     spawnSpecialMobs as spawnSpecialMobsModule,
     updateSpecialMobCounts as updateSpecialMobCountsModule,
     spawnCentipedeBodySegments,
@@ -422,7 +402,6 @@ ioInstance = io;
 // Get current server port and configuration
 const PORT = process.env.PORT || 3000;
 const CURRENT_SERVER_PORT = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
-const SERVER_CONFIGS = getServerConfigs();
 const CURRENT_SERVER_CONFIG = getServerConfigByPort(CURRENT_SERVER_PORT) || { port: CURRENT_SERVER_PORT, host: 'localhost', name: `Server${CURRENT_SERVER_PORT}` };
 
 // Setup cross-server transfer endpoints
@@ -696,23 +675,14 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
             spawnX = undefined;
             spawnY = undefined;
         } else {
-            // Check if position is in a safe zone
-            const inSafeZone = WORLD_MAP.some(element =>
-                element.type === 'safe_zone' &&
-                spawnX! >= element.x * SCALE_FACTOR &&
-                spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
-                spawnY! >= element.y * SCALE_FACTOR &&
-                spawnY! <= (element.y + element.height) * SCALE_FACTOR
-            );
-
             // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
             const tileState = getTileState(WALL_GRID, spawnX!, spawnY!);
             const collidesWithWall = isTileIdBlocking(tileState);
 
-            if (!inSafeZone && !collidesWithWall) {
+            if (!collidesWithWall) {
                 validPosition = true;
             } else {
-                console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) are in a safe zone or wall. Finding alternative position...`);
+                console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) collide with a wall. Finding alternative position...`);
                 spawnX = undefined;
                 spawnY = undefined;
             }
@@ -756,20 +726,11 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
                 continue;
             }
 
-            // Check if position is in a safe zone
-            const inSafeZone = WORLD_MAP.some(element =>
-                element.type === 'safe_zone' &&
-                spawnX! >= element.x * SCALE_FACTOR &&
-                spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
-                spawnY! >= element.y * SCALE_FACTOR &&
-                spawnY! <= (element.y + element.height) * SCALE_FACTOR
-            );
-
             // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
             const tileState2 = getTileState(WALL_GRID, spawnX!, spawnY!);
             const collidesWithWall = isTileIdBlocking(tileState2);
 
-            if (!inSafeZone && !collidesWithWall) {
+            if (!collidesWithWall) {
                 validPosition = true;
             }
         }
@@ -791,20 +752,11 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
                     continue;
                 }
 
-                // Check if position is in a safe zone
-                const inSafeZone = WORLD_MAP.some(element =>
-                    element.type === 'safe_zone' &&
-                    spawnX! >= element.x * SCALE_FACTOR &&
-                    spawnX! <= (element.x + element.width) * SCALE_FACTOR &&
-                    spawnY! >= element.y * SCALE_FACTOR &&
-                    spawnY! <= (element.y + element.height) * SCALE_FACTOR
-                );
-
                 // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
                 const tileState3 = getTileState(WALL_GRID, spawnX!, spawnY!);
                 const collidesWithWall = isTileIdBlocking(tileState3);
 
-                if (!inSafeZone && !collidesWithWall) {
+                if (!collidesWithWall) {
                     validPosition = true;
                 }
             }
@@ -871,16 +823,6 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
 
 // respawnPlayer moved to playerManager module - using wrapper function defined earlier
 
-// Helper function to determine spawn type based on level
-function getSpawnTypeForLevel(level: number): NonNullable<MapElement['properties']>['spawnType'] {
-    if (level <= 5) return 'common';
-    if (level <= 10) return 'uncommon';
-    if (level <= 15) return 'rare';
-    if (level <= 25) return 'epic';
-    if (level <= 40) return 'legendary';
-    return 'mythic';
-}
-
 // Helper functions moved to playerManager module - using imports
 
 
@@ -922,19 +864,6 @@ interface AuthenticatedSocket extends Socket {
         petalsSig: number;
     }>;
 }
-
-// Skill multipliers based on rarity tier
-const SKILL_MULTIPLIERS: Record<string, number> = {
-    common: 1.0,
-    uncommon: 1.1,
-    rare: 1.2,
-    epic: 1.35,
-    legendary: 1.6,
-    mythic: 2.0,
-    ultra: 2.6,
-    super: 3.3,
-    unique: 4.0
-};
 
 // TP costs for each rarity tier (total = 100 TP for full tree)
 const RARITY_TP_COSTS: Record<string, number> = {
@@ -1691,18 +1620,6 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             unique: 7
         };
 
-        const speedBoostMultipliers: Record<string, number> = {
-            common: 2,
-            uncommon: 2.8,
-            rare: 3.6,
-            epic: 5.2,
-            legendary: 6.8,
-            mythic: 8.4,
-            ultra: 10,
-            super: 12,
-            unique: 14
-        };
-
         const multiplier = item.rarity ? rarityMultipliers[item.rarity] : 1;
 
         switch (item.type) {
@@ -1805,33 +1722,6 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
         // Create a validated copy of the loadout
         const validatedLoadout = [...newLoadout];
-        let hasChanges = false;
-
-        // Helper function to check if an item exists in inventory
-        function itemExistsInInventory(inventory: PlayerInventory, item: Item): boolean {
-            if (!item.rarity) return false;
-
-            let inventoryKey: string;
-            if (item.type === 'petal') {
-                if (!item.petalType) return false;
-                inventoryKey = `petal_${item.petalType}`;
-            } else {
-                inventoryKey = item.type;
-            }
-
-            return hasItem(inventory, item.rarity, inventoryKey, 1);
-        }
-
-        // Helper function to check if an item matches (same type, rarity, petalType)
-        function itemsMatch(item1: Item | null, item2: Item | null): boolean {
-            if (!item1 || !item2) return false;
-            if (item1.type !== item2.type) return false;
-            if (item1.rarity !== item2.rarity) return false;
-            if (item1.type === 'petal') {
-                return item1.petalType === item2.petalType;
-            }
-            return true;
-        }
 
         // Build a reservoir of available items = oldInventory + all items in oldLoadout.
         // This lets us accept swaps between loadout slots (the items *conceptually* exist,
@@ -1872,21 +1762,15 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             if (!item.rarity) {
                 console.warn(`[SERVER] Item at slot ${index} missing rarity, unequipping`);
                 validatedLoadout[index] = null;
-                hasChanges = true;
                 return;
             }
             const k = keyOfItem(item);
             if (!k || (reservoir[k] || 0) <= 0) {
                 console.warn(`[SERVER] Item ${item.type === 'petal' ? `petal_${item.petalType}` : item.type} (${item.rarity}) not available (reservoir exhausted), unequipping`);
                 validatedLoadout[index] = null;
-                hasChanges = true;
                 return;
             }
             reservoir[k]--;
-
-            // If this slot didn't have this exact item before, mark a change for downstream diffing
-            const oldItem = oldLoadout[index];
-            if (!itemsMatch(item, oldItem)) hasChanges = true;
         });
 
         return validatedLoadout;
@@ -3219,11 +3103,6 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
     });
 
-    // Add near other interfaces at the top
-    interface CraftingRequest {
-        items: Item[];
-    }
-
     // Add to socket connection handler after other socket events
     socket.on('upgradeSkill', (data: { skillId: string; rarity: string }) => {
         const player = players[socket.id];
@@ -3342,25 +3221,6 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             socket.emit('skillResetError', { message: 'Player not found' });
             return;
         }
-
-        // Count how many TP were spent (sum costs of all tiers unlocked)
-        const countSpentTP = (tier: string | undefined): number => {
-            if (!tier) return 0;
-            const index = RARITY_LEVELS.indexOf(tier as Rarity);
-            if (index < 0) return 0;
-            // Sum costs from common up to this tier
-            let total = 0;
-            for (let i = 0; i <= index; i++) {
-                total += RARITY_TP_COSTS[RARITY_LEVELS[i]];
-            }
-            return total;
-        };
-
-        const spentTP = countSpentTP(player.skills?.damage) +
-                       countSpentTP(player.skills?.petalHealth) +
-                       countSpentTP(player.skills?.playerHealth) +
-                       countSpentTP(player.skills?.healingMultiplier) +
-                       countSpentTP(player.skills?.secondChance);
 
         // Reset all skills
         player.skills = {};
@@ -4159,7 +4019,6 @@ function moveEnemies() {
             }
             
             // Skip regular enemy behavior for pets - handle wall collisions and move to next enemy
-            const mobStatsForSize = getMobStats(enemy.type, enemy.tier);
             checkEnemyWallCollisions(enemy);
             // Continue to next iteration (pets skip regular enemy behavior)
         } else {
@@ -4169,8 +4028,7 @@ function moveEnemies() {
         
         // Check if we have an existing target that's still in range
         let targetPlayer: ServerPlayer | undefined;
-        let targetDistance = Infinity;
-        
+
         if (enemy.targetPlayerId && players[enemy.targetPlayerId]) {
             const existingTarget = players[enemy.targetPlayerId];
             if (!existingTarget.isDead) {
@@ -4182,7 +4040,6 @@ function moveEnemies() {
                 // If wall blocks line of sight, stop targeting
                 if (distance <= MAX_TARGET_DISTANCE && hasLineOfSight(enemy.x, enemy.y, existingTarget.x, existingTarget.y)) {
                     targetPlayer = existingTarget;
-                    targetDistance = distance;
                 } else {
                     // Player moved too far away or wall blocking, clear target
                     enemy.targetPlayerId = undefined;
@@ -4223,7 +4080,6 @@ function moveEnemies() {
             if (closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
                 enemy.targetPlayerId = closestPlayer.id;
                 targetPlayer = closestPlayer;
-                targetDistance = closestDistance;
             }
         }
         
@@ -4260,18 +4116,12 @@ function moveEnemies() {
             const isTargetingPlayer = target === targetPlayer;
             const targetX = isTargetingPlayer ? targetPlayer!.x : closestPet!.x;
             const targetY = isTargetingPlayer ? targetPlayer!.y : closestPet!.y;
-            const currentTargetDistance = isTargetingPlayer ? targetDistance : closestPetDistance;
             // Chase target (player or pet)
             enemy.isChasing = true;
             const dx = targetX - enemy.x;
             const dy = targetY - enemy.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            // Update target distance for player targets
-            if (isTargetingPlayer) {
-                targetDistance = distance;
-            }
-
             if (distance > 0) {
                 const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
                 let moveX = dx / distance;
@@ -4455,11 +4305,6 @@ function moveEnemies() {
             }
         }
 
-        // Get enemy size based on mob stats
-        const mobStats = getMobStats(enemy.type, enemy.tier);
-        const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
-        const halfSize = enemySize / 2;
-
         // // Check if enemy goes out of bounds - kill them -- no longer needed since enemies no longer spawn out of bounds
         // if (enemy.x < 0 || enemy.x >= ACTUAL_WORLD_WIDTH || enemy.y < 0 || enemy.y >= ACTUAL_WORLD_HEIGHT) {
         //     enemy.health = 0;
@@ -4552,8 +4397,6 @@ function moveEnemies() {
 
 // Update and move mob projectiles
 function updateMobProjectiles(deltaTimeMs: number) {
-    const currentTime = Date.now();
-    
     for (let i = mobProjectiles.length - 1; i >= 0; i--) {
         const projectile = mobProjectiles[i];
         
@@ -4806,8 +4649,6 @@ function updateMobProjectiles(deltaTimeMs: number) {
 
 // Update and move player projectiles
 function updatePlayerProjectiles(deltaTimeMs: number) {
-    const currentTime = Date.now();
-    
     for (let i = playerProjectiles.length - 1; i >= 0; i--) {
         const projectile = playerProjectiles[i];
         

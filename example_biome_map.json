@@ -203,17 +203,6 @@
     "properties": {
       "spawnType": "common"
     }
-  },
-  {
-    "type": "safe_zone",
-    "x": 9000,
-    "y": 14000,
-    "width": 2000,
-    "height": 2000,
-    "properties": {
-      "isNoCombat": true,
-      "isSafeZone": true
-    }
   }
 ]
 

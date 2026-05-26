@@ -1,4 +1,4 @@
-import { Graphics, MapElement, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState, WallTileState, getTileJaggedEdges, SECTION_CONFIGS } from './core';
+import { Graphics, MapElement, WALL_GRID, WALL_TILE_SIZE, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileJaggedEdges } from './core';
 import { getAllTileTypes, getTileTypeConfig, TileTypeConfig } from '../constants';
 
 // --- SVG-string tile texture cache ---
@@ -137,7 +137,7 @@ Graphics.prototype.drawMap = function(this: Graphics, world_map_data: MapElement
     // Wall grid is rendered via the static map cache (see render.ts) —
     // skip it here so we don't redraw it on top per frame.
 
-    // Draw all map elements (spawn areas, biomes, teleporters, safe zones)
+    // Draw all map elements (spawn areas, biomes, teleporters)
     world_map_data.forEach(element => {
         const x = element.x;
         const y = element.y;

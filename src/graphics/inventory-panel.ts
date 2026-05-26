@@ -101,7 +101,6 @@ export class CanvasInventoryPanel {
      *  matches gardn's TextInput approach (canvas paints the background, the
      *  HTML input handles all keyboard input, IME, copy/paste, etc.). */
     private searchInputEl: HTMLInputElement | null = null;
-    private parentEl: HTMLElement | null = null;
 
     /** Color of the rounded separator lines flanking each rarity label.
      *  Matches the .inventory-panel CSS border color. */
@@ -170,7 +169,6 @@ export class CanvasInventoryPanel {
     }
 
     public attachTo(parent: HTMLElement) {
-        this.parentEl = parent;
         parent.appendChild(this.canvas);
         // Mount a real <input> for the search field, positioned absolutely on
         // top of the canvas. The canvas paints the background; the input

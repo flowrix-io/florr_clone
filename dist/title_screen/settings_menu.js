@@ -65,7 +65,6 @@ class SettingsMenu {
         this.sliderDragging = null;
         this.contentBottomY = 0;
         this.showHitboxes = false;
-        this.shadersEnabled = false;
         this.showStats = false;
         this.mobFramerate = 15;
         this.highQualityMobs = false;
@@ -94,13 +93,11 @@ class SettingsMenu {
         this.sliderDragging = null;
     }
     getShowHitboxes() { return this.showHitboxes; }
-    getShadersEnabled() { return this.shadersEnabled; }
     getShowStats() { return this.showStats; }
     getDynamicSkybox() { return this.dynamicSkybox; }
     getServerIP() { return this.serverIP || window.location.origin; }
     loadValues() {
         this.showHitboxes = localStorage.getItem('showHitboxes') === 'true';
-        this.shadersEnabled = localStorage.getItem('shadersEnabled') === 'true';
         this.showStats = localStorage.getItem('showStats') === 'true';
         this.mobFramerate = parseInt(localStorage.getItem('mobAnimationFramerate') || '15', 10);
         this.highQualityMobs = localStorage.getItem('highQualityMobs') === 'true';
@@ -748,13 +745,6 @@ class SettingsMenu {
             case 'showHitboxes':
                 this.showHitboxes = !this.showHitboxes;
                 localStorage.setItem('showHitboxes', this.showHitboxes.toString());
-                break;
-            case 'enableShaders':
-                this.shadersEnabled = !this.shadersEnabled;
-                localStorage.setItem('shadersEnabled', this.shadersEnabled.toString());
-                if (window.shaderManager) {
-                    window.shaderManager.setShadersEnabled(this.shadersEnabled);
-                }
                 break;
             case 'showStats':
                 this.showStats = !this.showStats;

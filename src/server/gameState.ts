@@ -7,9 +7,7 @@ import {
     isWall,
     SCALE_FACTOR,
     enemies,
-    players,
-    obstacles,
-    dots
+    players
 } from '../constants';
 import { WORLD_MAP } from '../map_data';
 
@@ -31,15 +29,7 @@ let _ENEMY_COUNT = 1000;
 //   6 | 7 | 8
 let _superMobPerSection: (string | null)[] = [null, null, null, null, null, null, null, null, null];
 
-export function getUltraMobCount() { return _ultraMobCount; }
-export function setUltraMobCount(value: number) { _ultraMobCount = value; }
-export function getSuperMobCount() { return _superMobCount; }
-export function setSuperMobCount(value: number) { _superMobCount = value; }
-export function getUniqueMobCount() { return _uniqueMobCount; }
-export function setUniqueMobCount(value: number) { _uniqueMobCount = value; }
-
 // Super boss per section tracking
-export function getSuperMobPerSection(): (string | null)[] { return _superMobPerSection; }
 export function setSuperMobInSection(section: number, mobId: string | null) {
     if (section >= 0 && section < 9) {
         _superMobPerSection[section] = mobId;

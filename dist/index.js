@@ -6,7 +6,6 @@ const auth_ui_1 = require("./auth_ui");
 const title_screen_1 = require("./title_screen");
 const preloader_1 = require("./preloader");
 const petals_1 = require("./petals");
-const shaderManager_1 = require("./shader/shaderManager");
 const ws_client_1 = require("./ws_client");
 const inventoryCodec_1 = require("./inventoryCodec");
 const map_data_1 = require("./map_data");
@@ -16,47 +15,7 @@ let isConnecting = false; // Flag to prevent multiple connection attempts
 window.currentGame = currentGame;
 let titleScreen = null;
 window.titleScreen = titleScreen;
-let authUI = null;
 let preloadedAssets = null;
-let shaderManager = null;
-// Create and show loading screen
-function createLoadingScreen() {
-    const loadingScreen = document.createElement('div');
-    loadingScreen.id = 'preloadScreen';
-    loadingScreen.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(135deg, #00d885 0%, #02c278 100%);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-        font-family: Ubuntu, sans-serif;
-    `;
-    loadingScreen.innerHTML = `
-        <div style="text-align: center;">
-            <h1 style="color: white; font-size: 48px; margin-bottom: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
-                florr.io clone
-            </h1>
-            <p style="color: rgba(255,255,255,0.9); font-size: 20px; margin-bottom: 30px;">
-                Loading assets...
-            </p>
-            <div style="width: 300px; height: 30px; background: rgba(255,255,255,0.3); border-radius: 15px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.2);">
-                <div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%); transition: width 0.3s ease; border-radius: 15px;"></div>
-            </div>
-            <p id="progressText" style="color: white; font-size: 16px; margin-top: 15px;">0%</p>
-            <div style="margin-top: 30px; color: rgba(255,255,255,0.7); font-size: 14px;">
-                <p>Loading sprites, textures, and game systems...</p>
-            </div>
-        </div>
-    `;
-    // document.body.appendChild(loadingScreen);
-    return loadingScreen;
-}
 // Update loading screen progress
 function updateLoadingProgress(progress) {
     // const progressBar = document.getElementById('progressBar');
@@ -81,8 +40,6 @@ function removeLoadingScreen() {
 }
 const bootstrap = async () => {
     console.log('[Index] Starting application initialization...');
-    // Show loading screen
-    const loadingScreen = createLoadingScreen();
     try {
         // Create preloader
         const preloader = new preloader_1.Preloader((progress) => {
@@ -103,10 +60,6 @@ const bootstrap = async () => {
         await new Promise(resolve => setTimeout(resolve, 300));
         // Remove loading screen
         removeLoadingScreen();
-        // Initialize shader manager
-        console.log('[Index] Initializing shader manager...');
-        shaderManager = new shaderManager_1.ShaderManager();
-        window.shaderManager = shaderManager;
         // Initialize title screen
         console.log('[Index] Initializing title screen...');
         (0, title_screen_1.injectTitleScreenStyles)();
@@ -117,7 +70,7 @@ const bootstrap = async () => {
         // before any server connection.
         titleScreen.updateBiomesFromMapData(map_data_1.WORLD_MAP);
         // Initialize auth UI after title screen is created
-        authUI = new auth_ui_1.AuthUI();
+        new auth_ui_1.AuthUI();
         // Preconnect if user is already logged in (showing "logging in")
         // Use setTimeout to ensure titleScreen is fully initialized
         setTimeout(() => {
@@ -286,10 +239,9 @@ function setupGameEventListeners() {
             document.body.appendChild(connectingDiv);
             const showHitboxes = titleScreen?.getShowHitboxes() || false;
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
-            const shadersEnabled = titleScreen?.getShadersEnabled() || false;
             const showStats = titleScreen?.getShowStats() || false;
             const dynamicSkybox = titleScreen?.getDynamicSkybox() || false;
-            currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets, shadersEnabled, showStats, dynamicSkybox);
+            currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets, showStats, dynamicSkybox);
             window.currentGame = currentGame;
             // Set changelog and notifications managers on graphics
             if (titleScreen && currentGame.graphics) {

@@ -1,4 +1,4 @@
-import {Item, ItemWithRarity} from './item';
+import {Item} from './item';
 import { PlayerEffect } from './petal_actions';
 
 export enum FaceFlags {

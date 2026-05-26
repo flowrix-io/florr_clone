@@ -61,12 +61,6 @@ interface SkillDef {
     prerequisiteRarity?: string;
 }
 
-/** Second Chance invulnerability durations per tier (seconds). */
-const SECOND_CHANCE_DURATIONS: Record<string, number> = {
-    common: 0.3,
-    uncommon: 1.5,
-};
-
 const SKILLS: SkillDef[] = [
     { id: 'damage', name: 'Damage', icon: 'swirl', spiral: true },
     { id: 'petalHealth', name: 'Petal Health', icon: 'curve', spiral: true },

@@ -198,7 +198,6 @@ function roundedRect(ctx, x, y, w, h, r) {
 }
 class CanvasMobGalleryPanel {
     constructor() {
-        this.parentEl = null;
         this.kills = {};
         this.rarities = petals_1.RARITY_LEVELS.filter((r) => r !== 'apex');
         this.cellRects = [];
@@ -303,7 +302,6 @@ class CanvasMobGalleryPanel {
         document.addEventListener('mouseup', this.handleDocumentMouseUp);
     }
     attachTo(parent) {
-        this.parentEl = parent;
         parent.appendChild(this.canvas);
     }
     start() {
@@ -795,13 +793,6 @@ class CanvasMobGalleryPanel {
 exports.CanvasMobGalleryPanel = CanvasMobGalleryPanel;
 function pointInRect(x, y, r) {
     return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-}
-function formatItemName(itemType) {
-    if (!itemType)
-        return '';
-    return itemType
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 function wrapText(ctx, text, maxWidth, font) {
     const prevFont = ctx.font;

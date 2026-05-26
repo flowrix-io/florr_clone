@@ -3500,8 +3500,6 @@ const RARITY_PREFIXES: { [key in Rarity]: string } = {
 
 // Function to generate mob stats for a specific rarity
 function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: string): MobStats {
-    const rarityIndex = RARITY_LEVELS.indexOf(rarity);
-    
     // Calculate scaled stats
     const damage = baseConfig.damage * DAMAGE_SCALING[rarity];
     const health = baseConfig.health * HEALTH_SCALING[rarity];
@@ -4615,31 +4613,4 @@ export function calculateMobDrops(mobType: string, mobRarity: string): DropItem[
     }
     
     return drops;
-}
-
-// Function to get drop table for a specific mob type
-export function getMobDropTable(mobType: string): MobDropTable | null {
-    return MOB_DROP_TABLES[mobType] || null;
-}
-
-
-// Test function to verify drop system
-export function testDropSystem() {
-    console.log('Testing drop system...');
-    
-    const mobTypes = ['bee', 'ladybug', 'soldier_ant'];
-    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
-    
-    for (const mobType of mobTypes) {
-        console.log(`\nTesting ${mobType}:`);
-        
-        for (const rarity of rarities) {
-            const drops = calculateMobDrops(mobType, rarity);
-            console.log(`  ${rarity}: ${drops.length} drops`);
-            
-            for (const drop of drops) {
-                console.log(`    - ${drop.type} ${drop.itemType} (${drop.rarity})`);
-            }
-        }
-    }
 }

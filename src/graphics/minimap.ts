@@ -1,4 +1,4 @@
-import { Graphics, Player, MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, SECTION_CONFIGS, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState } from './core';
+import { Graphics, Player, SECTION_CONFIGS, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState } from './core';
 import { getTileTypeConfig, isTileIdSolid } from '../constants';
 
 const MINIMAP_SPAWN_COLORS: Record<string, string> = {
@@ -168,7 +168,7 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
         }
     }
 
-    // Draw map elements (spawn, biome, teleporter, safe_zone) on minimap
+    // Draw map elements (spawn, biome, teleporter) on minimap
     this.mapData.forEach(element => {
         const scaledX = minimapX + ((element.x - this.minimapScrollX) * minimapScale.x);
         const scaledY = minimapY + ((element.y - this.minimapScrollY) * minimapScale.y);
@@ -189,9 +189,6 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
                 this.ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
                 this.ctx.fill();
                 this.ctx.stroke();
-            } else if (element.type === 'safe_zone') {
-                this.ctx.fillStyle = '#FFC107'; // Yellow for safe zone
-                this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
             } else {
                 return; // Skip unknown types
             }
