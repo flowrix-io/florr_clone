@@ -1,10 +1,10 @@
-import express from 'express';
 import https from 'https';
 import http from 'http';
 import { Server as SocketIOServer } from '../ws_server';
+import type { UApp } from './uws_app';
 import { ServerPlayer } from '../player';
-import { 
-    WORLD_HEIGHT, 
+import {
+    WORLD_HEIGHT,
     getServerConfigByPort,
     ServerConfig,
     players
@@ -16,7 +16,7 @@ import { savePlayerProgress } from './playerManager';
  * Setup cross-server transfer endpoints
  */
 export function setupTransferEndpoints(
-    app: express.Application, 
+    app: UApp,
     io: SocketIOServer,
     currentServerConfig: ServerConfig,
     currentServerPort: number

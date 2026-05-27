@@ -12,10 +12,8 @@ exports.deleteCodeFromDatabase = deleteCodeFromDatabase;
 exports.scheduleRestart = scheduleRestart;
 exports.cancelScheduledRestart = cancelScheduledRestart;
 exports.getScheduledRestartInfo = getScheduledRestartInfo;
-const express_1 = __importDefault(require("express"));
-const https_1 = require("https");
-const http_1 = require("http");
 const ws_server_1 = require("./ws_server");
+const uws_app_1 = require("./server/uws_app");
 const path_1 = __importDefault(require("path"));
 const v8_1 = __importDefault(require("v8"));
 const fs_1 = __importDefault(require("fs"));
@@ -83,7 +81,24 @@ const gameState_2 = require("./server/gameState");
 // Load persisted guilds into memory now that database + guildManager are both ready.
 (0, guildManager_1.loadGuildsFromDatabase)();
 (0, botManager_1.initializeBotGuilds)();
-const app = (0, express_1.default)();
+// Build the uWebSockets.js-backed app. SSL is configured later (before listen)
+// because the SSL/non-SSL choice depends on cert files we don't want to read twice.
+let app;
+{
+    const certDir = path_1.default.resolve(__dirname, '..');
+    const keyPath = path_1.default.join(certDir, 'cert.key');
+    const certPath = path_1.default.join(certDir, 'cert.crt');
+    if (constants_1.USE_HTTPS && fs_1.default.existsSync(keyPath) && fs_1.default.existsSync(certPath)) {
+        app = (0, uws_app_1.createApp)({ ssl: { keyPath, certPath } });
+        console.log(`[SERVER] Using HTTPS protocol`);
+    }
+    else {
+        if (constants_1.USE_HTTPS)
+            console.warn(`[SERVER] HTTPS certificates not found, falling back to HTTP`);
+        app = (0, uws_app_1.createApp)();
+        console.log(`[SERVER] Using HTTP protocol`);
+    }
+}
 // Wrapper function for handleMobDrops that passes io (will be set up later)
 let ioInstance;
 function handleMobDrops(enemy, io) {
@@ -111,8 +126,9 @@ function updateTargetDummyDPS() {
         });
     }
 }
-// Add body parser middleware for JSON
-app.use(express_1.default.json());
+// JSON body parsing is built into the shim; the no-op preserves a registration
+// slot for symmetry with the previous Express setup.
+app.use((0, uws_app_1.jsonParser)());
 // Add CORS middleware with specific origin
 app.use((req, res, next) => {
     const origin = req.headers.origin || 'https://localhost:8080';
@@ -174,7 +190,7 @@ app.post('/auth/logout', (req, res) => {
 });
 // Cross-server player transfer endpoints - setup will be called after io is created
 // Serve static files from the dist directory
-app.use(express_1.default.static(path_1.default.join(__dirname, '../dist'), {
+app.use('/', (0, uws_app_1.staticFiles)(path_1.default.join(__dirname, '../dist'), {
     index: 'index.html',
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.js')) {
@@ -195,7 +211,7 @@ app.use('/assets', (req, res, next) => {
     res.header('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
 });
-app.use('/assets', express_1.default.static(path_1.default.join(__dirname, '../assets'), {
+app.use('/assets', (0, uws_app_1.staticFiles)(path_1.default.join(__dirname, '../assets'), {
     setHeaders: (res, filePath) => {
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -205,9 +221,9 @@ app.use('/assets', express_1.default.static(path_1.default.join(__dirname, '../a
     }
 }));
 // Serve favicon from dist directory (it's copied there during build)
-app.use('/favicon.ico', express_1.default.static(path_1.default.join(__dirname, '../dist/favicon.ico')));
+app.use('/favicon.ico', (0, uws_app_1.staticFiles)(path_1.default.join(__dirname, '../dist/favicon.ico')));
 // Notification endpoints
-app.use(express_1.default.json());
+app.use((0, uws_app_1.jsonParser)());
 app.get('/api/notifications', (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const beforeTimestamp = req.query.before ? parseInt(req.query.before) : undefined;
@@ -248,28 +264,10 @@ app.get('/api/leaderboard', (req, res) => {
     }
     res.json(payload);
 });
-// Create server based on protocol configuration
-let server;
-if (constants_1.USE_HTTPS) {
-    try {
-        const certDir = path_1.default.resolve(__dirname, '..');
-        server = (0, https_1.createServer)({
-            key: fs_1.default.readFileSync(path_1.default.join(certDir, 'cert.key')),
-            cert: fs_1.default.readFileSync(path_1.default.join(certDir, 'cert.crt'))
-        }, app);
-        console.log(`[SERVER] Using HTTPS protocol`);
-    }
-    catch (error) {
-        console.warn(`[SERVER] HTTPS certificates not found, falling back to HTTP`);
-        server = (0, http_1.createServer)(app);
-        console.log(`[SERVER] Using HTTP protocol (fallback)`);
-    }
-}
-else {
-    server = (0, http_1.createServer)(app);
-    console.log(`[SERVER] Using HTTP protocol`);
-}
-const io = new ws_server_1.Server(server);
+// The uWS app was created above; SSL vs plain was selected there based on
+// USE_HTTPS + cert availability. HTTP routes and the WebSocket route share
+// a single port; app.listen() is called at the bottom of this file.
+const io = new ws_server_1.Server(app);
 // Set ioInstance for use in modules
 ioInstance = io;
 // Get current server port and configuration
@@ -4900,8 +4898,12 @@ function start_loop() {
         }
     }, TICK_INTERVAL);
 }
-// Start the server
-server.listen(PORT, () => {
+// Start the server. uWS listens on (port, cb); cb receives a truthy listen socket on success.
+app.listen(typeof PORT === 'string' ? parseInt(PORT, 10) : PORT, (ok) => {
+    if (!ok) {
+        console.error(`[SERVER] Failed to bind to port ${PORT}`);
+        process.exit(1);
+    }
     console.log(`Server is running on ${constants_1.SERVER_PROTOCOL}://localhost:${PORT}`);
     // Debug: verify WALL_GRID is loaded
     let nonZeroTiles = 0;

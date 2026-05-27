@@ -1,12 +1,8 @@
-import express from 'express';
-import { createServer } from 'https';
-import { createServer as createHttpServer } from 'http';
 import { Server, Socket } from './ws_server';
+import { createApp, UApp, staticFiles, jsonParser } from './server/uws_app';
 import path from 'path';
 import v8 from 'v8';
 import fs from 'fs';
-import https from 'https';
-import http from 'http';
 import { database, Notification, ApiKey } from './database';
 import { USE_HTTPS, SERVER_PROTOCOL, PVP_ARENA_SPAWN_X, PVP_ARENA_SPAWN_Y } from './constants';
 
@@ -184,7 +180,22 @@ import { setSuperMobInSection } from './server/gameState';
 loadGuildsFromDatabase();
 initializeBotGuilds();
 
-const app = express();
+// Build the uWebSockets.js-backed app. SSL is configured later (before listen)
+// because the SSL/non-SSL choice depends on cert files we don't want to read twice.
+let app: UApp;
+{
+    const certDir = path.resolve(__dirname, '..');
+    const keyPath = path.join(certDir, 'cert.key');
+    const certPath = path.join(certDir, 'cert.crt');
+    if (USE_HTTPS && fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+        app = createApp({ ssl: { keyPath, certPath } });
+        console.log(`[SERVER] Using HTTPS protocol`);
+    } else {
+        if (USE_HTTPS) console.warn(`[SERVER] HTTPS certificates not found, falling back to HTTP`);
+        app = createApp();
+        console.log(`[SERVER] Using HTTP protocol`);
+    }
+}
 
 // Re-export functions that are used elsewhere
 export { trackDamage, sendBossMobDefeatedMessage };
@@ -219,8 +230,9 @@ function updateTargetDummyDPS() {
         });
     }
 }
-// Add body parser middleware for JSON
-app.use(express.json());
+// JSON body parsing is built into the shim; the no-op preserves a registration
+// slot for symmetry with the previous Express setup.
+app.use(jsonParser());
 
 // Add CORS middleware with specific origin
 app.use((req, res, next) => {
@@ -292,7 +304,7 @@ app.post('/auth/logout', (req, res) => {
 // Cross-server player transfer endpoints - setup will be called after io is created
 
 // Serve static files from the dist directory
-app.use(express.static(path.join(__dirname, '../dist'), {
+app.use('/', staticFiles(path.join(__dirname, '../dist'), {
     index: 'index.html',
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.js')) {
@@ -315,7 +327,7 @@ app.use('/assets', (req, res, next) => {
     next();
 });
 
-app.use('/assets', express.static(path.join(__dirname, '../assets'), {
+app.use('/assets', staticFiles(path.join(__dirname, '../assets'), {
     setHeaders: (res, filePath) => {
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -326,10 +338,10 @@ app.use('/assets', express.static(path.join(__dirname, '../assets'), {
 }));
 
 // Serve favicon from dist directory (it's copied there during build)
-app.use('/favicon.ico', express.static(path.join(__dirname, '../dist/favicon.ico')));
+app.use('/favicon.ico', staticFiles(path.join(__dirname, '../dist/favicon.ico')));
 
 // Notification endpoints
-app.use(express.json());
+app.use(jsonParser());
 app.get('/api/notifications', (req, res) => {
     const limit = parseInt(req.query.limit as string) || 50;
     const beforeTimestamp = req.query.before ? parseInt(req.query.before as string) : undefined;
@@ -373,28 +385,10 @@ app.get('/api/leaderboard', (req, res) => {
     res.json(payload);
 });
 
-// Create server based on protocol configuration
-let server: http.Server | https.Server;
-
-if (USE_HTTPS) {
-    try {
-        const certDir = path.resolve(__dirname, '..');
-        server = createServer({
-            key: fs.readFileSync(path.join(certDir, 'cert.key')),
-            cert: fs.readFileSync(path.join(certDir, 'cert.crt'))
-        }, app);
-        console.log(`[SERVER] Using HTTPS protocol`);
-    } catch (error) {
-        console.warn(`[SERVER] HTTPS certificates not found, falling back to HTTP`);
-        server = createHttpServer(app);
-        console.log(`[SERVER] Using HTTP protocol (fallback)`);
-    }
-} else {
-    server = createHttpServer(app);
-    console.log(`[SERVER] Using HTTP protocol`);
-}
-
-const io = new Server(server);
+// The uWS app was created above; SSL vs plain was selected there based on
+// USE_HTTPS + cert availability. HTTP routes and the WebSocket route share
+// a single port; app.listen() is called at the bottom of this file.
+const io = new Server(app);
 
 // Set ioInstance for use in modules
 ioInstance = io;
@@ -5369,8 +5363,12 @@ function start_loop() {
     }, TICK_INTERVAL);
 }
 
-// Start the server
-server.listen(PORT, () => {
+// Start the server. uWS listens on (port, cb); cb receives a truthy listen socket on success.
+app.listen(typeof PORT === 'string' ? parseInt(PORT, 10) : PORT, (ok) => {
+    if (!ok) {
+        console.error(`[SERVER] Failed to bind to port ${PORT}`);
+        process.exit(1);
+    }
     console.log(`Server is running on ${SERVER_PROTOCOL}://localhost:${PORT}`);
 
     // Debug: verify WALL_GRID is loaded

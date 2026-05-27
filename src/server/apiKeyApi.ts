@@ -13,8 +13,13 @@
 // emit sites in enemySpawner.ts and utils.ts call recordBossEvent() so the
 // API can return them on demand.
 
-import type { Express, Request, Response, NextFunction } from 'express';
+import type { UApp, UReq, UResponse, NextFunction } from './uws_app';
 import { database, ApiKey, Notification, RedeemedCode } from '../database';
+
+// Local aliases keep the rest of this file readable; the route handlers below
+// were written against an Express-style req/res shape, which our shim mirrors.
+type Request = UReq;
+type Response = UResponse;
 
 export interface BossEvent {
     type: 'spawn' | 'defeat';
@@ -114,7 +119,7 @@ export interface ApiKeyApiDeps {
     deleteCodeFromDatabase: (code: string) => void;
 }
 
-export function registerApiKeyRoutes(app: Express, deps: ApiKeyApiDeps): void {
+export function registerApiKeyRoutes(app: UApp, deps: ApiKeyApiDeps): void {
     const { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase } = deps;
 
     // Create a star code. Body: { code, stars, maxUses? } — admin only.

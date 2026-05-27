@@ -27,6 +27,7 @@
     "better-sqlite3": "^11.5.0",
     "express": "^4.21.1",
     "socket.io": "^4.8.0",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.67.0",
     "ws": "^8.20.0"
   },
   "devDependencies": {

@@ -1,21 +1,26 @@
 "use strict";
 /**
  * Lightweight WebSocket server wrapper that provides a socket.io-compatible API.
- * Uses raw WebSocket (ws) for minimal protocol overhead.
+ * Now backed by uWebSockets.js for ~3-5× higher throughput and lower per-conn
+ * memory than the previous `ws`-based implementation.
  *
  * Wire format: custom tag-based binary encoding of [eventName, ...args] arrays
- * (see binary_codec.ts). Sent as binary WebSocket frames. ~50–70% smaller than
- * the previous JSON-array format because numbers travel as 1–9 raw bytes
- * (vs. their decimal-string length) and repeated short property names cost
- * 1 + N bytes instead of `"name":` plus quotes.
+ * (see binary_codec.ts). Sent as binary WebSocket frames.
  *
  * System events: ["__sys", type, data] for connection handshake.
+ *
+ * Integration: this module no longer owns the HTTP server. The caller creates
+ * a UApp (see server/uws_app.ts), passes it in, then calls UApp.listen() *after*
+ * constructing the Server (which registers the `/ws` upgrade route on the same app).
  */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Server = exports.WSServer = exports.WSSocket = void 0;
 exports.getServerEventStats = getServerEventStats;
 exports.resetServerEventStats = resetServerEventStats;
-const ws_1 = require("ws");
+const uWebSockets_js_1 = __importDefault(require("uWebSockets.js"));
 const crypto_1 = require("crypto");
 const binary_codec_1 = require("./binary_codec");
 const eventByteStats = new Map();
@@ -45,66 +50,55 @@ class WSSocket {
         this.ws = ws;
         this.id = id;
         this.server = server;
-        ws.on('message', (raw) => {
-            try {
-                // `raw` is a Buffer, an array of fragmented Buffers, or an ArrayBuffer
-                // depending on ws config. Normalize to a single Uint8Array for the codec.
-                let bytes;
-                if (Array.isArray(raw)) {
-                    bytes = Buffer.concat(raw);
-                }
-                else if (raw instanceof ArrayBuffer) {
-                    bytes = new Uint8Array(raw);
-                }
-                else {
-                    bytes = raw;
-                }
-                const msg = (0, binary_codec_1.decode)(bytes);
-                if (!Array.isArray(msg) || msg.length < 1)
-                    return;
-                if (typeof msg[0] === 'string')
-                    recordBytes(msg[0], bytes.byteLength, 'in');
-                const [event, ...args] = msg;
-                // Fire onAny handlers
-                for (const handler of this.anyHandlers) {
-                    handler(event, ...args);
-                }
-                // Fire event-specific handlers
-                const handlers = this.handlers.get(event);
-                if (handlers) {
-                    for (const handler of handlers) {
-                        handler(...args);
-                    }
-                }
-                // Fire and remove once handlers
-                const onceHandlers = this.onceHandlers.get(event);
-                if (onceHandlers) {
-                    for (const handler of onceHandlers) {
-                        handler(...args);
-                    }
-                    this.onceHandlers.delete(event);
-                }
+    }
+    /** @internal Called by WSServer when uWS delivers a message frame. */
+    _handleMessage(message) {
+        try {
+            // The ArrayBuffer is only valid during this sync handler — but we
+            // decode synchronously and the decoder copies any embedded byte
+            // payloads, so wrapping in a view (no copy) is safe.
+            const bytes = new Uint8Array(message);
+            const msg = (0, binary_codec_1.decode)(bytes);
+            if (!Array.isArray(msg) || msg.length < 1)
+                return;
+            if (typeof msg[0] === 'string')
+                recordBytes(msg[0], bytes.byteLength, 'in');
+            const [event, ...args] = msg;
+            for (const handler of this.anyHandlers) {
+                handler(event, ...args);
             }
-            catch (e) {
-                // Ignore malformed messages
-            }
-        });
-        ws.on('close', () => {
-            this._connected = false;
-            const handlers = this.handlers.get('disconnect');
+            const handlers = this.handlers.get(event);
             if (handlers) {
                 for (const handler of handlers) {
-                    handler();
+                    handler(...args);
                 }
             }
-            server._removeSocket(this.id);
-        });
-        ws.on('error', () => {
-            // Handled by close event
-        });
+            const onceHandlers = this.onceHandlers.get(event);
+            if (onceHandlers) {
+                for (const handler of onceHandlers) {
+                    handler(...args);
+                }
+                this.onceHandlers.delete(event);
+            }
+        }
+        catch {
+            // Ignore malformed messages
+        }
+    }
+    /** @internal Called by WSServer when uWS reports the connection closed. */
+    _handleClose() {
+        this._connected = false;
+        this.ws = null;
+        const handlers = this.handlers.get('disconnect');
+        if (handlers) {
+            for (const handler of handlers) {
+                handler();
+            }
+        }
+        this.server._removeSocket(this.id);
     }
     get connected() {
-        return this._connected && this.ws.readyState === ws_1.WebSocket.OPEN;
+        return this._connected && this.ws !== null;
     }
     on(event, handler) {
         if (!this.handlers.has(event)) {
@@ -125,13 +119,14 @@ class WSSocket {
         return this;
     }
     emit(event, ...args) {
-        if (this.ws.readyState !== ws_1.WebSocket.OPEN)
+        if (!this.ws || !this._connected)
             return false;
         try {
-            // Binary frame; ws sends Uint8Array as a binary WebSocket message.
             const payload = (0, binary_codec_1.encode)([event, ...args]);
             recordBytes(event, payload.byteLength, 'out');
-            this.ws.send(payload);
+            // (data, isBinary, compress) — compress=false matches the perMessageDeflate
+            // disable from the previous `ws`-backed implementation.
+            this.ws.send(payload, true, false);
             return true;
         }
         catch {
@@ -140,10 +135,10 @@ class WSSocket {
     }
     /** @internal Send a pre-encoded payload (used by WSServer.emit for broadcasts). */
     sendRaw(payload, event) {
-        if (this.ws.readyState !== ws_1.WebSocket.OPEN)
+        if (!this.ws || !this._connected)
             return false;
         try {
-            this.ws.send(payload);
+            this.ws.send(payload, true, false);
             if (event)
                 recordBytes(event, payload.byteLength, 'out');
             return true;
@@ -169,11 +164,13 @@ class WSSocket {
     }
     disconnect() {
         this._connected = false;
-        try {
-            this.ws.close();
-        }
-        catch {
-            // Already closed
+        const ws = this.ws;
+        this.ws = null;
+        if (ws) {
+            try {
+                ws.close();
+            }
+            catch { /* already closed */ }
         }
     }
     get broadcast() {
@@ -187,7 +184,7 @@ class WSSocket {
 }
 exports.WSSocket = WSSocket;
 class WSServer {
-    constructor(httpServer, _options) {
+    constructor(uApp, _options) {
         this.sockets_map = new Map();
         this.connectionHandlers = new Set();
         // Compatible with io.sockets.sockets
@@ -195,20 +192,37 @@ class WSServer {
             sockets: this.sockets_map
         };
         this.sockets.sockets = this.sockets_map;
-        // perMessageDeflate is disabled: ws's default zlib context is ~300 KB
-        // per connection and compression only helps on large/repetitive frames.
-        // This protocol's frames are small, frequent JSON arrays — the per-peer
-        // memory cost outweighs the bandwidth savings.
-        this.wss = new ws_1.WebSocketServer({ server: httpServer, path: '/ws', perMessageDeflate: false });
-        this.wss.on('connection', (ws, _req) => {
-            const id = (0, crypto_1.randomUUID)().replace(/-/g, '').slice(0, 20);
-            const socket = new WSSocket(ws, id, this);
-            this.sockets_map.set(id, socket);
-            // Send the client its ID
-            ws.send((0, binary_codec_1.encode)(['__sys', 'id', id]));
-            // Notify connection handlers
-            for (const handler of this.connectionHandlers) {
-                handler(socket);
+        // perMessageDeflate is disabled: compression only helps on large/repetitive
+        // frames. This protocol's frames are small, frequent binary arrays — the
+        // per-peer compressor cost outweighs the bandwidth savings.
+        uApp.ws('/ws', {
+            compression: uWebSockets_js_1.default.DISABLED,
+            maxPayloadLength: 16 * 1024 * 1024,
+            idleTimeout: 120,
+            sendPingsAutomatically: true,
+            open: (ws) => {
+                const id = (0, crypto_1.randomUUID)().replace(/-/g, '').slice(0, 20);
+                const socket = new WSSocket(ws, id, this);
+                ws.getUserData().socket = socket;
+                this.sockets_map.set(id, socket);
+                // Send the client its ID
+                ws.send((0, binary_codec_1.encode)(['__sys', 'id', id]), true, false);
+                // Notify connection handlers
+                for (const handler of this.connectionHandlers) {
+                    handler(socket);
+                }
+            },
+            message: (ws, message, _isBinary) => {
+                const socket = ws.getUserData().socket;
+                if (socket)
+                    socket._handleMessage(message);
+            },
+            close: (ws, _code, _msg) => {
+                const socket = ws.getUserData().socket;
+                if (socket) {
+                    ws.getUserData().socket = null;
+                    socket._handleClose();
+                }
             }
         });
     }
