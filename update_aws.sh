@@ -7,11 +7,11 @@ rm public_build_florrclone.zip
 wget https://sussybite.s3.amazonaws.com/public_build_florrclone.zip
 unzip public_build_florrclone.zip
 rm public_build_florrclone.zip
-cd dist
-npm install socket.io express bcrypt
 sudo cp /etc/letsencrypt/live/florrclone.cryodome.com/privkey.pem cert.key
 sudo cp /etc/letsencrypt/live/florrclone.cryodome.com/fullchain.pem cert.crt
 sudo chown $(id -u):$(id -g) cert.key cert.crt
+cd dist
+npm install bcrypt github:uNetworking/uWebSockets.js#v20.67.0
 rm inventory.json
 cp ~/inventory.json inventory.json
 rm ~/inventory.json
