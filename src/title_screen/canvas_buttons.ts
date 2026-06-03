@@ -2,9 +2,9 @@
  * Title-screen icon-button strip rendered on the shared title canvas.
  *
  * Two groups: a horizontal row at top-left (settings / changelog /
- * notifications / leaderboard / guild) and a vertical column at bottom-left
- * (inventory / skills / mob gallery / shop / craft). Mirrors the legacy DOM
- * `gardn-icon-btn` look — solid bg, darker border, 32x32 SVG icon, hover
+ * notifications / leaderboard / guild / discord) and a vertical column at
+ * bottom-left (inventory / skills / mob gallery / shop / craft). Mirrors the
+ * legacy DOM `gardn-icon-btn` look — solid bg, darker border, 32x32 SVG icon, hover
  * brightens, press dims, changelog button can shake when there's unread.
  */
 
@@ -16,6 +16,7 @@ export type TitleButtonId =
     | 'notifications'
     | 'leaderboard'
     | 'guild'
+    | 'discord'
     | 'exit'
     | 'inventory'
     | 'skills'
@@ -61,6 +62,7 @@ const BUTTON_DEFS: ButtonDef[] = [
     { id: 'notifications', iconName: 'notifications', bg: '#4a90e2', border: '#3b73b5', group: 'top' },
     { id: 'leaderboard',   iconName: 'leaderboard',   bg: '#e8a023', border: '#ba801c', group: 'top' },
     { id: 'guild',         iconName: 'guild',         bg: '#27dade', border: '#1fb3b0', group: 'top' },
+    { id: 'discord',       iconName: 'discord',       bg: '#5865f2', border: '#4752c4', group: 'top' },
     // Exit slot: only visible in-game; appended to the right of the top row.
     { id: 'exit',          iconName: 'exit_button',   bg: '#ff0000', border: '#cc0000', group: 'top' },
 

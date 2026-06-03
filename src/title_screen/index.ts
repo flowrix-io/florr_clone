@@ -2141,6 +2141,10 @@ export class TitleScreen {
                 closeOthers('guild');
                 this.guildMenuManager.toggle();
                 break;
+            case 'discord':
+                closeOthers();
+                window.open('https://discord.gg/e23DMCR7DV', '_blank', 'noopener,noreferrer');
+                break;
             case 'exit':
                 // The exit-to-title flow is owned by setupGameEventListeners
                 // in src/index.ts (iris animation, socket reconnect, etc.).
