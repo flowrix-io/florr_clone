@@ -1,4 +1,24 @@
 cd ~
+
+# --- Node version guard ---------------------------------------------------
+# uWebSockets.js v20.67.0 only ships prebuilt binaries for Node 22, 24 and 26.
+# An older Node (e.g. the distro default 18) makes server.js crash on boot,
+# which surfaces as an nginx 502. Ensure Node >= 22 before deploying.
+REQUIRED_NODE_MAJOR=22
+NODE_MAJOR=$(node -v 2>/dev/null | sed -E 's/^v([0-9]+)\..*/\1/')
+if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt "$REQUIRED_NODE_MAJOR" ]; then
+    echo "Node ${NODE_MAJOR:-none} found; installing Node ${REQUIRED_NODE_MAJOR}.x (required by uWebSockets.js)..."
+    curl -fsSL https://deb.nodesource.com/setup_${REQUIRED_NODE_MAJOR}.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    NODE_MAJOR=$(node -v 2>/dev/null | sed -E 's/^v([0-9]+)\..*/\1/')
+    if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt "$REQUIRED_NODE_MAJOR" ]; then
+        echo "ERROR: Node >= ${REQUIRED_NODE_MAJOR} still not available after install (got $(node -v 2>/dev/null)). Aborting." >&2
+        exit 1
+    fi
+fi
+echo "Using Node $(node -v)"
+# --------------------------------------------------------------------------
+
 pm2 delete server
 pm2 save
 cp dist/inventory.json inventory.json
