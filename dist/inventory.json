@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 515155376,
+      "totalXP": 515155586,
       "inventory": {
         "common": {
           "petal_light": 170,
@@ -389,8 +389,7 @@
           "petal_antennae": 12,
           "petal_soil": 2,
           "petal_pollen": 5,
-          "petal_bomb": 1,
-          "petal_centipede_body_egg": 1
+          "petal_bomb": 1
         },
         "epic": {
           "petal_stinger": 96,
@@ -1119,7 +1118,7 @@
         "dust": {
           "common": 99,
           "uncommon": 101,
-          "rare": 44,
+          "rare": 45,
           "epic": 58,
           "legendary": 92,
           "mythic": 166,
@@ -1129,7 +1128,7 @@
         },
         "glitch": {
           "common": 109,
-          "rare": 63,
+          "rare": 64,
           "uncommon": 110,
           "epic": 61,
           "mythic": 154,
@@ -1138,7 +1137,7 @@
         },
         "cube": {
           "common": 70,
-          "uncommon": 54,
+          "uncommon": 55,
           "legendary": 62,
           "mythic": 104,
           "ultra": 10,
@@ -1709,7 +1708,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1780459927698
+      "lastActiveAt": 1780460087105
     },
     "dev": {
       "id": "1g99g1gfk",

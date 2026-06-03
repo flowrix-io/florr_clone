@@ -355,6 +355,12 @@ exports.CHANGELOG = [
             'Optimize game',
         ]
     },
+    {
+        date: 'June 2, 2026',
+        changes: [
+            'Added discord link',
+        ]
+    }
 ];
 class ChangelogManager {
     constructor() {

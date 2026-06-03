@@ -359,6 +359,12 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Optimize game',
         ]
     },
+    {
+        date: 'June 2, 2026',
+        changes: [
+            'Added discord link',
+        ]
+    }
 ];
 
 export class ChangelogManager {
