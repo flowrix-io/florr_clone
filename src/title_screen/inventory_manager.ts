@@ -1048,7 +1048,8 @@ export class TitleScreenInventoryManager {
             mythic: 2.0,
             ultra: 2.6,
             super: 3.3,
-            unique: 4.0
+            unique: 4.0,
+            apex: 4.8
         };
         return SKILL_MULTIPLIERS[skillTier] || 1.0;
     }

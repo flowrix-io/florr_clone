@@ -3512,8 +3512,16 @@ function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: st
     // Larger mobs and higher rarity mobs (which have larger size) will have more mass
     const mass = size * size; // Mass proportional to area (size^2)
     
-    // Get XP from the specific mob XP table
-    const xp = MOB_XP_TABLES[mobType]?.[rarity] || 1;
+    // Get XP from the specific mob XP table.
+    const mobXpTable = MOB_XP_TABLES[mobType];
+    let xp = mobXpTable?.[rarity] || 1;
+    // Apex XP was never enumerated per-mob in MOB_XP_TABLES (they stop at unique),
+    // which left apex mobs awarding the fallback of 1 XP. Derive it from the unique
+    // tier using the same 3x step the apex stat-scaling tables use (HEALTH_SCALING
+    // and DAMAGE_SCALING both go unique*3 -> apex).
+    if (rarity === 'apex' && mobXpTable && mobXpTable['apex'] === undefined && mobXpTable['unique'] !== undefined) {
+        xp = mobXpTable['unique'] * 3;
+    }
     
     // Get rarity-specific overrides
     const overrides = RARITY_OVERRIDES[mobType]?.[rarity] || {};
@@ -4572,7 +4580,7 @@ export function calculateMobDrops(mobType: string, mobRarity: string): DropItem[
     
     // For non-common mobs, adjust rarity probabilities
     if (mobRarity !== 'common') {
-        const rarityIndex = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'].indexOf(mobRarity);
+        const rarityIndex = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'].indexOf(mobRarity);
         
         // Process each drop in the table
         for (const drop of dropTable.drops) {
@@ -4585,7 +4593,7 @@ export function calculateMobDrops(mobType: string, mobRarity: string): DropItem[
                 if (random < 0.9 && rarityIndex > 0) {
                     // One rarity lower
                     const lowerRarityIndex = rarityIndex - 1;
-                    adjustedDrop.rarity = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'][lowerRarityIndex] as any;
+                    adjustedDrop.rarity = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'][lowerRarityIndex] as any;
                 }
                 // Otherwise keep same rarity (10% chance)
             // }
@@ -4599,7 +4607,7 @@ export function calculateMobDrops(mobType: string, mobRarity: string): DropItem[
             drops.push({
                 type: dropTable.drops[0].type,
                 itemType: dropTable.drops[0].itemType,
-                rarity: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'][rarityIndex - 1] as any,
+                rarity: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'][rarityIndex - 1] as any,
                 probability: 1.0,
             });
         }

@@ -40,7 +40,8 @@ const RARITY_TP_COSTS = {
     mythic: 5,
     ultra: 6,
     super: 7,
-    unique: 8
+    unique: 8,
+    apex: 9
 };
 exports.RARITY_TP_COSTS = RARITY_TP_COSTS;
 // Helper function to create initial basic petals for new players
@@ -427,7 +428,8 @@ function getSkillMultiplier(skillTier) {
         mythic: 1.5,
         ultra: 1.6,
         super: 1.7,
-        unique: 1.8
+        unique: 1.8,
+        apex: 1.9
     };
     return multipliers[skillTier] || 1;
 }

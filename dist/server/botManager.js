@@ -80,7 +80,7 @@ const GROUP_TARGET_SIZE = 7; // target group size (4-10 band)
 const GROUP_MIN_FOR_MODE = 4; // don't enter group mode unless this many bots are in the group
 // Raid targets only. Ultras are explicitly excluded — bots treat them as
 // high-tier mobs, not raid rally points.
-const BOSS_TIERS = new Set(['super', 'unique']);
+const BOSS_TIERS = new Set(['super', 'unique', 'apex']);
 const HIGH_TIERS = new Set(['epic', 'legendary', 'mythic', 'ultra']);
 // Raid traversal: when the bot is farther than this from the raid anchor,
 // swap slot 0 for powder to close distance faster. Beyond combat range.
@@ -431,7 +431,7 @@ const MYTHIC_IDX = 5;
 const ULTRA_IDX = 6;
 function preferredMobTiersForBot(botIdx) {
     if (botIdx >= ULTRA_IDX)
-        return new Set(['super', 'unique']);
+        return new Set(['super', 'unique', 'apex']);
     if (botIdx === MYTHIC_IDX)
         return new Set(['mythic']);
     if (botIdx >= 0 && botIdx < RARITY_ORDER.length - 1) {

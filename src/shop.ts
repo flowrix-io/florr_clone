@@ -112,7 +112,7 @@ export class ShopManager {
     constructor(game: GameInterface) {
         this.game = game;
         this.allPetalTypes = getAllPetalTypes();
-        this.buyableRarities = (RARITY_LEVELS as readonly Rarity[]).filter(r => r !== 'unique');
+        this.buyableRarities = (RARITY_LEVELS as readonly Rarity[]).filter(r => r !== 'unique' && r !== 'apex');
 
         this.canvas = document.createElement('canvas');
         this.canvas.id = 'shopCanvas';
@@ -627,6 +627,7 @@ export class ShopManager {
             { tier: 'ultra', stars: 5, color: '#de1f65', description: 'Defeat any Ultra tier mob' },
             { tier: 'super', stars: 25, color: '#2bffa4', description: 'Defeat any Super tier mob' },
             { tier: 'unique', stars: 100, color: '#bf00ff', description: 'Defeat any Unique tier mob' },
+            { tier: 'apex', stars: 250, color: '#ff00ff', description: 'Defeat any Apex tier mob' },
         ];
 
         const cardW = w - 12;

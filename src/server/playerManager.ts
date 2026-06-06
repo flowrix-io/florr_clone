@@ -51,7 +51,8 @@ const RARITY_TP_COSTS: Record<string, number> = {
     mythic: 5,
     ultra: 6,
     super: 7,
-    unique: 8
+    unique: 8,
+    apex: 9
 };
 
 // Helper function to create initial basic petals for new players
@@ -499,7 +500,8 @@ export function getSkillMultiplier(skillTier: string | undefined): number {
         mythic: 1.5,
         ultra: 1.6,
         super: 1.7,
-        unique: 1.8
+        unique: 1.8,
+        apex: 1.9
     };
     return multipliers[skillTier] || 1;
 }

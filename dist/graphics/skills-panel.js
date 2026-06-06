@@ -17,7 +17,8 @@ const RARITY_MULTIPLIERS = {
     mythic: 2.0,
     ultra: 2.6,
     super: 3.3,
-    unique: 4.0
+    unique: 4.0,
+    apex: 4.8
 };
 const RARITY_TP_COSTS = {
     common: 1,
@@ -28,7 +29,8 @@ const RARITY_TP_COSTS = {
     mythic: 12,
     ultra: 18,
     super: 25,
-    unique: 26
+    unique: 26,
+    apex: 30
 };
 const SKILLS = [
     { id: 'damage', name: 'Damage', icon: 'swirl', spiral: true },
@@ -257,7 +259,7 @@ class CanvasSkillsPanel {
         // originating from the flower center.
         const mainSkills = SKILLS.filter(s => !s.branchFrom);
         const branchCount = mainSkills.length;
-        const fullTierCount = petals_1.RARITY_LEVELS.length; // 9
+        const fullTierCount = petals_1.RARITY_LEVELS.length; // 10 (incl. apex)
         const nodeRadius = 30;
         const radiusStep = 80;
         const arcSpan = Math.PI * 2;

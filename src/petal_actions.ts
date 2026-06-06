@@ -190,7 +190,8 @@ const SKILL_MULTIPLIERS: Record<string, number> = {
     mythic: 2.0,
     ultra: 2.6,
     super: 3.3,
-    unique: 4.0
+    unique: 4.0,
+    apex: 4.8
 };
 
 function getSkillMultiplier(skillTier: string | undefined): number {

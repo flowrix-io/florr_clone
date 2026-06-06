@@ -62,7 +62,8 @@ class InventoryManager {
             mythic: 2.0,
             ultra: 2.6,
             super: 3.3,
-            unique: 4.0
+            unique: 4.0,
+            apex: 4.8
         };
         return SKILL_MULTIPLIERS[skillTier] || 1.0;
     }
@@ -882,7 +883,8 @@ class InventoryManager {
             mythic: 4,
             ultra: 5,
             super: 6,
-            unique: 7
+            unique: 7,
+            apex: 8
         };
         const multiplier = item.rarity ? rarityMultipliers[item.rarity] : 1;
         switch (item.type) {
@@ -1195,7 +1197,7 @@ class InventoryManager {
         const content = this.inventoryPanel.querySelector('.inventory-content');
         if (!content)
             return;
-        const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+        const rarities = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
         const invDict = (0, inventoryCodec_1.inventoryToDict)(player.inventory);
         // Build set of current item keys for removal detection
         const currentKeys = new Set();
@@ -1701,7 +1703,7 @@ class InventoryManager {
             }
         });
         // Calculate success chance based on rarity progression
-        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+        const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
         let baseChance = 64; // 64% for common->uncommon
         // Find the highest rarity in the crafting slots
         let highestRarityIndex = -1;
@@ -1712,9 +1714,12 @@ class InventoryManager {
         }
         if (highestRarityIndex === -1)
             return 0;
-        // Halve the chance for each rarity level above common
+        // Halve the chance for each rarity level above common.
         const chance = baseChance / Math.pow(2, highestRarityIndex);
-        return Math.round(chance);
+        // Preserve sub-1% precision (e.g. unique->apex is 0.25%) instead of
+        // rounding it down to 0, so the displayed chance matches the server's
+        // actual success roll (server.ts uses the unrounded value).
+        return chance >= 1 ? Math.round(chance) : Math.round(chance * 100) / 100;
     }
     cleanup() {
         this.inventoryPanel?.remove();

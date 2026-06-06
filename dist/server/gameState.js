@@ -88,7 +88,8 @@ exports.ITEM_EXPIRATION_TIMES = {
     mythic: 60000, // 60 seconds
     ultra: 80000, // 80 seconds
     super: 120000, // 120 seconds
-    unique: 300000 // 300 seconds (5 minutes)
+    unique: 300000, // 300 seconds (5 minutes)
+    apex: 600000 // 600 seconds (10 minutes)
 };
 // Initialize map obstacles
 function initializeMapObstacles() {

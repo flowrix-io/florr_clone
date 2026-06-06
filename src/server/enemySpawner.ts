@@ -33,7 +33,7 @@ import { recordBossEvent } from './apiKeyApi';
 import { calculatePlayerModifiers } from './playerManager';
 
 // Tier order from lowest to highest
-const TIER_ORDER: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+const TIER_ORDER: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 
 // Sections (0-8) where all rarities have equal spawn chance
 // Section layout:

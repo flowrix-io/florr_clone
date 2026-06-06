@@ -442,7 +442,12 @@ class CanvasCraftingPanel {
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
         ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-        const chanceText = `${this.successChance}% success chance`;
+        // A computed chance is always > 0 for a valid craft (even high tiers are
+        // shown as fractions like 0.25%). A chance of 0 means there's nothing to
+        // craft (empty slots / craft disabled), so show "?%" rather than "0%".
+        const chanceText = this.successChance > 0
+            ? `${this.successChance}% success chance`
+            : `?% success chance`;
         const chanceX = cb.x + cb.w / 2;
         const chanceY = cb.y + cb.h + 6;
         ctx.strokeText(chanceText, chanceX, chanceY);

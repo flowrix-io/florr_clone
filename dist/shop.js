@@ -58,7 +58,7 @@ class ShopManager {
         this.onResize = () => { this.resize(); this.requestDraw(); };
         this.game = game;
         this.allPetalTypes = (0, petals_1.getAllPetalTypes)();
-        this.buyableRarities = petals_1.RARITY_LEVELS.filter(r => r !== 'unique');
+        this.buyableRarities = petals_1.RARITY_LEVELS.filter(r => r !== 'unique' && r !== 'apex');
         this.canvas = document.createElement('canvas');
         this.canvas.id = 'shopCanvas';
         this.canvas.style.cssText = `
@@ -516,6 +516,7 @@ class ShopManager {
             { tier: 'ultra', stars: 5, color: '#de1f65', description: 'Defeat any Ultra tier mob' },
             { tier: 'super', stars: 25, color: '#2bffa4', description: 'Defeat any Super tier mob' },
             { tier: 'unique', stars: 100, color: '#bf00ff', description: 'Defeat any Unique tier mob' },
+            { tier: 'apex', stars: 250, color: '#ff00ff', description: 'Defeat any Apex tier mob' },
         ];
         const cardW = w - 12;
         const cardH = 92;

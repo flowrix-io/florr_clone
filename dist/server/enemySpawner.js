@@ -21,7 +21,7 @@ const mobs_1 = require("../mobs");
 const apiKeyApi_1 = require("./apiKeyApi");
 const playerManager_1 = require("./playerManager");
 // Tier order from lowest to highest
-const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 // Sections (0-8) where all rarities have equal spawn chance
 // Section layout:
 //   0 | 1 | 2

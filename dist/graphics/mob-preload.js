@@ -11,7 +11,7 @@ const core_1 = require("./core");
 core_1.Graphics.prototype.preloadMobImages = async function () {
     await this.svgRenderer.waitForInit();
     const allMobTypes = (0, core_1.getAllMobTypes)();
-    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
     // Cache all SVG strings and pre-compile them into canvas commands
     for (const mobType of allMobTypes) {
         for (const rarity of rarities) {
@@ -84,7 +84,7 @@ core_1.Graphics.prototype.getOffscreenCanvasMemoryMB = function () {
 };
 core_1.Graphics.prototype.loadSectionMobs = function (section) {
     const mobTypes = (0, core_1.getMobTypesBySection)(section);
-    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
     this.loadedSections.add(section);
     // Pre-compile SVGs for this section's mobs
     for (const mobType of mobTypes) {

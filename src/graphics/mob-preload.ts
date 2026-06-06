@@ -24,7 +24,7 @@ Graphics.prototype.preloadMobImages = async function(this: Graphics) {
     await this.svgRenderer.waitForInit();
 
     const allMobTypes = getAllMobTypes();
-    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 
     // Cache all SVG strings and pre-compile them into canvas commands
     for (const mobType of allMobTypes) {
@@ -109,7 +109,7 @@ Graphics.prototype.getOffscreenCanvasMemoryMB = function(this: Graphics): number
 
 Graphics.prototype.loadSectionMobs = function(this: Graphics, section: number): void {
     const mobTypes = getMobTypesBySection(section);
-    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
+    const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 
     this.loadedSections.add(section);
 

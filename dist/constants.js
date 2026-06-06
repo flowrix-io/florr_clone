@@ -276,7 +276,8 @@ exports.ENEMY_SIZE_MULTIPLIERS = {
     mythic: 2.0,
     ultra: 2.5,
     super: 3.0,
-    unique: 3.5
+    unique: 3.5,
+    apex: 4.0
 };
 // Add drop chances like in singleplayer
 exports.DROP_CHANCES = {
@@ -288,7 +289,8 @@ exports.DROP_CHANCES = {
     mythic: 0.75, // 75% chance
     ultra: 0.9, // 90% chance
     super: 0.95, // 95% chance
-    unique: 1.0 // 100% chance
+    unique: 1.0, // 100% chance
+    apex: 1.0 // 100% chance
 };
 // Add map element type guards
 function isWall(element) {

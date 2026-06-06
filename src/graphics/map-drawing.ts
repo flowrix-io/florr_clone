@@ -346,7 +346,8 @@ const SPAWN_ZONE_COLORS: Record<string, string> = {
     mythic: 'rgba(31, 219, 222, 0.25)',
     ultra: 'rgba(222, 31, 101, 0.25)',
     super: 'rgba(43, 255, 164, 0.25)',
-    unique: 'rgba(191, 0, 255, 0.25)'
+    unique: 'rgba(191, 0, 255, 0.25)',
+    apex: 'rgba(255, 0, 255, 0.25)'
 };
 
 Graphics.prototype.drawSpawnZones = function(this: Graphics, mapData: MapElement[]) {

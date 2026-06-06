@@ -18,7 +18,8 @@ const SKILL_MULTIPLIERS: Record<string, number> = {
     mythic: 2.0,
     ultra: 2.6,
     super: 3.3,
-    unique: 4.0
+    unique: 4.0,
+    apex: 4.8
 };
 
 /** Format a number with k/m suffixes (e.g. 19725 → "19.7k"). */

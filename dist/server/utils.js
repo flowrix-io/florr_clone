@@ -122,7 +122,7 @@ function getEligiblePlayers(enemy) {
         .sort((a, b) => b[1] - a[1])
         .map(entry => entry[0]);
     // Determine placement requirement based on mob rarity
-    const isUltraOrAbove = ['ultra', 'super', 'unique'].includes(enemy.tier);
+    const isUltraOrAbove = ['ultra', 'super', 'unique', 'apex'].includes(enemy.tier);
     const placementRequirement = isUltraOrAbove ? 15 : 4;
     // Get top N entities (a squad counts as 1 slot)
     const topEntities = sortedEntities.slice(0, placementRequirement);
@@ -132,8 +132,8 @@ function getEligiblePlayers(enemy) {
 // Helper function to send boss mob defeated message in chat
 function sendBossMobDefeatedMessage(enemy, io, players) {
     // Check if this is a boss mob whose defeat is broadcast.
-    // Ultras spawn silently and so they also die silently — only super/unique are announced.
-    const isBroadcastBoss = ['super', 'unique'].includes(enemy.tier);
+    // Ultras spawn silently and so they also die silently — only super/unique/apex are announced.
+    const isBroadcastBoss = ['super', 'unique', 'apex'].includes(enemy.tier);
     if (!isBroadcastBoss) {
         return;
     }
@@ -210,7 +210,7 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
         const currentCount = player.mobKills[enemy.type][enemy.tier] || 0;
         player.mobKills[enemy.type][enemy.tier] = currentCount + 1;
         // Award stars for mythic+ mob kills (challenge system)
-        const mythicPlusTiers = ['mythic', 'ultra', 'super', 'unique'];
+        const mythicPlusTiers = ['mythic', 'ultra', 'super', 'unique', 'apex'];
         if (mythicPlusTiers.includes(enemy.tier)) {
             // Initialize stars if it doesn't exist
             if (player.stars === undefined) {
@@ -221,7 +221,8 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
                 mythic: 1,
                 ultra: 5,
                 super: 25,
-                unique: 100
+                unique: 100,
+                apex: 250
             };
             const starsAwarded = starRewards[enemy.tier] || 0;
             player.stars += starsAwarded;

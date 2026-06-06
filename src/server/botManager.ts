@@ -108,7 +108,7 @@ const GROUP_MIN_FOR_MODE = 4;          // don't enter group mode unless this man
 
 // Raid targets only. Ultras are explicitly excluded — bots treat them as
 // high-tier mobs, not raid rally points.
-const BOSS_TIERS = new Set(['super', 'unique']);
+const BOSS_TIERS = new Set(['super', 'unique', 'apex']);
 const HIGH_TIERS = new Set(['epic', 'legendary', 'mythic', 'ultra']);
 
 // Raid traversal: when the bot is farther than this from the raid anchor,
@@ -530,7 +530,7 @@ function getBotMaxRarityIdx(bot: ServerPlayer): number {
 const MYTHIC_IDX = 5;
 const ULTRA_IDX = 6;
 function preferredMobTiersForBot(botIdx: number): Set<string> {
-    if (botIdx >= ULTRA_IDX) return new Set(['super', 'unique']);
+    if (botIdx >= ULTRA_IDX) return new Set(['super', 'unique', 'apex']);
     if (botIdx === MYTHIC_IDX) return new Set(['mythic']);
     if (botIdx >= 0 && botIdx < RARITY_ORDER.length - 1) {
         return new Set([RARITY_ORDER[botIdx + 1]]);

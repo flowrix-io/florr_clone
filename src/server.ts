@@ -869,7 +869,8 @@ const RARITY_TP_COSTS: Record<string, number> = {
     mythic: 12,
     ultra: 18,
     super: 25,
-    unique: 26
+    unique: 26,
+    apex: 30
 };
 
 // Functions moved to playerManager module - using imports
@@ -1611,7 +1612,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             mythic: 4,
             ultra: 5,
             super: 6,
-            unique: 7
+            unique: 7,
+            apex: 8
         };
 
         const multiplier = item.rarity ? rarityMultipliers[item.rarity] : 1;

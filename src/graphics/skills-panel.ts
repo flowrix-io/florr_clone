@@ -24,7 +24,8 @@ const RARITY_MULTIPLIERS: Record<string, number> = {
     mythic: 2.0,
     ultra: 2.6,
     super: 3.3,
-    unique: 4.0
+    unique: 4.0,
+    apex: 4.8
 };
 
 const RARITY_TP_COSTS: Record<string, number> = {
@@ -36,7 +37,8 @@ const RARITY_TP_COSTS: Record<string, number> = {
     mythic: 12,
     ultra: 18,
     super: 25,
-    unique: 26
+    unique: 26,
+    apex: 30
 };
 
 interface SkillDef {
@@ -263,7 +265,7 @@ export class CanvasSkillsPanel {
         // originating from the flower center.
         const mainSkills = SKILLS.filter(s => !s.branchFrom);
         const branchCount = mainSkills.length;
-        const fullTierCount = RARITY_LEVELS.length;   // 9
+        const fullTierCount = RARITY_LEVELS.length;   // 10 (incl. apex)
 
         const nodeRadius = 30;
         const radiusStep = 80;
