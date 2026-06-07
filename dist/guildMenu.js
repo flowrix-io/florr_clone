@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GuildMenuManager = void 0;
+const zoom_compensation_1 = require("./zoom-compensation");
 /**
  * Canvas-based guild menu, drawn on the main game canvas (same lifecycle as
  * LeaderboardManager). Styling mirrors the inventory panel: a 4px inset border
@@ -328,7 +329,7 @@ class GuildMenuManager {
         const h = this.PANEL_HEIGHT;
         this.hitRegions = [];
         ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.setTransform((0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0, (0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0);
         // Panel border + body (inventory-style inset).
         ctx.fillStyle = this.BORDER;
         this.roundRect(ctx, x0, y0, w, h, 6);

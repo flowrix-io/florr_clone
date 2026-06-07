@@ -74,8 +74,8 @@ const FLOWER_COLORS = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#00ffff", "#
 
 Graphics.prototype.drawRaindropAuras = function(this: Graphics, players: Map<string, Player>): void {
     const now = Date.now();
-    const viewW = this.canvas.width / (this.zoomLevel * this.renderScale);
-    const viewH = this.canvas.height / (this.zoomLevel * this.renderScale);
+    const viewW = this.viewW / (this.zoomLevel * this.renderScale);
+    const viewH = this.viewH / (this.zoomLevel * this.renderScale);
     const viewLeft = this.cameraX;
     const viewTop = this.cameraY;
     const viewRight = viewLeft + viewW;
@@ -434,7 +434,7 @@ Graphics.prototype.drawFallingStars = function(this: Graphics): void {
         const progress = star.lifetime / star.maxLife;
 
         // Remove if off screen or lifetime expired
-        if (star.y > this.canvas.height + 50 || progress <= 0) {
+        if (star.y > this.viewH + 50 || progress <= 0) {
             return false;
         }
 

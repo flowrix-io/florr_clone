@@ -1,3 +1,5 @@
+import { getBaseDeviceScale } from './zoom-compensation';
+
 export interface Notification {
     id: string;
     type: 'super_craft' | 'unique_craft' | 'star_code';
@@ -283,7 +285,7 @@ export class NotificationsManager {
 
         // Reset any transformations that might affect text measurement
         // This ensures text measurement is accurate
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.setTransform(getBaseDeviceScale(), 0, 0, getBaseDeviceScale(), 0, 0);
         // Defensive: do not inherit textAlign from upstream renderers. The title
         // header below relies on left-aligned start positioning.
         ctx.textAlign = 'start';
@@ -580,7 +582,7 @@ export class NotificationsManager {
         // Save context state and reset transformations for accurate text measurement
         // This is critical because the context might be transformed (scaled/translated) in-game
         ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset to identity matrix
+        ctx.setTransform(getBaseDeviceScale(), 0, 0, getBaseDeviceScale(), 0, 0); // Reset to identity matrix
         
         // Ensure font is set before measuring - this is critical!
         ctx.font = '14px Ubuntu, sans-serif';

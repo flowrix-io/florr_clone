@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LeaderboardManager = void 0;
 const constants_1 = require("./constants");
+const zoom_compensation_1 = require("./zoom-compensation");
 class LeaderboardManager {
     constructor() {
         this.canvas = null;
@@ -182,7 +183,7 @@ class LeaderboardManager {
         const offsetX = this.PANEL_X;
         const offsetY = this.PANEL_Y;
         ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.setTransform((0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0, (0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0);
         // Defensive: do not inherit textAlign from upstream renderers. The title
         // header below relies on left-aligned start positioning.
         ctx.textAlign = 'start';

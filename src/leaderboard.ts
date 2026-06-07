@@ -1,4 +1,5 @@
 import { BASE_XP_REQUIREMENT, XP_MULTIPLIER } from './constants';
+import { getBaseDeviceScale } from './zoom-compensation';
 
 interface LeaderboardEntry {
     username: string;
@@ -200,7 +201,7 @@ export class LeaderboardManager {
         const offsetY = this.PANEL_Y;
 
         ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.setTransform(getBaseDeviceScale(), 0, 0, getBaseDeviceScale(), 0, 0);
         // Defensive: do not inherit textAlign from upstream renderers. The title
         // header below relies on left-aligned start positioning.
         ctx.textAlign = 'start';

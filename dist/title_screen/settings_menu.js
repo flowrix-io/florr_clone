@@ -17,12 +17,15 @@ function applyRenderScaleToActiveGame() {
     const renderScale = parseFloat(localStorage.getItem('renderScale') || '1');
     const antialiasing = localStorage.getItem('antialiasing') !== 'false';
     const safeScale = isNaN(renderScale) ? 1 : Math.max(0.25, Math.min(1, renderScale));
+    // HiDPI: keep the main canvas at physical resolution.
+    (0, zoom_compensation_1.applyZoomCompensation)(game.canvas, antialiasing, true);
     if (game.graphics) {
         game.graphics.renderScale = safeScale;
         game.graphics.antialiasing = antialiasing;
+        // Recompute logical dims/device scale, then resize the low-res buffer.
+        game.graphics.syncViewMetrics();
         game.graphics.syncWorldCanvasSize();
     }
-    (0, zoom_compensation_1.applyZoomCompensation)(game.canvas, antialiasing);
     if (game.graphics?.ctx) {
         game.graphics.ctx.imageSmoothingEnabled = antialiasing;
     }

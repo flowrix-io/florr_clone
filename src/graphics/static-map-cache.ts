@@ -156,15 +156,23 @@ class StaticMapCache {
         const savedCameraX = g.cameraX;
         const savedCameraY = g.cameraY;
         const savedZoom = g.zoomLevel;
+        const savedViewW = g.viewW;
+        const savedViewH = g.viewH;
+        const savedUiScale = g.uiScale;
 
         // Pretend the canvas IS this chunk so background/wall-grid loops
-        // pick the right viewport bounds.
+        // pick the right viewport bounds. viewW/viewH/uiScale are stubbed too
+        // because the static draw code now reasons in logical (viewW/viewH)
+        // units; for a 1:1 chunk that's just CHUNK_SIZE at uiScale 1.
         g.ctx = ctx;
         // Cast: we only stub the dimensions used by drawScrollingBackground.
         g.canvas = { width: CHUNK_SIZE, height: CHUNK_SIZE } as HTMLCanvasElement;
         g.cameraX = cx * CHUNK_SIZE;
         g.cameraY = cy * CHUNK_SIZE;
         g.zoomLevel = 1.0;
+        g.viewW = CHUNK_SIZE;
+        g.viewH = CHUNK_SIZE;
+        g.uiScale = 1.0;
 
         try {
             const viewport = {
@@ -181,6 +189,9 @@ class StaticMapCache {
             g.cameraX = savedCameraX;
             g.cameraY = savedCameraY;
             g.zoomLevel = savedZoom;
+            g.viewW = savedViewW;
+            g.viewH = savedViewH;
+            g.uiScale = savedUiScale;
         }
 
         return canvas;

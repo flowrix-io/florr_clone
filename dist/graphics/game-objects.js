@@ -3,8 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 core_1.Graphics.prototype.drawGameObjects = function (players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0) {
     // Calculate viewport accounting for zoom level
-    const scaledWidth = this.canvas.width / this.zoomLevel;
-    const scaledHeight = this.canvas.height / this.zoomLevel;
+    const scaledWidth = this.viewW / this.zoomLevel;
+    const scaledHeight = this.viewH / this.zoomLevel;
     const viewport = {
         left: this.cameraX,
         top: this.cameraY,

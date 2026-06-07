@@ -60,7 +60,7 @@ core_1.Graphics.prototype.followPlayerOnMinimap = function (playerX, playerY) {
     this.setMinimapScroll(sectionCenterX - SECTION_SIZE / 2, sectionCenterY - SECTION_SIZE / 2);
 };
 core_1.Graphics.prototype.drawMinimap = function (players, socket) {
-    const minimapX = this.canvas.width - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
+    const minimapX = this.viewW - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
     const minimapY = this.MINIMAP_PADDING;
     // Always show exactly one section (20000x20000) - no zoom
     const MINIMAP_AREA_SIZE = 20000;
@@ -206,7 +206,7 @@ core_1.Graphics.prototype.drawMinimap = function (players, socket) {
     if (this.showHitboxes) {
         this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(minimapX + ((this.cameraX - this.minimapScrollX) * minimapScale.x), minimapY + ((this.cameraY - this.minimapScrollY) * minimapScale.y), (this.canvas.width / this.zoomLevel) * minimapScale.x, (this.canvas.height / this.zoomLevel) * minimapScale.y);
+        this.ctx.strokeRect(minimapX + ((this.cameraX - this.minimapScrollX) * minimapScale.x), minimapY + ((this.cameraY - this.minimapScrollY) * minimapScale.y), (this.viewW / this.zoomLevel) * minimapScale.x, (this.viewH / this.zoomLevel) * minimapScale.y);
     }
     // Restore context to remove clipping region
     this.ctx.restore();

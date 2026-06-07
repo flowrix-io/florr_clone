@@ -97,8 +97,8 @@ function getTileTexturePattern(cfg, ctx, onReady) {
 }
 core_1.Graphics.prototype.drawMap = function (world_map_data) {
     // Calculate viewport accounting for zoom level
-    const scaledWidth = this.canvas.width / this.zoomLevel;
-    const scaledHeight = this.canvas.height / this.zoomLevel;
+    const scaledWidth = this.viewW / this.zoomLevel;
+    const scaledHeight = this.viewH / this.zoomLevel;
     const viewport = {
         left: this.cameraX,
         top: this.cameraY,
@@ -310,8 +310,8 @@ const SPAWN_ZONE_COLORS = {
     apex: 'rgba(255, 0, 255, 0.25)'
 };
 core_1.Graphics.prototype.drawSpawnZones = function (mapData) {
-    const scaledWidth = this.canvas.width / this.zoomLevel;
-    const scaledHeight = this.canvas.height / this.zoomLevel;
+    const scaledWidth = this.viewW / this.zoomLevel;
+    const scaledHeight = this.viewH / this.zoomLevel;
     const viewLeft = this.cameraX;
     const viewTop = this.cameraY;
     const viewRight = viewLeft + scaledWidth;

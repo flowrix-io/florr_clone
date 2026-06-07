@@ -1,4 +1,4 @@
-import { applyZoomCompensation } from '../zoom-compensation';
+import { applyZoomCompensation, getBaseDeviceScale } from '../zoom-compensation';
 import { getBiomeSvgContent } from '../biome_svgs';
 import { getBiomeSvgFile } from './biomes';
 import { FloatingPetalManager } from './floating_petals';
@@ -33,7 +33,7 @@ export class BackgroundAnimation {
             pointer-events: auto;
             z-index: 1000;
         `;
-        applyZoomCompensation(this.backgroundCanvas);
+        applyZoomCompensation(this.backgroundCanvas, true, true);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d')!;
         this.backgroundTexture = new Image();
         this.floatingPetalManager = new FloatingPetalManager();
@@ -92,11 +92,18 @@ export class BackgroundAnimation {
     }
 
     private drawScrollingBackground(): void {
-        applyZoomCompensation(this.backgroundCanvas);
+        // HiDPI: physical backing store + a base scale(dpr) so the title screen
+        // renders at native resolution while the code below works in logical
+        // (CSS) coordinates — same scheme as the in-game canvas.
+        applyZoomCompensation(this.backgroundCanvas, true, true);
+        const dpr = getBaseDeviceScale();
+        this.backgroundCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const logicalW = this.backgroundCanvas.width / dpr;
+        const logicalH = this.backgroundCanvas.height / dpr;
 
         if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
             this.backgroundCtx.fillStyle = '#00d885';
-            this.backgroundCtx.fillRect(0, 0, this.backgroundCanvas.width, this.backgroundCanvas.height);
+            this.backgroundCtx.fillRect(0, 0, logicalW, logicalH);
             return;
         }
 
@@ -104,14 +111,14 @@ export class BackgroundAnimation {
         const bgHeight = this.backgroundTexture.height;
 
         const radius = 2000;
-        const centerX = this.backgroundCanvas.width / 2;
-        const centerY = this.backgroundCanvas.height / 2;
+        const centerX = logicalW / 2;
+        const centerY = logicalH / 2;
 
         const cameraX = centerX + Math.cos(this.backgroundTime * 0.00002) * radius;
         const cameraY = centerY + Math.sin(this.backgroundTime * 0.00002) * radius;
 
-        const visibleWidth = this.backgroundCanvas.width;
-        const visibleHeight = this.backgroundCanvas.height;
+        const visibleWidth = logicalW;
+        const visibleHeight = logicalH;
 
         const startX = Math.floor(cameraX / bgWidth) * bgWidth;
         const startY = Math.floor(cameraY / bgHeight) * bgHeight;
@@ -142,10 +149,13 @@ export class BackgroundAnimation {
         this.backgroundTime += 16;
         this.drawScrollingBackground();
         if (this.petalsVisible) {
+            // drawScrollingBackground already set the base scale(dpr); pass
+            // logical dimensions so petals fill the screen at native res.
+            const dpr = getBaseDeviceScale();
             this.floatingPetalManager.draw(
                 this.backgroundCtx,
-                this.backgroundCanvas.width,
-                this.backgroundCanvas.height,
+                this.backgroundCanvas.width / dpr,
+                this.backgroundCanvas.height / dpr,
             );
         }
         if (this.onFrame) this.onFrame();

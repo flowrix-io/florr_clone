@@ -1,4 +1,5 @@
 import { Socket } from './ws_client';
+import { getBaseDeviceScale } from './zoom-compensation';
 
 interface GuildState {
     name: string; // 5-char alphanumeric guild name — the sole identifier
@@ -360,7 +361,7 @@ export class GuildMenuManager {
         this.hitRegions = [];
 
         ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.setTransform(getBaseDeviceScale(), 0, 0, getBaseDeviceScale(), 0, 0);
 
         // Panel border + body (inventory-style inset).
         ctx.fillStyle = this.BORDER;

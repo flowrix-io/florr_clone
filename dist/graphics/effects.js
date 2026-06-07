@@ -39,8 +39,8 @@ const RAINDROP_MAX_DOTS_PER_PLAYER = 80;
 const FLOWER_COLORS = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#00ffff", "#ff00ff"];
 core_1.Graphics.prototype.drawRaindropAuras = function (players) {
     const now = Date.now();
-    const viewW = this.canvas.width / (this.zoomLevel * this.renderScale);
-    const viewH = this.canvas.height / (this.zoomLevel * this.renderScale);
+    const viewW = this.viewW / (this.zoomLevel * this.renderScale);
+    const viewH = this.viewH / (this.zoomLevel * this.renderScale);
     const viewLeft = this.cameraX;
     const viewTop = this.cameraY;
     const viewRight = viewLeft + viewW;
@@ -361,7 +361,7 @@ core_1.Graphics.prototype.drawFallingStars = function () {
         star.lifetime -= 16; // Assuming ~60fps
         const progress = star.lifetime / star.maxLife;
         // Remove if off screen or lifetime expired
-        if (star.y > this.canvas.height + 50 || progress <= 0) {
+        if (star.y > this.viewH + 50 || progress <= 0) {
             return false;
         }
         // Draw star (in screen coordinates)

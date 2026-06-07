@@ -12,14 +12,14 @@ core_1.Graphics.prototype.sampleColorAtPosition = function (worldX, worldY) {
     const canvasX = Math.floor((worldX - validCameraX) * this.zoomLevel);
     const canvasY = Math.floor((worldY - validCameraY) * this.zoomLevel);
     // Make sure we're within canvas bounds
-    if (canvasX >= 0 && canvasX < this.canvas.width && canvasY >= 0 && canvasY < this.canvas.height) {
+    if (canvasX >= 0 && canvasX < this.viewW && canvasY >= 0 && canvasY < this.viewH) {
         try {
             // Use a small region (3x3) for more reliable sampling
             const sampleSize = 3;
             const startX = Math.max(0, canvasX - Math.floor(sampleSize / 2));
             const startY = Math.max(0, canvasY - Math.floor(sampleSize / 2));
-            const endX = Math.min(this.canvas.width, startX + sampleSize);
-            const endY = Math.min(this.canvas.height, startY + sampleSize);
+            const endX = Math.min(this.viewW, startX + sampleSize);
+            const endY = Math.min(this.viewH, startY + sampleSize);
             const actualWidth = endX - startX;
             const actualHeight = endY - startY;
             if (actualWidth > 0 && actualHeight > 0) {
@@ -262,8 +262,8 @@ core_1.Graphics.prototype.drawUI = function (players, socket) {
 };
 core_1.Graphics.prototype.drawBossBars = function (enemies) {
     // Calculate viewport accounting for zoom level
-    const scaledWidth = this.canvas.width / this.zoomLevel;
-    const scaledHeight = this.canvas.height / this.zoomLevel;
+    const scaledWidth = this.viewW / this.zoomLevel;
+    const scaledHeight = this.viewH / this.zoomLevel;
     const viewport = {
         left: this.cameraX,
         top: this.cameraY,
@@ -298,7 +298,7 @@ core_1.Graphics.prototype.drawBossBars = function (enemies) {
         const nameMargin = 8; // Space between name and bar
         const bossBarSpacing = 60; // Space between multiple boss bars (increased to accommodate name)
         const topMargin = 20; // Margin from top of screen
-        const centerX = this.canvas.width / 2;
+        const centerX = this.viewW / 2;
         bossMobs.forEach((enemy, index) => {
             const nameY = topMargin + (index * bossBarSpacing);
             const bossBarY = nameY + nameFontSize + nameMargin;
@@ -440,9 +440,9 @@ core_1.Graphics.prototype.drawConsoleLogs = function () {
     const lineHeight = 16;
     const padding = 8;
     const x = padding;
-    const maxWidth = Math.min(600, this.canvas.width * 0.4);
+    const maxWidth = Math.min(600, this.viewW * 0.4);
     const totalHeight = this.consoleLogs.length * lineHeight + padding * 2;
-    const y = this.canvas.height - totalHeight - padding;
+    const y = this.viewH - totalHeight - padding;
     // Draw background
     ctx.save();
     // Draw log lines
@@ -484,8 +484,8 @@ core_1.Graphics.prototype.drawDeathScreen = function () {
     if (!this.deathScreenVisible)
         return;
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const w = this.viewW;
+    const h = this.viewH;
     ctx.save();
     // Semi-transparent dark overlay
     ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';

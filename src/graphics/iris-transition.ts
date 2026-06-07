@@ -29,6 +29,8 @@ Graphics.prototype.startIrisClose = function(this: Graphics, screenshot: HTMLCan
 
 /** Capture the current canvas contents as a screenshot for use in transitions. */
 Graphics.prototype.captureScreenshot = function(this: Graphics): HTMLCanvasElement {
+    // Snapshot at the full physical backing resolution (world + UI both live
+    // on the main canvas now).
     const shot = document.createElement('canvas');
     shot.width = this.canvas.width;
     shot.height = this.canvas.height;
@@ -46,7 +48,7 @@ Graphics.prototype.drawIrisTransition = function(this: Graphics): void {
             // Closing complete: draw final black frame
             this.ctx.save();
             this.ctx.fillStyle = 'black';
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.fillRect(0, 0, this.viewW, this.viewH);
             this.ctx.restore();
         }
         this.irisTransitionActive = false;
@@ -67,8 +69,8 @@ Graphics.prototype.drawIrisTransition = function(this: Graphics): void {
         eased = 1 - Math.pow(1 - progress, 3); // starts small (0), grows to 1
     }
 
-    const centerX = this.canvas.width / 2;
-    const centerY = this.canvas.height / 2;
+    const centerX = this.viewW / 2;
+    const centerY = this.viewH / 2;
     const maxRadius = Math.sqrt(centerX * centerX + centerY * centerY);
     const currentRadius = eased * maxRadius;
 
@@ -76,24 +78,24 @@ Graphics.prototype.drawIrisTransition = function(this: Graphics): void {
         // Teleporter close: black everywhere, frozen screenshot inside shrinking circle
         this.ctx.save();
         this.ctx.fillStyle = 'black';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.fillRect(0, 0, this.viewW, this.viewH);
         this.ctx.restore();
 
         this.ctx.save();
         this.ctx.beginPath();
         this.ctx.arc(centerX, centerY, Math.max(currentRadius, 0), 0, Math.PI * 2);
         this.ctx.clip();
-        this.ctx.drawImage(this.irisScreenshot, 0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.drawImage(this.irisScreenshot, 0, 0, this.viewW, this.viewH);
         this.ctx.restore();
     } else {
         // Title screen transitions or teleporter open: draw outside the circle
         this.ctx.save();
         this.ctx.beginPath();
-        this.ctx.rect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.rect(0, 0, this.viewW, this.viewH);
         this.ctx.arc(centerX, centerY, Math.max(currentRadius, 0), 0, Math.PI * 2, true);
         this.ctx.clip();
         if (this.irisTitleScreen && this.irisScreenshot) {
-            this.ctx.drawImage(this.irisScreenshot, 0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.drawImage(this.irisScreenshot, 0, 0, this.viewW, this.viewH);
         } else {
             this.ctx.fillStyle = 'black';
             this.ctx.fill();

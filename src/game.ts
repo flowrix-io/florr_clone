@@ -250,7 +250,7 @@ export class Game {
 
                     // Show confirmation message
                     this.showFloatingText(
-                        this.canvas.width / 2,
+                        this.graphics.viewW / 2,
                         50,
                         'Color Updated!',
                         '#4CAF50',
@@ -285,7 +285,7 @@ export class Game {
         // Add mouse move listener - always track mouse position so it's available when toggling mouse controls
         this.canvas.addEventListener('mousemove', (event) => {
             // Loadout bar hover/drag tracking (screen-space)
-            const { x: sx, y: sy } = canvasCoords(this.canvas, event);
+            const { x: sx, y: sy } = canvasCoords(this.canvas, event, true);
             // Settings panel hover/slider drag
             if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
                 window.titleScreen.handleSettingsMouseMoveExternal(sx);
@@ -309,8 +309,8 @@ export class Game {
             // Calculate normalized screen coordinates (-1 to 1, where 0,0 is center of screen)
             // X: -1 is left edge, 0 is center, 1 is right edge
             // Y: -1 is top edge, 0 is center, 1 is bottom edge
-            this.normalizedMouseXOnScreen = ((screenX / this.canvas.width) * 2 - 1) / (this.canvas.height / this.canvas.width);
-            this.normalizedMouseYOnScreen = (screenY / this.canvas.height) * 2 - 1;
+            this.normalizedMouseXOnScreen = ((screenX / this.graphics.viewW) * 2 - 1) / (this.graphics.viewH / this.graphics.viewW);
+            this.normalizedMouseYOnScreen = (screenY / this.graphics.viewH) * 2 - 1;
 
             // Update current mouse position (for eye tracking, etc.)
             this.mouseX = worldX;
@@ -326,7 +326,7 @@ export class Game {
         // Track mouse for death screen button hover
         this.canvas.addEventListener('mousemove', (event) => {
             if (this.isPlayerDead && this.graphics.deathScreenVisible) {
-                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event, true);
                 const btn = this.graphics.deathScreenButtonRect;
                 this.graphics.deathScreenButtonHovered =
                     sx >= btn.x && sx <= btn.x + btn.w &&
@@ -342,7 +342,7 @@ export class Game {
         this.canvas.addEventListener('mousedown', (event) => {
             // Intercept clicks for canvas settings panel
             if (event.button === 0 && window.titleScreen && window.titleScreen.isSettingsOpen()) {
-                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event, true);
                 if (window.titleScreen.handleSettingsMouseDownExternal(sx, sy)) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -351,7 +351,7 @@ export class Game {
             }
             // Intercept clicks on the canvas death screen buttons
             if (event.button === 0 && this.isPlayerDead && this.graphics.deathScreenVisible) {
-                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event, true);
                 const btn = this.graphics.deathScreenButtonRect;
                 if (sx >= btn.x && sx <= btn.x + btn.w && sy >= btn.y && sy <= btn.y + btn.h) {
                     this.hideDeathScreen();
@@ -367,7 +367,7 @@ export class Game {
             }
             // Intercept left-clicks over the canvas loadout bar to start drag
             if (event.button === 0 && this.loadoutBar && this.loadoutBar.isVisible()) {
-                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event, true);
                 const hit = this.loadoutBar.hitTest(sx, sy);
                 if (hit >= 0 && hit < LOADOUT_SLOT_COUNT) {
                     const player = this.getLocalPlayer();
@@ -398,7 +398,7 @@ export class Game {
         // Canvas click handler for settings panel
         this.canvas.addEventListener('click', (event) => {
             if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
-                const { x: sx, y: sy } = canvasCoords(this.canvas, event);
+                const { x: sx, y: sy } = canvasCoords(this.canvas, event, true);
                 if (window.titleScreen.handleSettingsClickExternal(sx, sy)) {
                     event.stopPropagation();
                 }
@@ -730,7 +730,7 @@ export class Game {
                 this.useMouseControls = !this.useMouseControls;
                 localStorage.setItem('useMouseControls', this.useMouseControls.toString());
                 this.showFloatingText(
-                    this.canvas.width / 2,
+                    this.graphics.viewW / 2,
                     50,
                     `Controls: ${this.useMouseControls ? 'Mouse' : 'Keyboard'}`,
                     '#FFFFFF',
@@ -744,7 +744,7 @@ export class Game {
                 this.graphics.showHitboxes = this.showHitboxes;
                 localStorage.setItem('showHitboxes', this.showHitboxes.toString());
                 this.showFloatingText(
-                    this.canvas.width / 2,
+                    this.graphics.viewW / 2,
                     50,
                     `Hitboxes: ${this.showHitboxes ? 'ON' : 'OFF'}`,
                     '#FFFFFF',
@@ -780,7 +780,7 @@ export class Game {
             if (key === normalizeKey(this.controls.minimap_zoom_in)) {
                 this.graphics.zoomInMinimap();
                 this.showFloatingText(
-                    this.canvas.width / 2,
+                    this.graphics.viewW / 2,
                     50,
                     `Minimap Zoom: ${Math.round(this.graphics.getMinimapZoom() * 100)}%`,
                     '#FFFFFF',
@@ -791,7 +791,7 @@ export class Game {
             if (key === normalizeKey(this.controls.minimap_zoom_out)) {
                 this.graphics.zoomOutMinimap();
                 this.showFloatingText(
-                    this.canvas.width / 2,
+                    this.graphics.viewW / 2,
                     50,
                     `Minimap Zoom: ${Math.round(this.graphics.getMinimapZoom() * 100)}%`,
                     '#FFFFFF',
@@ -954,7 +954,7 @@ export class Game {
     private zoomIn() {
         this.zoomLevel = Math.min(this.zoomLevel + this.ZOOM_STEP, this.MAX_ZOOM);
         this.showFloatingText(
-            this.canvas.width / 2,
+            this.graphics.viewW / 2,
             50,
             `Zoom: ${Math.round(this.zoomLevel * 100)}%`,
             '#FFFFFF',
@@ -965,7 +965,7 @@ export class Game {
     private zoomOut() {
         this.zoomLevel = Math.max(this.zoomLevel - this.ZOOM_STEP, this.MIN_ZOOM);
         this.showFloatingText(
-            this.canvas.width / 2,
+            this.graphics.viewW / 2,
             50,
             `Zoom: ${Math.round(this.zoomLevel * 100)}%`,
             '#FFFFFF',
@@ -988,8 +988,8 @@ export class Game {
 
         // Center camera on player with zoom
         const effectiveZoom = this.getEffectiveZoom();
-        const scaledWidth = this.canvas.width / effectiveZoom;
-        const scaledHeight = this.canvas.height / effectiveZoom;
+        const scaledWidth = this.graphics.viewW / effectiveZoom;
+        const scaledHeight = this.graphics.viewH / effectiveZoom;
 
         const targetX = player.x - scaledWidth / 2;
         const targetY = player.y - scaledHeight / 2;
@@ -1015,8 +1015,8 @@ export class Game {
         // Set up animation to mob
         this.animationStartPos = { x: this.cameraX, y: this.cameraY };
         const effectiveZoom = this.getEffectiveZoom();
-        const scaledWidth = this.canvas.width / effectiveZoom;
-        const scaledHeight = this.canvas.height / effectiveZoom;
+        const scaledWidth = this.graphics.viewW / effectiveZoom;
+        const scaledHeight = this.graphics.viewH / effectiveZoom;
 
         this.animationTargetPos = {
             x: Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - scaledWidth, mobX - scaledWidth / 2)),
@@ -1052,8 +1052,8 @@ export class Game {
                 this.animationStartPos = { x: this.cameraX, y: this.cameraY };
 
                 const effectiveZoom = this.getEffectiveZoom();
-                const scaledWidth = this.canvas.width / effectiveZoom;
-                const scaledHeight = this.canvas.height / effectiveZoom;
+                const scaledWidth = this.graphics.viewW / effectiveZoom;
+                const scaledHeight = this.graphics.viewH / effectiveZoom;
 
                 this.animationTargetPos = {
                     x: Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - scaledWidth, this.savedPlayerPos.x - scaledWidth / 2)),
@@ -1144,11 +1144,15 @@ export class Game {
         // Use active player ID for rendering (or socket.id if not split)
         const activePlayerId = this.activePlayerId || this.socket?.id || '';
         this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension, this.groundPollens);
-        // Draw canvas loadout bar on top of game UI
+        // Overlays drawn after render() must re-establish the HiDPI base
+        // transform so they render at native resolution in logical coordinates.
+        const ui = this.graphics.uiScale || 1;
+        this.graphics.ctx.setTransform(ui, 0, 0, ui, 0, 0);
+        // Draw canvas loadout bar on top of game UI (logical bounds)
         if (this.loadoutBar) {
             const localPlayer = this.getLocalPlayer();
             if (localPlayer) this.loadoutBar.show(); else this.loadoutBar.hide();
-            this.loadoutBar.draw(this.graphics.ctx);
+            this.loadoutBar.draw(this.graphics.ctx, { x: 0, y: 0, width: this.graphics.viewW, height: this.graphics.viewH });
         }
         if (this.showStats) {
             this.renderStatsOverlay();
@@ -1363,8 +1367,8 @@ export class Game {
         const inputData: any = {
             keys: Array.from(this.keysPressed),
             petalExtension: this.petalExtension,
-            viewportWidth: this.canvas.width / this.getEffectiveZoom(),
-            viewportHeight: this.canvas.height / this.getEffectiveZoom()
+            viewportWidth: this.graphics.viewW / this.getEffectiveZoom(),
+            viewportHeight: this.graphics.viewH / this.getEffectiveZoom()
         };
 
         // Calculate mouse movement direction on client when mouse controls are enabled
@@ -1580,7 +1584,7 @@ export class Game {
         ctx.lineWidth = 2;
         ctx.strokeStyle = '#000000';
 
-        const x = canvas.width - 8;
+        const x = this.graphics.viewW - 8;
         const player = this.socket?.id ? this.players.get(this.socket.id) : undefined;
 
         const lines: { text: string; color: string }[] = [];
@@ -1624,7 +1628,7 @@ export class Game {
         });
 
         // Draw from bottom up
-        let y = canvas.height - 8;
+        let y = this.graphics.viewH - 8;
         for (const line of lines) {
             ctx.strokeText(line.text, x, y);
             ctx.fillStyle = line.color;
@@ -1782,12 +1786,16 @@ export class Game {
         const renderScale = parseFloat(localStorage.getItem('renderScale') || '1');
         const antialiasing = localStorage.getItem('antialiasing') !== 'false';
         const safeScale = isNaN(renderScale) ? 1 : Math.max(0.25, Math.min(1, renderScale));
+        // HiDPI: size the main canvas backing store to physical pixels.
+        applyZoomCompensation(this.canvas, antialiasing, true);
         if (this.graphics) {
             this.graphics.renderScale = safeScale;
             this.graphics.antialiasing = antialiasing;
+            // Recompute logical dims/device scale from the resized canvas, then
+            // size the low-res render buffer off it.
+            this.graphics.syncViewMetrics();
             this.graphics.syncWorldCanvasSize();
         }
-        applyZoomCompensation(this.canvas, antialiasing);
         if (this.graphics?.ctx) {
             this.graphics.ctx.imageSmoothingEnabled = antialiasing;
         }
@@ -2049,7 +2057,7 @@ export class Game {
         document.getElementById('titleScreen')?.classList.remove('hidden');
     }
     public showSaveIndicator() {
-        this.graphics.showFloatingText(this.canvas.width / 2, 0, 'Progress Saved', 'white', 20);
+        this.graphics.showFloatingText(this.graphics.viewW / 2, 0, 'Progress Saved', 'white', 20);
     }
 
     // UI methods for disconnect/reconnect

@@ -90,7 +90,7 @@ Graphics.prototype.followPlayerOnMinimap = function(this: Graphics, playerX: num
 };
 
 Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, Player>, socket: string) {
-    const minimapX = this.canvas.width - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
+    const minimapX = this.viewW - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
     const minimapY = this.MINIMAP_PADDING;
 
     // Always show exactly one section (20000x20000) - no zoom
@@ -246,8 +246,8 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
         this.ctx.strokeRect(
             minimapX + ((this.cameraX - this.minimapScrollX) * minimapScale.x),
             minimapY + ((this.cameraY - this.minimapScrollY) * minimapScale.y),
-            (this.canvas.width / this.zoomLevel) * minimapScale.x,
-            (this.canvas.height / this.zoomLevel) * minimapScale.y
+            (this.viewW / this.zoomLevel) * minimapScale.x,
+            (this.viewH / this.zoomLevel) * minimapScale.y
         );
     }
 

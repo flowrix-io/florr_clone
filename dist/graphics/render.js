@@ -13,44 +13,55 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     if (currentPlayer) {
         this.updateSectionTextures(currentPlayer.x, currentPlayer.y);
     }
-    // Always clear the visible main canvas. When we render the world to an
-    // offscreen target, the blit at the end overwrites the world region but
-    // not the UI region, so a stale frame would peek through without this.
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.ctx.fillStyle = 'black';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    // Render the world into an offscreen canvas when renderScale < 1, so
-    // the GPU only fills (canvas.width * canvas.height * renderScale²)
-    // pixels per frame instead of the full screen. UI continues to draw
-    // to the main canvas afterward at full resolution.
-    const useOffscreen = this.renderScale < 1 && this.worldCtx !== null && this.worldCanvas !== null;
+    // HiDPI base transform. The main canvas backing store is physical pixels
+    // (logical × uiScale); applying scale(uiScale) once lets all drawing below
+    // — world and UI — work in *logical* coordinates yet render at native
+    // resolution. Everything reads this.viewW/viewH (logical) instead of
+    // canvas.width/height (physical).
+    const uiScale = this.uiScale || 1;
     const mainCtx = this.ctx;
-    if (useOffscreen) {
-        this.ctx = this.worldCtx;
-        this.ctx.imageSmoothingEnabled = this.antialiasing;
-    }
-    this.ctx.save();
-    // Clear the world target. With offscreen, this is the small buffer; at
-    // renderScale=1 it's the main canvas (already cleared above — harmless).
-    this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
-    this.ctx.fillStyle = 'black';
-    this.ctx.fillRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
-    // Apply zoom scaling. Multiplying by renderScale folds the offscreen
-    // resolution into the world transform so the same camera/world view
-    // that fits the main canvas also fits the smaller offscreen.
-    this.ctx.scale(this.zoomLevel * this.renderScale, this.zoomLevel * this.renderScale);
-    // Translate the context by the camera position
-    // Ensure camera position is valid (not NaN or Infinity)
+    mainCtx.setTransform(uiScale, 0, 0, uiScale, 0, 0);
+    mainCtx.imageSmoothingEnabled = this.antialiasing;
+    // Clear to a black background (logical coords cover the full physical
+    // canvas through the base scale).
+    mainCtx.clearRect(0, 0, this.viewW, this.viewH);
+    mainCtx.fillStyle = 'black';
+    mainCtx.fillRect(0, 0, this.viewW, this.viewH);
+    // When renderScale < 1, render the world into a smaller offscreen buffer
+    // first (GPU fills native² × renderScale² pixels), then stretch it up onto
+    // the main canvas. Otherwise the world renders straight onto the main
+    // canvas at native resolution.
+    const useBuffer = this.renderScale < 1 && this.worldCtx !== null && this.worldCanvas !== null;
+    // Visible world extent (logical) — independent of renderScale; only the
+    // pixel density changes, not how much of the world is shown.
+    const visibleW = this.viewW / this.zoomLevel;
+    const visibleH = this.viewH / this.zoomLevel;
     const validCameraX = isNaN(this.cameraX) || !isFinite(this.cameraX) ? 0 : this.cameraX;
     const validCameraY = isNaN(this.cameraY) || !isFinite(this.cameraY) ? 0 : this.cameraY;
+    if (useBuffer) {
+        // Buffer maps world → buffer pixels directly: zoom × uiScale ×
+        // renderScale (buffer size is canvas physical × renderScale).
+        this.ctx = this.worldCtx;
+        this.ctx.imageSmoothingEnabled = this.antialiasing;
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+        this.ctx.fillStyle = 'black';
+        this.ctx.fillRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+        const bufferScale = this.zoomLevel * uiScale * this.renderScale;
+        this.ctx.scale(bufferScale, bufferScale);
+    }
+    else {
+        // Direct: build on the base scale(uiScale) so total world scale is
+        // zoom × uiScale (native resolution).
+        this.ctx.save();
+        this.ctx.scale(this.zoomLevel, this.zoomLevel);
+    }
     this.ctx.translate(-validCameraX, -validCameraY);
     // Static world (background + walls + edges) is pre-rendered into
     // chunk canvases and blitted in a handful of drawImage calls per
     // frame. Replaces what used to be drawScrollingBackground + the wall
     // grid pass inside drawMap, both of which did hundreds of fillRect /
     // stroke calls per frame for content that never changes.
-    const visibleW = this.canvas.width / (this.zoomLevel * this.renderScale);
-    const visibleH = this.canvas.height / (this.zoomLevel * this.renderScale);
     const mapViewport = {
         left: this.cameraX,
         top: this.cameraY,
@@ -81,14 +92,16 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     this.drawPetalBreakEffects();
     this.drawLightningEffects();
     this.drawPetalParticleEffects();
-    this.ctx.restore();
-    // Blit the offscreen world back to the main canvas (stretched to fill),
-    // then point this.ctx at the main canvas so all UI below renders at
-    // full resolution.
-    if (useOffscreen) {
+    if (useBuffer) {
+        // Stretch the low-res buffer onto the main canvas. drawImage at logical
+        // size (viewW/viewH) fills the full physical canvas via the base scale.
         this.ctx = mainCtx;
         this.ctx.imageSmoothingEnabled = this.antialiasing;
-        this.ctx.drawImage(this.worldCanvas, 0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.drawImage(this.worldCanvas, 0, 0, this.viewW, this.viewH);
+    }
+    else {
+        // Undo the world scale/translate; back to the base scale(uiScale).
+        this.ctx.restore();
     }
     // Draw UI elements (not affected by camera)
     this.drawUI(players, currentPlayerId);
@@ -118,7 +131,7 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     // Draw the canvas icon-button strip on top of the menu panels so it stays
     // accessible (same z-order as the legacy DOM buttons sat above gameCanvas).
     if (this.titleCanvasButtons) {
-        this.titleCanvasButtons.draw(this.ctx, this.canvas.width, this.canvas.height);
+        this.titleCanvasButtons.draw(this.ctx, this.viewW, this.viewH);
     }
     // Draw console logs overlay
     this.drawConsoleLogs();

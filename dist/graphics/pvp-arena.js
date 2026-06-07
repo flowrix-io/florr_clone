@@ -13,8 +13,8 @@ const ARENA_GRID_STROKE = 'rgba(0, 0, 0, 0.18)';
 core_1.Graphics.prototype.drawPvpArenaBoundary = function () {
     const ctx = this.ctx;
     // Viewport in world coordinates.
-    const visibleWidth = this.canvas.width / this.zoomLevel;
-    const visibleHeight = this.canvas.height / this.zoomLevel;
+    const visibleWidth = this.viewW / this.zoomLevel;
+    const visibleHeight = this.viewH / this.zoomLevel;
     const vpLeft = this.cameraX;
     const vpTop = this.cameraY;
     const vpRight = vpLeft + visibleWidth;
@@ -108,10 +108,11 @@ core_1.Graphics.prototype.drawPvpLeaderboard = function (players, currentPlayerI
     const panelW = headerW + PANEL_PAD * 2;
     const rowsH = topN.length * ROW_H + Math.max(0, topN.length - 1) * ROW_GAP;
     const panelH = HEADER_H + PANEL_PAD * 2 + rowsH + PANEL_PAD;
-    const x = this.canvas.width - panelW - 20;
+    const x = this.viewW - panelW - 20;
     const y = 20;
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // HiDPI base scale (logical → physical) so the panel draws at native res.
+    ctx.setTransform(this.uiScale, 0, 0, this.uiScale, 0, 0);
     ctx.lineJoin = 'round';
     // Outer dark-gray container.
     ctx.fillStyle = '#555555';

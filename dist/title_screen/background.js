@@ -23,7 +23,10 @@ class BackgroundAnimation {
             this.backgroundTime += 16;
             this.drawScrollingBackground();
             if (this.petalsVisible) {
-                this.floatingPetalManager.draw(this.backgroundCtx, this.backgroundCanvas.width, this.backgroundCanvas.height);
+                // drawScrollingBackground already set the base scale(dpr); pass
+                // logical dimensions so petals fill the screen at native res.
+                const dpr = (0, zoom_compensation_1.getBaseDeviceScale)();
+                this.floatingPetalManager.draw(this.backgroundCtx, this.backgroundCanvas.width / dpr, this.backgroundCanvas.height / dpr);
             }
             if (this.onFrame)
                 this.onFrame();
@@ -38,7 +41,7 @@ class BackgroundAnimation {
             pointer-events: auto;
             z-index: 1000;
         `;
-        (0, zoom_compensation_1.applyZoomCompensation)(this.backgroundCanvas);
+        (0, zoom_compensation_1.applyZoomCompensation)(this.backgroundCanvas, true, true);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d');
         this.backgroundTexture = new Image();
         this.floatingPetalManager = new floating_petals_1.FloatingPetalManager();
@@ -90,21 +93,28 @@ class BackgroundAnimation {
         this.backgroundTexture.src = canvas.toDataURL();
     }
     drawScrollingBackground() {
-        (0, zoom_compensation_1.applyZoomCompensation)(this.backgroundCanvas);
+        // HiDPI: physical backing store + a base scale(dpr) so the title screen
+        // renders at native resolution while the code below works in logical
+        // (CSS) coordinates — same scheme as the in-game canvas.
+        (0, zoom_compensation_1.applyZoomCompensation)(this.backgroundCanvas, true, true);
+        const dpr = (0, zoom_compensation_1.getBaseDeviceScale)();
+        this.backgroundCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const logicalW = this.backgroundCanvas.width / dpr;
+        const logicalH = this.backgroundCanvas.height / dpr;
         if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
             this.backgroundCtx.fillStyle = '#00d885';
-            this.backgroundCtx.fillRect(0, 0, this.backgroundCanvas.width, this.backgroundCanvas.height);
+            this.backgroundCtx.fillRect(0, 0, logicalW, logicalH);
             return;
         }
         const bgWidth = this.backgroundTexture.width;
         const bgHeight = this.backgroundTexture.height;
         const radius = 2000;
-        const centerX = this.backgroundCanvas.width / 2;
-        const centerY = this.backgroundCanvas.height / 2;
+        const centerX = logicalW / 2;
+        const centerY = logicalH / 2;
         const cameraX = centerX + Math.cos(this.backgroundTime * 0.00002) * radius;
         const cameraY = centerY + Math.sin(this.backgroundTime * 0.00002) * radius;
-        const visibleWidth = this.backgroundCanvas.width;
-        const visibleHeight = this.backgroundCanvas.height;
+        const visibleWidth = logicalW;
+        const visibleHeight = logicalH;
         const startX = Math.floor(cameraX / bgWidth) * bgWidth;
         const startY = Math.floor(cameraY / bgHeight) * bgHeight;
         const TILE_OVERLAP = 2;

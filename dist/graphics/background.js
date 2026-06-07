@@ -6,8 +6,8 @@ core_1.Graphics.prototype.drawScrollingBackground = function () {
     if (!this.backgroundTexture || !this.backgroundTexture.complete || this.backgroundTexture.naturalWidth === 0) {
         const SECTION_SIZE = 20000;
         // Calculate visible area and clamp to world boundaries
-        const visibleWidth = this.canvas.width / this.zoomLevel;
-        const visibleHeight = this.canvas.height / this.zoomLevel;
+        const visibleWidth = this.viewW / this.zoomLevel;
+        const visibleHeight = this.viewH / this.zoomLevel;
         // Draw each visible section with its background color or texture
         const startSectionX = Math.max(0, Math.floor(this.cameraX / SECTION_SIZE));
         const startSectionY = Math.max(0, Math.floor(this.cameraY / SECTION_SIZE));
@@ -60,8 +60,8 @@ core_1.Graphics.prototype.drawScrollingBackground = function () {
         return;
     }
     // Calculate the visible area in world coordinates
-    const visibleWidth = this.canvas.width / this.zoomLevel;
-    const visibleHeight = this.canvas.height / this.zoomLevel;
+    const visibleWidth = this.viewW / this.zoomLevel;
+    const visibleHeight = this.viewH / this.zoomLevel;
     // Get the size of the background texture (400x400 from the SVG)
     const defaultBgWidth = this.backgroundTexture.width;
     const defaultBgHeight = this.backgroundTexture.height;

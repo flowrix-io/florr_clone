@@ -8,8 +8,8 @@ declare module './core' {
 
 Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0): void {
     // Calculate viewport accounting for zoom level
-    const scaledWidth = this.canvas.width / this.zoomLevel;
-    const scaledHeight = this.canvas.height / this.zoomLevel;
+    const scaledWidth = this.viewW / this.zoomLevel;
+    const scaledHeight = this.viewH / this.zoomLevel;
     const viewport = {
         left: this.cameraX,
         top: this.cameraY,

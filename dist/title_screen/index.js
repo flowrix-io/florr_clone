@@ -27,6 +27,11 @@ class TitleScreen {
     // `uiCanvas` / `uiCtx` are getters that point at `background`'s canvas.
     get uiCanvas() { return this.background.getCanvas(); }
     get uiCtx() { return this.background.getCtx(); }
+    // Logical (CSS) dimensions of the title canvas. Its backing store is HiDPI
+    // (physical pixels); the render code draws under a base scale(dpr) in these
+    // logical units, so layout/hit-testing must use these, not canvas.width.
+    get logicalW() { return this.background.getCanvas().width / (0, zoom_compensation_1.getBaseDeviceScale)(); }
+    get logicalH() { return this.background.getCanvas().height / (0, zoom_compensation_1.getBaseDeviceScale)(); }
     constructor() {
         this.availableBiomes = [];
         this.playerName = '';
@@ -61,7 +66,7 @@ class TitleScreen {
             if (this.uiRenderingEnabled) {
                 this.renderCanvasUI();
                 this.drawTitleLoadout();
-                this.canvasButtons.draw(this.uiCtx, this.uiCanvas.width, this.uiCanvas.height);
+                this.canvasButtons.draw(this.uiCtx, this.logicalW, this.logicalH);
             }
             this.renderInGameMenusOverlay();
         };
@@ -78,7 +83,7 @@ class TitleScreen {
         // PANEL_X/PANEL_Y on whatever canvas they're attached to, so they
         // composite cleanly on top of the bg + petals + UI.
         const titleCanvas = this.background.getCanvas();
-        (0, zoom_compensation_1.applyZoomCompensation)(titleCanvas);
+        (0, zoom_compensation_1.applyZoomCompensation)(titleCanvas, true, true);
         this.changelogManager.setCanvas(titleCanvas);
         this.notificationsManager.setCanvas(titleCanvas);
         this.leaderboardManager.setCanvas(titleCanvas);
@@ -913,21 +918,21 @@ class TitleScreen {
         // mouseup-over-same-button (see mousedown/mouseup handlers below) so
         // we filter them out of the generic click path here.
         this.uiCanvas.addEventListener('click', (e) => {
-            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e);
+            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e, true);
             if (this.canvasButtons.isPointOnButton(x, y))
                 return;
             this.handleCanvasClick(x, y);
         });
         // Mouse move for hover effects
         this.uiCanvas.addEventListener('mousemove', (e) => {
-            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e);
+            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e, true);
             this.canvasButtons.setHover(x, y);
             this.settings.handleMouseMove(x);
             this.handleCanvasHover(x, y);
         });
         // Mouse down for pressed state
         this.uiCanvas.addEventListener('mousedown', (e) => {
-            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e);
+            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e, true);
             if (this.canvasButtons.press(x, y)) {
                 this.pressedButton = null;
                 return;
@@ -948,7 +953,7 @@ class TitleScreen {
         // Mouse up to clear pressed state and dispatch canvas-button clicks
         // (which only fire when mouseup lands on the same button as mousedown).
         this.uiCanvas.addEventListener('mouseup', (e) => {
-            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e);
+            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e, true);
             this.canvasButtons.releaseClick(x, y);
         });
         document.addEventListener('mouseup', () => {
@@ -1014,15 +1019,15 @@ class TitleScreen {
         });
         // Handle window resize
         window.addEventListener('resize', () => {
-            (0, zoom_compensation_1.applyZoomCompensation)(this.uiCanvas);
+            (0, zoom_compensation_1.applyZoomCompensation)(this.uiCanvas, true, true);
         });
     }
     /**
      * Handles canvas click events
      */
     handleCanvasClick(x, y) {
-        const centerX = this.uiCanvas.width / 2;
-        const centerY = this.uiCanvas.height / 2;
+        const centerX = this.logicalW / 2;
+        const centerY = this.logicalH / 2;
         // Ignore clicks while connecting animation is playing
         if (this.authForm.isConnectingState()) {
             return;
@@ -1073,8 +1078,8 @@ class TitleScreen {
      * Handles canvas hover events
      */
     handleCanvasHover(x, y) {
-        const centerX = this.uiCanvas.width / 2;
-        const centerY = this.uiCanvas.height / 2;
+        const centerX = this.logicalW / 2;
+        const centerY = this.logicalH / 2;
         // Handle settings menu hover
         if (this.settings.isMenuOpen()) {
             this.settings.handleHover(x, y);
@@ -1158,8 +1163,8 @@ class TitleScreen {
         }
     }
     renderCanvasUIInner(ctx) {
-        const width = this.uiCanvas.width;
-        const height = this.uiCanvas.height;
+        const width = this.logicalW;
+        const height = this.logicalH;
         const centerX = width / 2;
         const centerY = height / 2;
         // No clear: BackgroundAnimation just painted the scrolling biome and
@@ -1199,7 +1204,7 @@ class TitleScreen {
         // Render auth form if visible, otherwise render game menu
         if (this.authForm.isVisible()) {
             this.authForm.render(ctx, centerX, centerY, this.pressedButton);
-            this.renderStatsCounters(ctx, this.uiCanvas.width, this.uiCanvas.height);
+            this.renderStatsCounters(ctx, this.logicalW, this.logicalH);
             return;
         }
         // Draw name input field (shorter to avoid overlap with ready button)
@@ -1380,7 +1385,7 @@ class TitleScreen {
         ctx.strokeText(connectingText, centerX, centerY);
         ctx.fillText(connectingText, centerX, centerY);
         // Draw stats counters
-        this.renderStatsCounters(ctx, this.uiCanvas.width, this.uiCanvas.height);
+        this.renderStatsCounters(ctx, this.logicalW, this.logicalH);
     }
     setupNameInputPersistence() {
         // Use setTimeout to ensure DOM is ready
@@ -1682,7 +1687,8 @@ class TitleScreen {
             gameCanvas.style.zIndex = '0';
             gameCanvas.style.pointerEvents = 'auto';
             gameCanvas.style.display = 'block';
-            (0, zoom_compensation_1.applyZoomCompensation)(gameCanvas);
+            // Main game canvas is HiDPI (physical-resolution backing store).
+            (0, zoom_compensation_1.applyZoomCompensation)(gameCanvas, true, true);
             // Re-setup canvas on managers with full screen dimensions
             this.changelogManager.setCanvas(gameCanvas);
             this.notificationsManager.setCanvas(gameCanvas);
@@ -1999,8 +2005,8 @@ class TitleScreen {
         // to position slots; size mirrors the old standalone canvas.
         const LOADOUT_W = 900;
         const LOADOUT_H = 210;
-        const x = (this.uiCanvas.width - LOADOUT_W) / 2;
-        const y = this.uiCanvas.height / 2 + 50;
+        const x = (this.logicalW - LOADOUT_W) / 2;
+        const y = this.logicalH / 2 + 50;
         this.titleScreenInventoryManager.drawLoadout(ctx, { x, y, width: LOADOUT_W, height: LOADOUT_H });
     }
     /**

@@ -3,6 +3,7 @@ import { MapElement } from '../constants';
 import { ITEM_RARITY_COLORS } from '../petals';
 import { getSVGRenderer } from '../svg_renderer';
 import { FloatingText, ExplosionEffect, ExplosionParticle, PetalBreakEffect, LightningEffect, PetalParticleEffect, PetalParticle, FallingStar } from './types';
+import { getBaseDeviceScale } from '../zoom-compensation';
 
 export { Player, FaceFlags, EquipmentFlags } from '../player';
 export { Enemy } from '../enemy';
@@ -129,15 +130,31 @@ export class Graphics {
     public showRarityGlow: boolean = false;
     public altKeyPressed: boolean = false;
 
-    // Render scale (1.0 = full window resolution, lower = lower-res buffer
+    // Render scale (1.0 = full native resolution, lower = lower-res buffer
     // stretched to fill the screen). Trades sharpness for GPU work — useful
     // when many drops/effects are on screen.
     public renderScale: number = 1.0;
     public antialiasing: boolean = true;
 
-    // Offscreen canvas the world is rendered into when renderScale < 1, then
-    // blitted (stretched) to the main canvas. UI keeps drawing to the main
-    // canvas at full resolution so it stays crisp and the right size.
+    // HiDPI: the main canvas backing store is physical pixels (logical ×
+    // uiScale). All drawing works in *logical* coordinates — render() applies
+    // a base scale(uiScale) so world and UI render at native resolution.
+    // viewW/viewH are the logical (CSS) dimensions; use these instead of
+    // this.canvas.width/height for layout and world-view culling.
+    public uiScale: number = 1.0;
+    public viewW: number = 0;
+    public viewH: number = 0;
+
+    /** Recompute logical dimensions + device scale from the (already-sized) main canvas. */
+    public syncViewMetrics(): void {
+        this.uiScale = getBaseDeviceScale();
+        this.viewW = this.canvas.width / this.uiScale;
+        this.viewH = this.canvas.height / this.uiScale;
+    }
+
+    // Low-res offscreen buffer used only when renderScale < 1: the world is
+    // drawn here, then stretched up onto the main canvas, trading sharpness
+    // for GPU fill work.
     public worldCanvas: HTMLCanvasElement | null = null;
     public worldCtx: CanvasRenderingContext2D | null = null;
 
@@ -147,6 +164,8 @@ export class Graphics {
             this.worldCtx = null;
             return;
         }
+        // Buffer is renderScale of the main canvas's *physical* resolution, so
+        // 50% means half of native.
         const w = Math.max(1, Math.round(this.canvas.width * this.renderScale));
         const h = Math.max(1, Math.round(this.canvas.height * this.renderScale));
         if (!this.worldCanvas) {
@@ -415,7 +434,7 @@ export class Graphics {
 
         for (let i = 0; i < starsToAdd; i++) {
             this.fallingStars.push({
-                x: Math.random() * this.canvas.width,
+                x: Math.random() * this.viewW,
                 y: -20 - Math.random() * 50,
                 vy: 2 + Math.random() * 3,
                 rotation: Math.random() * Math.PI * 2,
@@ -570,9 +589,12 @@ export class Graphics {
 
         const toLocal = (e: MouseEvent): { x: number; y: number } => {
             const r = this.canvas!.getBoundingClientRect();
+            // Logical coordinates: divide the physical backing-store ratio by
+            // the device scale so hit-testing matches the logical layout.
+            const s = getBaseDeviceScale();
             return {
-                x: (e.clientX - r.left) * (this.canvas!.width / r.width),
-                y: (e.clientY - r.top) * (this.canvas!.height / r.height),
+                x: (e.clientX - r.left) * (this.canvas!.width / r.width) / s,
+                y: (e.clientY - r.top) * (this.canvas!.height / r.height) / s,
             };
         };
 

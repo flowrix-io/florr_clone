@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Graphics = exports.getSVGRenderer = exports.MOB_CONFIG = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
 const petals_1 = require("../petals");
 const svg_renderer_1 = require("../svg_renderer");
+const zoom_compensation_1 = require("../zoom-compensation");
 var player_1 = require("../player");
 Object.defineProperty(exports, "FaceFlags", { enumerable: true, get: function () { return player_1.FaceFlags; } });
 Object.defineProperty(exports, "EquipmentFlags", { enumerable: true, get: function () { return player_1.EquipmentFlags; } });
@@ -48,12 +49,20 @@ function blendHexWithWhite(hex, amount) {
     return `rgb(${br},${bg},${bb})`;
 }
 class Graphics {
+    /** Recompute logical dimensions + device scale from the (already-sized) main canvas. */
+    syncViewMetrics() {
+        this.uiScale = (0, zoom_compensation_1.getBaseDeviceScale)();
+        this.viewW = this.canvas.width / this.uiScale;
+        this.viewH = this.canvas.height / this.uiScale;
+    }
     syncWorldCanvasSize() {
         if (this.renderScale >= 1) {
             this.worldCanvas = null;
             this.worldCtx = null;
             return;
         }
+        // Buffer is renderScale of the main canvas's *physical* resolution, so
+        // 50% means half of native.
         const w = Math.max(1, Math.round(this.canvas.width * this.renderScale));
         const h = Math.max(1, Math.round(this.canvas.height * this.renderScale));
         if (!this.worldCanvas) {
@@ -160,14 +169,22 @@ class Graphics {
         this.showHitboxes = false;
         this.showRarityGlow = false;
         this.altKeyPressed = false;
-        // Render scale (1.0 = full window resolution, lower = lower-res buffer
+        // Render scale (1.0 = full native resolution, lower = lower-res buffer
         // stretched to fill the screen). Trades sharpness for GPU work — useful
         // when many drops/effects are on screen.
         this.renderScale = 1.0;
         this.antialiasing = true;
-        // Offscreen canvas the world is rendered into when renderScale < 1, then
-        // blitted (stretched) to the main canvas. UI keeps drawing to the main
-        // canvas at full resolution so it stays crisp and the right size.
+        // HiDPI: the main canvas backing store is physical pixels (logical ×
+        // uiScale). All drawing works in *logical* coordinates — render() applies
+        // a base scale(uiScale) so world and UI render at native resolution.
+        // viewW/viewH are the logical (CSS) dimensions; use these instead of
+        // this.canvas.width/height for layout and world-view culling.
+        this.uiScale = 1.0;
+        this.viewW = 0;
+        this.viewH = 0;
+        // Low-res offscreen buffer used only when renderScale < 1: the world is
+        // drawn here, then stretched up onto the main canvas, trading sharpness
+        // for GPU fill work.
         this.worldCanvas = null;
         this.worldCtx = null;
         this.dynamicSkybox = false;
@@ -396,7 +413,7 @@ class Graphics {
             return;
         for (let i = 0; i < starsToAdd; i++) {
             this.fallingStars.push({
-                x: Math.random() * this.canvas.width,
+                x: Math.random() * this.viewW,
                 y: -20 - Math.random() * 50,
                 vy: 2 + Math.random() * 3,
                 rotation: Math.random() * Math.PI * 2,
@@ -523,9 +540,12 @@ class Graphics {
         this.titleButtonListenersAttached = true;
         const toLocal = (e) => {
             const r = this.canvas.getBoundingClientRect();
+            // Logical coordinates: divide the physical backing-store ratio by
+            // the device scale so hit-testing matches the logical layout.
+            const s = (0, zoom_compensation_1.getBaseDeviceScale)();
             return {
-                x: (e.clientX - r.left) * (this.canvas.width / r.width),
-                y: (e.clientY - r.top) * (this.canvas.height / r.height),
+                x: (e.clientX - r.left) * (this.canvas.width / r.width) / s,
+                y: (e.clientY - r.top) * (this.canvas.height / r.height) / s,
             };
         };
         // Capture phase + stopImmediatePropagation when the press/release lands
