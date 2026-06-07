@@ -745,10 +745,13 @@ export interface TileCollisionResult {
 
 // Check if a position collides with a wall or water tile, accounting for jagged edges.
 export function checkTileCollision(worldX: number, worldY: number, halfSize: number): TileCollisionResult | null {
-    const minTileX = worldToTileX(worldX - halfSize - JAGGED_MAX_OFFSET);
-    const maxTileX = worldToTileX(worldX + halfSize + JAGGED_MAX_OFFSET);
-    const minTileY = worldToTileY(worldY - halfSize - JAGGED_MAX_OFFSET);
-    const maxTileY = worldToTileY(worldY + halfSize + JAGGED_MAX_OFFSET);
+    // Reach includes COLLISION_BUFFER so an entity already resting at the buffer
+    // distance still registers as in contact (see the inflated overlap test below).
+    const reach = halfSize + JAGGED_MAX_OFFSET + COLLISION_BUFFER;
+    const minTileX = worldToTileX(worldX - reach);
+    const maxTileX = worldToTileX(worldX + reach);
+    const minTileY = worldToTileY(worldY - reach);
+    const maxTileY = worldToTileY(worldY + reach);
 
     const entityLeft = worldX - halfSize;
     const entityRight = worldX + halfSize;
@@ -795,6 +798,17 @@ export function checkTileCollision(worldX: number, worldY: number, halfSize: num
                 }
             }
 
+            // Inflate the collision plane outward by COLLISION_BUFFER. resolveTileCollision
+            // rests the entity exactly on this inflated plane, so detection and resolution
+            // share one boundary. Without this, detection fired at the true tile edge while
+            // resolution parked the entity COLLISION_BUFFER short of it — leaving a gap the
+            // entity drifts back into every frame and gets ejected from again, i.e. the
+            // sawtooth that makes flowers/mobs shake against walls.
+            effectiveLeft -= COLLISION_BUFFER;
+            effectiveRight += COLLISION_BUFFER;
+            effectiveTop -= COLLISION_BUFFER;
+            effectiveBottom += COLLISION_BUFFER;
+
             if (
                 entityRight > effectiveLeft &&
                 entityLeft < effectiveRight &&
@@ -831,14 +845,17 @@ export function resolveTileCollision(
     let newX = entityX;
     let newY = entityY;
 
+    // effectiveLeft/Right/Top/Bottom are already inflated by COLLISION_BUFFER in
+    // checkTileCollision, so resting the entity flush against them keeps the buffer gap
+    // while landing exactly on the detection boundary (no dead zone, no shake).
     if (minOverlap === overlapLeft) {
-        newX = collision.effectiveLeft - entityHalfSize - COLLISION_BUFFER;
+        newX = collision.effectiveLeft - entityHalfSize;
     } else if (minOverlap === overlapRight) {
-        newX = collision.effectiveRight + entityHalfSize + COLLISION_BUFFER;
+        newX = collision.effectiveRight + entityHalfSize;
     } else if (minOverlap === overlapTop) {
-        newY = collision.effectiveTop - entityHalfSize - COLLISION_BUFFER;
+        newY = collision.effectiveTop - entityHalfSize;
     } else if (minOverlap === overlapBottom) {
-        newY = collision.effectiveBottom + entityHalfSize + COLLISION_BUFFER;
+        newY = collision.effectiveBottom + entityHalfSize;
     }
 
     return { x: newX, y: newY };
