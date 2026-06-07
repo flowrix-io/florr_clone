@@ -233,8 +233,16 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
                 }
             }
             if (foundX !== null) {
-                petalX = foundX - playerX;
-                petalY = foundY - playerY;
+                // Server petal positions are absolute coords orbiting the player's
+                // SERVER position. The local flower renders at its predicted position
+                // (client-side prediction), so anchor petals to the *smoothed* server
+                // reference (_refX/_refY) — using the raw 30Hz targetX/Y would subtract
+                // a stairstep from the interpolated petal and make petals jitter. Falls
+                // back to targetX/playerX. Only the local player has serverPositions.
+                const refX = player._refX ?? player.targetX ?? playerX;
+                const refY = player._refY ?? player.targetY ?? playerY;
+                petalX = foundX - refX;
+                petalY = foundY - refY;
             }
             else {
                 petalX = Math.cos(totalAngle) * petalRadius + clumpOffsetX;

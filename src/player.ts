@@ -54,6 +54,13 @@ export interface Player {
   speed_boost?: boolean;
   targetX: number;
   targetY: number;
+  // Smoothly-interpolated server position for the local (predicted) player, used
+  // only to anchor its absolute petal positions (player.x/y itself is predicted).
+  _refX?: number;
+  _refY?: number;
+  // Effective speed multiplier from the server (speed boosts / speed petals), so
+  // client-side prediction can move at the same speed as the server.
+  speedFactor?: number;
   eye?: {x: number, y: number};
   targetEye?: {x: number, y: number};
   isDead?: boolean;
@@ -122,6 +129,10 @@ export interface ServerPlayer {
   xpToNextLevel: number;
   lastDamageTime?: number;
   speed_boost: number;
+  // Effective speed multiplier (speed_boost × petal/effect multipliers) used for
+  // movement this tick. Cached so the broadcast can send it to the owning client
+  // for accurate client-side prediction.
+  speedFactor?: number;
   inputs: {
     keys: string[];
     useMouse?: boolean;

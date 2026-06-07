@@ -236,7 +236,11 @@ export const MAX_INVENTORY_SIZE = 5;
 
 export const RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
 
-export const MAX_SPEED = 160;
+// Player top speed (units/sec), matched to gardn. gardn's terminal velocity is
+// PLAYER_ACCELERATION / DEFAULT_FRICTION per tick = (5 / (1/3)) = 15 units/tick,
+// × SIM_RATE (20) = 300 units/sec. This is the terminal velocity the friction
+// model in playerState.ts converges to (before speed_boost / multipliers).
+export const MAX_SPEED = 300;
 // Nonlinear mouse movement parameters
 export const MOUSE_NONLINEAR_SCALE = 200; // Reference distance for nonlinear scaling (pixels)
 export const MOUSE_NONLINEAR_EXPONENT = 0.6; // Power curve exponent (0.6 = slower for small distances, faster for large)
@@ -719,5 +723,199 @@ export function getMaxJaggedOffset(points: JaggedPoint[], minT: number, maxT: nu
     }
 
     return maxOffset;
+}
+
+// ── Shared tile collision resolution ────────────────────────────────────────
+// Used by BOTH the server (authoritative wall/water collision) and the client
+// (movement prediction). Keeping a single implementation guarantees the predicted
+// position resolves walls/water identically to the server, so prediction doesn't
+// fight the authoritative position at walls (jitter) or at water edges (springing).
+export const COLLISION_BUFFER = 5; // Buffer between entities and walls
+
+export interface TileCollisionResult {
+    collided: boolean;
+    tileX: number;
+    tileY: number;
+    state: WallTileState;
+    effectiveLeft: number;
+    effectiveRight: number;
+    effectiveTop: number;
+    effectiveBottom: number;
+}
+
+// Check if a position collides with a wall or water tile, accounting for jagged edges.
+export function checkTileCollision(worldX: number, worldY: number, halfSize: number): TileCollisionResult | null {
+    const minTileX = worldToTileX(worldX - halfSize - JAGGED_MAX_OFFSET);
+    const maxTileX = worldToTileX(worldX + halfSize + JAGGED_MAX_OFFSET);
+    const minTileY = worldToTileY(worldY - halfSize - JAGGED_MAX_OFFSET);
+    const maxTileY = worldToTileY(worldY + halfSize + JAGGED_MAX_OFFSET);
+
+    const entityLeft = worldX - halfSize;
+    const entityRight = worldX + halfSize;
+    const entityTop = worldY - halfSize;
+    const entityBottom = worldY + halfSize;
+
+    for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+        for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+            const state = getTileState(WALL_GRID, tileToWorldX(tileX), tileToWorldY(tileY));
+            if (!isTileIdBlocking(state)) continue;
+
+            const tileWorldX = tileToWorldX(tileX);
+            const tileWorldY = tileToWorldY(tileY);
+
+            let effectiveLeft = tileWorldX;
+            let effectiveRight = tileWorldX + WALL_TILE_SIZE;
+            let effectiveTop = tileWorldY;
+            let effectiveBottom = tileWorldY + WALL_TILE_SIZE;
+
+            const cfg = getTileTypeConfig(state);
+            const usesJaggedEdges = cfg.style === 'wall' || cfg.style === 'water';
+            if (usesJaggedEdges) {
+                const jaggedEdges = getTileJaggedEdges(WALL_GRID, tileX, tileY);
+
+                if (jaggedEdges.top) {
+                    const minT = Math.max(0, entityLeft - tileWorldX);
+                    const maxT = Math.min(WALL_TILE_SIZE, entityRight - tileWorldX);
+                    if (maxT > minT) effectiveTop = tileWorldY - getMaxJaggedOffset(jaggedEdges.top, minT, maxT);
+                }
+                if (jaggedEdges.bottom) {
+                    const minT = Math.max(0, entityLeft - tileWorldX);
+                    const maxT = Math.min(WALL_TILE_SIZE, entityRight - tileWorldX);
+                    if (maxT > minT) effectiveBottom = tileWorldY + WALL_TILE_SIZE + getMaxJaggedOffset(jaggedEdges.bottom, minT, maxT);
+                }
+                if (jaggedEdges.left) {
+                    const minT = Math.max(0, entityTop - tileWorldY);
+                    const maxT = Math.min(WALL_TILE_SIZE, entityBottom - tileWorldY);
+                    if (maxT > minT) effectiveLeft = tileWorldX - getMaxJaggedOffset(jaggedEdges.left, minT, maxT);
+                }
+                if (jaggedEdges.right) {
+                    const minT = Math.max(0, entityTop - tileWorldY);
+                    const maxT = Math.min(WALL_TILE_SIZE, entityBottom - tileWorldY);
+                    if (maxT > minT) effectiveRight = tileWorldX + WALL_TILE_SIZE + getMaxJaggedOffset(jaggedEdges.right, minT, maxT);
+                }
+            }
+
+            if (
+                entityRight > effectiveLeft &&
+                entityLeft < effectiveRight &&
+                entityBottom > effectiveTop &&
+                entityTop < effectiveBottom
+            ) {
+                return { collided: true, tileX, tileY, state, effectiveLeft, effectiveRight, effectiveTop, effectiveBottom };
+            }
+        }
+    }
+
+    return null;
+}
+
+// Push an entity out of a tile along the axis of minimum overlap.
+export function resolveTileCollision(
+    entityX: number,
+    entityY: number,
+    entityHalfSize: number,
+    collision: TileCollisionResult
+): { x: number; y: number } {
+    const entityLeft = entityX - entityHalfSize;
+    const entityRight = entityX + entityHalfSize;
+    const entityTop = entityY - entityHalfSize;
+    const entityBottom = entityY + entityHalfSize;
+
+    const overlapLeft = entityRight - collision.effectiveLeft;
+    const overlapRight = collision.effectiveRight - entityLeft;
+    const overlapTop = entityBottom - collision.effectiveTop;
+    const overlapBottom = collision.effectiveBottom - entityTop;
+
+    const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+
+    let newX = entityX;
+    let newY = entityY;
+
+    if (minOverlap === overlapLeft) {
+        newX = collision.effectiveLeft - entityHalfSize - COLLISION_BUFFER;
+    } else if (minOverlap === overlapRight) {
+        newX = collision.effectiveRight + entityHalfSize + COLLISION_BUFFER;
+    } else if (minOverlap === overlapTop) {
+        newY = collision.effectiveTop - entityHalfSize - COLLISION_BUFFER;
+    } else if (minOverlap === overlapBottom) {
+        newY = collision.effectiveBottom + entityHalfSize + COLLISION_BUFFER;
+    }
+
+    return { x: newX, y: newY };
+}
+
+// Iteratively resolve wall/water collisions for an entity of the given size.
+// Mirrors the server's checkPlayerWallCollisions (4 iterations to escape corners).
+export function resolveEntityWallCollisions(
+    x: number,
+    y: number,
+    halfSize: number
+): { x: number; y: number; collided: boolean } {
+    let newX = x;
+    let newY = y;
+    let collided = false;
+    for (let i = 0; i < 4; i++) {
+        const collision = checkTileCollision(newX, newY, halfSize);
+        if (collision && collision.collided) {
+            const resolved = resolveTileCollision(newX, newY, halfSize, collision);
+            newX = resolved.x;
+            newY = resolved.y;
+            collided = true;
+        } else {
+            break;
+        }
+    }
+    return { x: newX, y: newY, collided };
+}
+
+// ── Shared player movement step ─────────────────────────────────────────────
+// The single source of truth for player movement physics, run by BOTH the server
+// (authoritative, in playerState.ts) and the client (movement prediction, in
+// game.ts). Applies the gardn friction model and substepped wall/water collision.
+// Keeping one implementation guarantees the client predicts exactly what the
+// server will do, so there's nothing to reconcile in open movement.
+//
+// gardn (Server/Process/Motion.cc): velocity *= (1 - friction); velocity += accel.
+// Frame-rate-independent via dt: friction decay = (1 - friction)^(dt × SIM_RATE),
+// applied to both the carried velocity and the input "refill" (targetVelocity is
+// the terminal velocity it converges to). DEFAULT_FRICTION = 1/3, SIM_RATE = 20.
+export interface PlayerMoveState { x: number; y: number; vx: number; vy: number; }
+
+export function stepPlayerMovement(
+    state: PlayerMoveState,
+    targetVX: number,
+    targetVY: number,
+    dt: number,
+    effectiveSize: number
+): PlayerMoveState {
+    const GARDN_FRICTION = 1 / 3;
+    const GARDN_SIM_RATE = 20;
+    const frictionDecay = Math.pow(1 - GARDN_FRICTION, dt * GARDN_SIM_RATE);
+    const vx = state.vx * frictionDecay + targetVX * (1 - frictionDecay);
+    const vy = state.vy * frictionDecay + targetVY * (1 - frictionDecay);
+
+    const deltaX = vx * dt;
+    const deltaY = vy * dt;
+
+    // Substep movement so a single fast step can't skip past a wall. Step size is
+    // bounded by half the hitbox so collision checks always sample an overlapping
+    // position against any tile in the path.
+    const MAX_STEP = effectiveSize / 2;
+    const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    const steps = Math.max(1, Math.ceil(moveDistance / MAX_STEP));
+    const stepX = deltaX / steps;
+    const stepY = deltaY / steps;
+
+    let newX = state.x;
+    let newY = state.y;
+    for (let i = 0; i < steps; i++) {
+        newX += stepX;
+        newY += stepY;
+        const wall = resolveEntityWallCollisions(newX, newY, effectiveSize / 2);
+        newX = wall.x;
+        newY = wall.y;
+    }
+
+    return { x: newX, y: newY, vx, vy };
 }
 

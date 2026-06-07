@@ -682,13 +682,17 @@ function updatePlayerState(player, deltaTime, deps) {
     applyRaindropAuraDamage(player, deps);
     let targetVelocityX = 0;
     let targetVelocityY = 0;
+    // Effective speed multiplier (boosts + petal/effect modifiers). Cached on the
+    // player so the broadcast can send it to the owning client for prediction.
+    const speedFactor = player.speed_boost * (0, petal_actions_1.getSpeedMultiplier)(player);
+    player.speedFactor = speedFactor;
     if (player.inputs.useMouse &&
         player.inputs.mouseDirectionX !== undefined &&
         player.inputs.mouseDirectionY !== undefined &&
         player.inputs.mouseSpeedMultiplier !== undefined) {
         // Client has already calculated the direction and speed multiplier
-        // Server just needs to apply MAX_SPEED, speed_boost, and other multipliers
-        const speed = constants_1.MAX_SPEED * player.speed_boost * (0, petal_actions_1.getSpeedMultiplier)(player) * player.inputs.mouseSpeedMultiplier;
+        // Server just needs to apply MAX_SPEED and the effective speed factor
+        const speed = constants_1.MAX_SPEED * speedFactor * player.inputs.mouseSpeedMultiplier;
         targetVelocityX = player.inputs.mouseDirectionX * speed;
         targetVelocityY = player.inputs.mouseDirectionY * speed;
         player.angle = Math.atan2(player.inputs.mouseDirectionY, player.inputs.mouseDirectionX);
@@ -707,41 +711,24 @@ function updatePlayerState(player, deltaTime, deps) {
             targetVelocityX /= length;
             targetVelocityY /= length;
         }
-        const speed = constants_1.MAX_SPEED * player.speed_boost * (0, petal_actions_1.getSpeedMultiplier)(player);
+        const speed = constants_1.MAX_SPEED * speedFactor;
         targetVelocityX *= speed;
         targetVelocityY *= speed;
         if (targetVelocityX !== 0 || targetVelocityY !== 0) {
             player.angle = Math.atan2(targetVelocityY, targetVelocityX);
         }
     }
-    // Apply movement smoothing using linear interpolation
-    // Smoothing factor represents how fast to reach target velocity (higher = faster response)
-    // Using exponential smoothing that works with deltaTime in seconds
-    const SMOOTHING_RATE = 20.0; // Velocity change per second (higher = faster response, lower = smoother)
-    const smoothingFactor = 1 - Math.exp(-SMOOTHING_RATE * deltaTime);
-    // Smoothly interpolate from current velocity to target velocity
-    player.velocityX = player.velocityX + (targetVelocityX - player.velocityX) * smoothingFactor;
-    player.velocityY = player.velocityY + (targetVelocityY - player.velocityY) * smoothingFactor;
-    const deltaX = player.velocityX * deltaTime;
-    const deltaY = player.velocityY * deltaTime;
-    // Substep movement so a single fast tick can't skip past a wall.
-    // Step size is bounded by half the player hitbox so collision checks
-    // always sample an overlapping position against any tile in the path.
+    // Player movement physics (gardn friction + substepped wall/water collision).
+    // Run through the SHARED stepPlayerMovement so the client's movement prediction
+    // (game.ts) executes byte-for-byte the same physics — nothing to reconcile in
+    // open movement. targetVelocity is the terminal velocity it converges to
+    // (MAX_SPEED × speed_boost × multipliers, computed above).
     const effectivePlayerSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
-    const MAX_STEP = effectivePlayerSize / 2;
-    const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    const steps = Math.max(1, Math.ceil(moveDistance / MAX_STEP));
-    const stepX = deltaX / steps;
-    const stepY = deltaY / steps;
-    let newX = player.x;
-    let newY = player.y;
-    for (let i = 0; i < steps; i++) {
-        newX += stepX;
-        newY += stepY;
-        const wallCollision = (0, physics_1.checkPlayerWallCollisions)(newX, newY, effectivePlayerSize);
-        newX = wallCollision.x;
-        newY = wallCollision.y;
-    }
+    const moved = (0, constants_1.stepPlayerMovement)({ x: player.x, y: player.y, vx: player.velocityX, vy: player.velocityY }, targetVelocityX, targetVelocityY, deltaTime, effectivePlayerSize);
+    player.velocityX = moved.vx;
+    player.velocityY = moved.vy;
+    let newX = moved.x;
+    let newY = moved.y;
     // Spatial-grid broad-phase: only test enemies whose center is within
     // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
     const _playerRadius = effectivePlayerSize / 2;
@@ -1312,7 +1299,7 @@ function updatePlayerState(player, deltaTime, deps) {
                     let remaining = boostMagnitude;
                     let safetyIterations = 32;
                     while (remaining > 0.5 && safetyIterations-- > 0) {
-                        const stepLen = Math.min(MAX_STEP, remaining);
+                        const stepLen = Math.min(effectivePlayerSize / 2, remaining);
                         const speed = Math.sqrt(vx * vx + vy * vy) || 1;
                         const stepX = (vx / speed) * stepLen;
                         const stepY = (vy / speed) * stepLen;

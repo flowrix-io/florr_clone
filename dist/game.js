@@ -63,6 +63,26 @@ class Game {
         this.mobDeathAnimation = true; // Mob death animation setting (default true)
         this.interpolationAmount = 0.3; // Interpolation factor (0 = no interpolation/snap, 1 = instant)
         this.lastInterpolationTime = 0;
+        // Client-side prediction state for the local player. The local flower is
+        // simulated locally with the same gardn physics the server uses, so input is
+        // reflected instantly instead of waiting a round-trip. predTargetV* is the
+        // input-derived target velocity (set in updatePlayerMovement); predVel* is the
+        // integrated predicted velocity; pred*/predInit are the predicted position;
+        // renderErr* is a decaying offset that blends authoritative re-anchors (incl.
+        // bubble/knockback/wall pushes the client can't predict) instead of snapping;
+        // lastSrv* tracks the last server position to detect new snapshots. See
+        // predictLocalPlayer().
+        this.predTargetVX = 0;
+        this.predTargetVY = 0;
+        this.predVelX = 0;
+        this.predVelY = 0;
+        this.predX = 0;
+        this.predY = 0;
+        this.renderErrX = 0;
+        this.renderErrY = 0;
+        this.lastSrvX = 0;
+        this.lastSrvY = 0;
+        this.predInit = false;
         this.fpsCounter = 0;
         this.fpsUpdateTime = 0;
         // Rolling per-frame work-time average (ms). If this is well under
@@ -988,8 +1008,29 @@ class Game {
         // rate ~= -ln(1 - lerpFactor) * 60
         const smoothingRate = -Math.log(1 - lerpFactor) * 60;
         const smoothingFactor = 1 - Math.exp(-smoothingRate * frameDeltaMs / 1000);
-        for (const player of this.players.values()) {
-            if (player.targetX !== undefined && player.targetY !== undefined) {
+        const localPlayerId = this.activePlayerId || this.socket?.id || '';
+        for (const [pid, player] of this.players.entries()) {
+            // The local player's position is owned by client-side prediction
+            // (predictLocalPlayer); don't also lerp it toward the server here or the
+            // two would fight. Remote players still interpolate toward server targets.
+            const isLocalPredicted = pid === localPlayerId && !player.isDead;
+            if (isLocalPredicted) {
+                // player.x/y is owned by prediction. Still maintain a smoothly-
+                // interpolated server reference (same smoothing as petals) so the
+                // local player's absolute petal positions can be anchored to it
+                // without picking up the raw 30Hz snapshot stairstep.
+                if (player.targetX !== undefined && player.targetY !== undefined) {
+                    if (player._refX === undefined || player._refY === undefined) {
+                        player._refX = player.targetX;
+                        player._refY = player.targetY;
+                    }
+                    else {
+                        player._refX += (player.targetX - player._refX) * smoothingFactor;
+                        player._refY += (player.targetY - player._refY) * smoothingFactor;
+                    }
+                }
+            }
+            else if (player.targetX !== undefined && player.targetY !== undefined) {
                 const dx = player.targetX - player.x;
                 const dy = player.targetY - player.y;
                 // Snap when close enough to avoid sub-pixel oscillation
@@ -1023,40 +1064,12 @@ class Game {
         for (const enemy of this.enemies.values()) {
             if (enemy.deathAnimationStartTime)
                 continue;
-            const prevX = enemy.x;
-            const prevY = enemy.y;
             if (enemy.targetX !== undefined && enemy.targetY !== undefined) {
                 enemy.x += (enemy.targetX - enemy.x) * smoothingFactor;
                 enemy.y += (enemy.targetY - enemy.y) * smoothingFactor;
             }
-            // Derive facing. Centipede body segments don't move in their facing direction
-            // (they trail sideways as the chain curves), so motion-based facing wobbles —
-            // for those, point toward the segment ahead in the chain instead.
-            if (enemy.leaderId) {
-                const leader = this.enemies.get(enemy.leaderId);
-                if (leader) {
-                    enemy.targetAngle = Math.atan2(leader.y - enemy.y, leader.x - enemy.x);
-                }
-            }
-            else {
-                // Non-chained mobs: derive from a smoothed per-frame velocity. The raw
-                // per-frame velocity tracks toward the *quantized* target, so when a slow
-                // mob's target jumps in 1-unit increments along different axes, the
-                // instantaneous direction wobbles. Low-pass filtering the velocity at
-                // 60fps (blend 0.08, ~0.2s time constant) cancels that without slowing
-                // genuine direction changes noticeably.
-                const frameDx = enemy.x - prevX;
-                const frameDy = enemy.y - prevY;
-                const blend = 0.08;
-                enemy.smoothedVelX = (enemy.smoothedVelX ?? 0) * (1 - blend) + frameDx * blend;
-                enemy.smoothedVelY = (enemy.smoothedVelY ?? 0) * (1 - blend) + frameDy * blend;
-                const svx = enemy.smoothedVelX;
-                const svy = enemy.smoothedVelY;
-                if (svx * svx + svy * svy > 0.0004) {
-                    enemy.targetAngle = Math.atan2(svy, svx);
-                }
-            }
             if (enemy.targetAngle !== undefined) {
+                // Interpolate angle with wrapping
                 let angleDiff = enemy.targetAngle - enemy.angle;
                 if (angleDiff > Math.PI)
                     angleDiff -= Math.PI * 2;
@@ -1098,16 +1111,30 @@ class Game {
             }
         }
         // Update petal extension based on key presses
-        this.updatePetalExtension();
+        this.updatePetalExtension(frameDeltaMs);
         const player = this.getLocalPlayer();
         if (player) {
-            this.updatePlayerMovement(player, 1); // Still needed to send input to server
+            this.updatePlayerMovement(player, 1); // Sends input + refreshes the prediction target
+            // Predict the local flower's position locally for instant input response;
+            // when dead, fall back to plain server interpolation (handled in the loop
+            // above) and reset prediction so it re-anchors cleanly on respawn.
+            if (!player.isDead) {
+                this.predictLocalPlayer(player, frameDeltaMs);
+            }
+            else {
+                this.predInit = false;
+            }
             this.updateCamera(player);
             this.updatePlayerEye();
         }
     }
-    updatePetalExtension() {
-        const extensionSpeed = 0.05; // How fast petals extend/retract
+    updatePetalExtension(frameDeltaMs = 16.67) {
+        // Frame-rate-independent extend/retract, in units/sec (so it's consistent at
+        // any FPS). 12/sec fully extends (1.0 -> 2.0) in ~0.08s — snappy but still
+        // animated. Clamp dt so a backgrounded tab (huge gap) can't overshoot in one
+        // step.
+        const dt = Math.min(frameDeltaMs, 100) / 1000;
+        const extensionSpeed = 12.0 * dt; // How fast petals extend/retract
         const maxExtension = 2.0; // Maximum extension multiplier
         const minExtension = 0.7; // Minimum extension multiplier
         // Check for space key or left mouse button (button 0)
@@ -1175,6 +1202,7 @@ class Game {
                 }
                 else {
                     inputData.useMouse = false;
+                    this.computePredictionTarget(inputData, dx, dy);
                     // Throttle input sending
                     const now = performance.now();
                     if (now - this.lastInputSendTime >= this.getInputInterval()) {
@@ -1219,12 +1247,123 @@ class Game {
                 this.hasValidMouseTarget = false;
             }
         }
+        this.computePredictionTarget(inputData, dx, dy);
         // Throttle input sending based on connection quality
         const now = performance.now();
         if (now - this.lastInputSendTime >= this.getInputInterval()) {
             this.socket.emit('playerInput', inputData);
             this.lastInputSendTime = now;
         }
+    }
+    // Derive the local player's target velocity (world units/sec) from the input
+    // being sent, mirroring the server's speed calc (constants.MAX_SPEED, mouse
+    // distance multiplier). speed_boost / petal speed multipliers aren't known
+    // client-side; predictLocalPlayer's reconciliation against the authoritative
+    // position absorbs that difference.
+    computePredictionTarget(inputData, dx, dy) {
+        // Match the server's effective speed: base MAX_SPEED × the speed factor it
+        // sends (speed boosts / speed petals). Without this, prediction moves at base
+        // speed while a boosted server moves faster, so the error blows past the snap
+        // threshold and the flower repeatedly snaps ("jumping around").
+        const speedFactor = this.getLocalPlayer()?.speedFactor ?? 1;
+        const baseSpeed = constants_1.MAX_SPEED * speedFactor;
+        if (inputData.useMouse && inputData.mouseDirectionX !== undefined && inputData.mouseDirectionY !== undefined) {
+            const sp = baseSpeed * (inputData.mouseSpeedMultiplier ?? 1);
+            this.predTargetVX = inputData.mouseDirectionX * sp;
+            this.predTargetVY = inputData.mouseDirectionY * sp;
+        }
+        else if (dx !== 0 || dy !== 0) {
+            const len = Math.hypot(dx, dy) || 1;
+            this.predTargetVX = (dx / len) * baseSpeed;
+            this.predTargetVY = (dy / len) * baseSpeed;
+        }
+        else {
+            this.predTargetVX = 0;
+            this.predTargetVY = 0;
+        }
+    }
+    // Client-side prediction for the local flower.
+    //
+    // Per frame, advance the predicted position (predX/predY) with the same gardn
+    // physics the server runs, so input reacts instantly. Each server snapshot,
+    // re-anchor predX to the authoritative position extrapolated forward by latency
+    // (predVel * lead) — the authoritative position already includes EVERYTHING the
+    // server did (input + bubble propulsion + knockback + wall resolution), so those
+    // come through automatically. Re-anchoring at 30Hz would pop, so the re-anchor
+    // delta is pushed into a decaying renderErr offset and the *rendered* position
+    // (player.x) trails predX by that offset, which decays to 0 — a smooth blend
+    // instead of a snap or a slow rubber-band. This is why bubble/knockback/odd-wall
+    // pushes no longer "jump": they're blended in, not fought as prediction error.
+    predictLocalPlayer(player, frameDeltaMs) {
+        if (player.targetX === undefined || player.targetY === undefined)
+            return;
+        const dt = Math.min(frameDeltaMs, 100) / 1000;
+        if (dt <= 0)
+            return;
+        // (Re)initialise on first run or after a respawn/teleport (predInit cleared
+        // while dead). Start exactly on the authoritative position, no offset.
+        if (!this.predInit) {
+            this.predX = player.targetX;
+            this.predY = player.targetY;
+            this.predVelX = 0;
+            this.predVelY = 0;
+            this.renderErrX = 0;
+            this.renderErrY = 0;
+            this.lastSrvX = player.targetX;
+            this.lastSrvY = player.targetY;
+            this.predInit = true;
+        }
+        // 1. Advance prediction with the SHARED movement step — byte-for-byte the
+        //    same gardn friction + substepped wall/water collision the server runs
+        //    (src/constants.ts stepPlayerMovement, called from playerState.ts). So in
+        //    open movement there's nothing to reconcile, and walls/water resolve
+        //    exactly as the server resolves them (no jitter, no spring).
+        const effectiveSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+        const moved = (0, constants_1.stepPlayerMovement)({ x: this.predX, y: this.predY, vx: this.predVelX, vy: this.predVelY }, this.predTargetVX, this.predTargetVY, dt, effectiveSize);
+        this.predX = moved.x;
+        this.predY = moved.y;
+        this.predVelX = moved.vx;
+        this.predVelY = moved.vy;
+        // 2. On a new server snapshot, re-anchor to the authoritative position
+        //    extrapolated forward by latency. Extrapolate by SIMULATING the shared
+        //    movement step forward by `lead` (not a raw linear velocity projection):
+        //    that way the lead respects walls/water via the same substepped collision
+        //    and never projects into or across a wall — which is what made walls
+        //    jitter and let the client glitch through subpixel gaps. The re-anchor
+        //    delta is absorbed into renderErr so the rendered position doesn't jump.
+        if (player.targetX !== this.lastSrvX || player.targetY !== this.lastSrvY) {
+            const lead = Math.min(0.18, Math.max(0.03, (this.averagePing + 33) / 1000));
+            const ext = (0, constants_1.stepPlayerMovement)({ x: player.targetX, y: player.targetY, vx: this.predVelX, vy: this.predVelY }, this.predTargetVX, this.predTargetVY, lead, effectiveSize);
+            const authX = ext.x;
+            const authY = ext.y;
+            const adx = authX - this.predX;
+            const ady = authY - this.predY;
+            if (adx * adx + ady * ady > 400 * 400) {
+                // Huge divergence (teleport / respawn / desync): hard reset.
+                this.predX = authX;
+                this.predY = authY;
+                this.renderErrX = 0;
+                this.renderErrY = 0;
+                this.predVelX = 0;
+                this.predVelY = 0;
+            }
+            else {
+                // Keep the rendered position put across the re-anchor, then let the
+                // offset decay so it eases to the authoritative position.
+                this.renderErrX += adx;
+                this.renderErrY += ady;
+                this.predX = authX;
+                this.predY = authY;
+            }
+            this.lastSrvX = player.targetX;
+            this.lastSrvY = player.targetY;
+        }
+        // 3. Decay the render-error offset (~0.07s time constant) and render.
+        const errDecay = Math.exp(-15 * dt);
+        this.renderErrX *= errDecay;
+        this.renderErrY *= errDecay;
+        player.x = this.predX - this.renderErrX;
+        player.y = this.predY - this.renderErrY;
     }
     getInputInterval() {
         // Adjust input rate based on connection quality

@@ -46,6 +46,11 @@ export interface Enemy {
   wanderTargetX?: number;
   wanderTargetY?: number;
   lastWanderTime?: number;
+  // gardn-style passive AI (see moveEnemies): state machine + friction velocity.
+  passiveState?: 'idle' | 'moving';
+  passiveStateStart?: number;  // timestamp the current passive state began
+  velX?: number;               // passive movement velocity (friction integrator)
+  velY?: number;
   spawnTime?: number;  // Timestamp when enemy was spawned
   lastViewportCheck?: number;  // Last time this enemy was in any player's viewport
   damageContributors?: Map<string, number>;  // Map of player ID to damage dealt

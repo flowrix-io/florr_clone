@@ -846,7 +846,7 @@ interface AuthenticatedSocket extends Socket {
     lastUpdateTime?: number;
     lastGameState?: any; // For delta compression
     lastStateHash?: number; // Lightweight hash for skip-if-unchanged
-    lastSentEnemies?: Map<string, { x: number; y: number; h: number; H: number; t: any; T: any; L: string | undefined }>;
+    lastSentEnemies?: Map<string, { x: number; y: number; a: number; h: number; H: number; t: any; T: any }>;
     lastSentPlayers?: Map<string, {
         x: number; y: number; a: number;
         h: number; H: number;
@@ -855,6 +855,7 @@ interface AuthenticatedSocket extends Socket {
         f: number; q: number; m: number;
         v: number; V: number; z: number;
         n: string;
+        sm: number;
         petalsSig: number;
     }>;
 }
@@ -4266,38 +4267,86 @@ function moveEnemies() {
                     enemy.targetPlayerId = undefined;
                 }
             }
-            // Wander randomly
-            if (enemy.wanderTargetX === undefined || currentTime - (enemy.lastWanderTime || 0) > 3000) {
-                enemy.wanderTargetX = enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
-                enemy.wanderTargetY = enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
-                enemy.lastWanderTime = currentTime;
-            }
 
-            if (enemy.wanderTargetX !== undefined) {
-                const dx = enemy.wanderTargetX - enemy.x;
-                const dy = enemy.wanderTargetY! - enemy.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-
-                if (distance > 5) {
-                    const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5; // Slower wandering
-                    let moveX = dx / distance;
-                    let moveY = dy / distance;
-                    const avoid = computeOwnSegmentAvoidance(enemy);
-                    if (avoid) {
-                        moveX += avoid.x;
-                        moveY += avoid.y;
-                        const mag = Math.sqrt(moveX * moveX + moveY * moveY);
-                        if (mag > 0) {
-                            moveX /= mag;
-                            moveY /= mag;
+            if (isCentipedeHeadType(enemy.type) || isCentipedeBodyType(enemy.type)) {
+                // Centipede heads keep the target-based wander with own-segment
+                // avoidance — the chain-follow pass depends on smooth directed head
+                // movement, so it's intentionally not the gardn passive below.
+                if (enemy.wanderTargetX === undefined || currentTime - (enemy.lastWanderTime || 0) > 3000) {
+                    enemy.wanderTargetX = enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
+                    enemy.wanderTargetY = enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
+                    enemy.lastWanderTime = currentTime;
+                }
+                if (enemy.wanderTargetX !== undefined) {
+                    const dx = enemy.wanderTargetX - enemy.x;
+                    const dy = enemy.wanderTargetY! - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance > 5) {
+                        const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5;
+                        let moveX = dx / distance;
+                        let moveY = dy / distance;
+                        const avoid = computeOwnSegmentAvoidance(enemy);
+                        if (avoid) {
+                            moveX += avoid.x;
+                            moveY += avoid.y;
+                            const mag = Math.sqrt(moveX * moveX + moveY * moveY);
+                            if (mag > 0) { moveX /= mag; moveY /= mag; }
                         }
-                    }
-                    enemy.x += moveX * speed;
-                    enemy.y += moveY * speed;
-                    if (enemy.speed !== 0) {
-                        enemy.angle = Math.atan2(moveY * speed, moveX * speed);
+                        enemy.x += moveX * speed;
+                        enemy.y += moveY * speed;
+                        if (enemy.speed !== 0) enemy.angle = Math.atan2(moveY * speed, moveX * speed);
                     }
                 }
+            } else if (enemy.speed > 0) {
+                // Passive movement ported from ~/gardn (Server/Process/Ai.cc
+                // tick_default_passive + Motion.cc). State machine:
+                //   idle ~1s  → pick a random heading (= the mob's facing angle)
+                //   moving ~2.5s → pause 0.5s, then ease into motion ALONG that heading
+                //                  for ~2s with a parabolic accel ramp → back to idle.
+                // Movement is the gardn friction integrator (velocity *= 1 - friction;
+                // velocity += acceleration), so the mob eases in and glides to a stop.
+                // Because it accelerates along enemy.angle, facing always equals the
+                // movement direction by construction — no facing derivation needed.
+                // gardn's friction is 1/3 per tick @ SIM_RATE 20; ~0.25 per tick gives
+                // the same glide at this server's 30 TPS.
+                const FRICTION = 0.25;
+                // gardn ramps acceleration as 2 * PLAYER_ACCELERATION * (r - r^2); the
+                // base is scaled per-mob. Distance covered per move scales linearly with
+                // this, so the 3x factor makes passive mobs roam ~3x as far as the
+                // old-wander-matched baseline (which was enemy.speed*ESM*0.25).
+                const ACCEL = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.25 * 3;
+
+                if (enemy.passiveState === undefined) {
+                    enemy.passiveState = 'idle';
+                    enemy.passiveStateStart = currentTime;
+                }
+                const elapsed = currentTime - (enemy.passiveStateStart ?? currentTime);
+                let accelX = 0;
+                let accelY = 0;
+                if (enemy.passiveState === 'idle') {
+                    if (elapsed >= 1000) { // idle for ~1s, then choose a new heading
+                        enemy.angle = Math.random() * Math.PI * 2;
+                        enemy.passiveState = 'moving';
+                        enemy.passiveStateStart = currentTime;
+                    }
+                } else {
+                    if (elapsed >= 2500) { // full move phase done → idle
+                        enemy.passiveState = 'idle';
+                        enemy.passiveStateStart = currentTime;
+                    } else if (elapsed >= 500) { // 0.5s pause, then 2s parabolic ramp
+                        const r = (elapsed - 500) / 2000;       // 0..1 across the move
+                        const ramp = r - r * r;                 // gardn (r - r^2), peak 0.25
+                        const mag = ACCEL * 2 * ramp;           // gardn 2*ACCEL*(r - r^2)
+                        accelX = Math.cos(enemy.angle) * mag;
+                        accelY = Math.sin(enemy.angle) * mag;
+                    }
+                }
+
+                // gardn Motion.cc integrator: friction bleeds velocity, accel refills it.
+                enemy.velX = (enemy.velX ?? 0) * (1 - FRICTION) + accelX;
+                enemy.velY = (enemy.velY ?? 0) * (1 - FRICTION) + accelY;
+                enemy.x += enemy.velX;
+                enemy.y += enemy.velY;
             }
         }
 
@@ -4352,7 +4401,7 @@ function moveEnemies() {
 
     // Check for mob-to-mob collisions and melee combat
     checkEnemyEnemyCollisions(enemies, io);
-    
+
     // Remove dead enemies after melee combat and handle XP/loot
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
@@ -4944,7 +4993,22 @@ function updateGroundPollens() {
 function start_loop() {
     const TICK_RATE = 30;
     const TICK_INTERVAL = 1000 / TICK_RATE;
-    const deltaTime = 1 / TICK_RATE;
+    const NOMINAL_DELTA = 1 / TICK_RATE;
+    // setInterval doesn't fire at exactly TICK_RATE — GC pauses and CPU load make
+    // ticks land late. Driving physics off a fixed 1/TICK_RATE makes the player's
+    // real-world speed scale with the (variable) actual tick rate, so it feels slow
+    // under load. But feeding the *raw* per-tick interval straight into movement
+    // makes each tick advance by an uneven amount, so the (un-predicted, server-
+    // authoritative) player position jumps unevenly and looks choppy on the client.
+    //
+    // So: low-pass-filter the timestep. Sustained slowdowns still pull the average
+    // toward the real rate (speed stays correct), while one-off tick jitter is
+    // smoothed out (motion stays smooth). Clamp the raw sample first so a long
+    // GC/idle gap can't skew the filter or produce a giant step.
+    const MAX_DELTA = NOMINAL_DELTA * 3;
+    const DELTA_SMOOTH = 0.1; // low-pass factor (~10-tick time constant)
+    let lastTickMs = 0;
+    let smoothedDelta = NOMINAL_DELTA;
 
     // Reused per tick to avoid per-tick allocation of the authenticated-id array
     // and an associated socket lookup that was previously done twice.
@@ -4952,6 +5016,16 @@ function start_loop() {
     const authenticatedSockets: AuthenticatedSocket[] = [];
 
     setInterval(() => {
+        // Smoothed real elapsed time since the previous tick (seconds). Computed
+        // before the no-players early-return so it stays one tick wide across idle.
+        const nowMs = performance.now();
+        let rawDelta = lastTickMs > 0 ? (nowMs - lastTickMs) / 1000 : NOMINAL_DELTA;
+        lastTickMs = nowMs;
+        if (rawDelta > MAX_DELTA) rawDelta = MAX_DELTA;
+        smoothedDelta += (rawDelta - smoothedDelta) * DELTA_SMOOTH;
+        const deltaTime = smoothedDelta;
+        const deltaMs = deltaTime * 1000;
+
         authenticatedPlayerIds.length = 0;
         authenticatedSockets.length = 0;
         for (const id in players) {
@@ -4992,10 +5066,10 @@ function start_loop() {
         moveEnemies();
         
         // Update mob projectiles
-        updateMobProjectiles(TICK_INTERVAL); // Pass milliseconds
-        
+        updateMobProjectiles(deltaMs); // Pass real elapsed milliseconds
+
         // Update player projectiles
-        updatePlayerProjectiles(TICK_INTERVAL); // Pass milliseconds
+        updatePlayerProjectiles(deltaMs); // Pass real elapsed milliseconds
 
         // Update ground pollen drops (damage zones from broken pollen petals)
         updateGroundPollens();
@@ -5206,6 +5280,8 @@ function start_loop() {
                 const sV = p.pvpScore || 0;
                 const sz = p.sizeMultiplier ?? 1.0;
                 const sn = p.name;
+                // Effective speed multiplier, sent to the owning client for prediction.
+                const sm = quantize(p.speedFactor ?? 1, 0.01);
 
                 // Petal positions: only sent to the local player for their *own* petals.
                 // For other players we omit the entire `p` array — the recipient's client
@@ -5259,6 +5335,8 @@ function start_loop() {
                 if (prev ? prev.V !== sV : sV !== 0) { delta.V = sV; changed = true; }
                 if (prev ? prev.z !== sz : sz !== 1.0) { delta.z = sz; changed = true; }
                 if (prev ? prev.n !== sn : true) { delta.n = sn; changed = true; }
+                // Only the owning client predicts, so only it needs the speed factor.
+                if (isSelf && (prev ? prev.sm !== sm : sm !== 1)) { delta.sm = sm; changed = true; }
                 // petalsOut is null for non-self players (their clients dead-reckon orbit
                 // positions). Only self gets the per-tick petal array.
                 if (petalsOut && (prev ? prev.petalsSig !== petalsSig : petalsOut.length > 0)) {
@@ -5273,6 +5351,7 @@ function start_loop() {
                         l: sl, s: ss, e: se,
                         f: faceFlags, q: equipFlags, m: mouth,
                         v: sv, V: sV, z: sz, n: sn,
+                        sm,
                         petalsSig,
                     });
                 }
@@ -5299,13 +5378,19 @@ function start_loop() {
             const changedEnemies: any[] = [];
             const currentEnemyIds = new Set<string>();
 
+            // Finer position grid than the old 1-unit: slow wandering mobs (Bee/Ladybug
+            // move ~0.5/tick) otherwise staircase across the 1-unit grid, so their
+            // rendered motion visibly lags their (correct) server facing — they look
+            // like they're not facing the way they're going. Never coarser than the old
+            // 1 unit, so weak connections aren't regressed.
+            const enemyPrecision = quality === 'slow' ? 1 : 0.5;
             for (const e of viewportEnemies) {
                 currentEnemyIds.add(e.id);
-                const ex = quantize(e.x, 1);
-                const ey = quantize(e.y, 1);
+                const ex = quantize(e.x, enemyPrecision);
+                const ey = quantize(e.y, enemyPrecision);
+                const ea = quantize(e.angle, 0.05);
                 const eh = Math.round(e.health);
                 const eH = Math.round(e.maxHealth);
-                const eL = e.leaderId;
                 const prev = lastEnemies.get(e.id);
 
                 // Default maxHealth comes from the mob config for (type, tier). When the
@@ -5316,22 +5401,22 @@ function start_loop() {
                 if (!prev) {
                     const ed: any = { i: e.id, t: e.type, x: ex, y: ey };
                     if (e.tier !== 'common') ed.T = e.tier;
+                    if (ea !== 0) ed.a = ea;
                     ed.h = eh;
                     if (eH !== defaultMaxH) ed.H = eH;
-                    if (eL !== undefined) ed.L = eL;
                     changedEnemies.push(ed);
-                    lastEnemies.set(e.id, { x: ex, y: ey, h: eh, H: eH, t: e.type, T: e.tier, L: eL });
-                } else if (prev.x !== ex || prev.y !== ey || prev.h !== eh || prev.H !== eH || prev.t !== e.type || prev.T !== e.tier || prev.L !== eL) {
+                    lastEnemies.set(e.id, { x: ex, y: ey, a: ea, h: eh, H: eH, t: e.type, T: e.tier });
+                } else if (prev.x !== ex || prev.y !== ey || prev.a !== ea || prev.h !== eh || prev.H !== eH || prev.t !== e.type || prev.T !== e.tier) {
                     const ed: any = { i: e.id };
                     if (prev.x !== ex) ed.x = ex;
                     if (prev.y !== ey) ed.y = ey;
+                    if (prev.a !== ea) ed.a = ea;
                     if (prev.h !== eh) ed.h = eh;
                     if (prev.H !== eH) ed.H = eH;
                     if (prev.t !== e.type) ed.t = e.type;
                     if (prev.T !== e.tier) ed.T = e.tier;
-                    if (prev.L !== eL) ed.L = eL ?? null;
                     changedEnemies.push(ed);
-                    lastEnemies.set(e.id, { x: ex, y: ey, h: eh, H: eH, t: e.type, T: e.tier, L: eL });
+                    lastEnemies.set(e.id, { x: ex, y: ey, a: ea, h: eh, H: eH, t: e.type, T: e.tier });
                 }
                 // Unchanged enemies are NOT mentioned — the client keeps them as-is.
             }
