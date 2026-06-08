@@ -120,16 +120,20 @@ function spawnGroundPollen(io: any, player: ServerPlayer, petalStats: any, petal
     });
 }
 
-// --- Clumped-petal per-instance health/cooldown helpers ---
-// Clumped petals (e.g. sand) spawn multiple instances that share one orbit slot.
-// Each instance needs its own health and cooldown so a single hit can't kill them all at once.
+// --- Per-instance petal health/cooldown helpers ---
+// Some petals spawn multiple instances (count > 1) that should each carry their own
+// health and cooldown, so a single hit can't kill them all at once and each breaks
+// and recharges independently. This applies to clumped petals (e.g. sand, which share
+// one orbit slot) and to spread petals flagged `independentHealth` (e.g. light, whose
+// particles orbit in separate slots). `clumped` controls only visual arrangement; the
+// independent-health behavior is gated separately here.
 
-function isClumpedMulti(petalStats: any): boolean {
-    return !!(petalStats?.clumped && (petalStats.count ?? 1) > 1);
+function hasIndependentInstances(petalStats: any): boolean {
+    return !!((petalStats?.clumped || petalStats?.independentHealth) && (petalStats.count ?? 1) > 1);
 }
 
 function ensureInstanceArrays(petal: any, petalStats: any): void {
-    if (!isClumpedMulti(petalStats)) return;
+    if (!hasIndependentInstances(petalStats)) return;
     const count = petalStats.count ?? 1;
     const defaultHealth = petal.maxHealth ?? petalStats.health;
     if (!Array.isArray(petal.instanceHealth) || petal.instanceHealth.length !== count) {
@@ -141,14 +145,14 @@ function ensureInstanceArrays(petal: any, petalStats: any): void {
 }
 
 function getInstanceHealth(petal: any, instanceIndex: number, petalStats: any): number {
-    if (isClumpedMulti(petalStats) && Array.isArray(petal.instanceHealth)) {
+    if (hasIndependentInstances(petalStats) && Array.isArray(petal.instanceHealth)) {
         return petal.instanceHealth[instanceIndex] ?? 0;
     }
     return petal.health ?? 0;
 }
 
 function setInstanceHealth(petal: any, instanceIndex: number, petalStats: any, value: number): void {
-    if (isClumpedMulti(petalStats) && Array.isArray(petal.instanceHealth)) {
+    if (hasIndependentInstances(petalStats) && Array.isArray(petal.instanceHealth)) {
         petal.instanceHealth[instanceIndex] = value;
         // Keep petal.health reflecting the max across live instances so legacy UI/health bars
         // render a sensible value for the slot overall.
@@ -159,7 +163,7 @@ function setInstanceHealth(petal: any, instanceIndex: number, petalStats: any, v
 }
 
 function isInstanceOnCooldown(petal: any, instanceIndex: number, petalStats: any): boolean {
-    if (isClumpedMulti(petalStats) && Array.isArray(petal.instanceOnCooldown)) {
+    if (hasIndependentInstances(petalStats) && Array.isArray(petal.instanceOnCooldown)) {
         return !!petal.instanceOnCooldown[instanceIndex];
     }
     return !!petal.onCooldown;
@@ -1237,8 +1241,8 @@ export function updatePlayerState(
 
                     const cooldownTime = getEffectiveCooldown(petal, petalStats);
 
-                    if (isClumpedMulti(petalStats)) {
-                        // Clumped: only this instance breaks; other instances keep working
+                    if (hasIndependentInstances(petalStats)) {
+                        // Per-instance: only this instance breaks; other instances keep working
                         ensureInstanceArrays(petal, petalStats);
                         petal.instanceOnCooldown![instanceIndex] = true;
                         const snapshotPetalType = petal.petalType;
@@ -1897,8 +1901,8 @@ export function updatePlayerState(
 
                         const cooldownTime = getEffectiveCooldown(petal, petalStats);
 
-                        if (isClumpedMulti(petalStats)) {
-                            // Clumped: only this instance breaks
+                        if (hasIndependentInstances(petalStats)) {
+                            // Per-instance: only this instance breaks; other instances keep working
                             ensureInstanceArrays(petal, petalStats);
                             petal.instanceOnCooldown![instanceIndex] = true;
                             const snapshotPetalType = petal.petalType;

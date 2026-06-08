@@ -59,6 +59,7 @@ export interface PetalStats {
     equipFlags?: number; // Bitmask of EquipmentFlags to apply (e.g., EquipmentFlags.ThirdEye)
     noPhysics?: boolean; // When true, petal snaps to orbit position without spring/damping physics (no lag behind player)
     clumped?: boolean; // When true, all instances of this petal share a single orbit slot instead of being spread evenly
+    independentHealth?: boolean; // When true, each spawned instance (count > 1) has its own health/cooldown and breaks independently instead of sharing one health pool. Independent of `clumped` (which only controls visual arrangement).
     // Emissive light properties
     emissive?: boolean; // Whether this petal emits light
     lightRadius?: number; // Radius of the emissive light glow (in pixels, default: petal size * 3)
@@ -168,6 +169,7 @@ interface BasePetalConfig {
     equipFlags?: number; // Bitmask of EquipmentFlags to apply (e.g., EquipmentFlags.ThirdEye)
     noPhysics?: boolean; // When true, petal snaps to orbit position without spring/damping physics (no lag behind player)
     clumped?: boolean; // When true, all instances of this petal share a single orbit slot instead of being spread evenly
+    independentHealth?: boolean; // When true, each spawned instance (count > 1) has its own health/cooldown and breaks independently instead of sharing one health pool. Independent of `clumped` (which only controls visual arrangement).
     // Emissive light properties
     emissive?: boolean; // Whether this petal emits light
     lightRadius?: number; // Radius of the emissive light glow (in pixels, default: petal size * 3)
@@ -739,6 +741,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
             description: "Weak, but recharges quickly",
             color: "#90EE90",
             count: 1,
+            independentHealth: true, // Each light particle (count > 1 at higher rarities) has its own health and breaks independently
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="white" stroke-width="4" stroke="#d9d9d9"/>
 </svg>`
@@ -2552,6 +2555,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         equipFlags: baseConfig.equipFlags,
         noPhysics: baseConfig.noPhysics,
         clumped: overrides.clumped ?? baseConfig.clumped,
+        independentHealth: baseConfig.independentHealth,
         emissive: overrides.emissive ?? baseConfig.emissive,
         lightRadius: overrides.lightRadius ?? baseConfig.lightRadius,
         lightColor: overrides.lightColor ?? baseConfig.lightColor,

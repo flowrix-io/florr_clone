@@ -241,6 +241,19 @@ class ShopManager {
         if (this.codeFocused && !this.modal)
             this.requestDraw();
     }
+    /**
+     * Draw text with the game-standard black outline (matches the HUD,
+     * inventory, loadout, etc.). Uses the already-set font/fillStyle/align so
+     * callers configure those as usual, then call this instead of fillText.
+     */
+    outlinedText(text, x, y, lineWidth = 3) {
+        const ctx = this.ctx;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = lineWidth;
+        ctx.strokeText(text, x, y);
+        ctx.fillText(text, x, y);
+    }
     drawHeader(cssW) {
         const ctx = this.ctx;
         const player = this.game.getLocalPlayer();
@@ -250,7 +263,7 @@ class ShopManager {
         ctx.font = 'bold 24px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('Shop', cssW / 2, PANEL_PADDING + 18);
+        this.outlinedText('Shop', cssW / 2, PANEL_PADDING + 18, 4);
         // Stars (icon + count, centered)
         const text = stars.toLocaleString();
         ctx.font = 'bold 24px Ubuntu, sans-serif';
@@ -265,7 +278,7 @@ class ShopManager {
         }
         else {
             ctx.fillStyle = '#ffd700';
-            ctx.font = '28px serif';
+            ctx.font = '28px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
             ctx.fillText('⭐', startX, yIcon + iconSize - 5);
             ctx.font = 'bold 24px Ubuntu, sans-serif';
@@ -273,7 +286,7 @@ class ShopManager {
         ctx.fillStyle = '#ffd700';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, startX + iconSize + gap, yIcon + iconSize / 2);
+        this.outlinedText(text, startX + iconSize + gap, yIcon + iconSize / 2, 4);
         // Close (X) button in top-right
         const cb = { x: cssW - PANEL_PADDING - 24, y: PANEL_PADDING - 4, w: 24, h: 24 };
         const closeHover = this.hover?.kind === 'close';
@@ -308,7 +321,7 @@ class ShopManager {
         ctx.font = 'bold 18px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillText('Redeem Code', x + 15, y + 12);
+        this.outlinedText('Redeem Code', x + 15, y + 12);
         // Input + button
         const fieldY = y + 45;
         const fieldH = 40;
@@ -361,7 +374,7 @@ class ShopManager {
         ctx.font = 'bold 16px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('Redeem', buttonX + buttonW / 2, fieldY + fieldH / 2);
+        this.outlinedText('Redeem', buttonX + buttonW / 2, fieldY + fieldH / 2);
         this.regions.push({ x: buttonX, y: fieldY, w: buttonW, h: fieldH, kind: 'redeem' });
     }
     drawTabs(cssW) {
@@ -385,7 +398,7 @@ class ShopManager {
             ctx.font = 'bold 16px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(t.label, tx + tabW / 2, y + tabH / 2);
+            this.outlinedText(t.label, tx + tabW / 2, y + tabH / 2);
             if (active) {
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(tx, y + tabH - 2, tabW, 2);
@@ -472,7 +485,7 @@ class ShopManager {
                 ctx.font = 'bold 9px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(formatPrice(price), cx + cardSize / 2, cy + cardSize - ITEM_PRICE_BAR_H / 2);
+                this.outlinedText(formatPrice(price), cx + cardSize / 2, cy + cardSize - ITEM_PRICE_BAR_H / 2, 2);
                 this.regions.push({
                     x: cx, y: cy, w: cardSize, h: cardSize, kind: 'item',
                     payload: { petalType, rarity, price, stats }, disabled
@@ -493,7 +506,7 @@ class ShopManager {
         ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText('Earn Stars by Defeating Mythic+ Mobs', x + w / 2, cursorY);
+        this.outlinedText('Earn Stars by Defeating Mythic+ Mobs', x + w / 2, cursorY, 4);
         cursorY += 32;
         // Current stars line
         const text = `${currentStars.toLocaleString()} Stars`;
@@ -509,7 +522,7 @@ class ShopManager {
         ctx.fillStyle = '#ffd700';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, tx + iconSize + gap, cursorY + iconSize / 2);
+        this.outlinedText(text, tx + iconSize + gap, cursorY + iconSize / 2);
         cursorY += 40;
         const challengeTiers = [
             { tier: 'mythic', stars: 1, color: '#1fdbde', description: 'Defeat any Mythic tier mob' },
@@ -532,10 +545,10 @@ class ShopManager {
             ctx.font = 'bold 18px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
-            ctx.fillText(`${c.tier.charAt(0).toUpperCase() + c.tier.slice(1)} Challenge`, x + 18, cursorY + 12);
+            this.outlinedText(`${c.tier.charAt(0).toUpperCase() + c.tier.slice(1)} Challenge`, x + 18, cursorY + 12);
             ctx.fillStyle = 'rgba(255,255,255,0.95)';
             ctx.font = '14px Ubuntu, sans-serif';
-            ctx.fillText(c.description, x + 18, cursorY + 36);
+            this.outlinedText(c.description, x + 18, cursorY + 36);
             // Reward
             const rewardText = `${c.stars} Star${c.stars !== 1 ? 's' : ''}`;
             const rIconSize = 18;
@@ -545,7 +558,7 @@ class ShopManager {
             ctx.fillStyle = '#ffd700';
             ctx.font = 'bold 16px Ubuntu, sans-serif';
             ctx.textBaseline = 'middle';
-            ctx.fillText(rewardText, x + 18 + rIconSize + 8, cursorY + 60 + rIconSize / 2);
+            this.outlinedText(rewardText, x + 18 + rIconSize + 8, cursorY + 60 + rIconSize / 2);
             cursorY += cardH + 12;
         }
         this.contentHeights.challenges = cursorY - (y + 10 - scroll) + 10;
@@ -613,7 +626,7 @@ class ShopManager {
             ctx.font = 'bold 15px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(b.label, bxStart + btnW / 2, btnY + btnH / 2);
+            this.outlinedText(b.label, bxStart + btnW / 2, btnY + btnH / 2);
             this.regions.push({
                 x: bxStart, y: btnY, w: btnW, h: btnH,
                 kind: 'modal-button', payload: b.action
@@ -930,13 +943,21 @@ function roundRect(ctx, x, y, w, h, r) {
     ctx.closePath();
 }
 function wrapText(ctx, text, cx, y, maxWidth, lineH) {
+    // Match the game-standard outlined text style.
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    const drawLine = (line, ly) => {
+        ctx.strokeText(line, cx, ly);
+        ctx.fillText(line, cx, ly);
+    };
     const words = text.split(/\s+/);
     let line = '';
     let cy = y;
     for (const w of words) {
         const test = line ? line + ' ' + w : w;
         if (ctx.measureText(test).width > maxWidth && line) {
-            ctx.fillText(line, cx, cy);
+            drawLine(line, cy);
             cy += lineH;
             line = w;
         }
@@ -945,7 +966,7 @@ function wrapText(ctx, text, cx, y, maxWidth, lineH) {
         }
     }
     if (line)
-        ctx.fillText(line, cx, cy);
+        drawLine(line, cy);
 }
 function clamp(v, lo, hi) {
     return v < lo ? lo : (v > hi ? hi : v);

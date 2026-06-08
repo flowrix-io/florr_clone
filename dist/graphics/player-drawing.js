@@ -244,6 +244,13 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
                 petalX = foundX - refX;
                 petalY = foundY - refY;
             }
+            else if (serverPositions && clumpCount > 1) {
+                // Multi-instance petal: the server omits an instance from petalPositions
+                // once it has broken (per-instance health/cooldown). Hide just that
+                // particle instead of drawing a phantom at its orbit slot while its
+                // siblings keep spinning.
+                continue;
+            }
             else {
                 petalX = Math.cos(totalAngle) * petalRadius + clumpOffsetX;
                 petalY = Math.sin(totalAngle) * petalRadius + clumpOffsetY;
