@@ -1435,7 +1435,12 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
     });
 
-    socket.on('disconnect', () => {
+    // Ends a player's active session. `removeListeners` is true for a real socket
+    // 'disconnect' (full teardown) and false for 'leaveGame' (return to title): the
+    // latter keeps the socket — and the player's ground-loot eligibility, which is
+    // keyed to the socket id — alive so loot doesn't despawn and the client is not
+    // counted as disconnected.
+    const endPlayerSession = (removeListeners: boolean) => {
         console.log('A user disconnected');
 
         // Clean up squad membership
@@ -1547,9 +1552,12 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             knownPlayerProjectilesByPlayer.delete(socket.id);
         }
         
-        // Remove all event listeners to prevent memory leaks
-        // Socket.IO will handle cleanup, but we can be explicit for unauthenticated connections
-        socket.removeAllListeners();
+        // Remove all event listeners to prevent memory leaks.
+        // Skipped on 'leaveGame' (return to title): the socket stays connected and
+        // must keep its listeners so the player can re-authenticate and rejoin.
+        if (removeListeners) {
+            socket.removeAllListeners();
+        }
         
         // Only emit to authenticated players (not to unauthenticated title screen connections)
         // Note: playerDisconnected events for split players are already emitted above
@@ -1565,7 +1573,15 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         if (Object.keys(players).length > 0) {
             triggerViewportUpdate();
         }
-    });
+    };
+
+    // Real socket drop: full teardown (strip listeners, the socket is gone).
+    socket.on('disconnect', () => endPlayerSession(true));
+    // Soft leave: the player returned to the title screen. Remove them from the
+    // active world (save progress, despawn pets, notify other players) but KEEP
+    // the socket connected so the same connection is reused on the next play and
+    // their ground loot — eligibility keyed by socket id — does not despawn.
+    socket.on('leaveGame', () => endPlayerSession(false));
 
     socket.on('collectDot', (dotIndex: number) => {
         if (dotIndex >= 0 && dotIndex < dots.length) {

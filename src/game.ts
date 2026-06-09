@@ -1817,10 +1817,25 @@ export class Game {
         // Abort all event listeners registered with the signal
         this.abortController.abort();
 
-        // Remove all socket listeners before disconnecting
+        // Return to the title screen WITHOUT dropping the connection. Disconnecting
+        // would reconnect later under a fresh socket id, which counts the player as
+        // disconnected and orphans their ground loot (eligibility is keyed by socket
+        // id). Instead: tell the server we've left the active world (it despawns our
+        // pets and removes us from other players' view but keeps our loot), strip the
+        // game's listeners, and hand the still-connected socket back to the title
+        // screen so it is reused on the next play.
         if (this.socket) {
-            this.socket.removeAllListeners();
-            this.socket.disconnect();
+            const reuseSocket = (window as any).reuseSocketForTitleScreen;
+            if (this.socket.connected && typeof reuseSocket === 'function') {
+                this.socket.emit('leaveGame');
+                this.socket.removeAllListeners();
+                reuseSocket(this.socket);
+            } else {
+                // Not connected (or no title-screen handler available): fall back to
+                // a hard teardown.
+                this.socket.removeAllListeners();
+                this.socket.disconnect();
+            }
         }
 
         // Clear heartbeat interval

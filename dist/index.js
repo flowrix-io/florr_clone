@@ -130,14 +130,22 @@ function preconnectToServer() {
         withCredentials: true,
         transports: ['websocket', 'polling'] // Explicitly set transports
     });
-    preconnectedSocket.on('connect', () => {
-        console.log(`[Index] Preconnected to server (socket ID: ${preconnectedSocket?.id})`);
+    attachTitleScreenSocketListeners(preconnectedSocket);
+    window.preconnectedSocket = preconnectedSocket;
+}
+// Attaches the title-screen socket listeners. Shared between a freshly
+// preconnected socket and a live in-game socket handed back when the player
+// returns to the title screen (so the connection — and the player's loot — is
+// reused rather than dropped and recreated under a new socket id).
+function attachTitleScreenSocketListeners(sock) {
+    sock.on('connect', () => {
+        console.log(`[Index] Preconnected to server (socket ID: ${sock?.id})`);
         // Notify title screen that connection is complete
         if (titleScreen) {
             titleScreen.onConnectionComplete();
         }
     });
-    preconnectedSocket.on('connect_error', (error) => {
+    sock.on('connect_error', (error) => {
         console.error('[Index] Preconnect connection error:', error);
     });
     // Map is bundled with the client via src/map_data.ts — no longer received
@@ -145,13 +153,13 @@ function preconnectToServer() {
     if (titleScreen)
         titleScreen.updateBiomesFromMapData(map_data_1.WORLD_MAP);
     // Listen for authenticated event to update title screen inventory and skills
-    preconnectedSocket.on('authenticated', (response) => {
+    sock.on('authenticated', (response) => {
         if (response.success && response.player && titleScreen) {
             console.log('[Index] Updating title screen with player data');
             // Mark socket as authenticated - this allows operations to proceed immediately
             const username = localStorage.getItem('username');
             if (username) {
-                preconnectedSocket.username = username;
+                sock.username = username;
             }
             // Mark inventory manager as authenticated
             if (titleScreen.titleScreenInventoryManager) {
@@ -176,10 +184,10 @@ function preconnectToServer() {
         }
     });
     // Listen for skills updates
-    preconnectedSocket.on('skillsUpdated', (data) => {
+    sock.on('skillsUpdated', (data) => {
         console.log('[Index] skillsUpdated received:', data);
         // Check if this is for the current player (compare socket ID)
-        if (data.playerId === preconnectedSocket.id && titleScreen) {
+        if (data.playerId === sock.id && titleScreen) {
             if (titleScreen.titleScreenSkillsManager) {
                 titleScreen.titleScreenSkillsManager.updateSkills(data.tp, data.skills);
             }
@@ -189,16 +197,25 @@ function preconnectToServer() {
             }
         }
     });
-    preconnectedSocket.on('disconnect', (reason) => {
+    sock.on('disconnect', (reason) => {
         console.log(`[Index] Preconnected socket disconnected: ${reason}`);
         preconnectedSocket = null;
         window.preconnectedSocket = null;
         window.preconnectedMapData = null;
     });
-    window.preconnectedSocket = preconnectedSocket;
 }
 // Expose preconnectToServer so the title screen can trigger it after first login
 window.preconnectToServer = preconnectToServer;
+// Reuse a still-connected in-game socket for the title screen instead of
+// disconnecting it. Keeps the same socket id, so the player is not counted as
+// disconnected and their ground loot (eligibility keyed by socket id) survives.
+window.reuseSocketForTitleScreen = (sock) => {
+    if (!sock)
+        return;
+    preconnectedSocket = sock;
+    window.preconnectedSocket = sock;
+    attachTitleScreenSocketListeners(sock);
+};
 function setupGameEventListeners() {
     if (!titleScreen)
         return;
@@ -343,11 +360,12 @@ function setupGameEventListeners() {
                     }
                     // Now fully show the title screen
                     titleScreen?.showTitleScreen();
-                    // The game disconnected the shared socket; reconnect so the title screen
-                    // can show the up-to-date loadout/inventory that was saved on exit.
-                    // NB: game.cleanup() calls socket.removeAllListeners() before disconnect(),
-                    // which strips the 'disconnect' handler that nulls preconnectedSocket, so
-                    // the variable still points to the dead socket. Clear it manually.
+                    // game.cleanup() now hands the still-connected socket back to the
+                    // title screen via reuseSocketForTitleScreen (no disconnect), so
+                    // preconnectedSocket normally already points at a live socket and we
+                    // just re-authenticate to refresh the loadout/inventory. The reconnect
+                    // path below is only a fallback for when the connection was actually
+                    // lost (e.g. the socket dropped on its own).
                     if (!preconnectedSocket || !preconnectedSocket.connected) {
                         preconnectedSocket = null;
                         window.preconnectedSocket = null;
