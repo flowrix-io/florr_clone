@@ -1022,12 +1022,16 @@ const BASE_PETAL_CONFIGS = {
         health: 10,
         size: 1.5,
         cooldown: 627,
-        description: "A lightbulb, but it's not very strong",
+        description: "A lightbulb, but it's not very strong. Its glow draws mobs from further away",
         color: "#ffff00",
-        count: 3,
+        count: 1,
         emissive: true,
         lightRadius: 50,
         lightColor: "#ffff00",
+        wallCollide: true,
+        playerModifiers: {
+            aggroRadius: 150 // Bright light makes mobs notice (and chase) this player from further away
+        },
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
   <rect x="12" y="12" width="8" height="16" fill="#aaaaaa" stroke-width="2" stroke="#999999"/>
   <rect x="12" y="19" width="8" height="2" fill="#999999" stroke-width="0" stroke="#999999"/>
@@ -2268,7 +2272,7 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         // For modifiers, we can either:
         // 1. Use override if provided (for rarity-specific scaling) - overrides are NOT scaled
         // 2. Scale base modifiers by rarity multiplier
-        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined || overrideModifiers.magnetism !== undefined || overrideModifiers.luck !== undefined || overrideModifiers.petalAttractionRadius !== undefined) {
+        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined || overrideModifiers.magnetism !== undefined || overrideModifiers.luck !== undefined || overrideModifiers.petalAttractionRadius !== undefined || overrideModifiers.aggroRadius !== undefined) {
             // Use override modifiers directly (not scaled, as they're already rarity-specific)
             playerModifiers = {
                 damage: overrideModifiers.damage ?? baseModifiers.damage,
@@ -2279,10 +2283,11 @@ function generatePetalStats(baseConfig, rarity, petalType) {
                 playerRadius: overrideModifiers.playerRadius ?? baseModifiers.playerRadius,
                 magnetism: overrideModifiers.magnetism ?? baseModifiers.magnetism,
                 luck: overrideModifiers.luck ?? baseModifiers.luck,
-                petalAttractionRadius: overrideModifiers.petalAttractionRadius ?? baseModifiers.petalAttractionRadius
+                petalAttractionRadius: overrideModifiers.petalAttractionRadius ?? baseModifiers.petalAttractionRadius,
+                aggroRadius: overrideModifiers.aggroRadius ?? baseModifiers.aggroRadius
             };
         }
-        else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined || baseModifiers.magnetism !== undefined || baseModifiers.luck !== undefined || baseModifiers.petalAttractionRadius !== undefined) {
+        else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined || baseModifiers.magnetism !== undefined || baseModifiers.luck !== undefined || baseModifiers.petalAttractionRadius !== undefined || baseModifiers.aggroRadius !== undefined) {
             // Scale base modifiers by rarity multiplier
             // Formula: baseValue * (1 + (rarityIndex / 8) * 3)
             // This scales from 1x at common to 4x at unique
@@ -2313,6 +2318,9 @@ function generatePetalStats(baseConfig, rarity, petalType) {
                     : undefined,
                 petalAttractionRadius: baseModifiers.petalAttractionRadius !== undefined
                     ? baseModifiers.petalAttractionRadius * modifierRarityMultiplier
+                    : undefined,
+                aggroRadius: baseModifiers.aggroRadius !== undefined
+                    ? baseModifiers.aggroRadius * modifierRarityMultiplier
                     : undefined
             };
         }
@@ -2352,6 +2360,7 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         noPhysics: baseConfig.noPhysics,
         clumped: overrides.clumped ?? baseConfig.clumped,
         independentHealth: baseConfig.independentHealth,
+        wallCollide: baseConfig.wallCollide,
         emissive: overrides.emissive ?? baseConfig.emissive,
         lightRadius: overrides.lightRadius ?? baseConfig.lightRadius,
         lightColor: overrides.lightColor ?? baseConfig.lightColor,

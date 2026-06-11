@@ -4082,14 +4082,19 @@ function moveEnemies() {
                 const dx = player.x - enemy.x;
                 const dy = player.y - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
+                // Petals like Bulb raise this player's aggro radius — treat them as if
+                // they were that many pixels closer, so mobs detect them from further away.
+                const effectiveDistance = distance - (player.aggroRadiusBonus || 0);
                 // Only consider players with line of sight for initial targeting
-                if (distance < closestDistance && hasLineOfSight(enemy.x, enemy.y, player.x, player.y)) {
-                    closestDistance = distance;
+                if (effectiveDistance < closestDistance && hasLineOfSight(enemy.x, enemy.y, player.x, player.y)) {
+                    closestDistance = effectiveDistance;
                     closestPlayer = player;
                 }
             });
 
-            // If we found a new target within chase range, start targeting them
+            // If we found a new target within chase range, start targeting them.
+            // closestDistance is the aggro-radius-adjusted distance, so the bonus
+            // effectively widens (enemy.range || ENEMY_CHASE_RANGE) for that player.
             if (closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
                 enemy.targetPlayerId = closestPlayer.id;
                 targetPlayer = closestPlayer;

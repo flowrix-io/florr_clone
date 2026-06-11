@@ -534,7 +534,8 @@ export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers 
         playerRadius: 1.0,
         magnetism: 0,
         luck: 1.0,
-        petalAttractionRadius: 30
+        petalAttractionRadius: 30,
+        aggroRadius: 0
     };
     
     if (!player.loadout) return modifiers;
@@ -579,6 +580,9 @@ export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers 
         if (petalModifiers.petalAttractionRadius !== undefined && modifiers.petalAttractionRadius !== undefined) {
             modifiers.petalAttractionRadius += petalModifiers.petalAttractionRadius;
         }
+        if (petalModifiers.aggroRadius !== undefined && modifiers.aggroRadius !== undefined) {
+            modifiers.aggroRadius += petalModifiers.aggroRadius;
+        }
     }
 
     return modifiers;
@@ -610,6 +614,7 @@ export function recalculatePlayerStats(player: ServerPlayer, io?: SocketIOServer
     player.damage = Math.round(baseDamage * damageMultiplier * (petalModifiers.damage ?? 1.0));
     player.sizeMultiplier = petalModifiers.playerRadius ?? 1.0;
     player.magnetism = petalModifiers.magnetism ?? 0;
+    player.aggroRadiusBonus = petalModifiers.aggroRadius ?? 0;
     
     // Scale current health proportionally if maxHealth changed
     if (oldMaxHealth > 0 && oldMaxHealth !== newMaxHealth) {

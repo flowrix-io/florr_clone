@@ -1272,6 +1272,24 @@ function updatePlayerState(player, deltaTime, deps) {
                 petalX = physicsState.x;
                 petalY = physicsState.y;
             }
+            // Petals flagged wallCollide can't orbit through walls/water — push them
+            // back out of any solid tile. Persist the resolved position (and kill the
+            // velocity into the wall) into the physics state so the orbit spring
+            // doesn't keep driving them back inside on the next frame.
+            if (petalStats.wallCollide) {
+                const resolved = (0, physics_1.checkPlayerWallCollisions)(petalX, petalY, 40 * effectiveSize);
+                if (resolved.collided) {
+                    petalX = resolved.x;
+                    petalY = resolved.y;
+                    const ps = petalPhysicsStates.get(petalId);
+                    if (ps) {
+                        ps.x = petalX;
+                        ps.y = petalY;
+                        ps.vx = 0;
+                        ps.vy = 0;
+                    }
+                }
+            }
             // Update petal position in action context
             (0, petal_actions_1.updatePetalPosition)(petalId, petalX, petalY);
             // Store petal position for client synchronization
