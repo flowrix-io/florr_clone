@@ -5,6 +5,7 @@ import { splitPlayers } from '../petal_actions';
 import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadManager';
 import { isBot } from './botManager';
 import { recordBossEvent, stripHtml } from './apiKeyApi';
+import { forgetEnemyFromRaindropAura } from './playerState';
 
 // Per-tick batch of enemies that took damage. Keyed by enemy.id with the
 // post-damage health snapshot. Using a module-level Map (cleared on flush)
@@ -340,6 +341,10 @@ export function cleanupEnemy(enemy: Enemy): void {
     enemy.lastViewportCheck = undefined;
     enemy.lastProjectileTime = undefined;
     enemy.lastMeleeAttackTime = undefined;
+
+    // Release this enemy's slot in every raindrop player's aura damage-timestamp
+    // map so those inner maps don't grow unboundedly over a long session.
+    forgetEnemyFromRaindropAura(enemy.id);
 }
 
 // Collision detection functions have been moved to physics.ts

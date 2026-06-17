@@ -1,5 +1,5 @@
 import { Socket } from './ws_client';
-import { FaceFlags, EquipmentFlags } from './player';
+import { FaceFlags, EquipmentFlags, PlayerRenderFlags } from './player';
 
 interface SandboxedScript {
     id: string;
@@ -144,6 +144,15 @@ export class Chat {
     }
 
     private handleClientCommand(message: string): boolean {
+        if (message === '/skins' || message === '/skin-studio') {
+            const game = (window as any).currentGame;
+            if (game?.skinStudio) {
+                game.skinStudio.toggle();
+            } else {
+                this.addChatMessage({ sender: 'System', content: 'Skin Studio is only available in-game.', timestamp: Date.now() });
+            }
+            return true;
+        }
         if (message === '/guild-menu' || message === '/guild menu') {
             const game = (window as any).currentGame;
             if (game?.guildMenu) {
@@ -169,12 +178,14 @@ export class Chat {
             if (args.length === 0 || args[0] === '') {
                 const faceNames = Object.keys(FaceFlags).filter(k => isNaN(Number(k)));
                 const equipNames = Object.keys(EquipmentFlags).filter(k => isNaN(Number(k)));
+                const renderNames = Object.keys(PlayerRenderFlags).filter(k => isNaN(Number(k)));
                 this.addChatMessage({
                     sender: 'System',
-                    content: `Usage: /forcelocalplayerflags <face|equip> <flag1> [flag2] ...\n` +
+                    content: `Usage: /forcelocalplayerflags <face|equip|render> <flag1> [flag2] ...\n` +
                         `Face flags: ${faceNames.join(', ')}\n` +
                         `Equip flags: ${equipNames.join(', ')}\n` +
-                        `Current: faceFlags=${localPlayer.faceFlags ?? 0}, equipFlags=${localPlayer.equipFlags ?? 0}`,
+                        `Render flags (skins): ${renderNames.join(', ')}\n` +
+                        `Current: faceFlags=${localPlayer.faceFlags ?? 0}, equipFlags=${localPlayer.equipFlags ?? 0}, renderFlags=${localPlayer.renderFlags ?? 0}`,
                     timestamp: Date.now()
                 });
                 return true;
@@ -213,8 +224,23 @@ export class Chat {
                 localPlayer.equipFlags = value;
                 localPlayer.forcedFlags = true;
                 this.addChatMessage({ sender: 'System', content: `Set local equipFlags to ${value} (server updates frozen until reload)`, timestamp: Date.now() });
+            } else if (type === 'render') {
+                let value = 0;
+                for (const name of flagNames) {
+                    const flag = PlayerRenderFlags[name as keyof typeof PlayerRenderFlags];
+                    if (flag === undefined) {
+                        const num = parseInt(name);
+                        if (!isNaN(num)) { value = num; break; }
+                        this.addChatMessage({ sender: 'System', content: `Unknown render flag: ${name}`, timestamp: Date.now() });
+                        return true;
+                    }
+                    value |= flag;
+                }
+                localPlayer.renderFlags = value;
+                localPlayer.forcedFlags = true;
+                this.addChatMessage({ sender: 'System', content: `Set local renderFlags to ${value} (server updates frozen until reload)`, timestamp: Date.now() });
             } else {
-                this.addChatMessage({ sender: 'System', content: `Unknown flag type: ${type}. Use "face" or "equip".`, timestamp: Date.now() });
+                this.addChatMessage({ sender: 'System', content: `Unknown flag type: ${type}. Use "face", "equip", or "render".`, timestamp: Date.now() });
             }
             return true;
         }

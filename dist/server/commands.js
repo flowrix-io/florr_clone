@@ -4,6 +4,7 @@ exports.executeServerCommand = executeServerCommand;
 exports.handleAdminCommand = handleAdminCommand;
 exports.setupStdinCommandHandler = setupStdinCommandHandler;
 exports.getAdminHelpText = getAdminHelpText;
+const player_1 = require("../player");
 const database_1 = require("../database");
 const mobs_1 = require("../mobs");
 const constants_1 = require("../constants");
@@ -209,6 +210,66 @@ function executeServerCommand(command, executor, deps, socketId) {
             sendOutput('    teleport abc123 1000 2000', socketId, io);
             sendOutput('    teleport Username 5000 3000', socketId, io);
             sendOutput('    tp abc123 1000 2000  (shorthand)', socketId, io);
+        }
+    }
+    else if (trimmedCommand.startsWith('set_skin ')) {
+        // set_skin <playerId/username> <skinName|bitmask|none>
+        // Sets the player's renderFlags, which the broadcast sends to every client
+        // so the custom skin (graphics/player-skins.ts) replaces their flower render.
+        const skinNames = Object.keys(player_1.PlayerRenderFlags).filter(k => isNaN(Number(k)));
+        const parts = trimmedCommand.split(' ');
+        if (parts.length !== 3) {
+            sendOutput(`Usage: set_skin <playerId/username> <${skinNames.join('|')}|none|bitmask>`, socketId, io);
+            return;
+        }
+        const playerIdentifier = parts[1];
+        const skinArg = parts[2];
+        // Resolve the requested skin to a renderFlags bitmask (name, "none", or number).
+        let renderFlags;
+        if (skinArg.toLowerCase() === 'none') {
+            renderFlags = 0;
+        }
+        else {
+            const matchedKey = skinNames.find(k => k.toLowerCase() === skinArg.toLowerCase());
+            if (matchedKey) {
+                renderFlags = player_1.PlayerRenderFlags[matchedKey];
+            }
+            else {
+                const numeric = parseInt(skinArg);
+                renderFlags = isNaN(numeric) || numeric < 0 ? null : numeric;
+            }
+        }
+        if (renderFlags === null) {
+            sendOutput(`Unknown skin "${skinArg}". Available: ${skinNames.join(', ')}, none, or a numeric bitmask.`, socketId, io);
+            return;
+        }
+        // Find player by socket ID first, then by username.
+        let targetPlayer;
+        let targetSocket;
+        if (constants_1.players[playerIdentifier]) {
+            targetPlayer = constants_1.players[playerIdentifier];
+            targetSocket = io.sockets.sockets.get(playerIdentifier);
+        }
+        else {
+            for (const [sid, player] of Object.entries(constants_1.players)) {
+                const s = io.sockets.sockets.get(sid);
+                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
+                    targetPlayer = player;
+                    targetSocket = s;
+                    break;
+                }
+            }
+        }
+        if (targetPlayer) {
+            targetPlayer.renderFlags = renderFlags;
+            // Persist immediately so the skin is saved as account content (survives
+            // logout) rather than waiting for the next debounced save.
+            if (targetSocket?.userId)
+                savePlayerProgress(targetPlayer, targetSocket.userId);
+            sendOutput(`Set ${targetPlayer.name}'s renderFlags to ${renderFlags}${renderFlags === 0 ? ' (default flower)' : ''}`, socketId, io);
+        }
+        else {
+            sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
         }
     }
     else if (trimmedCommand.startsWith('generate_code') || trimmedCommand.startsWith('gen_code')) {
@@ -630,5 +691,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status]';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status]';
 }

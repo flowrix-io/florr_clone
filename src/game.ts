@@ -8,6 +8,7 @@ import { ITEM_RARITY_COLORS, getPetalStats } from './petals';
 import { Graphics } from './graphics';
 import { Chat } from './chat';
 import { GuildMenuManager } from './guildMenu';
+import { SkinStudio, getSkinStudio } from './skinStudio';
 import { initMultiPlayerMode, Socket } from './socket';
 import { InventoryManager } from './inventory';
 import { SkillsManager } from './skills';
@@ -131,6 +132,7 @@ export class Game {
     // Add chat property
     private chat: Chat | null = null;
     public guildMenu: GuildMenuManager | null = null;
+    public skinStudio: SkinStudio = getSkinStudio();
 
     // Add property
     public inventoryManager!: InventoryManager;
@@ -267,6 +269,10 @@ export class Game {
 
         // Initialize multiplayer mode after resource loading
         initMultiPlayerMode(this, serverIp);
+
+        // Connect the live socket to the Skin Studio menu (opened from the top
+        // button strip; its in-game canvas is wired in index.ts).
+        this.skinStudio.setSocket(this.socket);
 
         // Move authentication to after socket initialization
         this.authenticate();

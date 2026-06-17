@@ -2,6 +2,7 @@
 // ... (keep the existing imports and Player class)
 Object.defineProperty(exports, "__esModule", { value: true });
 const game_1 = require("./game");
+const skinStudio_1 = require("./skinStudio");
 const auth_ui_1 = require("./auth_ui");
 const title_screen_1 = require("./title_screen");
 const preloader_1 = require("./preloader");
@@ -280,6 +281,9 @@ function setupGameEventListeners() {
                     currentGame.guildMenu = guildMenuManager;
                     currentGame.connectGuildMenu?.(guildMenuManager);
                 }
+                // Point the Skin Studio canvas menu at the in-game canvas (the
+                // singleton's socket is already connected in Game's constructor).
+                currentGame.graphics.setSkinStudio?.((0, skinStudio_1.getSkinStudio)());
                 // Hand the title-screen canvas-button strip to the in-game
                 // graphics so the same icon buttons paint on the gameCanvas
                 // and route their clicks through TitleScreen's handler.

@@ -10,6 +10,14 @@ const constants_1 = require("../constants");
 // query cells; 512 is a reasonable middle-ground for this world (60000 wide).
 const CELL_SIZE = 512;
 const KEY_OFFSET = 1024; // allow negative cell coords (PVP arena lives outside main world)
+// Sanity bounds. No legitimate mob radius or broad-phase query radius comes close to
+// these — they exist purely to stop a degenerate (NaN/Infinity/huge) value from making
+// the cell-range loops span the whole coordinate space and spin forever at 100% CPU
+// (the long-session server hang). Hit values are logged so the real cause is visible.
+const MAX_MOB_RADIUS = 4096; // mob _radius = size*40/2; real mobs are < ~400
+const MAX_QUERY_RADIUS = 8192; // playerRadius + maxEnemyRadius (+aura); real < ~1500
+let _lastBadMobRadius = NaN;
+let _lastBadQuery = NaN;
 const grid = new Map();
 let maxRadius = 0;
 function key(cx, cy) {
@@ -38,7 +46,17 @@ function rebuildEnemyGrid(enemies) {
             e._radius = mobStats ? (mobStats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2;
             e._mobStats = mobStats;
         }
-        const r = e._radius;
+        let r = e._radius;
+        // A degenerate mob radius would poison getMaxEnemyRadius() and blow up every
+        // queryEnemiesNear cell range. Clamp + log, and persist so it's only logged once.
+        if (!(r >= 0 && r <= MAX_MOB_RADIUS)) {
+            if (r !== _lastBadMobRadius) {
+                console.warn(`[enemyGrid] degenerate mob _radius=${r} for ${e.type}/${e.tier}; clamping to ${constants_1.ENEMY_SIZE / 2}`);
+                _lastBadMobRadius = r;
+            }
+            r = constants_1.ENEMY_SIZE / 2;
+            e._radius = r;
+        }
         if (r > maxRadius)
             maxRadius = r;
         const cx = Math.floor(e.x / CELL_SIZE);
@@ -62,6 +80,23 @@ function getMaxEnemyRadius() {
  */
 function queryEnemiesNear(x, y, radius, out) {
     out.length = 0;
+    // A non-finite position would make the cell range below NaN/Infinity and spin the
+    // nested loops forever — bail safely (can't query from a corrupt position).
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        if (x !== _lastBadQuery) {
+            console.warn(`[enemyGrid] non-finite query position (${x},${y}); skipping query`);
+            _lastBadQuery = x;
+        }
+        return out;
+    }
+    // A non-finite or absurdly large radius does the same. Clamp + log the real value.
+    if (!(radius >= 0 && radius <= MAX_QUERY_RADIUS)) {
+        if (radius !== _lastBadQuery) {
+            console.warn(`[enemyGrid] degenerate query radius=${radius} at (${x.toFixed(0)},${y.toFixed(0)}); clamping to ${MAX_QUERY_RADIUS}`);
+            _lastBadQuery = radius;
+        }
+        radius = MAX_QUERY_RADIUS;
+    }
     const minCX = Math.floor((x - radius) / CELL_SIZE);
     const maxCX = Math.floor((x + radius) / CELL_SIZE);
     const minCY = Math.floor((y - radius) / CELL_SIZE);

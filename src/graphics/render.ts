@@ -154,6 +154,9 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     if (this.guildMenuManager) {
         this.guildMenuManager.render();
     }
+    if (this.skinStudioManager) {
+        this.skinStudioManager.render();
+    }
 
     // Draw the canvas icon-button strip on top of the menu panels so it stays
     // accessible (same z-order as the legacy DOM buttons sat above gameCanvas).

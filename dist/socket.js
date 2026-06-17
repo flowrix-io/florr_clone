@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.initMultiPlayerMode = initMultiPlayerMode;
 const ws_client_1 = require("./ws_client");
 const mobs_1 = require("./mobs");
+const player_skins_1 = require("./graphics/player-skins");
 function padLoadout(arr, size) {
     const out = new Array(size).fill(null);
     if (arr)
@@ -425,6 +426,20 @@ function setupSocketListeners(game) {
         if (!menu)
             return;
         menu.applyInviteReceived(data);
+    });
+    // Custom skins: keep the shared client registry in sync (so any player wearing
+    // a skin renders) and refresh the Skin Studio gallery if it's open.
+    game.socket.on('skinsUpdate', (data) => {
+        (0, player_skins_1.setCustomSkins)(data?.skins);
+        window.currentGame?.skinStudio?.applyCatalog(data?.skins || [], !!data?.isAdmin);
+    });
+    game.socket.on('skinPublished', (skin) => {
+        (0, player_skins_1.upsertCustomSkin)(skin);
+        window.currentGame?.skinStudio?.applySkinPublished(skin);
+    });
+    game.socket.on('skinDeleted', (id) => {
+        (0, player_skins_1.removeCustomSkin)(id);
+        window.currentGame?.skinStudio?.applySkinDeleted(id);
     });
     game.socket.on('disconnect', (reason) => {
         const disconnectTime = performance.now();
@@ -1113,7 +1128,7 @@ function setupSocketListeners(game) {
     //   E = newly-changed enemies (delta fields, or full fields on first sight)
     //   R = enemies to remove (left viewport or died)
     // Unmentioned entities keep their current state.
-    // Per-player keys: i,n,x,y,a,h,H,l,s,e,f,q,m,v,V,z, p (petalPositions array).
+    // Per-player keys: i,n,x,y,a,h,H,l,s,e,f,q,r,k,m,v,V,z, p (petalPositions array).
     // Per-petal keys: L=loadoutIndex,I=instanceIndex,x,y,N=noPhysics.
     // Per-enemy keys: i,t=type,T=tier,x,y,a,h,H. Missing fields = unchanged.
     game.socket.on('gameStateUpdate', (data) => {
@@ -1144,9 +1159,13 @@ function setupSocketListeners(game) {
                             existing.faceFlags = sp.f;
                         if (sp.q !== undefined)
                             existing.equipFlags = sp.q;
+                        if (sp.r !== undefined)
+                            existing.renderFlags = sp.r;
                         if (sp.m !== undefined)
                             existing.mouth = sp.m;
                     }
+                    if (sp.k !== undefined)
+                        existing.equippedSkinId = sp.k;
                     if (sp.v !== undefined)
                         existing.inPvpArena = !!sp.v;
                     if (sp.V !== undefined)
@@ -1211,6 +1230,8 @@ function setupSocketListeners(game) {
                         petalExtension: sp.e ?? 1.0,
                         faceFlags: sp.f ?? 0,
                         equipFlags: sp.q ?? 0,
+                        renderFlags: sp.r ?? 0,
+                        equippedSkinId: sp.k ?? '',
                         mouth: sp.m ?? 14.5,
                         inPvpArena: !!sp.v,
                         pvpScore: sp.V ?? 0,

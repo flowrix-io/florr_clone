@@ -4,6 +4,7 @@ import path from 'path';
 import v8 from 'v8';
 import fs from 'fs';
 import { database, Notification, ApiKey } from './database';
+import { sanitizeSkin, CustomSkin, MAX_SKINS_PER_USER } from './skin_format';
 import { USE_HTTPS, SERVER_PROTOCOL, PVP_ARENA_SPAWN_X, PVP_ARENA_SPAWN_Y } from './constants';
 
 // Check for and migrate any plain text passwords on server startup
@@ -39,7 +40,7 @@ if (invalidEggTypes.size > 0) {
 
 import { ServerPlayer, PlayerInventory, FaceFlags } from './player';
 import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
-import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets } from './petal_actions';
+import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets, cleanupPlayerPetalActionState } from './petal_actions';
 import { RARITY_LEVELS, Rarity } from './petals';
 import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
@@ -852,7 +853,7 @@ interface AuthenticatedSocket extends Socket {
         h: number; H: number;
         l: number; s: number;
         e: number;
-        f: number; q: number; m: number;
+        f: number; q: number; r: number; k: string; m: number;
         v: number; V: number; z: number;
         n: string;
         sm: number;
@@ -1252,6 +1253,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 skills: savedSkills,
                 mobKills: (savedProgress as any)?.mobKills || {},
                 stars: (savedProgress as any)?.stars || 0,
+                renderFlags: (savedProgress as any)?.renderFlags || 0,
+                equippedSkinId: (savedProgress as any)?.equippedSkinId || '',
                 spawnBiome: credentials.spawnBiome || 'default',
                 inPvpArena: false,
                 pvpScore: 0
@@ -1380,6 +1383,15 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 }
             }
             
+            // Send the full catalog of published user-created skins plus this
+            // client's admin flag (used only to show/hide the takedown button —
+            // deletes are re-checked server-side). Seeds the client skin registry
+            // so remote players wearing custom skins render correctly.
+            socket.emit('skinsUpdate', {
+                skins: database.getAllCustomSkins(),
+                isAdmin: socket.username ? database.isUserAdmin(socket.username) : false,
+            });
+
             // Send initial skills update
             socket.emit('skillsUpdated', {
                 playerId: players[socket.id].id,
@@ -1496,7 +1508,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 
                 // Clean up petal physics states
                 cleanupPetalPhysicsStates(playerId);
-                
+                cleanupPlayerPetalActionState(playerId);
+
                 // Remove player from players map
                 delete players[playerId];
                 delete playerUserIds[playerId];
@@ -1542,6 +1555,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             
             // Clean up petal physics states for this player
             cleanupPetalPhysicsStates(socket.id);
+            cleanupPlayerPetalActionState(socket.id);
 
             // Despawn all pets owned by this player
             despawnAllPlayerPets(socket.id, io);
@@ -3072,6 +3086,75 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         sendSquadChatMessage(squad, io, socket.username, playerName, message);
     });
 
+    // ── Custom skin studio ────────────────────────────────────────────────
+    // Any logged-in (non-guest) player may publish a data-driven skin. The
+    // payload is sanitized through the shared validator before it is stored or
+    // broadcast, so an untrusted client can never get arbitrary content onto
+    // other players' screens. Published skins are broadcast to everyone so they
+    // render on whoever equips them.
+    const skinNotify = (content: string) =>
+        io.to(socket.id).emit('chatMessage', { sender: 'Skins', content, timestamp: Date.now() });
+
+    socket.on('publishSkin', (payload: any) => {
+        if (!socket.username) return;
+        // Guests can play but shouldn't spam the shared catalog.
+        if (/^User\d{8}$/.test(socket.username)) {
+            skinNotify('Create a (non-guest) account to publish skins.');
+            return;
+        }
+        const result = sanitizeSkin(payload);
+        if ('error' in result) {
+            skinNotify(result.error);
+            return;
+        }
+        if (database.countCustomSkinsByAuthor(socket.username) >= MAX_SKINS_PER_USER) {
+            skinNotify(`You've reached the limit of ${MAX_SKINS_PER_USER} published skins. Delete one first.`);
+            return;
+        }
+        const id = 'sk_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        const skin: CustomSkin = {
+            id,
+            name: result.name,
+            author: socket.username,
+            shapes: result.shapes,
+            createdAt: Date.now(),
+        };
+        database.saveCustomSkin(skin);
+        io.emit('skinPublished', skin); // everyone needs it to render wearers
+        skinNotify(`Published "${skin.name}". It's now in the Browse tab.`);
+    });
+
+    socket.on('deleteSkin', (rawId: any) => {
+        if (!socket.username) return;
+        const id = typeof rawId === 'string' ? rawId : '';
+        const skin = database.getCustomSkin(id);
+        if (!skin) return;
+        const isAdmin = database.isUserAdmin(socket.username);
+        const isOwner = skin.author.toLowerCase() === socket.username.toLowerCase();
+        if (!isAdmin && !isOwner) {
+            skinNotify('You can only take down your own skins.');
+            return;
+        }
+        database.deleteCustomSkin(id);
+        io.emit('skinDeleted', id);
+        skinNotify(isOwner ? `Deleted "${skin.name}".` : `Took down "${skin.name}" by ${skin.author}.`);
+    });
+
+    socket.on('equipSkin', (rawId: any) => {
+        if (!socket.username) return;
+        const player = players[socket.id];
+        if (!player) return;
+        const id = typeof rawId === 'string' ? rawId : '';
+        if (id && !database.getCustomSkin(id)) {
+            skinNotify('That skin no longer exists.');
+            return;
+        }
+        player.equippedSkinId = id;
+        // A custom skin replaces any built-in skin flag so they don't conflict.
+        if (id) player.renderFlags = 0;
+        if (socket.userId) savePlayerProgressImmediate(player, socket.userId);
+    });
+
     // Handle ping/pong for heartbeat monitoring and connection quality tracking
     socket.on('ping', (clientTime: number) => {
         socket.emit('pong', clientTime);
@@ -3732,8 +3815,12 @@ function spawnWaveMobs() {
         }
 
         const maxHp = enemy.maxHealth || 1;
-        const startWave = Math.floor((prev / maxHp) * numWaves);
-        const endWave = Math.ceil((enemy.health / maxHp) * numWaves);
+        // Clamp to the valid wave range [0, numWaves]. Without this, a large overkill
+        // drives enemy.health far negative, so endWave becomes a huge negative number
+        // and the loop spins from startWave down to it — millions of iterations that all
+        // just `continue` (out-of-range waveIndex): a tight, flat-heap 100% CPU hang.
+        const startWave = Math.min(numWaves, Math.floor((prev / maxHp) * numWaves));
+        const endWave = Math.max(0, Math.ceil((enemy.health / maxHp) * numWaves));
         const parentRadius = (parentStats.size * 40) / 2;
 
         for (let i = startWave; i >= endWave; i--) {
@@ -3790,9 +3877,21 @@ function moveEnemies() {
         enemy.segmentIndex = 0;
         let leader: Enemy = enemy;
         let nextIndex = 1;
+        // Guard against a cycle in the leaderId graph (e.g. two severed segments
+        // that end up pointing at each other). Without this, enemies.find() keeps
+        // returning a chain member forever and the server tick spins at 100% CPU —
+        // a hang that silently stops all logging and stops serving. Track visited
+        // segments; a revisit means the chain is corrupt, so sever it and stop.
+        // The visited set also bounds the walk to at most `enemies.length` steps.
+        const visited = new Set<string>([enemy.id]);
         while (true) {
             const follower = enemies.find(e => e.leaderId === leader.id);
             if (!follower) break;
+            if (visited.has(follower.id)) {
+                follower.leaderId = undefined; // break the cycle so it can't recur next tick
+                break;
+            }
+            visited.add(follower.id);
             follower.headId = enemy.id;
             follower.segmentIndex = nextIndex++;
             leader = follower;
@@ -5216,6 +5315,8 @@ function start_loop() {
             p: any;
             faceFlags: number;
             equipFlags: number;
+            renderFlags: number;
+            equippedSkinId: string;
             mouth: number;
             petalExtension: number;
             petalsRaw: any[];
@@ -5242,6 +5343,8 @@ function start_loop() {
                 p,
                 faceFlags,
                 equipFlags,
+                renderFlags: p.renderFlags ?? 0,
+                equippedSkinId: p.equippedSkinId ?? '',
                 mouth,
                 petalExtension,
                 petalsRaw: p.petalPositions || [],
@@ -5286,6 +5389,8 @@ function start_loop() {
 
                 const faceFlags = snap.faceFlags;
                 const equipFlags = snap.equipFlags;
+                const renderFlags = snap.renderFlags;
+                const equippedSkinId = snap.equippedSkinId;
                 const mouth = snap.mouth;
                 const petalExtension = snap.petalExtension;
 
@@ -5351,6 +5456,8 @@ function start_loop() {
                 if (prev ? prev.e !== se : se !== 1.0) { delta.e = se; changed = true; }
                 if (prev ? prev.f !== faceFlags : faceFlags !== 0) { delta.f = faceFlags; changed = true; }
                 if (prev ? prev.q !== equipFlags : equipFlags !== 0) { delta.q = equipFlags; changed = true; }
+                if (prev ? prev.r !== renderFlags : renderFlags !== 0) { delta.r = renderFlags; changed = true; }
+                if (prev ? prev.k !== equippedSkinId : equippedSkinId !== '') { delta.k = equippedSkinId; changed = true; }
                 if (prev ? prev.m !== mouth : mouth !== 14.5) { delta.m = mouth; changed = true; }
                 if (prev ? prev.v !== sv : sv !== 0) { delta.v = sv; changed = true; }
                 if (prev ? prev.V !== sV : sV !== 0) { delta.V = sV; changed = true; }
@@ -5370,7 +5477,7 @@ function start_loop() {
                     lastPlayers.set(p.id, {
                         x: sx, y: sy, a: sa, h: sh, H: sH,
                         l: sl, s: ss, e: se,
-                        f: faceFlags, q: equipFlags, m: mouth,
+                        f: faceFlags, q: equipFlags, r: renderFlags, k: equippedSkinId, m: mouth,
                         v: sv, V: sV, z: sz, n: sn,
                         sm,
                         petalsSig,
@@ -5574,10 +5681,17 @@ export function getScheduledRestartInfo(): { remainingMs: number; reason: string
 // Daily restart: 24h after startup
 scheduleRestart(24 * 60 * 60 * 1000, 'daily');
 
-// Memory watchdog: log every 10s, restart process if heap usage > 80% of V8 heap limit.
+// Memory watchdog: log every 5s, restart process if heap usage > 70% of V8 heap limit.
 // Requires a process supervisor (systemd, pm2, docker --restart, etc.) to actually bring the server back up.
-const MEMORY_RESTART_THRESHOLD = 0.8;
-const MEMORY_CHECK_INTERVAL = 10000;
+//
+// Threshold is intentionally well below the V8 hard limit and the interval is short:
+// as the heap approaches its limit V8 falls into a back-to-back full-GC death-spiral
+// that blocks the event loop, so a watchdog that only trips at the last moment never
+// gets a turn to run and the process dies with "FATAL ERROR: Reached heap limit" instead
+// of restarting gracefully. Firing at 70% leaves headroom to restart while the loop is
+// still responsive. Baseline heap under load is ~20-40%, so this won't false-trip.
+const MEMORY_RESTART_THRESHOLD = 0.7;
+const MEMORY_CHECK_INTERVAL = 5000;
 let memoryRestartInProgress = false;
 setInterval(() => {
     const mem = process.memoryUsage();

@@ -9,6 +9,7 @@ const changelog_1 = require("../changelog");
 const notifications_1 = require("../notifications");
 const leaderboard_1 = require("../leaderboard");
 const guildMenu_1 = require("../guildMenu");
+const skinStudio_1 = require("../skinStudio");
 require("../graphics/flower");
 const zoom_compensation_1 = require("../zoom-compensation");
 const inventory_manager_1 = require("./inventory_manager");
@@ -34,6 +35,7 @@ class TitleScreen {
     get logicalH() { return this.background.getCanvas().height / (0, zoom_compensation_1.getBaseDeviceScale)(); }
     constructor() {
         this.availableBiomes = [];
+        this.skinStudio = (0, skinStudio_1.getSkinStudio)();
         this.playerName = '';
         this.isNameInputFocused = false;
         this.hoveredBiomeIndex = -1;
@@ -88,6 +90,7 @@ class TitleScreen {
         this.notificationsManager.setCanvas(titleCanvas);
         this.leaderboardManager.setCanvas(titleCanvas);
         this.guildMenuManager.setCanvas(titleCanvas);
+        this.skinStudio.setCanvas(titleCanvas);
         this.setupEventListeners();
         this.titleScreenInventoryManager = new inventory_manager_1.TitleScreenInventoryManager();
         // Wire the loadout bar onto the shared title canvas so it shares the
@@ -1775,6 +1778,7 @@ class TitleScreen {
         this.notificationsManager.setCanvas(titleCanvas);
         this.leaderboardManager.setCanvas(titleCanvas);
         this.guildMenuManager.setCanvas(titleCanvas);
+        this.skinStudio.setCanvas(titleCanvas);
         // Hide the DOM button containers — canvas buttons paint on title.
         this.exitButtonContainer.style.display = 'none';
         const bottomLeftButtons = document.getElementById('bottomLeftButtons');
@@ -1925,6 +1929,8 @@ class TitleScreen {
                 this.leaderboardManager.hide();
             if (!except.includes('guild'))
                 this.guildMenuManager.hide();
+            if (!except.includes('skins'))
+                this.skinStudio.hide();
         };
         switch (id) {
             case 'settings':
@@ -1948,6 +1954,10 @@ class TitleScreen {
             case 'guild':
                 closeOthers('guild');
                 this.guildMenuManager.toggle();
+                break;
+            case 'skins':
+                closeOthers('skins');
+                this.skinStudio.toggle();
                 break;
             case 'discord':
                 closeOthers();
@@ -2026,6 +2036,8 @@ class TitleScreen {
             this.leaderboardManager.render();
         if (this.guildMenuManager.isGuildMenuOpen())
             this.guildMenuManager.render();
+        if (this.skinStudio.isOpen())
+            this.skinStudio.render();
     }
     toggleInventoryOnTitleScreen() {
         // Use the title screen inventory manager

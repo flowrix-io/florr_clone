@@ -7,6 +7,7 @@ const map_data_1 = require("./map_data");
 const petals_1 = require("./petals");
 const graphics_1 = require("./graphics");
 const chat_1 = require("./chat");
+const skinStudio_1 = require("./skinStudio");
 const socket_1 = require("./socket");
 const inventory_1 = require("./inventory");
 const skills_1 = require("./skills");
@@ -118,6 +119,7 @@ class Game {
         // Add chat property
         this.chat = null;
         this.guildMenu = null;
+        this.skinStudio = (0, skinStudio_1.getSkinStudio)();
         this.beforeUnloadHandler = null;
         this.abortController = new AbortController();
         this.createdElements = []; // Track DOM elements for cleanup
@@ -216,6 +218,9 @@ class Game {
         this.nameInput = document.getElementById('nameInput');
         // Initialize multiplayer mode after resource loading
         (0, socket_1.initMultiPlayerMode)(this, serverIp);
+        // Connect the live socket to the Skin Studio menu (opened from the top
+        // button strip; its in-game canvas is wired in index.ts).
+        this.skinStudio.setSocket(this.socket);
         // Move authentication to after socket initialization
         this.authenticate();
         this.socket.on('inventoryUpdated', (inventory) => {

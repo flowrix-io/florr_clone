@@ -16,6 +16,7 @@ export type TitleButtonId =
     | 'notifications'
     | 'leaderboard'
     | 'guild'
+    | 'skins'
     | 'discord'
     | 'exit'
     | 'inventory'
@@ -62,6 +63,7 @@ const BUTTON_DEFS: ButtonDef[] = [
     { id: 'notifications', iconName: 'notifications', bg: '#4a90e2', border: '#3b73b5', group: 'top' },
     { id: 'leaderboard',   iconName: 'leaderboard',   bg: '#e8a023', border: '#ba801c', group: 'top' },
     { id: 'guild',         iconName: 'guild',         bg: '#27dade', border: '#1fb3b0', group: 'top' },
+    { id: 'skins',         iconName: 'skins',         bg: '#c45cff', border: '#9a3fd0', group: 'top' },
     { id: 'discord',       iconName: 'discord',       bg: '#5865f2', border: '#4752c4', group: 'top' },
     // Exit slot: only visible in-game; appended to the right of the top row.
     { id: 'exit',          iconName: 'exit_button',   bg: '#ff0000', border: '#cc0000', group: 'top' },

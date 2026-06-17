@@ -1,6 +1,7 @@
 // ... (keep the existing imports and Player class)
 
 import { Game } from './game';
+import { getSkinStudio } from './skinStudio';
 import { AuthUI } from './auth_ui';
 import { TitleScreen, injectTitleScreenStyles } from './title_screen';
 import { Preloader, PreloadedAssets } from './preloader';
@@ -333,6 +334,9 @@ function setupGameEventListeners() {
                     currentGame.guildMenu = guildMenuManager;
                     currentGame.connectGuildMenu?.(guildMenuManager);
                 }
+                // Point the Skin Studio canvas menu at the in-game canvas (the
+                // singleton's socket is already connected in Game's constructor).
+                currentGame.graphics.setSkinStudio?.(getSkinStudio());
                 // Hand the title-screen canvas-button strip to the in-game
                 // graphics so the same icon buttons paint on the gameCanvas
                 // and route their clicks through TitleScreen's handler.

@@ -128,6 +128,9 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     if (this.guildMenuManager) {
         this.guildMenuManager.render();
     }
+    if (this.skinStudioManager) {
+        this.skinStudioManager.render();
+    }
     // Draw the canvas icon-button strip on top of the menu panels so it stays
     // accessible (same z-order as the legacy DOM buttons sat above gameCanvas).
     if (this.titleCanvasButtons) {

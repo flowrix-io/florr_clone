@@ -598,11 +598,28 @@ function getMaxJaggedOffset(points, minT, maxT) {
 // position resolves walls/water identically to the server, so prediction doesn't
 // fight the authoritative position at walls (jitter) or at water edges (springing).
 exports.COLLISION_BUFFER = 5; // Buffer between entities and walls
+// Sanity cap for collision reach. No real entity (player or mob) has a halfSize
+// remotely this large; beyond it the tile-scan loops below would span the whole grid
+// and spin forever. Used only to bound those loops against a degenerate size.
+const MAX_COLLISION_REACH = 4096;
+let _lastBadHalfSize = NaN;
 // Check if a position collides with a wall or water tile, accounting for jagged edges.
 function checkTileCollision(worldX, worldY, halfSize) {
     // Reach includes COLLISION_BUFFER so an entity already resting at the buffer
     // distance still registers as in contact (see the inflated overlap test below).
     const reach = halfSize + exports.JAGGED_MAX_OFFSET + exports.COLLISION_BUFFER;
+    // Guard a degenerate entity size/position. A non-finite position, or a huge/Infinity
+    // halfSize (e.g. a player whose sizeMultiplier blew up), makes the tile range below
+    // span (effectively) the whole grid and spins the nested loops forever — the 100% CPU
+    // hang. No legitimate entity is anywhere near MAX_COLLISION_REACH; treat the degenerate
+    // entity as not-colliding (it's the real bug) and log the value once so it's traceable.
+    if (!Number.isFinite(worldX) || !Number.isFinite(worldY) || !(reach >= 0 && reach <= MAX_COLLISION_REACH)) {
+        if (halfSize !== _lastBadHalfSize) {
+            console.warn(`[tileCollision] degenerate entity halfSize=${halfSize} at (${worldX},${worldY}); skipping wall resolution`);
+            _lastBadHalfSize = halfSize;
+        }
+        return null;
+    }
     const minTileX = worldToTileX(worldX - reach);
     const maxTileX = worldToTileX(worldX + reach);
     const minTileY = worldToTileY(worldY - reach);
@@ -732,9 +749,20 @@ function stepPlayerMovement(state, targetVX, targetVY, dt, effectiveSize) {
     // Substep movement so a single fast step can't skip past a wall. Step size is
     // bounded by half the hitbox so collision checks always sample an overlapping
     // position against any tile in the path.
-    const MAX_STEP = effectiveSize / 2;
+    //
+    // Guard the degenerate cases that otherwise make `steps` blow up and spin the
+    // loop below forever at 100% CPU — a frozen, unservable server (the long-session
+    // "hang"). If effectiveSize is 0 (e.g. sizeMultiplier driven to 0 by an effect),
+    // MAX_STEP would be 0 and moveDistance/0 = Infinity → steps = Infinity. A blown-up
+    // velocity makes moveDistance huge for the same effect. So: floor the step at 1px,
+    // and hard-cap the substep count (also catches NaN, which fails the >=1 test).
+    const MAX_STEP = effectiveSize > 0 ? effectiveSize / 2 : 1;
     const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    const steps = Math.max(1, Math.ceil(moveDistance / MAX_STEP));
+    let steps = Math.ceil(moveDistance / MAX_STEP);
+    if (!(steps >= 1))
+        steps = 1; // NaN, 0, or negative → 1
+    if (steps > 1024)
+        steps = 1024; // Infinity or absurd velocity → clamp
     const stepX = deltaX / steps;
     const stepY = deltaY / steps;
     let newX = state.x;

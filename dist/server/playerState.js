@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.forgetEnemyFromRaindropAura = forgetEnemyFromRaindropAura;
 exports.cleanupPetalPhysicsStates = cleanupPetalPhysicsStates;
 exports.getRaindropAuraRadius = getRaindropAuraRadius;
 exports.getPlayerViewports = getPlayerViewports;
@@ -36,6 +37,16 @@ const raindropAuraLastDamage = new Map();
 const RAINDROP_AURA_DAMAGE_INTERVAL_MS = 500;
 const RAINDROP_AURA_BASE_RADIUS = 180;
 const RAINDROP_AURA_RADIUS_PER_RARITY = 18;
+// Drop an enemy's per-player aura damage-timestamps when it leaves the world.
+// Without this the inner maps grow by one entry per enemy ever seen in aura
+// range and are only ever cleared on player disconnect — a heap leak that
+// builds up over a long session as mobs continuously spawn and die. Called
+// from cleanupEnemy so every enemy removal (death or despawn) prunes here.
+function forgetEnemyFromRaindropAura(enemyId) {
+    for (const lastDamageMap of raindropAuraLastDamage.values()) {
+        lastDamageMap.delete(enemyId);
+    }
+}
 // Drop a damaging pollen puff at the given position. Pollen petals call this
 // when they break so the petal still goes through the normal cooldown/reload
 // cycle while leaving a short-lived AoE behind.
@@ -688,7 +699,16 @@ function updatePlayerState(player, deltaTime, deps) {
     let targetVelocityY = 0;
     // Effective speed multiplier (boosts + petal/effect modifiers). Cached on the
     // player so the broadcast can send it to the owning client for prediction.
-    const speedFactor = player.speed_boost * (0, petal_actions_1.getSpeedMultiplier)(player);
+    let speedFactor = player.speed_boost * (0, petal_actions_1.getSpeedMultiplier)(player);
+    // Clamp the effective speed. getSpeedMultiplier multiplies every speed_boost effect
+    // and petal modifier with no cap, so an apex/stacked boost (or a degenerate value)
+    // can make this enormous — moving the player thousands of px in one tick and landing
+    // them at an absurd coordinate that then hangs distance/raycast loops elsewhere (e.g.
+    // bot wall-avoidance rayHitsWall). 8x is well above any intended boost.
+    if (!(speedFactor >= 0))
+        speedFactor = 1; // NaN / negative → 1
+    if (speedFactor > 8)
+        speedFactor = 8;
     player.speedFactor = speedFactor;
     if (player.inputs.useMouse &&
         player.inputs.mouseDirectionX !== undefined &&
@@ -696,7 +716,10 @@ function updatePlayerState(player, deltaTime, deps) {
         player.inputs.mouseSpeedMultiplier !== undefined) {
         // Client has already calculated the direction and speed multiplier
         // Server just needs to apply MAX_SPEED and the effective speed factor
-        const speed = constants_1.MAX_SPEED * speedFactor * player.inputs.mouseSpeedMultiplier;
+        // mouseSpeedMultiplier is a client-supplied fraction (normally 0..1); clamp it so
+        // a malformed/huge value can't bypass the speedFactor cap above. NaN → 0 (no move).
+        const mouseMult = Math.min(1.5, Math.max(0, player.inputs.mouseSpeedMultiplier)) || 0;
+        const speed = constants_1.MAX_SPEED * speedFactor * mouseMult;
         targetVelocityX = player.inputs.mouseDirectionX * speed;
         targetVelocityY = player.inputs.mouseDirectionY * speed;
         player.angle = Math.atan2(player.inputs.mouseDirectionY, player.inputs.mouseDirectionX);

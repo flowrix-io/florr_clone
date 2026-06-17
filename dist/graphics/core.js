@@ -233,6 +233,7 @@ class Graphics {
         this.perfItemsCount = 0;
         this.perfMobsMs = 0;
         this.perfProjectilesMs = 0;
+        this.skinStudioManager = null;
         /**
          * Wire the title-screen canvas-button strip into the in-game render loop
          * so the same icon buttons (settings/changelog/.../exit + bottom-left
@@ -531,6 +532,12 @@ class Graphics {
         this.guildMenuManager = guildMenuManager;
         if (guildMenuManager && this.canvas) {
             guildMenuManager.setCanvas(this.canvas);
+        }
+    }
+    setSkinStudio(skinStudioManager) {
+        this.skinStudioManager = skinStudioManager;
+        if (skinStudioManager && this.canvas) {
+            skinStudioManager.setCanvas(this.canvas);
         }
     }
     setTitleCanvasButtons(buttons) {

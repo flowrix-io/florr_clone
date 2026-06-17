@@ -18,6 +18,16 @@ export enum EquipmentFlags {
     Test1 = 1 << 4, // Unused/test flag for bitmask expansion
 }
 
+// Bitmask flags that activate a custom player skin. Each bit maps to a skin
+// registered in graphics/player-skins.ts whose render() replaces the default
+// drawFlower() body. A skin only renders when its bit is set in player.renderFlags
+// — with no bit set the player draws as the normal flower. Bits are checked in
+// registration order, so the lowest-priority set bit wins if several are on.
+export enum PlayerRenderFlags {
+    Pumpkin = 1 << 0,
+    Robot = 1 << 1,
+}
+
 // Compact inventory: flat number array of [rarityId, itemId, count, ...] triplets
 export type PlayerInventory = number[];
 
@@ -81,6 +91,8 @@ export interface Player {
   flowerColor?: string;    // Base flower color (hex like '#FFE763')
   faceFlags?: number;      // Bitmask of FaceFlags (poisoned, dead eyes, square eyes, etc.)
   equipFlags?: number;     // Bitmask of EquipmentFlags (cutter, third eye, observer, antennae)
+  renderFlags?: number;    // Bitmask of PlayerRenderFlags — when a bit is set the matching custom skin replaces the default flower render
+  equippedSkinId?: string; // ID of an equipped user-created skin (data-driven, see skin_format.ts); takes priority over renderFlags
   mouth?: number;          // Mouth curve Y control point (14.5 = smile, higher = more open)
   cutterAngle?: number;    // Rotation angle for cutter equipment
   forcedFlags?: boolean;   // When true, server flag updates are ignored (set by /forcelocalplayerflags)
@@ -170,6 +182,8 @@ export interface ServerPlayer {
   petalPositions?: Array<{ loadoutIndex: number; instanceIndex: number; x: number; y: number; noPhysics?: boolean }>; // Petal positions calculated on server
   faceFlags?: number;      // Bitmask of FaceFlags (computed each tick)
   equipFlags?: number;     // Bitmask of EquipmentFlags (computed from loadout)
+  renderFlags?: number;    // Bitmask of PlayerRenderFlags — broadcast so clients pick the custom skin render
+  equippedSkinId?: string; // ID of an equipped user-created skin (broadcast so clients render it on this player)
   mouth?: number;          // Mouth curve Y control point
   squadId?: string;        // ID of the squad this player belongs to
   guildName?: string;      // 5-char alphanumeric guild name (broadcast so clients can render it)

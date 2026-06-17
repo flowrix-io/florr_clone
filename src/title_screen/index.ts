@@ -7,6 +7,7 @@ import { ChangelogManager, CHANGELOG } from '../changelog';
 import { NotificationsManager } from '../notifications';
 import { LeaderboardManager } from '../leaderboard';
 import { GuildMenuManager } from '../guildMenu';
+import { SkinStudio, getSkinStudio } from '../skinStudio';
 import '../graphics/flower';
 import { applyZoomCompensation, canvasCoords, getBaseDeviceScale } from '../zoom-compensation';
 import { TitleScreenInventoryManager } from './inventory_manager';
@@ -37,6 +38,7 @@ export class TitleScreen {
     private notificationsManager!: NotificationsManager;
     private leaderboardManager!: LeaderboardManager;
     public guildMenuManager!: GuildMenuManager;
+    private skinStudio: SkinStudio = getSkinStudio();
     private titleScreenInventoryManager!: TitleScreenInventoryManager;
     private submanagers!: TitleScreenSubmanagers;
     // Canvas-based UI — shares a single canvas with the background animation.
@@ -92,6 +94,7 @@ export class TitleScreen {
         this.notificationsManager.setCanvas(titleCanvas);
         this.leaderboardManager.setCanvas(titleCanvas);
         this.guildMenuManager.setCanvas(titleCanvas);
+        this.skinStudio.setCanvas(titleCanvas);
         
         this.setupEventListeners();
         this.titleScreenInventoryManager = new TitleScreenInventoryManager();
@@ -1947,6 +1950,7 @@ export class TitleScreen {
         this.notificationsManager.setCanvas(titleCanvas);
         this.leaderboardManager.setCanvas(titleCanvas);
         this.guildMenuManager.setCanvas(titleCanvas);
+        this.skinStudio.setCanvas(titleCanvas);
         // Hide the DOM button containers — canvas buttons paint on title.
         this.exitButtonContainer.style.display = 'none';
         const bottomLeftButtons = document.getElementById('bottomLeftButtons');
@@ -2123,6 +2127,7 @@ export class TitleScreen {
             if (!except.includes('notifications')) this.notificationsManager.hide();
             if (!except.includes('leaderboard')) this.leaderboardManager.hide();
             if (!except.includes('guild')) this.guildMenuManager.hide();
+            if (!except.includes('skins')) this.skinStudio.hide();
         };
         switch (id) {
             case 'settings':
@@ -2146,6 +2151,10 @@ export class TitleScreen {
             case 'guild':
                 closeOthers('guild');
                 this.guildMenuManager.toggle();
+                break;
+            case 'skins':
+                closeOthers('skins');
+                this.skinStudio.toggle();
                 break;
             case 'discord':
                 closeOthers();
@@ -2217,6 +2226,7 @@ export class TitleScreen {
         if (this.notificationsManager.isNotificationsOpen()) this.notificationsManager.render();
         if (this.leaderboardManager.isLeaderboardOpen()) this.leaderboardManager.render();
         if (this.guildMenuManager.isGuildMenuOpen()) this.guildMenuManager.render();
+        if (this.skinStudio.isOpen()) this.skinStudio.render();
     }
 
     private toggleInventoryOnTitleScreen(): void {

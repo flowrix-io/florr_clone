@@ -15,6 +15,7 @@ const petal_actions_1 = require("../petal_actions");
 const squadManager_1 = require("./squadManager");
 const botManager_1 = require("./botManager");
 const apiKeyApi_1 = require("./apiKeyApi");
+const playerState_1 = require("./playerState");
 // Per-tick batch of enemies that took damage. Keyed by enemy.id with the
 // post-damage health snapshot. Using a module-level Map (cleared on flush)
 // avoids monkey-patching `pendingDamageUpdate` / `lastDamageHealth` onto
@@ -296,5 +297,8 @@ function cleanupEnemy(enemy) {
     enemy.lastViewportCheck = undefined;
     enemy.lastProjectileTime = undefined;
     enemy.lastMeleeAttackTime = undefined;
+    // Release this enemy's slot in every raindrop player's aura damage-timestamp
+    // map so those inner maps don't grow unboundedly over a long session.
+    (0, playerState_1.forgetEnemyFromRaindropAura)(enemy.id);
 }
 // Collision detection functions have been moved to physics.ts

@@ -531,7 +531,12 @@ function recalculatePlayerStats(player, io) {
         ? constants_1.PVP_MAX_HEALTH
         : Math.round(baseMaxHealth * healthMultiplier * (petalModifiers.maxHealth ?? 1.0));
     player.damage = Math.round(baseDamage * damageMultiplier * (petalModifiers.damage ?? 1.0));
-    player.sizeMultiplier = petalModifiers.playerRadius ?? 1.0;
+    // Clamp to a sane range: an Infinity/NaN/<=0 or absurdly stacked playerRadius
+    // (the product of many grow petals' modifiers) would give a degenerate hitbox that
+    // hangs the tile-collision scans (see checkTileCollision's guard). 100x base keeps
+    // any legitimate big-flower build intact while capping the pathological extreme.
+    const rawSizeMult = petalModifiers.playerRadius ?? 1.0;
+    player.sizeMultiplier = (Number.isFinite(rawSizeMult) && rawSizeMult > 0) ? Math.min(rawSizeMult, 100) : 1.0;
     player.magnetism = petalModifiers.magnetism ?? 0;
     player.aggroRadiusBonus = petalModifiers.aggroRadius ?? 0;
     // Scale current health proportionally if maxHealth changed
@@ -635,7 +640,9 @@ function savePlayerProgress(player, userId, database) {
             tp: player.tp || 0,
             skills: player.skills || {},
             mobKills: player.mobKills || {},
-            stars: player.stars || 0
+            stars: player.stars || 0,
+            renderFlags: player.renderFlags || 0,
+            equippedSkinId: player.equippedSkinId || ''
         });
     }
 }

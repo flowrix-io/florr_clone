@@ -1,0 +1,859 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SkinStudio = void 0;
+exports.getSkinStudio = getSkinStudio;
+const zoom_compensation_1 = require("./zoom-compensation");
+const skin_format_1 = require("./skin_format");
+const player_skins_1 = require("./graphics/player-skins");
+const ACCENT = '#27dade';
+const BORDER = '#1fb3b0';
+const PANEL_BG = '#2b2f33';
+const PANEL_BG2 = '#23272b';
+const ROW_BG = '#33383d';
+const CLOSE_BG = '#dc7e92';
+const CLOSE_BORDER = '#b56476';
+const TEXT = '#e9eef1';
+const MUTED = '#9fb0b8';
+const PALETTE = [
+    '#ffe763', '#ff9d00', '#e8731f', '#d01c1d', '#e85cc0', '#c45cff', '#3a86ff',
+    '#27dade', '#2bd14f', '#7d5a3a', '#ffffff', '#bfc6cc', '#5a6670', '#111111',
+];
+function starterShapes() {
+    return [
+        { t: 'circle', x: 0, y: 0, r: 25, fill: '#ffe763', stroke: '#cdb74f', sw: 3, rot: 0 },
+        { t: 'ellipse', x: -7, y: -5, rx: 3.2, ry: 6.5, fill: '#111111', stroke: '', sw: 0, rot: 0 },
+        { t: 'ellipse', x: 7, y: -5, rx: 3.2, ry: 6.5, fill: '#111111', stroke: '', sw: 0, rot: 0 },
+    ];
+}
+function defaultShape(t) {
+    switch (t) {
+        case 'circle': return { t, x: 0, y: 0, r: 10, fill: '#3a86ff', stroke: '', sw: 0, rot: 0 };
+        case 'ellipse': return { t, x: 0, y: 0, rx: 10, ry: 6, fill: '#3a86ff', stroke: '', sw: 0, rot: 0 };
+        case 'rect': return { t, x: 0, y: 0, rx: 8, ry: 8, fill: '#3a86ff', stroke: '', sw: 0, rot: 0 };
+        case 'line': return { t, x: -10, y: 0, x2: 10, y2: 0, stroke: '#111111', sw: 2, fill: '', rot: 0 };
+        case 'polygon': return { t, x: 0, y: 0, points: [0, -12, 11, 8, -11, 8], fill: '#3a86ff', stroke: '', sw: 0, rot: 0 };
+    }
+}
+class SkinStudio {
+    constructor() {
+        this.canvas = null;
+        this.ctx = null;
+        this.socket = null;
+        this.isOpen_ = false;
+        this.tab = 'create';
+        // Editor state
+        this.shapes = starterShapes();
+        this.selected = 0;
+        this.skinName = '';
+        // Catalog state (mirrors the server's published-skin set)
+        this.catalog = [];
+        this.isAdmin = false;
+        this.equippedId = '';
+        // Interaction state
+        this.hitRegions = [];
+        this.hoverKey = null;
+        this.listScroll = 0;
+        this.browseScroll = 0;
+        this.drag = null;
+        this.nameInput = null;
+        this.mouseDownHandler = null;
+        this.mouseMoveHandler = null;
+        this.mouseUpHandler = null;
+        this.wheelHandler = null;
+        this.keyHandler = null;
+        // Layout (logical px; panel drawn with the shared device scale like guildMenu)
+        this.PX = 20;
+        this.PY = 72;
+        this.PW = 600;
+        this.PH = 540;
+        this.HEADER = 46;
+        this.PREVIEW = 200;
+        this.keyHandler = (e) => {
+            if (!this.isOpen_)
+                return;
+            if (e.key === 'Escape' && !this.nameInput)
+                this.hide();
+        };
+        document.addEventListener('keydown', this.keyHandler);
+    }
+    // ── lifecycle ──────────────────────────────────────────────────────────
+    setCanvas(canvas) {
+        this.detachCanvas();
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.attachCanvas();
+    }
+    setSocket(socket) { this.socket = socket; }
+    isOpen() { return this.isOpen_; }
+    toggle() { this.isOpen_ ? this.hide() : this.show(); }
+    show() { this.isOpen_ = true; }
+    hide() { this.isOpen_ = false; this.closeNameInput(); this.drag = null; }
+    attachCanvas() {
+        if (!this.canvas)
+            return;
+        this.mouseDownHandler = (e) => this.onMouseDown(e);
+        this.mouseMoveHandler = (e) => this.onMouseMove(e);
+        this.mouseUpHandler = () => { this.drag = null; };
+        this.wheelHandler = (e) => this.onWheel(e);
+        this.canvas.addEventListener('mousedown', this.mouseDownHandler);
+        this.canvas.addEventListener('mousemove', this.mouseMoveHandler);
+        this.canvas.addEventListener('mouseup', this.mouseUpHandler);
+        this.canvas.addEventListener('wheel', this.wheelHandler, { passive: false });
+    }
+    detachCanvas() {
+        if (!this.canvas)
+            return;
+        if (this.mouseDownHandler)
+            this.canvas.removeEventListener('mousedown', this.mouseDownHandler);
+        if (this.mouseMoveHandler)
+            this.canvas.removeEventListener('mousemove', this.mouseMoveHandler);
+        if (this.mouseUpHandler)
+            this.canvas.removeEventListener('mouseup', this.mouseUpHandler);
+        if (this.wheelHandler)
+            this.canvas.removeEventListener('wheel', this.wheelHandler);
+        this.mouseDownHandler = this.mouseMoveHandler = null;
+        this.mouseUpHandler = null;
+        this.wheelHandler = null;
+    }
+    // ── socket-driven catalog updates (called from socket.ts) ──────────────
+    applyCatalog(skins, isAdmin) {
+        this.catalog = Array.isArray(skins) ? skins.slice() : [];
+        this.isAdmin = isAdmin;
+        this.equippedId = window.currentGame?.getLocalPlayer?.()?.equippedSkinId || this.equippedId;
+    }
+    applySkinPublished(skin) {
+        if (!skin || !skin.id)
+            return;
+        const i = this.catalog.findIndex(s => s.id === skin.id);
+        if (i >= 0)
+            this.catalog[i] = skin;
+        else
+            this.catalog.push(skin);
+    }
+    applySkinDeleted(id) {
+        this.catalog = this.catalog.filter(s => s.id !== id);
+        if (this.equippedId === id)
+            this.equippedId = '';
+    }
+    // ── mouse ──────────────────────────────────────────────────────────────
+    localMouse(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+    previewRect() {
+        return { x: this.PX + 24, y: this.PY + this.HEADER + 12, w: this.PREVIEW, h: this.PREVIEW };
+    }
+    previewScale() { return (this.PREVIEW / 2) / 40; } // shows ±40 local units
+    toLocal(mx, my) {
+        const pr = this.previewRect();
+        const s = this.previewScale();
+        return { x: (mx - (pr.x + pr.w / 2)) / s, y: (my - (pr.y + pr.h / 2)) / s };
+    }
+    toPx(lx, ly) {
+        const pr = this.previewRect();
+        const s = this.previewScale();
+        return { x: pr.x + pr.w / 2 + lx * s, y: pr.y + pr.h / 2 + ly * s };
+    }
+    // Draggable handles for the selected shape, in local coords.
+    handles() {
+        const s = this.shapes[this.selected];
+        if (!s)
+            return [];
+        const out = [{ id: 'c', lx: s.x, ly: s.y }];
+        if (s.t === 'line')
+            out.push({ id: 'e', lx: s.x2 ?? 0, ly: s.y2 ?? 0 });
+        if (s.t === 'polygon' && s.points) {
+            for (let i = 0; i + 1 < s.points.length; i += 2) {
+                out.push({ id: 'v' + (i / 2), lx: s.x + s.points[i], ly: s.y + s.points[i + 1] });
+            }
+        }
+        return out;
+    }
+    onMouseDown(e) {
+        if (!this.isOpen_ || !this.canvas)
+            return;
+        const { x, y } = this.localMouse(e);
+        // Clicks on UI regions first.
+        const region = this.hitTest(x, y);
+        if (region) {
+            e.preventDefault();
+            this.dispatch(region.action);
+            return;
+        }
+        // Otherwise: start a drag in the preview if the create tab is showing.
+        if (this.tab === 'create' && this.shapes[this.selected]) {
+            const pr = this.previewRect();
+            if (x >= pr.x && x <= pr.x + pr.w && y >= pr.y && y <= pr.y + pr.h) {
+                e.preventDefault();
+                let best = null, bestD = 9;
+                for (const h of this.handles()) {
+                    const p = this.toPx(h.lx, h.ly);
+                    const d = Math.hypot(p.x - x, p.y - y);
+                    if (d < bestD) {
+                        bestD = d;
+                        best = h.id;
+                    }
+                }
+                this.drag = { handle: best || 'c' };
+                this.applyDrag(x, y);
+            }
+        }
+    }
+    onMouseMove(e) {
+        if (!this.isOpen_ || !this.canvas)
+            return;
+        const { x, y } = this.localMouse(e);
+        if (this.drag) {
+            this.applyDrag(x, y);
+            return;
+        }
+        const region = this.hitTest(x, y);
+        this.hoverKey = region ? actionKey(region.action) : null;
+        const inPanel = x >= this.PX && x <= this.PX + this.PW && y >= this.PY && y <= this.PY + this.PH;
+        this.canvas.style.cursor = region ? 'pointer' : inPanel ? 'default' : 'default';
+    }
+    applyDrag(mx, my) {
+        const s = this.shapes[this.selected];
+        if (!s || !this.drag)
+            return;
+        const l = this.toLocal(mx, my);
+        const cx = clamp(l.x, -skin_format_1.SKIN_COORD_LIMIT, skin_format_1.SKIN_COORD_LIMIT);
+        const cy = clamp(l.y, -skin_format_1.SKIN_COORD_LIMIT, skin_format_1.SKIN_COORD_LIMIT);
+        const h = this.drag.handle;
+        if (h === 'c') {
+            s.x = round1(cx);
+            s.y = round1(cy);
+        }
+        else if (h === 'e') {
+            s.x2 = round1(cx);
+            s.y2 = round1(cy);
+        }
+        else if (h[0] === 'v' && s.points) {
+            const i = parseInt(h.slice(1)) * 2;
+            s.points[i] = round1(cx - s.x);
+            s.points[i + 1] = round1(cy - s.y);
+        }
+    }
+    onWheel(e) {
+        if (!this.isOpen_ || !this.canvas)
+            return;
+        const { x, y } = this.localMouse(e);
+        if (x < this.PX || x > this.PX + this.PW || y < this.PY || y > this.PY + this.PH)
+            return;
+        e.preventDefault();
+        if (this.tab === 'browse')
+            this.browseScroll = Math.max(0, this.browseScroll + e.deltaY);
+        else
+            this.listScroll = Math.max(0, this.listScroll + e.deltaY);
+    }
+    hitTest(x, y) {
+        // Later regions are drawn on top, so iterate in reverse.
+        for (let i = this.hitRegions.length - 1; i >= 0; i--) {
+            const r = this.hitRegions[i];
+            if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)
+                return r;
+        }
+        return null;
+    }
+    // ── actions ────────────────────────────────────────────────────────────
+    dispatch(a) {
+        switch (a.k) {
+            case 'close':
+                this.hide();
+                break;
+            case 'tab':
+                this.tab = a.tab;
+                break;
+            case 'addShape':
+                if (this.shapes.length >= skin_format_1.MAX_SKIN_SHAPES)
+                    break;
+                this.shapes.push(defaultShape(a.shape));
+                this.selected = this.shapes.length - 1;
+                break;
+            case 'selectShape':
+                this.selected = a.i;
+                break;
+            case 'moveShape': {
+                const j = a.i + a.dir;
+                if (j < 0 || j >= this.shapes.length)
+                    break;
+                const t = this.shapes[a.i];
+                this.shapes[a.i] = this.shapes[j];
+                this.shapes[j] = t;
+                if (this.selected === a.i)
+                    this.selected = j;
+                else if (this.selected === j)
+                    this.selected = a.i;
+                break;
+            }
+            case 'delShape':
+                this.shapes.splice(a.i, 1);
+                if (this.selected >= this.shapes.length)
+                    this.selected = this.shapes.length - 1;
+                break;
+            case 'step':
+                this.step(a.field, a.delta);
+                break;
+            case 'fill': {
+                const s = this.shapes[this.selected];
+                if (s)
+                    s.fill = a.color;
+                break;
+            }
+            case 'stroke': {
+                const s = this.shapes[this.selected];
+                if (s) {
+                    s.stroke = a.color;
+                    if (a.color && !(s.sw && s.sw > 0))
+                        s.sw = 2;
+                }
+                break;
+            }
+            case 'addVertex': {
+                const s = this.shapes[this.selected];
+                if (s && s.t === 'polygon' && s.points && s.points.length < skin_format_1.MAX_POLY_POINTS * 2) {
+                    const n = s.points.length;
+                    const ax = s.points[n - 2], ay = s.points[n - 1];
+                    const bx = s.points[0], by = s.points[1];
+                    s.points.push(round1((ax + bx) / 2), round1((ay + by) / 2));
+                }
+                break;
+            }
+            case 'delVertex': {
+                const s = this.shapes[this.selected];
+                if (s && s.t === 'polygon' && s.points && s.points.length > 6)
+                    s.points.splice(-2, 2);
+                break;
+            }
+            case 'editName':
+                this.openNameInput();
+                break;
+            case 'publish':
+                this.publish();
+                break;
+            case 'reset':
+                this.shapes = starterShapes();
+                this.selected = 0;
+                break;
+            case 'equip':
+                this.equip(a.id);
+                break;
+            case 'unequip':
+                this.equip('');
+                break;
+            case 'delete':
+                if (confirm(`Delete "${a.name}"?`))
+                    this.socket?.emit('deleteSkin', a.id);
+                break;
+        }
+    }
+    step(field, delta) {
+        const s = this.shapes[this.selected];
+        if (!s)
+            return;
+        const set = (v, lo, hi) => round1(clamp(v + delta, lo, hi));
+        switch (field) {
+            case 'x':
+                s.x = set(s.x, -skin_format_1.SKIN_COORD_LIMIT, skin_format_1.SKIN_COORD_LIMIT);
+                break;
+            case 'y':
+                s.y = set(s.y, -skin_format_1.SKIN_COORD_LIMIT, skin_format_1.SKIN_COORD_LIMIT);
+                break;
+            case 'r':
+                s.r = set(s.r ?? 1, 0.5, skin_format_1.SKIN_RADIUS_LIMIT);
+                break;
+            case 'rx':
+                s.rx = set(s.rx ?? 1, 0.5, skin_format_1.SKIN_RADIUS_LIMIT);
+                break;
+            case 'ry':
+                s.ry = set(s.ry ?? 1, 0.5, skin_format_1.SKIN_RADIUS_LIMIT);
+                break;
+            case 'rot':
+                s.rot = set(s.rot ?? 0, -180, 180);
+                break;
+            case 'sw':
+                s.sw = set(s.sw ?? 0, 0, skin_format_1.MAX_STROKE_WIDTH);
+                break;
+        }
+    }
+    publish() {
+        if (!this.socket)
+            return;
+        const payload = { name: this.skinName, shapes: this.shapes };
+        const check = (0, skin_format_1.sanitizeSkin)(payload);
+        if ('error' in check) {
+            if (!this.skinName)
+                this.openNameInput();
+            window.currentGame?.chat?.addChatMessage?.({ sender: 'Skins', content: check.error, timestamp: Date.now() });
+            return;
+        }
+        this.socket.emit('publishSkin', payload);
+    }
+    equip(id) {
+        if (!this.socket)
+            return;
+        this.equippedId = id;
+        this.socket.emit('equipSkin', id);
+        const lp = window.currentGame?.getLocalPlayer?.();
+        if (lp) {
+            lp.equippedSkinId = id;
+            if (id)
+                lp.renderFlags = 0;
+        }
+    }
+    // ── name entry (one transient input — typing into a canvas isn't possible;
+    //    mirrors the guild menu's create/invite prompt) ──────────────────────
+    openNameInput() {
+        if (this.nameInput)
+            this.closeNameInput();
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.maxLength = skin_format_1.MAX_SKIN_NAME_LEN;
+        input.value = this.skinName;
+        input.placeholder = 'Skin name';
+        input.style.cssText =
+            `position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:4000;
+             padding:8px 10px; width:260px; border:2px solid ${ACCENT}; border-radius:4px;
+             background:#222; color:#fff; font-family:Ubuntu,sans-serif; outline:none;`;
+        input.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') {
+                this.skinName = input.value.trim();
+                this.closeNameInput();
+            }
+            else if (e.key === 'Escape') {
+                this.closeNameInput();
+            }
+        });
+        input.addEventListener('blur', () => { this.skinName = input.value.trim(); this.closeNameInput(); });
+        document.body.appendChild(input);
+        this.nameInput = input;
+        setTimeout(() => input.focus(), 0);
+    }
+    closeNameInput() {
+        if (this.nameInput) {
+            this.nameInput.remove();
+            this.nameInput = null;
+        }
+    }
+    currentUsername() {
+        return this.socket?.username || window.currentGame?.socket?.username || '';
+    }
+    // ── rendering ──────────────────────────────────────────────────────────
+    render() {
+        if (!this.canvas || !this.isOpen_)
+            return;
+        if (!this.ctx) {
+            this.ctx = this.canvas.getContext('2d');
+            if (!this.ctx)
+                return;
+        }
+        const ctx = this.ctx;
+        this.hitRegions = [];
+        ctx.save();
+        ctx.setTransform((0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0, (0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0);
+        ctx.textBaseline = 'alphabetic';
+        // Panel
+        roundRect(ctx, this.PX, this.PY, this.PW, this.PH, 8);
+        ctx.fillStyle = BORDER;
+        ctx.fill();
+        roundRect(ctx, this.PX + 3, this.PY + 3, this.PW - 6, this.PH - 6, 6);
+        ctx.fillStyle = PANEL_BG;
+        ctx.fill();
+        this.drawHeader(ctx);
+        if (this.tab === 'create')
+            this.drawCreate(ctx);
+        else
+            this.drawBrowse(ctx);
+        ctx.restore();
+    }
+    drawHeader(ctx) {
+        const x = this.PX, y = this.PY, w = this.PW;
+        roundRect(ctx, x + 3, y + 3, w - 6, this.HEADER, 6);
+        ctx.fillStyle = PANEL_BG2;
+        ctx.fill();
+        ctx.font = 'bold 18px Ubuntu, sans-serif';
+        ctx.fillStyle = ACCENT;
+        ctx.textAlign = 'left';
+        ctx.fillText('Skin Studio', x + 16, y + 30);
+        // Tabs
+        this.button(ctx, x + 150, y + 11, 86, 26, 'Create', this.tab === 'create', { k: 'tab', tab: 'create' });
+        this.button(ctx, x + 242, y + 11, 86, 26, 'Browse', this.tab === 'browse', { k: 'tab', tab: 'browse' });
+        // Close
+        this.button(ctx, x + w - 84, y + 11, 70, 26, 'Close', false, { k: 'close' }, CLOSE_BG, CLOSE_BORDER, '#3a1721');
+    }
+    // CREATE TAB
+    drawCreate(ctx) {
+        const bodyTop = this.PY + this.HEADER + 6;
+        this.drawPreview(ctx);
+        // Left column below the preview: add buttons + shape list
+        const pr = this.previewRect();
+        const listX = this.PX + 12, listW = 224;
+        let ay = pr.y + pr.h + 12;
+        ctx.font = '11px Ubuntu, sans-serif';
+        ctx.fillStyle = MUTED;
+        ctx.textAlign = 'left';
+        ctx.fillText('Add shape', listX + 4, ay + 2);
+        ay += 8;
+        const types = ['circle', 'ellipse', 'rect', 'polygon', 'line'];
+        const bw = (listW - 4 * 4) / 5;
+        types.forEach((t, i) => {
+            this.button(ctx, listX + i * (bw + 4), ay, bw, 22, shortType(t), false, { k: 'addShape', shape: t }, ROW_BG, BORDER, TEXT, '10px');
+        });
+        ay += 30;
+        this.drawShapeList(ctx, listX, ay, listW, this.PY + this.PH - ay - 46);
+        // Right column: properties of selected shape
+        this.drawProps(ctx, this.PX + 248, bodyTop + 6, this.PW - 248 - 14);
+        // Bottom bar: name + publish + reset
+        const by = this.PY + this.PH - 38;
+        const nameLabel = this.skinName ? this.skinName : '(click to name)';
+        this.button(ctx, this.PX + 12, by, 240, 28, 'Name: ' + nameLabel, false, { k: 'editName' }, ROW_BG, BORDER, TEXT, '12px', 'left');
+        this.button(ctx, this.PX + this.PW - 230, by, 120, 28, 'Publish', true, { k: 'publish' });
+        this.button(ctx, this.PX + this.PW - 104, by, 92, 28, 'Reset', false, { k: 'reset' }, ROW_BG, BORDER, TEXT);
+    }
+    drawPreview(ctx) {
+        const pr = this.previewRect();
+        ctx.save();
+        roundRect(ctx, pr.x, pr.y, pr.w, pr.h, 6);
+        ctx.fillStyle = '#3b7d4f';
+        ctx.fill();
+        ctx.save();
+        roundRect(ctx, pr.x, pr.y, pr.w, pr.h, 6);
+        ctx.clip();
+        ctx.translate(pr.x + pr.w / 2, pr.y + pr.h / 2);
+        const s = this.previewScale();
+        // reference body circle
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(0, 0, 25 * s, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        (0, player_skins_1.renderCustomSkinShapes)(ctx, this.shapes, 25 * s);
+        ctx.restore();
+        // handles for the selected shape
+        for (const h of this.handles()) {
+            const p = this.toPx(h.lx, h.ly);
+            ctx.fillStyle = h.id === 'c' ? ACCENT : '#ffffff';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.rect(p.x - 3, p.y - 3, 6, 6);
+            ctx.fill();
+            ctx.stroke();
+        }
+        ctx.restore();
+        ctx.fillStyle = MUTED;
+        ctx.font = '10px Ubuntu, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('drag the squares to shape it', pr.x + pr.w / 2, pr.y + pr.h + 12);
+    }
+    drawShapeList(ctx, x, y, w, h) {
+        ctx.save();
+        roundRect(ctx, x, y, w, h, 6);
+        ctx.fillStyle = PANEL_BG2;
+        ctx.fill();
+        roundRect(ctx, x, y, w, h, 6);
+        ctx.clip();
+        const rowH = 26;
+        const maxScroll = Math.max(0, this.shapes.length * rowH - h);
+        this.listScroll = Math.min(this.listScroll, maxScroll);
+        let ry = y + 4 - this.listScroll;
+        this.shapes.forEach((s, i) => {
+            if (ry + rowH > y && ry < y + h) {
+                const sel = i === this.selected;
+                roundRect(ctx, x + 4, ry, w - 8, rowH - 4, 4);
+                ctx.fillStyle = sel ? 'rgba(39,218,222,0.18)' : ROW_BG;
+                ctx.fill();
+                if (sel) {
+                    ctx.strokeStyle = ACCENT;
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+                // swatch
+                ctx.fillStyle = s.fill || s.stroke || '#000';
+                ctx.fillRect(x + 10, ry + 6, 10, 10);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x + 10, ry + 6, 10, 10);
+                ctx.fillStyle = TEXT;
+                ctx.font = '12px Ubuntu, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText(`${i + 1}. ${s.t}`, x + 28, ry + 15);
+                // row buttons
+                const bx = x + w - 80;
+                this.iconBtn(ctx, bx, ry + 2, 'up', { k: 'moveShape', i, dir: -1 });
+                this.iconBtn(ctx, bx + 24, ry + 2, 'down', { k: 'moveShape', i, dir: 1 });
+                this.iconBtn(ctx, bx + 48, ry + 2, 'del', { k: 'delShape', i });
+                this.hitRegions.push({ x: x + 4, y: ry, w: w - 92, h: rowH - 4, action: { k: 'selectShape', i } });
+            }
+            ry += rowH;
+        });
+        ctx.restore();
+    }
+    drawProps(ctx, x, y, w) {
+        const s = this.shapes[this.selected];
+        ctx.fillStyle = MUTED;
+        ctx.font = '11px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('Selected shape', x, y + 2);
+        if (!s) {
+            ctx.fillText('— none —', x, y + 22);
+            return;
+        }
+        let cy = y + 14;
+        const steppers = [];
+        steppers.push(['X', 'x', s.x, 1], ['Y', 'y', s.y, 1]);
+        if (s.t === 'circle')
+            steppers.push(['Radius', 'r', s.r ?? 0, 1]);
+        if (s.t === 'ellipse' || s.t === 'rect')
+            steppers.push(['Width', 'rx', s.rx ?? 0, 1], ['Height', 'ry', s.ry ?? 0, 1]);
+        if (s.t !== 'line')
+            steppers.push(['Rotation', 'rot', s.rot ?? 0, 15]);
+        steppers.push(['Outline w', 'sw', s.sw ?? 0, 1]);
+        // two columns of steppers
+        const colW = (w - 10) / 2;
+        steppers.forEach((st, i) => {
+            const col = i % 2, row = Math.floor(i / 2);
+            this.stepper(ctx, x + col * (colW + 10), cy + row * 30, colW, st[0], st[1], st[2], st[3]);
+        });
+        cy += Math.ceil(steppers.length / 2) * 30 + 6;
+        if (s.t === 'polygon') {
+            this.button(ctx, x, cy, 90, 22, 'Add point', false, { k: 'addVertex' }, ROW_BG, BORDER, TEXT, '11px');
+            this.button(ctx, x + 98, cy, 90, 22, 'Del point', false, { k: 'delVertex' }, ROW_BG, BORDER, TEXT, '11px');
+            cy += 30;
+        }
+        if (s.t !== 'line') {
+            cy = this.drawPalette(ctx, x, cy, w, 'Fill', s.fill || '', 'fill');
+        }
+        cy = this.drawPalette(ctx, x, cy, w, 'Outline', s.stroke || '', 'stroke');
+    }
+    drawPalette(ctx, x, y, w, label, current, kind) {
+        ctx.fillStyle = MUTED;
+        ctx.font = '11px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(label, x, y + 10);
+        const sw = 20, gap = 4, perRow = Math.floor((w + gap) / (sw + gap));
+        let sx = x, sy = y + 16;
+        const cells = ['', ...PALETTE]; // '' = none
+        cells.forEach((c, i) => {
+            const col = i % perRow, rr = Math.floor(i / perRow);
+            const cxp = x + col * (sw + gap), cyp = sy + rr * (sw + gap);
+            if (c === '') {
+                ctx.fillStyle = '#1a1d20';
+                ctx.fillRect(cxp, cyp, sw, sw);
+                ctx.strokeStyle = '#777';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(cxp + 0.5, cyp + 0.5, sw - 1, sw - 1);
+                ctx.strokeStyle = '#d05a5a';
+                ctx.beginPath();
+                ctx.moveTo(cxp + 3, cyp + sw - 3);
+                ctx.lineTo(cxp + sw - 3, cyp + 3);
+                ctx.stroke();
+            }
+            else {
+                ctx.fillStyle = c;
+                ctx.fillRect(cxp, cyp, sw, sw);
+            }
+            const isCur = (current || '') === c;
+            ctx.strokeStyle = isCur ? ACCENT : '#000';
+            ctx.lineWidth = isCur ? 2 : 1;
+            ctx.strokeRect(cxp + 0.5, cyp + 0.5, sw - 1, sw - 1);
+            this.hitRegions.push({ x: cxp, y: cyp, w: sw, h: sw, action: kind === 'fill' ? { k: 'fill', color: c } : { k: 'stroke', color: c } });
+            sx = cxp;
+        });
+        void sx;
+        const rows = Math.ceil(cells.length / perRow);
+        return y + 16 + rows * (sw + gap) + 8;
+    }
+    stepper(ctx, x, y, w, label, field, value, step) {
+        ctx.fillStyle = MUTED;
+        ctx.font = '10px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(label, x, y + 9);
+        const by = y + 12, bh = 18, bw = 20;
+        const valW = w - bw * 2 - 6;
+        this.button(ctx, x, by, bw, bh, '-', false, { k: 'step', field, delta: -step }, ROW_BG, BORDER, TEXT, '12px');
+        roundRect(ctx, x + bw + 3, by, valW, bh, 3);
+        ctx.fillStyle = PANEL_BG2;
+        ctx.fill();
+        ctx.fillStyle = TEXT;
+        ctx.font = '11px Ubuntu, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(round1(value)), x + bw + 3 + valW / 2, by + 13);
+        this.button(ctx, x + bw + valW + 6, by, bw, bh, '+', false, { k: 'step', field, delta: step }, ROW_BG, BORDER, TEXT, '12px');
+    }
+    // BROWSE TAB
+    drawBrowse(ctx) {
+        const x = this.PX, top = this.PY + this.HEADER + 8;
+        ctx.fillStyle = MUTED;
+        ctx.font = '12px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('Published skins — equip one; everyone sees it.', x + 14, top + 12);
+        this.button(ctx, x + this.PW - 190, top, 176, 24, 'Unequip (default flower)', false, { k: 'unequip' }, ROW_BG, BORDER, TEXT, '11px');
+        const gridTop = top + 34, gridBottom = this.PY + this.PH - 12;
+        const gridX = x + 14, gridW = this.PW - 28;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(gridX, gridTop, gridW, gridBottom - gridTop);
+        ctx.clip();
+        if (this.catalog.length === 0) {
+            ctx.fillStyle = MUTED;
+            ctx.font = '13px Ubuntu, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('No skins published yet. Make one in the Create tab.', gridX + 4, gridTop + 24);
+            ctx.restore();
+            return;
+        }
+        const me = this.currentUsername().toLowerCase();
+        const cols = 3, cardW = (gridW - (cols - 1) * 12) / cols, cardH = 168;
+        const sorted = this.catalog.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        const rows = Math.ceil(sorted.length / cols);
+        const maxScroll = Math.max(0, rows * (cardH + 12) - (gridBottom - gridTop));
+        this.browseScroll = Math.min(this.browseScroll, maxScroll);
+        sorted.forEach((skin, i) => {
+            const col = i % cols, row = Math.floor(i / cols);
+            const cx = gridX + col * (cardW + 12);
+            const cyp = gridTop + row * (cardH + 12) - this.browseScroll;
+            if (cyp + cardH < gridTop || cyp > gridBottom)
+                return;
+            const equipped = skin.id === this.equippedId;
+            roundRect(ctx, cx, cyp, cardW, cardH, 6);
+            ctx.fillStyle = PANEL_BG2;
+            ctx.fill();
+            if (equipped) {
+                ctx.strokeStyle = ACCENT;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+            // preview
+            const ps = cardW - 20, pcx = cx + cardW / 2, pcy = cyp + 10 + ps / 2;
+            ctx.save();
+            roundRect(ctx, cx + 10, cyp + 10, ps, ps, 4);
+            ctx.fillStyle = '#3b7d4f';
+            ctx.fill();
+            roundRect(ctx, cx + 10, cyp + 10, ps, ps, 4);
+            ctx.clip();
+            ctx.translate(pcx, pcy);
+            (0, player_skins_1.renderCustomSkinShapes)(ctx, skin.shapes, (ps / 2) * (25 / 36));
+            ctx.restore();
+            ctx.fillStyle = TEXT;
+            ctx.font = 'bold 12px Ubuntu, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(clip(skin.name, 16), cx + 10, cyp + ps + 26);
+            ctx.fillStyle = MUTED;
+            ctx.font = '10px Ubuntu, sans-serif';
+            ctx.fillText('by ' + clip(skin.author, 16), cx + 10, cyp + ps + 40);
+            const by = cyp + cardH - 28;
+            const canDelete = this.isAdmin || skin.author.toLowerCase() === me;
+            const eqW = canDelete ? cardW - 20 - 56 : cardW - 20;
+            this.button(ctx, cx + 10, by, eqW, 22, equipped ? 'Equipped' : 'Equip', equipped, { k: 'equip', id: skin.id }, undefined, undefined, undefined, '11px');
+            if (canDelete) {
+                const isTakedown = this.isAdmin && skin.author.toLowerCase() !== me;
+                this.button(ctx, cx + 10 + eqW + 6, by, 50, 22, isTakedown ? 'Remove' : 'Delete', false, { k: 'delete', id: skin.id, name: skin.name }, CLOSE_BG, CLOSE_BORDER, '#3a1721', '10px');
+            }
+        });
+        ctx.restore();
+    }
+    // ── small drawing helpers ──────────────────────────────────────────────
+    button(ctx, x, y, w, h, label, active, action, bg = ACCENT, border = BORDER, fg = '#06343a', font = '12px', align = 'center') {
+        const hovered = this.hoverKey === actionKey(action);
+        const realBg = active ? ACCENT : bg;
+        const realFg = active ? '#06343a' : fg;
+        roundRect(ctx, x, y, w, h, 4);
+        ctx.fillStyle = border;
+        ctx.fill();
+        roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 3);
+        ctx.fillStyle = realBg;
+        ctx.fill();
+        if (hovered) {
+            roundRect(ctx, x, y, w, h, 4);
+            ctx.fillStyle = 'rgba(255,255,255,0.16)';
+            ctx.fill();
+        }
+        ctx.fillStyle = realFg;
+        ctx.font = `bold ${font} Ubuntu, sans-serif`;
+        ctx.textAlign = align;
+        const tx = align === 'left' ? x + 8 : x + w / 2;
+        ctx.fillText(clipToWidth(ctx, label, w - 12), tx, y + h / 2 + 4);
+        this.hitRegions.push({ x, y, w, h, action });
+    }
+    iconBtn(ctx, x, y, kind, action) {
+        const s = 20;
+        const hovered = this.hoverKey === actionKey(action);
+        roundRect(ctx, x, y, s, s, 3);
+        ctx.fillStyle = BORDER;
+        ctx.fill();
+        roundRect(ctx, x + 1, y + 1, s - 2, s - 2, 2);
+        ctx.fillStyle = hovered ? '#3a4046' : ROW_BG;
+        ctx.fill();
+        ctx.strokeStyle = TEXT;
+        ctx.fillStyle = TEXT;
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        const cx = x + s / 2, cy = y + s / 2;
+        ctx.beginPath();
+        if (kind === 'up') {
+            ctx.moveTo(cx - 4, cy + 2);
+            ctx.lineTo(cx, cy - 3);
+            ctx.lineTo(cx + 4, cy + 2);
+            ctx.stroke();
+        }
+        else if (kind === 'down') {
+            ctx.moveTo(cx - 4, cy - 2);
+            ctx.lineTo(cx, cy + 3);
+            ctx.lineTo(cx + 4, cy - 2);
+            ctx.stroke();
+        }
+        else {
+            ctx.moveTo(cx - 4, cy - 4);
+            ctx.lineTo(cx + 4, cy + 4);
+            ctx.moveTo(cx + 4, cy - 4);
+            ctx.lineTo(cx - 4, cy + 4);
+            ctx.strokeStyle = '#e58a8a';
+            ctx.stroke();
+        }
+        this.hitRegions.push({ x, y, w: s, h: s, action });
+    }
+}
+exports.SkinStudio = SkinStudio;
+// ── module helpers ──────────────────────────────────────────────────────────
+let sharedInstance = null;
+function getSkinStudio() {
+    if (!sharedInstance)
+        sharedInstance = new SkinStudio();
+    return sharedInstance;
+}
+function actionKey(a) {
+    return [a.k, a.tab, a.i, a.field, a.delta, a.color, a.id, a.shape, a.dir]
+        .filter(v => v !== undefined).join(':');
+}
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+function round1(v) { return Math.round(v * 10) / 10; }
+function shortType(t) {
+    return t === 'circle' ? 'Circ' : t === 'ellipse' ? 'Elps' : t === 'rect' ? 'Rect' : t === 'polygon' ? 'Poly' : 'Line';
+}
+function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+function clipToWidth(ctx, s, w) {
+    if (ctx.measureText(s).width <= w)
+        return s;
+    let out = s;
+    while (out.length > 1 && ctx.measureText(out + '…').width > w)
+        out = out.slice(0, -1);
+    return out + '…';
+}
+function roundRect(ctx, x, y, w, h, r) {
+    const rad = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rad, y);
+    ctx.lineTo(x + w - rad, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
+    ctx.lineTo(x + w, y + h - rad);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
+    ctx.lineTo(x + rad, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
+    ctx.lineTo(x, y + rad);
+    ctx.quadraticCurveTo(x, y, x + rad, y);
+    ctx.closePath();
+}

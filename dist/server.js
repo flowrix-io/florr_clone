@@ -18,6 +18,7 @@ const path_1 = __importDefault(require("path"));
 const v8_1 = __importDefault(require("v8"));
 const fs_1 = __importDefault(require("fs"));
 const database_1 = require("./database");
+const skin_format_1 = require("./skin_format");
 const constants_1 = require("./constants");
 // Check for and migrate any plain text passwords on server startup
 if (database_1.database.checkForPlainTextPasswords()) {
@@ -993,6 +994,8 @@ io.on('connection', (socket) => {
                 skills: savedSkills,
                 mobKills: savedProgress?.mobKills || {},
                 stars: savedProgress?.stars || 0,
+                renderFlags: savedProgress?.renderFlags || 0,
+                equippedSkinId: savedProgress?.equippedSkinId || '',
                 spawnBiome: credentials.spawnBiome || 'default',
                 inPvpArena: false,
                 pvpScore: 0
@@ -1114,6 +1117,14 @@ io.on('connection', (socket) => {
                     socket.emit('guildUpdate', null);
                 }
             }
+            // Send the full catalog of published user-created skins plus this
+            // client's admin flag (used only to show/hide the takedown button —
+            // deletes are re-checked server-side). Seeds the client skin registry
+            // so remote players wearing custom skins render correctly.
+            socket.emit('skinsUpdate', {
+                skins: database_1.database.getAllCustomSkins(),
+                isAdmin: socket.username ? database_1.database.isUserAdmin(socket.username) : false,
+            });
             // Send initial skills update
             socket.emit('skillsUpdated', {
                 playerId: constants_2.players[socket.id].id,
@@ -1216,6 +1227,7 @@ io.on('connection', (socket) => {
                 keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
                 // Clean up petal physics states
                 (0, playerState_1.cleanupPetalPhysicsStates)(playerId);
+                (0, petal_actions_1.cleanupPlayerPetalActionState)(playerId);
                 // Remove player from players map
                 delete constants_2.players[playerId];
                 delete gameState_1.playerUserIds[playerId];
@@ -1256,6 +1268,7 @@ io.on('connection', (socket) => {
             keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
             // Clean up petal physics states for this player
             (0, playerState_1.cleanupPetalPhysicsStates)(socket.id);
+            (0, petal_actions_1.cleanupPlayerPetalActionState)(socket.id);
             // Despawn all pets owned by this player
             (0, petal_actions_1.despawnAllPlayerPets)(socket.id, io);
             delete constants_2.players[socket.id];
@@ -2792,6 +2805,77 @@ io.on('connection', (socket) => {
         const playerName = player ? player.name : socket.username;
         (0, squadManager_1.sendSquadChatMessage)(squad, io, socket.username, playerName, message);
     });
+    // ── Custom skin studio ────────────────────────────────────────────────
+    // Any logged-in (non-guest) player may publish a data-driven skin. The
+    // payload is sanitized through the shared validator before it is stored or
+    // broadcast, so an untrusted client can never get arbitrary content onto
+    // other players' screens. Published skins are broadcast to everyone so they
+    // render on whoever equips them.
+    const skinNotify = (content) => io.to(socket.id).emit('chatMessage', { sender: 'Skins', content, timestamp: Date.now() });
+    socket.on('publishSkin', (payload) => {
+        if (!socket.username)
+            return;
+        // Guests can play but shouldn't spam the shared catalog.
+        if (/^User\d{8}$/.test(socket.username)) {
+            skinNotify('Create a (non-guest) account to publish skins.');
+            return;
+        }
+        const result = (0, skin_format_1.sanitizeSkin)(payload);
+        if ('error' in result) {
+            skinNotify(result.error);
+            return;
+        }
+        if (database_1.database.countCustomSkinsByAuthor(socket.username) >= skin_format_1.MAX_SKINS_PER_USER) {
+            skinNotify(`You've reached the limit of ${skin_format_1.MAX_SKINS_PER_USER} published skins. Delete one first.`);
+            return;
+        }
+        const id = 'sk_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        const skin = {
+            id,
+            name: result.name,
+            author: socket.username,
+            shapes: result.shapes,
+            createdAt: Date.now(),
+        };
+        database_1.database.saveCustomSkin(skin);
+        io.emit('skinPublished', skin); // everyone needs it to render wearers
+        skinNotify(`Published "${skin.name}". It's now in the Browse tab.`);
+    });
+    socket.on('deleteSkin', (rawId) => {
+        if (!socket.username)
+            return;
+        const id = typeof rawId === 'string' ? rawId : '';
+        const skin = database_1.database.getCustomSkin(id);
+        if (!skin)
+            return;
+        const isAdmin = database_1.database.isUserAdmin(socket.username);
+        const isOwner = skin.author.toLowerCase() === socket.username.toLowerCase();
+        if (!isAdmin && !isOwner) {
+            skinNotify('You can only take down your own skins.');
+            return;
+        }
+        database_1.database.deleteCustomSkin(id);
+        io.emit('skinDeleted', id);
+        skinNotify(isOwner ? `Deleted "${skin.name}".` : `Took down "${skin.name}" by ${skin.author}.`);
+    });
+    socket.on('equipSkin', (rawId) => {
+        if (!socket.username)
+            return;
+        const player = constants_2.players[socket.id];
+        if (!player)
+            return;
+        const id = typeof rawId === 'string' ? rawId : '';
+        if (id && !database_1.database.getCustomSkin(id)) {
+            skinNotify('That skin no longer exists.');
+            return;
+        }
+        player.equippedSkinId = id;
+        // A custom skin replaces any built-in skin flag so they don't conflict.
+        if (id)
+            player.renderFlags = 0;
+        if (socket.userId)
+            savePlayerProgressImmediate(player, socket.userId);
+    });
     // Handle ping/pong for heartbeat monitoring and connection quality tracking
     socket.on('ping', (clientTime) => {
         socket.emit('pong', clientTime);
@@ -3362,8 +3446,12 @@ function spawnWaveMobs() {
             continue;
         }
         const maxHp = enemy.maxHealth || 1;
-        const startWave = Math.floor((prev / maxHp) * numWaves);
-        const endWave = Math.ceil((enemy.health / maxHp) * numWaves);
+        // Clamp to the valid wave range [0, numWaves]. Without this, a large overkill
+        // drives enemy.health far negative, so endWave becomes a huge negative number
+        // and the loop spins from startWave down to it — millions of iterations that all
+        // just `continue` (out-of-range waveIndex): a tight, flat-heap 100% CPU hang.
+        const startWave = Math.min(numWaves, Math.floor((prev / maxHp) * numWaves));
+        const endWave = Math.max(0, Math.ceil((enemy.health / maxHp) * numWaves));
         const parentRadius = (parentStats.size * 40) / 2;
         for (let i = startWave; i >= endWave; i--) {
             const waveIndex = numWaves - i;
@@ -3420,10 +3508,22 @@ function moveEnemies() {
         enemy.segmentIndex = 0;
         let leader = enemy;
         let nextIndex = 1;
+        // Guard against a cycle in the leaderId graph (e.g. two severed segments
+        // that end up pointing at each other). Without this, enemies.find() keeps
+        // returning a chain member forever and the server tick spins at 100% CPU —
+        // a hang that silently stops all logging and stops serving. Track visited
+        // segments; a revisit means the chain is corrupt, so sever it and stop.
+        // The visited set also bounds the walk to at most `enemies.length` steps.
+        const visited = new Set([enemy.id]);
         while (true) {
             const follower = constants_2.enemies.find(e => e.leaderId === leader.id);
             if (!follower)
                 break;
+            if (visited.has(follower.id)) {
+                follower.leaderId = undefined; // break the cycle so it can't recur next tick
+                break;
+            }
+            visited.add(follower.id);
             follower.headId = enemy.id;
             follower.segmentIndex = nextIndex++;
             leader = follower;
@@ -4734,6 +4834,8 @@ function start_loop() {
                 p,
                 faceFlags,
                 equipFlags,
+                renderFlags: p.renderFlags ?? 0,
+                equippedSkinId: p.equippedSkinId ?? '',
                 mouth,
                 petalExtension,
                 petalsRaw: p.petalPositions || [],
@@ -4774,6 +4876,8 @@ function start_loop() {
                 const isSelf = p.id === playerId;
                 const faceFlags = snap.faceFlags;
                 const equipFlags = snap.equipFlags;
+                const renderFlags = snap.renderFlags;
+                const equippedSkinId = snap.equippedSkinId;
                 const mouth = snap.mouth;
                 const petalExtension = snap.petalExtension;
                 const sx = isSelf ? p.x : quantize(p.x, precision);
@@ -4867,6 +4971,14 @@ function start_loop() {
                     delta.q = equipFlags;
                     changed = true;
                 }
+                if (prev ? prev.r !== renderFlags : renderFlags !== 0) {
+                    delta.r = renderFlags;
+                    changed = true;
+                }
+                if (prev ? prev.k !== equippedSkinId : equippedSkinId !== '') {
+                    delta.k = equippedSkinId;
+                    changed = true;
+                }
                 if (prev ? prev.m !== mouth : mouth !== 14.5) {
                     delta.m = mouth;
                     changed = true;
@@ -4903,7 +5015,7 @@ function start_loop() {
                     lastPlayers.set(p.id, {
                         x: sx, y: sy, a: sa, h: sh, H: sH,
                         l: sl, s: ss, e: se,
-                        f: faceFlags, q: equipFlags, m: mouth,
+                        f: faceFlags, q: equipFlags, r: renderFlags, k: equippedSkinId, m: mouth,
                         v: sv, V: sV, z: sz, n: sn,
                         sm,
                         petalsSig,
@@ -5121,10 +5233,17 @@ function getScheduledRestartInfo() {
 }
 // Daily restart: 24h after startup
 scheduleRestart(24 * 60 * 60 * 1000, 'daily');
-// Memory watchdog: log every 10s, restart process if heap usage > 80% of V8 heap limit.
+// Memory watchdog: log every 5s, restart process if heap usage > 70% of V8 heap limit.
 // Requires a process supervisor (systemd, pm2, docker --restart, etc.) to actually bring the server back up.
-const MEMORY_RESTART_THRESHOLD = 0.8;
-const MEMORY_CHECK_INTERVAL = 10000;
+//
+// Threshold is intentionally well below the V8 hard limit and the interval is short:
+// as the heap approaches its limit V8 falls into a back-to-back full-GC death-spiral
+// that blocks the event loop, so a watchdog that only trips at the last moment never
+// gets a turn to run and the process dies with "FATAL ERROR: Reached heap limit" instead
+// of restarting gracefully. Firing at 70% leaves headroom to restart while the loop is
+// still responsive. Baseline heap under load is ~20-40%, so this won't false-trip.
+const MEMORY_RESTART_THRESHOLD = 0.7;
+const MEMORY_CHECK_INTERVAL = 5000;
 let memoryRestartInProgress = false;
 setInterval(() => {
     const mem = process.memoryUsage();

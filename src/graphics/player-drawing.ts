@@ -1,4 +1,5 @@
 import { Graphics, Player, Enemy, getPetalStats, PLAYER_SIZE } from './core';
+import { getActivePlayerSkin, getCustomSkin, renderCustomSkinShapes } from './player-skins';
 
 declare module './core' {
     interface Graphics {
@@ -58,66 +59,59 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
         this.ctx.rotate(spinAngle);
     }
 
-    // Draw player sprite
+    // Resolve the smoothed eye offset. The local player uses the shared
+    // this.playerEye accumulator; remote players (and bots) each carry their own.
+    let eyeX: number;
+    let eyeY: number;
+    const targetEyeX = Math.cos(player.angle) * 2;
+    const targetEyeY = Math.sin(player.angle) * 4.4;
+    const lerpFactor = 0.15;
     if (player.id === socket) {
-        // Calculate target eye position
-        const targetEye = {
-            x: Math.cos(player.angle) * 2,
-            y: Math.sin(player.angle) * 4.4
-        };
-
-        // Smooth interpolation of eye position (lerp factor controls smoothness)
-        const lerpFactor = 0.15;
-        this.playerEye.x += (targetEye.x - this.playerEye.x) * lerpFactor;
-        this.playerEye.y += (targetEye.y - this.playerEye.y) * lerpFactor;
-
-        this.ctx.save();
-        this.drawFlower({
-            radius: flowerRadius,
-            color: player.flowerColor || '#FFE763',
-            faceFlags: player.faceFlags || 0,
-            equipFlags: player.equipFlags || 0,
-            eyeX: this.playerEye.x,
-            eyeY: this.playerEye.y,
-            mouth: player.mouth ?? 14.5,
-            cutterAngle: player.cutterAngle,
-            thirdEyeRarity: getThirdEyeRarity(player),
-        });
-        this.ctx.restore();
+        this.playerEye.x += (targetEyeX - this.playerEye.x) * lerpFactor;
+        this.playerEye.y += (targetEyeY - this.playerEye.y) * lerpFactor;
+        eyeX = this.playerEye.x;
+        eyeY = this.playerEye.y;
     } else {
-        // For other players, use their own smooth eye interpolation
         if (!player.eye) {
             player.eye = { x: 0, y: 0 };
             player.targetEye = { x: 0, y: 0 };
         }
-
-        // Target eye position — same formula as the local player so remote
-        // players' (and bots') eyes look in their facing direction rather than
-        // 90° off.
-        player.targetEye = {
-            x: Math.cos(player.angle) * 2,
-            y: Math.sin(player.angle) * 4.4
-        };
-
-        // Smooth interpolation
-        const lerpFactor = 0.15;
+        // Same formula as the local player so remote players' eyes look in their
+        // facing direction rather than 90° off.
+        player.targetEye = { x: targetEyeX, y: targetEyeY };
         player.eye.x += (player.targetEye.x - player.eye.x) * lerpFactor;
         player.eye.y += (player.targetEye.y - player.eye.y) * lerpFactor;
-
-        this.ctx.save();
-        this.drawFlower({
-            radius: flowerRadius,
-            color: player.flowerColor || '#FFE763',
-            faceFlags: player.faceFlags || 0,
-            equipFlags: player.equipFlags || 0,
-            eyeX: player.eye.x,
-            eyeY: player.eye.y,
-            mouth: player.mouth ?? 14.5,
-            cutterAngle: player.cutterAngle,
-            thirdEyeRarity: getThirdEyeRarity(player),
-        });
-        this.ctx.restore();
+        eyeX = player.eye.x;
+        eyeY = player.eye.y;
     }
+
+    // Build the flower attributes once, then either hand them to the active
+    // custom skin (when a render flag is set) or to the default flower renderer.
+    const flowerAttrs = {
+        radius: flowerRadius,
+        color: player.flowerColor || '#FFE763',
+        faceFlags: player.faceFlags || 0,
+        equipFlags: player.equipFlags || 0,
+        eyeX,
+        eyeY,
+        mouth: player.mouth ?? 14.5,
+        cutterAngle: player.cutterAngle,
+        thirdEyeRarity: getThirdEyeRarity(player),
+    };
+
+    // Render priority: an equipped user-created skin wins, then a built-in skin
+    // flag, then the default flower.
+    const customSkin = getCustomSkin(player.equippedSkinId);
+    const builtinSkin = customSkin ? undefined : getActivePlayerSkin(player.renderFlags);
+    this.ctx.save();
+    if (customSkin) {
+        renderCustomSkinShapes(this.ctx, customSkin.shapes, flowerRadius);
+    } else if (builtinSkin) {
+        builtinSkin.render(this, { ...flowerAttrs, renderFlags: player.renderFlags || 0 });
+    } else {
+        this.drawFlower(flowerAttrs);
+    }
+    this.ctx.restore();
 
     // Reset rotation before drawing petals so they don't spin
     if (player.teleporterCharging && player.teleporterChargeStart) {

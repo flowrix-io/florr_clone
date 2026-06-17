@@ -573,6 +573,14 @@ export class Graphics {
         }
     }
 
+    public skinStudioManager: any = null;
+    public setSkinStudio(skinStudioManager: any): void {
+        this.skinStudioManager = skinStudioManager;
+        if (skinStudioManager && this.canvas) {
+            skinStudioManager.setCanvas(this.canvas);
+        }
+    }
+
     /**
      * Wire the title-screen canvas-button strip into the in-game render loop
      * so the same icon buttons (settings/changelog/.../exit + bottom-left

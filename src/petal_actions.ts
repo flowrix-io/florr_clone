@@ -1638,6 +1638,19 @@ export function cleanupPetalActions(petalId: string): void {
     petalActionStates.delete(petalId);
 }
 
+// Drop per-player entries from the module-level petal-action tracking maps so
+// they don't accumulate for the whole server lifetime. lightningCutterStrikeTimes
+// is keyed by playerId (a fresh socket id every reconnect) and splitExecutedPetalIds
+// by `${playerId}_<i>_<j>` petal ids — neither was ever pruned, so both grew with
+// every player/bot churn over a long session. Called on disconnect and bot removal.
+export function cleanupPlayerPetalActionState(playerId: string): void {
+    lightningCutterStrikeTimes.delete(playerId);
+    const prefix = `${playerId}_`;
+    for (const petalId of splitExecutedPetalIds) {
+        if (petalId.startsWith(prefix)) splitExecutedPetalIds.delete(petalId);
+    }
+}
+
 // Split player into 2 players
 export function splitPlayer(player: ServerPlayer, io: any): void {
     // Check if player is already split (check original ID and split IDs)

@@ -35,6 +35,13 @@ npm install bcrypt github:uNetworking/uWebSockets.js#v20.67.0
 rm inventory.json
 cp ~/inventory.json inventory.json
 rm ~/inventory.json
-pm2 start server.js
+# Node flags for debugging the 100%-CPU event-loop hangs (see scripts/hang-watchdog.sh):
+#  --perf-basic-prof-only-functions writes /tmp/perf-<pid>.map (JIT address -> JS
+#    function + file:line). The watchdog resolves the spinning instruction pointer
+#    (from a gdb backtrace) against this map to name the looping function — the only
+#    method that works, since the loop is too tight for --report-on-signal to fire.
+#  --report-on-signal is kept as a best-effort SIGUSR2 JS-stack report.
+# REMOVE both once the hang is fixed (the perf map grows slowly over a long session).
+pm2 start server.js --node-args="--report-on-signal --perf-basic-prof-only-functions"
 pm2 save
 sudo reboot

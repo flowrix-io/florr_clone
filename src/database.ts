@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as bcrypt from 'bcrypt';
 import { Item } from './item';
+import { CustomSkin } from './skin_format';
 
 const dbPath = path.join(__dirname, '..', 'game.db');
 if (fs.existsSync(dbPath)) {
@@ -25,6 +26,8 @@ export interface PlayerProgress {
     loadout?: (Item | null)[];
     mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
     stars?: number; // In-game currency earned from challenges and codes
+    renderFlags?: number; // Bitmask of PlayerRenderFlags — the player's owned/active built-in skin, persisted per account
+    equippedSkinId?: string; // ID of an equipped user-created skin (see customSkins), persisted per account
     dailyStreak?: number; // Consecutive-day login counter, cycles 1..5
     lastStreakDate?: string; // YYYY-MM-DD (UTC) of last streak claim
 }
@@ -76,6 +79,7 @@ interface DatabaseData {
     notifications?: Notification[]; // Global notifications array
     guilds?: { [guildName: string]: Guild }; // Persistent guild storage, keyed by uppercase name
     apiKeys?: { [key: string]: ApiKey }; // External REST API keys
+    customSkins?: { [skinId: string]: CustomSkin }; // User-created player skins, keyed by skin id
 }
 
 let db: DatabaseData = { players: {}, users: {} };
@@ -113,6 +117,10 @@ readDatabase();
 function isDefaultProgress(progress: PlayerProgress): boolean {
     // Has gained any XP
     if (progress.totalXP > 0) return false;
+
+    // Owns/equips a custom skin — that's account content worth keeping
+    if (progress.renderFlags) return false;
+    if (progress.equippedSkinId) return false;
 
     // Check inventory: default is only { common: { petal_basic: 5 } }
     if (progress.inventory) {
@@ -545,6 +553,48 @@ export const database = {
 
     getAllGuilds: (): { [guildName: string]: Guild } => {
         return db.guilds || {};
+    },
+
+    // ── Custom (user-created) skins ───────────────────────────────────────
+    // Collection is lazily created so older inventory.json files load fine.
+    saveCustomSkin: (skin: CustomSkin): boolean => {
+        if (!db.customSkins) db.customSkins = {};
+        db.customSkins[skin.id] = {
+            id: skin.id,
+            name: skin.name,
+            author: skin.author,
+            shapes: skin.shapes,
+            createdAt: skin.createdAt,
+        };
+        writeDatabase();
+        return true;
+    },
+
+    getCustomSkin: (skinId: string): CustomSkin | null => {
+        return (db.customSkins && db.customSkins[skinId]) || null;
+    },
+
+    getAllCustomSkins: (): CustomSkin[] => {
+        return db.customSkins ? Object.values(db.customSkins) : [];
+    },
+
+    countCustomSkinsByAuthor: (author: string): number => {
+        if (!db.customSkins) return 0;
+        const lower = author.toLowerCase();
+        let n = 0;
+        for (const id in db.customSkins) {
+            if (db.customSkins[id].author.toLowerCase() === lower) n++;
+        }
+        return n;
+    },
+
+    deleteCustomSkin: (skinId: string): boolean => {
+        if (db.customSkins && db.customSkins[skinId]) {
+            delete db.customSkins[skinId];
+            writeDatabase();
+            return true;
+        }
+        return false;
     },
 
     // Delete guest accounts that still have the default initial inventory/loadout

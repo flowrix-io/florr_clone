@@ -23,6 +23,7 @@ const playerManager_1 = require("./playerManager");
 const gameState_1 = require("./gameState");
 const squadManager_1 = require("./squadManager");
 const guildManager_1 = require("./guildManager");
+const petal_actions_1 = require("../petal_actions");
 const BOT_ID_PREFIX = 'bot_';
 const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
@@ -916,6 +917,8 @@ function removeBot(id, io) {
     delete constants_1.players[id];
     botAIState.delete(id);
     botJitter.delete(id);
+    botSquadNextTick.delete(id);
+    (0, petal_actions_1.cleanupPlayerPetalActionState)(id);
     io.emit('playerDisconnected', id);
 }
 function removeAllBots(io) {
@@ -1150,11 +1153,15 @@ function rayHitsWall(x0, y0, x1, y1) {
     const dx = x1 - x0;
     const dy = y1 - y0;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist === 0)
+    // Guard a degenerate ray: a 0/NaN dist means no hit; a non-finite or huge dist
+    // (e.g. raycasting toward an entity flung to an enormous coordinate) would make
+    // `steps` blow up and spin this loop forever — bound it. 1024 half-tile samples
+    // covers any legitimate on-screen ray; beyond that the target is bogus anyway.
+    if (!(dist > 0) || !Number.isFinite(dist))
         return false;
     // Sample every half-tile so we don't skip over a wall tile diagonally
     const step = constants_1.WALL_TILE_SIZE / 2;
-    const steps = Math.ceil(dist / step);
+    const steps = Math.min(1024, Math.ceil(dist / step));
     for (let i = 1; i <= steps; i++) {
         const t = i / steps;
         const x = x0 + dx * t;

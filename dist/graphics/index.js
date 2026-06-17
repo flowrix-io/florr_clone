@@ -11,6 +11,7 @@ require("./sections");
 require("./wall-edges");
 require("./map-drawing");
 require("./flower");
+require("./player-skins");
 require("./player-drawing");
 require("./enemy-drawing");
 require("./items");

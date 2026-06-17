@@ -9,6 +9,7 @@ import './sections';
 import './wall-edges';
 import './map-drawing';
 import './flower';
+import './player-skins';
 import './player-drawing';
 import './enemy-drawing';
 import './items';

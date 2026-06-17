@@ -3,6 +3,8 @@ import { Player, ServerPlayer } from './player';
 import { Enemy, Obstacle } from './enemy';
 import { Item, WorldItem } from './item';
 import { getMobStats } from './mobs';
+import { setCustomSkins, upsertCustomSkin, removeCustomSkin } from './graphics/player-skins';
+import { CustomSkin } from './skin_format';
 
 function padLoadout(arr: (Item | null)[] | undefined, size: number): (Item | null)[] {
     const out: (Item | null)[] = new Array(size).fill(null);
@@ -477,6 +479,21 @@ function setupSocketListeners(game: any) {
         const menu = (window as any).currentGame?.guildMenu;
         if (!menu) return;
         menu.applyInviteReceived(data);
+    });
+
+    // Custom skins: keep the shared client registry in sync (so any player wearing
+    // a skin renders) and refresh the Skin Studio gallery if it's open.
+    game.socket.on('skinsUpdate', (data: { skins: CustomSkin[]; isAdmin?: boolean }) => {
+        setCustomSkins(data?.skins);
+        (window as any).currentGame?.skinStudio?.applyCatalog(data?.skins || [], !!data?.isAdmin);
+    });
+    game.socket.on('skinPublished', (skin: CustomSkin) => {
+        upsertCustomSkin(skin);
+        (window as any).currentGame?.skinStudio?.applySkinPublished(skin);
+    });
+    game.socket.on('skinDeleted', (id: string) => {
+        removeCustomSkin(id);
+        (window as any).currentGame?.skinStudio?.applySkinDeleted(id);
     });
 
     game.socket.on('disconnect', (reason: string) => {
@@ -1339,7 +1356,7 @@ function setupSocketListeners(game: any) {
     //   E = newly-changed enemies (delta fields, or full fields on first sight)
     //   R = enemies to remove (left viewport or died)
     // Unmentioned entities keep their current state.
-    // Per-player keys: i,n,x,y,a,h,H,l,s,e,f,q,m,v,V,z, p (petalPositions array).
+    // Per-player keys: i,n,x,y,a,h,H,l,s,e,f,q,r,k,m,v,V,z, p (petalPositions array).
     // Per-petal keys: L=loadoutIndex,I=instanceIndex,x,y,N=noPhysics.
     // Per-enemy keys: i,t=type,T=tier,x,y,a,h,H. Missing fields = unchanged.
     game.socket.on('gameStateUpdate', (data: any) => {
@@ -1362,8 +1379,10 @@ function setupSocketListeners(game: any) {
                     if (!existing.forcedFlags) {
                         if (sp.f !== undefined) existing.faceFlags = sp.f;
                         if (sp.q !== undefined) existing.equipFlags = sp.q;
+                        if (sp.r !== undefined) existing.renderFlags = sp.r;
                         if (sp.m !== undefined) existing.mouth = sp.m;
                     }
+                    if (sp.k !== undefined) existing.equippedSkinId = sp.k;
                     if (sp.v !== undefined) (existing as any).inPvpArena = !!sp.v;
                     if (sp.V !== undefined) (existing as any).pvpScore = sp.V;
                     if (sp.z !== undefined) (existing as any).sizeMultiplier = sp.z;
@@ -1425,6 +1444,8 @@ function setupSocketListeners(game: any) {
                         petalExtension: sp.e ?? 1.0,
                         faceFlags: sp.f ?? 0,
                         equipFlags: sp.q ?? 0,
+                        renderFlags: sp.r ?? 0,
+                        equippedSkinId: sp.k ?? '',
                         mouth: sp.m ?? 14.5,
                         inPvpArena: !!sp.v,
                         pvpScore: sp.V ?? 0,
