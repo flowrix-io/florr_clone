@@ -380,7 +380,8 @@ export class AuthUI {
         if (!sessionStorage.getItem('isOffline')) {
             fetch(`${this.serverUrl}/auth/logout`, {
                 method: 'POST',
-                credentials: 'include'
+                credentials: 'include',
+                keepalive: true
             }).catch(error => {
                 console.error('Logout error:', error);
             });

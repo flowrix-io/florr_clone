@@ -71,7 +71,7 @@ const bootstrap = async () => {
         // before any server connection.
         titleScreen.updateBiomesFromMapData(map_data_1.WORLD_MAP);
         // Initialize auth UI after title screen is created
-        new auth_ui_1.AuthUI();
+        window.authUI = new auth_ui_1.AuthUI();
         // Preconnect if user is already logged in (showing "logging in")
         // Use setTimeout to ensure titleScreen is fully initialized
         setTimeout(() => {

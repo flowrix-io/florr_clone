@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 528429278,
+      "totalXP": 528429315,
       "inventory": {
         "common": {
           "petal_light": 188,
@@ -806,7 +806,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 1188,
+          "common": 1190,
           "legendary": 787,
           "uncommon": 393,
           "mythic": 700,
@@ -819,7 +819,7 @@
         "soldier_ant": {
           "epic": 323,
           "legendary": 1213,
-          "common": 1454,
+          "common": 1455,
           "rare": 448,
           "mythic": 1249,
           "ultra": 136,
@@ -851,7 +851,7 @@
           "unique": 2
         },
         "hornet": {
-          "common": 1784,
+          "common": 1785,
           "legendary": 1122,
           "mythic": 1147,
           "uncommon": 751,
@@ -873,10 +873,10 @@
           "super": 17
         },
         "bee": {
-          "common": 1217,
+          "common": 1218,
           "epic": 240,
           "mythic": 650,
-          "uncommon": 396,
+          "uncommon": 397,
           "legendary": 661,
           "rare": 200,
           "ultra": 136,
@@ -1180,7 +1180,7 @@
           "super": 3
         },
         "centipede_body": {
-          "common": 2162,
+          "common": 2164,
           "uncommon": 948,
           "legendary": 1783,
           "mythic": 1706,
@@ -1264,9 +1264,9 @@
           "ultra": 1
         }
       },
-      "stars": 155369,
-      "dailyStreak": 1,
-      "lastStreakDate": "2026-06-16",
+      "stars": 155374,
+      "dailyStreak": 3,
+      "lastStreakDate": "2026-06-18",
       "renderFlags": 0,
       "equippedSkinId": ""
     },
@@ -1722,7 +1722,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1781582775274
+      "lastActiveAt": 1781821768497
     },
     "dev": {
       "id": "1g99g1gfk",

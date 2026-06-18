@@ -349,6 +349,14 @@ export class SettingsMenu {
             cy += rowH;
             this.drawCheckbox(ctx, contentX, cy, 22, this.showAdminCommands, 'Show Admin Commands', this.hoveredItem === 'cb_showAdminCommands');
             cy += rowH;
+
+            cy += 10;
+            const logoutBtnW = 160;
+            const logoutBtnH = 32;
+            drawGardnButton(ctx, contentX, cy, logoutBtnW, logoutBtnH, '#cc4444',
+                this.hoveredItem === 'logout', this.pressedButton === 'settings_logout',
+                'Log Out', 14, 3, 3);
+            cy += logoutBtnH + 10;
         } else if (this.tab === 'credits') {
             cy = this.renderCreditsTab(ctx, contentX, contentW, cy);
         }
@@ -573,6 +581,16 @@ export class SettingsMenu {
                 this.toggleCheckbox('showAdminCommands');
                 return true;
             }
+            cy += rowH;
+            cy += 10;
+            const logoutBtnW = 160;
+            const logoutBtnH = 32;
+            if (y >= cy && y <= cy + logoutBtnH && x >= contentX && x <= contentX + logoutBtnW) {
+                if (confirm('Are you sure you want to log out?')) {
+                    this.performLogout();
+                }
+                return true;
+            }
         }
 
         this.serverIPFocused = false;
@@ -694,7 +712,37 @@ export class SettingsMenu {
                 this.hoveredItem = 'cb_showAdminCommands';
                 return;
             }
+            cy += rowH;
+            cy += 10;
+            const logoutBtnW = 160;
+            const logoutBtnH = 32;
+            if (y >= cy && y <= cy + logoutBtnH && x >= contentX && x <= contentX + logoutBtnW) {
+                this.hoveredItem = 'logout';
+                return;
+            }
         }
+    }
+
+    /**
+     * Log the user out via the global AuthUI (clears credentials + server
+     * session), then reload so we land on a clean title screen with the auth
+     * form — works whether settings was opened on the title screen or in-game.
+     */
+    private performLogout(): void {
+        this.close();
+        const authUI = window.authUI;
+        if (authUI && typeof authUI.logout === 'function') {
+            authUI.logout();
+        } else {
+            // Fallback: clear stored credentials directly.
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('username');
+            localStorage.removeItem('password');
+            sessionStorage.removeItem('currentUser');
+            sessionStorage.removeItem('offlineCredentials');
+            sessionStorage.removeItem('isOffline');
+        }
+        window.location.reload();
     }
 
     /** Returns true if mousedown was inside the panel (consumed). */

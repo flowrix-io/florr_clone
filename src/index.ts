@@ -19,6 +19,7 @@ declare global {
     interface Window {
         currentGame: Game | null;
         titleScreen: TitleScreen | null;
+        authUI?: AuthUI;
         preconnectedSocket?: any;
         preconnectedMapData?: any;
     }
@@ -94,7 +95,7 @@ const bootstrap = async () => {
         titleScreen.updateBiomesFromMapData(WORLD_MAP);
         
         // Initialize auth UI after title screen is created
-        new AuthUI();
+        window.authUI = new AuthUI();
         
         // Preconnect if user is already logged in (showing "logging in")
         // Use setTimeout to ensure titleScreen is fully initialized
