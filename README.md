@@ -4,7 +4,7 @@ A browser-based multiplayer survival game inspired by [florr.io](https://florr.i
 
 ## Quick start
 
-Requires Node.js 18+ (20 recommended), a emscripten for the native module, and `make`.
+Requires Node.js 22+
 
 ```bash
 npm install
@@ -12,7 +12,7 @@ npm run build   # builds cpp, webpacks the client, compresses bundle
 npm start       # compiles the server and runs dist/server.js
 ```
 
-Open `http://localhost:3000`.
+Open `https://localhost:3000`.
 
 ## Scripts
 
@@ -45,7 +45,6 @@ The world is divided into biomes (ocean, desert, jungle, etc.) with their own mo
 - **Map editor** (`MapEditor.html`) for authoring biome layouts
 - **Persistence** via custom JSON database
 - **HTTPS** support (drop `cert.crt` / `cert.key` at the project root)
-- **Native C++ module** in `cpp/` for hot-path physics, built via `make` during `npm run build`
 
 ## Chat commands
 
@@ -70,7 +69,7 @@ Typed on the server's stdin, or via `/admin` in chat:
 - `spawn_special_mobs` — spawn ultra/super/unique tiers
 - `set_max_enemies <n>` — cap concurrent enemy count
 
-Mob types include: `bee`, `hornet`, `mantis`, `ladybug`, `soldier_ant`, `leafbug`, `fish`, `shark`, `octopus`, `bush`, `target_dummy`, `item_spawner`. See `src/mobs.ts` for the current list.
+Mob types include: `bee`, `hornet`, `mantis`, `ladybug`, `soldier_ant`, `leafbug`, `bush`, `target_dummy`, `item_spawner`. See `src/mobs.ts` for the current list.
 
 ## Project layout
 
@@ -95,8 +94,8 @@ MapEditor.html              # standalone biome map editor
 
 ## Stack
 
-TypeScript, Canvas 2D, Socket.IO + `ws`, Express, `better-sqlite3`, Webpack, and a small C++ native addon.
+TypeScript, Canvas 2D, Socket.IO + `ws`, Express, `better-sqlite3`, Webpack
 
 ## License
 
-ISC (per `package.json`). No standalone `LICENSE` file is included.
+ISC (per `package.json`).
