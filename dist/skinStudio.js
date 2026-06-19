@@ -5,15 +5,21 @@ exports.getSkinStudio = getSkinStudio;
 const zoom_compensation_1 = require("./zoom-compensation");
 const skin_format_1 = require("./skin_format");
 const player_skins_1 = require("./graphics/player-skins");
-const ACCENT = '#27dade';
-const BORDER = '#1fb3b0';
-const PANEL_BG = '#2b2f33';
-const PANEL_BG2 = '#23272b';
-const ROW_BG = '#33383d';
+// Theme matches the purple "skins" icon-button on the title strip
+// (#c45cff bg / #9a3fd0 border in title_screen/canvas_buttons.ts).
+const ACCENT = '#c45cff';
+const BORDER = '#9a3fd0';
+const ACCENT_FG = '#2c0d44'; // dark-purple text drawn on top of ACCENT fills
+const ACCENT_SEL = 'rgba(196,92,255,0.18)'; // selected-row tint (ACCENT @ 18%)
+const PANEL_BG = '#8737b6';
+const PANEL_BG2 = '#702d97';
+const ROW_BG = '#a655dd'; // secondary buttons — themed purple, dimmer than ACCENT
+const LIST_ROW = '#5f2a86'; // shape-list row background — darker purple, reads on PANEL_BG2
 const CLOSE_BG = '#dc7e92';
 const CLOSE_BORDER = '#b56476';
 const TEXT = '#e9eef1';
 const MUTED = '#9fb0b8';
+const ERROR_FG = '#ff8a9a';
 const PALETTE = [
     '#ffe763', '#ff9d00', '#e8731f', '#d01c1d', '#e85cc0', '#c45cff', '#3a86ff',
     '#27dade', '#2bd14f', '#7d5a3a', '#ffffff', '#bfc6cc', '#5a6670', '#111111',
@@ -56,6 +62,12 @@ class SkinStudio {
         this.browseScroll = 0;
         this.drag = null;
         this.nameInput = null;
+        // Text mode: swap the visual editor for a textarea where the skin's shapes
+        // are typed directly as canvas commands (one shape per line). Edits parse
+        // back into `shapes` live, so the preview updates as you type.
+        this.textMode = false;
+        this.textArea = null;
+        this.textError = '';
         this.mouseDownHandler = null;
         this.mouseMoveHandler = null;
         this.mouseUpHandler = null;
@@ -71,7 +83,7 @@ class SkinStudio {
         this.keyHandler = (e) => {
             if (!this.isOpen_)
                 return;
-            if (e.key === 'Escape' && !this.nameInput)
+            if (e.key === 'Escape' && !this.nameInput && !this.textArea)
                 this.hide();
         };
         document.addEventListener('keydown', this.keyHandler);
@@ -87,7 +99,7 @@ class SkinStudio {
     isOpen() { return this.isOpen_; }
     toggle() { this.isOpen_ ? this.hide() : this.show(); }
     show() { this.isOpen_ = true; }
-    hide() { this.isOpen_ = false; this.closeNameInput(); this.drag = null; }
+    hide() { this.isOpen_ = false; this.closeNameInput(); this.removeTextArea(); this.drag = null; }
     attachCanvas() {
         if (!this.canvas)
             return;
@@ -181,7 +193,7 @@ class SkinStudio {
             return;
         }
         // Otherwise: start a drag in the preview if the create tab is showing.
-        if (this.tab === 'create' && this.shapes[this.selected]) {
+        if (this.tab === 'create' && !this.textMode && this.shapes[this.selected]) {
             const pr = this.previewRect();
             if (x >= pr.x && x <= pr.x + pr.w && y >= pr.y && y <= pr.y + pr.h) {
                 e.preventDefault();
@@ -328,12 +340,19 @@ class SkinStudio {
             case 'editName':
                 this.openNameInput();
                 break;
+            case 'textMode':
+                this.textMode = !this.textMode;
+                this.textError = '';
+                break;
             case 'publish':
                 this.publish();
                 break;
             case 'reset':
                 this.shapes = starterShapes();
                 this.selected = 0;
+                this.textError = '';
+                if (this.textArea)
+                    this.textArea.value = this.serializeShapes();
                 break;
             case 'equip':
                 this.equip(a.id);
@@ -414,7 +433,7 @@ class SkinStudio {
         input.style.cssText =
             `position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:4000;
              padding:8px 10px; width:260px; border:2px solid ${ACCENT}; border-radius:4px;
-             background:#222; color:#fff; font-family:Ubuntu,sans-serif; outline:none;`;
+             background:${PANEL_BG2}; color:#fff; font-family:Ubuntu,sans-serif; outline:none;`;
         input.addEventListener('keydown', (e) => {
             e.stopPropagation();
             if (e.key === 'Enter') {
@@ -453,19 +472,54 @@ class SkinStudio {
         ctx.save();
         ctx.setTransform((0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0, (0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0);
         ctx.textBaseline = 'alphabetic';
-        // Panel
-        roundRect(ctx, this.PX, this.PY, this.PW, this.PH, 8);
-        ctx.fillStyle = BORDER;
-        ctx.fill();
-        roundRect(ctx, this.PX + 3, this.PY + 3, this.PW - 6, this.PH - 6, 6);
-        ctx.fillStyle = PANEL_BG;
-        ctx.fill();
-        this.drawHeader(ctx);
-        if (this.tab === 'create')
-            this.drawCreate(ctx);
+        // Draw every canvas label with a black outline (strokeText → fillText),
+        // like the other menus. Wrap fillText for this frame so all labels,
+        // headings and button text pick it up without per-call changes; the
+        // outline width tracks the font size (≈ the other menus' lineWidth-3-on-13px).
+        const origFillText = ctx.fillText.bind(ctx);
+        ctx.fillText = (text, x, y, maxWidth) => {
+            const m = /([\d.]+)px/.exec(ctx.font);
+            const fp = m ? parseFloat(m[1]) : 12;
+            ctx.save();
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = Math.max(2, fp * 0.22);
+            ctx.strokeStyle = '#000';
+            ctx.fillStyle = '#fff'; // all label text is white over the black outline
+            if (maxWidth === undefined) {
+                ctx.strokeText(text, x, y);
+                origFillText(text, x, y);
+            }
+            else {
+                ctx.strokeText(text, x, y, maxWidth);
+                origFillText(text, x, y, maxWidth);
+            }
+            ctx.restore();
+        };
+        try {
+            // Panel
+            roundRect(ctx, this.PX, this.PY, this.PW, this.PH, 8);
+            ctx.fillStyle = BORDER;
+            ctx.fill();
+            roundRect(ctx, this.PX + 3, this.PY + 3, this.PW - 6, this.PH - 6, 6);
+            ctx.fillStyle = PANEL_BG;
+            ctx.fill();
+            this.drawHeader(ctx);
+            if (this.tab === 'create')
+                this.drawCreate(ctx);
+            else
+                this.drawBrowse(ctx);
+        }
+        finally {
+            ctx.fillText = origFillText;
+            ctx.restore();
+        }
+        // The text editor is a real <textarea> floated over the canvas (you
+        // can't type into a canvas). Keep it alive + aligned only while the
+        // Create tab is in text mode; tear it down otherwise.
+        if (this.tab === 'create' && this.textMode)
+            this.ensureTextArea();
         else
-            this.drawBrowse(ctx);
-        ctx.restore();
+            this.removeTextArea();
     }
     drawHeader(ctx) {
         const x = this.PX, y = this.PY, w = this.PW;
@@ -479,6 +533,10 @@ class SkinStudio {
         // Tabs
         this.button(ctx, x + 150, y + 11, 86, 26, 'Create', this.tab === 'create', { k: 'tab', tab: 'create' });
         this.button(ctx, x + 242, y + 11, 86, 26, 'Browse', this.tab === 'browse', { k: 'tab', tab: 'browse' });
+        // Text/visual toggle (only meaningful while editing on the Create tab)
+        if (this.tab === 'create') {
+            this.button(ctx, x + 336, y + 11, 86, 26, this.textMode ? 'Visual' : 'Text', this.textMode, { k: 'textMode' }, ROW_BG, BORDER, TEXT);
+        }
         // Close
         this.button(ctx, x + w - 84, y + 11, 70, 26, 'Close', false, { k: 'close' }, CLOSE_BG, CLOSE_BORDER, '#3a1721');
     }
@@ -486,24 +544,31 @@ class SkinStudio {
     drawCreate(ctx) {
         const bodyTop = this.PY + this.HEADER + 6;
         this.drawPreview(ctx);
-        // Left column below the preview: add buttons + shape list
-        const pr = this.previewRect();
-        const listX = this.PX + 12, listW = 224;
-        let ay = pr.y + pr.h + 12;
-        ctx.font = '11px Ubuntu, sans-serif';
-        ctx.fillStyle = MUTED;
-        ctx.textAlign = 'left';
-        ctx.fillText('Add shape', listX + 4, ay + 2);
-        ay += 8;
-        const types = ['circle', 'ellipse', 'rect', 'polygon', 'line'];
-        const bw = (listW - 4 * 4) / 5;
-        types.forEach((t, i) => {
-            this.button(ctx, listX + i * (bw + 4), ay, bw, 22, shortType(t), false, { k: 'addShape', shape: t }, ROW_BG, BORDER, TEXT, '10px');
-        });
-        ay += 30;
-        this.drawShapeList(ctx, listX, ay, listW, this.PY + this.PH - ay - 46);
-        // Right column: properties of selected shape
-        this.drawProps(ctx, this.PX + 248, bodyTop + 6, this.PW - 248 - 14);
+        if (this.textMode) {
+            this.drawTextEditor(ctx);
+        }
+        else {
+            // Left column below the preview: add buttons + shape list.
+            // Start below the preview's "drag the squares" caption (drawn at
+            // pr.y + pr.h + 12) so the "Add shape" label doesn't overlap it.
+            const pr = this.previewRect();
+            const listX = this.PX + 12, listW = 224;
+            let ay = pr.y + pr.h + 28;
+            ctx.font = '11px Ubuntu, sans-serif';
+            ctx.fillStyle = MUTED;
+            ctx.textAlign = 'left';
+            ctx.fillText('Add shape', listX + 4, ay + 2);
+            ay += 8;
+            const types = ['circle', 'ellipse', 'rect', 'polygon', 'line'];
+            const bw = (listW - 4 * 4) / 5;
+            types.forEach((t, i) => {
+                this.button(ctx, listX + i * (bw + 4), ay, bw, 22, shortType(t), false, { k: 'addShape', shape: t }, ROW_BG, BORDER, TEXT, '10px');
+            });
+            ay += 30;
+            this.drawShapeList(ctx, listX, ay, listW, this.PY + this.PH - ay - 46);
+            // Right column: properties of selected shape
+            this.drawProps(ctx, this.PX + 248, bodyTop + 6, this.PW - 248 - 14);
+        }
         // Bottom bar: name + publish + reset
         const by = this.PY + this.PH - 38;
         const nameLabel = this.skinName ? this.skinName : '(click to name)';
@@ -532,22 +597,24 @@ class SkinStudio {
         ctx.setLineDash([]);
         (0, player_skins_1.renderCustomSkinShapes)(ctx, this.shapes, 25 * s);
         ctx.restore();
-        // handles for the selected shape
-        for (const h of this.handles()) {
-            const p = this.toPx(h.lx, h.ly);
-            ctx.fillStyle = h.id === 'c' ? ACCENT : '#ffffff';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.rect(p.x - 3, p.y - 3, 6, 6);
-            ctx.fill();
-            ctx.stroke();
+        // handles for the selected shape (hidden in text mode — you edit by typing)
+        if (!this.textMode) {
+            for (const h of this.handles()) {
+                const p = this.toPx(h.lx, h.ly);
+                ctx.fillStyle = h.id === 'c' ? ACCENT : '#ffffff';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.rect(p.x - 3, p.y - 3, 6, 6);
+                ctx.fill();
+                ctx.stroke();
+            }
         }
         ctx.restore();
         ctx.fillStyle = MUTED;
         ctx.font = '10px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('drag the squares to shape it', pr.x + pr.w / 2, pr.y + pr.h + 12);
+        ctx.fillText(this.textMode ? 'live preview' : 'drag the squares to shape it', pr.x + pr.w / 2, pr.y + pr.h + 12);
     }
     drawShapeList(ctx, x, y, w, h) {
         ctx.save();
@@ -564,7 +631,7 @@ class SkinStudio {
             if (ry + rowH > y && ry < y + h) {
                 const sel = i === this.selected;
                 roundRect(ctx, x + 4, ry, w - 8, rowH - 4, 4);
-                ctx.fillStyle = sel ? 'rgba(39,218,222,0.18)' : ROW_BG;
+                ctx.fillStyle = sel ? ACCENT_SEL : LIST_ROW;
                 ctx.fill();
                 if (sel) {
                     ctx.strokeStyle = ACCENT;
@@ -756,11 +823,182 @@ class SkinStudio {
         });
         ctx.restore();
     }
+    // ── text mode (type shapes as canvas commands) ─────────────────────────
+    // Logical-coord rectangle the <textarea> overlay occupies (right of the
+    // preview, above the bottom bar).
+    textAreaRect() {
+        const x = this.PX + 248;
+        const y = this.PY + this.HEADER + 12;
+        const w = this.PW - 248 - 14;
+        const h = (this.PY + this.PH - 38) - y - 10;
+        return { x, y, w, h };
+    }
+    drawTextEditor(ctx) {
+        // Backing panel (the live <textarea> sits exactly on top of this).
+        const r = this.textAreaRect();
+        roundRect(ctx, r.x, r.y, r.w, r.h, 6);
+        ctx.fillStyle = PANEL_BG2;
+        ctx.fill();
+        // Help / format reference under the preview on the left.
+        const pr = this.previewRect();
+        let hy = pr.y + pr.h + 26;
+        const line = (s, color = MUTED, font = '11px') => {
+            ctx.fillStyle = color;
+            ctx.font = `${font} Ubuntu, sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.fillText(s, this.PX + 14, hy);
+            hy += 16;
+        };
+        ctx.fillStyle = TEXT;
+        ctx.font = 'bold 12px Ubuntu, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('Canvas commands', this.PX + 14, hy);
+        hy += 18;
+        line('One shape per line:');
+        line('type x=.. y=.. fill=#rrggbb');
+        line('types: circle ellipse rect line polygon');
+        line('circle: r=    ellipse/rect: rx= ry=');
+        line('line: x2= y2=   polygon: points=x,y,x,y');
+        line('optional: rot=  stroke=#rrggbb  sw=');
+        hy += 4;
+        if (this.textError)
+            line(this.textError, ERROR_FG, 'bold 11px');
+    }
+    ensureTextArea() {
+        if (!this.textArea)
+            this.createTextArea();
+        this.positionTextArea();
+    }
+    createTextArea() {
+        const ta = document.createElement('textarea');
+        ta.spellcheck = false;
+        ta.wrap = 'off';
+        ta.value = this.serializeShapes();
+        ta.style.cssText =
+            `position:fixed; z-index:4000; box-sizing:border-box; resize:none; outline:none;
+             border:2px solid ${ACCENT}; border-radius:6px; background:${PANEL_BG2};
+             color:#fff; caret-color:#fff; padding:8px 10px; line-height:1.45; white-space:pre;
+             font-family:Ubuntu,sans-serif; font-weight:bold;`;
+        ta.addEventListener('input', () => this.onTextInput());
+        ta.addEventListener('keydown', (e) => {
+            e.stopPropagation(); // keep game/menu hotkeys from firing while typing
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                this.textMode = false;
+            }
+        });
+        document.body.appendChild(ta);
+        this.textArea = ta;
+        setTimeout(() => ta.focus(), 0);
+    }
+    positionTextArea() {
+        if (!this.textArea || !this.canvas)
+            return;
+        const rect = this.canvas.getBoundingClientRect();
+        // Logical px → on-screen CSS px: drawing scales logical coords by the
+        // base device scale into the backing store, then the element is shown
+        // at rect.width/canvas.width CSS px per backing pixel.
+        const f = (rect.width / this.canvas.width) * (0, zoom_compensation_1.getBaseDeviceScale)();
+        const r = this.textAreaRect();
+        const s = this.textArea.style;
+        s.left = (rect.left + r.x * f) + 'px';
+        s.top = (rect.top + r.y * f) + 'px';
+        s.width = (r.w * f) + 'px';
+        s.height = (r.h * f) + 'px';
+        const fontPx = Math.max(10, 13 * f);
+        s.fontSize = fontPx + 'px';
+        // Black outline like the other menus' strokeText→fillText. -webkit-text-stroke
+        // doesn't render on a <textarea>'s text, so build the outline from text-shadow
+        // (8 directions), scaled to the canvas ratio (≈1.5px outline on the 13px font).
+        const o = Math.max(1, fontPx * 1.5 / 13);
+        s.textShadow = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
+            .map(([dx, dy]) => `${(dx * o).toFixed(2)}px ${(dy * o).toFixed(2)}px 0 #000`).join(', ');
+    }
+    removeTextArea() {
+        if (this.textArea) {
+            this.textArea.remove();
+            this.textArea = null;
+        }
+    }
+    onTextInput() {
+        if (!this.textArea)
+            return;
+        const res = this.parseShapes(this.textArea.value);
+        if ('error' in res) {
+            this.textError = res.error;
+            return;
+        }
+        this.textError = '';
+        this.shapes = res.shapes;
+        if (this.selected >= this.shapes.length)
+            this.selected = this.shapes.length - 1;
+        if (this.selected < 0)
+            this.selected = 0;
+    }
+    serializeShapes() {
+        return this.shapes.map(s => serializeShape(s)).join('\n');
+    }
+    parseShapes(text) {
+        const lines = text.split('\n');
+        const shapes = [];
+        const NUM_KEYS = ['x', 'y', 'rot', 'sw', 'r', 'rx', 'ry', 'x2', 'y2'];
+        for (let li = 0; li < lines.length; li++) {
+            const raw = lines[li].trim();
+            if (!raw || raw.startsWith('#'))
+                continue; // blanks + comments
+            const at = (msg) => ({ error: `Line ${li + 1}: ${msg}` });
+            const toks = raw.split(/\s+/);
+            const t = toks[0];
+            if (['circle', 'ellipse', 'rect', 'polygon', 'line'].indexOf(t) === -1)
+                return at(`unknown shape "${toks[0]}"`);
+            const kv = {};
+            for (let i = 1; i < toks.length; i++) {
+                const eq = toks[i].indexOf('=');
+                if (eq <= 0)
+                    return at(`expected key=value near "${toks[i]}"`);
+                kv[toks[i].slice(0, eq)] = toks[i].slice(eq + 1);
+            }
+            for (const k of NUM_KEYS)
+                if (kv[k] !== undefined && !isFinite(parseFloat(kv[k])))
+                    return at(`"${k}" must be a number`);
+            for (const k of ['fill', 'stroke'])
+                if (kv[k] && !/^#[0-9a-fA-F]{6}$/.test(kv[k]))
+                    return at(`"${k}" must be a #rrggbb color`);
+            const num = (k, d) => (kv[k] !== undefined ? parseFloat(kv[k]) : d);
+            const s = { t, x: num('x', 0), y: num('y', 0), rot: num('rot', 0), fill: kv.fill || '', stroke: kv.stroke || '', sw: num('sw', 0) };
+            if (t === 'circle')
+                s.r = num('r', 10);
+            else if (t === 'ellipse' || t === 'rect') {
+                s.rx = num('rx', 10);
+                s.ry = num('ry', 6);
+            }
+            else if (t === 'line') {
+                s.x2 = num('x2', 0);
+                s.y2 = num('y2', 0);
+            }
+            else if (t === 'polygon') {
+                const pts = (kv.points || '').split(',').map(v => parseFloat(v));
+                if (kv.points && pts.some(v => !isFinite(v)))
+                    return at('"points" must be a comma list of numbers');
+                if (pts.length < 6)
+                    return at('polygon needs points=x,y,x,y,x,y (≥3 points)');
+                if (pts.length > skin_format_1.MAX_POLY_POINTS * 2)
+                    return at(`polygon allows at most ${skin_format_1.MAX_POLY_POINTS} points`);
+                s.points = pts;
+            }
+            shapes.push(s);
+        }
+        if (shapes.length === 0)
+            return { error: 'Add at least one shape line.' };
+        if (shapes.length > skin_format_1.MAX_SKIN_SHAPES)
+            return { error: `Too many shapes (max ${skin_format_1.MAX_SKIN_SHAPES}).` };
+        return { shapes };
+    }
     // ── small drawing helpers ──────────────────────────────────────────────
-    button(ctx, x, y, w, h, label, active, action, bg = ACCENT, border = BORDER, fg = '#06343a', font = '12px', align = 'center') {
+    button(ctx, x, y, w, h, label, active, action, bg = ACCENT, border = BORDER, fg = ACCENT_FG, font = '12px', align = 'center') {
         const hovered = this.hoverKey === actionKey(action);
         const realBg = active ? ACCENT : bg;
-        const realFg = active ? '#06343a' : fg;
+        const realFg = active ? ACCENT_FG : fg;
         roundRect(ctx, x, y, w, h, 4);
         ctx.fillStyle = border;
         ctx.fill();
@@ -786,7 +1024,7 @@ class SkinStudio {
         ctx.fillStyle = BORDER;
         ctx.fill();
         roundRect(ctx, x + 1, y + 1, s - 2, s - 2, 2);
-        ctx.fillStyle = hovered ? '#3a4046' : ROW_BG;
+        ctx.fillStyle = hovered ? ACCENT : ROW_BG;
         ctx.fill();
         ctx.strokeStyle = TEXT;
         ctx.fillStyle = TEXT;
@@ -833,6 +1071,27 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 function round1(v) { return Math.round(v * 10) / 10; }
 function shortType(t) {
     return t === 'circle' ? 'Circ' : t === 'ellipse' ? 'Elps' : t === 'rect' ? 'Rect' : t === 'polygon' ? 'Poly' : 'Line';
+}
+// One shape → one editable command line (round-trips through parseShapes).
+function serializeShape(s) {
+    const p = [s.t, `x=${round1(s.x)}`, `y=${round1(s.y)}`];
+    if (s.t === 'circle')
+        p.push(`r=${round1(s.r ?? 0)}`);
+    else if (s.t === 'ellipse' || s.t === 'rect')
+        p.push(`rx=${round1(s.rx ?? 0)}`, `ry=${round1(s.ry ?? 0)}`);
+    else if (s.t === 'line')
+        p.push(`x2=${round1(s.x2 ?? 0)}`, `y2=${round1(s.y2 ?? 0)}`);
+    else if (s.t === 'polygon' && s.points)
+        p.push(`points=${s.points.map(round1).join(',')}`);
+    if (s.t !== 'line' && (s.rot ?? 0) !== 0)
+        p.push(`rot=${round1(s.rot ?? 0)}`);
+    if (s.fill)
+        p.push(`fill=${s.fill}`);
+    if (s.stroke)
+        p.push(`stroke=${s.stroke}`);
+    if ((s.sw ?? 0) > 0)
+        p.push(`sw=${round1(s.sw ?? 0)}`);
+    return p.join(' ');
 }
 function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 function clipToWidth(ctx, s, w) {

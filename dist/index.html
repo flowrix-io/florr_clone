@@ -56,8 +56,9 @@
     </script>
     <script>
         async function fetchAndDecompress(url) {
-            // 1. Fetch the compressed binary file
-            const response = await fetch(url);
+            // 1. Fetch the compressed binary file (never cache — always get the
+            //    freshest build so a rebuilt bundle.bin shows up on reload).
+            const response = await fetch(url, { cache: 'no-store' });
             
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
