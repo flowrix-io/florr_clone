@@ -413,19 +413,22 @@ exports.database = {
     getAllApiKeys: () => {
         return db.apiKeys ? Object.values(db.apiKeys) : [];
     },
-    // Get leaderboard data: all accounts sorted by totalXP descending
-    getLeaderboard: (limit = 50) => {
+    // Get leaderboard data: non-admin accounts sorted by totalXP descending by default.
+    getLeaderboard: (limit = 50, includeAdmins = false) => {
         const entries = [];
         const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
         let dailyActiveUsers = 0;
         for (const username in db.users) {
             const user = db.users[username];
-            const progress = db.players[user.id];
-            const totalXP = progress?.totalXP || 0;
-            entries.push({ username, totalXP });
             if (user.lastActiveAt && user.lastActiveAt >= dayAgo) {
                 dailyActiveUsers++;
             }
+            if (!includeAdmins && user.admin === true) {
+                continue;
+            }
+            const progress = db.players[user.id];
+            const totalXP = progress?.totalXP || 0;
+            entries.push({ username, totalXP });
         }
         const totalAccounts = entries.length;
         // Sort by totalXP descending

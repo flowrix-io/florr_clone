@@ -76,6 +76,7 @@ export class SettingsMenu {
     private interpolation = 0.15;
     private showConsoleLogs = false;
     private showAdminCommands = false;
+    private showAdminsOnLeaderboard = false;
     private numberKeysUseItems = false;
     private useMouseControls = false;
     private antialiasing = true;
@@ -115,6 +116,7 @@ export class SettingsMenu {
         this.interpolation = parseFloat(localStorage.getItem('interpolationAmount') || '0.15');
         this.showConsoleLogs = localStorage.getItem('showConsoleLogs') === 'true';
         this.showAdminCommands = localStorage.getItem('showAdminCommands') === 'true';
+        this.showAdminsOnLeaderboard = localStorage.getItem('showAdminsOnLeaderboard') === 'true';
         this.numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
         this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
         this.antialiasing = localStorage.getItem('antialiasing') !== 'false';
@@ -349,6 +351,8 @@ export class SettingsMenu {
             cy += rowH;
             this.drawCheckbox(ctx, contentX, cy, 22, this.showAdminCommands, 'Show Admin Commands', this.hoveredItem === 'cb_showAdminCommands');
             cy += rowH;
+            this.drawCheckbox(ctx, contentX, cy, 22, this.showAdminsOnLeaderboard, 'Show Admins on Leaderboard', this.hoveredItem === 'cb_showAdminsOnLeaderboard');
+            cy += rowH;
 
             cy += 10;
             const logoutBtnW = 160;
@@ -582,6 +586,11 @@ export class SettingsMenu {
                 return true;
             }
             cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleCheckbox('showAdminsOnLeaderboard');
+                return true;
+            }
+            cy += rowH;
             cy += 10;
             const logoutBtnW = 160;
             const logoutBtnH = 32;
@@ -710,6 +719,11 @@ export class SettingsMenu {
             cy += rowH;
             if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                 this.hoveredItem = 'cb_showAdminCommands';
+                return;
+            }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'cb_showAdminsOnLeaderboard';
                 return;
             }
             cy += rowH;
@@ -892,6 +906,10 @@ export class SettingsMenu {
             case 'showAdminCommands':
                 this.showAdminCommands = !this.showAdminCommands;
                 localStorage.setItem('showAdminCommands', this.showAdminCommands.toString());
+                break;
+            case 'showAdminsOnLeaderboard':
+                this.showAdminsOnLeaderboard = !this.showAdminsOnLeaderboard;
+                localStorage.setItem('showAdminsOnLeaderboard', this.showAdminsOnLeaderboard.toString());
                 break;
             case 'numberKeysUseItems':
                 this.numberKeysUseItems = !this.numberKeysUseItems;

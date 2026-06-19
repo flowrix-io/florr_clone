@@ -70,6 +70,9 @@ export class LeaderboardManager {
 
         try {
             const params = new URLSearchParams({ limit: '50' });
+            if (typeof localStorage !== 'undefined' && localStorage.getItem('showAdminsOnLeaderboard') === 'true') {
+                params.set('includeAdmins', 'true');
+            }
             const username = typeof localStorage !== 'undefined' ? localStorage.getItem('username') : null;
             const password = typeof localStorage !== 'undefined' ? localStorage.getItem('password') : null;
             if (username && password) {

@@ -368,7 +368,8 @@ app.post('/api/notifications', (req, res) => {
 // Leaderboard endpoint
 app.get('/api/leaderboard', (req, res) => {
     const limit = parseInt(req.query.limit as string) || 50;
-    const { entries, totalAccounts, dailyActiveUsers } = database.getLeaderboard(limit);
+    const includeAdmins = req.query.includeAdmins === 'true';
+    const { entries, totalAccounts, dailyActiveUsers } = database.getLeaderboard(limit, includeAdmins);
     const authUsername = typeof req.query.username === 'string' ? req.query.username : undefined;
     const authPassword = typeof req.query.password === 'string' ? req.query.password : undefined;
     let isAdmin = false;
