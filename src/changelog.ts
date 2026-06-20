@@ -364,7 +364,15 @@ export const CHANGELOG: ChangelogEntry[] = [
         changes: [
             'Added discord link',
         ]
-    }
+    },
+    {
+        date: 'June 19, 2026',
+        changes: [
+            'Server crashes should now be fixed(hopefully)',
+            'Admin names are no longer shown on leaderboard',
+            'Added skins menu',
+        ]
+    },
 ];
 
 export class ChangelogManager {
