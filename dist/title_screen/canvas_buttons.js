@@ -11,6 +11,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TitleCanvasButtons = void 0;
 const game_icons_net_icons_1 = require("../game-icons-net-icons");
+const SLIDE_DURATION_MS = 50;
+const SLIDE_STAGGER_MS = 40;
+function easeOutCubic(t) {
+    return 1 - (1 - t) ** 3;
+}
 const BUTTON_SIZE = 42;
 const BUTTON_GAP = 10;
 const GROUP_INSET = 20;
@@ -87,6 +92,7 @@ class TitleCanvasButtons {
         this.shakeIds = new Set();
         /** True when the icon strip should not paint (e.g. while connecting). */
         this.visible = true;
+        this._initialAnimTriggered = false;
         this.handlers = handlers;
         this.buttons = BUTTON_DEFS.map((d) => ({
             ...d,
@@ -95,13 +101,19 @@ class TitleCanvasButtons {
             // Exit is in-game only — start hidden; TitleScreen.showExitButton
             // flips it on. Other buttons default to visible.
             visible: d.id !== 'exit',
+            slideInStart: 0,
         }));
     }
     /** Show or hide the in-game exit button. */
     setExitVisible(visible) {
         const b = this.buttons.find((x) => x.id === 'exit');
-        if (b)
-            b.visible = visible;
+        if (!b)
+            return;
+        if (visible && !b.visible)
+            b.slideInStart = performance.now();
+        else if (!visible)
+            b.slideInStart = 0;
+        b.visible = visible;
     }
     /** Re-layout button rectangles for the current canvas size. Only visible
      *  buttons participate in positioning. */
@@ -135,13 +147,45 @@ class TitleCanvasButtons {
             return;
         this.layout(canvasWidth, canvasHeight);
         const t = performance.now();
+        // On the very first draw, assign staggered start times to all initially
+        // visible buttons so they cascade in from the left.
+        if (!this._initialAnimTriggered) {
+            this._initialAnimTriggered = true;
+            let stagger = 0;
+            for (const b of this.buttons) {
+                if (b.visible) {
+                    b.slideInStart = t + stagger;
+                    stagger += SLIDE_STAGGER_MS;
+                }
+            }
+        }
         ctx.save();
         for (const b of this.buttons) {
             if (!b.visible)
                 continue;
             const hovered = this.hoveredId === b.id;
             const pressed = this.pressedId === b.id;
+            // Slide-in offset: button enters from the left edge.
+            let xOffset = 0;
+            if (b.slideInStart > 0) {
+                const elapsed = t - b.slideInStart;
+                if (elapsed < 0) {
+                    // Stagger delay not yet reached — hold fully off-screen.
+                    xOffset = -(b.x + BUTTON_SIZE);
+                }
+                else {
+                    const progress = Math.min(1, elapsed / SLIDE_DURATION_MS);
+                    if (progress < 1) {
+                        xOffset = -(b.x + BUTTON_SIZE) * (1 - easeOutCubic(progress));
+                    }
+                    else {
+                        b.slideInStart = 0;
+                    }
+                }
+            }
             ctx.save();
+            if (xOffset !== 0)
+                ctx.translate(xOffset, 0);
             // Shake transform: rotate around the button center, ~0.8s loop,
             // matches the legacy CSS @keyframes shake.
             if (this.shakeIds.has(b.id)) {

@@ -79,6 +79,9 @@ function renderCustomSkinShapes(ctx, shapes, radius) {
     const scale = radius / 25;
     ctx.save();
     ctx.scale(scale, scale);
+    ctx.beginPath();
+    ctx.arc(0, 0, 100, 0, Math.PI * 2);
+    ctx.clip();
     for (let i = 0; i < shapes.length; i++) {
         const s = shapes[i];
         ctx.save();
