@@ -42,6 +42,22 @@ class CanvasInventoryPanel {
         this.rafHandle = 0;
         this.running = false;
         this.imgCache = new Map();
+        // Canvas size — updated by ResizeObserver, avoiding getBoundingClientRect() every frame.
+        this.cachedCssW = 0;
+        this.cachedCssH = 0;
+        this.resizeObserver = null;
+        // Layout dirty-tracking — skip inventoryToDict() + grid when nothing changed.
+        this.layoutDirty = true;
+        this.lastInventoryHash = -1;
+        this.lastSearchFilter = '\0';
+        this.lastStackMode = undefined;
+        this.lastLayoutW = -1;
+        this.cachedFilter = '';
+        // Canvas redraw dirty-tracking — skip the full canvas paint when nothing is visible.
+        this.canvasDirty = true;
+        this.lastHoverIndex = -2;
+        this.lastScrollY = -1;
+        this.hasAnimatedPetals = false;
         /**
          * True from dragstart until dragend (+ a small grace window) so we can
          * suppress the `click` event that some browsers fire spuriously after a
@@ -239,6 +255,20 @@ class CanvasInventoryPanel {
     }
     attachTo(parent) {
         parent.appendChild(this.canvas);
+        // Seed cached size immediately (getBoundingClientRect called once only).
+        const initRect = this.canvas.getBoundingClientRect();
+        this.cachedCssW = initRect.width;
+        this.cachedCssH = initRect.height;
+        this.resizeObserver = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                if (entry.target === this.canvas) {
+                    this.cachedCssW = entry.contentRect.width;
+                    this.cachedCssH = entry.contentRect.height;
+                    this.layoutDirty = true;
+                }
+            }
+        });
+        this.resizeObserver.observe(this.canvas);
         // Mount a real <input> for the search field, positioned absolutely on
         // top of the canvas. The canvas paints the background; the input
         // handles every keystroke (gardn's TextInput approach).
@@ -293,6 +323,8 @@ class CanvasInventoryPanel {
     /** Tear down DOM resources. Call when the panel is destroyed. */
     destroy() {
         this.stop();
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
         if (this.searchInputEl) {
             this.searchInputEl.remove();
             this.searchInputEl = null;
@@ -336,15 +368,16 @@ class CanvasInventoryPanel {
         return null;
     }
     syncCanvasSize() {
-        const rect = this.canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
-        const w = Math.max(1, Math.floor(rect.width * dpr));
-        const h = Math.max(1, Math.floor(rect.height * dpr));
+        const cssW = this.cachedCssW > 0 ? this.cachedCssW : this.canvas.offsetWidth;
+        const cssH = this.cachedCssH > 0 ? this.cachedCssH : this.canvas.offsetHeight;
+        const w = Math.max(1, Math.floor(cssW * dpr));
+        const h = Math.max(1, Math.floor(cssH * dpr));
         if (this.canvas.width !== w || this.canvas.height !== h) {
             this.canvas.width = w;
             this.canvas.height = h;
         }
-        return { dpr, cssW: rect.width, cssH: rect.height };
+        return { dpr, cssW, cssH };
     }
     layoutHeader(cssW) {
         // The header area at the top of the canvas: title, subtitle, controls,
@@ -390,15 +423,44 @@ class CanvasInventoryPanel {
         };
         this.contentTop = controlsY + controlsH + gap;
     }
+    hashInventory(inv) {
+        let h = inv.length;
+        for (let i = 0; i < inv.length; i++) {
+            h = (Math.imul(h, 31) + inv[i]) | 0;
+        }
+        return h;
+    }
     layout(cssW, cssH) {
         this.layoutHeader(cssW);
         const player = this.game.getLocalPlayer();
-        if (!player || !Array.isArray(player.inventory)) {
+        const inv = player && Array.isArray(player.inventory) ? player.inventory : null;
+        const invHash = inv ? this.hashInventory(inv) : 0;
+        const needsLayout = this.layoutDirty
+            || invHash !== this.lastInventoryHash
+            || this.searchFilter !== this.lastSearchFilter
+            || this.stackMode !== this.lastStackMode
+            || cssW !== this.lastLayoutW;
+        // Reclamp scroll every frame — cheap, and cssH can change independently.
+        const visibleH = Math.max(0, cssH - this.contentTop - 14);
+        const maxScroll = Math.max(0, this.contentHeight - visibleH);
+        if (this.scrollY > maxScroll)
+            this.scrollY = maxScroll;
+        if (this.scrollY < 0)
+            this.scrollY = 0;
+        if (!needsLayout)
+            return;
+        this.layoutDirty = false;
+        this.lastInventoryHash = invHash;
+        this.lastSearchFilter = this.searchFilter;
+        this.lastStackMode = this.stackMode;
+        this.lastLayoutW = cssW;
+        this.cachedFilter = this.searchFilter.trim().toLowerCase();
+        if (!inv) {
             this.itemRects = [];
             this.contentHeight = 0;
             return;
         }
-        const invDict = (0, inventoryCodec_1.inventoryToDict)(player.inventory);
+        const invDict = (0, inventoryCodec_1.inventoryToDict)(inv);
         const padding = 12;
         const sectionGap = 14;
         const labelHeight = 22;
@@ -494,26 +556,41 @@ class CanvasInventoryPanel {
             }
         }
         this.contentHeight = y + padding;
-        const visibleH = Math.max(0, cssH - this.contentTop - 14);
-        const maxScroll = Math.max(0, this.contentHeight - visibleH);
-        if (this.scrollY > maxScroll)
-            this.scrollY = maxScroll;
-        if (this.scrollY < 0)
-            this.scrollY = 0;
+        // Check whether any visible slot contains an animated petal (frame varies with time).
+        this.hasAnimatedPetals = this.itemRects.some(r => {
+            if (!r.itemType.startsWith('petal_'))
+                return false;
+            const pt = r.itemType.replace('petal_', '');
+            const c0 = this.game.getPetalCanvas?.(pt, r.rarity, 0);
+            const c1 = this.game.getPetalCanvas?.(pt, r.rarity, 100);
+            return c0 !== null && c0 !== c1;
+        });
+        this.canvasDirty = true;
     }
     matchesSearch(itemType) {
-        const filter = this.searchFilter.trim().toLowerCase();
-        if (!filter)
+        if (!this.cachedFilter)
             return true;
         const display = itemType.startsWith('petal_')
             ? formatPetalName(itemType.replace('petal_', ''))
             : formatPetalName(itemType);
-        return display.toLowerCase().includes(filter)
-            || itemType.toLowerCase().includes(filter);
+        return display.toLowerCase().includes(this.cachedFilter)
+            || itemType.toLowerCase().includes(this.cachedFilter);
     }
     draw() {
         const { dpr, cssW, cssH } = this.syncCanvasSize();
         this.layout(cssW, cssH);
+        const lerpTarget = this.stackMode ? 1 : 0;
+        const lerpDone = Math.abs(this.toggleLerp - lerpTarget) < 0.01;
+        const needsRedraw = this.canvasDirty
+            || this.hoverIndex !== this.lastHoverIndex
+            || this.scrollY !== this.lastScrollY
+            || !lerpDone
+            || this.hasAnimatedPetals;
+        if (!needsRedraw)
+            return;
+        this.canvasDirty = false;
+        this.lastHoverIndex = this.hoverIndex;
+        this.lastScrollY = this.scrollY;
         const ctx = this.ctx;
         ctx.save();
         ctx.scale(dpr, dpr);
@@ -541,14 +618,19 @@ class CanvasInventoryPanel {
         // Rarity labels — centered above the first rect of each group, with
         // rounded separator lines on either side. Skipped in stacked mode,
         // which deliberately renders one flat grid without per-rarity sections.
+        const visibleH = cssH - contentTop - 14;
+        const viewTop = this.scrollY;
+        const viewBottom = this.scrollY + visibleH;
         const seenRarity = new Set();
         if (!this.stackMode)
             for (const r of this.itemRects) {
                 if (!seenRarity.has(r.rarity)) {
                     seenRarity.add(r.rarity);
+                    const labelY = r.y - 4;
+                    if (labelY < viewTop - 22 || labelY >= viewBottom)
+                        continue;
                     const color = petals_1.ITEM_RARITY_COLORS[r.rarity] || '#fff';
                     const labelText = r.rarity.charAt(0).toUpperCase() + r.rarity.slice(1).toLowerCase();
-                    const labelY = r.y - 4;
                     ctx.font = 'bold 14px Ubuntu, sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
@@ -585,11 +667,12 @@ class CanvasInventoryPanel {
         const now = performance.now();
         for (let i = 0; i < this.itemRects.length; i++) {
             const r = this.itemRects[i];
+            if (r.y + r.h <= viewTop || r.y >= viewBottom)
+                continue;
             this.drawItemSlot(ctx, r, i === this.hoverIndex, now);
         }
         ctx.restore(); // unclip & untranslate
         // Scrollbar indicator (vertical strip on the right side of the items area).
-        const visibleH = cssH - contentTop - 14;
         if (this.contentHeight > visibleH) {
             const trackTop = contentTop;
             const trackH = visibleH;
@@ -800,17 +883,20 @@ class CanvasInventoryPanel {
             }
         }
         else {
-            const dataUrl = this.game.getItemSpriteDataUrl?.(r.itemType);
-            if (dataUrl) {
-                let img = this.imgCache.get(r.itemType);
-                if (!img) {
-                    img = new Image();
+            if (!this.imgCache.has(r.itemType)) {
+                const dataUrl = this.game.getItemSpriteDataUrl?.(r.itemType);
+                if (dataUrl) {
+                    const img = new Image();
                     img.src = dataUrl;
                     this.imgCache.set(r.itemType, img);
                 }
-                if (img.complete && img.naturalWidth > 0) {
-                    ctx.drawImage(img, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
+                else {
+                    this.imgCache.set(r.itemType, null);
                 }
+            }
+            const img = this.imgCache.get(r.itemType);
+            if (img && img.complete && img.naturalWidth > 0) {
+                ctx.drawImage(img, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
             }
         }
     }

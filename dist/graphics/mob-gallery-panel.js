@@ -449,8 +449,12 @@ class CanvasMobGalleryPanel {
         ctx.translate(0, -this.scrollY);
         // Cells. (No rarity-header row — the legacy DOM didn't have one;
         // each cell carries its own mob name and is colored by rarity.)
+        const viewTop = this.scrollY;
+        const viewBottom = this.scrollY + contentH;
         for (let i = 0; i < this.cellRects.length; i++) {
             const c = this.cellRects[i];
+            if (c.y + c.h <= viewTop || c.y >= viewBottom)
+                continue;
             const isHover = i === this.hoverIndex;
             // Cell background.
             if (c.killed && c.valid && c.stats) {
