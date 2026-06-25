@@ -39,12 +39,7 @@ function initMultiPlayerMode(game, serverIp) {
         // Use provided server IP or current origin as default
         const serverUrl = serverIp || window.location.origin;
         console.log(`[CLIENT] Connecting to server: ${serverUrl}`);
-        game.socket = (0, ws_client_1.io)(serverUrl, {
-            secure: serverUrl.startsWith('https'),
-            rejectUnauthorized: false,
-            withCredentials: true,
-            transports: ['websocket', 'polling'] // Explicitly set transports
-        });
+        game.socket = (0, ws_client_1.io)(serverUrl);
         game.socket.on('connect', () => {
             const connectTime = performance.now();
             console.log(`[CLIENT] Connected to server at ${connectTime.toFixed(0)}`);
@@ -232,11 +227,7 @@ function setupSocketListeners(game) {
             // Connect to new server
             const protocol = transferData.targetServer.protocol || 'https';
             const newServerUrl = `${protocol}://${transferData.targetServer.host}:${transferData.targetServer.port}`;
-            game.socket = (0, ws_client_1.io)(newServerUrl, {
-                secure: newServerUrl.startsWith('https'),
-                rejectUnauthorized: false,
-                withCredentials: true
-            });
+            game.socket = (0, ws_client_1.io)(newServerUrl);
             // Store transfer data for claiming after reconnect
             game.pendingTransfer = {
                 transferToken: transferData.transferToken,
@@ -336,8 +327,6 @@ function setupSocketListeners(game) {
     // Add serverType event handler
     game.socket.on('serverType', (type) => {
         console.log(`Connected to ${type} server`);
-        // You can add visual feedback here if needed
-        game.showFloatingText(game.canvas.width / 2, 50, `Connected to ${type} server`, '#00FF00', 24);
     });
     game.socket.on('currentPlayers', (players) => {
         //console.log('Received current players:', players);
@@ -885,7 +874,6 @@ function setupSocketListeners(game) {
             player.xpToNextLevel = data.xpToNextLevel;
             player.maxHealth = data.maxHealth;
             player.damage = data.damage;
-            game.showFloatingText(player.x, player.y - 20, '+' + data.xp + ' XP', '#32CD32', 16);
             game.savePlayerProgress(player);
         }
     });
@@ -896,22 +884,6 @@ function setupSocketListeners(game) {
             player.level = data.level;
             player.maxHealth = data.maxHealth;
             player.damage = data.damage;
-            game.showFloatingText(player.x, player.y - 30, 'Level Up! Level ' + data.level, '#FFD700', 24);
-            game.savePlayerProgress(player);
-        }
-    });
-    game.socket.on('playerLostLevel', (data) => {
-        //console.log('Player lost level:', data);
-        const player = game.players.get(data.playerId);
-        if (player) {
-            player.level = data.level;
-            player.maxHealth = data.maxHealth;
-            player.damage = data.damage;
-            player.xp = data.xp;
-            player.xpToNextLevel = data.xpToNextLevel;
-            // Show level loss message
-            game.showFloatingText(player.x, player.y - 30, 'Level Lost! Level ' + data.level, '#FF0000', 24);
-            // Save the new progress
             game.savePlayerProgress(player);
         }
     });
@@ -925,8 +897,6 @@ function setupSocketListeners(game) {
                 game.isPlayerDead = false;
                 game.hideDeathScreen();
             }
-            // Show respawn message
-            game.showFloatingText(player.x, player.y - 50, 'Respawned!', '#FFFFFF', 20);
         }
     });
     game.socket.on('decorationsUpdate', (decorations) => {
@@ -1050,12 +1020,6 @@ function setupSocketListeners(game) {
                 };
                 game.inventoryManager.showCraftingSuccess(displayItem, data.successCount, data.petalsReturned || 0);
             }
-            if (data.successCount > 0) {
-                game.showFloatingText(game.canvas.width / 2, 50, `Successfully crafted ${data.successCount}x ${data.newItem.rarity} ${data.newItem.type}!`, game.ITEM_RARITY_COLORS[data.newItem.rarity || 'common'], 24);
-            }
-            if (data.failCount > 0) {
-                game.showFloatingText(game.canvas.width / 2, 80, `Failed to craft ${data.failCount}x. Items were lost.`, '#FF0000', 20);
-            }
             if (game.inventoryManager.isCraftingOpen) {
                 game.inventoryManager.updateCraftingDisplay();
             }
@@ -1063,7 +1027,6 @@ function setupSocketListeners(game) {
     });
     game.socket.on('craftingFailed', (message) => {
         console.log('[CLIENT] craftingFailed received:', message);
-        game.showFloatingText(game.canvas.width / 2, 50, `Crafting failed: ${message}`, '#FF0000', 20);
         if (game.inventoryManager.isCraftingOpen) {
             game.inventoryManager.updateCraftingDisplay();
         }
@@ -1114,8 +1077,6 @@ function setupSocketListeners(game) {
         const player = game.getLocalPlayer();
         if (player) {
             player.stars = data.total;
-            // Show floating text
-            game.showFloatingText(game.canvas.width / 2, game.canvas.height / 2, `+${data.amount} ⭐ Stars!`, '#ffd700', 24);
         }
         // Update shop display (including challenges tab if open)
         if (game.shopManager) {
@@ -1428,21 +1389,6 @@ function setupSocketListeners(game) {
             game.showDeathScreen(data.killedBy);
         }
     });
-    game.socket.on('playerRespawned', (player) => {
-        // Update the player's state to mark them as alive
-        const gamePlayer = game.players.get(player.id);
-        if (gamePlayer) {
-            gamePlayer.isDead = false;
-            gamePlayer.health = player.health;
-            gamePlayer.maxHealth = player.maxHealth;
-            gamePlayer.x = player.x;
-            gamePlayer.y = player.y;
-        }
-        if (player.id === game.socket.id) {
-            game.isPlayerDead = false;
-            game.hideDeathScreen();
-        }
-    });
     game.socket.on('playerRevived', (data) => {
         // Update the revived player's state
         const revivedPlayer = game.players.get(data.revivedPlayerId);
@@ -1450,8 +1396,6 @@ function setupSocketListeners(game) {
             revivedPlayer.isDead = false;
             revivedPlayer.health = revivedPlayer.maxHealth;
         }
-        // Show revival message
-        game.showFloatingText(game.canvas.width / 2, 200, `${data.revivingPlayerName} revived ${data.revivedPlayerName}!`, '#32CD32', 20);
         // If the revived player is the local player, hide death screen
         if (data.revivedPlayerId === game.socket.id) {
             game.isPlayerDead = false;

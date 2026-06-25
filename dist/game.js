@@ -208,8 +208,7 @@ class Game {
                     // Update game state after saving
                     this.playerHue = parseInt(value);
                     this.playerColor = `hsl(${this.playerHue}, 100%, 50%)`;
-                    // Show confirmation message
-                    this.showFloatingText(this.graphics.viewW / 2, 50, 'Color Updated!', '#4CAF50', 20);
+                    // Color change saved
                 }, { signal: this.abortController.signal });
             }
         }
@@ -626,14 +625,12 @@ class Game {
             if (key === normalizeKey(this.controls.toggle_mouse_controls)) {
                 this.useMouseControls = !this.useMouseControls;
                 localStorage.setItem('useMouseControls', this.useMouseControls.toString());
-                this.showFloatingText(this.graphics.viewW / 2, 50, `Controls: ${this.useMouseControls ? 'Mouse' : 'Keyboard'}`, '#FFFFFF', 20);
                 return;
             }
             if (key === normalizeKey(this.controls.toggle_hitboxes)) {
                 this.showHitboxes = !this.showHitboxes;
                 this.graphics.showHitboxes = this.showHitboxes;
                 localStorage.setItem('showHitboxes', this.showHitboxes.toString());
-                this.showFloatingText(this.graphics.viewW / 2, 50, `Hitboxes: ${this.showHitboxes ? 'ON' : 'OFF'}`, '#FFFFFF', 20);
                 return;
             }
             // Minimap scroll controls
@@ -662,12 +659,10 @@ class Game {
             }
             if (key === normalizeKey(this.controls.minimap_zoom_in)) {
                 this.graphics.zoomInMinimap();
-                this.showFloatingText(this.graphics.viewW / 2, 50, `Minimap Zoom: ${Math.round(this.graphics.getMinimapZoom() * 100)}%`, '#FFFFFF', 20);
                 return;
             }
             if (key === normalizeKey(this.controls.minimap_zoom_out)) {
                 this.graphics.zoomOutMinimap();
-                this.showFloatingText(this.graphics.viewW / 2, 50, `Minimap Zoom: ${Math.round(this.graphics.getMinimapZoom() * 100)}%`, '#FFFFFF', 20);
                 return;
             }
             // Handle exit when dead - Enter returns to title screen
@@ -812,11 +807,9 @@ class Game {
     }
     zoomIn() {
         this.zoomLevel = Math.min(this.zoomLevel + this.ZOOM_STEP, this.MAX_ZOOM);
-        this.showFloatingText(this.graphics.viewW / 2, 50, `Zoom: ${Math.round(this.zoomLevel * 100)}%`, '#FFFFFF', 20);
     }
     zoomOut() {
         this.zoomLevel = Math.max(this.zoomLevel - this.ZOOM_STEP, this.MIN_ZOOM);
-        this.showFloatingText(this.graphics.viewW / 2, 50, `Zoom: ${Math.round(this.zoomLevel * 100)}%`, '#FFFFFF', 20);
     }
     updateCamera(player) {
         if (this.isAnimatingViewport) {
@@ -1829,9 +1822,7 @@ class Game {
     showTitleScreen() {
         document.getElementById('titleScreen')?.classList.remove('hidden');
     }
-    showSaveIndicator() {
-        this.graphics.showFloatingText(this.graphics.viewW / 2, 0, 'Progress Saved', 'white', 20);
-    }
+    showSaveIndicator() { }
     // UI methods for disconnect/reconnect
     showDisconnectMessage() {
         let disconnectDiv = document.getElementById('disconnect-message');

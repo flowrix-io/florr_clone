@@ -128,9 +128,6 @@ class ShopManager {
     }
     handlePurchaseSuccess() {
         this.requestDraw();
-        if (this.game.showFloatingText) {
-            this.game.showFloatingText(this.game.canvas.width / 2, this.game.canvas.height / 2, 'Purchase Successful!', '#4a90e2', 24);
-        }
     }
     handlePurchaseError(message) {
         this.modal = { type: 'alert', message: `Purchase failed: ${message}`, color: '#e74c3c' };
@@ -140,12 +137,6 @@ class ShopManager {
         this.requestDraw();
         if (this.game.showFallingStars)
             this.game.showFallingStars();
-        if (this.game.showFloatingText) {
-            const player = this.game.getLocalPlayer();
-            const x = player ? player.x : this.game.canvas.width / 2;
-            const y = player ? player.y - 30 : this.game.canvas.height / 2;
-            this.game.showFloatingText(x, y, `Code redeemed successfully! +${stars} Stars!`, '#ffd700', 24);
-        }
     }
     handleCodeRedeemError(message) {
         this.modal = { type: 'alert', message: `Code redemption failed: ${message}`, color: '#e74c3c' };

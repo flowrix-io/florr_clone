@@ -860,14 +860,11 @@ class InventoryManager {
             return;
         // Petals cannot be used as consumables (except yggdrasil and splitter which can be used)
         if (item.type === 'petal' && item.petalType !== 'yggdrasil' && item.petalType !== 'splitter') {
-            // Use world coordinates (player position) instead of screen coordinates
-            this.game.showFloatingText(player.x, player.y - 30, 'Petals cannot be used - they provide passive protection!', '#FFA500', 16);
             return;
         }
         // Yggdrasil petals are always active - no need to emit useItem
         if (item.type === 'petal' && item.petalType === 'yggdrasil') {
-            this.game.showFloatingText(player.x, player.y - 30, 'Yggdrasil Petal - Always active! Will revive nearby corpses.', '#FFD700', 20);
-            return; // Don't emit useItem since it's always active
+            return;
         }
         this.game.getSocket()?.emit('useItem', {
             type: item.type,
@@ -889,13 +886,10 @@ class InventoryManager {
         const multiplier = item.rarity ? rarityMultipliers[item.rarity] : 1;
         switch (item.type) {
             case 'health_potion':
-                this.game.showFloatingText(player.x, player.y - 30, `+${Math.floor(50 * multiplier)} HP`, '#32CD32', 20);
                 break;
             case 'speed_boost':
-                this.game.showFloatingText(player.x, player.y - 30, `Speed Boost (${Math.floor(5 * multiplier)}s)`, '#4169E1', 20);
                 break;
             case 'shield':
-                this.game.showFloatingText(player.x, player.y - 30, `Shield (${Math.floor(3 * multiplier)}s)`, '#FFD700', 20);
                 break;
         }
         // Trigger canvas loadout cooldown animation
@@ -1543,7 +1537,6 @@ class InventoryManager {
         if (existingItems.length > 0) {
             const firstItem = existingItems[0];
             if (item.type !== firstItem.type || item.rarity !== firstItem.rarity || item.petalType !== firstItem.petalType) {
-                this.game.showFloatingText(this.game.canvas.width / 2, 50, 'Items must be of the same type and rarity!', '#FF0000', 20);
                 return;
             }
         }
@@ -1579,7 +1572,6 @@ class InventoryManager {
         }
         const actualAmountToAdd = Math.min(amountToAdd, this.getItemCount(rarity, type));
         if (actualAmountToAdd < 5) {
-            this.game.showFloatingText(this.game.canvas.width / 2, 50, 'You need at least 5 items to add a batch.', '#FF0000', 20);
             return;
         }
         const batchesToAdd = Math.floor(actualAmountToAdd / 5);
@@ -1619,7 +1611,6 @@ class InventoryManager {
             return;
         const itemsToCraftCount = this.craftingItems.length;
         if (itemsToCraftCount < 5 || itemsToCraftCount % 5 !== 0) {
-            this.game.showFloatingText(this.game.canvas.width / 2, 50, 'You must add items in multiples of 5 to craft!', '#FF0000', 20);
             return;
         }
         console.log('[CLIENT] Sending craftItems request:', { itemCount: this.craftingItems.length });

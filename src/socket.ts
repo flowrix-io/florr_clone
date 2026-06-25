@@ -45,12 +45,7 @@ export function initMultiPlayerMode(game: any, serverIp: string) {
         
         console.log(`[CLIENT] Connecting to server: ${serverUrl}`);
         
-        game.socket = io(serverUrl, {
-            secure: serverUrl.startsWith('https'),
-            rejectUnauthorized: false,
-            withCredentials: true,
-            transports: ['websocket', 'polling'] // Explicitly set transports
-        });
+        game.socket = io(serverUrl);
 
         game.socket.on('connect', () => {
             const connectTime = performance.now();
@@ -263,11 +258,7 @@ function setupSocketListeners(game: any) {
             // Connect to new server
             const protocol = transferData.targetServer.protocol || 'https';
             const newServerUrl = `${protocol}://${transferData.targetServer.host}:${transferData.targetServer.port}`;
-            game.socket = io(newServerUrl, {
-                secure: newServerUrl.startsWith('https'),
-                rejectUnauthorized: false,
-                withCredentials: true
-            });
+            game.socket = io(newServerUrl);
             
             // Store transfer data for claiming after reconnect
             game.pendingTransfer = {
@@ -380,14 +371,6 @@ function setupSocketListeners(game: any) {
     // Add serverType event handler
     game.socket.on('serverType', (type: string) => {
         console.log(`Connected to ${type} server`);
-        // You can add visual feedback here if needed
-        game.showFloatingText(
-            game.canvas.width / 2,
-            50,
-            `Connected to ${type} server`,
-            '#00FF00',
-            24
-        );
     });
 
     game.socket.on('currentPlayers', (players: Record<string, Player>) => {
@@ -1017,7 +1000,6 @@ function setupSocketListeners(game: any) {
             player.xpToNextLevel = data.xpToNextLevel;
             player.maxHealth = data.maxHealth;
             player.damage = data.damage;
-            game.showFloatingText(player.x, player.y - 20, '+' + data.xp + ' XP', '#32CD32', 16);
             game.savePlayerProgress(player);
         }
     });
@@ -1034,47 +1016,10 @@ function setupSocketListeners(game: any) {
             player.level = data.level;
             player.maxHealth = data.maxHealth;
             player.damage = data.damage;
-            game.showFloatingText(
-                player.x,
-                player.y - 30,
-                'Level Up! Level ' + data.level,
-                '#FFD700',
-                24
-            );
             game.savePlayerProgress(player);
         }
     });
 
-    game.socket.on('playerLostLevel', (data: {
-        playerId: string;
-        level: number;
-        maxHealth: number;
-        damage: number;
-        xp: number;
-        xpToNextLevel: number;
-    }) => {
-        //console.log('Player lost level:', data);
-        const player = game.players.get(data.playerId);
-        if (player) {
-            player.level = data.level;
-            player.maxHealth = data.maxHealth;
-            player.damage = data.damage;
-            player.xp = data.xp;
-            player.xpToNextLevel = data.xpToNextLevel;
-
-            // Show level loss message
-            game.showFloatingText(
-                player.x,
-                player.y - 30,
-                'Level Lost! Level ' + data.level,
-                '#FF0000',
-                24
-            );
-
-            // Save the new progress
-            game.savePlayerProgress(player);
-        }
-    });
 
     game.socket.on('playerRespawned', (player: Player) => {
         const existingPlayer = game.players.get(player.id);
@@ -1086,14 +1031,6 @@ function setupSocketListeners(game: any) {
                 game.isPlayerDead = false;
                 game.hideDeathScreen();
             }
-            // Show respawn message
-            game.showFloatingText(
-                player.x,
-                player.y - 50,
-                'Respawned!',
-                '#FFFFFF',
-                20
-            );
         }
     });
 
@@ -1245,25 +1182,6 @@ function setupSocketListeners(game: any) {
                 game.inventoryManager.showCraftingSuccess(displayItem, data.successCount, data.petalsReturned || 0);
             }
 
-            if (data.successCount > 0) {
-                game.showFloatingText(
-                    game.canvas.width / 2,
-                    50,
-                    `Successfully crafted ${data.successCount}x ${data.newItem.rarity} ${data.newItem.type}!`,
-                    game.ITEM_RARITY_COLORS[data.newItem.rarity || 'common'],
-                    24
-                );
-            }
-            if (data.failCount > 0) {
-                game.showFloatingText(
-                    game.canvas.width / 2,
-                    80,
-                    `Failed to craft ${data.failCount}x. Items were lost.`,
-                    '#FF0000',
-                    20
-                );
-            }
-
             if (game.inventoryManager.isCraftingOpen) {
                 game.inventoryManager.updateCraftingDisplay();
             }
@@ -1272,14 +1190,6 @@ function setupSocketListeners(game: any) {
 
     game.socket.on('craftingFailed', (message: string) => {
         console.log('[CLIENT] craftingFailed received:', message);
-        game.showFloatingText(
-            game.canvas.width / 2,
-            50,
-            `Crafting failed: ${message}`,
-            '#FF0000',
-            20
-        );
-        
         if (game.inventoryManager.isCraftingOpen) {
             game.inventoryManager.updateCraftingDisplay();
         }
@@ -1335,14 +1245,6 @@ function setupSocketListeners(game: any) {
         const player = game.getLocalPlayer();
         if (player) {
             player.stars = data.total;
-            // Show floating text
-            game.showFloatingText(
-                game.canvas.width / 2,
-                game.canvas.height / 2,
-                `+${data.amount} ⭐ Stars!`,
-                '#ffd700',
-                24
-            );
         }
         // Update shop display (including challenges tab if open)
         if (game.shopManager) {
@@ -1648,23 +1550,6 @@ function setupSocketListeners(game: any) {
         }
     });
 
-    game.socket.on('playerRespawned', (player: any) => {
-        // Update the player's state to mark them as alive
-        const gamePlayer = game.players.get(player.id);
-        if (gamePlayer) {
-            gamePlayer.isDead = false;
-            gamePlayer.health = player.health;
-            gamePlayer.maxHealth = player.maxHealth;
-            gamePlayer.x = player.x;
-            gamePlayer.y = player.y;
-        }
-        
-        if (player.id === game.socket.id) {
-            game.isPlayerDead = false;
-            game.hideDeathScreen();
-        }
-    });
-
     game.socket.on('playerRevived', (data: { 
         revivedPlayerId: string, 
         revivingPlayerId: string, 
@@ -1677,15 +1562,6 @@ function setupSocketListeners(game: any) {
             revivedPlayer.isDead = false;
             revivedPlayer.health = revivedPlayer.maxHealth;
         }
-        
-        // Show revival message
-        game.showFloatingText(
-            game.canvas.width / 2,
-            200,
-            `${data.revivingPlayerName} revived ${data.revivedPlayerName}!`,
-            '#32CD32',
-            20
-        );
         
         // If the revived player is the local player, hide death screen
         if (data.revivedPlayerId === game.socket.id) {
