@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PETAL_CONFIG = exports.ITEM_RARITY_COLORS = exports.RARITY_LEVELS = void 0;
+exports.getRarityIndex = getRarityIndex;
 exports.getLightningDamage = getLightningDamage;
 exports.getLightningScalingInfo = getLightningScalingInfo;
 exports.getPetalStats = getPetalStats;
@@ -24,6 +25,9 @@ exports.RARITY_LEVELS = [
     'unique',
     'apex'
 ];
+function getRarityIndex(rarity) {
+    return exports.RARITY_LEVELS.indexOf(rarity);
+}
 // Canonical UI rarity colors — single source of truth for all panels/UI
 exports.ITEM_RARITY_COLORS = {
     common: '#7eef6d',
@@ -2215,7 +2219,7 @@ function getLightningScalingInfo(rarity) {
 // const scalingInfo = getLightningScalingInfo('legendary'); // Returns multiplier: 81, damageAt10Base: 810, etc.
 // Function to find SVG fallback for higher rarities
 function findSvgFallback(petalType, rarity) {
-    const rarityIndex = exports.RARITY_LEVELS.indexOf(rarity);
+    const rarityIndex = getRarityIndex(rarity);
     // Try to find SVG from lower rarities
     for (let i = rarityIndex - 1; i >= 0; i--) {
         const lowerRarity = exports.RARITY_LEVELS[i];
@@ -2229,7 +2233,7 @@ function findSvgFallback(petalType, rarity) {
 }
 // Function to generate petal stats for a specific rarity
 function generatePetalStats(baseConfig, rarity, petalType) {
-    const rarityIndex = exports.RARITY_LEVELS.indexOf(rarity);
+    const rarityIndex = getRarityIndex(rarity);
     const multiplier = Math.pow(3, rarityIndex); // 3x multiplier for each rarity level
     const prefix = RARITY_PREFIXES[rarity];
     const name = prefix ? `${prefix} ${baseConfig.name}` : baseConfig.name;
@@ -2240,7 +2244,7 @@ function generatePetalStats(baseConfig, rarity, petalType) {
     let health = baseConfig.health * multiplier;
     let poison = baseConfig.poison ? baseConfig.poison * multiplier : undefined; // Scale poison with rarity
     // Scale passiveHeal: x3 per rarity up to mythic, then x sqrt(3) per rarity up to apex
-    const mythicIndex = exports.RARITY_LEVELS.indexOf('mythic');
+    const mythicIndex = getRarityIndex('mythic');
     const passiveHealMultiplier = rarityIndex <= mythicIndex
         ? Math.pow(3, rarityIndex)
         : Math.pow(3, mythicIndex) * Math.pow(Math.sqrt(3), rarityIndex - mythicIndex);

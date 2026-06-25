@@ -60,13 +60,13 @@ function executeAction(action, context, trigger) {
             // We don't need to do anything here as the petal will be marked as broken
             break;
         case 'damage_boost':
-            applyDamageBoost(player, action.value || 1.5, action.duration || 5000);
+            applyPlayerEffect(player, 'damage_boost', action.value || 1.5, action.duration || 5000);
             break;
         case 'speed_boost':
-            applySpeedBoost(player, action.value || 1.5, action.duration || 5000);
+            applyPlayerEffect(player, 'speed_boost', action.value || 1.5, action.duration || 5000);
             break;
         case 'shield':
-            applyShield(player, action.value || 50, action.duration || 3000);
+            applyPlayerEffect(player, 'shield', action.value || 50, action.duration || 3000);
             break;
         case 'explode':
             explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
@@ -152,7 +152,7 @@ function healPlayer(player, healAmount, io, context) {
     if (context && context.loadoutIndex !== undefined) {
         const petal = player.loadout[context.loadoutIndex];
         if (petal && petal.type === 'petal' && petal.rarity) {
-            const rarityIndex = petals_1.RARITY_LEVELS.indexOf(petal.rarity);
+            const rarityIndex = (0, petals_1.getRarityIndex)(petal.rarity);
             if (rarityIndex >= 0) {
                 rarityMultiplier = Math.pow(Math.sqrt(3), rarityIndex);
             }
@@ -170,59 +170,11 @@ function healPlayer(player, healAmount, io, context) {
         });
     }
 }
-// Apply damage boost to player
-function applyDamageBoost(player, multiplier, duration) {
-    const effect = {
-        type: 'damage_boost',
-        value: multiplier,
-        duration: duration,
-        startTime: Date.now()
-    };
-    // Initialize effects array if it doesn't exist
-    if (!player.effects) {
+function applyPlayerEffect(player, type, value, duration) {
+    if (!player.effects)
         player.effects = [];
-    }
-    // Remove existing damage boost effects
-    player.effects = player.effects.filter(e => e.type !== 'damage_boost');
-    // Add new effect
-    player.effects.push(effect);
-    console.log(`Player ${player.id} gained damage boost: ${multiplier}x for ${duration}ms`);
-}
-// Apply speed boost to player
-function applySpeedBoost(player, multiplier, duration) {
-    const effect = {
-        type: 'speed_boost',
-        value: multiplier,
-        duration: duration,
-        startTime: Date.now()
-    };
-    // Initialize effects array if it doesn't exist
-    if (!player.effects) {
-        player.effects = [];
-    }
-    // Remove existing speed boost effects
-    player.effects = player.effects.filter(e => e.type !== 'speed_boost');
-    // Add new effect
-    player.effects.push(effect);
-    console.log(`Player ${player.id} gained speed boost: ${multiplier}x for ${duration}ms`);
-}
-// Apply shield to player
-function applyShield(player, shieldAmount, duration) {
-    const effect = {
-        type: 'shield',
-        value: shieldAmount,
-        duration: duration,
-        startTime: Date.now()
-    };
-    // Initialize effects array if it doesn't exist
-    if (!player.effects) {
-        player.effects = [];
-    }
-    // Remove existing shield effects
-    player.effects = player.effects.filter(e => e.type !== 'shield');
-    // Add new effect
-    player.effects.push(effect);
-    console.log(`Player ${player.id} gained shield: ${shieldAmount} for ${duration}ms`);
+    player.effects = player.effects.filter(e => e.type !== type);
+    player.effects.push({ type, value, duration, startTime: Date.now() });
 }
 // Explode petal and deal area damage
 function explodePetal(x, y, petalSize, damage, enemies, io, player) {
@@ -448,8 +400,7 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
         return;
     }
     // Calculate range bonus: +200 per rarity level
-    const { RARITY_LEVELS } = require('./petals');
-    const rarityIndex = RARITY_LEVELS.indexOf(rarity.toLowerCase());
+    const rarityIndex = (0, petals_1.getRarityIndex)(rarity.toLowerCase());
     const rangeBonus = rarityIndex >= 0 ? rarityIndex * 200 : 0;
     const petRange = (mobStats.range || 0) + rangeBonus;
     // Create the pet enemy
@@ -973,15 +924,15 @@ function executeNextAction(petalId, deltaTime) {
             actionState.currentActionIndex++;
             break;
         case 'damage_boost':
-            applyDamageBoost(player, action.value || 1.5, action.duration || 5000);
+            applyPlayerEffect(player, 'damage_boost', action.value || 1.5, action.duration || 5000);
             actionState.currentActionIndex++;
             break;
         case 'speed_boost':
-            applySpeedBoost(player, action.value || 1.5, action.duration || 5000);
+            applyPlayerEffect(player, 'speed_boost', action.value || 1.5, action.duration || 5000);
             actionState.currentActionIndex++;
             break;
         case 'shield':
-            applyShield(player, action.value || 50, action.duration || 3000);
+            applyPlayerEffect(player, 'shield', action.value || 50, action.duration || 3000);
             actionState.currentActionIndex++;
             break;
         case 'explode':

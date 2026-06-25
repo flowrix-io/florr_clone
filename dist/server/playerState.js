@@ -126,7 +126,7 @@ const SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after sp
 function getEffectiveCooldown(petal, petalStats) {
     let cooldownTime = petalStats.cooldown || 10000;
     if (petal.petalType === 'bubble' && petal.rarity) {
-        const rarityIdx = Math.max(0, petals_1.RARITY_LEVELS.indexOf(petal.rarity));
+        const rarityIdx = Math.max(0, (0, petals_1.getRarityIndex)(petal.rarity));
         cooldownTime = Math.max(50, cooldownTime * Math.pow(0.85, rarityIdx));
     }
     return cooldownTime;
@@ -232,7 +232,7 @@ function getRaindropAuraRadius(player) {
             continue;
         if (petal.onCooldown)
             continue;
-        const rarityIndex = Math.max(0, petals_1.RARITY_LEVELS.indexOf(petal.rarity));
+        const rarityIndex = Math.max(0, (0, petals_1.getRarityIndex)(petal.rarity));
         const radius = RAINDROP_AURA_BASE_RADIUS + rarityIndex * RAINDROP_AURA_RADIUS_PER_RARITY;
         if (radius > bestRadius)
             bestRadius = radius;
@@ -261,7 +261,7 @@ function applyRaindropAuraDamage(player, deps) {
         const stats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
         if (!stats)
             continue;
-        const rarityIndex = Math.max(0, petals_1.RARITY_LEVELS.indexOf(petal.rarity));
+        const rarityIndex = Math.max(0, (0, petals_1.getRarityIndex)(petal.rarity));
         const radius = RAINDROP_AURA_BASE_RADIUS + rarityIndex * RAINDROP_AURA_RADIUS_PER_RARITY;
         if (stats.damage > bestDamage)
             bestDamage = stats.damage;
@@ -1332,7 +1332,7 @@ function updatePlayerState(player, deltaTime, deps) {
                 const dy = player.y - petalY;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist > 0) {
-                    const rarityIdx = Math.max(0, petals_1.RARITY_LEVELS.indexOf((petal.rarity ?? 'common')));
+                    const rarityIdx = Math.max(0, (0, petals_1.getRarityIndex)(petal.rarity ?? 'common'));
                     const boostMagnitude = 60 * (1 + rarityIdx * 0.6);
                     // Substep so a high-rarity boost can't tunnel through walls; on each blocked
                     // step, reflect the remaining boost across the wall normal so the player bounces.

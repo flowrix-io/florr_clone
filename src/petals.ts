@@ -92,6 +92,10 @@ export const RARITY_LEVELS = [
 
 export type Rarity = typeof RARITY_LEVELS[number];
 
+export function getRarityIndex(rarity: Rarity | string): number {
+    return RARITY_LEVELS.indexOf(rarity as Rarity);
+}
+
 // Canonical UI rarity colors — single source of truth for all panels/UI
 export const ITEM_RARITY_COLORS: Record<string, string> = {
     common: '#7eef6d',
@@ -2413,8 +2417,8 @@ export function getLightningScalingInfo(rarity: Rarity): { multiplier: number, d
 
 // Function to find SVG fallback for higher rarities
 function findSvgFallback(petalType: string, rarity: Rarity): string | undefined {
-    const rarityIndex = RARITY_LEVELS.indexOf(rarity);
-    
+    const rarityIndex = getRarityIndex(rarity);
+
     // Try to find SVG from lower rarities
     for (let i = rarityIndex - 1; i >= 0; i--) {
         const lowerRarity = RARITY_LEVELS[i];
@@ -2430,7 +2434,7 @@ function findSvgFallback(petalType: string, rarity: Rarity): string | undefined 
 
 // Function to generate petal stats for a specific rarity
 function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalType: string): PetalStats {
-    const rarityIndex = RARITY_LEVELS.indexOf(rarity);
+    const rarityIndex = getRarityIndex(rarity);
     const multiplier = Math.pow(3, rarityIndex); // 3x multiplier for each rarity level
     
     const prefix = RARITY_PREFIXES[rarity];
@@ -2444,7 +2448,7 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
     let health = baseConfig.health * multiplier;
     let poison = baseConfig.poison ? baseConfig.poison * multiplier : undefined; // Scale poison with rarity
     // Scale passiveHeal: x3 per rarity up to mythic, then x sqrt(3) per rarity up to apex
-    const mythicIndex = RARITY_LEVELS.indexOf('mythic');
+    const mythicIndex = getRarityIndex('mythic');
     const passiveHealMultiplier = rarityIndex <= mythicIndex
         ? Math.pow(3, rarityIndex)
         : Math.pow(3, mythicIndex) * Math.pow(Math.sqrt(3), rarityIndex - mythicIndex);

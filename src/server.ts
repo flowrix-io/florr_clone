@@ -41,7 +41,7 @@ if (invalidEggTypes.size > 0) {
 import { ServerPlayer, PlayerInventory, FaceFlags } from './player';
 import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets, cleanupPlayerPetalActionState } from './petal_actions';
-import { RARITY_LEVELS, Rarity } from './petals';
+import { RARITY_LEVELS, getRarityIndex, Rarity } from './petals';
 import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
 import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
@@ -1184,7 +1184,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             // Count spent TP by summing costs of unlocked tiers
             const countSpentTP = (tier: string | undefined): number => {
                 if (!tier) return 0;
-                const index = RARITY_LEVELS.indexOf(tier as Rarity);
+                const index = getRarityIndex(tier);
                 if (index < 0) return 0;
                 // Sum costs from common up to this tier
                 let total = 0;
@@ -3247,8 +3247,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         // Get current tier for this skill
         const skillKey = data.skillId as keyof typeof player.skills;
         const currentTier = player.skills[skillKey];
-        const currentIndex = currentTier ? RARITY_LEVELS.indexOf(currentTier as Rarity) : -1;
-        const targetIndex = RARITY_LEVELS.indexOf(data.rarity as Rarity);
+        const currentIndex = currentTier ? getRarityIndex(currentTier) : -1;
+        const targetIndex = getRarityIndex(data.rarity);
 
         // Check if this is the next tier in sequence
         if (targetIndex !== currentIndex + 1) {
@@ -3259,8 +3259,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         // Second Chance requires rare Flower Health (playerHealth) as prerequisite
         if (data.skillId === 'secondChance') {
             const playerHealthTier = player.skills.playerHealth;
-            const playerHealthIdx = playerHealthTier ? RARITY_LEVELS.indexOf(playerHealthTier as Rarity) : -1;
-            const rareIdx = RARITY_LEVELS.indexOf('rare' as Rarity);
+            const playerHealthIdx = playerHealthTier ? getRarityIndex(playerHealthTier) : -1;
+            const rareIdx = getRarityIndex('rare');
             if (playerHealthIdx < rareIdx) {
                 socket.emit('skillUpgradeError', { message: 'Requires rare Flower Health' });
                 return;
@@ -4352,8 +4352,8 @@ function moveEnemies() {
             }
 
             // Suck in nearby players if sandstorm is super rarity or above
-            const sandstormRarityIndex = RARITY_LEVELS.indexOf(enemy.tier as Rarity);
-            const superRarityIndex = RARITY_LEVELS.indexOf('super');
+            const sandstormRarityIndex = getRarityIndex(enemy.tier);
+            const superRarityIndex = getRarityIndex('super');
             if (sandstormRarityIndex >= superRarityIndex) {
                 const SANDSTORM_SUCK_RANGE = 400;
                 const SANDSTORM_SUCK_FORCE = 1.5;

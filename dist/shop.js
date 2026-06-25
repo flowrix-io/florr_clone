@@ -15,7 +15,7 @@ const SHOP_PRICES = {
 const DEFAULT_SHOP_PRICE = 10;
 function getShopPrice(petalType, rarity) {
     const basePrice = SHOP_PRICES[petalType] || DEFAULT_SHOP_PRICE;
-    const rarityIndex = petals_1.RARITY_LEVELS.indexOf(rarity);
+    const rarityIndex = (0, petals_1.getRarityIndex)(rarity);
     return Math.floor(basePrice * Math.pow(3.5, rarityIndex));
 }
 /* -------------------------- Layout constants -------------------------- */

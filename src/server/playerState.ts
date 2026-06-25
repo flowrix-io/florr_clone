@@ -3,7 +3,7 @@ import { ServerPlayer } from '../player';
 import { Enemy, getXPFromEnemy } from '../server_utils';
 import { PlayerProjectile } from '../enemy';
 import { WorldItem } from '../item';
-import { RARITY_LEVELS, Rarity, getAllPetalTypes, getPetalStats } from '../petals';
+import { RARITY_LEVELS, getRarityIndex, Rarity, getAllPetalTypes, getPetalStats } from '../petals';
 import {
     players,
     enemies,
@@ -188,7 +188,7 @@ const SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after sp
 function getEffectiveCooldown(petal: any, petalStats: any): number {
     let cooldownTime = petalStats.cooldown || 10000;
     if (petal.petalType === 'bubble' && petal.rarity) {
-        const rarityIdx = Math.max(0, RARITY_LEVELS.indexOf(petal.rarity as Rarity));
+        const rarityIdx = Math.max(0, getRarityIndex(petal.rarity));
         cooldownTime = Math.max(50, cooldownTime * Math.pow(0.85, rarityIdx));
     }
     return cooldownTime;
@@ -303,7 +303,7 @@ export function getRaindropAuraRadius(player: ServerPlayer): number {
         const petal = player.loadout[i];
         if (!petal || petal.type !== 'petal' || petal.petalType !== 'raindrop' || !petal.rarity) continue;
         if (petal.onCooldown) continue;
-        const rarityIndex = Math.max(0, RARITY_LEVELS.indexOf(petal.rarity as Rarity));
+        const rarityIndex = Math.max(0, getRarityIndex(petal.rarity));
         const radius = RAINDROP_AURA_BASE_RADIUS + rarityIndex * RAINDROP_AURA_RADIUS_PER_RARITY;
         if (radius > bestRadius) bestRadius = radius;
     }
@@ -329,7 +329,7 @@ function applyRaindropAuraDamage(player: ServerPlayer, deps: PlayerStateDependen
         if (petal.onCooldown) continue;
         const stats = getPetalStats(petal.petalType, petal.rarity);
         if (!stats) continue;
-        const rarityIndex = Math.max(0, RARITY_LEVELS.indexOf(petal.rarity as Rarity));
+        const rarityIndex = Math.max(0, getRarityIndex(petal.rarity));
         const radius = RAINDROP_AURA_BASE_RADIUS + rarityIndex * RAINDROP_AURA_RADIUS_PER_RARITY;
         if (stats.damage > bestDamage) bestDamage = stats.damage;
         if (radius > bestRadius) bestRadius = radius;
@@ -1525,7 +1525,7 @@ export function updatePlayerState(
                 const dy = player.y - petalY;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist > 0) {
-                    const rarityIdx = Math.max(0, RARITY_LEVELS.indexOf((petal.rarity ?? 'common') as Rarity));
+                    const rarityIdx = Math.max(0, getRarityIndex(petal.rarity ?? 'common'));
                     const boostMagnitude = 60 * (1 + rarityIdx * 0.6);
                     // Substep so a high-rarity boost can't tunnel through walls; on each blocked
                     // step, reflect the remaining boost across the wall normal so the player bounces.

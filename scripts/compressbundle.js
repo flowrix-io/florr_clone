@@ -13,7 +13,7 @@ async function getFileSize(path) {
     console.log(`${path} size: ${fileStats.size} bytes`);
     return fileStats.size;
   } catch (err) {
-    console.error("Error reading file stats:", err);
+    console.error("Bundle not ready yet (likely first build)");
   }
 }
 

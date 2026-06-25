@@ -3,7 +3,7 @@
 // playerHealth, healingMultiplier), each branch a chain of nine rarity tiers
 // connected by dashed lines. The center of the panel hosts a small flower-face
 // avatar representing the player; the bottom-right shows derived stat lines.
-import { RARITY_LEVELS, Rarity, ITEM_RARITY_COLORS } from '../petals';
+import { RARITY_LEVELS, getRarityIndex, Rarity, ITEM_RARITY_COLORS } from '../petals';
 
 interface GameAPI {
     getLocalPlayer(): any;
@@ -388,7 +388,7 @@ export class CanvasSkillsPanel {
     private getCurrentTierIndex(skillId: string): number {
         const tier = this.playerSkills[skillId];
         if (!tier) return -1;
-        return RARITY_LEVELS.indexOf(tier as Rarity);
+        return getRarityIndex(tier);
     }
 
     public draw() {
@@ -549,7 +549,7 @@ export class CanvasSkillsPanel {
                 let unlocked = t <= currentIdx;
                 if (skill.branchFrom && skill.prerequisiteRarity) {
                     const parentIdx = this.getCurrentTierIndex(skill.branchFrom.skillId);
-                    const reqIdx = RARITY_LEVELS.indexOf(skill.prerequisiteRarity as Rarity);
+                    const reqIdx = getRarityIndex(skill.prerequisiteRarity);
                     if (parentIdx < reqIdx) unlocked = false;
                 }
 
@@ -573,7 +573,7 @@ export class CanvasSkillsPanel {
         const skill = SKILLS.find(s => s.id === skillId);
         if (!skill?.branchFrom || !skill.prerequisiteRarity) return true;
         const parentIdx = this.getCurrentTierIndex(skill.branchFrom.skillId);
-        const reqIdx = RARITY_LEVELS.indexOf(skill.prerequisiteRarity as Rarity);
+        const reqIdx = getRarityIndex(skill.prerequisiteRarity);
         return parentIdx >= reqIdx;
     }
 

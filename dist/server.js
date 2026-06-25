@@ -927,7 +927,7 @@ io.on('connection', (socket) => {
             const countSpentTP = (tier) => {
                 if (!tier)
                     return 0;
-                const index = petals_1.RARITY_LEVELS.indexOf(tier);
+                const index = (0, petals_1.getRarityIndex)(tier);
                 if (index < 0)
                     return 0;
                 // Sum costs from common up to this tier
@@ -2956,8 +2956,8 @@ io.on('connection', (socket) => {
         // Get current tier for this skill
         const skillKey = data.skillId;
         const currentTier = player.skills[skillKey];
-        const currentIndex = currentTier ? petals_1.RARITY_LEVELS.indexOf(currentTier) : -1;
-        const targetIndex = petals_1.RARITY_LEVELS.indexOf(data.rarity);
+        const currentIndex = currentTier ? (0, petals_1.getRarityIndex)(currentTier) : -1;
+        const targetIndex = (0, petals_1.getRarityIndex)(data.rarity);
         // Check if this is the next tier in sequence
         if (targetIndex !== currentIndex + 1) {
             socket.emit('skillUpgradeError', { message: 'Must upgrade tiers in order' });
@@ -2966,8 +2966,8 @@ io.on('connection', (socket) => {
         // Second Chance requires rare Flower Health (playerHealth) as prerequisite
         if (data.skillId === 'secondChance') {
             const playerHealthTier = player.skills.playerHealth;
-            const playerHealthIdx = playerHealthTier ? petals_1.RARITY_LEVELS.indexOf(playerHealthTier) : -1;
-            const rareIdx = petals_1.RARITY_LEVELS.indexOf('rare');
+            const playerHealthIdx = playerHealthTier ? (0, petals_1.getRarityIndex)(playerHealthTier) : -1;
+            const rareIdx = (0, petals_1.getRarityIndex)('rare');
             if (playerHealthIdx < rareIdx) {
                 socket.emit('skillUpgradeError', { message: 'Requires rare Flower Health' });
                 return;
@@ -3938,8 +3938,8 @@ function moveEnemies() {
                     }
                 }
                 // Suck in nearby players if sandstorm is super rarity or above
-                const sandstormRarityIndex = petals_1.RARITY_LEVELS.indexOf(enemy.tier);
-                const superRarityIndex = petals_1.RARITY_LEVELS.indexOf('super');
+                const sandstormRarityIndex = (0, petals_1.getRarityIndex)(enemy.tier);
+                const superRarityIndex = (0, petals_1.getRarityIndex)('super');
                 if (sandstormRarityIndex >= superRarityIndex) {
                     const SANDSTORM_SUCK_RANGE = 400;
                     const SANDSTORM_SUCK_FORCE = 1.5;

@@ -1,4 +1,4 @@
-import { PetalAction, parsePetalActions, RARITY_LEVELS } from './petals';
+import { PetalAction, parsePetalActions, getRarityIndex } from './petals';
 import { ServerPlayer } from './player';
 import { Item } from './item';
 import { Enemy, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
@@ -107,15 +107,15 @@ function executeAction(action: PetalAction, context: ActionContext, trigger: 'on
             break;
 
         case 'damage_boost':
-                applyDamageBoost(player, action.value || 1.5, action.duration || 5000);
+                applyPlayerEffect(player, 'damage_boost', action.value || 1.5, action.duration || 5000);
             break;
 
         case 'speed_boost':
-                applySpeedBoost(player, action.value || 1.5, action.duration || 5000);
+                applyPlayerEffect(player, 'speed_boost', action.value || 1.5, action.duration || 5000);
             break;
 
         case 'shield':
-                applyShield(player, action.value || 50, action.duration || 3000);
+                applyPlayerEffect(player, 'shield', action.value || 50, action.duration || 3000);
             break;
 
         case 'explode':
@@ -208,7 +208,7 @@ function healPlayer(player: ServerPlayer, healAmount: number, io: any, context?:
     if (context && context.loadoutIndex !== undefined) {
         const petal = player.loadout[context.loadoutIndex];
         if (petal && petal.type === 'petal' && petal.rarity) {
-            const rarityIndex = RARITY_LEVELS.indexOf(petal.rarity);
+            const rarityIndex = getRarityIndex(petal.rarity);
             if (rarityIndex >= 0) {
                 rarityMultiplier = Math.pow(Math.sqrt(3), rarityIndex);
             }
@@ -229,73 +229,10 @@ function healPlayer(player: ServerPlayer, healAmount: number, io: any, context?:
     }
 }
 
-// Apply damage boost to player
-function applyDamageBoost(player: ServerPlayer, multiplier: number, duration: number): void {
-    const effect: PlayerEffect = {
-        type: 'damage_boost',
-        value: multiplier,
-        duration: duration,
-        startTime: Date.now()
-    };
-
-    // Initialize effects array if it doesn't exist
-    if (!player.effects) {
-        player.effects = [];
-    }
-
-    // Remove existing damage boost effects
-    player.effects = player.effects.filter(e => e.type !== 'damage_boost');
-    
-    // Add new effect
-    player.effects.push(effect);
-    
-    console.log(`Player ${player.id} gained damage boost: ${multiplier}x for ${duration}ms`);
-}
-
-// Apply speed boost to player
-function applySpeedBoost(player: ServerPlayer, multiplier: number, duration: number): void {
-    const effect: PlayerEffect = {
-        type: 'speed_boost',
-        value: multiplier,
-        duration: duration,
-        startTime: Date.now()
-    };
-
-    // Initialize effects array if it doesn't exist
-    if (!player.effects) {
-        player.effects = [];
-    }
-
-    // Remove existing speed boost effects
-    player.effects = player.effects.filter(e => e.type !== 'speed_boost');
-    
-    // Add new effect
-    player.effects.push(effect);
-    
-    console.log(`Player ${player.id} gained speed boost: ${multiplier}x for ${duration}ms`);
-}
-
-// Apply shield to player
-function applyShield(player: ServerPlayer, shieldAmount: number, duration: number): void {
-    const effect: PlayerEffect = {
-        type: 'shield',
-        value: shieldAmount,
-        duration: duration,
-        startTime: Date.now()
-    };
-
-    // Initialize effects array if it doesn't exist
-    if (!player.effects) {
-        player.effects = [];
-    }
-
-    // Remove existing shield effects
-    player.effects = player.effects.filter(e => e.type !== 'shield');
-    
-    // Add new effect
-    player.effects.push(effect);
-    
-    console.log(`Player ${player.id} gained shield: ${shieldAmount} for ${duration}ms`);
+function applyPlayerEffect(player: ServerPlayer, type: PlayerEffect['type'], value: number, duration: number): void {
+    if (!player.effects) player.effects = [];
+    player.effects = player.effects.filter(e => e.type !== type);
+    player.effects.push({ type, value, duration, startTime: Date.now() });
 }
 
 // Explode petal and deal area damage
@@ -567,8 +504,7 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     }
 
     // Calculate range bonus: +200 per rarity level
-    const { RARITY_LEVELS } = require('./petals');
-    const rarityIndex = RARITY_LEVELS.indexOf(rarity.toLowerCase() as any);
+    const rarityIndex = getRarityIndex(rarity.toLowerCase());
     const rangeBonus = rarityIndex >= 0 ? rarityIndex * 200 : 0;
     const petRange = (mobStats.range || 0) + rangeBonus;
 
@@ -1148,17 +1084,17 @@ function executeNextAction(petalId: string, deltaTime: number): void {
             break;
 
         case 'damage_boost':
-            applyDamageBoost(player, action.value || 1.5, action.duration || 5000);
+            applyPlayerEffect(player, 'damage_boost', action.value || 1.5, action.duration || 5000);
             actionState.currentActionIndex++;
             break;
 
         case 'speed_boost':
-            applySpeedBoost(player, action.value || 1.5, action.duration || 5000);
+            applyPlayerEffect(player, 'speed_boost', action.value || 1.5, action.duration || 5000);
             actionState.currentActionIndex++;
             break;
 
         case 'shield':
-            applyShield(player, action.value || 50, action.duration || 3000);
+            applyPlayerEffect(player, 'shield', action.value || 50, action.duration || 3000);
             actionState.currentActionIndex++;
             break;
 

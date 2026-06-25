@@ -7,7 +7,7 @@
  */
 import { Player } from './player';
 import { Socket } from './socket';
-import { getPetalStats, getAllPetalTypes, RARITY_LEVELS, Rarity, ITEM_RARITY_COLORS } from './petals';
+import { getPetalStats, getAllPetalTypes, RARITY_LEVELS, getRarityIndex, Rarity, ITEM_RARITY_COLORS } from './petals';
 import { GAME_ICONS_NET_ICONS } from './game-icons-net-icons';
 
 interface GameInterface {
@@ -35,7 +35,7 @@ const DEFAULT_SHOP_PRICE = 10;
 
 function getShopPrice(petalType: string, rarity: Rarity): number {
     const basePrice = SHOP_PRICES[petalType] || DEFAULT_SHOP_PRICE;
-    const rarityIndex = RARITY_LEVELS.indexOf(rarity);
+    const rarityIndex = getRarityIndex(rarity);
     return Math.floor(basePrice * Math.pow(3.5, rarityIndex));
 }
 

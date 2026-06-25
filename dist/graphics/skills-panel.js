@@ -366,7 +366,7 @@ class CanvasSkillsPanel {
         const tier = this.playerSkills[skillId];
         if (!tier)
             return -1;
-        return petals_1.RARITY_LEVELS.indexOf(tier);
+        return (0, petals_1.getRarityIndex)(tier);
     }
     draw() {
         const { dpr, cssW, cssH } = this.syncCanvasSize();
@@ -508,7 +508,7 @@ class CanvasSkillsPanel {
                 let unlocked = t <= currentIdx;
                 if (skill.branchFrom && skill.prerequisiteRarity) {
                     const parentIdx = this.getCurrentTierIndex(skill.branchFrom.skillId);
-                    const reqIdx = petals_1.RARITY_LEVELS.indexOf(skill.prerequisiteRarity);
+                    const reqIdx = (0, petals_1.getRarityIndex)(skill.prerequisiteRarity);
                     if (parentIdx < reqIdx)
                         unlocked = false;
                 }
@@ -532,7 +532,7 @@ class CanvasSkillsPanel {
         if (!skill?.branchFrom || !skill.prerequisiteRarity)
             return true;
         const parentIdx = this.getCurrentTierIndex(skill.branchFrom.skillId);
-        const reqIdx = petals_1.RARITY_LEVELS.indexOf(skill.prerequisiteRarity);
+        const reqIdx = (0, petals_1.getRarityIndex)(skill.prerequisiteRarity);
         return parentIdx >= reqIdx;
     }
     drawNode(ctx, node, hovered) {
