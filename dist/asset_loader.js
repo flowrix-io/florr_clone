@@ -12,8 +12,6 @@ class AssetLoader {
         this.assets = {
             sprites: {
                 player: new Image(),
-                coral: new Image(),
-                palm: new Image(),
                 healthPotion: new Image(),
                 speedBoost: new Image(),
                 shield: new Image(),
@@ -32,8 +30,6 @@ class AssetLoader {
     initializeFromPreloaded(preloadedAssets) {
         console.log('[AssetLoader] Initializing from preloaded assets');
         this.assets.sprites.player = preloadedAssets.sprites.player;
-        this.assets.sprites.coral = preloadedAssets.sprites.coral;
-        this.assets.sprites.palm = preloadedAssets.sprites.palm;
         this.assets.sprites.healthPotion = preloadedAssets.sprites.healthPotion;
         this.assets.sprites.speedBoost = preloadedAssets.sprites.speedBoost;
         this.assets.sprites.shield = preloadedAssets.sprites.shield;
@@ -47,7 +43,7 @@ class AssetLoader {
         };
     }
     /**
-     * No-op now that player/coral/palm are procedural — only item sprites
+     * No-op now that player sprites are procedural — only item sprites
      * (loaded separately via setupItemSprites) still come from PNGs.
      */
     async loadSprites() { }
@@ -336,12 +332,6 @@ class AssetLoader {
     }
     get playerSprite() {
         return this.assets.sprites.player;
-    }
-    get coralSprite() {
-        return this.assets.sprites.coral;
-    }
-    get palmSprite() {
-        return this.assets.sprites.palm;
     }
     get healthPotionSprite() {
         return this.assets.sprites.healthPotion;

@@ -45,8 +45,6 @@ class Preloader {
         const assets = {
             sprites: {
                 player: new Image(),
-                coral: new Image(),
-                palm: new Image(),
                 healthPotion: new Image(),
                 speedBoost: new Image(),
                 shield: new Image(),

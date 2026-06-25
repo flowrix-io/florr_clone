@@ -123,7 +123,7 @@ export function initializeMapObstacles(): Obstacle[] {
             y: wall.y * SCALE_FACTOR,
             width: wall.width * SCALE_FACTOR,
             height: wall.height * SCALE_FACTOR,
-            type: 'coral',
+            type: 'wall',
             isEnemy: false
         });
     });

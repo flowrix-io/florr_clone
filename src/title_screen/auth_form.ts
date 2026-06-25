@@ -102,7 +102,7 @@ export class AuthForm {
 
         const advancedButtonY = currentY;
         const advancedButtonHeight = 35;
-        const advancedText = `Advanced Settings ${this.advancedSettingsVisible ? '▲' : '▼'}`;
+        const advancedText = `Advanced Settings ${this.advancedSettingsVisible ? '[^]' : '[v]'}`;
         drawGardnButton(ctx, inputX, advancedButtonY, inputWidth, advancedButtonHeight,
             '#7B2FA0', this.hoveredButton === 'toggleAdvanced', pressedButton === 'toggleAdvanced',
             advancedText, 14, 4, inputRadius);

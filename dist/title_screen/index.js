@@ -129,108 +129,6 @@ class TitleScreen {
         console.log('Available biomes detected:', this.availableBiomes);
     }
     initializeElements() {
-        // Create authentication container
-        this.authContainer = this.createElement('div', 'auth-container');
-        this.authContainer.id = 'authContainer';
-        this.authContainer.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 2000;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 20px;
-            border-radius: 10px;
-            color: white;
-            pointer-events: auto;
-        `;
-        document.body.style.cssText = `
-            background: rgb(0, 0, 0);
-        `;
-        this.loadingScreen = document.getElementById('loadingScreen');
-        if (this.loadingScreen) {
-            this.loadingScreen.style.cssText = `
-                display: none;
-            `;
-        }
-        // Create login form
-        this.loginForm = this.createElement('div', 'auth-form');
-        this.loginForm.id = 'loginForm';
-        this.loginForm.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            min-width: 300px;
-            `;
-        const displayHTTPWarning = location.protocol === 'http:';
-        const httpWarning = displayHTTPWarning ? '<h3>WARNING: You are using HTTP. This is not secure. Do not use a shared password with other accounts.</h3>' : '';
-        this.loginForm.innerHTML = `
-            <h2>Login</h2>
-            <div class="register-warning">
-                ${httpWarning}
-            </div>
-            <input type="text" id="loginUsername" placeholder="Username">
-            <input type="password" id="loginPassword" placeholder="Password">
-            <div class="advanced-settings">
-                <button type="button" id="advancedSettingsToggle" class="advanced-toggle">Advanced Settings ▼</button>
-                <div id="advancedSettings" class="advanced-settings-content hidden">
-                    <div class="server-input">
-                        <label for="serverIP-connect">Server IP:</label>
-                        <input type="text" id="serverIP-connect" placeholder="Server IP">
-                    </div>
-                </div>
-            </div>
-            <button id="loginButton">Login</button>
-            <button id="guestButton" style="background-color: #6c757d;">Play As Guest</button>
-            <p class="form-switch" id="showRegister">Need an account? Register</p>
-        `;
-        // Create register form
-        this.registerForm = this.createElement('div', 'auth-form hidden');
-        this.registerForm.id = 'registerForm';
-        this.registerForm.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            min-width: 300px;
-        `;
-        this.registerForm.innerHTML = `
-            <h2>Register</h2>
-            <br/>
-            <div class="register-warning">
-                ${httpWarning}
-                <h3>Do not use your real name or any personal information as your username.</h3>
-            </div>
-            <input type="text" id="registerUsername" placeholder="Username">
-            <input type="password" id="registerPassword" placeholder="Password">
-            <input type="password" id="registerConfirmPassword" placeholder="Confirm Password">
-            <div class="advanced-settings">
-                <button type="button" id="advancedSettingsToggleRegister" class="advanced-toggle">Advanced Settings ▼</button>
-                <div id="advancedSettingsRegister" class="advanced-settings-content hidden">
-                    <div class="server-input">
-                        <label for="serverIP-single">Server IP:</label>
-                        <input type="text" id="serverIP-single" placeholder="Server IP">
-                    </div>
-                </div>
-            </div>
-            <button id="registerButton">Register</button>
-            <button id="registerOfflineButton">Register Offline</button>
-            <p class="form-switch" id="showLogin">Already have an account? Login</p>
-        `;
-        if (localStorage.getItem('username')) {
-            this.loginForm.style.display = 'none';
-            this.registerForm.style.display = 'none';
-            this.authContainer.style.cssText = `
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                z-index: 2000;
-                background: transparent;
-            `;
-            this.authContainer.innerHTML = `
-                <h1 style="text-align: center; color: white; -webkit-text-stroke: 2px black;">Logging in...</h1>
-            `;
-        }
         // Create game menu (keeping for future buttons if needed)
         this.gameMenu = this.createElement('div', '');
         this.gameMenu.id = 'gameMenu';
@@ -251,27 +149,6 @@ class TitleScreen {
         this.gameMenu.innerHTML = `
             <!-- Settings button moved to exit button container -->
         `;
-        // Create center text
-        this.centerText = this.createElement('div', 'center_text');
-        this.centerText.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-            text-align: center;
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            background: transparent;
-            box-shadow: none;
-            pointer-events: none;
-        `;
-        // centerText was historically the wrapper for the loadout-bar canvas.
-        // The loadout now paints onto the shared title canvas, so this DOM node
-        // is empty dead-weight — kept around because hide/showCenterText are
-        // still called elsewhere, but it has no children.
-        this.centerText.innerHTML = '';
         // Settings values load themselves in the SettingsMenu constructor.
         // Create exit button container (now contains settings and exit buttons)
         this.exitButtonContainer = this.createElement('div', '');
@@ -414,11 +291,6 @@ class TitleScreen {
         this.loadingScreen = this.createElement('div', 'hidden');
         this.loadingScreen.id = 'loadingScreen';
         this.loadingScreen.innerHTML = `<p>Loading...</p>`;
-        // Create land and axolotl containers
-        this.landContainer = this.createElement('div', '');
-        this.landContainer.id = 'land-container';
-        this.axolotlContainer = this.createElement('div', '');
-        this.axolotlContainer.id = 'axolotl-container';
         // The "UI canvas" is the same element as the background canvas — see
         // the `uiCanvas` / `uiCtx` getters above. Nothing to create here.
         // Load saved player name
@@ -710,17 +582,9 @@ class TitleScreen {
     }
     async appendToBody() {
         this.background.mount();
-        // Hide DOM-based auth container since we're using canvas
-        this.authContainer.style.display = 'none';
-        document.body.appendChild(this.authContainer);
-        this.authContainer.appendChild(this.loginForm);
-        this.authContainer.appendChild(this.registerForm);
         document.body.appendChild(this.gameMenu);
-        document.body.appendChild(this.centerText);
         document.body.appendChild(this.exitButtonContainer);
         document.body.appendChild(this.loadingScreen);
-        document.body.appendChild(this.landContainer);
-        document.body.appendChild(this.axolotlContainer);
         // Hide the in-game canvas while on the title screen; the title canvas
         // owns rendering until a game starts.
         const gameCanvas = document.getElementById('gameCanvas');
@@ -746,8 +610,6 @@ class TitleScreen {
         await this.background.loadTexture();
         this.uiRenderingEnabled = true;
         this.background.start(this.titleFrame);
-        // Hide HTML centerText (empty dead-weight; loadout bar is on canvas now).
-        this.centerText.style.display = 'none';
         // The loadout bar now paints onto the shared title canvas via
         // titleFrame; if the auth form is up, hide it so it doesn't draw.
         if (this.authForm.isVisible()) {
@@ -771,147 +633,6 @@ class TitleScreen {
                 }
             }
         }, 2000); // Wait 2 seconds for connection attempt
-        // Add CSS for advanced settings
-        this.addAdvancedSettingsStyles();
-        // Debug: Check if forms are in DOM
-        console.log('Login form in DOM:', document.getElementById('loginForm'));
-        console.log('Register form in DOM:', document.getElementById('registerForm'));
-        console.log('Advanced settings toggle in DOM:', document.getElementById('advancedSettingsToggle'));
-        console.log('Advanced settings toggle register in DOM:', document.getElementById('advancedSettingsToggleRegister'));
-        console.log('Login form innerHTML:', this.loginForm.innerHTML);
-        // Setup advanced settings toggle functionality
-        this.setupAdvancedSettingsToggle();
-    }
-    addAdvancedSettingsStyles() {
-        const style = document.createElement('style');
-        style.textContent = `
-            .auth-form .advanced-settings {
-                margin: 10px 0 !important;
-            }
-            
-            .auth-form .advanced-toggle {
-                background: rgba(255, 0, 0, 0.8) !important;
-                border: 2px solid yellow !important;
-                color: white !important;
-                padding: 8px 12px !important;
-                border-radius: 5px !important;
-                cursor: pointer !important;
-                font-size: 14px !important;
-                transition: all 0.3s ease !important;
-                width: 100% !important;
-                display: block !important;
-                visibility: visible !important;
-                opacity: 1 !important;
-            }
-            
-            .auth-form .advanced-toggle:hover {
-                background: rgba(255, 255, 255, 0.2) !important;
-                border-color: rgba(255, 255, 255, 0.5) !important;
-            }
-            
-            .auth-form .advanced-settings-content {
-                margin-top: 10px !important;
-                padding: 10px !important;
-                background: rgba(0, 0, 0, 0.3) !important;
-                border-radius: 5px !important;
-                border: 1px solid rgba(255, 255, 255, 0.2) !important;
-            }
-            
-            .auth-form .advanced-settings-content.hidden {
-                display: none !important;
-            }
-            
-            .auth-form .server-input {
-                display: flex !important;
-                flex-direction: column !important;
-                gap: 5px !important;
-            }
-            
-            .auth-form .server-input label {
-                color: white !important;
-                font-size: 14px !important;
-                font-weight: bold !important;
-            }
-            
-            .auth-form .server-input input {
-                padding: 8px !important;
-                border: 1px solid rgba(255, 255, 255, 0.3) !important;
-                border-radius: 4px !important;
-                background: rgba(255, 255, 255, 0.1) !important;
-                color: white !important;
-                font-size: 14px !important;
-            }
-            
-            .auth-form .server-input input::placeholder {
-                color: rgba(255, 255, 255, 0.6) !important;
-            }
-            
-            .auth-form .server-input input:focus {
-                outline: none !important;
-                border-color: rgba(255, 255, 255, 0.6) !important;
-                background: rgba(255, 255, 255, 0.15) !important;
-            }
-        `;
-        document.head.appendChild(style);
-    }
-    setupAdvancedSettingsToggle() {
-        // Get current origin for default values
-        const currentOrigin = window.location.origin;
-        console.log('Setting up advanced settings toggle...');
-        console.log('Current origin:', currentOrigin);
-        // Use setTimeout to ensure DOM is ready
-        setTimeout(() => {
-            console.log('Inside setTimeout - checking for elements...');
-            // Setup login form advanced settings
-            const loginToggle = document.getElementById('advancedSettingsToggle');
-            const loginAdvancedSettings = document.getElementById('advancedSettings');
-            const loginServerInput = document.getElementById('serverIP-connect');
-            console.log('Login elements found:', { loginToggle, loginAdvancedSettings, loginServerInput });
-            console.log('Login toggle element:', loginToggle);
-            console.log('Login toggle innerHTML:', loginToggle?.innerHTML);
-            console.log('Login toggle style:', loginToggle?.style.cssText);
-            console.log('Login toggle computed style:', loginToggle ? window.getComputedStyle(loginToggle) : 'Element not found');
-            if (loginToggle && loginAdvancedSettings && loginServerInput) {
-                // Set default value to current origin
-                loginServerInput.value = currentOrigin;
-                loginToggle.addEventListener('click', () => {
-                    const isHidden = loginAdvancedSettings.classList.contains('hidden');
-                    if (isHidden) {
-                        loginAdvancedSettings.classList.remove('hidden');
-                        loginToggle.textContent = 'Advanced Settings ▲';
-                    }
-                    else {
-                        loginAdvancedSettings.classList.add('hidden');
-                        loginToggle.textContent = 'Advanced Settings ▼';
-                        // Reset to default when collapsed
-                        loginServerInput.value = currentOrigin;
-                    }
-                });
-            }
-            // Setup register form advanced settings
-            const registerToggle = document.getElementById('advancedSettingsToggleRegister');
-            const registerAdvancedSettings = document.getElementById('advancedSettingsRegister');
-            const registerServerInput = document.getElementById('serverIP-single');
-            console.log('Register elements found:', { registerToggle, registerAdvancedSettings, registerServerInput });
-            console.log('Current origin for register:', currentOrigin);
-            if (registerToggle && registerAdvancedSettings && registerServerInput) {
-                // Set default value to current origin
-                registerServerInput.value = currentOrigin;
-                registerToggle.addEventListener('click', () => {
-                    const isHidden = registerAdvancedSettings.classList.contains('hidden');
-                    if (isHidden) {
-                        registerAdvancedSettings.classList.remove('hidden');
-                        registerToggle.textContent = 'Advanced Settings ▲';
-                    }
-                    else {
-                        registerAdvancedSettings.classList.add('hidden');
-                        registerToggle.textContent = 'Advanced Settings ▼';
-                        // Reset to default when collapsed
-                        registerServerInput.value = currentOrigin;
-                    }
-                });
-            }
-        }, 100); // 100ms delay to ensure DOM is ready
     }
     /**
      * Sets up canvas UI event listeners for mouse and keyboard input
@@ -1411,20 +1132,10 @@ class TitleScreen {
     }
     hideAuthContainer() {
         this.authForm.hide();
-        // Also hide DOM-based auth container
-        if (this.authContainer) {
-            this.authContainer.style.display = 'none';
-        }
-        // Show loadout bar when auth form is hidden
         this.titleScreenInventoryManager?.showLoadoutBar();
     }
     showAuthContainer() {
         this.authForm.show();
-        // Keep DOM-based auth container hidden since we're using canvas-based form
-        if (this.authContainer) {
-            this.authContainer.style.display = 'none';
-        }
-        // Hide loadout bar when auth form is shown
         this.titleScreenInventoryManager?.hideLoadoutBar();
     }
     /**
@@ -1647,7 +1358,6 @@ class TitleScreen {
         this.gameMenu.style.display = 'none';
     }
     hideCenterText() {
-        this.centerText.style.display = 'none';
         if (this.uiCanvas) {
             this.uiCanvas.style.display = 'none';
         }
@@ -1655,7 +1365,6 @@ class TitleScreen {
         this.stopCanvasRendering();
     }
     showCenterText() {
-        this.centerText.style.display = 'none'; // Keep HTML hidden, use canvas
         if (this.uiCanvas) {
             this.uiCanvas.style.display = 'block';
         }

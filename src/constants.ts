@@ -206,9 +206,6 @@ export const PVP_WORLD_HEIGHT = 30000;
 export const SCALE_FACTOR = 1;
 //export let ENEMY_COUNT = 200;
 export const OBSTACLE_COUNT = 20;
-export const ENEMY_CORAL_PROBABILITY = 0.3;
-export const ENEMY_CORAL_HEALTH = 50;
-export const ENEMY_CORAL_DAMAGE = 5;
 
 export const PLAYER_MAX_HEALTH = 100;
 export const ENEMY_MAX_HEALTH = 50;

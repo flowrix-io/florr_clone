@@ -80,7 +80,7 @@ export interface Obstacle {
   y: number;
   width: number;
   height: number;
-  type: 'coral';
+  type: 'wall';
   isEnemy: boolean;
   health?: number;
 }

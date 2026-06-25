@@ -102,7 +102,7 @@ function initializeMapObstacles() {
             y: wall.y * constants_1.SCALE_FACTOR,
             width: wall.width * constants_1.SCALE_FACTOR,
             height: wall.height * constants_1.SCALE_FACTOR,
-            type: 'coral',
+            type: 'wall',
             isEnemy: false
         });
     });

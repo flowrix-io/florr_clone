@@ -38,21 +38,21 @@
     "width": 3000,
     "height": 3000,
     "properties": {
-      "biomeName": "coral_reef",
-      "backgroundTexture": "coral.png",
+      "biomeName": "meadow",
+      "backgroundTexture": "land.svg",
       "spawnTable": [
         {
-          "mobType": "fish",
+          "mobType": "bee",
           "tier": "common",
           "weight": 10
         },
         {
-          "mobType": "fish",
+          "mobType": "bee",
           "tier": "uncommon",
           "weight": 7
         },
         {
-          "mobType": "fish",
+          "mobType": "bee",
           "tier": "rare",
           "weight": 3
         }
@@ -66,21 +66,21 @@
     "width": 3500,
     "height": 3500,
     "properties": {
-      "biomeName": "deep_ocean",
+      "biomeName": "ant_colony",
       "backgroundTexture": "land.svg",
       "spawnTable": [
         {
-          "mobType": "octopus",
+          "mobType": "soldier_ant",
           "tier": "rare",
           "weight": 5
         },
         {
-          "mobType": "octopus",
+          "mobType": "soldier_ant",
           "tier": "epic",
           "weight": 4
         },
         {
-          "mobType": "octopus",
+          "mobType": "soldier_ant",
           "tier": "legendary",
           "weight": 2
         },
@@ -173,21 +173,21 @@
     "width": 3000,
     "height": 3000,
     "properties": {
-      "biomeName": "shark_territory",
+      "biomeName": "hornet_nest",
       "backgroundTexture": "land.svg",
       "spawnTable": [
         {
-          "mobType": "shark",
+          "mobType": "hornet",
           "tier": "rare",
           "weight": 6
         },
         {
-          "mobType": "shark",
+          "mobType": "hornet",
           "tier": "epic",
           "weight": 4
         },
         {
-          "mobType": "shark",
+          "mobType": "hornet",
           "tier": "legendary",
           "weight": 2
         }

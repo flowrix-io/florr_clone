@@ -3,7 +3,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const game_1 = require("./game");
 const skinStudio_1 = require("./skinStudio");
-const auth_ui_1 = require("./auth_ui");
 const title_screen_1 = require("./title_screen");
 const preloader_1 = require("./preloader");
 const petals_1 = require("./petals");
@@ -70,8 +69,6 @@ const bootstrap = async () => {
         // Seed biome list from the bundled map so the selector is populated
         // before any server connection.
         titleScreen.updateBiomesFromMapData(map_data_1.WORLD_MAP);
-        // Initialize auth UI after title screen is created
-        window.authUI = new auth_ui_1.AuthUI();
         // Preconnect if user is already logged in (showing "logging in")
         // Use setTimeout to ensure titleScreen is fully initialized
         setTimeout(() => {

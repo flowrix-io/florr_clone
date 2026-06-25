@@ -194,17 +194,17 @@
                             Enter JSON array of spawn entries<br>
                             mobType is optional (omit for any mob)
                         </div>
-                        <textarea id="spawnTableEditor" 
+                        <textarea id="spawnTableEditor"
                             style="height: 120px; font-family: monospace; resize: vertical;">[
-  {"mobType": "fish", "tier": "rare", "weight": 5},
-  {"mobType": "octopus", "tier": "epic", "weight": 3},
+  {"mobType": "bee", "tier": "rare", "weight": 5},
+  {"mobType": "hornet", "tier": "epic", "weight": 3},
   {"tier": "legendary", "weight": 2}
 ]</textarea>
                         <div style="font-size: 11px; color: #666; margin-top: 5px;">
                             Example format:<br>
-                            • {"mobType": "fish", "tier": "rare", "weight": 5}<br>
+                            • {"mobType": "bee", "tier": "rare", "weight": 5}<br>
                             • {"tier": "legendary", "weight": 2} (any mob type)<br>
-                            • {"mobType": "octopus", "tier": "mythic", "weight": 1}
+                            • {"mobType": "hornet", "tier": "mythic", "weight": 1}
                         </div>
                     </div>
                 </div>
@@ -948,8 +948,8 @@
                 document.getElementById('biomeName').value = '';
                 document.getElementById('backgroundTexture').value = '';
                 document.getElementById('spawnTableEditor').value = `[
-  {"mobType": "fish", "tier": "rare", "weight": 5},
-  {"mobType": "octopus", "tier": "epic", "weight": 3},
+  {"mobType": "bee", "tier": "rare", "weight": 5},
+  {"mobType": "hornet", "tier": "epic", "weight": 3},
   {"tier": "legendary", "weight": 2}
 ]`;
             }

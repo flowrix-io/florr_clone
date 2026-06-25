@@ -82,7 +82,7 @@ class AuthForm {
         }
         const advancedButtonY = currentY;
         const advancedButtonHeight = 35;
-        const advancedText = `Advanced Settings ${this.advancedSettingsVisible ? '▲' : '▼'}`;
+        const advancedText = `Advanced Settings ${this.advancedSettingsVisible ? '[^]' : '[v]'}`;
         (0, render_utils_1.drawGardnButton)(ctx, inputX, advancedButtonY, inputWidth, advancedButtonHeight, '#7B2FA0', this.hoveredButton === 'toggleAdvanced', pressedButton === 'toggleAdvanced', advancedText, 14, 4, inputRadius);
         currentY += advancedButtonHeight + 10;
         if (this.advancedSettingsVisible) {

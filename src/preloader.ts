@@ -7,8 +7,6 @@ import { SVGCanvasCompiler, renderCompiledSVGToCanvas } from './svg_canvas_rende
 export interface PreloadedAssets {
     sprites: {
         player: HTMLImageElement;
-        coral: HTMLImageElement;
-        palm: HTMLImageElement;
         healthPotion: HTMLImageElement;
         speedBoost: HTMLImageElement;
         shield: HTMLImageElement;
@@ -38,8 +36,6 @@ export class Preloader {
         const assets: PreloadedAssets = {
             sprites: {
                 player: new Image(),
-                coral: new Image(),
-                palm: new Image(),
                 healthPotion: new Image(),
                 speedBoost: new Image(),
                 shield: new Image(),

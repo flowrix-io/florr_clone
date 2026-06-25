@@ -2,7 +2,6 @@
 
 import { Game } from './game';
 import { getSkinStudio } from './skinStudio';
-import { AuthUI } from './auth_ui';
 import { TitleScreen, injectTitleScreenStyles } from './title_screen';
 import { Preloader, PreloadedAssets } from './preloader';
 import { PETAL_CONFIG } from './petals';
@@ -19,7 +18,6 @@ declare global {
     interface Window {
         currentGame: Game | null;
         titleScreen: TitleScreen | null;
-        authUI?: AuthUI;
         preconnectedSocket?: any;
         preconnectedMapData?: any;
     }
@@ -93,9 +91,6 @@ const bootstrap = async () => {
         // Seed biome list from the bundled map so the selector is populated
         // before any server connection.
         titleScreen.updateBiomesFromMapData(WORLD_MAP);
-        
-        // Initialize auth UI after title screen is created
-        window.authUI = new AuthUI();
         
         // Preconnect if user is already logged in (showing "logging in")
         // Use setTimeout to ensure titleScreen is fully initialized

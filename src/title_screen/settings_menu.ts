@@ -738,23 +738,20 @@ export class SettingsMenu {
     }
 
     /**
-     * Log the user out via the global AuthUI (clears credentials + server
-     * session), then reload so we land on a clean title screen with the auth
-     * form — works whether settings was opened on the title screen or in-game.
+     * Clear credentials and end the server session, then reload to the title screen.
      */
     private performLogout(): void {
         this.close();
-        const authUI = window.authUI;
-        if (authUI && typeof authUI.logout === 'function') {
-            authUI.logout();
-        } else {
-            // Fallback: clear stored credentials directly.
-            localStorage.removeItem('currentUser');
-            localStorage.removeItem('username');
-            localStorage.removeItem('password');
-            sessionStorage.removeItem('currentUser');
-            sessionStorage.removeItem('offlineCredentials');
-            sessionStorage.removeItem('isOffline');
+        const serverUrl = localStorage.getItem('serverUrl') || window.location.origin;
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('username');
+        localStorage.removeItem('password');
+        sessionStorage.removeItem('currentUser');
+        sessionStorage.removeItem('offlineCredentials');
+        sessionStorage.removeItem('isOffline');
+        if (!sessionStorage.getItem('isOffline')) {
+            fetch(`${serverUrl}/auth/logout`, { method: 'POST', credentials: 'include', keepalive: true })
+                .catch(() => {});
         }
         window.location.reload();
     }

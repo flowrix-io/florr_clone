@@ -506,7 +506,6 @@ class Game {
         this.performAuthentication();
     }
     performAuthentication() {
-        // Get credentials from AuthUI or localStorage
         const credentials = {
             username: localStorage.getItem('username') || 'player1',
             password: localStorage.getItem('password') || 'password123',
