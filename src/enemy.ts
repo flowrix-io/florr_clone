@@ -84,6 +84,8 @@ export interface Enemy {
   targetX?: number;
   targetY?: number;
   targetAngle?: number;
+  // Snapshot buffer for high-ping interpolation
+  _snapshots?: { t: number; x: number; y: number; angle?: number }[];
   // Centipede chain tracking
   leaderId?: string;
   headId?: string;

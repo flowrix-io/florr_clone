@@ -365,15 +365,15 @@ function setupSocketListeners(game) {
         const existingPlayer = game.players.get(player.id);
         const isCurrentPlayer = player.id === game.socket?.id;
         if (existingPlayer) {
-            if (isCurrentPlayer) {
-                // For current player, use smooth interpolation to server position
-                existingPlayer.targetX = player.x;
-                existingPlayer.targetY = player.y;
-            }
-            else {
-                // For other players, use interpolation to smooth movement
-                existingPlayer.targetX = player.x;
-                existingPlayer.targetY = player.y;
+            existingPlayer.targetX = player.x;
+            existingPlayer.targetY = player.y;
+            if (!isCurrentPlayer) {
+                const sNow = performance.now();
+                if (!existingPlayer._snapshots)
+                    existingPlayer._snapshots = [];
+                existingPlayer._snapshots.push({ t: sNow, x: player.x, y: player.y });
+                if (existingPlayer._snapshots.length > 12)
+                    existingPlayer._snapshots.shift();
             }
             // Update other properties
             existingPlayer.angle = player.angle;
@@ -616,6 +616,12 @@ function setupSocketListeners(game) {
             existingEnemy.targetX = enemy.x;
             existingEnemy.targetY = enemy.y;
             existingEnemy.targetAngle = enemy.angle;
+            const sNow = performance.now();
+            if (!existingEnemy._snapshots)
+                existingEnemy._snapshots = [];
+            existingEnemy._snapshots.push({ t: sNow, x: enemy.x, y: enemy.y, angle: enemy.angle });
+            if (existingEnemy._snapshots.length > 12)
+                existingEnemy._snapshots.shift();
             existingEnemy.health = enemy.health;
             existingEnemy.maxHealth = enemy.maxHealth;
             // Update other fields directly

@@ -1151,6 +1151,11 @@ export class Game {
         const smoothingRate = -Math.log(1 - lerpFactor) * 60;
         const smoothingFactor = 1 - Math.exp(-smoothingRate * frameDeltaMs / 1000);
 
+        // How far in the past remote entities are rendered. 80ms = ~2.4 server ticks,
+        // which guarantees a bracket pair even with moderate network jitter (±33ms).
+        const RENDER_DELAY_MS = 80;
+        const renderTime = now - RENDER_DELAY_MS;
+
         const localPlayerId = this.activePlayerId || this.socket?.id || '';
         for (const [pid, player] of this.players.entries()) {
             // The local player's position is owned by client-side prediction
@@ -1172,15 +1177,24 @@ export class Game {
                     }
                 }
             } else if (player.targetX !== undefined && player.targetY !== undefined) {
-                const dx = player.targetX - player.x;
-                const dy = player.targetY - player.y;
-                // Snap when close enough to avoid sub-pixel oscillation
-                if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
-                    player.x = player.targetX;
-                    player.y = player.targetY;
+                const snaps = player._snapshots;
+                if (snaps && snaps.length >= 2) {
+                    const interp = this.interpolateFromSnapshots(snaps, renderTime);
+                    if (interp) {
+                        player.x = interp.x;
+                        player.y = interp.y;
+                    }
                 } else {
-                    player.x += dx * smoothingFactor;
-                    player.y += dy * smoothingFactor;
+                    // Fallback to lerp until the snapshot buffer has at least two entries
+                    const dx = player.targetX - player.x;
+                    const dy = player.targetY - player.y;
+                    if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+                        player.x = player.targetX;
+                        player.y = player.targetY;
+                    } else {
+                        player.x += dx * smoothingFactor;
+                        player.y += dy * smoothingFactor;
+                    }
                 }
             }
 
@@ -1204,16 +1218,24 @@ export class Game {
         // Interpolate all enemies' positions (skip dying enemies)
         for (const enemy of this.enemies.values()) {
             if (enemy.deathAnimationStartTime) continue;
-            if (enemy.targetX !== undefined && enemy.targetY !== undefined) {
+            const snaps = enemy._snapshots;
+            if (snaps && snaps.length >= 2) {
+                const interp = this.interpolateFromSnapshots(snaps, renderTime);
+                if (interp) {
+                    enemy.x = interp.x;
+                    enemy.y = interp.y;
+                    if (interp.angle !== undefined) enemy.angle = interp.angle;
+                }
+            } else if (enemy.targetX !== undefined && enemy.targetY !== undefined) {
+                // Fallback to lerp until buffer has at least two entries
                 enemy.x += (enemy.targetX - enemy.x) * smoothingFactor;
                 enemy.y += (enemy.targetY - enemy.y) * smoothingFactor;
-            }
-            if (enemy.targetAngle !== undefined) {
-                // Interpolate angle with wrapping
-                let angleDiff = enemy.targetAngle - enemy.angle;
-                if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                enemy.angle += angleDiff * smoothingFactor;
+                if (enemy.targetAngle !== undefined) {
+                    let angleDiff = enemy.targetAngle - enemy.angle;
+                    if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                    enemy.angle += angleDiff * smoothingFactor;
+                }
             }
         }
 
@@ -1477,7 +1499,7 @@ export class Game {
         //    jitter and let the client glitch through subpixel gaps. The re-anchor
         //    delta is absorbed into renderErr so the rendered position doesn't jump.
         if (player.targetX !== this.lastSrvX || player.targetY !== this.lastSrvY) {
-            const lead = Math.min(0.18, Math.max(0.03, (this.averagePing + 33) / 1000));
+            const lead = Math.min(0.35, Math.max(0.03, (this.averagePing + 33) / 1000));
             const ext = stepPlayerMovement(
                 { x: player.targetX, y: player.targetY, vx: this.predVelX, vy: this.predVelY },
                 this.predTargetVX, this.predTargetVY, lead, effectiveSize
@@ -1509,6 +1531,47 @@ export class Game {
         this.renderErrY *= errDecay;
         player.x = this.predX - this.renderErrX;
         player.y = this.predY - this.renderErrY;
+    }
+
+    // Snapshot interpolation: find the two snapshots bracketing `renderTime` and
+    // return the linearly interpolated position. Returns null if the buffer is too
+    // small or renderTime is newer than all snapshots (caller should fall back to lerp).
+    private interpolateFromSnapshots(
+        snaps: { t: number; x: number; y: number; angle?: number }[],
+        renderTime: number
+    ): { x: number; y: number; angle?: number } | null {
+        if (snaps.length < 2) return null;
+        // Walk backward from the end to find the pair where snaps[i].t <= renderTime <= snaps[i+1].t
+        let i = snaps.length - 2;
+        while (i > 0 && snaps[i].t > renderTime) i--;
+        const s0 = snaps[i];
+        const s1 = snaps[i + 1];
+        if (s1.t <= renderTime) {
+            // renderTime is after ALL snapshots (buffer hasn't caught up yet) — extrapolate
+            // from the latest pair at most one server tick forward to avoid freezing.
+            const dt = s1.t - s0.t;
+            if (dt <= 0) return { x: s1.x, y: s1.y, angle: s1.angle };
+            const overshoot = Math.min((renderTime - s1.t) / dt, 1);
+            return {
+                x: s1.x + (s1.x - s0.x) * overshoot,
+                y: s1.y + (s1.y - s0.y) * overshoot,
+                angle: s1.angle,
+            };
+        }
+        const span = s1.t - s0.t;
+        if (span <= 0) return { x: s1.x, y: s1.y, angle: s1.angle };
+        const alpha = (renderTime - s0.t) / span;
+        const result: { x: number; y: number; angle?: number } = {
+            x: s0.x + (s1.x - s0.x) * alpha,
+            y: s0.y + (s1.y - s0.y) * alpha,
+        };
+        if (s0.angle !== undefined && s1.angle !== undefined) {
+            let da = s1.angle - s0.angle;
+            if (da > Math.PI) da -= Math.PI * 2;
+            if (da < -Math.PI) da += Math.PI * 2;
+            result.angle = s0.angle + da * alpha;
+        }
+        return result;
     }
 
     private getInputInterval(): number {

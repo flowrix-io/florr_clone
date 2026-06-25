@@ -68,6 +68,8 @@ export interface Player {
   // only to anchor its absolute petal positions (player.x/y itself is predicted).
   _refX?: number;
   _refY?: number;
+  // Snapshot buffer for high-ping interpolation (remote players only)
+  _snapshots?: { t: number; x: number; y: number }[];
   // Effective speed multiplier from the server (speed boosts / speed petals), so
   // client-side prediction can move at the same speed as the server.
   speedFactor?: number;
