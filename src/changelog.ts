@@ -373,6 +373,13 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Added skins menu',
         ]
     },
+    {
+        date: 'June 30, 2026',
+        changes: [
+            'Fixed unobtainable petals being in the shop',
+            'Bugfix(from discord/youtube bug reports)',
+        ]
+    },
 ];
 
 export class ChangelogManager {

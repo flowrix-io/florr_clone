@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 563961337,
+      "totalXP": 564048607,
       "inventory": {
         "common": {
           "petal_light": 197,
@@ -816,7 +816,7 @@
       "mobKills": {
         "ladybug": {
           "common": 1247,
-          "legendary": 796,
+          "legendary": 797,
           "uncommon": 442,
           "mythic": 743,
           "rare": 201,
@@ -830,7 +830,7 @@
           "legendary": 1216,
           "common": 1467,
           "rare": 453,
-          "mythic": 1271,
+          "mythic": 1272,
           "ultra": 145,
           "uncommon": 592,
           "super": 17,
@@ -873,7 +873,7 @@
         "dandelion": {
           "legendary": 644,
           "common": 1058,
-          "mythic": 622,
+          "mythic": 624,
           "uncommon": 409,
           "unique": 9,
           "ultra": 209,
@@ -884,7 +884,7 @@
         "bee": {
           "common": 1290,
           "epic": 255,
-          "mythic": 686,
+          "mythic": 687,
           "uncommon": 450,
           "legendary": 680,
           "rare": 225,
@@ -1183,7 +1183,7 @@
           "uncommon": 149,
           "legendary": 265,
           "epic": 77,
-          "mythic": 316,
+          "mythic": 317,
           "rare": 72,
           "ultra": 128,
           "super": 3
@@ -1192,10 +1192,10 @@
           "common": 2327,
           "uncommon": 1152,
           "legendary": 1833,
-          "mythic": 1893,
+          "mythic": 1896,
           "epic": 612,
           "rare": 619,
-          "ultra": 762
+          "ultra": 763
         },
         "desert_centipede_body": {
           "epic": 135,
@@ -1233,7 +1233,7 @@
           "legendary": 135,
           "common": 313,
           "mythic": 173,
-          "ultra": 53,
+          "ultra": 54,
           "unique": 2
         },
         "worker_fire_ant": {
@@ -1273,7 +1273,7 @@
           "ultra": 1
         }
       },
-      "stars": 161510,
+      "stars": 161528,
       "dailyStreak": 1,
       "lastStreakDate": "2026-06-30",
       "renderFlags": 0,
@@ -1835,7 +1835,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1782851560209
+      "lastActiveAt": 1782854063333
     },
     "dev": {
       "id": "1g99g1gfk",
