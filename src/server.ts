@@ -41,7 +41,7 @@ if (invalidEggTypes.size > 0) {
 import { ServerPlayer, PlayerInventory, FaceFlags } from './player';
 import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets, cleanupPlayerPetalActionState } from './petal_actions';
-import { RARITY_LEVELS, getRarityIndex, Rarity } from './petals';
+import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType } from './petals';
 import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
 import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
@@ -3546,6 +3546,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             // Skip admin petals
             if (petalStats.isAdminPetal) {
                 socket.emit('shopPurchaseError', 'Cannot purchase admin petals');
+                return;
+            }
+
+            if (isUndroppableEggPetalType(data.petalType)) {
+                socket.emit('shopPurchaseError', 'Cannot purchase undroppable eggs');
                 return;
             }
 

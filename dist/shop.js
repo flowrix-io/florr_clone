@@ -415,6 +415,8 @@ class ShopManager {
         const startX = x + 6;
         const startY = y + 6;
         for (const petalType of this.allPetalTypes) {
+            if ((0, petals_1.isUndroppableEggPetalType)(petalType))
+                continue;
             const commonStats = (0, petals_1.getPetalStats)(petalType, 'common');
             if (commonStats?.isAdminPetal)
                 continue;

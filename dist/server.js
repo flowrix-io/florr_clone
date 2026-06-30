@@ -3212,6 +3212,10 @@ io.on('connection', (socket) => {
                 socket.emit('shopPurchaseError', 'Cannot purchase admin petals');
                 return;
             }
+            if ((0, petals_1.isUndroppableEggPetalType)(data.petalType)) {
+                socket.emit('shopPurchaseError', 'Cannot purchase undroppable eggs');
+                return;
+            }
             // Skip unique rarity - not purchasable
             if (data.rarity === 'unique') {
                 socket.emit('shopPurchaseError', 'Cannot purchase unique rarity petals');

@@ -193,6 +193,9 @@ Graphics.prototype.drawItem = function(this: Graphics, item: WorldItem, players?
             this.ctx.strokeRect(item.x - 15, item.y - 15, 30, 30);
             this.ctx.restore();
         }
+        if (!deathAnim && item.rarity && (item.rarity === 'ultra' || item.rarity === 'super' || item.rarity === 'unique' || item.rarity === 'apex') && Math.random() < 0.1) {
+            this.showPetalParticleEffect(drawX, drawY, item.rarity);
+        }
         return;
     }
 

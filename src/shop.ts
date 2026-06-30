@@ -7,7 +7,7 @@
  */
 import { Player } from './player';
 import { Socket } from './socket';
-import { getPetalStats, getAllPetalTypes, RARITY_LEVELS, getRarityIndex, Rarity, ITEM_RARITY_COLORS } from './petals';
+import { getPetalStats, getAllPetalTypes, isUndroppableEggPetalType, RARITY_LEVELS, getRarityIndex, Rarity, ITEM_RARITY_COLORS } from './petals';
 import { GAME_ICONS_NET_ICONS } from './game-icons-net-icons';
 
 interface GameInterface {
@@ -503,6 +503,8 @@ export class ShopManager {
         const startY = y + 6;
 
         for (const petalType of this.allPetalTypes) {
+            if (isUndroppableEggPetalType(petalType)) continue;
+
             const commonStats = getPetalStats(petalType, 'common');
             if (commonStats?.isAdminPetal) continue;
 

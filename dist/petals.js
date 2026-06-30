@@ -6,6 +6,8 @@ exports.getLightningDamage = getLightningDamage;
 exports.getLightningScalingInfo = getLightningScalingInfo;
 exports.getPetalStats = getPetalStats;
 exports.getAllPetalTypes = getAllPetalTypes;
+exports.isEggPetalType = isEggPetalType;
+exports.isUndroppableEggPetalType = isUndroppableEggPetalType;
 exports.getPetalRarities = getPetalRarities;
 exports.parsePetalActions = parsePetalActions;
 const test_action_1 = require("./petal_action/test.action");
@@ -2393,6 +2395,15 @@ function getPetalStats(petalType, rarity) {
 }
 function getAllPetalTypes() {
     return Object.keys(exports.PETAL_CONFIG);
+}
+function isEggPetalType(petalType) {
+    return petalType.endsWith('_egg');
+}
+function isUndroppableEggPetalType(petalType) {
+    if (!isEggPetalType(petalType))
+        return false;
+    const mobType = petalType.slice(0, -'_egg'.length);
+    return mobs_1.BASE_MOB_CONFIGS[mobType]?.noEggDrop === true;
 }
 function getPetalRarities(petalType) {
     return Object.keys(exports.PETAL_CONFIG[petalType] || {});

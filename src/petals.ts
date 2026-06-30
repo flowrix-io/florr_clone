@@ -2607,6 +2607,17 @@ export function getAllPetalTypes(): string[] {
     return Object.keys(PETAL_CONFIG);
 }
 
+export function isEggPetalType(petalType: string): boolean {
+    return petalType.endsWith('_egg');
+}
+
+export function isUndroppableEggPetalType(petalType: string): boolean {
+    if (!isEggPetalType(petalType)) return false;
+
+    const mobType = petalType.slice(0, -'_egg'.length);
+    return BASE_MOB_CONFIGS[mobType]?.noEggDrop === true;
+}
+
 export function getPetalRarities(petalType: string): string[] {
     return Object.keys(PETAL_CONFIG[petalType] || {});
 }
