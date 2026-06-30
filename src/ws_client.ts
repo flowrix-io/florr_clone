@@ -30,6 +30,8 @@ export class WSClientSocket {
     private pendingMessages: Uint8Array[] = [];
 
     private eventBytes: Map<string, EventByteStats> = new Map();
+    private static readonly VOLATILE_EVENTS = new Set(['playerInput', 'ping']);
+    private static readonly MAX_VOLATILE_BUFFERED_BYTES = 16 * 1024;
 
     /** Return a snapshot of per-event byte counts since last reset. */
     getEventStats(): Map<string, EventByteStats> {
@@ -45,6 +47,10 @@ export class WSClientSocket {
         let s = this.eventBytes.get(event);
         if (!s) { s = { in: 0, out: 0 }; this.eventBytes.set(event, s); }
         if (dir === 'in') s.in += bytes; else s.out += bytes;
+    }
+
+    private isVolatile(event: string): boolean {
+        return WSClientSocket.VOLATILE_EVENTS.has(event);
     }
 
     constructor(url: string, _options?: any) {
@@ -192,13 +198,23 @@ export class WSClientSocket {
     }
 
     emit(event: string, ...args: any[]): this {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.isVolatile(event) &&
+            this.ws.bufferedAmount > WSClientSocket.MAX_VOLATILE_BUFFERED_BYTES) {
+            return this;
+        }
+
         const msg = encode([event, ...args]);
-        this.recordBytes(event, msg.byteLength, 'out');
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(msg);
-        } else {
-            // Queue messages until connected
+            this.recordBytes(event, msg.byteLength, 'out');
+        } else if (!this.isVolatile(event)) {
+            // Queue durable messages until connected. Stale input/heartbeat frames
+            // are intentionally dropped; sending old controls after congestion clears
+            // feels worse than missing a tick.
             this.pendingMessages.push(msg);
+            this.recordBytes(event, msg.byteLength, 'out');
+        } else {
+            // Drop volatile messages while disconnected or still handshaking.
         }
         return this;
     }

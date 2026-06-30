@@ -150,12 +150,7 @@ function preconnectToServer() {
     
     console.log(`[Index] Preconnecting to server: ${serverUrl}`);
     
-    preconnectedSocket = io(serverUrl, {
-        secure: serverUrl.startsWith('https'),
-        rejectUnauthorized: false,
-        withCredentials: true,
-        transports: ['websocket', 'polling'] // Explicitly set transports
-    });
+    preconnectedSocket = io(serverUrl);
     
     attachTitleScreenSocketListeners(preconnectedSocket);
 
@@ -458,4 +453,3 @@ function setupGameEventListeners() {
 }
 
 // Add this at the top of index.ts, before the Game class
-

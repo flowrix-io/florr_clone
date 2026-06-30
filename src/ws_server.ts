@@ -34,6 +34,9 @@ interface SocketUserData {
     socket: WSSocket | null;
 }
 
+const SEND_BINARY = true;
+const SEND_COMPRESSED = false;
+
 export class WSSocket {
     id: string;
     private ws: UWS_WebSocket<SocketUserData> | null;
@@ -132,7 +135,7 @@ export class WSSocket {
             recordBytes(event, payload.byteLength, 'out');
             // (data, isBinary, compress) — compress=false matches the perMessageDeflate
             // disable from the previous `ws`-backed implementation.
-            this.ws.send(payload, true, false);
+            this.ws.send(payload, SEND_BINARY, SEND_COMPRESSED);
             return true;
         } catch {
             return false;
@@ -143,7 +146,7 @@ export class WSSocket {
     sendRaw(payload: Uint8Array, event?: string): boolean {
         if (!this.ws || !this._connected) return false;
         try {
-            this.ws.send(payload, true, false);
+            this.ws.send(payload, SEND_BINARY, SEND_COMPRESSED);
             if (event) recordBytes(event, payload.byteLength, 'out');
             return true;
         } catch {
@@ -214,7 +217,7 @@ export class WSServer {
                 this.sockets_map.set(id, socket);
 
                 // Send the client its ID
-                ws.send(encode(['__sys', 'id', id]), true, false);
+                ws.send(encode(['__sys', 'id', id]), SEND_BINARY, SEND_COMPRESSED);
 
                 // Notify connection handlers
                 for (const handler of this.connectionHandlers) {

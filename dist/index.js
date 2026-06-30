@@ -122,12 +122,7 @@ function preconnectToServer() {
     const serverIp = titleScreen?.getServerIP() || window.location.origin;
     const serverUrl = serverIp || window.location.origin;
     console.log(`[Index] Preconnecting to server: ${serverUrl}`);
-    preconnectedSocket = (0, ws_client_1.io)(serverUrl, {
-        secure: serverUrl.startsWith('https'),
-        rejectUnauthorized: false,
-        withCredentials: true,
-        transports: ['websocket', 'polling'] // Explicitly set transports
-    });
+    preconnectedSocket = (0, ws_client_1.io)(serverUrl);
     attachTitleScreenSocketListeners(preconnectedSocket);
     window.preconnectedSocket = preconnectedSocket;
 }

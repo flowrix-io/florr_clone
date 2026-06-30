@@ -41,6 +41,8 @@ function recordBytes(event, bytes, dir) {
 }
 function getServerEventStats() { return eventByteStats; }
 function resetServerEventStats() { eventByteStats.clear(); }
+const SEND_BINARY = true;
+const SEND_COMPRESSED = false;
 class WSSocket {
     constructor(ws, id, server) {
         this.handlers = new Map();
@@ -126,7 +128,7 @@ class WSSocket {
             recordBytes(event, payload.byteLength, 'out');
             // (data, isBinary, compress) — compress=false matches the perMessageDeflate
             // disable from the previous `ws`-backed implementation.
-            this.ws.send(payload, true, false);
+            this.ws.send(payload, SEND_BINARY, SEND_COMPRESSED);
             return true;
         }
         catch {
@@ -138,7 +140,7 @@ class WSSocket {
         if (!this.ws || !this._connected)
             return false;
         try {
-            this.ws.send(payload, true, false);
+            this.ws.send(payload, SEND_BINARY, SEND_COMPRESSED);
             if (event)
                 recordBytes(event, payload.byteLength, 'out');
             return true;
@@ -206,7 +208,7 @@ class WSServer {
                 ws.getUserData().socket = socket;
                 this.sockets_map.set(id, socket);
                 // Send the client its ID
-                ws.send((0, binary_codec_1.encode)(['__sys', 'id', id]), true, false);
+                ws.send((0, binary_codec_1.encode)(['__sys', 'id', id]), SEND_BINARY, SEND_COMPRESSED);
                 // Notify connection handlers
                 for (const handler of this.connectionHandlers) {
                     handler(socket);

@@ -31,6 +31,9 @@ class WSClientSocket {
         else
             s.out += bytes;
     }
+    isVolatile(event) {
+        return WSClientSocket.VOLATILE_EVENTS.has(event);
+    }
     constructor(url, _options) {
         this.id = null;
         this.connected = false;
@@ -171,14 +174,24 @@ class WSClientSocket {
         return this;
     }
     emit(event, ...args) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.isVolatile(event) &&
+            this.ws.bufferedAmount > WSClientSocket.MAX_VOLATILE_BUFFERED_BYTES) {
+            return this;
+        }
         const msg = (0, binary_codec_1.encode)([event, ...args]);
-        this.recordBytes(event, msg.byteLength, 'out');
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(msg);
+            this.recordBytes(event, msg.byteLength, 'out');
+        }
+        else if (!this.isVolatile(event)) {
+            // Queue durable messages until connected. Stale input/heartbeat frames
+            // are intentionally dropped; sending old controls after congestion clears
+            // feels worse than missing a tick.
+            this.pendingMessages.push(msg);
+            this.recordBytes(event, msg.byteLength, 'out');
         }
         else {
-            // Queue messages until connected
-            this.pendingMessages.push(msg);
+            // Drop volatile messages while disconnected or still handshaking.
         }
         return this;
     }
@@ -211,6 +224,8 @@ class WSClientSocket {
     }
 }
 exports.WSClientSocket = WSClientSocket;
+WSClientSocket.VOLATILE_EVENTS = new Set(['playerInput', 'ping']);
+WSClientSocket.MAX_VOLATILE_BUFFERED_BYTES = 16 * 1024;
 // socket.io-compatible factory function
 function io(url, options) {
     return new WSClientSocket(url, options);
