@@ -83,6 +83,9 @@ class Game {
         this.renderErrY = 0;
         this.lastSrvX = 0;
         this.lastSrvY = 0;
+        this.inputSeq = 0;
+        this.lastAckInputSeq = 0;
+        this.lastSelfSnapshotMs = 0;
         this.predInit = false;
         this.fpsCounter = 0;
         this.fpsUpdateTime = 0;
@@ -1276,6 +1279,7 @@ class Game {
         // Throttle input sending based on connection quality
         const now = performance.now();
         if (now - this.lastInputSendTime >= this.getInputInterval()) {
+            inputData.seq = ++this.inputSeq;
             this.socket.emit('playerInput', inputData);
             this.lastInputSendTime = now;
         }
@@ -1336,15 +1340,23 @@ class Game {
             this.renderErrY = 0;
             this.lastSrvX = player.targetX;
             this.lastSrvY = player.targetY;
+            if (this.lastSelfSnapshotMs <= 0)
+                this.lastSelfSnapshotMs = performance.now();
             this.predInit = true;
         }
+        const now = performance.now();
+        const unackedInputs = Math.max(0, this.inputSeq - this.lastAckInputSeq);
+        const selfSnapshotAgeMs = this.lastSelfSnapshotMs > 0 ? now - this.lastSelfSnapshotMs : 0;
+        const serverStale = selfSnapshotAgeMs > 250 || unackedInputs > 12;
+        const targetVX = serverStale ? 0 : this.predTargetVX;
+        const targetVY = serverStale ? 0 : this.predTargetVY;
         // 1. Advance prediction with the SHARED movement step — byte-for-byte the
         //    same gardn friction + substepped wall/water collision the server runs
         //    (src/constants.ts stepPlayerMovement, called from playerState.ts). So in
         //    open movement there's nothing to reconcile, and walls/water resolve
         //    exactly as the server resolves them (no jitter, no spring).
         const effectiveSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
-        const moved = (0, constants_1.stepPlayerMovement)({ x: this.predX, y: this.predY, vx: this.predVelX, vy: this.predVelY }, this.predTargetVX, this.predTargetVY, dt, effectiveSize);
+        const moved = (0, constants_1.stepPlayerMovement)({ x: this.predX, y: this.predY, vx: this.predVelX, vy: this.predVelY }, targetVX, targetVY, dt, effectiveSize);
         this.predX = moved.x;
         this.predY = moved.y;
         this.predVelX = moved.vx;
@@ -1357,8 +1369,16 @@ class Game {
         //    jitter and let the client glitch through subpixel gaps. The re-anchor
         //    delta is absorbed into renderErr so the rendered position doesn't jump.
         if (player.targetX !== this.lastSrvX || player.targetY !== this.lastSrvY) {
-            const lead = Math.min(0.35, Math.max(0.03, (this.averagePing + 33) / 1000));
-            const ext = (0, constants_1.stepPlayerMovement)({ x: player.targetX, y: player.targetY, vx: this.predVelX, vy: this.predVelY }, this.predTargetVX, this.predTargetVY, lead, effectiveSize);
+            // averagePing is round-trip time. To project an authoritative snapshot
+            // from server-time to client-now, use roughly one-way latency plus one
+            // server tick of slack. Full RTT over-projects badly on high ping and
+            // turns every correction into a visible forward/backward wobble.
+            const oneWayMs = this.averagePing > 0 ? this.averagePing * 0.5 : 33;
+            const inputBacklogMs = serverStale ? 0 : Math.min(50, unackedInputs * this.MIN_INPUT_INTERVAL);
+            const lead = Math.min(0.24, Math.max(0.03, (oneWayMs + 33 + inputBacklogMs) / 1000));
+            const serverVelX = Number.isFinite(player.velocityX) ? player.velocityX : this.predVelX;
+            const serverVelY = Number.isFinite(player.velocityY) ? player.velocityY : this.predVelY;
+            const ext = (0, constants_1.stepPlayerMovement)({ x: player.targetX, y: player.targetY, vx: serverVelX, vy: serverVelY }, targetVX, targetVY, lead, effectiveSize);
             const authX = ext.x;
             const authY = ext.y;
             const adx = authX - this.predX;
@@ -1369,8 +1389,8 @@ class Game {
                 this.predY = authY;
                 this.renderErrX = 0;
                 this.renderErrY = 0;
-                this.predVelX = 0;
-                this.predVelY = 0;
+                this.predVelX = serverVelX;
+                this.predVelY = serverVelY;
             }
             else {
                 // Keep the rendered position put across the re-anchor, then let the
@@ -1379,12 +1399,17 @@ class Game {
                 this.renderErrY += ady;
                 this.predX = authX;
                 this.predY = authY;
+                this.predVelX = ext.vx;
+                this.predVelY = ext.vy;
             }
             this.lastSrvX = player.targetX;
             this.lastSrvY = player.targetY;
         }
-        // 3. Decay the render-error offset (~0.07s time constant) and render.
-        const errDecay = Math.exp(-15 * dt);
+        // 3. Decay the render-error offset and render. At higher RTTs, use a
+        // slightly longer blend so unavoidable corrections do not arrive as sharp
+        // snaps between less-regular network updates.
+        const correctionRate = this.averagePing > 200 ? 9 : this.averagePing > 100 ? 12 : 15;
+        const errDecay = Math.exp(-correctionRate * dt);
         this.renderErrX *= errDecay;
         this.renderErrY *= errDecay;
         player.x = this.predX - this.renderErrX;
@@ -1434,14 +1459,10 @@ class Game {
         return result;
     }
     getInputInterval() {
-        // Adjust input rate based on connection quality
-        if (this.connectionQuality === 'slow') {
-            return 66; // ~15 TPS for slow connections
-        }
-        else if (this.connectionQuality === 'medium') {
-            return 50; // ~20 TPS for medium connections
-        }
-        return this.MIN_INPUT_INTERVAL; // ~30 TPS for good connections
+        // Keep local controls at the server tick cadence even when RTT is high.
+        // Lowering input rate under high ping makes the server steer from stale
+        // controls longer, which increases correction size and feels glitchy.
+        return this.MIN_INPUT_INTERVAL;
     }
     formatBytes(bytes) {
         if (bytes < 1024)
@@ -1471,7 +1492,7 @@ class Game {
         }
         // Network
         const pingStr = this.averagePing > 0 ? `${Math.round(this.averagePing)}ms` : '--';
-        lines.push({ text: `Ping: ${pingStr} | In: ${this.formatBytes(this.incomingThroughput)}/s | Out: ${this.formatBytes(this.outgoingThroughput)}/s`, color: '#a78bfa' });
+        lines.push({ text: `Ping: ${pingStr} (${this.connectionQuality}) | In: ${this.formatBytes(this.incomingThroughput)}/s | Out: ${this.formatBytes(this.outgoingThroughput)}/s`, color: '#a78bfa' });
         // Top per-event bandwidth consumers (real wire bytes/sec from the prior 1s window).
         // Arrow indicates direction: ← incoming, → outgoing.
         if (this.topBandwidthEvents.length > 0) {

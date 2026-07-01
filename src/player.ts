@@ -148,6 +148,7 @@ export interface ServerPlayer {
   // for accurate client-side prediction.
   speedFactor?: number;
   inputs: {
+    seq?: number;
     keys: string[];
     useMouse?: boolean;
     mouseX?: number; // Deprecated - kept for backwards compatibility
@@ -157,6 +158,7 @@ export interface ServerPlayer {
     mouseSpeedMultiplier?: number; // Speed multiplier calculated on client (0.15 to 1.0)
     petalExtension?: number;
   };
+  lastProcessedInputSeq?: number;
   // Cross-server transfer properties
   isTransferred?: boolean;
   transferToken?: string;

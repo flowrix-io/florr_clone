@@ -851,6 +851,7 @@ interface AuthenticatedSocket extends Socket {
     lastSentEnemies?: Map<string, { x: number; y: number; a: number; h: number; H: number; t: any; T: any }>;
     lastSentPlayers?: Map<string, {
         x: number; y: number; a: number;
+        vx: number; vy: number;
         h: number; H: number;
         l: number; s: number;
         e: number;
@@ -858,6 +859,7 @@ interface AuthenticatedSocket extends Socket {
         v: number; V: number; z: number;
         n: string;
         sm: number;
+        u: number;
         petalsSig: number;
     }>;
 }
@@ -1072,10 +1074,12 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 const activePlayer = splitState.activeIndex === 0 ? splitState.player1 : splitState.player2;
                 if (activePlayer && players[activePlayer.id]) {
                     players[activePlayer.id].inputs = inputData;
+                    players[activePlayer.id].lastProcessedInputSeq = inputData.seq;
                 }
             } else {
                 // Normal player - apply inputs directly
                 player.inputs = inputData;
+                player.lastProcessedInputSeq = inputData.seq;
             }
         }
     });
@@ -5367,17 +5371,9 @@ function start_loop() {
             const quality = socket.connectionQuality || 'good';
             const now = Date.now();
 
-            // Adaptive update rate: 30 TPS for good, lower for weaker connections
-            let shouldUpdate = true;
-            if (socket.lastUpdateTime) {
-                const timeSinceLastUpdate = now - socket.lastUpdateTime;
-                if (quality === 'slow' && timeSinceLastUpdate < 100) {
-                    shouldUpdate = false;
-                } else if (quality === 'medium' && timeSinceLastUpdate < 67) {
-                    shouldUpdate = false;
-                }
-            }
-            if (!shouldUpdate) continue;
+            // Send every server tick. Local prediction needs frequent authoritative
+            // anchors, especially with fast movement where a 15 TPS correction cadence
+            // turns small prediction errors into large visible jumps.
 
             const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
             const anglePrecision = quality === 'slow' ? 0.1 : 0.05;
@@ -5403,6 +5399,8 @@ function start_loop() {
                 const sx = isSelf ? p.x : quantize(p.x, precision);
                 const sy = isSelf ? p.y : quantize(p.y, precision);
                 const sa = isSelf ? p.angle : quantize(p.angle, anglePrecision);
+                const svx = isSelf ? quantize(p.velocityX ?? 0, 0.01) : 0;
+                const svy = isSelf ? quantize(p.velocityY ?? 0, 0.01) : 0;
                 const sh = Math.round(p.health);
                 const sH = Math.round(p.maxHealth);
                 const sl = p.level;
@@ -5414,6 +5412,7 @@ function start_loop() {
                 const sn = p.name;
                 // Effective speed multiplier, sent to the owning client for prediction.
                 const sm = quantize(p.speedFactor ?? 1, 0.01);
+                const su = isSelf ? (p.lastProcessedInputSeq ?? 0) : 0;
 
                 // Petal positions: only sent to the local player for their *own* petals.
                 // For other players we omit the entire `p` array — the recipient's client
@@ -5455,6 +5454,8 @@ function start_loop() {
                 if (prev ? prev.x !== sx : true) { delta.x = sx; changed = true; }
                 if (prev ? prev.y !== sy : true) { delta.y = sy; changed = true; }
                 if (prev ? prev.a !== sa : sa !== 0) { delta.a = sa; changed = true; }
+                if (isSelf && (prev ? prev.vx !== svx : svx !== 0)) { delta.vx = svx; changed = true; }
+                if (isSelf && (prev ? prev.vy !== svy : svy !== 0)) { delta.vy = svy; changed = true; }
                 if (prev ? prev.h !== sh : true) { delta.h = sh; changed = true; }
                 if (prev ? prev.H !== sH : true) { delta.H = sH; changed = true; }
                 if (prev ? prev.l !== sl : sl !== 1) { delta.l = sl; changed = true; }
@@ -5471,6 +5472,9 @@ function start_loop() {
                 if (prev ? prev.n !== sn : true) { delta.n = sn; changed = true; }
                 // Only the owning client predicts, so only it needs the speed factor.
                 if (isSelf && (prev ? prev.sm !== sm : sm !== 1)) { delta.sm = sm; changed = true; }
+                // Echo the last input sequence processed by the server. This gives the
+                // client a stable acknowledgement marker when RTT is high or uneven.
+                if (isSelf && (prev ? prev.u !== su : su !== 0)) { delta.u = su; changed = true; }
                 // petalsOut is null for non-self players (their clients dead-reckon orbit
                 // positions). Only self gets the per-tick petal array.
                 if (petalsOut && (prev ? prev.petalsSig !== petalsSig : petalsOut.length > 0)) {
@@ -5481,11 +5485,12 @@ function start_loop() {
                 if (changed) {
                     changedPlayers.push(delta);
                     lastPlayers.set(p.id, {
-                        x: sx, y: sy, a: sa, h: sh, H: sH,
+                        x: sx, y: sy, a: sa, vx: svx, vy: svy, h: sh, H: sH,
                         l: sl, s: ss, e: se,
                         f: faceFlags, q: equipFlags, r: renderFlags, k: equippedSkinId, m: mouth,
                         v: sv, V: sV, z: sz, n: sn,
                         sm,
+                        u: su,
                         petalsSig,
                     });
                 }

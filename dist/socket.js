@@ -1105,14 +1105,21 @@ function setupSocketListeners(game) {
         if (serverPlayers) {
             for (const sp of serverPlayers) {
                 const id = sp.i;
+                const isSelf = id === (game.activePlayerId || game.socket?.id);
                 const existing = game.players.get(id);
                 if (existing) {
+                    if (isSelf)
+                        game.lastSelfSnapshotMs = performance.now();
                     if (sp.x !== undefined)
                         existing.targetX = sp.x;
                     if (sp.y !== undefined)
                         existing.targetY = sp.y;
                     if (sp.a !== undefined)
                         existing.angle = sp.a;
+                    if (sp.vx !== undefined)
+                        existing.velocityX = sp.vx;
+                    if (sp.vy !== undefined)
+                        existing.velocityY = sp.vy;
                     if (sp.h !== undefined)
                         existing.health = sp.h;
                     if (sp.H !== undefined)
@@ -1143,6 +1150,8 @@ function setupSocketListeners(game) {
                         existing.score = sp.s;
                     if (sp.sm !== undefined)
                         existing.speedFactor = sp.sm;
+                    if (sp.u !== undefined)
+                        game.lastAckInputSeq = sp.u;
                     if (sp.e !== undefined)
                         existing.petalExtension = sp.e || 1.0;
                     if (Array.isArray(sp.p)) {
@@ -1211,6 +1220,14 @@ function setupSocketListeners(game) {
                         xp: 0,
                         xpToNextLevel: 100,
                     };
+                    if (sp.vx !== undefined)
+                        newPlayer.velocityX = sp.vx;
+                    if (sp.vy !== undefined)
+                        newPlayer.velocityY = sp.vy;
+                    if (isSelf)
+                        game.lastSelfSnapshotMs = performance.now();
+                    if (sp.u !== undefined)
+                        game.lastAckInputSeq = sp.u;
                     if (Array.isArray(sp.p)) {
                         newPlayer.petalPositions = sp.p.map((pos) => ({
                             loadoutIndex: pos.L,
