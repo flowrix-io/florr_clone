@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 564048607,
+      "totalXP": 564048661,
       "inventory": {
         "common": {
           "petal_light": 197,
@@ -124,7 +124,7 @@
           "petal_glass": 1,
           "petal_leaf": 3,
           "petal_beetle_egg": 58,
-          "petal_dandelion": 8,
+          "petal_dandelion": 10,
           "petal_explosive": 518,
           "petal_lightning": 499,
           "petal_light": 264,
@@ -659,7 +659,7 @@
           "petal_yggdrasil": 2,
           "petal_rock": 2,
           "petal_square": 3,
-          "petal_bone": 6,
+          "petal_bone": 3,
           "petal_lightning": 2,
           "petal_cactus": 1,
           "petal_spider_egg": 1,
@@ -675,7 +675,6 @@
           "petal_cube_egg": 1,
           "petal_dust_egg": 1,
           "petal_bulb": 1,
-          "petal_dandelion": 2446,
           "petal_ladybug_egg": 2,
           "petal_sand": 2,
           "petal_rock_egg": 1,
@@ -691,7 +690,8 @@
           "petal_air": 1,
           "petal_soil": 1,
           "petal_yucca": 1,
-          "petal_clover": 3
+          "petal_clover": 3,
+          "petal_dandelion": 309
         },
         "apex": {
           "petal_centipede_egg": 1,
@@ -815,7 +815,7 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 1247,
+          "common": 1248,
           "legendary": 797,
           "uncommon": 442,
           "mythic": 743,
@@ -828,7 +828,7 @@
         "soldier_ant": {
           "epic": 325,
           "legendary": 1216,
-          "common": 1467,
+          "common": 1468,
           "rare": 453,
           "mythic": 1272,
           "ultra": 145,
@@ -849,7 +849,7 @@
           "unique": 3
         },
         "dark_ladybug": {
-          "common": 1505,
+          "common": 1506,
           "legendary": 580,
           "mythic": 638,
           "uncommon": 523,
@@ -860,7 +860,7 @@
           "unique": 3
         },
         "hornet": {
-          "common": 1874,
+          "common": 1878,
           "legendary": 1141,
           "mythic": 1246,
           "uncommon": 834,
@@ -882,7 +882,7 @@
           "super": 21
         },
         "bee": {
-          "common": 1290,
+          "common": 1292,
           "epic": 255,
           "mythic": 687,
           "uncommon": 450,
@@ -1273,9 +1273,9 @@
           "ultra": 1
         }
       },
-      "stars": 161528,
-      "dailyStreak": 1,
-      "lastStreakDate": "2026-06-30",
+      "stars": 161530,
+      "dailyStreak": 2,
+      "lastStreakDate": "2026-07-01",
       "renderFlags": 0,
       "equippedSkinId": "sk_mqvqqfcp_silt03"
     },
@@ -1835,7 +1835,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1782854063333
+      "lastActiveAt": 1782866478974
     },
     "dev": {
       "id": "1g99g1gfk",
@@ -2025,6 +2025,18 @@
       "type": "star_code",
       "message": "Star code \"G2UPGB4J\" redeemed by @sussy [sussy]! +1000 ⭐ Stars",
       "timestamp": 1782347797180
+    },
+    {
+      "id": "1782866438048-o14qv9yvp",
+      "type": "unique_craft",
+      "message": "A Dand has been crafted by @sussy [sussy]",
+      "timestamp": 1782866438048
+    },
+    {
+      "id": "1782866442598-92i6ign3g",
+      "type": "unique_craft",
+      "message": "A Dand has been crafted by @sussy [sussy]",
+      "timestamp": 1782866442598
     }
   ],
   "guilds": {

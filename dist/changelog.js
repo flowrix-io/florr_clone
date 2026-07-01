@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChangelogManager = exports.CHANGELOG = void 0;
+// This file should not be updated every time
+// It should only be updated when there are major changes
+const zoom_compensation_1 = require("./zoom-compensation");
 exports.CHANGELOG = [
     {
         date: 'October 18, 2025',
@@ -374,6 +377,7 @@ exports.CHANGELOG = [
         changes: [
             'Fixed unobtainable petals being in the shop',
             'Bugfix(from discord/youtube bug reports)',
+            'New link: link:https://flowrix.sussybite.dev'
         ]
     },
 ];
@@ -395,6 +399,7 @@ class ChangelogManager {
         this.isDragging = false;
         this.dragStartY = 0;
         this.dragStartScroll = 0;
+        this.linkBounds = [];
         // Close on escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.isOpen) {
@@ -413,14 +418,17 @@ class ChangelogManager {
         this.canvas.addEventListener('mousedown', (e) => {
             if (!this.isOpen)
                 return;
-            const rect = this.canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const { x, y } = this.getMousePosition(e);
             // Check close button
             if (this.closeButtonBounds &&
                 x >= this.closeButtonBounds.x && x <= this.closeButtonBounds.x + this.closeButtonBounds.width &&
                 y >= this.closeButtonBounds.y && y <= this.closeButtonBounds.y + this.closeButtonBounds.height) {
                 this.hide();
+                return;
+            }
+            const clickedLink = this.getLinkAt(x, y);
+            if (clickedLink) {
+                window.open(clickedLink.url, '_blank', 'noopener,noreferrer');
                 return;
             }
             // Check scrollbar
@@ -439,14 +447,15 @@ class ChangelogManager {
         this.canvas.addEventListener('mousemove', (e) => {
             if (!this.isOpen)
                 return;
+            const { x, y } = this.getMousePosition(e);
             if (this.isDragging) {
-                const rect = this.canvas.getBoundingClientRect();
-                const y = e.clientY - rect.top;
                 const deltaY = y - this.dragStartY;
                 const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
                 const scrollRatio = deltaY / (this.PANEL_HEIGHT - 45);
                 this.scrollY = Math.max(0, Math.min(maxScroll, this.dragStartScroll + scrollRatio * maxScroll));
+                return;
             }
+            this.canvas.style.cursor = this.getLinkAt(x, y) ? 'pointer' : '';
         });
         this.canvas.addEventListener('mouseup', () => {
             this.isDragging = false;
@@ -470,6 +479,7 @@ class ChangelogManager {
     }
     render() {
         if (!this.canvas || !this.isOpen) {
+            this.linkBounds = [];
             return;
         }
         // Re-get context if it's null (might have been lost)
@@ -481,6 +491,7 @@ class ChangelogManager {
             }
         }
         const ctx = this.ctx;
+        this.linkBounds = [];
         // The canvas is always full-screen now; the panel is drawn at PANEL_X/PANEL_Y.
         const offsetX = this.PANEL_X;
         const offsetY = this.PANEL_Y;
@@ -570,8 +581,7 @@ class ChangelogManager {
                 ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 0.5;
                 const textX = offsetX + this.PADDING + 20;
-                ctx.strokeText(change, textX, contentY);
-                ctx.fillText(change, textX, contentY);
+                this.drawChangeText(ctx, change, textX, contentY);
                 contentY += 24;
             });
             contentY += 15;
@@ -601,6 +611,92 @@ class ChangelogManager {
         };
         // Restore context state to prevent affecting other UI elements
         ctx.restore();
+    }
+    drawChangeText(ctx, change, x, y) {
+        const segments = this.parseChangeText(change);
+        let currentX = x;
+        segments.forEach(segment => {
+            if (!segment.text)
+                return;
+            const width = ctx.measureText(segment.text).width;
+            if (segment.type === 'link') {
+                ctx.fillStyle = '#d8f7ff';
+                ctx.strokeStyle = '#000000';
+                ctx.strokeText(segment.text, currentX, y);
+                ctx.fillText(segment.text, currentX, y);
+                ctx.beginPath();
+                ctx.strokeStyle = '#d8f7ff';
+                ctx.lineWidth = 1;
+                ctx.moveTo(currentX, y + 17);
+                ctx.lineTo(currentX + width, y + 17);
+                ctx.stroke();
+                this.linkBounds.push({
+                    x: currentX,
+                    y,
+                    width,
+                    height: 18,
+                    url: segment.url
+                });
+            }
+            else {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.strokeStyle = '#000000';
+                ctx.strokeText(segment.text, currentX, y);
+                ctx.fillText(segment.text, currentX, y);
+            }
+            currentX += width;
+        });
+    }
+    parseChangeText(change) {
+        const segments = [];
+        const linkPattern = /link:(\S+)/g;
+        let lastIndex = 0;
+        let match;
+        while ((match = linkPattern.exec(change)) !== null) {
+            if (match.index > lastIndex) {
+                segments.push({ type: 'text', text: change.slice(lastIndex, match.index) });
+            }
+            const rawUrl = match[1];
+            const url = this.normalizeLinkUrl(rawUrl);
+            segments.push({
+                type: 'link',
+                text: this.getLinkDisplayText(rawUrl),
+                url
+            });
+            lastIndex = match.index + match[0].length;
+        }
+        if (lastIndex < change.length) {
+            segments.push({ type: 'text', text: change.slice(lastIndex) });
+        }
+        return segments.length > 0 ? segments : [{ type: 'text', text: change }];
+    }
+    normalizeLinkUrl(rawUrl) {
+        return /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    }
+    getLinkDisplayText(rawUrl) {
+        try {
+            const url = new URL(this.normalizeLinkUrl(rawUrl));
+            return url.host + url.pathname.replace(/\/$/, '');
+        }
+        catch {
+            return rawUrl;
+        }
+    }
+    getLinkAt(x, y) {
+        const contentX = this.PANEL_X + this.PADDING;
+        const contentY = this.PANEL_Y + 40;
+        const contentWidth = this.PANEL_WIDTH - this.PADDING * 2;
+        const contentHeight = this.PANEL_HEIGHT - 40 - this.PADDING;
+        if (x < contentX || x > contentX + contentWidth || y < contentY || y > contentY + contentHeight) {
+            return null;
+        }
+        return this.linkBounds.find(bounds => x >= bounds.x &&
+            x <= bounds.x + bounds.width &&
+            y >= bounds.y &&
+            y <= bounds.y + bounds.height) || null;
+    }
+    getMousePosition(e) {
+        return this.canvas ? (0, zoom_compensation_1.canvasCoords)(this.canvas, e, true) : { x: 0, y: 0 };
     }
     roundRect(ctx, x, y, width, height, radius) {
         if (!ctx)
@@ -633,6 +729,10 @@ class ChangelogManager {
     }
     hide() {
         this.isOpen = false;
+        this.linkBounds = [];
+        if (this.canvas) {
+            this.canvas.style.cursor = '';
+        }
     }
     isChangelogOpen() {
         return this.isOpen;

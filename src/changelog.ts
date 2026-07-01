@@ -1,9 +1,23 @@
 // This file should not be updated every time
 // It should only be updated when there are major changes
+import { canvasCoords } from './zoom-compensation';
+
 export interface ChangelogEntry {
     date: string;
     changes: string[];
 }
+
+interface ChangelogLinkBounds {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    url: string;
+}
+
+type ChangelogTextSegment =
+    | { type: 'text'; text: string }
+    | { type: 'link'; text: string; url: string };
 
 export const CHANGELOG: ChangelogEntry[] = [
     {
@@ -378,6 +392,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         changes: [
             'Fixed unobtainable petals being in the shop',
             'Bugfix(from discord/youtube bug reports)',
+            'New link: link:https://flowrix.sussybite.dev'
         ]
     },
 ];
@@ -399,6 +414,7 @@ export class ChangelogManager {
     private isDragging: boolean = false;
     private dragStartY: number = 0;
     private dragStartScroll: number = 0;
+    private linkBounds: ChangelogLinkBounds[] = [];
 
     constructor() {
         // Close on escape key
@@ -420,15 +436,19 @@ export class ChangelogManager {
 
         this.canvas.addEventListener('mousedown', (e) => {
             if (!this.isOpen) return;
-            const rect = this.canvas!.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const { x, y } = this.getMousePosition(e);
 
             // Check close button
             if (this.closeButtonBounds && 
                 x >= this.closeButtonBounds.x && x <= this.closeButtonBounds.x + this.closeButtonBounds.width &&
                 y >= this.closeButtonBounds.y && y <= this.closeButtonBounds.y + this.closeButtonBounds.height) {
                 this.hide();
+                return;
+            }
+
+            const clickedLink = this.getLinkAt(x, y);
+            if (clickedLink) {
+                window.open(clickedLink.url, '_blank', 'noopener,noreferrer');
                 return;
             }
 
@@ -448,14 +468,17 @@ export class ChangelogManager {
 
         this.canvas.addEventListener('mousemove', (e) => {
             if (!this.isOpen) return;
+            const { x, y } = this.getMousePosition(e);
+
             if (this.isDragging) {
-                const rect = this.canvas!.getBoundingClientRect();
-                const y = e.clientY - rect.top;
                 const deltaY = y - this.dragStartY;
                 const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
                 const scrollRatio = deltaY / (this.PANEL_HEIGHT - 45);
                 this.scrollY = Math.max(0, Math.min(maxScroll, this.dragStartScroll + scrollRatio * maxScroll));
+                return;
             }
+
+            this.canvas!.style.cursor = this.getLinkAt(x, y) ? 'pointer' : '';
         });
 
         this.canvas.addEventListener('mouseup', () => {
@@ -482,6 +505,7 @@ export class ChangelogManager {
 
     public render(): void {
         if (!this.canvas || !this.isOpen) {
+            this.linkBounds = [];
             return;
         }
         // Re-get context if it's null (might have been lost)
@@ -493,6 +517,7 @@ export class ChangelogManager {
             }
         }
         const ctx = this.ctx;
+        this.linkBounds = [];
         
         // The canvas is always full-screen now; the panel is drawn at PANEL_X/PANEL_Y.
         const offsetX = this.PANEL_X;
@@ -601,8 +626,7 @@ export class ChangelogManager {
                 ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 0.5;
                 const textX = offsetX + this.PADDING + 20;
-                ctx.strokeText(change, textX, contentY);
-                ctx.fillText(change, textX, contentY);
+                this.drawChangeText(ctx, change, textX, contentY);
                 contentY += 24;
             });
             contentY += 15;
@@ -640,6 +664,108 @@ export class ChangelogManager {
         ctx.restore();
     }
 
+    private drawChangeText(ctx: CanvasRenderingContext2D, change: string, x: number, y: number): void {
+        const segments = this.parseChangeText(change);
+        let currentX = x;
+
+        segments.forEach(segment => {
+            if (!segment.text) return;
+
+            const width = ctx.measureText(segment.text).width;
+            if (segment.type === 'link') {
+                ctx.fillStyle = '#d8f7ff';
+                ctx.strokeStyle = '#000000';
+                ctx.strokeText(segment.text, currentX, y);
+                ctx.fillText(segment.text, currentX, y);
+
+                ctx.beginPath();
+                ctx.strokeStyle = '#d8f7ff';
+                ctx.lineWidth = 1;
+                ctx.moveTo(currentX, y + 17);
+                ctx.lineTo(currentX + width, y + 17);
+                ctx.stroke();
+
+                this.linkBounds.push({
+                    x: currentX,
+                    y,
+                    width,
+                    height: 18,
+                    url: segment.url
+                });
+            } else {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.strokeStyle = '#000000';
+                ctx.strokeText(segment.text, currentX, y);
+                ctx.fillText(segment.text, currentX, y);
+            }
+
+            currentX += width;
+        });
+    }
+
+    private parseChangeText(change: string): ChangelogTextSegment[] {
+        const segments: ChangelogTextSegment[] = [];
+        const linkPattern = /link:(\S+)/g;
+        let lastIndex = 0;
+        let match: RegExpExecArray | null;
+
+        while ((match = linkPattern.exec(change)) !== null) {
+            if (match.index > lastIndex) {
+                segments.push({ type: 'text', text: change.slice(lastIndex, match.index) });
+            }
+
+            const rawUrl = match[1];
+            const url = this.normalizeLinkUrl(rawUrl);
+            segments.push({
+                type: 'link',
+                text: this.getLinkDisplayText(rawUrl),
+                url
+            });
+            lastIndex = match.index + match[0].length;
+        }
+
+        if (lastIndex < change.length) {
+            segments.push({ type: 'text', text: change.slice(lastIndex) });
+        }
+
+        return segments.length > 0 ? segments : [{ type: 'text', text: change }];
+    }
+
+    private normalizeLinkUrl(rawUrl: string): string {
+        return /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    }
+
+    private getLinkDisplayText(rawUrl: string): string {
+        try {
+            const url = new URL(this.normalizeLinkUrl(rawUrl));
+            return url.host + url.pathname.replace(/\/$/, '');
+        } catch {
+            return rawUrl;
+        }
+    }
+
+    private getLinkAt(x: number, y: number): ChangelogLinkBounds | null {
+        const contentX = this.PANEL_X + this.PADDING;
+        const contentY = this.PANEL_Y + 40;
+        const contentWidth = this.PANEL_WIDTH - this.PADDING * 2;
+        const contentHeight = this.PANEL_HEIGHT - 40 - this.PADDING;
+
+        if (x < contentX || x > contentX + contentWidth || y < contentY || y > contentY + contentHeight) {
+            return null;
+        }
+
+        return this.linkBounds.find(bounds =>
+            x >= bounds.x &&
+            x <= bounds.x + bounds.width &&
+            y >= bounds.y &&
+            y <= bounds.y + bounds.height
+        ) || null;
+    }
+
+    private getMousePosition(e: MouseEvent): { x: number; y: number } {
+        return this.canvas ? canvasCoords(this.canvas, e, true) : { x: 0, y: 0 };
+    }
+
     private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
         if (!ctx) return;
         ctx.beginPath();
@@ -672,10 +798,13 @@ export class ChangelogManager {
 
     public hide(): void {
         this.isOpen = false;
+        this.linkBounds = [];
+        if (this.canvas) {
+            this.canvas.style.cursor = '';
+        }
     }
 
     public isChangelogOpen(): boolean {
         return this.isOpen;
     }
 }
-
