@@ -149,26 +149,26 @@ Graphics.prototype.drawFlower = function(this: Graphics, attrs: FlowerRenderAttr
 
     // Worried look when defending (and not dead, and mouth closed enough)
     // Triangles cover the outer edges of the eyes
-    if (!(faceFlags & FaceFlags.DeadEyes) && mouth <= 8 && (faceFlags & FaceFlags.Defending)) {
-        ctx.save();
-        ctx.fillStyle = baseColor;
-        ctx.translate(0, -mouth - 8);
-        // Left triangle — covers top-outer of left eye
-        ctx.beginPath();
-        ctx.moveTo(-12, 0);
-        ctx.lineTo(0, 0);
-        ctx.lineTo(-12, 6);
-        ctx.closePath();
-        ctx.fill();
-        // Right triangle — covers top-outer of right eye
-        ctx.beginPath();
-        ctx.moveTo(12, 0);
-        ctx.lineTo(0, 0);
-        ctx.lineTo(12, 6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-    }
+    // if (!(faceFlags & FaceFlags.DeadEyes) && mouth <= 8 && (faceFlags & FaceFlags.Defending)) {
+    //     ctx.save();
+    //     ctx.fillStyle = baseColor;
+    //     ctx.translate(0, -mouth - 8);
+    //     // Left triangle — covers top-outer of left eye
+    //     ctx.beginPath();
+    //     ctx.moveTo(-12, 0);
+    //     ctx.lineTo(0, 0);
+    //     ctx.lineTo(-12, 6);
+    //     ctx.closePath();
+    //     ctx.fill();
+    //     // Right triangle — covers top-outer of right eye
+    //     ctx.beginPath();
+    //     ctx.moveTo(12, 0);
+    //     ctx.lineTo(0, 0);
+    //     ctx.lineTo(12, 6);
+    //     ctx.closePath();
+    //     ctx.fill();
+    //     ctx.restore();
+    // }
 
     // ── Equipment: Antennae / Observer ────────────────────────
     if (equipFlags & (EquipmentFlags.Antennae | EquipmentFlags.Observer)) {
