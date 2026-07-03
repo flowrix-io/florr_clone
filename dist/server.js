@@ -1556,6 +1556,13 @@ io.on('connection', (socket) => {
                     return item1.petalType === item2.petalType;
                 return true;
             };
+            for (let index = 0; index < validatedLoadout.length; index++) {
+                const oldItem = oldLoadout[index] || null;
+                const newItem = validatedLoadout[index];
+                if (oldItem && newItem && itemsMatch(oldItem, newItem)) {
+                    validatedLoadout[index] = oldItem;
+                }
+            }
             // Pass 1: add unequipped items back, despawn pets for removed petals
             for (let index = 0; index < loadoutIterationLength; index++) {
                 const oldItem = oldLoadout[index] || null;

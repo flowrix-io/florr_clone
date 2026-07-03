@@ -28,6 +28,21 @@ const inventoryCodec_1 = require("../inventoryCodec");
 const utils_1 = require("./utils");
 // Map to store petal physics state (keyed by petalId)
 const petalPhysicsStates = new Map();
+// Drop a broken petal instance's spring state so its reload re-initializes at
+// the flower's center (the petal flies back out into orbit instead of resuming
+// from the stale position where it broke).
+function resetPetalPhysicsOnBreak(playerId, loadoutIndex, instanceIndex) {
+    petalPhysicsStates.delete(`${playerId}_${loadoutIndex}_${instanceIndex}`);
+}
+// Slot-wide break: every instance of the slot goes on cooldown together, so
+// drop all of their spring states.
+function resetSlotPetalPhysicsOnBreak(playerId, loadoutIndex) {
+    const prefix = `${playerId}_${loadoutIndex}_`;
+    for (const key of petalPhysicsStates.keys()) {
+        if (key.startsWith(prefix))
+            petalPhysicsStates.delete(key);
+    }
+}
 // Map to track last damage time for petals with damageCooldown (keyed by petalId)
 const petalLastDamageTime = new Map();
 // Raindrop aura: tracks the last time each (player, enemy) pair took aura damage,
@@ -95,6 +110,30 @@ function ensureInstanceArrays(petal, petalStats) {
     if (!Array.isArray(petal.instanceOnCooldown) || petal.instanceOnCooldown.length !== count) {
         petal.instanceOnCooldown = new Array(count).fill(false);
     }
+}
+function restoreIndependentPetalInstance(playerId, loadoutIndex, instanceIndex, snapshotPetalType, snapshotRarity, snapshotMaxHealth, io) {
+    const current = constants_1.players[playerId]?.loadout?.[loadoutIndex];
+    if (!current || current.type !== 'petal')
+        return;
+    if (current.petalType !== snapshotPetalType || current.rarity !== snapshotRarity)
+        return;
+    if (!current.petalType || !current.rarity)
+        return;
+    const currentStats = (0, petals_1.getPetalStats)(current.petalType, current.rarity);
+    if (!currentStats || !hasIndependentInstances(currentStats))
+        return;
+    ensureInstanceArrays(current, currentStats);
+    const restoredHealth = snapshotMaxHealth ?? current.maxHealth ?? currentStats.health;
+    current.instanceOnCooldown[instanceIndex] = false;
+    current.instanceHealth[instanceIndex] = restoredHealth;
+    current.health = Math.max(0, ...current.instanceHealth);
+    current.onCooldown = current.instanceOnCooldown.every((c) => c);
+    io.emit('petalRestored', {
+        playerId,
+        slotIndex: loadoutIndex,
+        instanceIndex,
+        petal: current
+    });
 }
 function getInstanceHealth(petal, instanceIndex, petalStats) {
     if (hasIndependentInstances(petalStats) && Array.isArray(petal.instanceHealth)) {
@@ -1094,25 +1133,13 @@ function updatePlayerState(player, deltaTime, deps) {
                         // Per-instance: only this instance breaks; other instances keep working
                         ensureInstanceArrays(petal, petalStats);
                         petal.instanceOnCooldown[instanceIndex] = true;
+                        resetPetalPhysicsOnBreak(player.id, loadoutIndex, instanceIndex);
                         const snapshotPetalType = petal.petalType;
                         const snapshotRarity = petal.rarity;
                         const snapshotMaxHealth = petal.maxHealth;
+                        const snapshotPlayerId = player.id;
                         setTimeout(() => {
-                            const current = constants_1.players[player.id]?.loadout?.[loadoutIndex];
-                            if (!current || current.type !== 'petal')
-                                return;
-                            if (current.petalType !== snapshotPetalType ||
-                                current.rarity !== snapshotRarity)
-                                return;
-                            if (Array.isArray(current.instanceOnCooldown) &&
-                                Array.isArray(current.instanceHealth)) {
-                                current.instanceOnCooldown[instanceIndex] = false;
-                                current.instanceHealth[instanceIndex] = snapshotMaxHealth ?? current.instanceHealth[instanceIndex];
-                                // If any instance is alive, the slot is no longer fully on cooldown
-                                if (current.instanceOnCooldown.every((c) => !c)) {
-                                    current.onCooldown = false;
-                                }
-                            }
+                            restoreIndependentPetalInstance(snapshotPlayerId, loadoutIndex, instanceIndex, snapshotPetalType, snapshotRarity, snapshotMaxHealth, io);
                         }, cooldownTime);
                         // Slot shows cooldown only when every instance is on cooldown
                         if (petal.instanceOnCooldown.every((c) => c)) {
@@ -1122,6 +1149,7 @@ function updatePlayerState(player, deltaTime, deps) {
                     else {
                         // Non-clumped: whole slot breaks (legacy behavior)
                         petal.onCooldown = true;
+                        resetSlotPetalPhysicsOnBreak(player.id, loadoutIndex);
                         const originalPetal = {
                             type: petal.type,
                             petalType: petal.petalType,
@@ -1214,10 +1242,11 @@ function updatePlayerState(player, deltaTime, deps) {
                 // Get or initialize petal physics state
                 let physicsState = petalPhysicsStates.get(petalId);
                 if (!physicsState) {
-                    // Initialize physics state at target orbit position (prevents petals from appearing inside player on reload)
+                    // New or reloaded petal: start at the flower's center and let the
+                    // spring (force-ramped over spawnSmoothTime) carry it out into orbit.
                     physicsState = {
-                        x: targetX,
-                        y: targetY,
+                        x: player.x,
+                        y: player.y,
                         vx: 0,
                         vy: 0,
                         spawnTime: currentTime
@@ -1235,6 +1264,10 @@ function updatePlayerState(player, deltaTime, deps) {
                 let closestEnemy = null;
                 let closestDistanceSq = Infinity;
                 for (const enemy of attractionCandidates) {
+                    // A mob killed earlier this tick (by another petal in this same
+                    // loop) is spliced out of `enemies` but still referenced here.
+                    if (enemy.isDead)
+                        continue;
                     const candidateMobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
                     const candidateEnemyRadius = candidateMobStats ? (candidateMobStats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2;
                     const dx = enemy.x - targetX;
@@ -1255,6 +1288,21 @@ function updatePlayerState(player, deltaTime, deps) {
                 // dedicated angular-motion code needed.
                 let effectiveTargetX = targetX;
                 let effectiveTargetY = targetY;
+                if (closestEnemy) {
+                    physicsState.attractedEnemyId = closestEnemy.id;
+                }
+                else if (physicsState.attractedEnemyId !== undefined) {
+                    // Attraction just released. If it released because the mob died
+                    // (rather than the orbit sweeping out of range), restart the
+                    // spring ramp so the petal glides back into orbit instead of
+                    // snapping there — the raw spring covers most of the gap in a
+                    // couple of ticks, which reads as the whole orbit jumping.
+                    const releasedFrom = physicsState.attractedEnemyId;
+                    physicsState.attractedEnemyId = undefined;
+                    if (!constants_1.enemies.some(e => e.id === releasedFrom)) {
+                        physicsState.spawnTime = currentTime;
+                    }
+                }
                 if (closestEnemy) {
                     const closestMobStats = (0, mobs_1.getMobStats)(closestEnemy.type, closestEnemy.tier);
                     const closestEnemyRadius = closestMobStats ? (closestMobStats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2;
@@ -1705,24 +1753,13 @@ function updatePlayerState(player, deltaTime, deps) {
                             // Per-instance: only this instance breaks; other instances keep working
                             ensureInstanceArrays(petal, petalStats);
                             petal.instanceOnCooldown[instanceIndex] = true;
+                            resetPetalPhysicsOnBreak(player.id, loadoutIndex, instanceIndex);
                             const snapshotPetalType = petal.petalType;
                             const snapshotRarity = petal.rarity;
                             const snapshotMaxHealth = petal.maxHealth;
+                            const snapshotPlayerId = player.id;
                             setTimeout(() => {
-                                const current = constants_1.players[player.id]?.loadout?.[loadoutIndex];
-                                if (!current || current.type !== 'petal')
-                                    return;
-                                if (current.petalType !== snapshotPetalType ||
-                                    current.rarity !== snapshotRarity)
-                                    return;
-                                if (Array.isArray(current.instanceOnCooldown) &&
-                                    Array.isArray(current.instanceHealth)) {
-                                    current.instanceOnCooldown[instanceIndex] = false;
-                                    current.instanceHealth[instanceIndex] = snapshotMaxHealth ?? current.instanceHealth[instanceIndex];
-                                    if (current.instanceOnCooldown.every((c) => !c)) {
-                                        current.onCooldown = false;
-                                    }
-                                }
+                                restoreIndependentPetalInstance(snapshotPlayerId, loadoutIndex, instanceIndex, snapshotPetalType, snapshotRarity, snapshotMaxHealth, io);
                             }, cooldownTime);
                             if (petal.instanceOnCooldown.every((c) => c)) {
                                 petal.onCooldown = true;
@@ -1731,6 +1768,7 @@ function updatePlayerState(player, deltaTime, deps) {
                         else {
                             // Non-clumped: whole slot breaks (legacy behavior)
                             petal.onCooldown = true;
+                            resetSlotPetalPhysicsOnBreak(player.id, loadoutIndex);
                             const originalPetal = {
                                 type: petal.type,
                                 petalType: petal.petalType,
