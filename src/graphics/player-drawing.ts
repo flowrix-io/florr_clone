@@ -270,11 +270,14 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
                 const refY = player._refY ?? player.targetY ?? playerY;
                 petalX = foundX - refX;
                 petalY = (foundY as number) - refY;
-            } else if (serverPositions && clumpCount > 1) {
-                // Multi-instance petal: the server omits an instance from petalPositions
-                // once it has broken (per-instance health/cooldown). Hide just that
-                // particle instead of drawing a phantom at its orbit slot while its
-                // siblings keep spinning.
+            } else if (serverPositions) {
+                // Local player (only the local player has serverPositions): no entry
+                // for this instance means the server hasn't placed it — broken
+                // (per-instance health/cooldown) or just restored, with its first
+                // position still a snapshot away. Hide it for that 1-2 frame window.
+                // The canonical fallback below derives its angle from wallclock time,
+                // not the server orbit phase, so drawing it there flashes the petal
+                // at a wrong position the instant it respawns.
                 continue;
             } else {
                 petalX = Math.cos(totalAngle) * petalRadius + clumpOffsetX;
