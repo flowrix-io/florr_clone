@@ -77,7 +77,20 @@ interface PetalPhysicsState {
     y: number; // Current position Y
     spawnTime?: number; // Time when petal was spawned (for smooth initialization)
     attractedEnemyId?: string; // Enemy this petal is currently attraction-locked to (for smooth release when it dies)
+    // While set and in the future, the petal glides toward its (moving) orbit
+    // target with a first-order approach instead of the spring. The spring is
+    // underdamped for large displacements (visible overshoot/oscillation), and
+    // ramping its force down instead just stalls the petal while the orbit
+    // rotates on, so it slings to a point far ahead when the ramp ends. The
+    // glide has no momentum: it starts moving immediately, never overshoots,
+    // and tracks the rotating target continuously. Used for the spawn/reload
+    // fly-out and for the release when an attracting mob dies.
+    glideUntil?: number;
 }
+
+const PETAL_SPAWN_GLIDE_MS = 300;   // reload/spawn: fly-out from the flower into orbit
+const PETAL_RELEASE_GLIDE_MS = 250; // attracting mob died: glide back into orbit
+const PETAL_GLIDE_RATE = 14;        // 1/s first-order approach rate (~95% converged in 220ms)
 
 // Map to store petal physics state (keyed by petalId)
 const petalPhysicsStates = new Map<string, PetalPhysicsState>();
@@ -1439,14 +1452,15 @@ export function updatePlayerState(
                 // Get or initialize petal physics state
                 let physicsState = petalPhysicsStates.get(petalId);
                 if (!physicsState) {
-                    // New or reloaded petal: start at the flower's center and let the
-                    // spring (force-ramped over spawnSmoothTime) carry it out into orbit.
+                    // New or reloaded petal: start at the flower's center and glide
+                    // out into orbit (overshoot-free, see glideUntil).
                     physicsState = {
                         x: player.x,
                         y: player.y,
                         vx: 0,
                         vy: 0,
-                        spawnTime: currentTime
+                        spawnTime: currentTime,
+                        glideUntil: currentTime + PETAL_SPAWN_GLIDE_MS
                     };
                     petalPhysicsStates.set(petalId, physicsState);
                 }
@@ -1492,14 +1506,13 @@ export function updatePlayerState(
                     physicsState.attractedEnemyId = closestEnemy.id;
                 } else if (physicsState.attractedEnemyId !== undefined) {
                     // Attraction just released. If it released because the mob died
-                    // (rather than the orbit sweeping out of range), restart the
-                    // spring ramp so the petal glides back into orbit instead of
-                    // snapping there — the raw spring covers most of the gap in a
-                    // couple of ticks, which reads as the whole orbit jumping.
+                    // (rather than the orbit sweeping out of range), glide back into
+                    // orbit — the raw spring covers most of the gap in a couple of
+                    // ticks, which reads as the whole orbit jumping.
                     const releasedFrom = physicsState.attractedEnemyId;
                     physicsState.attractedEnemyId = undefined;
                     if (!enemies.some(e => e.id === releasedFrom)) {
-                        physicsState.spawnTime = currentTime;
+                        physicsState.glideUntil = currentTime + PETAL_RELEASE_GLIDE_MS;
                     }
                 }
 
@@ -1521,31 +1534,46 @@ export function updatePlayerState(
                     effectiveTargetY = closestEnemy.y + Math.sin(projectionAngle) * mobOrbitRadius;
                 }
 
-                const springDx = effectiveTargetX - physicsState.x;
-                const springDy = effectiveTargetY - physicsState.y;
-                const springDistance = Math.sqrt(springDx * springDx + springDy * springDy);
+                if (physicsState.glideUntil !== undefined && currentTime < physicsState.glideUntil) {
+                    // Transit glide (spawn fly-out / post-kill release): first-order
+                    // approach toward the live target. vx/vy track the glide motion
+                    // so the spring takes over seamlessly when the window ends.
+                    const approach = 1 - Math.exp(-PETAL_GLIDE_RATE * deltaTime);
+                    const glideX = physicsState.x + (effectiveTargetX - physicsState.x) * approach;
+                    const glideY = physicsState.y + (effectiveTargetY - physicsState.y) * approach;
+                    physicsState.vx = (glideX - physicsState.x) / deltaTime;
+                    physicsState.vy = (glideY - physicsState.y) / deltaTime;
+                    physicsState.x = glideX;
+                    physicsState.y = glideY;
+                } else {
+                    if (physicsState.glideUntil !== undefined) physicsState.glideUntil = undefined;
 
-                let springFx = 0;
-                let springFy = 0;
+                    const springDx = effectiveTargetX - physicsState.x;
+                    const springDy = effectiveTargetY - physicsState.y;
+                    const springDistance = Math.sqrt(springDx * springDx + springDy * springDy);
 
-                if (springDistance > 0) {
-                    const normalizedSpringDx = springDx / springDistance;
-                    const normalizedSpringDy = springDy / springDistance;
+                    let springFx = 0;
+                    let springFy = 0;
 
-                    // Spring force is proportional to distance from target
-                    // Apply smooth factor to spring force (gradually increase after spawn)
-                    springFx = normalizedSpringDx * petalSpringForce * springDistance * deltaTime * smoothFactor;
-                    springFy = normalizedSpringDy * petalSpringForce * springDistance * deltaTime * smoothFactor;
+                    if (springDistance > 0) {
+                        const normalizedSpringDx = springDx / springDistance;
+                        const normalizedSpringDy = springDy / springDistance;
+
+                        // Spring force is proportional to distance from target
+                        // Apply smooth factor to spring force (gradually increase after spawn)
+                        springFx = normalizedSpringDx * petalSpringForce * springDistance * deltaTime * smoothFactor;
+                        springFy = normalizedSpringDy * petalSpringForce * springDistance * deltaTime * smoothFactor;
+                    }
+
+                    physicsState.vx += springFx;
+                    physicsState.vy += springFy;
+
+                    physicsState.vx *= petalDamping;
+                    physicsState.vy *= petalDamping;
+
+                    physicsState.x += physicsState.vx * deltaTime;
+                    physicsState.y += physicsState.vy * deltaTime;
                 }
-
-                physicsState.vx += springFx;
-                physicsState.vy += springFy;
-
-                physicsState.vx *= petalDamping;
-                physicsState.vy *= petalDamping;
-
-                physicsState.x += physicsState.vx * deltaTime;
-                physicsState.y += physicsState.vy * deltaTime;
                 
                 // Use physics-based position
                 petalX = physicsState.x;

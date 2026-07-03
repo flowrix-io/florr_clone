@@ -1094,7 +1094,16 @@ function setupSocketListeners(game: any) {
             const prevY = player.y;
             const newX = updatedPlayer.x;
             const newY = updatedPlayer.y;
+            // The full server player carries its raw petalPositions. Assigning
+            // them would wipe the client's per-petal interpolation state and
+            // snap every petal to its un-smoothed server spot — the whole
+            // orbit visibly jumps ahead by the interpolation lag. This event
+            // fires on every mob kill (trackMobKill) and on loadout changes,
+            // which is exactly when the jump was seen. Petal positions are
+            // owned by the gameStateUpdate delta pipeline; keep the client's.
+            const prevPetalPositions = player.petalPositions;
             Object.assign(player, updatedPlayer);
+            if (prevPetalPositions) player.petalPositions = prevPetalPositions;
             // Restore interpolated position, update targets
             if (newX !== undefined && newY !== undefined) {
                 player.x = prevX;
