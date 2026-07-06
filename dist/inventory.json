@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 565622771,
+      "totalXP": 565623071,
       "inventory": {
         "common": {
           "petal_light": 207,
@@ -42,7 +42,7 @@
           "petal_cactus_egg": 28,
           "petal_spider_egg": 75,
           "petal_moth_egg": 46,
-          "petal_garbage_egg": 926,
+          "petal_garbage_egg": 928,
           "petal_hel_beetle_egg": 29,
           "petal_soldier_fire_ant_egg": 78,
           "petal_mantis_egg": 19,
@@ -80,7 +80,7 @@
           "petal_worker_ant_egg": 48,
           "petal_worker_fire_ant_egg": 21,
           "petal_baby_fire_ant_egg": 15,
-          "petal_soil": 10,
+          "petal_soil": 11,
           "shield": 119,
           "petal_magnet": 15,
           "petal_air": 11,
@@ -262,7 +262,7 @@
           "petal_moth_egg": 33,
           "petal_bush_egg": 10,
           "petal_rock_egg": 140,
-          "petal_soldier_fire_ant_egg": 65,
+          "petal_soldier_fire_ant_egg": 66,
           "petal_spider_egg": 49,
           "petal_bulb": 15,
           "petal_jellyfish_egg": 18,
@@ -964,7 +964,7 @@
           "ultra": 37,
           "super": 2,
           "epic": 179,
-          "common": 3261,
+          "common": 3291,
           "uncommon": 247
         },
         "roach": {
@@ -1278,9 +1278,9 @@
           "ultra": 1
         }
       },
-      "stars": 161918,
+      "stars": 161919,
       "dailyStreak": 1,
-      "lastStreakDate": "2026-07-03",
+      "lastStreakDate": "2026-07-06",
       "renderFlags": 0,
       "equippedSkinId": "sk_mqvqqfcp_silt03"
     },
@@ -2133,7 +2133,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1783113566345
+      "lastActiveAt": 1783376658859
     },
     "dev": {
       "id": "1g99g1gfk",

@@ -11,7 +11,7 @@ function getEligiblePetalTypes() {
         const allPetalTypes = (0, petals_1.getAllPetalTypes)();
         cachedEligiblePetalTypes = allPetalTypes.filter(type => {
             const stats = (0, petals_1.getPetalStats)(type, 'common');
-            return stats && !stats.isAdminPetal && type !== 'cutter' && type !== 'lightning_cutter';
+            return stats && !stats.isAdminPetal && !(0, petals_1.isUndroppableEggPetalType)(type) && type !== 'cutter' && type !== 'lightning_cutter';
         });
     }
     return cachedEligiblePetalTypes;

@@ -12,13 +12,13 @@ function getEligiblePetalTypes(): string[] {
         const allPetalTypes = getAllPetalTypes();
         cachedEligiblePetalTypes = allPetalTypes.filter(type => {
             const stats = getPetalStats(type, 'common');
-            return stats && !stats.isAdminPetal && type !== 'cutter' && type !== 'lightning_cutter';
+            return stats && !stats.isAdminPetal && !isUndroppableEggPetalType(type) && type !== 'cutter' && type !== 'lightning_cutter';
         });
     }
     return cachedEligiblePetalTypes;
 }
 import { checkItemWallCollisions } from './physics';
-import { getAllPetalTypes, getPetalStats } from '../petals';
+import { getAllPetalTypes, getPetalStats, isUndroppableEggPetalType } from '../petals';
 
 // Rarity type
 type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';

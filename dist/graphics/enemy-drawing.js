@@ -266,7 +266,7 @@ core_1.Graphics.prototype.getEligiblePetalTypes = function () {
         const allPetalTypes = (0, core_1.getAllPetalTypes)();
         this.cachedEligiblePetalTypes = allPetalTypes.filter(petalType => {
             const stats = (0, core_1.getPetalStats)(petalType, 'common');
-            return stats && !stats.isAdminPetal && petalType !== 'cutter' && petalType !== 'lightning_cutter';
+            return stats && !stats.isAdminPetal && !(0, core_1.isUndroppableEggPetalType)(petalType) && petalType !== 'cutter' && petalType !== 'lightning_cutter';
         });
     }
     return this.cachedEligiblePetalTypes;

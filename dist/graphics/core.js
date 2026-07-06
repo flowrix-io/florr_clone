@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Graphics = exports.getSVGRenderer = exports.MOB_CONFIG = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
+exports.Graphics = exports.getSVGRenderer = exports.MOB_CONFIG = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.isUndroppableEggPetalType = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
 const petals_1 = require("../petals");
 const svg_renderer_1 = require("../svg_renderer");
 const zoom_compensation_1 = require("../zoom-compensation");
@@ -28,6 +28,7 @@ Object.defineProperty(exports, "getTileJaggedEdges", { enumerable: true, get: fu
 var petals_2 = require("../petals");
 Object.defineProperty(exports, "getPetalStats", { enumerable: true, get: function () { return petals_2.getPetalStats; } });
 Object.defineProperty(exports, "getAllPetalTypes", { enumerable: true, get: function () { return petals_2.getAllPetalTypes; } });
+Object.defineProperty(exports, "isUndroppableEggPetalType", { enumerable: true, get: function () { return petals_2.isUndroppableEggPetalType; } });
 var mobs_1 = require("../mobs");
 Object.defineProperty(exports, "getMobStats", { enumerable: true, get: function () { return mobs_1.getMobStats; } });
 Object.defineProperty(exports, "getAllMobTypes", { enumerable: true, get: function () { return mobs_1.getAllMobTypes; } });

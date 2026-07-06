@@ -1,4 +1,4 @@
-import { Graphics, Enemy, getPetalStats, getAllPetalTypes, getMobStats } from './core';
+import { Graphics, Enemy, getPetalStats, getAllPetalTypes, getMobStats, isUndroppableEggPetalType } from './core';
 
 declare module './core' {
     interface Graphics {
@@ -325,7 +325,7 @@ Graphics.prototype.getEligiblePetalTypes = function(this: Graphics): string[] {
         const allPetalTypes = getAllPetalTypes();
         this.cachedEligiblePetalTypes = allPetalTypes.filter(petalType => {
             const stats = getPetalStats(petalType, 'common');
-            return stats && !stats.isAdminPetal && petalType !== 'cutter' && petalType !== 'lightning_cutter';
+            return stats && !stats.isAdminPetal && !isUndroppableEggPetalType(petalType) && petalType !== 'cutter' && petalType !== 'lightning_cutter';
         });
     }
     return this.cachedEligiblePetalTypes;
