@@ -979,6 +979,10 @@ function setupSocketListeners(game) {
                 // Only update loadout display if loadout actually changed
                 if (game.inventoryManager && loadoutChanged) {
                     game.inventoryManager.updateLoadoutDisplay();
+                    // Equipped clovers affect the displayed craft success chance
+                    if (game.inventoryManager.isCraftingOpen) {
+                        game.inventoryManager.updateCraftingDisplay();
+                    }
                 }
                 // Show notification when mobs are killed while gallery is open
                 if (game.inventoryManager && mobKillsChanged) {

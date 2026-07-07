@@ -1705,12 +1705,24 @@ class InventoryManager {
         }
         if (highestRarityIndex === -1)
             return 0;
+        // Each equipped clover matching the crafted rarity adds +0.05%
+        // success chance — must mirror the server roll in the craftItems
+        // handler. Storage slots (10+) don't count.
+        const craftRarity = rarities[highestRarityIndex];
+        const loadout = this.game.getLocalPlayer()?.loadout ?? [];
+        let cloverBonus = 0;
+        for (let i = 0; i < Math.min(loadout.length, 10); i++) {
+            const slot = loadout[i];
+            if (slot && slot.type === 'petal' && slot.petalType === 'clover' && slot.rarity === craftRarity) {
+                cloverBonus += 0.05;
+            }
+        }
         // Halve the chance for each rarity level above common.
-        const chance = baseChance / Math.pow(2, highestRarityIndex);
-        // Preserve sub-1% precision (e.g. unique->apex is 0.25%) instead of
-        // rounding it down to 0, so the displayed chance matches the server's
-        // actual success roll (server.ts uses the unrounded value).
-        return chance >= 1 ? Math.round(chance) : Math.round(chance * 100) / 100;
+        const chance = Math.min(100, baseChance / Math.pow(2, highestRarityIndex) + cloverBonus);
+        // Round to 2 decimals so sub-1% chances (e.g. unique->apex 0.25%) and
+        // the clover bonus stay visible, and the displayed chance matches the
+        // server's actual success roll (server.ts uses the unrounded value).
+        return Math.round(chance * 100) / 100;
     }
     cleanup() {
         this.inventoryPanel?.remove();

@@ -3445,7 +3445,19 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             const rarities = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
             const rarityIndex = rarities.indexOf(rarity);
             const baseChance = 64;
-            const successChance = baseChance / Math.pow(2, rarityIndex);
+            // Each equipped clover matching the crafted rarity adds +0.05%
+            // success chance. Storage slots (10+) don't count, same as
+            // calculatePlayerModifiers.
+            let cloverBonus = 0;
+            if (player.loadout) {
+                for (let i = 0; i < Math.min(player.loadout.length, 10); i++) {
+                    const slot = player.loadout[i];
+                    if (slot && slot.type === 'petal' && slot.petalType === 'clover' && slot.rarity === rarity) {
+                        cloverBonus += 0.05;
+                    }
+                }
+            }
+            const successChance = Math.min(100, baseChance / Math.pow(2, rarityIndex) + cloverBonus);
             
             // Remove items from inventory - check if removal was successful
             const removed = removeItem(player.inventory, rarity, itemKey, data.items.length);

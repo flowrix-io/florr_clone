@@ -401,6 +401,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Patched exploits to get sun egg',
             'Changed bee AI',
             'Changed most mob speeds',
+            'Clover now increases craft chance'
         ]
     }
 ];
