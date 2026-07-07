@@ -51,6 +51,7 @@ export interface Enemy {
   passiveStateStart?: number;  // timestamp the current passive state began
   velX?: number;               // passive movement velocity (friction integrator)
   velY?: number;
+  wobblePhase?: number;        // bee flight: per-mob phase offset for the sinusoidal heading wobble
   spawnTime?: number;  // Timestamp when enemy was spawned
   lastViewportCheck?: number;  // Last time this enemy was in any player's viewport
   damageContributors?: Map<string, number>;  // Map of player ID to damage dealt

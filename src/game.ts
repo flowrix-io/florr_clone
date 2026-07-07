@@ -1585,7 +1585,9 @@ export class Game {
         }
         const span = s1.t - s0.t;
         if (span <= 0) return { x: s1.x, y: s1.y, angle: s1.angle };
-        const alpha = (renderTime - s0.t) / span;
+        // Clamp: renderTime can predate the oldest pair right after the buffer
+        // seeds; a negative alpha would extrapolate backward past s0.
+        const alpha = Math.max(0, (renderTime - s0.t) / span);
         const result: { x: number; y: number; angle?: number } = {
             x: s0.x + (s1.x - s0.x) * alpha,
             y: s0.y + (s1.y - s0.y) * alpha,

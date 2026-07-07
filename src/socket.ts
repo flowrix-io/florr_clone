@@ -684,8 +684,10 @@ function setupSocketListeners(game: any) {
         }
     }
 
-    // Unified handler for enemy updates - all enemy updates go through the same path
-    function handleEnemyUpdate(enemy: Enemy) {
+    // Unified handler for enemy updates - all enemy updates go through the same path.
+    // snapTimeMs is the de-jittered server-mapped timestamp for interpolation
+    // snapshots (see gameStateUpdate); legacy callers omit it and get arrival time.
+    function handleEnemyUpdate(enemy: Enemy, snapTimeMs?: number) {
         // If enemy is already in death animation, don't update it (let animation complete)
         const existingEnemy = game.enemies.get(enemy.id);
         if (existingEnemy && existingEnemy.deathAnimationStartTime) {
@@ -702,10 +704,13 @@ function setupSocketListeners(game: any) {
             existingEnemy.targetX = enemy.x;
             existingEnemy.targetY = enemy.y;
             existingEnemy.targetAngle = enemy.angle;
-            const sNow = performance.now();
+            const sNow = snapTimeMs ?? performance.now();
             if (!existingEnemy._snapshots) existingEnemy._snapshots = [];
-            existingEnemy._snapshots.push({ t: sNow, x: enemy.x, y: enemy.y, angle: enemy.angle });
-            if (existingEnemy._snapshots.length > 12) existingEnemy._snapshots.shift();
+            const buf = existingEnemy._snapshots;
+            // Keep the buffer monotonic even across a clock-offset re-anchor.
+            const t = buf.length > 0 && sNow <= buf[buf.length - 1].t ? buf[buf.length - 1].t + 1 : sNow;
+            buf.push({ t, x: enemy.x, y: enemy.y, angle: enemy.angle });
+            if (buf.length > 12) buf.shift();
             existingEnemy.health = enemy.health;
             existingEnemy.maxHealth = enemy.maxHealth;
             // Update other fields directly
@@ -1278,6 +1283,29 @@ function setupSocketListeners(game: any) {
         const serverEnemies: any[] | undefined = data.E;
         const removedEnemyIds: string[] | undefined = data.R;
 
+        // De-jittered snapshot timeline. Stamping snapshots with *arrival* time
+        // lets network jitter distort the timeline: under latency, TCP delivers
+        // several ticks in a burst with near-identical timestamps, and the
+        // interpolator plays 100ms of movement in a few ms (stutter / rubber-
+        // banding). Instead, map the server's tick timestamp (data.T) into
+        // client time with a slowly-adapting offset: spacing between snapshots
+        // then stays the server's true tick spacing no matter how packets
+        // arrive. The 0.02 gain tracks genuine clock drift but barely reacts
+        // to per-packet jitter; a >2s divergence means reconnect/clock jump,
+        // so re-anchor immediately.
+        const arrivalMs = performance.now();
+        let snapTimeMs = arrivalMs;
+        if (typeof data.T === 'number') {
+            const g: any = game;
+            const off = arrivalMs - data.T;
+            if (g._srvClockOffset === undefined || Math.abs(off - g._srvClockOffset) > 2000) {
+                g._srvClockOffset = off;
+            } else {
+                g._srvClockOffset += (off - g._srvClockOffset) * 0.02;
+            }
+            snapTimeMs = data.T + g._srvClockOffset;
+        }
+
         if (serverPlayers) {
             for (const sp of serverPlayers) {
                 const id = sp.i;
@@ -1287,6 +1315,20 @@ function setupSocketListeners(game: any) {
                     if (isSelf) (game as any).lastSelfSnapshotMs = performance.now();
                     if (sp.x !== undefined) existing.targetX = sp.x;
                     if (sp.y !== undefined) existing.targetY = sp.y;
+                    if (!isSelf && existing.targetX !== undefined && existing.targetY !== undefined) {
+                        // Remote players: feed the same time-based snapshot buffer
+                        // enemies use — game.ts prefers it over the exponential-lerp
+                        // fallback, which lags and rubber-bands under latency. (The
+                        // old 'playerMoved' path that used to push these is dead —
+                        // the server never emits it.) Omitted fields fall back to
+                        // target* (last authoritative), never the render-mutated x/y.
+                        if (!existing._snapshots) existing._snapshots = [];
+                        const buf = existing._snapshots;
+                        const t = buf.length > 0 && snapTimeMs <= buf[buf.length - 1].t
+                            ? buf[buf.length - 1].t + 1 : snapTimeMs;
+                        buf.push({ t, x: existing.targetX, y: existing.targetY });
+                        if (buf.length > 12) buf.shift();
+                    }
                     if (sp.a !== undefined) existing.angle = sp.a;
                     if (sp.vx !== undefined) existing.velocityX = sp.vx;
                     if (sp.vy !== undefined) existing.velocityY = sp.vy;
@@ -1414,11 +1456,16 @@ function setupSocketListeners(game: any) {
                         tier: e.T !== undefined ? e.T : existing.tier,
                         x: e.x !== undefined ? e.x : (existing.targetX ?? existing.x),
                         y: e.y !== undefined ? e.y : (existing.targetY ?? existing.y),
-                        angle: e.a !== undefined ? e.a : existing.angle,
+                        // Fall back to targetAngle (last authoritative server angle), NOT
+                        // existing.angle: the render loop mutates .angle mid-interpolation,
+                        // so using it here feeds the client's own lagging rendered angle
+                        // back into the snapshot buffer as if it were fresh server data —
+                        // the mob then chases its own tail and wobbles after finishing a turn.
+                        angle: e.a !== undefined ? e.a : (existing.targetAngle ?? existing.angle),
                         health: e.h !== undefined ? e.h : existing.health,
                         maxHealth: e.H !== undefined ? e.H : existing.maxHealth,
                     };
-                    handleEnemyUpdate(merged);
+                    handleEnemyUpdate(merged, snapTimeMs);
                 } else {
                     // First sight (or recovery if existing was malformed). Server omits
                     // tier/maxHealth/angle when they match defaults — apply fallbacks.
@@ -1438,7 +1485,7 @@ function setupSocketListeners(game: any) {
                         angle: e.a ?? 0,
                         health: e.h,
                         maxHealth,
-                    } as any);
+                    } as any, snapTimeMs);
                 }
             }
         }

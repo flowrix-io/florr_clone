@@ -3849,7 +3849,10 @@ function moveEnemies() {
                 const dy = targetY - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance > 0) {
-                    const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
+                    // Bees chase at their passive-cruise speed (3·speed/tick, see the bee
+                    // branch of the passive AI) — the generic 1·speed/tick chase step would
+                    // make a provoked bee slower than its own wander, which reads as broken.
+                    const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * (enemy.type === 'bee' ? 3 : 1);
                     let moveX = dx / distance;
                     let moveY = dy / distance;
                     const avoid = computeOwnSegmentAvoidance(enemy);
@@ -3861,6 +3864,21 @@ function moveEnemies() {
                             moveX /= mag;
                             moveY /= mag;
                         }
+                    }
+                    if (enemy.type === 'bee') {
+                        // Provoked bees weave toward the target instead of beelining —
+                        // the pursuit direction sways with the same sinusoid as their
+                        // passive wavy flight (gardn's wobble integrates to ±0.75 rad).
+                        // Facing follows the swayed direction via the atan2 below.
+                        if (enemy.wobblePhase === undefined)
+                            enemy.wobblePhase = Math.random() * Math.PI * 2;
+                        const sway = 0.75 * Math.sin(2 * (currentTime / 1000 + enemy.wobblePhase));
+                        const cosS = Math.cos(sway);
+                        const sinS = Math.sin(sway);
+                        const rx = moveX * cosS - moveY * sinS;
+                        const ry = moveX * sinS + moveY * cosS;
+                        moveX = rx;
+                        moveY = ry;
                     }
                     enemy.x += moveX * speed;
                     enemy.y += moveY * speed;
@@ -4042,31 +4060,60 @@ function moveEnemies() {
                     // this, so the 3x factor makes passive mobs roam ~3x as far as the
                     // old-wander-matched baseline (which was enemy.speed*ESM*0.25).
                     const ACCEL = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.25 * 3;
-                    if (enemy.passiveState === undefined) {
-                        enemy.passiveState = 'idle';
-                        enemy.passiveStateStart = currentTime;
-                    }
-                    const elapsed = currentTime - (enemy.passiveStateStart ?? currentTime);
                     let accelX = 0;
                     let accelY = 0;
-                    if (enemy.passiveState === 'idle') {
-                        if (elapsed >= 1000) { // idle for ~1s, then choose a new heading
+                    if (enemy.type === 'bee') {
+                        // gardn Ai.cc tick_bee_passive: bees don't stop-and-go like the
+                        // default machine below — they cruise continuously along a heading
+                        // that wobbles sinusoidally (the wavy flight line), re-pick a random
+                        // base heading every 5s, and pulse speed (half accel for the first
+                        // 0.5s of every 1.5s window). gardn per tick @ SIM_RATE 20:
+                        //   angle += 1.5·sin(lifetime/(SIM_RATE/2))/SIM_RATE  ⇒  dθ/dt = 1.5·sin(2t) rad/s
+                        // which integrates to ±0.75 rad of heading sway. wobblePhase
+                        // de-synchronizes bees so they don't all weave in lockstep.
+                        // Facing = heading by construction, same as the default machine.
+                        if (enemy.wobblePhase === undefined)
+                            enemy.wobblePhase = Math.random() * Math.PI * 2;
+                        if (enemy.passiveStateStart === undefined || currentTime - enemy.passiveStateStart >= 5000) {
                             enemy.angle = Math.random() * Math.PI * 2;
-                            enemy.passiveState = 'moving';
                             enemy.passiveStateStart = currentTime;
                         }
+                        const t = currentTime / 1000 + enemy.wobblePhase;
+                        enemy.angle += 1.5 * Math.sin(2 * t) / 30;
+                        // ACCEL sustained (not ramped) ⇒ terminal ACCEL/FRICTION = 3·speed/tick
+                        // = 90 u/s for the bee's 0.5 speed — gardn's bee cruise (accel 1.5 vs
+                        // PLAYER_ACCELERATION 5, of a 300 u/s top speed).
+                        let mag = ACCEL;
+                        if ((t * 1000) % 1500 < 500)
+                            mag *= 0.5;
+                        accelX = Math.cos(enemy.angle) * mag;
+                        accelY = Math.sin(enemy.angle) * mag;
                     }
                     else {
-                        if (elapsed >= 2500) { // full move phase done → idle
+                        if (enemy.passiveState === undefined) {
                             enemy.passiveState = 'idle';
                             enemy.passiveStateStart = currentTime;
                         }
-                        else if (elapsed >= 500) { // 0.5s pause, then 2s parabolic ramp
-                            const r = (elapsed - 500) / 2000; // 0..1 across the move
-                            const ramp = r - r * r; // gardn (r - r^2), peak 0.25
-                            const mag = ACCEL * 2 * ramp; // gardn 2*ACCEL*(r - r^2)
-                            accelX = Math.cos(enemy.angle) * mag;
-                            accelY = Math.sin(enemy.angle) * mag;
+                        const elapsed = currentTime - (enemy.passiveStateStart ?? currentTime);
+                        if (enemy.passiveState === 'idle') {
+                            if (elapsed >= 1000) { // idle for ~1s, then choose a new heading
+                                enemy.angle = Math.random() * Math.PI * 2;
+                                enemy.passiveState = 'moving';
+                                enemy.passiveStateStart = currentTime;
+                            }
+                        }
+                        else {
+                            if (elapsed >= 2500) { // full move phase done → idle
+                                enemy.passiveState = 'idle';
+                                enemy.passiveStateStart = currentTime;
+                            }
+                            else if (elapsed >= 500) { // 0.5s pause, then 2s parabolic ramp
+                                const r = (elapsed - 500) / 2000; // 0..1 across the move
+                                const ramp = r - r * r; // gardn (r - r^2), peak 0.25
+                                const mag = ACCEL * 2 * ramp; // gardn 2*ACCEL*(r - r^2)
+                                accelX = Math.cos(enemy.angle) * mag;
+                                accelY = Math.sin(enemy.angle) * mag;
+                            }
                         }
                     }
                     // gardn Motion.cc integrator: friction bleeds velocity, accel refills it.
@@ -5135,7 +5182,12 @@ function start_loop() {
                 socket.lastUpdateTime = now;
                 continue;
             }
-            const gameState = {};
+            // Server tick timestamp. The client maps this into its own clock and
+            // timestamps interpolation snapshots with it, so snapshot spacing stays
+            // the server's true tick spacing even when packets arrive in bursts
+            // (TCP under jitter) — arrival-time stamps compressed the timeline and
+            // made entities visibly stutter/rubber-band under latency.
+            const gameState = { T: now };
             if (changedPlayers.length > 0)
                 gameState.P = changedPlayers;
             if (changedEnemies.length > 0)

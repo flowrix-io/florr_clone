@@ -558,6 +558,19 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
 // Base mob configurations - only common rarity stats
 // Rarity-specific overrides for special cases
 const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride } } = {
+    // From rare up, bees defend themselves: neutral doesn't scan for targets but
+    // aggros its attacker when hit (trackDamage sets targetPlayerId, which the
+    // chase branch treats as provoked). Common/uncommon stay fully passive.
+    bee: {
+        rare: { ai_type: 'neutral' },
+        epic: { ai_type: 'neutral' },
+        legendary: { ai_type: 'neutral' },
+        mythic: { ai_type: 'neutral' },
+        ultra: { ai_type: 'neutral' },
+        super: { ai_type: 'neutral' },
+        unique: { ai_type: 'neutral' },
+        apex: { ai_type: 'neutral' },
+    },
     soldier_ant: {
         uncommon: {
             range: 500

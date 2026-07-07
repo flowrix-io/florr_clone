@@ -72,6 +72,20 @@ function checkEnemyWallCollisions(enemy) {
     const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
     const enemySize = mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE;
     const resolved = (0, constants_1.resolveEntityWallCollisions)(enemy.x, enemy.y, enemySize / 2);
+    // gardn Motion.cc: zero the velocity component along whatever axis the wall
+    // pushed, so the mob actually stops at the wall instead of re-entering every
+    // tick. Without this the passive-move integrator keeps feeding velocity into
+    // the wall and the mob grinds sideways along it — visibly travelling one way
+    // while enemy.angle (its intended heading, which we deliberately keep) points
+    // another. Facing stays the direction the mob is TRYING to go; motion stops.
+    if (resolved.x !== enemy.x) {
+        enemy.velX = 0;
+        enemy.knockbackX = 0;
+    }
+    if (resolved.y !== enemy.y) {
+        enemy.velY = 0;
+        enemy.knockbackY = 0;
+    }
     enemy.x = resolved.x;
     enemy.y = resolved.y;
 }
@@ -146,16 +160,8 @@ function checkEnemyEnemyCollisions(enemies, io) {
             if (mobStats?.no_mob_collision || otherMobStats?.no_mob_collision) {
                 continue;
             }
-            // Skip collision resolution if both mobs are passive and not chasing
-            // BUT allow pets (enemies with ownerId) to collide with each other
-            const thisMobIsPassive = (enemy.aiType === 'passive' || enemy.aiType === 'sandstorm') && !enemy.isChasing;
-            const otherMobIsPassive = (otherEnemy.aiType === 'passive' || otherEnemy.aiType === 'sandstorm') && !otherEnemy.isChasing;
             const thisMobIsPet = !!enemy.ownerId;
             const otherMobIsPet = !!otherEnemy.ownerId;
-            // Allow pet-to-pet collisions, but skip if both are passive wild mobs
-            if (thisMobIsPassive && otherMobIsPassive && !thisMobIsPet && !otherMobIsPet) {
-                continue; // Both are passive wild mobs, don't push each other
-            }
             const otherEnemySize = otherMobStats ? otherMobStats.size * 40 : constants_1.ENEMY_SIZE;
             const otherHalfSize = otherEnemySize / 2;
             // Calculate distance between mobs
@@ -165,14 +171,28 @@ function checkEnemyEnemyCollisions(enemies, io) {
             const minDistance = halfSize + otherHalfSize + MOB_COLLISION_BUFFER;
             // Check if mobs are colliding
             if (distance < minDistance && distance > 0) {
-                // Calculate push direction (away from each other)
-                const pushX = (dx / distance) * (minDistance - distance) / 2;
-                const pushY = (dy / distance) * (minDistance - distance) / 2;
+                // Cap the per-tick separation so mobs that spawn (or wander) deeply
+                // overlapped ease apart over a few ticks instead of teleporting.
+                // Steady walking-into-each-other overlap is far below the cap, so
+                // normal contact still resolves fully within the tick.
+                const MAX_PUSH_PER_TICK = 10;
+                const push = Math.min((minDistance - distance) / 2, MAX_PUSH_PER_TICK);
+                const pushX = (dx / distance) * push;
+                const pushY = (dy / distance) * push;
                 // Push both mobs away from each other
                 enemy.x -= pushX;
                 enemy.y -= pushY;
                 otherEnemy.x += pushX;
                 otherEnemy.y += pushY;
+                // Separation must not shove either mob into a wall (this pass runs
+                // after the per-enemy wall pass, so a violation would be visible to
+                // clients for a full tick).
+                const wr1 = (0, constants_1.resolveEntityWallCollisions)(enemy.x, enemy.y, halfSize);
+                enemy.x = wr1.x;
+                enemy.y = wr1.y;
+                const wr2 = (0, constants_1.resolveEntityWallCollisions)(otherEnemy.x, otherEnemy.y, otherHalfSize);
+                otherEnemy.x = wr2.x;
+                otherEnemy.y = wr2.y;
                 // Handle melee combat between pets and wild mobs
                 // Pet attacks wild mob OR wild mob attacks pet - damage every tick (no cooldown)
                 if ((thisMobIsPet && !otherMobIsPet) || (!thisMobIsPet && otherMobIsPet)) {
