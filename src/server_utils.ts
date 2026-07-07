@@ -52,6 +52,8 @@ export interface Enemy {
   velX?: number;               // passive movement velocity (friction integrator)
   velY?: number;
   wobblePhase?: number;        // bee flight: per-mob phase offset for the sinusoidal heading wobble
+  parentHoleId?: string;       // hole this mob spawned from — tethers it to a territory (gardn parent)
+  returningToHole?: boolean;   // gardn kReturning: heading home after straying past the retreat radius
   spawnTime?: number;  // Timestamp when enemy was spawned
   lastViewportCheck?: number;  // Last time this enemy was in any player's viewport
   damageContributors?: Map<string, number>;  // Map of player ID to damage dealt

@@ -380,6 +380,14 @@ exports.CHANGELOG = [
             'New link: link:https://flowrix.sussybite.dev'
         ]
     },
+    {
+        date: 'July 7, 2026',
+        changes: [
+            'Patched exploits to get sun egg',
+            'Changed bee AI',
+            'Changed most mob speeds',
+        ]
+    }
 ];
 class ChangelogManager {
     constructor() {

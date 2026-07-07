@@ -529,6 +529,17 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         }
     }
 
+    // Ant Hell (section 4) spawn throttle: the section's roster is entirely
+    // ants, and their hostile soldiers chase at player speed — at full
+    // open-world density they stack up and overwhelm players. Rejecting a
+    // fraction of density-loop spawns here settles the section ~30% below the
+    // global density target.
+    const ANT_HELL_SECTION = 4;
+    const ANT_HELL_SPAWN_SCALE = 0.7;
+    if (getSectionAtPosition(x, y) === ANT_HELL_SECTION && Math.random() > ANT_HELL_SPAWN_SCALE) {
+        return null as any;
+    }
+
     // Check if spawn position is too close to other mobs
     const MIN_MOB_SPAWN_DISTANCE = 80;
     const halfPrelimSize = PRELIMINARY_MOB_SIZE / 2;
@@ -1042,6 +1053,7 @@ export function spawnInitialSpawns(parent: Enemy): void {
             reversed: childStats.reversed ?? false,
             spawnTime: currentTime,
             lastViewportCheck: currentTime,
+            parentHoleId: parent.id,
         };
         enemies.push(child);
     }

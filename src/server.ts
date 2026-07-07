@@ -42,7 +42,7 @@ import { ServerPlayer, PlayerInventory, FaceFlags } from './player';
 import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets, cleanupPlayerPetalActionState } from './petal_actions';
 import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType } from './petals';
-import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
+import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, MAX_SPEED, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
 import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { MobProjectile } from './enemy';
@@ -3686,6 +3686,18 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 const ENEMY_SPEED_MULTIPLIER = 2;
 const ENEMY_CHASE_RANGE = 500;
 const ENEMY_WANDER_RANGE = 200;
+// Mobs that chase at exactly the player's base speed (MAX_SPEED) instead of
+// their stat-derived step: a fleeing flower can never outrun them, but they
+// can't gain on one running straight either — florr's pursuit feel.
+const PLAYER_SPEED_CHASERS = new Set([
+    'bee',
+    'ladybug', 'shiny_ladybug', 'dark_ladybug',
+    'soldier_ant', 'worker_ant', 'baby_ant',
+    'soldier_fire_ant', 'worker_fire_ant', 'baby_fire_ant',
+]);
+// gardn StaticData SUMMON_RETREAT_RADIUS: hole-spawned mobs defend a territory
+// this large around their hole; dragged past it they give up and head home.
+const SUMMON_RETREAT_RADIUS = 600;
 
 function updatePoisonEffects(deltaTime: number) {
     const currentTime = Date.now();
@@ -3868,6 +3880,7 @@ function spawnWaveMobs() {
                     reversed: childStats.reversed ?? false,
                     spawnTime: currentTime,
                     lastViewportCheck: currentTime,
+                    parentHoleId: enemy.id,
                 };
                 enemies.push(child);
                 io.emit('enemySpawned', child);
@@ -4152,6 +4165,46 @@ function moveEnemies() {
             // Continue to next iteration (pets skip regular enemy behavior)
         } else {
             // Regular enemy behavior (not a pet)
+
+            // gardn tick_ai_behavior parent tether: hole-spawned ants defend the
+            // territory around their hole. Dragged past SUMMON_RETREAT_RADIUS they
+            // drop their target and return home (gardn kReturning) until back
+            // within 100u, then resume normal AI — so kiting ants away disperses
+            // the swarm instead of accumulating permanent pursuers. If the hole
+            // is destroyed they unparent and roam free (gardn parity).
+            if (enemy.parentHoleId) {
+                const hole = enemyById.get(enemy.parentHoleId);
+                if (!hole || (hole as any).isDead || hole.health <= 0) {
+                    enemy.parentHoleId = undefined;
+                    enemy.returningToHole = false;
+                } else {
+                    const homeDx = hole.x - enemy.x;
+                    const homeDy = hole.y - enemy.y;
+                    const homeDist = Math.hypot(homeDx, homeDy) || 1;
+                    if (!enemy.returningToHole && homeDist > SUMMON_RETREAT_RADIUS) {
+                        enemy.targetPlayerId = undefined;
+                        enemy.isChasing = false;
+                        enemy.returningToHole = true;
+                    }
+                    if (enemy.returningToHole) {
+                        if (homeDist < 100) {
+                            enemy.returningToHole = false;
+                            enemy.passiveState = 'idle';
+                            enemy.passiveStateStart = currentTime;
+                        } else {
+                            const returnSpeed = PLAYER_SPEED_CHASERS.has(enemy.type)
+                                ? MAX_SPEED / 30
+                                : enemy.speed * ENEMY_SPEED_MULTIPLIER;
+                            enemy.x += (homeDx / homeDist) * returnSpeed;
+                            enemy.y += (homeDy / homeDist) * returnSpeed;
+                            enemy.angle = Math.atan2(homeDy, homeDx);
+                            checkEnemyWallCollisions(enemy);
+                            return; // skip targeting/chase/passive AI while returning
+                        }
+                    }
+                }
+            }
+
         // Calculate 5x view distance threshold
         const MAX_TARGET_DISTANCE = VIEWPORT_WIDTH * 5;
         
@@ -4257,10 +4310,9 @@ function moveEnemies() {
             const distance = Math.sqrt(dx * dx + dy * dy);
             
             if (distance > 0) {
-                // Bees chase at their passive-cruise speed (3·speed/tick, see the bee
-                // branch of the passive AI) — the generic 1·speed/tick chase step would
-                // make a provoked bee slower than its own wander, which reads as broken.
-                const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * (enemy.type === 'bee' ? 3 : 1);
+                const speed = PLAYER_SPEED_CHASERS.has(enemy.type)
+                    ? MAX_SPEED / 30 // player base speed, per 30 TPS tick
+                    : enemy.speed * ENEMY_SPEED_MULTIPLIER;
                 let moveX = dx / distance;
                 let moveY = dy / distance;
                 const avoid = computeOwnSegmentAvoidance(enemy);
@@ -4274,18 +4326,22 @@ function moveEnemies() {
                     }
                 }
                 if (enemy.type === 'bee') {
-                    // Provoked bees weave toward the target instead of beelining —
-                    // the pursuit direction sways with the same sinusoid as their
-                    // passive wavy flight (gardn's wobble integrates to ±0.75 rad).
-                    // Facing follows the swayed direction via the atan2 below.
+                    // Provoked bees weave toward the target instead of beelining.
+                    // The weave is a perpendicular velocity component ADDED to the
+                    // full-speed pursuit, NOT a rotation of it: rotating the step
+                    // cuts the closing rate by cos(sway), and a flower fleeing
+                    // straight at the same speed would slowly escape. Lateral
+                    // offset A·sin(2t) (A = 50u, the passive wobble's 2 rad/s)
+                    // contributes its derivative 2A·cos(2t) = ±100 u/s sideways —
+                    // ±18° of visible heading swing at full chase speed. Facing
+                    // follows the combined direction via the atan2 below.
                     if (enemy.wobblePhase === undefined) enemy.wobblePhase = Math.random() * Math.PI * 2;
-                    const sway = 0.75 * Math.sin(2 * (currentTime / 1000 + enemy.wobblePhase));
-                    const cosS = Math.cos(sway);
-                    const sinS = Math.sin(sway);
-                    const rx = moveX * cosS - moveY * sinS;
-                    const ry = moveX * sinS + moveY * cosS;
-                    moveX = rx;
-                    moveY = ry;
+                    const t = currentTime / 1000 + enemy.wobblePhase;
+                    const latFrac = (100 * Math.cos(2 * t)) / (speed * 30);
+                    const perpX = -moveY;
+                    const perpY = moveX;
+                    moveX += perpX * latFrac;
+                    moveY += perpY * latFrac;
                 }
                 enemy.x += moveX * speed;
                 enemy.y += moveY * speed;
@@ -4465,10 +4521,10 @@ function moveEnemies() {
                 // the same glide at this server's 30 TPS.
                 const FRICTION = 0.25;
                 // gardn ramps acceleration as 2 * PLAYER_ACCELERATION * (r - r^2); the
-                // base is scaled per-mob. Distance covered per move scales linearly with
-                // this, so the 3x factor makes passive mobs roam ~3x as far as the
-                // old-wander-matched baseline (which was enemy.speed*ESM*0.25).
-                const ACCEL = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.25 * 3;
+                // base is scaled per-mob (gardn-matched wander baseline). This used to
+                // carry a 3x roam factor, which sent mobs sprinting way too far per
+                // move — removed for gardn-like short wander hops.
+                const ACCEL = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.25;
 
                 let accelX = 0;
                 let accelY = 0;
@@ -4489,10 +4545,10 @@ function moveEnemies() {
                     }
                     const t = currentTime / 1000 + enemy.wobblePhase;
                     enemy.angle += 1.5 * Math.sin(2 * t) / 30;
-                    // ACCEL sustained (not ramped) ⇒ terminal ACCEL/FRICTION = 3·speed/tick
-                    // = 90 u/s for the bee's 0.5 speed — gardn's bee cruise (accel 1.5 vs
-                    // PLAYER_ACCELERATION 5, of a 300 u/s top speed).
-                    let mag = ACCEL;
+                    // Sustained (not ramped) accel of 3× the wander baseline ⇒ terminal
+                    // 3·speed/tick = 90 u/s for the bee's 0.5 speed — gardn's bee cruise
+                    // (accel 1.5 vs PLAYER_ACCELERATION 5, of a 300 u/s top speed).
+                    let mag = ACCEL * 3;
                     if ((t * 1000) % 1500 < 500) mag *= 0.5;
                     accelX = Math.cos(enemy.angle) * mag;
                     accelY = Math.sin(enemy.angle) * mag;
