@@ -35,6 +35,13 @@ const BOTTOM_CLEARANCE_GAP = 15;
 // buttons span x=20 to x=62), so the joystick is shifted right past it
 // rather than the natural x = margin + radius, to avoid the two overlapping.
 const JOYSTICK_LEFT_CENTER = 150;
+// Extra lift above the shared bottom anchor, on top of Attack/Retract's own
+// clearance. The chat log (chat.ts's chatContainer) is a fixed 200px-tall
+// box anchored 10px from the bottom-left corner, directly behind the
+// joystick's column (x=100-400) — clearing the loadout bar alone still
+// leaves the joystick sitting visually on top of it. Attack/Retract don't
+// need this since they're offset further right, clear of the chat's width.
+const JOYSTICK_EXTRA_LIFT = 60;
 const JOYSTICK_BASE_RADIUS = 55;
 const JOYSTICK_KNOB_RADIUS = 26;
 const JOYSTICK_HIT_RADIUS = JOYSTICK_BASE_RADIUS * 1.3;
@@ -64,7 +71,7 @@ class MobileControls {
         const bottomY = viewH - loadoutBarHeight - BOTTOM_CLEARANCE_GAP;
         this.joystickCenter = {
             x: JOYSTICK_LEFT_CENTER,
-            y: bottomY - JOYSTICK_BASE_RADIUS,
+            y: bottomY - JOYSTICK_BASE_RADIUS - JOYSTICK_EXTRA_LIFT,
         };
         this.attackCenter = {
             x: viewW - ATTACK_BUTTON_MARGIN - ATTACK_BUTTON_RADIUS,

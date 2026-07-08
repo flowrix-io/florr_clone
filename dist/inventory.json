@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 566793498,
+      "totalXP": 566794310,
       "inventory": {
         "common": {
           "petal_light": 210,
@@ -873,7 +873,7 @@
         },
         "hornet": {
           "common": 1996,
-          "legendary": 1158,
+          "legendary": 1159,
           "mythic": 1291,
           "uncommon": 915,
           "rare": 405,
@@ -894,7 +894,7 @@
           "super": 21
         },
         "bee": {
-          "common": 1387,
+          "common": 1389,
           "epic": 276,
           "mythic": 701,
           "uncommon": 516,
@@ -1341,6 +1341,9 @@
           "petal_clover": 1,
           "petal_dandelion": 1,
           "petal_rose": 1
+        },
+        "super": {
+          "petal_basic": 1
         }
       },
       "loadout": [
@@ -1460,9 +1463,11 @@
           "uncommon": 1
         }
       },
-      "stars": 1110,
+      "stars": 1111,
       "dailyStreak": 1,
-      "lastStreakDate": "2026-04-19"
+      "lastStreakDate": "2026-07-08",
+      "renderFlags": 0,
+      "equippedSkinId": ""
     },
     "rvu5butjz": {
       "totalXP": 10,
@@ -3829,13 +3834,13 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1783542095821
+      "lastActiveAt": 1783543080971
     },
     "dev": {
       "id": "1g99g1gfk",
       "username": "dev",
       "password": "$2b$12$Xs7mqEPcCz8DP47/3KI38.VqcIsdZh/I3KpcjVJkr8ldwj4SdDu8S",
-      "lastActiveAt": 1776634998622
+      "lastActiveAt": 1783543110348
     },
     "User79735867": {
       "id": "rvu5butjz",

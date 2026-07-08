@@ -27,7 +27,7 @@ const COMMANDS = [
     { command: '/admin notify', description: 'Create a notification (shorthand)', isAdmin: true },
     { command: '/admin clear_notifications', description: 'Clear all notifications', isAdmin: true },
     { command: '/admin clear_notifs', description: 'Clear notifications (shorthand)', isAdmin: true },
-    { command: '/admin give', description: 'Give item to a player', isAdmin: true },
+    { command: '/admin give', description: 'Give item to a player (online or offline)', isAdmin: true },
     { command: '/admin delete_guests', description: 'Delete default guest accounts', isAdmin: true },
     { command: '/admin list_today_logins', description: 'List accounts active in last 24h', isAdmin: true },
     { command: '/admin list_active', description: 'List accounts active in last 24h (shorthand)', isAdmin: true },

@@ -159,6 +159,20 @@ exports.database = {
         }
         return false;
     },
+    // Case-insensitive username -> userId lookup, used by admin commands (e.g. `give`)
+    // that need to act on an account whether or not it's currently connected.
+    getUserIdByUsername: (username) => {
+        if (!username)
+            return null;
+        if (db.users[username])
+            return db.users[username].id;
+        const key = username.toLowerCase();
+        for (const name in db.users) {
+            if (name.toLowerCase() === key)
+                return db.users[name].id;
+        }
+        return null;
+    },
     // Player-related functions
     savePlayer: (userId, progress) => {
         db.players[userId] = {

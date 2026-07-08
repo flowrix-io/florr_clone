@@ -473,49 +473,65 @@ export function executeServerCommand(
                 }
             }
             
-            if (targetPlayer && targetPlayerId) {
-                // Check if it's a consumable item
-                const consumableTypes = ['health_potion', 'speed_boost', 'shield'];
-                let itemKey: string;
-                let itemDisplayName: string;
-                
-                if (consumableTypes.includes(itemType)) {
-                    // It's a consumable
-                    itemKey = itemType;
-                    itemDisplayName = itemType;
-                } else {
-                    // It's a petal - validate it exists and has the specified rarity
-                    const petalStats = getPetalStats(itemType, rarity);
-                    if (!petalStats) {
-                        sendOutput(`Petal type "${itemType}" does not exist or does not have rarity "${rarity}"`, socketId, io);
-                        return;
-                    }
-                    
-                    itemKey = `petal_${itemType}`;
-                    itemDisplayName = `${itemType} petal`;
+            // Check if it's a consumable item
+            const consumableTypes = ['health_potion', 'speed_boost', 'shield'];
+            let itemKey: string;
+            let itemDisplayName: string;
+
+            if (consumableTypes.includes(itemType)) {
+                // It's a consumable
+                itemKey = itemType;
+                itemDisplayName = itemType;
+            } else {
+                // It's a petal - validate it exists and has the specified rarity
+                const petalStats = getPetalStats(itemType, rarity);
+                if (!petalStats) {
+                    sendOutput(`Petal type "${itemType}" does not exist or does not have rarity "${rarity}"`, socketId, io);
+                    return;
                 }
-                
+
+                itemKey = `petal_${itemType}`;
+                itemDisplayName = `${itemType} petal`;
+            }
+
+            if (targetPlayer && targetPlayerId) {
                 // Add item to player's inventory. The inventory is always in
                 // regular-world terms — even inside the maze (only the locked
                 // loadout shifts) — so the given rarity is stored literally.
                 addItem(targetPlayer.inventory, rarity, itemKey, 1);
-                
+
                 // Emit inventory update to the player
                 if (targetSocket) {
                     io.to(targetPlayerId).emit('inventoryUpdated', targetPlayer.inventory);
                 }
-                
+
                 // Save player progress if user is authenticated
                 if (targetSocket?.userId) {
                     savePlayerProgress(targetPlayer, targetSocket.userId);
                 }
-                
+
                 sendOutput(`Gave ${rarity} ${itemDisplayName} to ${targetPlayer.name} (${targetPlayerId})`, socketId, io);
             } else {
-                sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
+                // Not connected right now — write straight to the persisted account so
+                // `give` also works for offline players. Their live inventory (if any)
+                // gets rebuilt from this saved data the next time they connect.
+                const offlineUserId = database.getUserIdByUsername(playerIdentifier);
+                if (offlineUserId) {
+                    const progress = database.getPlayerByUserId(offlineUserId) || { totalXP: 0 };
+                    if (!progress.inventory) progress.inventory = {};
+                    if (!progress.inventory[rarity]) progress.inventory[rarity] = {};
+                    progress.inventory[rarity][itemKey] = (progress.inventory[rarity][itemKey] || 0) + 1;
+                    database.savePlayer(offlineUserId, progress);
+
+                    sendOutput(`Gave ${rarity} ${itemDisplayName} to ${playerIdentifier} (offline)`, socketId, io);
+                } else {
+                    sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see online players, or double-check the username for offline accounts.`, socketId, io);
+                }
             }
         } else {
             sendOutput('Usage: give <playerId/username> <itemType> <rarity>', socketId, io);
+            sendOutput('  Works for online players (by socket id or username) and offline', socketId, io);
+            sendOutput('  accounts (by username) — offline gives are saved directly to the account.', socketId, io);
             sendOutput('  Examples:', socketId, io);
             sendOutput('    give abc123 basic rare', socketId, io);
             sendOutput('    give Username rose legendary', socketId, io);
