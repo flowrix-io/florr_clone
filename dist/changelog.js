@@ -386,7 +386,14 @@ exports.CHANGELOG = [
             'Patched exploits to get sun egg',
             'Changed bee AI',
             'Changed most mob speeds',
-            'Clover now increases craft chance'
+            'Clover now increases craft chance',
+            'Added debug menu',
+            'Added maze mode(testing phase, if you find exploits, please bug report in discord)',
+            'Petals collected in maze increase in rarity by 1 outside of maze',
+            'Petals collected outside of maze decrease by 1 in maze',
+            'Only Mythic- petals are allowed in maze',
+            'Maze changes each day',
+            'Added absorbing(only for petals collected in maze)',
         ]
     }
 ];
