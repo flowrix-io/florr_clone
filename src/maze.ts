@@ -26,7 +26,7 @@ export const MAZE_ORIGIN_Y = 200000;
 // spawner density — derives from the ACTIVE maze's dimensions, not a constant.
 export const MAZE_MIN_TEMPLATE_DIM = 8;
 export const MAZE_MAX_TEMPLATE_DIM = 64; // grid 128, world span 76800
-export const MAZE_CELL_SIZE = 600;       // world units per grid cell
+export const MAZE_CELL_SIZE = 1000;       // world units per grid cell
 
 // Daily biome rotation. Section indices map into SECTION_CONFIGS / the
 // preloaded section ground textures (Garden=0, Desert=1, Ocean=3).
