@@ -107,7 +107,7 @@ core_1.Graphics.prototype.drawMazeWorld = function () {
     // coverage); a single nonzero fill rasterizes the union with full
     // coverage across shared edges.
     ctx.fillStyle = '#000000';
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = 0.2;
     ctx.beginPath();
     for (let gy = minGy; gy <= maxGy; gy++) {
         for (let gx = minGx; gx <= maxGx; gx++) {
