@@ -13,6 +13,7 @@ const inventory_1 = require("./inventory");
 const skills_1 = require("./skills");
 const shop_1 = require("./shop");
 const tutorial_1 = require("./tutorial");
+const debug_menu_1 = require("./debug_menu");
 const asset_loader_1 = require("./asset_loader");
 const loadout_bar_1 = require("./graphics/loadout-bar");
 class Game {
@@ -244,6 +245,10 @@ class Game {
                 window.titleScreen.handleSettingsMouseMoveExternal(sx);
                 window.titleScreen.handleSettingsHoverExternal(sx, sy);
             }
+            // Debug panel hover (close-button highlight)
+            if (debug_menu_1.debugMenuPanel.isMenuOpen()) {
+                debug_menu_1.debugMenuPanel.handleHover(sx, sy);
+            }
             if (this.loadoutBar) {
                 this.loadoutBar.setHover(sx, sy);
                 if (this.loadoutBar.draggingSlotIndex >= 0) {
@@ -292,6 +297,16 @@ class Game {
             if (event.button === 0 && window.titleScreen && window.titleScreen.isSettingsOpen()) {
                 const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event, true);
                 if (window.titleScreen.handleSettingsMouseDownExternal(sx, sy)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+            }
+            // Debug panel swallows mousedown over it so interacting with it
+            // doesn't trigger attacks underneath.
+            if (event.button === 0 && debug_menu_1.debugMenuPanel.isMenuOpen()) {
+                const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event, true);
+                if (debug_menu_1.debugMenuPanel.isPointInside(sx, sy)) {
                     event.preventDefault();
                     event.stopPropagation();
                     return;
@@ -346,6 +361,12 @@ class Game {
             if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
                 const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event, true);
                 if (window.titleScreen.handleSettingsClickExternal(sx, sy)) {
+                    event.stopPropagation();
+                }
+            }
+            if (debug_menu_1.debugMenuPanel.isMenuOpen()) {
+                const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event, true);
+                if (debug_menu_1.debugMenuPanel.handleClick(sx, sy)) {
                     event.stopPropagation();
                 }
             }
@@ -430,6 +451,9 @@ class Game {
         // preconnectedMapData is legacy — clear it if the title screen ever set it.
         if (window.preconnectedMapData)
             window.preconnectedMapData = null;
+        this.socket.on('debugStats', (stats) => {
+            debug_menu_1.debugMenuPanel.recordServerStats(stats);
+        });
         this.socket.on('zoneUpdate', (zones) => {
             // ... existing code ...
         });
@@ -633,6 +657,11 @@ class Game {
                 this.showHitboxes = !this.showHitboxes;
                 this.graphics.showHitboxes = this.showHitboxes;
                 localStorage.setItem('showHitboxes', this.showHitboxes.toString());
+                return;
+            }
+            if (key === normalizeKey(this.controls.toggle_debug_menu)) {
+                this.closeAllMenusExcept('debugMenu');
+                debug_menu_1.debugMenuPanel.toggle();
                 return;
             }
             // Minimap scroll controls
@@ -981,6 +1010,14 @@ class Game {
         if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
             window.titleScreen.renderSettingsOverlay(this.graphics.ctx);
         }
+        // Debug menu: sample frame time every frame (graphs accumulate even
+        // while the panel is closed), keep the top-row button's visibility in
+        // sync with the settings checkbox, and draw the panel if open.
+        debug_menu_1.debugMenuPanel.recordClientFrame();
+        if (window.titleScreen) {
+            window.titleScreen.getCanvasButtons().setDebugVisible((0, debug_menu_1.isDebugMenuEnabled)());
+        }
+        debug_menu_1.debugMenuPanel.render(this.graphics.ctx);
         if (this.showStats) {
             this.frameTimeAccum += performance.now() - frameStartMs;
             this.frameTimeSamples++;
@@ -1620,6 +1657,8 @@ class Game {
             this.shopManager?.closeShop();
         if (except !== 'skills')
             this.skillsManager?.hide();
+        if (except !== 'debugMenu')
+            debug_menu_1.debugMenuPanel.close();
     }
     updatePlayerEye() {
         const player = this.getLocalPlayer();
@@ -1754,6 +1793,7 @@ class Game {
         this.shopManager.cleanup();
         this.chat?.cleanup();
         this.tutorial.cleanup();
+        debug_menu_1.debugMenuPanel.close();
     }
     handleExit() {
         this.cleanup();
@@ -1886,6 +1926,7 @@ class Game {
             skills: 'x',
             toggle_mouse_controls: 'k',
             toggle_hitboxes: 'h',
+            toggle_debug_menu: 'j',
             zoom_in: '=',
             zoom_out: '-',
             chat: 'Enter',

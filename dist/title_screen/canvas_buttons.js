@@ -34,6 +34,8 @@ const BUTTON_DEFS = [
     { id: 'guild', iconName: 'guild', bg: '#27dade', border: '#1fb3b0', group: 'top' },
     { id: 'skins', iconName: 'skins', bg: '#c45cff', border: '#9a3fd0', group: 'top' },
     { id: 'discord', iconName: 'discord', bg: '#5865f2', border: '#4752c4', group: 'top' },
+    // Debug slot: only visible when "Enable Debug Menu" is on in settings.
+    { id: 'debug', iconName: 'debug', bg: '#666666', border: '#4d4d4d', group: 'top' },
     // Exit slot: only visible in-game; appended to the right of the top row.
     { id: 'exit', iconName: 'exit_button', bg: '#ff0000', border: '#cc0000', group: 'top' },
     { id: 'inventory', iconName: 'inventory', bg: '#00b3ff', border: '#008fcc', group: 'bottom' },
@@ -99,14 +101,26 @@ class TitleCanvasButtons {
             x: 0, y: 0, w: BUTTON_SIZE, h: BUTTON_SIZE,
             icon: loadIconImage(d.iconName),
             // Exit is in-game only — start hidden; TitleScreen.showExitButton
-            // flips it on. Other buttons default to visible.
-            visible: d.id !== 'exit',
+            // flips it on. Debug is settings-gated — setDebugVisible drives it.
+            // Other buttons default to visible.
+            visible: d.id !== 'exit' && d.id !== 'debug',
             slideInStart: 0,
         }));
     }
     /** Show or hide the in-game exit button. */
     setExitVisible(visible) {
         const b = this.buttons.find((x) => x.id === 'exit');
+        if (!b)
+            return;
+        if (visible && !b.visible)
+            b.slideInStart = performance.now();
+        else if (!visible)
+            b.slideInStart = 0;
+        b.visible = visible;
+    }
+    /** Show or hide the settings-gated debug button. */
+    setDebugVisible(visible) {
+        const b = this.buttons.find((x) => x.id === 'debug');
         if (!b)
             return;
         if (visible && !b.visible)

@@ -42,6 +42,8 @@ export interface Enemy {
   aiType?: 'passive' | 'neutral' | 'hostile' | 'sandstorm';
   isChasing?: boolean;  // Whether the enemy is currently chasing a player
   targetPlayerId?: string;  // ID of the player currently being targeted (persists until player is out of range)
+  targetEnemyId?: string;   // pets: cached wild-mob target — revalidated each tick so steady-state targeting costs one LOS ray instead of a full rescan
+  targetPetId?: string;     // wild mobs: cached pet target, same revalidate-then-rescan scheme
   range?: number;
   wanderTargetX?: number;
   wanderTargetY?: number;

@@ -359,6 +359,9 @@ function despawnAllPlayerPets(playerId, io) {
         }
     }
 }
+// See the cap check in spawnPet. Counts entities (centipede segments included),
+// not eggs: a full loadout of ordinary eggs stays far below this.
+const MAX_PET_ENTITIES_PER_PLAYER = 50;
 // Spawn a pet mob that belongs to a player
 function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false) {
     // Validate mob type
@@ -392,6 +395,21 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
             // console.log(`[PET] Player ${ownerId} already has a ${mobType} pet, despawning old one`);
             despawnPet(existingPet, io);
         }
+    }
+    // Hard cap on live pet entities per player, counting centipede body
+    // segments. 10 egg slots × apex (3 pets each) × centipede pets (10
+    // entities each) could otherwise put hundreds of entities in the world
+    // per player, and several players doing that together stalled the tick
+    // loop until nginx answered 502. The cap sits far above any normal
+    // loadout, so it only bites deliberate stacking.
+    let ownedEntities = 0;
+    for (const e of constants_1.enemies) {
+        if (e.ownerId === ownerId)
+            ownedEntities++;
+    }
+    if (ownedEntities >= MAX_PET_ENTITIES_PER_PLAYER) {
+        console.log(`[PET] Player ${ownerId} is at the pet entity cap (${MAX_PET_ENTITIES_PER_PLAYER}); not spawning ${mobType}`);
+        return;
     }
     const tier = rarity.toLowerCase();
     const mobStats = (0, mobs_1.getMobStats)(mobType, tier);

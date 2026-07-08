@@ -1,10 +1,10 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 566485292,
+      "totalXP": 566512158,
       "inventory": {
         "common": {
-          "petal_light": 209,
+          "petal_light": 210,
           "petal_dandelion": 62,
           "petal_stinger": 103,
           "petal_yggdrasil": 23,
@@ -30,13 +30,13 @@
           "petal_yucca": 47,
           "petal_hornet_egg": 383,
           "petal_dandelion_egg": 272,
-          "petal_ladybug_egg": 291,
+          "petal_ladybug_egg": 292,
           "petal_soldier_ant_egg": 300,
           "petal_dark_ladybug_egg": 282,
           "petal_bee_egg": 274,
           "petal_fly_egg": 120,
           "petal_bubble_egg": 53,
-          "petal_rock_egg": 253,
+          "petal_rock_egg": 254,
           "petal_bush_egg": 15,
           "petal_roach_egg": 46,
           "petal_cactus_egg": 28,
@@ -223,7 +223,7 @@
           "petal_sparkle": 1
         },
         "uncommon": {
-          "petal_rose": 197,
+          "petal_rose": 198,
           "petal_dandelion": 150,
           "petal_basic": 134,
           "petal_sand": 21,
@@ -518,7 +518,7 @@
           "petal_dark_ladybug_egg": 67,
           "petal_ladybug_egg": 80,
           "petal_hornet_egg": 108,
-          "petal_bee_egg": 75,
+          "petal_bee_egg": 76,
           "petal_garbage_egg": 39,
           "petal_moth_egg": 39,
           "petal_rock_egg": 56,
@@ -551,10 +551,10 @@
           "petal_glass": 69,
           "petal_shiny_ladybug_egg": 4,
           "petal_cube_egg": 11,
-          "petal_faster": 58,
+          "petal_faster": 59,
           "petal_shell_egg": 7,
           "petal_splitter": 2,
-          "petal_centipede_egg": 27,
+          "petal_centipede_egg": 28,
           "petal_desert_centipede_egg": 8,
           "petal_peas": 108,
           "petal_third_eye": 3,
@@ -570,7 +570,7 @@
           "petal_magnet": 2,
           "petal_antennae": 12,
           "petal_yin_yang": 2,
-          "petal_pollen": 12,
+          "petal_pollen": 13,
           "petal_bomb": 2
         },
         "ultra": {
@@ -821,11 +821,11 @@
       },
       "mobKills": {
         "ladybug": {
-          "common": 1384,
-          "legendary": 804,
-          "uncommon": 472,
+          "common": 1391,
+          "legendary": 805,
+          "uncommon": 475,
           "mythic": 756,
-          "rare": 214,
+          "rare": 218,
           "ultra": 192,
           "epic": 328,
           "super": 25,
@@ -833,9 +833,9 @@
         },
         "soldier_ant": {
           "epic": 326,
-          "legendary": 1217,
-          "common": 1483,
-          "rare": 462,
+          "legendary": 1218,
+          "common": 1485,
+          "rare": 463,
           "mythic": 1274,
           "ultra": 145,
           "uncommon": 598,
@@ -846,54 +846,54 @@
         "rock": {
           "legendary": 586,
           "ultra": 179,
-          "common": 1149,
+          "common": 1154,
           "mythic": 670,
           "epic": 194,
-          "rare": 217,
-          "uncommon": 439,
+          "rare": 220,
+          "uncommon": 440,
           "super": 9,
           "unique": 3
         },
         "dark_ladybug": {
-          "common": 1565,
-          "legendary": 592,
+          "common": 1570,
+          "legendary": 593,
           "mythic": 653,
-          "uncommon": 562,
-          "rare": 226,
-          "epic": 192,
+          "uncommon": 566,
+          "rare": 228,
+          "epic": 193,
           "ultra": 230,
           "super": 16,
           "unique": 3
         },
         "hornet": {
-          "common": 1958,
+          "common": 1971,
           "legendary": 1155,
           "mythic": 1285,
-          "uncommon": 888,
-          "rare": 396,
-          "epic": 352,
+          "uncommon": 899,
+          "rare": 400,
+          "epic": 354,
           "ultra": 431,
           "super": 15,
           "unique": 3
         },
         "dandelion": {
           "legendary": 657,
-          "common": 1096,
+          "common": 1102,
           "mythic": 649,
-          "uncommon": 439,
+          "uncommon": 440,
           "unique": 9,
           "ultra": 210,
-          "rare": 226,
+          "rare": 228,
           "epic": 175,
           "super": 21
         },
         "bee": {
-          "common": 1347,
-          "epic": 270,
+          "common": 1361,
+          "epic": 274,
           "mythic": 700,
-          "uncommon": 490,
+          "uncommon": 497,
           "legendary": 686,
-          "rare": 240,
+          "rare": 245,
           "ultra": 198,
           "super": 17,
           "unique": 3
@@ -1185,21 +1185,21 @@
           "uncommon": 7
         },
         "centipede": {
-          "common": 359,
-          "uncommon": 160,
-          "legendary": 269,
-          "epic": 87,
+          "common": 364,
+          "uncommon": 162,
+          "legendary": 270,
+          "epic": 90,
           "mythic": 328,
           "rare": 79,
           "ultra": 129,
           "super": 3
         },
         "centipede_body": {
-          "common": 2505,
-          "uncommon": 1224,
-          "legendary": 1868,
-          "mythic": 1953,
-          "epic": 676,
+          "common": 2538,
+          "uncommon": 1235,
+          "legendary": 1876,
+          "mythic": 1955,
+          "epic": 694,
           "rare": 676,
           "ultra": 766
         },
@@ -1226,8 +1226,8 @@
           "uncommon": 123,
           "rare": 92,
           "epic": 78,
-          "legendary": 145,
-          "common": 263,
+          "legendary": 146,
+          "common": 267,
           "mythic": 222,
           "ultra": 79,
           "unique": 1
@@ -1237,7 +1237,7 @@
           "rare": 94,
           "epic": 95,
           "legendary": 136,
-          "common": 339,
+          "common": 340,
           "mythic": 174,
           "ultra": 54,
           "unique": 2
@@ -1279,7 +1279,7 @@
           "ultra": 1
         }
       },
-      "stars": 162087,
+      "stars": 162089,
       "dailyStreak": 2,
       "lastStreakDate": "2026-07-07",
       "renderFlags": 0,
@@ -2134,7 +2134,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1783461333540
+      "lastActiveAt": 1783465451425
     },
     "dev": {
       "id": "1g99g1gfk",

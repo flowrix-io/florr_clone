@@ -154,21 +154,75 @@ export function hasLineOfSight(x1: number, y1: number, x2: number, y2: number, s
     return true; // Clear line of sight
 }
 
+// Broad-phase state for checkEnemyEnemyCollisions, reused across ticks.
+// Cell size must exceed the largest collision reach (two max mob radii +
+// buffer) divided across the 3×3-ish neighborhood the query box spans; 512
+// matches enemyGrid and comfortably covers real mob sizes (< ~400 radius).
+const COLLISION_CELL_SIZE = 512;
+const _collisionGrid = new Map<number, Enemy[]>();
+const _pairScratch: Enemy[] = [];
+function collisionKey(cx: number, cy: number): number {
+    return ((cy + 1024) << 16) | ((cx + 1024) & 0xFFFF);
+}
+
 /**
  * Check and resolve enemy-enemy collisions and melee combat
  */
 export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
     const MOB_COLLISION_BUFFER = 5; // Buffer between mobs
 
+    // Broad-phase: bucket enemies into a uniform grid so each one only runs the
+    // narrow phase against true neighbors. The old all-pairs loop — with a
+    // getMobStats call per pair — was O(E²): fine at a few hundred wild mobs,
+    // but pet eggs multiply the population (apex eggs spawn 3 pets, a centipede
+    // pet is 10 entities) and this pass alone froze the tick loop once several
+    // players stacked eggs. Radius/stats are cached per enemy under the same
+    // contract as enemyGrid.rebuildEnemyGrid: type/tier never change after spawn.
+    _collisionGrid.clear();
+    let maxHalfSize = 0;
+    for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i] as any;
+        if (e._radius === undefined) {
+            const stats = getMobStats(e.type, e.tier);
+            e._radius = stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2;
+            e._mobStats = stats;
+        }
+        if (e._radius > maxHalfSize) maxHalfSize = e._radius;
+        e._ci = i; // pair-dedup stamp — replaces the old `j > i` inner loop
+        const cellX = Math.floor(e.x / COLLISION_CELL_SIZE);
+        const cellY = Math.floor(e.y / COLLISION_CELL_SIZE);
+        const k = collisionKey(cellX, cellY);
+        let bucket = _collisionGrid.get(k);
+        if (!bucket) { bucket = []; _collisionGrid.set(k, bucket); }
+        bucket.push(enemies[i]);
+    }
+
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
-        const mobStats = getMobStats(enemy.type, enemy.tier);
-        const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
-        const halfSize = enemySize / 2;
+        const mobStats = (enemy as any)._mobStats as ReturnType<typeof getMobStats>;
+        const halfSize = (enemy as any)._radius as number;
 
-        // Only check enemies that come after this one to avoid double-processing
-        for (let j = i + 1; j < enemies.length; j++) {
-            const otherEnemy = enemies[j];
+        // Anything close enough to collide is within this enemy's radius plus
+        // the largest radius in play plus the buffer.
+        const reach = halfSize + maxHalfSize + MOB_COLLISION_BUFFER;
+        const minCX = Math.floor((enemy.x - reach) / COLLISION_CELL_SIZE);
+        const maxCX = Math.floor((enemy.x + reach) / COLLISION_CELL_SIZE);
+        const minCY = Math.floor((enemy.y - reach) / COLLISION_CELL_SIZE);
+        const maxCY = Math.floor((enemy.y + reach) / COLLISION_CELL_SIZE);
+        _pairScratch.length = 0;
+        for (let cellY = minCY; cellY <= maxCY; cellY++) {
+            for (let cellX = minCX; cellX <= maxCX; cellX++) {
+                const bucket = _collisionGrid.get(collisionKey(cellX, cellY));
+                if (!bucket) continue;
+                for (let bi = 0; bi < bucket.length; bi++) {
+                    // Each pair is processed once, from the lower-indexed side
+                    if (((bucket[bi] as any)._ci as number) > i) _pairScratch.push(bucket[bi]);
+                }
+            }
+        }
+
+        for (let j = 0; j < _pairScratch.length; j++) {
+            const otherEnemy = _pairScratch[j];
 
             // Skip collision resolution between segments of the same centipede chain:
             // the chain-follow pass keeps them in formation, so physical push-apart
@@ -180,8 +234,8 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                 continue;
             }
 
-            // Get other enemy's size
-            const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
+            // Other enemy's size (cached by the broad-phase pass above)
+            const otherMobStats = (otherEnemy as any)._mobStats as ReturnType<typeof getMobStats>;
 
             // Mobs flagged with no_mob_collision (e.g. ant holes) don't push
             // or get pushed by other mobs.
@@ -192,8 +246,7 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
             const thisMobIsPet = !!enemy.ownerId;
             const otherMobIsPet = !!otherEnemy.ownerId;
 
-            const otherEnemySize = otherMobStats ? otherMobStats.size * 40 : ENEMY_SIZE;
-            const otherHalfSize = otherEnemySize / 2;
+            const otherHalfSize = (otherEnemy as any)._radius as number;
 
             // Calculate distance between mobs
             const dx = otherEnemy.x - enemy.x;

@@ -17,6 +17,7 @@ const render_utils_1 = require("./render_utils");
 const biomes_1 = require("./biomes");
 const background_1 = require("./background");
 const settings_menu_1 = require("./settings_menu");
+const debug_menu_1 = require("../debug_menu");
 const auth_form_1 = require("./auth_form");
 const submanagers_1 = require("./submanagers");
 const canvas_buttons_1 = require("./canvas_buttons");
@@ -65,6 +66,13 @@ class TitleScreen {
         this.uiRenderingEnabled = false;
         /** Single per-frame callback for the title canvas — matches appendToBody. */
         this.titleFrame = () => {
+            // Debug button visibility tracks the settings checkbox live (same
+            // per-frame localStorage read pattern as renderStatsCounters).
+            this.canvasButtons.setDebugVisible((0, debug_menu_1.isDebugMenuEnabled)());
+            // Frame-time samples for the debug graphs; the game loop records its
+            // own frames, so only sample here while no game is running.
+            if (!window.currentGame)
+                debug_menu_1.debugMenuPanel.recordClientFrame();
             if (this.uiRenderingEnabled) {
                 this.renderCanvasUI();
                 this.drawTitleLoadout();
@@ -760,6 +768,10 @@ class TitleScreen {
         if (this.settings.handleClick(x, y)) {
             return;
         }
+        // Handle debug menu clicks
+        if (debug_menu_1.debugMenuPanel.handleClick(x, y)) {
+            return;
+        }
         // Handle auth form clicks
         if (this.authForm.isVisible()) {
             this.authForm.handleClick(x, y, centerX, centerY);
@@ -807,6 +819,11 @@ class TitleScreen {
         // Handle settings menu hover
         if (this.settings.isMenuOpen()) {
             this.settings.handleHover(x, y);
+            return;
+        }
+        // Handle debug menu hover
+        if (debug_menu_1.debugMenuPanel.isMenuOpen()) {
+            debug_menu_1.debugMenuPanel.handleHover(x, y);
             return;
         }
         // Handle auth form hover
@@ -1049,6 +1066,8 @@ class TitleScreen {
         this.renderStatsCounters(ctx, width, height);
         // Draw settings menu overlay
         this.settings.render(ctx);
+        // Draw debug menu overlay
+        debug_menu_1.debugMenuPanel.render(ctx);
     }
     /**
      * Renders stats counters (FPS, memory, mobs, players) in the bottom-right corner
@@ -1640,11 +1659,17 @@ class TitleScreen {
                 this.guildMenuManager.hide();
             if (!except.includes('skins'))
                 this.skinStudio.hide();
+            if (!except.includes('debug'))
+                debug_menu_1.debugMenuPanel.close();
         };
         switch (id) {
             case 'settings':
                 closeOthers('settings');
                 this.toggleSettings();
+                break;
+            case 'debug':
+                closeOthers('debug');
+                debug_menu_1.debugMenuPanel.toggle();
                 break;
             case 'changelog':
                 closeOthers('changelog');

@@ -37,6 +37,7 @@ export const DEFAULT_CONTROLS: { [key: string]: string } = {
     skills: 'x',
     toggle_mouse_controls: 'k',
     toggle_hitboxes: 'h',
+    toggle_debug_menu: 'j',
     zoom_in: '=',
     zoom_out: '-',
     chat: 'Enter',
@@ -77,6 +78,7 @@ export class SettingsMenu {
     private showConsoleLogs = false;
     private showAdminCommands = false;
     private showAdminsOnLeaderboard = false;
+    private debugMenuEnabled = false;
     private numberKeysUseItems = false;
     private useMouseControls = false;
     private antialiasing = true;
@@ -117,6 +119,7 @@ export class SettingsMenu {
         this.showConsoleLogs = localStorage.getItem('showConsoleLogs') === 'true';
         this.showAdminCommands = localStorage.getItem('showAdminCommands') === 'true';
         this.showAdminsOnLeaderboard = localStorage.getItem('showAdminsOnLeaderboard') === 'true';
+        this.debugMenuEnabled = localStorage.getItem('debugMenuEnabled') === 'true';
         this.numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
         this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
         this.antialiasing = localStorage.getItem('antialiasing') !== 'false';
@@ -352,6 +355,8 @@ export class SettingsMenu {
             this.drawCheckbox(ctx, contentX, cy, 22, this.showAdminCommands, 'Show Admin Commands', this.hoveredItem === 'cb_showAdminCommands');
             cy += rowH;
             this.drawCheckbox(ctx, contentX, cy, 22, this.showAdminsOnLeaderboard, 'Show Admins on Leaderboard', this.hoveredItem === 'cb_showAdminsOnLeaderboard');
+            cy += rowH;
+            this.drawCheckbox(ctx, contentX, cy, 22, this.debugMenuEnabled, 'Enable Debug Menu button (J in-game)', this.hoveredItem === 'cb_debugMenuEnabled');
             cy += rowH;
 
             cy += 10;
@@ -591,6 +596,11 @@ export class SettingsMenu {
                 return true;
             }
             cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleCheckbox('debugMenuEnabled');
+                return true;
+            }
+            cy += rowH;
             cy += 10;
             const logoutBtnW = 160;
             const logoutBtnH = 32;
@@ -724,6 +734,11 @@ export class SettingsMenu {
             cy += rowH;
             if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                 this.hoveredItem = 'cb_showAdminsOnLeaderboard';
+                return;
+            }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'cb_debugMenuEnabled';
                 return;
             }
             cy += rowH;
@@ -907,6 +922,10 @@ export class SettingsMenu {
             case 'showAdminsOnLeaderboard':
                 this.showAdminsOnLeaderboard = !this.showAdminsOnLeaderboard;
                 localStorage.setItem('showAdminsOnLeaderboard', this.showAdminsOnLeaderboard.toString());
+                break;
+            case 'debugMenuEnabled':
+                this.debugMenuEnabled = !this.debugMenuEnabled;
+                localStorage.setItem('debugMenuEnabled', this.debugMenuEnabled.toString());
                 break;
             case 'numberKeysUseItems':
                 this.numberKeysUseItems = !this.numberKeysUseItems;

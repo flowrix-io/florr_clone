@@ -3529,6 +3529,70 @@ function spawnWaveMobs() {
         enemy._spawnWavePrevHealth = enemy.health;
     }
 }
+// ---- Target acquisition (pets and wild mobs) ----
+// These scans used to LOS-raycast every candidate in range — O(candidates)
+// 21-sample rays per entity per tick. With several players stacking pet eggs
+// (apex eggs spawn 3 pets, centipede pets are 10 entities) the tick loop
+// blew past its 33ms budget and starved the event loop, so nginx answered 502.
+// Instead: collect in-range candidates by squared distance, sort nearest-first,
+// and raycast in that order, stopping at the first visible one. That computes
+// the same "nearest candidate with line of sight" the full scans did; the only
+// divergence is the ray cap, which gives up when everything nearby is occluded
+// instead of raycasting the entire candidate set.
+const TARGET_LOS_RAY_CAP = 8;
+const _targetScratch = [];
+const _playerScratch = [];
+function _byScratchDist(a, b) {
+    return a._d2 - b._d2;
+}
+// Nearest _targetScratch entry with line of sight from (fromX, fromY), if any.
+function pickNearestVisible(fromX, fromY) {
+    _targetScratch.sort(_byScratchDist);
+    const rays = Math.min(_targetScratch.length, TARGET_LOS_RAY_CAP);
+    for (let i = 0; i < rays; i++) {
+        const candidate = _targetScratch[i];
+        if ((0, physics_1.hasLineOfSight)(fromX, fromY, candidate.x, candidate.y))
+            return candidate;
+    }
+    return undefined;
+}
+// Resolve a pet's wild-mob target. The cached target is revalidated first
+// (alive, still wild, in range, visible — one ray), so a pet locked onto a mob
+// costs one raycast per tick instead of a rescan. Like wild mobs' player
+// targeting, the pet keeps its target until it dies, leaves range, or is
+// occluded, rather than flip-flopping to whatever is momentarily closest.
+function acquirePetWildTarget(enemy, enemyById) {
+    const petRange = enemy.range || ENEMY_CHASE_RANGE;
+    const rangeSq = petRange * petRange;
+    if (enemy.targetEnemyId) {
+        const cached = enemyById.get(enemy.targetEnemyId);
+        if (cached && !cached.ownerId && !cached.isDead && cached.health > 0) {
+            const dx = cached.x - enemy.x;
+            const dy = cached.y - enemy.y;
+            if (dx * dx + dy * dy < rangeSq && (0, physics_1.hasLineOfSight)(enemy.x, enemy.y, cached.x, cached.y)) {
+                return cached;
+            }
+        }
+        enemy.targetEnemyId = undefined;
+    }
+    _targetScratch.length = 0;
+    for (const otherEnemy of constants_2.enemies) {
+        if (otherEnemy.id === enemy.id || otherEnemy.ownerId)
+            continue;
+        if (otherEnemy.isDead || otherEnemy.health <= 0)
+            continue;
+        const dx = otherEnemy.x - enemy.x;
+        const dy = otherEnemy.y - enemy.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < rangeSq) {
+            otherEnemy._d2 = d2;
+            _targetScratch.push(otherEnemy);
+        }
+    }
+    const target = pickNearestVisible(enemy.x, enemy.y);
+    enemy.targetEnemyId = target ? target.id : undefined;
+    return target;
+}
 function moveEnemies() {
     const currentTime = Date.now();
     // Detect severed centipede chains: any body segment whose leader no longer
@@ -3537,6 +3601,13 @@ function moveEnemies() {
     const enemyById = new Map();
     for (const e of constants_2.enemies)
         enemyById.set(e.id, e);
+    // Live pets collected once per tick — the hostile-mob pet-targeting below
+    // otherwise rescans the whole enemies array for every untargeted mob.
+    const petsThisTick = [];
+    for (const e of constants_2.enemies) {
+        if (e.ownerId && !e.isDead && e.health > 0)
+            petsThisTick.push(e);
+    }
     for (const enemy of constants_2.enemies) {
         if (!(0, server_utils_1.isCentipedeBodyType)(enemy.type) || !enemy.leaderId)
             continue;
@@ -3593,6 +3664,10 @@ function moveEnemies() {
         if (isPet) {
             // Pet behavior: follow owner and attack wild mobs
             const owner = constants_2.players[enemy.ownerId];
+            // One wild-mob target per pet per tick, shared by chase movement and
+            // the projectile block below (they used to each rescan all enemies).
+            let petTarget;
+            let petTargetResolved = false;
             if (owner && !owner.isDead) {
                 // Check if there's a clear line of sight to owner
                 const hasLOS = (0, physics_1.hasLineOfSight)(enemy.x, enemy.y, owner.x, owner.y);
@@ -3646,28 +3721,12 @@ function moveEnemies() {
                 }
                 // Attack wild mobs (enemies without ownerId) if pet is movable
                 if (enemy.speed > 0) {
-                    let closestWildMob;
-                    let closestWildMobDistance = Infinity;
-                    for (const otherEnemy of constants_2.enemies) {
-                        // Skip self, pets, and enemies without ownerId are wild
-                        if (otherEnemy.id === enemy.id || otherEnemy.ownerId) {
-                            continue;
-                        }
-                        const mobDx = otherEnemy.x - enemy.x;
-                        const mobDy = otherEnemy.y - enemy.y;
-                        const mobDistance = Math.sqrt(mobDx * mobDx + mobDy * mobDy);
-                        // Only consider mobs with line of sight
-                        if (mobDistance < closestWildMobDistance && mobDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
-                            if ((0, physics_1.hasLineOfSight)(enemy.x, enemy.y, otherEnemy.x, otherEnemy.y)) {
-                                closestWildMobDistance = mobDistance;
-                                closestWildMob = otherEnemy;
-                            }
-                        }
-                    }
-                    // Attack closest wild mob
-                    if (closestWildMob) {
-                        const mobDx = closestWildMob.x - enemy.x;
-                        const mobDy = closestWildMob.y - enemy.y;
+                    petTarget = acquirePetWildTarget(enemy, enemyById);
+                    petTargetResolved = true;
+                    // Attack the acquired wild mob
+                    if (petTarget) {
+                        const mobDx = petTarget.x - enemy.x;
+                        const mobDy = petTarget.y - enemy.y;
                         const mobDistance = Math.sqrt(mobDx * mobDx + mobDy * mobDy);
                         if (mobDistance > 0) {
                             const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER;
@@ -3705,24 +3764,12 @@ function moveEnemies() {
             // Handle pet projectiles (same as regular enemies)
             const mobStats = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
             if (mobStats?.projectile && enemy.speed > 0) {
-                // Find closest wild mob for projectile target
-                let projectileTarget;
-                let projectileTargetDistance = Infinity;
-                for (const otherEnemy of constants_2.enemies) {
-                    if (otherEnemy.id === enemy.id || otherEnemy.ownerId) {
-                        continue;
-                    }
-                    const mobDx = otherEnemy.x - enemy.x;
-                    const mobDy = otherEnemy.y - enemy.y;
-                    const mobDistance = Math.sqrt(mobDx * mobDx + mobDy * mobDy);
-                    // Only consider mobs with line of sight
-                    if (mobDistance < projectileTargetDistance && mobDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
-                        if ((0, physics_1.hasLineOfSight)(enemy.x, enemy.y, otherEnemy.x, otherEnemy.y)) {
-                            projectileTargetDistance = mobDistance;
-                            projectileTarget = otherEnemy;
-                        }
-                    }
+                // Reuse the chase target acquired above. Only ownerless (wandering)
+                // pets skip that block, so acquire a target for them here.
+                if (!petTargetResolved) {
+                    petTarget = acquirePetWildTarget(enemy, enemyById);
                 }
+                const projectileTarget = petTarget;
                 if (projectileTarget) {
                     const projectileConfig = mobStats.projectile;
                     const lastShotTime = enemy.lastProjectileTime || 0;
@@ -3848,53 +3895,76 @@ function moveEnemies() {
             // If no existing target or existing target is out of range, look for new targets
             // Neutral and sandstorm mobs don't actively scan for targets — neutral only targets via provocation
             if (!targetPlayer && enemy.aiType !== 'neutral' && enemy.aiType !== 'sandstorm' && enemy.aiType !== 'passive') {
-                // Find closest living player with line of sight (for initial targeting)
-                let closestPlayer;
-                let closestDistance = Infinity;
-                // Convert players object to array and explicitly type it
-                const playerArray = Object.values(constants_2.players);
-                playerArray.forEach(player => {
+                // Find closest living player in chase range with line of sight.
+                // Candidates are ordered by aggro-adjusted distance and raycast
+                // nearest-first, so the common case costs one ray instead of one
+                // per player. Petals like Bulb raise a player's aggro radius —
+                // treated as being that many pixels closer, so mobs detect them
+                // from further away (effectively widening the chase range).
+                const chaseRange = enemy.range || ENEMY_CHASE_RANGE;
+                _playerScratch.length = 0;
+                for (const pid in constants_2.players) {
+                    const player = constants_2.players[pid];
                     // Skip dead players (corpses)
-                    if (player.isDead) {
-                        return;
-                    }
+                    if (player.isDead)
+                        continue;
                     const dx = player.x - enemy.x;
                     const dy = player.y - enemy.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
-                    // Petals like Bulb raise this player's aggro radius — treat them as if
-                    // they were that many pixels closer, so mobs detect them from further away.
                     const effectiveDistance = distance - (player.aggroRadiusBonus || 0);
-                    // Only consider players with line of sight for initial targeting
-                    if (effectiveDistance < closestDistance && (0, physics_1.hasLineOfSight)(enemy.x, enemy.y, player.x, player.y)) {
-                        closestDistance = effectiveDistance;
-                        closestPlayer = player;
+                    if (effectiveDistance < chaseRange) {
+                        player._d2 = effectiveDistance;
+                        _playerScratch.push(player);
                     }
-                });
-                // If we found a new target within chase range, start targeting them.
-                // closestDistance is the aggro-radius-adjusted distance, so the bonus
-                // effectively widens (enemy.range || ENEMY_CHASE_RANGE) for that player.
-                if (closestPlayer && closestDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
-                    enemy.targetPlayerId = closestPlayer.id;
-                    targetPlayer = closestPlayer;
+                }
+                _playerScratch.sort(_byScratchDist);
+                const playerRays = Math.min(_playerScratch.length, TARGET_LOS_RAY_CAP);
+                for (let ci = 0; ci < playerRays; ci++) {
+                    const candidate = _playerScratch[ci];
+                    if ((0, physics_1.hasLineOfSight)(enemy.x, enemy.y, candidate.x, candidate.y)) {
+                        enemy.targetPlayerId = candidate.id;
+                        targetPlayer = candidate;
+                        break;
+                    }
                 }
             }
-            // Find closest pet (enemy with ownerId) as alternative target (only if no player target)
+            // Find closest pet (enemy with ownerId) as alternative target (only if no
+            // player target). Only mobs that can actually chase consume this target
+            // (hostile, or a provoked neutral whose player target vanished), so
+            // passive/sandstorm/unprovoked-neutral mobs skip the scan entirely.
             let closestPet;
-            let closestPetDistance = Infinity;
-            if (!targetPlayer) {
-                for (const otherEnemy of constants_2.enemies) {
-                    if (otherEnemy.ownerId && otherEnemy.id !== enemy.id) {
-                        const petDx = otherEnemy.x - enemy.x;
-                        const petDy = otherEnemy.y - enemy.y;
-                        const petDistance = Math.sqrt(petDx * petDx + petDy * petDy);
-                        // Only consider pets with line of sight
-                        if (petDistance < closestPetDistance && petDistance < (enemy.range || ENEMY_CHASE_RANGE)) {
-                            if ((0, physics_1.hasLineOfSight)(enemy.x, enemy.y, otherEnemy.x, otherEnemy.y)) {
-                                closestPetDistance = petDistance;
-                                closestPet = otherEnemy;
-                            }
+            if (!targetPlayer && (enemy.aiType === 'hostile' || (enemy.aiType === 'neutral' && enemy.targetPlayerId))) {
+                const petChaseRange = enemy.range || ENEMY_CHASE_RANGE;
+                const petChaseRangeSq = petChaseRange * petChaseRange;
+                // Revalidate the cached pet target (one ray) before rescanning.
+                if (enemy.targetPetId) {
+                    const cached = enemyById.get(enemy.targetPetId);
+                    if (cached && cached.ownerId && !cached.isDead && cached.health > 0) {
+                        const petDx = cached.x - enemy.x;
+                        const petDy = cached.y - enemy.y;
+                        if (petDx * petDx + petDy * petDy < petChaseRangeSq &&
+                            (0, physics_1.hasLineOfSight)(enemy.x, enemy.y, cached.x, cached.y)) {
+                            closestPet = cached;
                         }
                     }
+                    if (!closestPet)
+                        enemy.targetPetId = undefined;
+                }
+                if (!closestPet && petsThisTick.length > 0) {
+                    _targetScratch.length = 0;
+                    for (const pet of petsThisTick) {
+                        if (pet.id === enemy.id)
+                            continue;
+                        const petDx = pet.x - enemy.x;
+                        const petDy = pet.y - enemy.y;
+                        const d2 = petDx * petDx + petDy * petDy;
+                        if (d2 < petChaseRangeSq) {
+                            pet._d2 = d2;
+                            _targetScratch.push(pet);
+                        }
+                    }
+                    closestPet = pickNearestVisible(enemy.x, enemy.y);
+                    enemy.targetPetId = closestPet ? closestPet.id : undefined;
                 }
             }
             // Prioritize players, but target pets if no player is in range
@@ -4778,6 +4848,12 @@ function start_loop() {
     const DELTA_SMOOTH = 0.1; // low-pass factor (~10-tick time constant)
     let lastTickMs = 0;
     let smoothedDelta = NOMINAL_DELTA;
+    // Tick-duration accounting for the client debug menu graphs. Accumulated
+    // per full tick below and drained once per second by the debugStats
+    // interval after this loop.
+    let debugTickAccumMs = 0;
+    let debugTickSamples = 0;
+    let debugTickMaxMs = 0;
     // Reused per tick to avoid per-tick allocation of the authenticated-id array
     // and an associated socket lookup that was previously done twice.
     const authenticatedPlayerIds = [];
@@ -5265,7 +5341,35 @@ function start_loop() {
             socket.lastUpdateTime = now;
             io.to(playerId).emit('gameStateUpdate', gameState);
         }
+        // Record how long this tick's work actually took (idle early-return
+        // ticks never reach here, so they don't dilute the average).
+        const tickDurMs = performance.now() - nowMs;
+        debugTickAccumMs += tickDurMs;
+        debugTickSamples++;
+        if (tickDurMs > debugTickMaxMs)
+            debugTickMaxMs = tickDurMs;
     }, TICK_INTERVAL);
+    // Once per second, ship memory + tick-time stats to clients for the debug
+    // menu graphs (~100 bytes per emit; skipped entirely while idle).
+    setInterval(() => {
+        if (authenticatedPlayerIds.length === 0) {
+            debugTickAccumMs = 0;
+            debugTickSamples = 0;
+            debugTickMaxMs = 0;
+            return;
+        }
+        const mem = process.memoryUsage();
+        io.emit('debugStats', {
+            rss: mem.rss,
+            heapUsed: mem.heapUsed,
+            heapTotal: mem.heapTotal,
+            tickAvgMs: debugTickSamples > 0 ? Math.round((debugTickAccumMs / debugTickSamples) * 100) / 100 : 0,
+            tickMaxMs: Math.round(debugTickMaxMs * 100) / 100,
+        });
+        debugTickAccumMs = 0;
+        debugTickSamples = 0;
+        debugTickMaxMs = 0;
+    }, 1000);
 }
 // Start the server. uWS listens on (port, cb); cb receives a truthy listen socket on success.
 app.listen(typeof PORT === 'string' ? parseInt(PORT, 10) : PORT, (ok) => {

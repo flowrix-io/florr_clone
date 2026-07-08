@@ -15,6 +15,7 @@ import { drawRoundedRect, hsvAdjust, drawGardnButton } from './render_utils';
 import { getBiomeConfig } from './biomes';
 import { BackgroundAnimation } from './background';
 import { SettingsMenu, getControls } from './settings_menu';
+import { debugMenuPanel, isDebugMenuEnabled } from '../debug_menu';
 import { AuthForm } from './auth_form';
 import { TitleScreenSubmanagers } from './submanagers';
 import { TitleCanvasButtons, TitleButtonId } from './canvas_buttons';
@@ -817,6 +818,11 @@ export class TitleScreen {
             return;
         }
 
+        // Handle debug menu clicks
+        if (debugMenuPanel.handleClick(x, y)) {
+            return;
+        }
+
         // Handle auth form clicks
         if (this.authForm.isVisible()) {
             this.authForm.handleClick(x, y, centerX, centerY);
@@ -871,6 +877,12 @@ export class TitleScreen {
         // Handle settings menu hover
         if (this.settings.isMenuOpen()) {
             this.settings.handleHover(x, y);
+            return;
+        }
+
+        // Handle debug menu hover
+        if (debugMenuPanel.isMenuOpen()) {
+            debugMenuPanel.handleHover(x, y);
             return;
         }
 
@@ -1152,6 +1164,9 @@ export class TitleScreen {
 
         // Draw settings menu overlay
         this.settings.render(ctx);
+
+        // Draw debug menu overlay
+        debugMenuPanel.render(ctx);
     }
 
     /**
@@ -1792,6 +1807,12 @@ export class TitleScreen {
 
     /** Single per-frame callback for the title canvas — matches appendToBody. */
     private titleFrame = (): void => {
+        // Debug button visibility tracks the settings checkbox live (same
+        // per-frame localStorage read pattern as renderStatsCounters).
+        this.canvasButtons.setDebugVisible(isDebugMenuEnabled());
+        // Frame-time samples for the debug graphs; the game loop records its
+        // own frames, so only sample here while no game is running.
+        if (!window.currentGame) debugMenuPanel.recordClientFrame();
         if (this.uiRenderingEnabled) {
             this.renderCanvasUI();
             this.drawTitleLoadout();
@@ -1812,11 +1833,16 @@ export class TitleScreen {
             if (!except.includes('leaderboard')) this.leaderboardManager.hide();
             if (!except.includes('guild')) this.guildMenuManager.hide();
             if (!except.includes('skins')) this.skinStudio.hide();
+            if (!except.includes('debug')) debugMenuPanel.close();
         };
         switch (id) {
             case 'settings':
                 closeOthers('settings');
                 this.toggleSettings();
+                break;
+            case 'debug':
+                closeOthers('debug');
+                debugMenuPanel.toggle();
                 break;
             case 'changelog':
                 closeOthers('changelog');
