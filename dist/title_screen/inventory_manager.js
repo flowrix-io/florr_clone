@@ -468,7 +468,13 @@ class TitleScreenInventoryManager {
         // Get player name from localStorage or the name input element
         const nameInput = document.getElementById('nameInput');
         const playerName = (nameInput?.value || localStorage.getItem('playerName') || 'Unnamed');
-        const spawnBiome = localStorage.getItem('spawnBiome') || 'default';
+        // This authentication is only a background data fetch for the title
+        // screen — always use the neutral biome. The saved biome selection is
+        // applied by the Game's own authenticate when the player clicks Ready.
+        // Sending the sticky selection here put accounts into maze/PVP state
+        // (maze: whole inventory displayed one rarity lower, super+ petals
+        // silently unequipped) just for opening the page.
+        const spawnBiome = 'default';
         if (!username || !password)
             return;
         console.log('[TitleScreenInventory] Authenticating to fetch player data...');

@@ -220,6 +220,14 @@ function executeServerCommand(command, executor, deps, socketId) {
             sendOutput('    tp abc123 1000 2000  (shorthand)', socketId, io);
         }
     }
+    else if (trimmedCommand === 'change-maze' || trimmedCommand.startsWith('change-maze ')
+        || trimmedCommand === 'change_maze' || trimmedCommand.startsWith('change_maze ')) {
+        // change-maze [next|garden|desert|ocean|<dayNumber>] — force a new maze
+        // immediately (new layout, mobs cleared, players inside moved to the new
+        // entrance, all clients rebuilt via 'mazeInfo').
+        const arg = trimmedCommand.split(' ').slice(1).join(' ');
+        sendOutput((0, server_1.adminChangeMaze)(arg), socketId, io);
+    }
     else if (trimmedCommand.startsWith('set_skin ')) {
         // set_skin <playerId/username> <skinName|bitmask|none>
         // Sets the player's renderFlags, which the broadcast sends to every client
@@ -470,7 +478,9 @@ function executeServerCommand(command, executor, deps, socketId) {
                     itemKey = `petal_${itemType}`;
                     itemDisplayName = `${itemType} petal`;
                 }
-                // Add item to player's inventory
+                // Add item to player's inventory. The inventory is always in
+                // regular-world terms — even inside the maze (only the locked
+                // loadout shifts) — so the given rarity is stored literally.
                 (0, playerManager_1.addItem)(targetPlayer.inventory, rarity, itemKey, 1);
                 // Emit inventory update to the player
                 if (targetSocket) {
@@ -699,5 +709,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status]';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], change-maze [next|garden|desert|ocean|<dayNumber>]';
 }

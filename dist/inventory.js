@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryManager = void 0;
 const petals_1 = require("./petals");
-const maze_1 = require("./maze");
 const inventoryCodec_1 = require("./inventoryCodec");
 const inventory_panel_1 = require("./graphics/inventory-panel");
 const crafting_panel_1 = require("./graphics/crafting-panel");
@@ -413,6 +412,7 @@ class InventoryManager {
         this.dragStartY = 0;
         this.CLICK_DRAG_THRESHOLD = 5;
         this.ITEM_RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
+        this.lastMazeLockHintAt = 0;
         this.game = game;
         this.chat = chat;
         const mobGalleryOnly = options?.mobGalleryOnly === true;
@@ -458,14 +458,11 @@ class InventoryManager {
             this.canvasInventoryPanel.onItemMouseDown = (rarity, itemType, e) => {
                 this.startDrag(e, { type: 'inventory', rarity, itemType }, null);
             };
-            // Inside the maze only petals up to mythic are usable — grey them out
-            // and block dragging/equipping them (the server rejects it anyway).
-            this.canvasInventoryPanel.isItemDisabled = (rarity, itemType) => {
-                const localPlayer = this.game.getLocalPlayer();
-                return !!localPlayer?.inMaze
-                    && itemType.startsWith('petal_')
-                    && (0, petals_1.getRarityIndex)(rarity) > maze_1.MAZE_MAX_PETAL_RARITY_INDEX;
-            };
+            // The loadout is locked inside the maze (petals must be equipped on
+            // the title screen before entering) — grey out the whole inventory
+            // grid and block dragging/equipping. The server rejects loadout
+            // updates from maze players anyway; this just makes it visible.
+            this.canvasInventoryPanel.isItemDisabled = (_rarity, _itemType) => this.isInMaze();
             this.canvasInventoryPanel.onItemHoverChange = (hit) => {
                 this.handleCanvasInventoryHover(hit);
             };
@@ -493,6 +490,14 @@ class InventoryManager {
                 this.removeCraftingBatch();
             };
             this.canvasCraftingPanel.onSwitchMode = () => this.toggleAbsorbMode();
+            // Absorbing is a maze-only feature — the Switch button is greyed out
+            // (and does nothing) outside the maze.
+            this.canvasCraftingPanel.isSwitchEnabled = () => this.isInMaze();
+            // In the Absorb tab only petals obtained during this maze run can be
+            // absorbed — grey out non-petals and stacks with no maze surplus so
+            // they don't look clickable.
+            this.canvasCraftingPanel.isItemDisabled = (rarity, itemType) => this.absorbMode && (!itemType.startsWith('petal_')
+                || this.getMazeAbsorbableCount(rarity, itemType) <= 0);
             document.body.appendChild(this.craftingPanel);
         } // end crafting panel creation
         if (!craftingOnly) {
@@ -817,6 +822,8 @@ class InventoryManager {
         this.canvasMobGalleryPanel.setKills(player?.mobKills || {});
     }
     equipItemToLoadout(rarity, type, loadoutSlot) {
+        if (this.blockLoadoutEditInMaze())
+            return;
         const player = this.game.getLocalPlayer();
         if (!player || loadoutSlot >= this.LOADOUT_SLOTS || this.getItemCount(rarity, type) === 0)
             return;
@@ -1170,21 +1177,11 @@ class InventoryManager {
         });
     }
     swapLoadoutItems(fromSlot, toSlot) {
+        if (this.blockLoadoutEditInMaze())
+            return;
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
-        // Maze petal cap: block swaps that would land an over-mythic petal in
-        // an active slot (0-9). The server rejects them anyway, but its
-        // correction nulls the slot — kicking the petal out of the loadout —
-        // so refuse the swap here for a cleaner outcome.
-        if (player.inMaze) {
-            const overCap = (item) => !!item && !!item.rarity && (0, petals_1.getRarityIndex)(item.rarity) > maze_1.MAZE_MAX_PETAL_RARITY_INDEX;
-            const itemFrom = player.loadout[fromSlot];
-            const itemTo = player.loadout[toSlot];
-            if ((toSlot < 10 && overCap(itemFrom)) || (fromSlot < 10 && overCap(itemTo))) {
-                return;
-            }
-        }
         // Pad to full loadout length so secondary-row swaps always have valid targets
         const newLoadout = new Array(this.LOADOUT_SLOTS).fill(null);
         for (let i = 0; i < Math.min(player.loadout.length, this.LOADOUT_SLOTS); i++) {
@@ -1509,6 +1506,8 @@ class InventoryManager {
         return itemElement;
     }
     moveItemToInventory(loadoutSlot) {
+        if (this.blockLoadoutEditInMaze())
+            return;
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
@@ -1594,12 +1593,13 @@ class InventoryManager {
         }
         let totalItemsToAdd;
         if (this.absorbMode) {
-            // Absorb accepts any count (no 5-batch requirement), petals only.
-            // Capped at the server's per-request limit so a huge shift-click
-            // stack can't stage a request the server would reject.
+            // Absorb accepts any count (no 5-batch requirement), petals only,
+            // and only the surplus obtained during this maze run. Capped at
+            // the server's per-request limit so a huge shift-click stack
+            // can't stage a request the server would reject.
             if (!isPetal)
                 return;
-            const available = this.getItemCount(rarity, type);
+            const available = Math.min(this.getItemCount(rarity, type), this.getMazeAbsorbableCount(rarity, type));
             const room = InventoryManager.MAX_ABSORB_BATCH - this.craftingItems.length;
             totalItemsToAdd = Math.min(isShiftClick ? available : Math.min(5, available), room);
             if (totalItemsToAdd < 1)
@@ -1644,9 +1644,13 @@ class InventoryManager {
                 this.addItem(item.rarity, itemKey, 1);
         });
     }
-    /** Toggle between the Craft and Absorb tabs (the panel's Switch button). */
+    /** Toggle between the Craft and Absorb tabs (the panel's Switch button).
+     *  Absorb is maze-only: entering it outside the maze is refused (the
+     *  Switch button is greyed out then anyway); leaving is always allowed. */
     toggleAbsorbMode() {
         if (this.canvasCraftingPanel?.isAnimating())
+            return;
+        if (!this.absorbMode && !this.isInMaze())
             return;
         // Return slot contents so craft selections never leak into absorb (and
         // vice versa) — the two modes have different validation rules.
@@ -1659,6 +1663,8 @@ class InventoryManager {
     /** Send the petals in the slots to the server to be absorbed for XP. */
     absorbItems() {
         if (!this.absorbMode)
+            return;
+        if (!this.isInMaze())
             return;
         if (this.canvasCraftingPanel?.isAnimating())
             return;
@@ -1728,6 +1734,13 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
+        // Absorb is maze-only. If the player left the maze while the Absorb
+        // tab was open (e.g. admin teleport), snap back to the Craft tab —
+        // the toggle returns any staged petals and re-runs this update.
+        if (this.absorbMode && !this.isInMaze()) {
+            this.toggleAbsorbMode();
+            return;
+        }
         // Clear success display when updating (e.g., when items change)
         if (this.craftingItems.length === 0) {
             this.clearCraftingSuccessDisplay();
@@ -1828,6 +1841,52 @@ class InventoryManager {
         this.dragCanvas?.remove();
         this.tooltipElement?.remove();
         document.getElementById('loadoutBar')?.remove();
+    }
+    isInMaze() {
+        return !!this.game.getLocalPlayer()?.inMaze;
+    }
+    /**
+     * The loadout is locked inside the maze — petals must be equipped on the
+     * title screen before entering. Returns true (and shows a rate-limited
+     * chat hint) when a loadout edit should be blocked.
+     */
+    blockLoadoutEditInMaze() {
+        if (!this.isInMaze())
+            return false;
+        const now = Date.now();
+        if (now - this.lastMazeLockHintAt > 4000) {
+            this.lastMazeLockHintAt = now;
+            this.chat?.addLocalSystemMessage('<span style="color: #c77dff;">You cannot equip new petals in the maze — set up your loadout on the title screen before entering.</span>');
+        }
+        return true;
+    }
+    /**
+     * How many of a stack the Absorb tab may take: current holdings
+     * (inventory + loadout) minus the maze entry snapshot the server sent on
+     * authenticate/respawn. Mirrors the server's getMazeAbsorbableCount.
+     * Staged absorb items were already removed from the local inventory, so
+     * this shrinks as petals are staged — it is the REMAINING stageable count.
+     */
+    getMazeAbsorbableCount(rarity, itemType) {
+        const player = this.game.getLocalPlayer();
+        if (!player?.inMaze)
+            return 0;
+        const rarityId = inventoryCodec_1.RARITY_TO_ID.get(rarity);
+        const itemId = inventoryCodec_1.ITEM_KEY_TO_ID.get(itemType);
+        if (rarityId === undefined || itemId === undefined)
+            return 0;
+        let total = this.getItemCount(rarity, itemType);
+        for (const item of player.loadout || []) {
+            if (!item || item.rarity !== rarity)
+                continue;
+            const key = item.type === 'petal'
+                ? (item.petalType ? `petal_${item.petalType}` : null)
+                : item.type;
+            if (key === itemType)
+                total++;
+        }
+        const entry = player.mazeEntryCounts?.[`${rarityId}|${itemId}`] || 0;
+        return Math.max(0, total - entry);
     }
     getItemCount(rarity, type) {
         const player = this.game.getLocalPlayer();

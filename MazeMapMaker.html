@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Maze Map Maker</title>
+<style>
+    body {
+        margin: 0;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+        background: #1a1a1a;
+        color: #fff;
+    }
+    h1 { margin: 0 0 4px 0; font-size: 22px; }
+    .sub { color: #999; margin-bottom: 16px; font-size: 13px; }
+    .container { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+    .panel {
+        background: #242424;
+        border: 1px solid #3a3a3a;
+        border-radius: 8px;
+        padding: 14px;
+    }
+    .controls { width: 300px; }
+    .controls h2, .out h2 { font-size: 14px; margin: 14px 0 6px 0; color: #bbb; text-transform: uppercase; letter-spacing: 0.5px; }
+    .controls h2:first-child { margin-top: 0; }
+    #drop {
+        border: 2px dashed #555;
+        border-radius: 8px;
+        padding: 22px 10px;
+        text-align: center;
+        color: #aaa;
+        cursor: pointer;
+        transition: border-color .15s, background .15s;
+    }
+    #drop.hover { border-color: #9d4edd; background: #2c2140; }
+    #drop.loaded { border-style: solid; border-color: #4a8; }
+    label { display: block; margin: 8px 0 2px; font-size: 13px; color: #ccc; }
+    input[type=range] { width: 100%; }
+    .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+    .row input[type=checkbox] { margin: 0; }
+    select, button {
+        background: #333; color: #fff; border: 1px solid #555;
+        border-radius: 5px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+    }
+    select { width: 100%; }
+    button:hover { background: #444; }
+    button.primary { background: #9d4edd; border-color: #7a3ba8; font-weight: bold; }
+    button.primary:hover { background: #b06ae8; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #origWrap { max-width: 300px; }
+    #orig { max-width: 100%; image-rendering: pixelated; border: 1px solid #444; display: none; }
+    #grid { image-rendering: pixelated; border: 1px solid #444; cursor: crosshair; }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; font-size: 12px; color: #ccc; }
+    .legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid #000; }
+    #validation { font-size: 13px; line-height: 1.5; margin-top: 4px; }
+    #validation .ok { color: #7eef6d; }
+    #validation .warn { color: #ffe65d; }
+    #validation .err { color: #ff6d6d; }
+    #cmd {
+        background: #111; border: 1px solid #333; border-radius: 5px;
+        font-family: monospace; font-size: 12px; padding: 8px; margin-top: 8px;
+        color: #9fdf9f; white-space: pre-wrap; word-break: break-all;
+    }
+    .btnrow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .hint { font-size: 12px; color: #888; margin-top: 6px; line-height: 1.4; }
+    #thresholdVal { color: #9d4edd; font-weight: bold; }
+    .brushes { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+    .brush {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: #333; border: 2px solid #555; border-radius: 5px;
+        padding: 4px 8px; font-size: 12px; cursor: pointer; user-select: none;
+    }
+    .brush:hover { background: #444; }
+    .brush.active { border-color: #9d4edd; background: #3a2a55; }
+    #tplText {
+        width: 100%; box-sizing: border-box; background: #111; color: #cfe8cf;
+        border: 1px solid #333; border-radius: 5px; font-family: monospace;
+        font-size: 12px; line-height: 1.25; padding: 8px; white-space: pre;
+        overflow: auto; resize: vertical;
+    }
+</style>
+</head>
+<body>
+<h1>Maze Map Maker</h1>
+<div class="sub">
+    Drop in <b>any image at any resolution</b> — a photo, a drawing, a logo, a maze screenshot with
+    rounded wall corners, or an exported palette map.
+    It gets resampled to the maze template at your chosen <b>map size (8–64 cells)</b>; in threshold mode,
+    dark vs. light decides wall vs. corridor, and difficulty zones are banded automatically by distance from the spawn.
+</div>
+
+<div class="container">
+    <div class="panel controls">
+        <h2>Image</h2>
+        <div id="drop">Drop an image here<br>or click to choose<input type="file" id="file" accept="image/*" hidden></div>
+        <div id="origWrap"><img id="orig" alt=""></div>
+
+        <h2>Conversion</h2>
+        <label>Mode</label>
+        <select id="mode">
+            <option value="auto">Auto-detect</option>
+            <option value="threshold">Threshold (any picture)</option>
+            <option value="palette">Palette (drawn map colors)</option>
+        </select>
+        <div id="modeNote" class="hint"></div>
+
+        <div id="thresholdControls">
+            <label>Threshold: <span id="thresholdVal">128</span> <span id="thresholdDir">(darker = wall)</span></label>
+            <input type="range" id="threshold" min="1" max="254" value="128">
+            <div class="row"><input type="checkbox" id="invert"><label for="invert" style="margin:0">Invert (lighter = wall)</label></div>
+            <label>Fit non-square images</label>
+            <select id="fit">
+                <option value="pad">Keep aspect, pad with walls</option>
+                <option value="stretch">Stretch to square</option>
+            </select>
+        </div>
+
+        <h2>Paint</h2>
+        <div class="brushes" id="brushes">
+            <span class="brush active" data-brush="#"><span class="sw" style="background:#000"></span>wall</span>
+            <span class="brush" data-brush="c"><span class="sw" style="background:#7eef6d"></span>common</span>
+            <span class="brush" data-brush="u"><span class="sw" style="background:#ffe65d"></span>uncommon</span>
+            <span class="brush" data-brush="r"><span class="sw" style="background:#4d52e3"></span>rare</span>
+            <span class="brush" data-brush="e"><span class="sw" style="background:#861fde"></span>epic</span>
+            <span class="brush" data-brush="l"><span class="sw" style="background:#de1f1f"></span>legendary</span>
+            <span class="brush" data-brush="m"><span class="sw" style="background:#1fdbde"></span>mythic</span>
+            <span class="brush" data-brush="S"><span class="sw" style="background:#fff"></span>spawn</span>
+            <span class="brush" data-brush="B"><span class="sw" style="background:#f0f"></span>boss</span>
+            <span class="brush" data-brush="erase">⌫ erase paint</span>
+        </div>
+        <div class="row">
+            <label style="margin:0">Brush size</label>
+            <select id="brushSize" style="width:60px"><option>1</option><option>2</option><option>3</option></select>
+            <button id="clearPaint">Clear paint</button>
+        </div>
+        <div class="btnrow">
+            <button id="startBlank">Start blank map</button>
+        </div>
+        <div class="hint">Left-drag paints with the selected brush on top of the converted image;
+        right-drag erases paint (reverts to the image). Painted zone cells keep their zone —
+        unpainted corridors still auto-band by distance from the spawn.</div>
+
+        <h2>Map</h2>
+        <label>Map size (cells per side, 8–64)</label>
+        <input type="number" id="mapSize" min="8" max="64" value="27" style="width:80px">
+        <div class="row"><input type="checkbox" id="closeBorder" checked><label for="closeBorder" style="margin:0">Close the outer border</label></div>
+        <div class="row"><input type="checkbox" id="wallUnreachable" checked><label for="wallUnreachable" style="margin:0">Wall off unreachable pockets</label></div>
+        <div class="row"><input type="checkbox" id="autoBosses" checked><label for="autoBosses" style="margin:0">Auto-place 2 boss rooms (deepest)</label></div>
+        <div class="hint">Use the <b>spawn</b> and <b>boss</b> brushes above to place S and B on the preview.</div>
+
+        <h2>Export</h2>
+        <label>Target biome</label>
+        <select id="biome">
+            <option value="garden">garden</option>
+            <option value="desert">desert</option>
+            <option value="ocean">ocean</option>
+        </select>
+        <div class="btnrow">
+            <button class="primary" id="download">Download map PNG</button>
+            <button id="copyAscii">Copy template text</button>
+        </div>
+        <div id="cmd"></div>
+    </div>
+
+    <div class="panel out">
+        <h2>Result (<span id="resultDim">27×27</span> template)</h2>
+        <canvas id="grid" width="594" height="594"></canvas>
+        <div class="legend">
+            <span><span class="sw" style="background:#000"></span>wall</span>
+            <span><span class="sw" style="background:#7eef6d"></span>common</span>
+            <span><span class="sw" style="background:#ffe65d"></span>uncommon</span>
+            <span><span class="sw" style="background:#4d52e3"></span>rare</span>
+            <span><span class="sw" style="background:#861fde"></span>epic</span>
+            <span><span class="sw" style="background:#de1f1f"></span>legendary</span>
+            <span><span class="sw" style="background:#1fdbde"></span>mythic</span>
+            <span><span class="sw" style="background:#fff"></span>spawn S</span>
+            <span><span class="sw" style="background:#f0f"></span>boss B</span>
+        </div>
+        <h2>Validation</h2>
+        <div id="validation">Load an image to begin.</div>
+        <h2>Template string</h2>
+        <textarea id="tplText" rows="29" spellcheck="false" placeholder="The template string appears here as you work. You can also paste rows (raw or the quoted maze.ts form) and press Apply."></textarea>
+        <div class="btnrow">
+            <button id="applyText">Apply text to map</button>
+        </div>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+// Map size is adjustable (engine bounds: MAZE_MIN/MAX_TEMPLATE_DIM in src/maze.ts).
+let D = 27;
+let CELL = 22; // preview pixels per cell (recomputed from D)
+
+// Palette must match scripts/importMazeMap.js exactly.
+const PALETTE = [
+    { ch: '#', name: 'wall',      rgb: [0x00, 0x00, 0x00] },
+    { ch: 'c', name: 'common',    rgb: [0x7e, 0xef, 0x6d] },
+    { ch: 'u', name: 'uncommon',  rgb: [0xff, 0xe6, 0x5d] },
+    { ch: 'r', name: 'rare',      rgb: [0x4d, 0x52, 0xe3] },
+    { ch: 'e', name: 'epic',      rgb: [0x86, 0x1f, 0xde] },
+    { ch: 'l', name: 'legendary', rgb: [0xde, 0x1f, 0x1f] },
+    { ch: 'm', name: 'mythic',    rgb: [0x1f, 0xdb, 0xde] },
+    { ch: 'S', name: 'spawn',     rgb: [0xff, 0xff, 0xff] },
+    { ch: 'B', name: 'boss',      rgb: [0xff, 0x00, 0xff] },
+];
+const ZONE_CHARS = ['c', 'u', 'r', 'e', 'l', 'm'];
+const CHAR_RGB = Object.fromEntries(PALETTE.map(p => [p.ch, p.rgb]));
+
+// ── State ───────────────────────────────────────────────────────────────────
+let image = null;            // loaded HTMLImageElement
+let cells = null;            // Uint8ClampedArray D*D*4 — downsampled RGBA
+let walk = null;             // Uint8Array D*D — 1 walkable
+let zones = null;            // Uint8Array D*D — 0-5, 255 wall
+let reach = null;            // Uint8Array D*D — reachable from spawn
+let paletteZones = null;     // zones straight from colors (palette mode)
+let spawn = null;            // {x, y} or null
+let manualSpawn = false;
+let bosses = [];             // [{x, y}]
+let manualBossEdit = false;
+let detectedMode = 'threshold';
+let paint = null;            // Uint8Array D*D of char codes (0 = no override)
+let blankBase = false;       // true for synthesized bases (blank map / applied text): always all-wall
+let brush = '#';
+let painting = -1;           // mouse button currently painting, or -1
+let lastPaintCell = null;    // for stroke interpolation
+
+const $ = id => document.getElementById(id);
+const gridCtx = $('grid').getContext('2d');
+
+// ── Image loading (any type the browser can decode, any resolution) ─────────
+$('drop').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+['dragover', 'dragenter'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('hover'); }));
+['dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('hover'); }));
+$('drop').addEventListener('drop', e => {
+    const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+    if (f) loadFile(f);
+});
+
+function loadFile(file) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+        image = img;
+        $('orig').src = url;
+        $('orig').style.display = 'block';
+        $('drop').classList.add('loaded');
+        $('drop').textContent = `${file.name} — ${img.naturalWidth}×${img.naturalHeight}`;
+        manualSpawn = false;
+        manualBossEdit = false;
+        spawn = null;
+        bosses = [];
+        $('autoBosses').checked = true;
+        paint = new Uint8Array(D * D);
+        blankBase = false;
+        resample();
+        autodetectMode();
+        rebuild();
+    };
+    img.onerror = () => alert('Could not decode that image.');
+    img.src = url;
+}
+
+// ── Downsample to 27×27 (any input resolution; box-averaged by the browser) ─
+function resample() {
+    if (!image) return; // blank mode: cells were synthesized directly
+    // Supersample at 5x and classify each cell by its CENTER texel (the
+    // average of the central 1/25th of the cell). Averaging the WHOLE cell
+    // block misclassifies mazes drawn with rounded wall corners — the
+    // quarter-circle fillets sit in cell corners and drag a floor cell's
+    // average toward wall (and vice versa) — but they never reach the cell
+    // centre, so the centre texel is unambiguous.
+    const SS = 5;
+    const R = D * SS;
+    const c = document.createElement('canvas');
+    c.width = R; c.height = R;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    // Composite over black so transparency reads as dark (= wall by default).
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, R, R);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const w = image.naturalWidth, h = image.naturalHeight;
+    if ($('fit').value === 'stretch' || w === h) {
+        ctx.drawImage(image, 0, 0, R, R);
+    } else {
+        // Keep aspect, centred, wall padding around.
+        const s = Math.min(R / w, R / h);
+        const dw = Math.max(1, Math.round(w * s)), dh = Math.max(1, Math.round(h * s));
+        ctx.drawImage(image, Math.floor((R - dw) / 2), Math.floor((R - dh) / 2), dw, dh);
+    }
+    const hi = ctx.getImageData(0, 0, R, R).data;
+    cells = new Uint8ClampedArray(D * D * 4);
+    const mid = SS >> 1;
+    for (let y = 0; y < D; y++) {
+        for (let x = 0; x < D; x++) {
+            const o = (y * D + x) * 4;
+            const s2 = ((y * SS + mid) * R + x * SS + mid) * 4;
+            cells[o] = hi[s2]; cells[o + 1] = hi[s2 + 1]; cells[o + 2] = hi[s2 + 2]; cells[o + 3] = hi[s2 + 3];
+        }
+    }
+}
+
+function nearestPalette(r, g, b) {
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < PALETTE.length; i++) {
+        const p = PALETTE[i].rgb;
+        const d = (r - p[0]) ** 2 + (g - p[1]) ** 2 + (b - p[2]) ** 2;
+        if (d < bd) { bd = d; best = i; }
+    }
+    return { idx: best, dist: Math.sqrt(bd) };
+}
+
+function autodetectMode() {
+    // A drawn palette map is recognized by its CHROMATIC zone colors (green/
+    // yellow/blue/purple/red/cyan/magenta). Black and white can't count as
+    // evidence — every photo has darks and lights — so we ask: of the
+    // non-black cells, how many sit right on a zone color?
+    let floorish = 0, chroma = 0;
+    for (let i = 0; i < D * D; i++) {
+        const n = nearestPalette(cells[i * 4], cells[i * 4 + 1], cells[i * 4 + 2]);
+        const ch = PALETTE[n.idx].ch;
+        if (ch === '#') continue;
+        floorish++;
+        if (n.dist < 40 && ch !== 'S') chroma++;
+    }
+    detectedMode = floorish > 0 && chroma / floorish >= 0.6 ? 'palette' : 'threshold';
+    $('modeNote').textContent = $('mode').value === 'auto'
+        ? `Detected: ${detectedMode} mode`
+        : '';
+}
+
+function activeMode() {
+    const m = $('mode').value;
+    return m === 'auto' ? detectedMode : m;
+}
+
+// ── Build walkability + zones from the current settings ─────────────────────
+function rebuild() {
+    if (!cells) return;
+    const mode = activeMode();
+    walk = new Uint8Array(D * D);
+    paletteZones = null;
+
+    if (mode === 'palette') {
+        paletteZones = new Uint8Array(D * D).fill(255);
+        let paletteSpawn = null;
+        const paletteBosses = [];
+        for (let i = 0; i < D * D; i++) {
+            if (paint && paint[i]) continue; // painted-over cells: the paint layer decides
+            const { idx } = nearestPalette(cells[i * 4], cells[i * 4 + 1], cells[i * 4 + 2]);
+            const ch = PALETTE[idx].ch;
+            if (ch === '#') continue;
+            walk[i] = 1;
+            paletteZones[i] = ch === 'S' ? 0 : ch === 'B' ? 5 : ZONE_CHARS.indexOf(ch);
+            if (ch === 'S' && !paletteSpawn) paletteSpawn = { x: i % D, y: Math.floor(i / D) };
+            if (ch === 'B') paletteBosses.push({ x: i % D, y: Math.floor(i / D) });
+        }
+        if (!manualSpawn && paletteSpawn) spawn = paletteSpawn;
+        if (!manualBossEdit && paletteBosses.length > 0) { bosses = paletteBosses; $('autoBosses').checked = false; }
+    } else if (!blankBase) {
+        const thr = +$('threshold').value;
+        const invert = $('invert').checked;
+        for (let i = 0; i < D * D; i++) {
+            const lum = 0.2126 * cells[i * 4] + 0.7152 * cells[i * 4 + 1] + 0.0722 * cells[i * 4 + 2];
+            const light = lum >= thr;
+            walk[i] = (invert ? !light : light) ? 1 : 0;
+        }
+    }
+    // blankBase: walk stays all-wall regardless of threshold/invert — only
+    // the paint layer carves corridors.
+
+    if ($('closeBorder').checked) {
+        for (let i = 0; i < D; i++) {
+            walk[i] = walk[(D - 1) * D + i] = walk[i * D] = walk[i * D + D - 1] = 0;
+        }
+    }
+
+    // Paint overrides win over the converted image: '#' carves wall, zone
+    // letters lay corridor (their zone is applied after banding below).
+    if (paint) {
+        for (let i = 0; i < D * D; i++) {
+            if (!paint[i]) continue;
+            walk[i] = paint[i] === 35 /* '#' */ ? 0 : 1;
+        }
+    }
+
+    // Spawn: keep a valid manual/palette spawn, else auto-place in the largest region.
+    if (!spawn || !walk[spawn.y * D + spawn.x]) {
+        spawn = autoSpawn();
+        manualSpawn = false;
+    }
+
+    computeReachAndZones();
+
+    // Painted zone cells keep their painted zone regardless of auto-banding.
+    if (paint) {
+        for (let i = 0; i < D * D; i++) {
+            if (!paint[i] || paint[i] === 35) continue;
+            const z = ZONE_CHARS.indexOf(String.fromCharCode(paint[i]));
+            if (z >= 0) zones[i] = z;
+        }
+    }
+
+    // Bosses
+    if ($('autoBosses').checked && !manualBossEdit) bosses = autoBosses();
+    bosses = bosses.filter(b => walk[b.y * D + b.x] && reach[b.y * D + b.x]);
+
+    draw();
+    validate();
+    syncTemplateText();
+    updateCmd();
+}
+
+function regions() {
+    const seen = new Uint8Array(D * D);
+    const out = [];
+    for (let i = 0; i < D * D; i++) {
+        if (!walk[i] || seen[i]) continue;
+        const cellsIn = [];
+        const q = [i]; seen[i] = 1;
+        while (q.length) {
+            const idx = q.pop();
+            cellsIn.push(idx);
+            const x = idx % D, y = (idx - x) / D;
+            for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                const nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= D || ny >= D) continue;
+                const n = ny * D + nx;
+                if (walk[n] && !seen[n]) { seen[n] = 1; q.push(n); }
+            }
+        }
+        out.push(cellsIn);
+    }
+    return out.sort((a, b) => b.length - a.length);
+}
+
+function autoSpawn() {
+    const regs = regions();
+    if (regs.length === 0) return null;
+    // Top-left-most cell of the largest region.
+    let best = regs[0][0];
+    for (const idx of regs[0]) if (idx < best) best = idx;
+    return { x: best % D, y: Math.floor(best / D) };
+}
+
+let depth = null;
+function computeReachAndZones() {
+    reach = new Uint8Array(D * D);
+    depth = new Int32Array(D * D).fill(-1);
+    zones = new Uint8Array(D * D).fill(255);
+    if (!spawn) return;
+    const q = [spawn.y * D + spawn.x];
+    depth[q[0]] = 0; reach[q[0]] = 1;
+    for (let head = 0; head < q.length; head++) {
+        const idx = q[head];
+        const x = idx % D, y = (idx - x) / D;
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= D || ny >= D) continue;
+            const n = ny * D + nx;
+            if (!walk[n] || reach[n]) continue;
+            reach[n] = 1; depth[n] = depth[idx] + 1; q.push(n);
+        }
+    }
+    let maxD = 1;
+    for (let i = 0; i < D * D; i++) if (depth[i] > maxD) maxD = depth[i];
+    for (let i = 0; i < D * D; i++) {
+        if (!walk[i]) continue;
+        if (paletteZones) zones[i] = paletteZones[i] === 255 ? 0 : paletteZones[i];
+        else if (reach[i]) zones[i] = Math.min(5, Math.floor(depth[i] / (maxD + 1) * 6));
+        else zones[i] = 0; // unreachable pocket — walled on export by default
+    }
+}
+
+function autoBosses() {
+    if (!spawn || !depth) return [];
+    const cand = [];
+    for (let i = 0; i < D * D; i++) if (depth[i] > 0) cand.push(i);
+    cand.sort((a, b) => depth[b] - depth[a]);
+    const picks = [];
+    for (const idx of cand) {
+        if (picks.length >= 2) break;
+        const x = idx % D, y = Math.floor(idx / D);
+        if (picks.every(p => Math.abs(p.x - x) + Math.abs(p.y - y) >= Math.floor(D / 2))) {
+            picks.push({ x, y });
+        }
+    }
+    return picks;
+}
+
+// ── Template output ──────────────────────────────────────────────────────────
+function toRows() {
+    const wallUnreach = $('wallUnreachable').checked;
+    const rows = [];
+    for (let y = 0; y < D; y++) {
+        let row = '';
+        for (let x = 0; x < D; x++) {
+            const i = y * D + x;
+            if (!walk[i] || (wallUnreach && !reach[i])) { row += '#'; continue; }
+            if (spawn && spawn.x === x && spawn.y === y) { row += 'S'; continue; }
+            if (bosses.some(b => b.x === x && b.y === y)) { row += 'B'; continue; }
+            row += ZONE_CHARS[zones[i]] || 'c';
+        }
+        rows.push(row);
+    }
+    return rows;
+}
+
+// ── Preview ──────────────────────────────────────────────────────────────────
+function draw() {
+    const rows = cells ? toRows() : null;
+    gridCtx.fillStyle = '#000';
+    gridCtx.fillRect(0, 0, D * CELL, D * CELL);
+    if (!rows) return;
+    for (let y = 0; y < D; y++) {
+        for (let x = 0; x < D; x++) {
+            const ch = rows[y][x];
+            const rgb = CHAR_RGB[ch];
+            gridCtx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+            gridCtx.fillRect(x * CELL, y * CELL, CELL, CELL);
+            // Hatch unreachable floor that ISN'T being auto-walled.
+            const i = y * D + x;
+            if (walk[i] && !reach[i] && !$('wallUnreachable').checked) {
+                gridCtx.strokeStyle = 'rgba(255,0,0,0.9)';
+                gridCtx.beginPath();
+                gridCtx.moveTo(x * CELL, y * CELL);
+                gridCtx.lineTo(x * CELL + CELL, y * CELL + CELL);
+                gridCtx.stroke();
+            }
+        }
+    }
+    // Grid lines
+    gridCtx.strokeStyle = 'rgba(255,255,255,0.08)';
+    for (let i = 0; i <= D; i++) {
+        gridCtx.beginPath(); gridCtx.moveTo(i * CELL, 0); gridCtx.lineTo(i * CELL, D * CELL); gridCtx.stroke();
+        gridCtx.beginPath(); gridCtx.moveTo(0, i * CELL); gridCtx.lineTo(D * CELL, i * CELL); gridCtx.stroke();
+    }
+    // Spawn / boss markers
+    gridCtx.font = `bold ${CELL - 8}px Arial`;
+    gridCtx.textAlign = 'center';
+    gridCtx.textBaseline = 'middle';
+    gridCtx.fillStyle = '#000';
+    if (spawn) gridCtx.fillText('S', spawn.x * CELL + CELL / 2, spawn.y * CELL + CELL / 2 + 1);
+    for (const b of bosses) gridCtx.fillText('B', b.x * CELL + CELL / 2, b.y * CELL + CELL / 2 + 1);
+}
+
+// ── Validation (mirrors scripts/importMazeMap.js) ────────────────────────────
+function validate() {
+    const v = $('validation');
+    if (!cells) { v.textContent = 'Load an image to begin.'; return; }
+    const lines = [];
+    let floor = 0, reachable = 0;
+    for (let i = 0; i < D * D; i++) { if (walk[i]) { floor++; if (reach[i]) reachable++; } }
+    const unreachable = floor - reachable;
+    if (!spawn) lines.push('<span class="err">✖ No walkable cells — lower/raise the threshold.</span>');
+    else lines.push(`<span class="ok">✔ Spawn at ${spawn.x},${spawn.y}${manualSpawn ? ' (manual)' : ' (auto)'}</span>`);
+    const exportedFloor = $('wallUnreachable').checked ? reachable : floor;
+    lines.push(`<span class="${exportedFloor >= 20 ? 'ok' : 'err'}">${exportedFloor >= 20 ? '✔' : '✖'} ${floor} walkable cells (${(floor / (D * D) * 100).toFixed(0)}%)${exportedFloor !== floor ? ` — ${exportedFloor} after walling pockets` : ''}</span>`);
+    if (unreachable > 0) {
+        lines.push($('wallUnreachable').checked
+            ? `<span class="warn">⚠ ${unreachable} unreachable cells will be walled off on export</span>`
+            : `<span class="err">✖ ${unreachable} unreachable cells (red hatch) — enable "wall off unreachable" or reconnect them</span>`);
+    } else if (floor > 0) {
+        lines.push('<span class="ok">✔ All corridors connected</span>');
+    }
+    lines.push(`<span class="${bosses.length ? 'ok' : 'warn'}">${bosses.length ? '✔' : '⚠'} ${bosses.length} boss room(s)${bosses.length ? '' : ' — no ultra bosses will spawn'}</span>`);
+    if (activeMode() === 'threshold' && floor > 0) {
+        lines.push('<span class="ok">✔ Zones banded by distance from spawn</span>');
+    }
+    v.innerHTML = lines.join('<br>');
+}
+
+function exportBlocked() {
+    let floor = 0, reachable = 0;
+    for (let i = 0; i < D * D; i++) { if (walk[i]) { floor++; if (reach[i]) reachable++; } }
+    // With "wall off unreachable" on, the EXPORTED floor is only the reachable
+    // part — gate on that, or the download could fail the CLI's validation.
+    const exportedFloor = $('wallUnreachable').checked ? reachable : floor;
+    if (!spawn || exportedFloor < 20) return 'Map has too few walkable cells (after walling unreachable pockets).';
+    if (!$('wallUnreachable').checked && floor !== reachable) return 'Unreachable cells present — enable "wall off unreachable pockets" or fix the map.';
+    return null;
+}
+
+function updateCmd() {
+    $('cmd').textContent = `node scripts/importMazeMap.js maze-${$('biome').value}.png ${$('biome').value}`;
+}
+
+// ── Export ───────────────────────────────────────────────────────────────────
+$('download').addEventListener('click', () => {
+    if (!cells) return;
+    const blocked = exportBlocked();
+    if (blocked) { alert(blocked); return; }
+    const rows = toRows();
+    const c = document.createElement('canvas');
+    c.width = D; c.height = D;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(D, D);
+    for (let i = 0; i < D * D; i++) {
+        const rgb = CHAR_RGB[rows[Math.floor(i / D)][i % D]];
+        img.data[i * 4] = rgb[0]; img.data[i * 4 + 1] = rgb[1]; img.data[i * 4 + 2] = rgb[2]; img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const a = document.createElement('a');
+    a.download = `maze-${$('biome').value}.png`;
+    a.href = c.toDataURL('image/png');
+    a.click();
+});
+
+$('copyAscii').addEventListener('click', () => {
+    if (!cells) return;
+    const text = toRows().map(r => `        '${r}',`).join('\n');
+    navigator.clipboard.writeText(text).then(
+        () => { $('copyAscii').textContent = 'Copied!'; setTimeout(() => $('copyAscii').textContent = 'Copy template text', 1200); },
+        () => alert('Clipboard blocked — open the console to copy:\n\n' + text)
+    );
+});
+
+// ── Paint tool ───────────────────────────────────────────────────────────────
+function cellAt(e) {
+    const r = $('grid').getBoundingClientRect();
+    const x = Math.floor((e.clientX - r.left) / CELL), y = Math.floor((e.clientY - r.top) / CELL);
+    if (x < 0 || y < 0 || x >= D || y >= D) return null;
+    return { x, y };
+}
+
+/** Apply the active brush (or eraser for button 2) to one cell + brush size. */
+function paintCell(cx, cy, button) {
+    if (!paint) paint = new Uint8Array(D * D);
+    const erase = button === 2 || brush === 'erase';
+    // Point markers (spawn/boss) ignore the brush size — they place exactly
+    // at the clicked cell.
+    const size = (!erase && (brush === 'S' || brush === 'B')) ? 1 : +$('brushSize').value;
+    let touched = false;
+    for (let dy = 0; dy < size; dy++) {
+        for (let dx = 0; dx < size; dx++) {
+            const x = cx + dx, y = cy + dy;
+            if (x >= D || y >= D) continue;
+            const i = y * D + x;
+            if (erase) {
+                if (paint[i]) { paint[i] = 0; touched = true; }
+                continue;
+            }
+            if (brush === 'S') {
+                // Spawn: ensure the cell is corridor, then move the spawn here.
+                if (!walk[i]) paint[i] = 'c'.charCodeAt(0);
+                spawn = { x, y };
+                manualSpawn = true;
+                touched = true;
+            } else if (brush === 'B') {
+                if (!walk[i]) paint[i] = 'm'.charCodeAt(0);
+                if (!bosses.some(b => b.x === x && b.y === y)) bosses.push({ x, y });
+                manualBossEdit = true;
+                $('autoBosses').checked = false;
+                touched = true;
+            } else {
+                const code = brush.charCodeAt(0);
+                if (paint[i] !== code) { paint[i] = code; touched = true; }
+            }
+        }
+    }
+    return touched;
+}
+
+function paintStroke(e, button) {
+    const c = cellAt(e);
+    if (!c) return;
+    let touched = false;
+    if (lastPaintCell) {
+        // Interpolate the stroke so fast drags don't skip cells, keeping it
+        // 4-connected (an orthogonal step on diagonals) so painted corridors
+        // are actually walkable by the BFS.
+        const steps = Math.max(Math.abs(c.x - lastPaintCell.x), Math.abs(c.y - lastPaintCell.y), 1);
+        let px = lastPaintCell.x, py = lastPaintCell.y;
+        for (let s = 1; s <= steps; s++) {
+            const ix = Math.round(lastPaintCell.x + (c.x - lastPaintCell.x) * s / steps);
+            const iy = Math.round(lastPaintCell.y + (c.y - lastPaintCell.y) * s / steps);
+            if (ix !== px && iy !== py) {
+                if (paintCell(ix, py, button)) touched = true; // orthogonal bridge
+            }
+            if (paintCell(ix, iy, button)) touched = true;
+            px = ix; py = iy;
+        }
+    } else if (paintCell(c.x, c.y, button)) {
+        touched = true;
+    }
+    lastPaintCell = c;
+    if (touched) rebuild();
+}
+
+$('grid').addEventListener('mousedown', e => {
+    if (!cells) return;
+    e.preventDefault();
+    // preventDefault also cancels the focus shift — blur any focused field so
+    // syncTemplateText's mid-edit guard doesn't freeze the string panel.
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    painting = e.button;
+    lastPaintCell = null;
+    // Boss brush is a click-toggle, not a drag: handle removal here.
+    if (e.button === 0 && brush === 'B') {
+        const c = cellAt(e);
+        if (c) {
+            const at = bosses.findIndex(b => b.x === c.x && b.y === c.y);
+            if (at >= 0) {
+                bosses.splice(at, 1);
+                manualBossEdit = true;
+                $('autoBosses').checked = false;
+                painting = -1;
+                rebuild();
+                return;
+            }
+        }
+    }
+    paintStroke(e, e.button);
+});
+$('grid').addEventListener('mousemove', e => {
+    if (painting < 0 || !cells) return;
+    if (brush === 'B' && painting === 0) return; // boss = click toggle only
+    paintStroke(e, painting);
+});
+['mouseup', 'mouseleave'].forEach(ev => $('grid').addEventListener(ev, () => { painting = -1; lastPaintCell = null; }));
+$('grid').addEventListener('contextmenu', e => e.preventDefault());
+
+$('brushes').addEventListener('click', e => {
+    const el = e.target.closest('.brush');
+    if (!el) return;
+    brush = el.dataset.brush;
+    for (const b of $('brushes').children) b.classList.toggle('active', b === el);
+});
+
+$('clearPaint').addEventListener('click', () => {
+    paint = new Uint8Array(D * D);
+    rebuild();
+});
+
+// Blank canvas: all-wall map to paint corridors onto (no image needed).
+$('startBlank').addEventListener('click', () => {
+    image = null;
+    cells = new Uint8ClampedArray(D * D * 4); // synthetic base: all wall
+    for (let i = 0; i < D * D; i++) cells[i * 4 + 3] = 255;
+    blankBase = true;
+    paint = new Uint8Array(D * D);
+    spawn = null; bosses = []; manualSpawn = false; manualBossEdit = false;
+    detectedMode = 'threshold';
+    $('modeNote').textContent = '';
+    $('orig').style.display = 'none';
+    $('drop').classList.remove('loaded');
+    $('drop').textContent = 'Blank map — paint corridors, or drop an image here';
+    rebuild();
+});
+
+// ── Template string panel ────────────────────────────────────────────────────
+function syncTemplateText() {
+    if (!cells) return;
+    if (document.activeElement === $('tplText')) return; // don't clobber mid-edit
+    $('tplText').value = toRows().join('\n');
+}
+
+$('applyText').addEventListener('click', () => {
+    // Accept raw rows or the quoted maze.ts form ('....', with commas).
+    const rows = $('tplText').value.split('\n')
+        .map(l => {
+            const q = l.match(/'([^']*)'/);
+            return (q ? q[1] : l).trim();
+        })
+        .filter(l => l.length > 0);
+    if (rows.length < 8 || rows.length > 64) { alert(`Need 8-64 rows, got ${rows.length}.`); return; }
+    if (rows.some(r => r.length !== rows.length)) {
+        alert(`Rows must form a square: ${rows.length} rows, but row lengths are ${[...new Set(rows.map(r => r.length))].join('/')}.`);
+        return;
+    }
+    const badChar = rows.join('').split('').find(ch => ch !== '#' && !('curelmSB'.includes(ch)));
+    if (badChar) { alert(`Unknown character '${badChar}' — use # c u r e l m S B.`); return; }
+
+    // Load as a fully-painted blank map at the text's size.
+    D = rows.length;
+    $('mapSize').value = D;
+    CELL = Math.max(6, Math.floor(594 / D));
+    $('grid').width = D * CELL;
+    $('grid').height = D * CELL;
+    $('resultDim').textContent = D + '\u00d7' + D;
+    image = null;
+    cells = new Uint8ClampedArray(D * D * 4); // synthetic base: all wall
+    for (let i = 0; i < D * D; i++) cells[i * 4 + 3] = 255;
+    blankBase = true;
+    paint = new Uint8Array(D * D);
+    spawn = null; bosses = []; manualSpawn = false; manualBossEdit = true;
+    $('autoBosses').checked = false;
+    for (let y = 0; y < D; y++) {
+        for (let x = 0; x < D; x++) {
+            const ch = rows[y][x];
+            const i = y * D + x;
+            if (ch === '#') continue; // base is already all-wall
+            if (ch === 'S') { paint[i] = 'c'.charCodeAt(0); spawn = { x, y }; manualSpawn = true; }
+            else if (ch === 'B') { paint[i] = 'm'.charCodeAt(0); bosses.push({ x, y }); }
+            else paint[i] = ch.charCodeAt(0);
+        }
+    }
+    detectedMode = 'threshold';
+    $('modeNote').textContent = '';
+    $('drop').textContent = 'Loaded from template text — paint away, or drop an image';
+    $('tplText').blur();
+    rebuild();
+});
+
+// ── Control wiring ───────────────────────────────────────────────────────────
+$('mapSize').addEventListener('change', () => {
+    D = Math.max(8, Math.min(64, Math.round(+$('mapSize').value || 27)));
+    $('mapSize').value = D;
+    CELL = Math.max(6, Math.floor(594 / D));
+    $('grid').width = D * CELL;
+    $('grid').height = D * CELL;
+    $('resultDim').textContent = D + '\u00d7' + D;
+    spawn = null; bosses = []; manualSpawn = false; manualBossEdit = false;
+    paint = new Uint8Array(D * D);
+    if (image) { resample(); autodetectMode(); }
+    else if (cells) { // blank map: re-synthesize at the new size
+        cells = new Uint8ClampedArray(D * D * 4);
+        for (let i = 0; i < D * D; i++) cells[i * 4 + 3] = 255;
+        blankBase = true;
+    }
+    rebuild();
+});
+$('threshold').addEventListener('input', () => { $('thresholdVal').textContent = $('threshold').value; rebuild(); });
+$('invert').addEventListener('change', () => { $('thresholdDir').textContent = $('invert').checked ? '(lighter = wall)' : '(darker = wall)'; rebuild(); });
+$('mode').addEventListener('change', () => { autodetectMode(); manualSpawn = false; manualBossEdit = false; spawn = null; bosses = []; rebuild(); });
+$('fit').addEventListener('change', () => { if (image) { resample(); rebuild(); } });
+$('closeBorder').addEventListener('change', rebuild);
+$('wallUnreachable').addEventListener('change', rebuild);
+$('autoBosses').addEventListener('change', () => { if ($('autoBosses').checked) manualBossEdit = false; rebuild(); });
+$('biome').addEventListener('change', updateCmd);
+updateCmd();
+draw();
+</script>
+</body>
+</html>

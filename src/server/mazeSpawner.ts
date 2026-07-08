@@ -1,7 +1,8 @@
 import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
-import { players, enemies } from '../constants';
+import { players, enemies, ORIGINAL_ENEMY_DENSITY } from '../constants';
 import { getMobStats, getAllMobTypes } from '../mobs';
 import { spawnCentipedeBodySegments } from './enemySpawner';
+import { rebuildEnemyGrid, queryEnemiesNear, getMaxEnemyRadius } from './enemyGrid';
 import {
     getActiveMaze,
     isInMazeRegion,
@@ -10,16 +11,46 @@ import {
     MazeBiome,
     MAZE_BIOME_SECTIONS,
     MAZE_ZONE_TIERS,
-    MAZE_CELL_SIZE
+    MAZE_CELL_SIZE,
+    MAZE_ORIGIN_X,
+    MAZE_ORIGIN_Y
 } from '../maze';
 
-// Population control. The maze is one shared dungeon, so mob count scales with
-// how many players are inside it.
-const MOBS_PER_PLAYER = 15;
-const MAX_MAZE_MOBS = 90;
-const MIN_SPAWN_DISTANCE_FROM_PLAYER = 500;
+// Population control. Unlike the open world (which only populates viewports),
+// the maze is a bounded dungeon populated rrolf-style: mobs spawn across ALL
+// corridors and persist while anyone is inside (despawnDistantEnemies exempts
+// them via hasMazePlayers), so exploring deeper always finds mobs — not just
+// a bubble around wherever the player happened to spawn in.
+//
+// The target is AREA-based, not per-player: the maze should feel equally
+// dense for one explorer as for five. Derived from the open world's density
+// constant so the corridors carry EXACTLY the same mobs-per-walkable-pixel as
+// the regular map (~0.9 mobs per 600x600 floor cell, ~1300 mobs total) and
+// stay in sync if the world density is ever retuned.
+const MAZE_MOBS_PER_FLOOR_CELL = ORIGINAL_ENEMY_DENSITY * MAZE_CELL_SIZE * MAZE_CELL_SIZE;
+const MAX_MAZE_MOBS = 1500; // runaway guard above the derived target
+const MIN_SPAWN_DISTANCE_FROM_PLAYER = 1200; // avoid on-screen pop-in
 const MIN_SPAWN_DISTANCE_FROM_MOB = 100;
-const SPAWN_RANGE_FROM_PLAYER = 2600; // spawn within this range so corridors ahead populate
+
+// Floor-cell count of the active maze, cached per day (the layout is static
+// for the day, so this only recomputes on rotation).
+let floorCellCacheDay = -1;
+let floorCellCount = 0;
+
+function getMazePopulationTarget(): number {
+    const maze = getActiveMaze();
+    if (!maze) return 0;
+    if (maze.dayNumber !== floorCellCacheDay) {
+        let count = 0;
+        for (let i = 0; i < maze.values.length; i++) {
+            const v = maze.values[i];
+            if (v === 1 || (v >= 4 && v <= 7)) count++;
+        }
+        floorCellCount = count;
+        floorCellCacheDay = maze.dayNumber;
+    }
+    return Math.min(MAX_MAZE_MOBS, Math.round(floorCellCount * MAZE_MOBS_PER_FLOOR_CELL));
+}
 
 // Ultra mobs are the maze bosses: kept alive in the deepest (mythic) rooms.
 const MAZE_BOSS_COUNT = 2;
@@ -80,6 +111,12 @@ function getMazePlayerIds(): string[] {
     return ids;
 }
 
+/** True while at least one live player is inside the maze. Used by the
+ *  distant-enemy despawner to keep the maze persistently populated. */
+export function hasMazePlayers(): boolean {
+    return getMazePlayerIds().length > 0;
+}
+
 function countMazeMobs(): { total: number; ultras: number } {
     let total = 0;
     let ultras = 0;
@@ -96,6 +133,8 @@ function countMazeMobs(): { total: number; ultras: number } {
     return { total, ultras };
 }
 
+const _spawnQueryScratch: Enemy[] = [];
+
 function isTooCloseToPlayersOrMobs(x: number, y: number, mobRadius: number): boolean {
     for (const id in players) {
         const p = players[id];
@@ -103,8 +142,12 @@ function isTooCloseToPlayersOrMobs(x: number, y: number, mobRadius: number): boo
         const dx = p.x - x, dy = p.y - y;
         if (dx * dx + dy * dy < MIN_SPAWN_DISTANCE_FROM_PLAYER * MIN_SPAWN_DISTANCE_FROM_PLAYER) return true;
     }
-    for (const enemy of enemies) {
-        if (!isInMazeRegion(enemy.x, enemy.y)) continue;
+    // Spatial-grid query instead of an all-enemies scan: at full maze density
+    // (~1300 mobs) a linear pass per placement attempt would make the fill
+    // burst quadratic. Caller refreshes the grid once per spawn batch.
+    const reach = mobRadius + getMaxEnemyRadius() + MIN_SPAWN_DISTANCE_FROM_MOB;
+    const nearby = queryEnemiesNear(x, y, reach, _spawnQueryScratch);
+    for (const enemy of nearby) {
         const otherStats = getMobStats(enemy.type, enemy.tier);
         const otherRadius = otherStats ? (otherStats.size * 40) / 2 : 20;
         const dx = enemy.x - x, dy = enemy.y - y;
@@ -114,22 +157,28 @@ function isTooCloseToPlayersOrMobs(x: number, y: number, mobRadius: number): boo
     return false;
 }
 
+/** Mob body clearance: the centre plus 4 compass points must all be floor. */
+function mazeBodyFits(x: number, y: number, mobRadius: number): boolean {
+    if (!isMazeFloorAtWorld(x, y)) return false;
+    const r = Math.min(mobRadius, MAZE_CELL_SIZE - 10);
+    return isMazeFloorAtWorld(x - r, y) && isMazeFloorAtWorld(x + r, y) &&
+        isMazeFloorAtWorld(x, y - r) && isMazeFloorAtWorld(x, y + r);
+}
+
 /**
- * Pick a walkable corridor position near the given player. The whole
- * candidate ring must be floor (so big mobs don't spawn half-inside a wall).
+ * Pick a walkable corridor position anywhere in the maze (uniform over floor
+ * cells), clear of walls for the mob's body and not right next to a player.
  */
-function findMazeSpawnPosition(nearX: number, nearY: number, mobRadius: number): { x: number; y: number } | null {
-    for (let attempt = 0; attempt < 30; attempt++) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist = MIN_SPAWN_DISTANCE_FROM_PLAYER
-            + Math.random() * (SPAWN_RANGE_FROM_PLAYER - MIN_SPAWN_DISTANCE_FROM_PLAYER);
-        const x = nearX + Math.cos(angle) * dist;
-        const y = nearY + Math.sin(angle) * dist;
-        if (!isMazeFloorAtWorld(x, y)) continue;
-        // Keep the mob's body clear of walls (sample 4 compass points).
-        const r = Math.min(mobRadius, MAZE_CELL_SIZE - 10);
-        if (!isMazeFloorAtWorld(x - r, y) || !isMazeFloorAtWorld(x + r, y) ||
-            !isMazeFloorAtWorld(x, y - r) || !isMazeFloorAtWorld(x, y + r)) continue;
+function findMazeSpawnPosition(mobRadius: number): { x: number; y: number } | null {
+    const maze = getActiveMaze();
+    if (!maze) return null;
+    for (let attempt = 0; attempt < 40; attempt++) {
+        const gx = Math.floor(Math.random() * maze.gridDim);
+        const gy = Math.floor(Math.random() * maze.gridDim);
+        if (maze.values[gy * maze.gridDim + gx] !== 1) continue; // plain floor cells only
+        const x = MAZE_ORIGIN_X + (gx + 0.2 + Math.random() * 0.6) * MAZE_CELL_SIZE;
+        const y = MAZE_ORIGIN_Y + (gy + 0.2 + Math.random() * 0.6) * MAZE_CELL_SIZE;
+        if (!mazeBodyFits(x, y, mobRadius)) continue;
         if (isTooCloseToPlayersOrMobs(x, y, mobRadius)) continue;
         return { x, y };
     }
@@ -177,19 +226,20 @@ export function spawnMazeMobs(limit: number = 3): Enemy[] {
     if (pool.length === 0) return [];
 
     const { total } = countMazeMobs();
-    const target = Math.min(MAX_MAZE_MOBS, mazePlayerIds.length * MOBS_PER_PLAYER);
+    const target = getMazePopulationTarget();
     const needed = Math.min(limit, target - total);
     if (needed <= 0) return [];
 
+    // Fresh broad-phase grid for the too-close checks below (the tick loop
+    // rebuilds it too, but this call runs on its own interval).
+    rebuildEnemyGrid(enemies);
+
     const spawned: Enemy[] = [];
     for (let i = 0; i < needed; i++) {
-        const anchor = players[mazePlayerIds[Math.floor(Math.random() * mazePlayerIds.length)]];
-        if (!anchor) continue;
-
         const mobEntry = pickWeighted(pool);
         const prelimStats = getMobStats(mobEntry.type, 'common');
         const mobRadius = prelimStats ? (prelimStats.size * 40) / 2 : 20;
-        const position = findMazeSpawnPosition(anchor.x, anchor.y, mobRadius);
+        const position = findMazeSpawnPosition(mobRadius);
         if (!position) continue;
 
         // Depth zone → tier, with a small up/down jitter (never above mythic;
@@ -201,6 +251,12 @@ export function spawnMazeMobs(limit: number = 3): Enemy[] {
         if (roll < 0.08) tierIndex = Math.min(MAZE_ZONE_TIERS.length - 1, tierIndex + 1);
         else if (roll < 0.28) tierIndex = Math.max(0, tierIndex - 1);
         const tier = MAZE_ZONE_TIERS[tierIndex] as Enemy['tier'];
+
+        // Re-check body clearance with the ACTUAL tier's size — higher tiers
+        // are much bigger than the common-size estimate used for placement.
+        const tierStats = getMobStats(mobEntry.type, tier);
+        const tierRadius = tierStats ? (tierStats.size * 40) / 2 : mobRadius;
+        if (tierRadius > mobRadius && !mazeBodyFits(position.x, position.y, tierRadius)) continue;
 
         const enemy = buildEnemy(mobEntry.type, tier, position.x, position.y);
         if (!enemy) continue;

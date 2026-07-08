@@ -4,20 +4,20 @@
 // corridors carved out of solid void, with every corridor/void junction rounded
 // by a quarter-circle fillet whose radius is one full grid cell ("rrolf walls").
 //
-// The maze is generated deterministically from the UTC day number, so the
+// Each biome (garden/desert/ocean) has a fixed, hand-editable layout hardcoded
+// below; the daily rotation only cycles which biome is active (day % 3). The
 // server and every client build byte-identical mazes from the single small
-// `mazeInfo { day }` message — no wall data goes over the wire. The biome
-// rotates garden → desert → ocean with the day, and the layout itself is
-// re-rolled daily (the day number seeds the PRNG).
+// `mazeInfo { day }` message — no wall data goes over the wire.
 //
 // This module is intentionally self-contained (no imports from constants.ts)
 // because constants.ts hooks its shared collision helpers into it.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAZE_MAX_PETAL_RARITY_INDEX = exports.MAZE_ZONE_TIERS = exports.MAZE_BIOME_SECTIONS = exports.MAZE_BIOMES = exports.MAZE_WORLD_SIZE = exports.MAZE_CELL_SIZE = exports.MAZE_GRID_DIM = exports.MAZE_TEMPLATE_DIM = exports.MAZE_ORIGIN_Y = exports.MAZE_ORIGIN_X = void 0;
+exports.MAZE_TEMPLATES = exports.MAZE_MAX_PETAL_RARITY_INDEX = exports.MAZE_ZONE_TIERS = exports.MAZE_BIOME_SECTIONS = exports.MAZE_BIOMES = exports.MAZE_CELL_SIZE = exports.MAZE_MAX_TEMPLATE_DIM = exports.MAZE_MIN_TEMPLATE_DIM = exports.MAZE_ORIGIN_Y = exports.MAZE_ORIGIN_X = void 0;
 exports.getActiveMaze = getActiveMaze;
 exports.getCurrentMazeDay = getCurrentMazeDay;
 exports.setActiveMazeDay = setActiveMazeDay;
 exports.generateMaze = generateMaze;
+exports.buildMazeFromTemplate = buildMazeFromTemplate;
 exports.isInMazeRegion = isInMazeRegion;
 exports.getMazeCellValue = getMazeCellValue;
 exports.mazeBlocksPoint = mazeBlocksPoint;
@@ -30,13 +30,17 @@ exports.mazeBlocksLine = mazeBlocksLine;
 // arena at (150000,150000), so the maze shares no coordinate space with either.
 exports.MAZE_ORIGIN_X = 200000;
 exports.MAZE_ORIGIN_Y = 200000;
-// Template is the authored/generated maze at corridor resolution; each template
-// cell expands to a 2x2 block of grid cells (exactly like rrolf's RR_MAZE
+// Templates are the authored mazes at corridor resolution; each template cell
+// expands to a 2x2 block of grid cells (exactly like rrolf's RR_MAZE
 // templates), which is what makes room for the corner fillets.
-exports.MAZE_TEMPLATE_DIM = 27; // odd, for the DFS carver
-exports.MAZE_GRID_DIM = exports.MAZE_TEMPLATE_DIM * 2; // 54x54 collision/render cells
+//
+// The template SIZE is per-biome and adjustable: a template array of N rows of
+// N characters yields an N-cell maze (grid = 2N cells, world span = 2N × 600).
+// Everything downstream — region bounds, collision, rendering, minimap,
+// spawner density — derives from the ACTIVE maze's dimensions, not a constant.
+exports.MAZE_MIN_TEMPLATE_DIM = 8;
+exports.MAZE_MAX_TEMPLATE_DIM = 64; // grid 128, world span 76800
 exports.MAZE_CELL_SIZE = 600; // world units per grid cell
-exports.MAZE_WORLD_SIZE = exports.MAZE_GRID_DIM * exports.MAZE_CELL_SIZE; // 32400
 // Daily biome rotation. Section indices map into SECTION_CONFIGS / the
 // preloaded section ground textures (Garden=0, Desert=1, Ocean=3).
 exports.MAZE_BIOMES = ['garden', 'desert', 'ocean'];
@@ -65,155 +69,154 @@ function setActiveMazeDay(dayNumber) {
     }
     return activeMaze;
 }
-// ── Seeded PRNG ─────────────────────────────────────────────────────────────
-function mulberry32(seed) {
-    let a = seed >>> 0;
-    return function () {
-        a |= 0;
-        a = (a + 0x6D2B79F5) | 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
-// ── Generation ──────────────────────────────────────────────────────────────
+// ── Hardcoded biome layouts ─────────────────────────────────────────────────
+// One hand-editable template per biome (rrolf-style), 27×27 characters:
+//   '#'              wall
+//   c u r e l m     corridor, difficulty zone common..mythic
+//   S                corridor, common zone, the player entrance/respawn cell
+//   B                corridor, mythic zone, an ultra-boss room cell
+// Each template cell expands to a 2×2 block of collision/render cells with
+// rrolf corner codes. The daily rotation only cycles WHICH biome is active
+// (day % 3 → garden/desert/ocean); the layout for a biome never changes, so
+// client and server trivially agree on the maze from the day number alone.
+const ZONE_BY_CHAR = {
+    c: 0, u: 1, r: 2, e: 3, l: 4, m: 5,
+    S: 0, // spawn room is common
+    B: 5, // boss rooms are mythic
+};
+exports.MAZE_TEMPLATES = {
+    garden: [
+        '######################',
+        '#mmm#mmmm#lll##llllee#',
+        '#m#m#m##m#m#l##l##l#e#',
+        '#m#m#m##m#m#l##l##l#e#',
+        '#m#m#mB#m#m#llll##l#e#',
+        '#m#m####m######l##l#e#',
+        '#m#mmmmmm######l##l#e#',
+        '#m#############m####e#',
+        '#m#####cccuuuu#mmB##e#',
+        '#l#####c##u##u######e#',
+        '#ll##Scc##u##u######e#',
+        '##ll######u##rrrrrree#',
+        '###l######u##r###e##e#',
+        '###ll#rrrrr##r###e##e#',
+        '#l##l#r###r##r###e#ee#',
+        '#l##l#r###rrrr###e####',
+        '#ll#e#r#rrr##r#eeeeee#',
+        '#l##e#r######r#e####e#',
+        '#l##e#r######r#e##l#e#',
+        '#eeeeeeeeeeeer#e##e#e#',
+        '###############eeeeee#',
+        '######################',
+    ],
+    desert: [
+        '######################',
+        '#Bmmmm#mmmmmBmmm#mll##',
+        '#mmmm##m#######mmm#ll#',
+        '#mmmm##m############l#',
+        '#mmmm##l##S##l######l#',
+        '#mmmmmll##c##lll####l#',
+        '#mmm###l##c####l#elll#',
+        '#mm####l##c####l#e####',
+        '#m#####l##c####eeee###',
+        '#######l##cc###eeeee##',
+        '#######l##c###eeeeeee#',
+        '#eeeelll#cc##eeeeeeee#',
+        '#e#e###l##c##eeeeeeee#',
+        '#e#####ll#c##eeeeeeee#',
+        '#e###e##l#u##e#eeee#e#',
+        '#eerrre#e#uu#e##ere#e#',
+        '#e##r#e#e#u##e###r##e#',
+        '#e##r#e#e#u##l##rr##e#',
+        '#e##r#eee#u####rr###l#',
+        '#e##r#####u###rr###ll#',
+        '#e##rrrruuuuurr###lll#',
+        '######################',
+    ],
+    ocean: [
+        '######################',
+        '#####mmmmmm######Bmm##',
+        '#####m####mmm######m##',
+        '###llm######m######m##',
+        '###l#m######m#mlllmm##',
+        '#lll#m##mmm#m#m#l##m##',
+        '#l###mmmm#B#mmm#l##m##',
+        '#ll#########m###l##m##',
+        '##l#############l##mm#',
+        '##le############l#####',
+        '###e##cccScccc##l#####',
+        '###e##c######c##llll##',
+        '###e##c######c###l####',
+        '###e##c##u###c###eeee#',
+        '#eee##ccccu##cc#####e#',
+        '#e#######u####c#u##ee#',
+        '#e###r###u####uuuu#e##',
+        '#e#rrrr##u######u##ee#',
+        '#r#r#r###u#uuu######e#',
+        '#r#r#u#uuuuu#u#rrr#rr#',
+        '#rrr#uuu#####rrr#rrr##',
+        '######################',
+    ],
+};
+// ── Template parsing + corner-code expansion ────────────────────────────────
 function generateMaze(dayNumber) {
-    const D = exports.MAZE_TEMPLATE_DIM;
-    const rng = mulberry32((dayNumber * 2654435761) ^ 0x9e3779b9);
-    // 0 = wall, 1 = walkable
-    const tpl = new Uint8Array(D * D);
-    const at = (x, y) => tpl[y * D + x];
-    const carve = (x, y) => { tpl[y * D + x] = 1; };
-    // 1. Recursive-backtracker maze over cells at odd template coordinates.
-    const M = (D - 1) / 2; // maze cells per side
-    const visited = new Uint8Array(M * M);
-    const stack = [0]; // cell index = my * M + mx; start at (0,0) = template (1,1)
-    visited[0] = 1;
-    carve(1, 1);
-    const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    while (stack.length > 0) {
-        const cur = stack[stack.length - 1];
-        const mx = cur % M, my = Math.floor(cur / M);
-        // Collect unvisited neighbors
-        const options = [];
-        for (const [dx, dy] of DIRS) {
-            const nx = mx + dx, ny = my + dy;
-            if (nx >= 0 && ny >= 0 && nx < M && ny < M && !visited[ny * M + nx]) {
-                options.push([nx, ny]);
-            }
-        }
-        if (options.length === 0) {
-            stack.pop();
-            continue;
-        }
-        const [nx, ny] = options[Math.floor(rng() * options.length)];
-        visited[ny * M + nx] = 1;
-        carve(1 + nx * 2, 1 + ny * 2); // the cell
-        carve(1 + mx * 2 + (nx - mx), 1 + my * 2 + (ny - my)); // the wall between
-        stack.push(ny * M + nx);
+    const biome = exports.MAZE_BIOMES[((dayNumber % 3) + 3) % 3];
+    return buildMazeFromTemplate(exports.MAZE_TEMPLATES[biome], biome, dayNumber);
+}
+/**
+ * Build a maze from any square template (size MAZE_MIN..MAZE_MAX cells per
+ * side). Exposed separately so tools/tests can build arbitrary-size mazes.
+ */
+function buildMazeFromTemplate(template, biome, dayNumber) {
+    const D = template.length;
+    if (D < exports.MAZE_MIN_TEMPLATE_DIM || D > exports.MAZE_MAX_TEMPLATE_DIM || template.some(row => row.length !== D)) {
+        throw new Error(`[maze] ${biome} template must be square, ${exports.MAZE_MIN_TEMPLATE_DIM}-${exports.MAZE_MAX_TEMPLATE_DIM} cells per side (got ${D} rows of lengths ${[...new Set(template.map(r => r.length))].join('/')})`);
     }
-    // 2. Braid: knock a wall off ~35% of dead ends so the maze has loops
-    // instead of being a pure tree (rrolf's maze is heavily looped).
-    for (let my = 0; my < M; my++) {
-        for (let mx = 0; mx < M; mx++) {
-            const tx = 1 + mx * 2, ty = 1 + my * 2;
-            let openings = 0;
-            for (const [dx, dy] of DIRS) {
-                if (at(tx + dx, ty + dy))
-                    openings++;
+    // Parse the character grid into walkability + zone, and find the spawn
+    // cell and boss rooms.
+    const tpl = new Uint8Array(D * D); // 0 = wall, 1 = walkable
+    const tplZone = new Uint8Array(D * D).fill(255);
+    let spawnCell = null;
+    const bossCells = [];
+    for (let y = 0; y < D; y++) {
+        for (let x = 0; x < D; x++) {
+            const ch = template[y][x];
+            if (ch === '#')
+                continue;
+            const zone = ZONE_BY_CHAR[ch];
+            if (zone === undefined) {
+                // Tolerate typos as wall — a bad hand-edit must not crash the
+                // live server when the daily rotation reaches this biome.
+                // (scripts/importMazeMap.js is the strict authoring path.)
+                console.warn(`[maze] ${biome} template has unknown char '${ch}' at ${x},${y} — treating as wall`);
+                continue;
             }
-            if (openings === 1 && rng() < 0.35) {
-                const closed = DIRS.filter(([dx, dy]) => {
-                    const wx = tx + dx, wy = ty + dy;
-                    return wx > 0 && wy > 0 && wx < D - 1 && wy < D - 1 && !at(wx, wy);
-                });
-                if (closed.length > 0) {
-                    const [dx, dy] = closed[Math.floor(rng() * closed.length)];
-                    carve(tx + dx, ty + dy);
+            tpl[y * D + x] = 1;
+            tplZone[y * D + x] = zone;
+            if (ch === 'S' && !spawnCell)
+                spawnCell = { x, y };
+            if (ch === 'B')
+                bossCells.push(y * D + x);
+        }
+    }
+    if (!spawnCell) {
+        // No 'S' authored: fall back to the first walkable cell (identical on
+        // client and server, so determinism holds) rather than crashing.
+        console.error(`[maze] ${biome} template has no spawn cell ('S') — falling back to the first walkable cell. Add an 'S' (white pixel via scripts/importMazeMap.js).`);
+        outer: for (let y = 0; y < D; y++) {
+            for (let x = 0; x < D; x++) {
+                if (tpl[y * D + x]) {
+                    spawnCell = { x, y };
+                    break outer;
                 }
             }
         }
-    }
-    // 3. Open rooms: the spawn room plus a few random chambers.
-    const carveRoom = (cx, cy, half) => {
-        for (let y = Math.max(1, cy - half); y <= Math.min(D - 2, cy + half); y++) {
-            for (let x = Math.max(1, cx - half); x <= Math.min(D - 2, cx + half); x++) {
-                carve(x, y);
-            }
-        }
-    };
-    carveRoom(2, 2, 1); // spawn room around template (2,2)
-    for (let i = 0; i < 3; i++) {
-        carveRoom(2 + Math.floor(rng() * (D - 4)), 2 + Math.floor(rng() * (D - 4)), 1);
-    }
-    // 4. BFS from the spawn cell to find the deepest reaches.
-    const SPAWN_TX = 1, SPAWN_TY = 1;
-    const bfs = () => {
-        const dist = new Int32Array(D * D).fill(-1);
-        const q = [SPAWN_TY * D + SPAWN_TX];
-        dist[q[0]] = 0;
-        for (let head = 0; head < q.length; head++) {
-            const idx = q[head];
-            const x = idx % D, y = Math.floor(idx / D);
-            for (const [dx, dy] of DIRS) {
-                const nx = x + dx, ny = y + dy;
-                if (nx < 0 || ny < 0 || nx >= D || ny >= D)
-                    continue;
-                const nidx = ny * D + nx;
-                if (!tpl[nidx] || dist[nidx] >= 0)
-                    continue;
-                dist[nidx] = dist[idx] + 1;
-                q.push(nidx);
-            }
-        }
-        return dist;
-    };
-    // 5. Boss rooms at the two farthest (and mutually distant) cells.
-    let dist = bfs();
-    const byDepth = [];
-    for (let i = 0; i < D * D; i++)
-        if (dist[i] > 0)
-            byDepth.push(i);
-    byDepth.sort((a, b) => dist[b] - dist[a]);
-    const bossCells = [];
-    for (const idx of byDepth) {
-        if (bossCells.length >= 2)
-            break;
-        const x = idx % D, y = Math.floor(idx / D);
-        const farFromOthers = bossCells.every(other => {
-            const ox = other % D, oy = Math.floor(other / D);
-            return Math.abs(ox - x) + Math.abs(oy - y) >= Math.floor(D / 2);
-        });
-        if (farFromOthers)
-            bossCells.push(idx);
-    }
-    for (const idx of bossCells) {
-        carveRoom(idx % D, Math.floor(idx / D), 1);
-    }
-    // 6. Final zone assignment: equal-width depth bands, common at the spawn
-    // through mythic at the deepest corridors. Boss rooms are forced mythic.
-    dist = bfs();
-    let maxDist = 1;
-    for (let i = 0; i < D * D; i++)
-        if (dist[i] > maxDist)
-            maxDist = dist[i];
-    const tplZone = new Uint8Array(D * D).fill(255);
-    for (let i = 0; i < D * D; i++) {
-        if (dist[i] >= 0) {
-            tplZone[i] = Math.min(exports.MAZE_ZONE_TIERS.length - 1, Math.floor((dist[i] / (maxDist + 1)) * exports.MAZE_ZONE_TIERS.length));
+        if (!spawnCell) {
+            throw new Error(`[maze] ${biome} template has no walkable cells at all`);
         }
     }
-    for (const idx of bossCells) {
-        const bx = idx % D, by = Math.floor(idx / D);
-        for (let y = Math.max(0, by - 1); y <= Math.min(D - 1, by + 1); y++) {
-            for (let x = Math.max(0, bx - 1); x <= Math.min(D - 1, bx + 1); x++) {
-                if (tpl[y * D + x])
-                    tplZone[y * D + x] = exports.MAZE_ZONE_TIERS.length - 1;
-            }
-        }
-    }
-    // 7. Expand template → grid with rrolf's corner codes (port of init_maze).
-    const dim = exports.MAZE_GRID_DIM;
+    // Expand template → grid with rrolf's corner codes (port of init_maze).
+    const dim = D * 2;
     const values = new Uint8Array(dim * dim);
     const zones = new Uint8Array(dim * dim).fill(255);
     const toff = (x, y, a, b) => {
@@ -278,10 +281,13 @@ function generateMaze(dayNumber) {
         x: exports.MAZE_ORIGIN_X + (tx * 2 + 1) * exports.MAZE_CELL_SIZE,
         y: exports.MAZE_ORIGIN_Y + (ty * 2 + 1) * exports.MAZE_CELL_SIZE,
     });
-    const spawn = cellCenter(SPAWN_TX, SPAWN_TY);
+    const spawn = cellCenter(spawnCell.x, spawnCell.y);
     return {
         dayNumber,
-        biome: exports.MAZE_BIOMES[((dayNumber % 3) + 3) % 3],
+        biome,
+        templateDim: D,
+        gridDim: dim,
+        worldSize: dim * exports.MAZE_CELL_SIZE,
         values,
         zones,
         spawnX: spawn.x,
@@ -292,14 +298,16 @@ function generateMaze(dayNumber) {
 // ── Queries ─────────────────────────────────────────────────────────────────
 /** True if (x, y) lies inside the maze's coordinate region. */
 function isInMazeRegion(x, y) {
-    return x >= exports.MAZE_ORIGIN_X && x < exports.MAZE_ORIGIN_X + exports.MAZE_WORLD_SIZE &&
-        y >= exports.MAZE_ORIGIN_Y && y < exports.MAZE_ORIGIN_Y + exports.MAZE_WORLD_SIZE;
+    if (!activeMaze)
+        return false;
+    return x >= exports.MAZE_ORIGIN_X && x < exports.MAZE_ORIGIN_X + activeMaze.worldSize &&
+        y >= exports.MAZE_ORIGIN_Y && y < exports.MAZE_ORIGIN_Y + activeMaze.worldSize;
 }
 /** Grid cell value at grid coords; out of range reads as solid wall (0). */
 function getMazeCellValue(gx, gy) {
-    if (!activeMaze || gx < 0 || gy < 0 || gx >= exports.MAZE_GRID_DIM || gy >= exports.MAZE_GRID_DIM)
+    if (!activeMaze || gx < 0 || gy < 0 || gx >= activeMaze.gridDim || gy >= activeMaze.gridDim)
         return 0;
-    return activeMaze.values[gy * exports.MAZE_GRID_DIM + gx];
+    return activeMaze.values[gy * activeMaze.gridDim + gx];
 }
 /**
  * Exact per-cell wall test at a world point, matching the rendered fillet
@@ -335,9 +343,9 @@ function getMazeZoneAtWorld(x, y) {
         return -1;
     const gx = Math.floor((x - exports.MAZE_ORIGIN_X) / exports.MAZE_CELL_SIZE);
     const gy = Math.floor((y - exports.MAZE_ORIGIN_Y) / exports.MAZE_CELL_SIZE);
-    if (gx < 0 || gy < 0 || gx >= exports.MAZE_GRID_DIM || gy >= exports.MAZE_GRID_DIM)
+    if (gx < 0 || gy < 0 || gx >= activeMaze.gridDim || gy >= activeMaze.gridDim)
         return -1;
-    const z = activeMaze.zones[gy * exports.MAZE_GRID_DIM + gx];
+    const z = activeMaze.zones[gy * activeMaze.gridDim + gx];
     return z === 255 ? -1 : z;
 }
 /** Walkable floor test at world coords (floor or a convex-corner floor cell). */

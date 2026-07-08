@@ -59,6 +59,7 @@ const COMMANDS = [
     { command: '/admin guild_list', description: 'List all guilds', isAdmin: true },
     { command: '/admin guild_info', description: 'Show info for a guild by id', isAdmin: true },
     { command: '/admin restart', description: 'Schedule server restart: restart [<N>(s|m|h)|cancel|status]', isAdmin: true },
+    { command: '/admin change-maze', description: 'Change the maze: change-maze [next|garden|desert|ocean|<dayNumber>]', isAdmin: true },
     { command: '/level-from-string', description: 'Show what level a player named &lt;name&gt; would roll', isAdmin: false },
     { command: '/loadout-from-string', description: 'Show the loadout a player named &lt;name&gt; would roll', isAdmin: false },
 ];
@@ -798,6 +799,13 @@ class Chat {
         container.appendChild(closeBtn);
         container.appendChild(iframe);
         button.parentNode?.replaceChild(container, button);
+    }
+    /**
+     * Show a client-side System line in the chat (no server round trip).
+     * Used for local UI feedback, e.g. blocked loadout edits in the maze.
+     */
+    addLocalSystemMessage(content) {
+        this.addChatMessage({ sender: 'System', content, timestamp: Date.now() });
     }
     addChatMessage(message) {
         if (!this.chatMessages)

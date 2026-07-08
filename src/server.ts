@@ -39,7 +39,7 @@ if (invalidEggTypes.size > 0) {
 }
 
 import { ServerPlayer, PlayerInventory, FaceFlags } from './player';
-import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY, ITEM_KEY_TO_ID } from './inventoryCodec';
+import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets, cleanupPlayerPetalActionState } from './petal_actions';
 import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType, ABSORB_XP } from './petals';
 import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, MAX_SPEED, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
@@ -108,7 +108,7 @@ import {
     getPlayerViewports,
     isPositionInPlayerPetalRange,
     validatePlayerPositions,
-    isPositionInAnyViewport,
+    isPositionNearAnyPlayer,
     getEnemiesInViewportCount,
     getEnemiesInViewport200Percent,
     PlayerStateDependencies,
@@ -161,18 +161,17 @@ import {
     recalculatePlayerStats,
     enterPvpArena,
     getMazeSpawnPosition,
-    enforceMazeLoadoutCap,
-    applyMazeRarityShift,
-    consumeMazeFloorBaseline
+    enterMazeState,
+    getMazeAbsorbableCount
 } from './server/playerManager';
 import {
     getActiveMaze,
     setActiveMazeDay,
     getCurrentMazeDay,
     isInMazeRegion,
-    MAZE_MAX_PETAL_RARITY_INDEX
+    MAZE_BIOMES
 } from './maze';
-import { spawnMazeMobs, spawnMazeBosses, clearMazeEnemies, invalidateMazeMobPool } from './server/mazeSpawner';
+import { spawnMazeMobs, spawnMazeBosses, clearMazeEnemies, invalidateMazeMobPool, hasMazePlayers } from './server/mazeSpawner';
 import { setupTransferEndpoints, transferPlayerToServer as transferPlayerToServerModule } from './server/crossServer';
 import {
     createEnemy as createEnemyModule,
@@ -442,9 +441,13 @@ obstacles.push(...initializeMapObstacles());
 
 function updateEnemyViewportStatus() {
     const currentTime = Date.now();
-    
+
     for (const enemy of enemies) {
-        if (isPositionInAnyViewport(enemy.x, enemy.y)) {
+        // isPositionNearAnyPlayer (not isPositionInAnyViewport): maze/PVP
+        // players sit outside the world rectangle and are excluded from the
+        // world-clamped viewport list, which made every maze mob look
+        // permanently out-of-view and churn through 30s despawns.
+        if (isPositionNearAnyPlayer(enemy.x, enemy.y)) {
             enemy.lastViewportCheck = currentTime;
         }
     }
@@ -540,22 +543,36 @@ function triggerViewportUpdate() {
 function despawnDistantEnemies() {
     const currentTime = Date.now();
     const enemiesToRemove: number[] = [];
-    
+
+    // The maze is a bounded, persistently-populated dungeon (rrolf-style):
+    // its mobs are capped by mazeSpawner and spawned across ALL corridors, so
+    // while anyone is inside, none of them distance-despawn — otherwise the
+    // deep zones would always be empty except a bubble around each player.
+    // Once the maze has no players left, the normal 30s timer cleans it up.
+    const mazeOccupied = hasMazePlayers();
+
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
-        
+
         // Special mobs (ultra, super, unique) never despawn
         if (enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique') {
             continue;
         }
-        
+
         // Target dummies never despawn
         if (enemy.type === 'target_dummy') {
             continue;
         }
-        
-        // Check if enemy is currently outside any player's viewport
-        const inViewport = isPositionInAnyViewport(enemy.x, enemy.y);
+
+        if (mazeOccupied && isInMazeRegion(enemy.x, enemy.y)) {
+            enemy.lastViewportCheck = undefined;
+            continue;
+        }
+
+        // Check if enemy is currently outside any player's viewport (the
+        // near-player check includes maze/PVP players, whose out-of-world
+        // coordinates are invisible to the world-clamped viewport list).
+        const inViewport = isPositionNearAnyPlayer(enemy.x, enemy.y);
         
         if (!inViewport) {
             // If enemy is outside viewport, update or set the last viewport check time
@@ -1304,12 +1321,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 enterPvpArena(players[socket.id], io);
             } else {
                 if (players[socket.id].inMaze) {
-                    // Maze rarity shift: the saved (regular-world) inventory and
-                    // loadout drop one rarity inside the maze; saves translate
-                    // back up. Then strip anything still above mythic from
-                    // active slots before pets/cooldowns are set up below.
-                    applyMazeRarityShift(players[socket.id]);
-                    enforceMazeLoadoutCap(players[socket.id], io);
+                    // Maze entry: the saved (regular-world) loadout drops one
+                    // rarity inside the maze (saves translate back up), over-cap
+                    // petals are stripped, and the absorb baseline is snapshotted
+                    // — all before pets/cooldowns are set up below.
+                    enterMazeState(players[socket.id], io);
                 }
                 // Recalculate player stats with modifiers after loadout is set
                 recalculatePlayerStats(players[socket.id], io);
@@ -1423,7 +1439,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 const biomeName = mazeNow ? mazeNow.biome.charAt(0).toUpperCase() + mazeNow.biome.slice(1) : '';
                 socket.emit('chatMessage', {
                     sender: 'System',
-                    content: `<span style="color: #c77dff;">Entered the ${biomeName} Maze. Your petals are one rarity lower in here (they return to normal when you leave), and petals found in the maze gain a rarity outside. Petals above Mythic are disabled.</span>`,
+                    content: `<span style="color: #c77dff;">Entered the ${biomeName} Maze. Your equipped petals act one rarity lower in here and return to normal when you leave. You cannot equip new petals in the maze — set up your loadout on the title screen before entering. Petals found in the maze enter your inventory one rarity higher; petals above Ultra are unequipped at the entrance.</span>`,
                     timestamp: Date.now()
                 });
             }
@@ -1885,18 +1901,20 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
         // console.log('[PET DEBUG] updateLoadout: Player found, processing loadout...');
         if (player) {
-            // Maze petal cap: only petals up to mythic may occupy active slots
-            // (0-9) inside the maze. Reject anything higher before validation —
-            // the diff passes below then leave the item in the inventory, and
-            // the corrected loadout is echoed back via 'playerUpdated'.
-            if (player.inMaze && Array.isArray(data.loadout)) {
-                const activeLen = Math.min(10, data.loadout.length);
-                for (let i = 0; i < activeLen; i++) {
-                    const item = data.loadout[i];
-                    if (item && item.rarity && getRarityIndex(item.rarity) > MAZE_MAX_PETAL_RARITY_INDEX) {
-                        data.loadout[i] = null;
-                    }
-                }
+            // The loadout is LOCKED inside the maze — petals must be equipped
+            // on the title screen before entering. Reject the whole update and
+            // echo the authoritative state back so the client's optimistic
+            // edit reverts. (This lock is also what makes the maze rarity
+            // accounting safe: the shifted loadout and the regular-terms
+            // inventory can never mix.)
+            if (player.inMaze) {
+                socket.emit('playerUpdated', player);
+                socket.emit('chatMessage', {
+                    sender: 'System',
+                    content: '<span style="color: #c77dff;">You cannot equip new petals in the maze — set up your loadout on the title screen before entering.</span>',
+                    timestamp: Date.now()
+                });
+                return;
             }
 
             // Track which slots had items before to detect changes
@@ -3553,13 +3571,6 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 addItem(player.inventory, rarity, itemKey, toReturn);
             }
 
-            // Commons destroyed by maze crafting consume floor-baseline credit
-            // (see consumeMazeFloorBaseline) so surviving/maze-found commons
-            // keep their +1 on exit.
-            if (rarity === 'common') {
-                consumeMazeFloorBaseline(player, itemKey, totalLost);
-            }
-
             if (successfulCrafts > 0) {
                 addItem(player.inventory, newRarity, itemKey, successfulCrafts);
                 
@@ -3617,9 +3628,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
     });
 
-    // Absorb petals for XP — the "Switch" tab of the craft menu. Validates
-    // ownership of the full request before removing anything, so a failed
-    // request never eats a partial batch.
+    // Absorb petals for XP — the "Switch" tab of the craft menu. Maze-only:
+    // just the surplus over the maze entry snapshot (petals obtained during
+    // this run) may be absorbed. Validates the full request before removing
+    // anything, so a failed request never eats a partial batch.
     socket.on('absorbItems', (data: { items: Item[] }) => {
         try {
             const player = players[socket.id];
@@ -3627,10 +3639,8 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 socket.emit('absorbFailed', { message: 'Player not found' });
                 return;
             }
-            // The PVP inventory is a sandbox (only 25% survives the exit) —
-            // absorbing it would launder sandboxed petals into permanent XP.
-            if (player.inPvpArena) {
-                socket.emit('absorbFailed', { message: 'Cannot absorb petals inside the PVP arena', inventory: player.inventory });
+            if (!player.inMaze || !player.mazeRarityShifted) {
+                socket.emit('absorbFailed', { message: 'Petals can only be absorbed inside the maze', inventory: player.inventory });
                 return;
             }
             if (!data || !Array.isArray(data.items) || data.items.length === 0 || data.items.length > 1000) {
@@ -3656,17 +3666,16 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                     socket.emit('absorbFailed', { message: 'Missing items in inventory', inventory: player.inventory });
                     return;
                 }
+                if (entry.count > getMazeAbsorbableCount(player, entry.rarity, entry.itemKey)) {
+                    socket.emit('absorbFailed', { message: 'Only petals found in the maze can be absorbed', inventory: player.inventory });
+                    return;
+                }
             }
 
             let xpGained = 0;
             let absorbedCount = 0;
             for (const entry of tally.values()) {
                 removeItem(player.inventory, entry.rarity, entry.itemKey, entry.count);
-                // Destroyed commons consume floor-baseline credit first, so
-                // commons found later in the maze keep their +1 on exit.
-                if (entry.rarity === 'common') {
-                    consumeMazeFloorBaseline(player, entry.itemKey, entry.count);
-                }
                 xpGained += (ABSORB_XP[entry.rarity] || 0) * entry.count;
                 absorbedCount += entry.count;
             }
@@ -3732,26 +3741,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             // Deduct stars
             player.stars = stars - data.price;
 
-            // Add item to inventory. Shop listings are regular-world rarities;
-            // while in the maze the live inventory is shifted down one, so the
-            // purchase lands shifted too (it translates back on exit). A common
-            // purchase can't shift — record it in the floor baseline so it
-            // doesn't gain a free rarity on the way out.
+            // Add item to inventory. The inventory is always in regular-world
+            // terms — even inside the maze (only the locked loadout shifts) —
+            // so shop purchases land at their listed rarity everywhere.
             const itemKey = `petal_${data.petalType}`;
-            let grantRarity = data.rarity;
-            if (player.inMaze && player.mazeRarityShifted) {
-                const rarityIdx = getRarityIndex(data.rarity);
-                if (rarityIdx > 0) {
-                    grantRarity = RARITY_LEVELS[rarityIdx - 1];
-                } else if (rarityIdx === 0) {
-                    const itemId = ITEM_KEY_TO_ID.get(itemKey);
-                    if (itemId !== undefined) {
-                        const baseline = player.mazeFloorBaseline || (player.mazeFloorBaseline = {});
-                        baseline[itemId] = (baseline[itemId] || 0) + 1;
-                    }
-                }
-            }
-            addItem(player.inventory, grantRarity, itemKey, 1);
+            addItem(player.inventory, data.rarity, itemKey, 1);
 
             // Save progress
             const userId = playerUserIds[socket.id];
@@ -6154,8 +6148,11 @@ setInterval(() => {
         }
 
         // Keep the maze corridors populated (tier by depth zone) and its
-        // ultra bosses alive in the deepest rooms.
-        const mazeMobs = spawnMazeMobs(3);
+        // ultra bosses alive in the deepest rooms. 40 per half-second fills a
+        // fresh maze (~1300-mob target at full world density) in ~17s; at
+        // steady state the target cap throttles this down to a
+        // kill-replacement trickle.
+        const mazeMobs = spawnMazeMobs(40);
         for (const mob of mazeMobs) {
             enemies.push(mob);
         }
@@ -6198,15 +6195,19 @@ setInterval(() => {
     }
 }, 60000); // 60 seconds
 
-// Daily maze rotation: at each UTC day boundary the maze gets a new layout
-// and the biome cycles garden → desert → ocean. Yesterday's mobs are cleared
-// (the new walls would strand them), players inside are moved to the new
-// entrance, and every client is told to rebuild via 'mazeInfo'.
-setInterval(() => {
-    const day = getCurrentMazeDay();
-    const currentMaze = getActiveMaze();
-    if (currentMaze && currentMaze.dayNumber === day) return;
+// Admin override for which "day" the maze uses. Kept as an offset from the
+// real UTC day (rather than a pinned day) so an admin-forced maze isn't
+// snapped back by the rotation check a minute later, and the maze still
+// advances normally at each real day boundary.
+let mazeDayOffset = 0;
 
+/**
+ * Swap the active maze to the given day number: clear the old maze's mobs
+ * (the new walls would strand them), rebuild, broadcast 'mazeInfo' so every
+ * client regenerates the same layout, and move everyone inside to the new
+ * entrance. Shared by the daily rotation and the change-maze admin command.
+ */
+export function rotateMazeToDay(day: number): void {
     const removedIds = clearMazeEnemies();
     for (const id of removedIds) {
         io.emit('enemyDestroyed', id);
@@ -6225,6 +6226,58 @@ setInterval(() => {
         p.y = spawn.y;
         io.to(pid).emit('playerTeleported', { newX: spawn.x, newY: spawn.y, playerId: pid });
     }
+}
+
+/**
+ * Admin command backend: force a maze change immediately. Layouts are
+ * hardcoded per biome, so changing the maze means changing the biome.
+ *   change-maze              → next biome in the garden → desert → ocean cycle
+ *   change-maze garden|desert|ocean → that biome's maze
+ *   change-maze <dayNumber>  → the maze for that day number (biome = day % 3)
+ * Returns a human-readable status string for the command output.
+ */
+export function adminChangeMaze(arg?: string): string {
+    const active = getActiveMaze();
+    const currentDay = active ? active.dayNumber : getCurrentMazeDay();
+    const token = (arg || '').trim().toLowerCase();
+
+    let targetDay: number;
+    if (token === '' || token === 'next') {
+        targetDay = currentDay + 1;
+    } else if ((MAZE_BIOMES as readonly string[]).includes(token)) {
+        const wantIndex = (MAZE_BIOMES as readonly string[]).indexOf(token);
+        const currentIndex = ((currentDay % 3) + 3) % 3; // same formula generateMaze uses
+        const advance = ((wantIndex - currentIndex) + 3) % 3;
+        if (advance === 0) {
+            // Layouts are fixed per biome — re-requesting the active biome
+            // would rebuild the identical maze.
+            return `Maze is already ${token}.`;
+        }
+        targetDay = currentDay + advance;
+    } else if (/^-?\d+$/.test(token)) {
+        targetDay = parseInt(token, 10);
+    } else {
+        return `Usage: change-maze [next|garden|desert|ocean|<dayNumber>] — current: day ${currentDay} (${active?.biome ?? 'none'})`;
+    }
+
+    if (active && targetDay === active.dayNumber) {
+        return `Maze is already day ${targetDay} (${active.biome}).`;
+    }
+
+    mazeDayOffset = targetDay - getCurrentMazeDay();
+    rotateMazeToDay(targetDay);
+    const maze = getActiveMaze();
+    return `Maze changed to day ${maze!.dayNumber} (${maze!.biome}). Offset from real day: ${mazeDayOffset >= 0 ? '+' : ''}${mazeDayOffset}.`;
+}
+
+// Daily maze rotation: at each UTC day boundary the maze gets a new layout
+// and the biome cycles garden → desert → ocean (plus any admin offset from
+// the change-maze command).
+setInterval(() => {
+    const day = getCurrentMazeDay() + mazeDayOffset;
+    const currentMaze = getActiveMaze();
+    if (currentMaze && currentMaze.dayNumber === day) return;
+    rotateMazeToDay(day);
 }, 60000); // check once a minute
 
 // Initial spawn of special mobs when server starts

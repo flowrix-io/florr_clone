@@ -141,6 +141,18 @@ export class CanvasCraftingPanel {
     public onSlotClick: (() => void) | null = null;
     /** Fired when the Switch button (left of the X) is clicked. */
     public onSwitchMode: (() => void) | null = null;
+    /**
+     * When set and returning false, the Switch button renders greyed out and
+     * clicks on it are swallowed (absorb is maze-only, so the button is dead
+     * outside the maze).
+     */
+    public isSwitchEnabled: (() => boolean) | null = null;
+    /**
+     * When set, items in the panel's inventory grid for which this returns
+     * true render greyed-out and can't be clicked into the slots (e.g.
+     * non-petal items while the Absorb tab is active).
+     */
+    public isItemDisabled: ((rarity: string, itemType: string) => boolean) | null = null;
 
     constructor(game: GameAPI) {
         this.game = game;
@@ -598,14 +610,19 @@ export class CanvasCraftingPanel {
         ctx.fillText(title, cssW / 2, 14);
         ctx.restore();
 
-        // Switch button (craft ⇄ absorb) — left of the X.
+        // Switch button (craft ⇄ absorb) — left of the X. Greyed out (and
+        // inert) when disabled, i.e. outside the maze.
+        const switchEnabled = !this.isSwitchEnabled || this.isSwitchEnabled();
         const sb = this.switchBtnRect;
         ctx.save();
-        ctx.fillStyle = CanvasCraftingPanel.SWITCH_BORDER;
+        if (!switchEnabled) ctx.globalAlpha = 0.45;
+        ctx.fillStyle = switchEnabled ? CanvasCraftingPanel.SWITCH_BORDER : '#5a5a5a';
         ctx.beginPath();
         (ctx as any).roundRect(sb.x, sb.y, sb.w, sb.h, 4);
         ctx.fill();
-        ctx.fillStyle = this.switchBtnHovered ? '#a394e0' : CanvasCraftingPanel.SWITCH_BG;
+        ctx.fillStyle = switchEnabled
+            ? (this.switchBtnHovered ? '#a394e0' : CanvasCraftingPanel.SWITCH_BG)
+            : '#8a8a8a';
         ctx.beginPath();
         (ctx as any).roundRect(sb.x + 2, sb.y + 2, sb.w - 4, sb.h - 4, 3);
         ctx.fill();
@@ -992,6 +1009,18 @@ export class CanvasCraftingPanel {
             ctx.fillText(text, tx, ty);
             ctx.restore();
         }
+
+        // Disabled items (e.g. non-petals in the Absorb tab): grey the slot out
+        // so it reads as unusable; clicks are blocked in handleMouseDown.
+        if (this.isItemDisabled && this.isItemDisabled(r.rarity, r.itemType)) {
+            ctx.save();
+            ctx.globalAlpha = 0.6;
+            ctx.fillStyle = '#3a3a3a';
+            ctx.beginPath();
+            (ctx as any).roundRect(r.x, r.y, r.w, r.h, radius);
+            ctx.fill();
+            ctx.restore();
+        }
     }
 
     private drawItemIcon(ctx: CanvasRenderingContext2D, r: ItemRect, time: number) {
@@ -1035,7 +1064,8 @@ export class CanvasCraftingPanel {
     private handleMouseMove = (e: MouseEvent) => {
         const { x, y } = this.toLocal(e);
         this.closeBtnHovered = this.pointInRect(x, y, this.closeBtnRect);
-        this.switchBtnHovered = this.pointInRect(x, y, this.switchBtnRect);
+        this.switchBtnHovered = this.pointInRect(x, y, this.switchBtnRect)
+            && (!this.isSwitchEnabled || this.isSwitchEnabled());
         this.craftBtnHovered = this.pointInRect(x, y, this.craftBtnRect);
 
         // Hit test inventory items
@@ -1064,9 +1094,10 @@ export class CanvasCraftingPanel {
             return;
         }
 
-        // Switch button (craft ⇄ absorb)
+        // Switch button (craft ⇄ absorb) — dead when disabled (outside the maze)
         if (this.pointInRect(x, y, this.switchBtnRect)) {
             e.preventDefault();
+            if (this.isSwitchEnabled && !this.isSwitchEnabled()) return;
             if (this.onSwitchMode) this.onSwitchMode();
             return;
         }
@@ -1091,6 +1122,10 @@ export class CanvasCraftingPanel {
 
         // Inventory items
         const hit = this.hitTestInventory(e.clientX, e.clientY);
+        if (hit && this.isItemDisabled && this.isItemDisabled(hit.rarity, hit.itemType)) {
+            e.preventDefault();
+            return;
+        }
         if (hit && this.onItemClick) {
             e.preventDefault();
             this.onItemClick(hit.rarity, hit.itemType, e.shiftKey);

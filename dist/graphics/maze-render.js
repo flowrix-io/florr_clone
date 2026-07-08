@@ -63,8 +63,8 @@ core_1.Graphics.prototype.drawMazeWorld = function () {
     const vpTop = this.cameraY;
     const vpRight = vpLeft + visibleW;
     const vpBottom = vpTop + visibleH;
-    const mazeRight = maze_1.MAZE_ORIGIN_X + maze_1.MAZE_WORLD_SIZE;
-    const mazeBottom = maze_1.MAZE_ORIGIN_Y + maze_1.MAZE_WORLD_SIZE;
+    const mazeRight = maze_1.MAZE_ORIGIN_X + maze.worldSize;
+    const mazeBottom = maze_1.MAZE_ORIGIN_Y + maze.worldSize;
     if (vpRight < maze_1.MAZE_ORIGIN_X || vpLeft > mazeRight || vpBottom < maze_1.MAZE_ORIGIN_Y || vpTop > mazeBottom) {
         return;
     }
@@ -98,9 +98,9 @@ core_1.Graphics.prototype.drawMazeWorld = function () {
     // 2. Walls: semi-transparent black carved by the corner-coded cell grid.
     const g = maze_1.MAZE_CELL_SIZE;
     const minGx = Math.max(0, Math.floor((left - maze_1.MAZE_ORIGIN_X) / g));
-    const maxGx = Math.min(maze_1.MAZE_GRID_DIM - 1, Math.floor((right - maze_1.MAZE_ORIGIN_X) / g));
+    const maxGx = Math.min(maze.gridDim - 1, Math.floor((right - maze_1.MAZE_ORIGIN_X) / g));
     const minGy = Math.max(0, Math.floor((top - maze_1.MAZE_ORIGIN_Y) / g));
-    const maxGy = Math.min(maze_1.MAZE_GRID_DIM - 1, Math.floor((bottom - maze_1.MAZE_ORIGIN_Y) / g));
+    const maxGy = Math.min(maze.gridDim - 1, Math.floor((bottom - maze_1.MAZE_ORIGIN_Y) / g));
     // All wall shapes go into ONE path filled once: filling cell-by-cell at
     // 50% alpha leaves antialiased hairline seams on every interior cell
     // boundary of a contiguous wall mass (each fill blends its own edge
@@ -144,7 +144,7 @@ core_1.Graphics.prototype.drawMazeMinimap = function (players, socket) {
     const minimapX = this.viewW - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
     const minimapY = this.MINIMAP_PADDING;
     const ctx = this.ctx;
-    const s = this.MINIMAP_WIDTH / maze_1.MAZE_GRID_DIM; // pixels per maze cell
+    const s = this.MINIMAP_WIDTH / maze.gridDim; // pixels per maze cell
     // Dark backdrop = walls.
     ctx.fillStyle = 'rgba(20, 20, 25, 0.9)';
     ctx.fillRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
@@ -156,9 +156,9 @@ core_1.Graphics.prototype.drawMazeMinimap = function (players, socket) {
     // (quarter-disc for convex floor corners, curved triangle for the carved
     // corner of concave wall cells) — the inverse of the world-view shapes.
     ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    for (let gy = 0; gy < maze_1.MAZE_GRID_DIM; gy++) {
-        for (let gx = 0; gx < maze_1.MAZE_GRID_DIM; gx++) {
-            const v = maze.values[gy * maze_1.MAZE_GRID_DIM + gx];
+    for (let gy = 0; gy < maze.gridDim; gy++) {
+        for (let gx = 0; gx < maze.gridDim; gx++) {
+            const v = maze.values[gy * maze.gridDim + gx];
             if (v === 0)
                 continue;
             const x0 = minimapX + gx * s;
@@ -187,12 +187,12 @@ core_1.Graphics.prototype.drawMazeMinimap = function (players, socket) {
     }
     // Depth-zone tint over the corridors (common → mythic).
     let lastZone = -1;
-    for (let gy = 0; gy < maze_1.MAZE_GRID_DIM; gy++) {
-        for (let gx = 0; gx < maze_1.MAZE_GRID_DIM; gx++) {
-            const v = maze.values[gy * maze_1.MAZE_GRID_DIM + gx];
+    for (let gy = 0; gy < maze.gridDim; gy++) {
+        for (let gx = 0; gx < maze.gridDim; gx++) {
+            const v = maze.values[gy * maze.gridDim + gx];
             if (v === 0 || (v >= 12 && v <= 15))
                 continue; // walls carry no tint
-            const zone = maze.zones[gy * maze_1.MAZE_GRID_DIM + gx];
+            const zone = maze.zones[gy * maze.gridDim + gx];
             if (zone >= maze_1.MAZE_ZONE_TIERS.length)
                 continue;
             if (zone !== lastZone) {
@@ -206,8 +206,8 @@ core_1.Graphics.prototype.drawMazeMinimap = function (players, socket) {
     // always, others only while ALT is held).
     const squadMemberIds = window.squadMemberIds || [];
     const squadMemberSet = new Set(squadMemberIds);
-    const worldToMapX = (wx) => minimapX + ((wx - maze_1.MAZE_ORIGIN_X) / maze_1.MAZE_WORLD_SIZE) * this.MINIMAP_WIDTH;
-    const worldToMapY = (wy) => minimapY + ((wy - maze_1.MAZE_ORIGIN_Y) / maze_1.MAZE_WORLD_SIZE) * this.MINIMAP_HEIGHT;
+    const worldToMapX = (wx) => minimapX + ((wx - maze_1.MAZE_ORIGIN_X) / maze.worldSize) * this.MINIMAP_WIDTH;
+    const worldToMapY = (wy) => minimapY + ((wy - maze_1.MAZE_ORIGIN_Y) / maze.worldSize) * this.MINIMAP_HEIGHT;
     players.forEach(player => {
         if (!(0, maze_1.isInMazeRegion)(player.x, player.y))
             return;

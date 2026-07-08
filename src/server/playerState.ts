@@ -29,7 +29,7 @@ import {
     isInPvpArena,
     stepPlayerMovement
 } from '../constants';
-import { isInMazeRegion, MAZE_ORIGIN_X, MAZE_ORIGIN_Y, MAZE_WORLD_SIZE } from '../maze';
+import { isInMazeRegion, getActiveMaze, MAZE_ORIGIN_X, MAZE_ORIGIN_Y } from '../maze';
 import { WORLD_MAP } from '../map_data';
 import {
     items,
@@ -500,6 +500,32 @@ export function getPlayerViewports(): Array<{x: number, y: number, width: number
     }
 
     return viewports;
+}
+
+/**
+ * Check if a position is near ANY player — including players in the maze or
+ * PVP arena, whose coordinates sit outside the regular world rectangle and are
+ * therefore excluded from getPlayerViewports (that function feeds the
+ * main-world spawn budget). Use this for enemy keep-alive / despawn decisions:
+ * with the world-clamped check, every mob in the maze counted as "outside all
+ * viewports" even with a player standing on it, so the entire maze despawned
+ * and respawned on a 30-second churn cycle.
+ */
+export function isPositionNearAnyPlayer(x: number, y: number): boolean {
+    let sawPlayer = false;
+    for (const playerId in players) {
+        if (playerId.startsWith('bot_')) continue;
+        const player = players[playerId];
+        if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)) continue;
+        sawPlayer = true;
+        const vpWidth = (player.viewportWidth || VIEWPORT_WIDTH) / 2 + VIEWPORT_BUFFER;
+        const vpHeight = (player.viewportHeight || VIEWPORT_HEIGHT) / 2 + VIEWPORT_BUFFER;
+        if (Math.abs(x - player.x) <= vpWidth && Math.abs(y - player.y) <= vpHeight) {
+            return true;
+        }
+    }
+    // No players connected: match isPositionInAnyViewport's permissive default.
+    return !sawPlayer;
 }
 
 /**
@@ -2313,8 +2339,17 @@ export function updatePlayerState(
             // Add item to player's inventory (which may be shared with split player).
             // While inside the PVP arena, `inventory` IS the PVP-only inventory; on
             // exit, 25% of it is transferred back into the regular inventory.
-            const rarity = item.rarity || 'common';
+            let rarity = item.rarity || 'common';
             const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+            // Maze drops gain a rarity the moment they enter the inventory:
+            // the inventory stays in regular-world terms inside the maze, so
+            // the +1 the maze promises is applied at pickup, not on exit.
+            if (player.inMaze && player.mazeRarityShifted) {
+                const rarityIdx = getRarityIndex(rarity);
+                if (rarityIdx >= 0) {
+                    rarity = RARITY_LEVELS[Math.min(rarityIdx + 1, RARITY_LEVELS.length - 1)];
+                }
+            }
             addItem(player.inventory, rarity, itemKey, 1);
             
             // Mark as picked up by this player (don't remove from world)
@@ -2377,9 +2412,12 @@ export function updatePlayerState(
     // solid wall so collision already contains them — this is a safety net
     // against knockback/teleport edge cases ejecting someone into the void.
     if (player.inMaze) {
-        const margin = PLAYER_SIZE / 2;
-        newX = Math.max(MAZE_ORIGIN_X + margin, Math.min(MAZE_ORIGIN_X + MAZE_WORLD_SIZE - margin, newX));
-        newY = Math.max(MAZE_ORIGIN_Y + margin, Math.min(MAZE_ORIGIN_Y + MAZE_WORLD_SIZE - margin, newY));
+        const mazeNow = getActiveMaze();
+        if (mazeNow) {
+            const margin = PLAYER_SIZE / 2;
+            newX = Math.max(MAZE_ORIGIN_X + margin, Math.min(MAZE_ORIGIN_X + mazeNow.worldSize - margin, newX));
+            newY = Math.max(MAZE_ORIGIN_Y + margin, Math.min(MAZE_ORIGIN_Y + mazeNow.worldSize - margin, newY));
+        }
     }
 
     // Clamp position to the PVP arena boundary if the player is currently inside it.

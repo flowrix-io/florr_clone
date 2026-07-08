@@ -103,6 +103,11 @@ export interface Player {
   inPvpArena?: boolean;    // True when this player is currently inside the PVP arena
   pvpScore?: number;       // PVP arena score (resets when leaving the arena)
   inMaze?: boolean;        // True when this player is currently inside the maze
+  // What this player brought into the maze ("rarityId|itemId" → count;
+  // inventory in regular terms + loadout in maze-shifted terms). Sent by the
+  // server on authenticate/respawn. Petals beyond these counts were obtained
+  // during the maze run and are the only ones the Absorb tab accepts.
+  mazeEntryCounts?: Record<string, number>;
   sizeMultiplier?: number; // Multiplier applied to the flower's radius/hitbox (from equipped petal playerRadius modifiers)
   magnetism?: number;      // Additive pixels added to item pickup radius (sum of equipped petal magnetism modifiers)
 }
@@ -195,18 +200,25 @@ export interface ServerPlayer {
   inPvpArena?: boolean;    // True when player is currently inside the PVP arena
   pvpScore?: number;       // PVP arena score (kills + assists). Resets when leaving the arena.
   inMaze?: boolean;        // True when player is currently inside the maze. Unlike PVP, the
-                           // regular inventory/loadout stay live — petals found in the maze are
-                           // absorbed (kept) permanently; only equipping >mythic is blocked.
-  // Maze rarity shift: on entry the whole live inventory/loadout is shifted
-  // DOWN one rarity (maze terms); on any save (and implicitly on leaving via
-  // re-auth) it is translated back UP one. Net effect: petals obtained in the
-  // maze gain a rarity when brought to the regular map, petals brought in
-  // lose one while inside, and round trips are lossless.
+                           // regular inventory stays live — petals found in the maze are kept
+                           // permanently. The loadout is LOCKED inside (updateLoadout rejects
+                           // every change): petals must be equipped on the title screen.
+  // Maze rarity shift: on entry the equipped LOADOUT (only) is shifted DOWN
+  // one rarity; on any save (and implicitly on leaving via re-auth) it is
+  // translated back UP one. The inventory stays in regular-world terms the
+  // whole run — drops are upgraded one rarity at pickup instead — which is
+  // safe precisely because the locked loadout and the inventory never mix.
   mazeRarityShifted?: boolean;
-  // Items that were already common at entry (couldn't shift down), keyed by
-  // inventoryCodec item ID → count. These stay common when translating back
-  // up, so a maze round trip can't mint free uncommons out of commons.
-  mazeFloorBaseline?: Record<number, number>;
+  // Loadout slots whose item was already common at entry (couldn't shift
+  // down). These stay common when translating back up, so a maze round trip
+  // can't mint free uncommons. Slot-keyed, which is stable because the
+  // loadout is locked inside the maze.
+  mazeFlooredSlots?: number[];
+  // Snapshot of everything brought into the maze (inventory + loadout, in
+  // post-shift terms), keyed "rarityId|itemId" → count. Absorbing is limited
+  // to the surplus over this snapshot: only petals obtained during the maze
+  // run may be absorbed. Cleared on maze exit; survives in-maze deaths.
+  mazeEntryCounts?: Record<string, number>;
   // While inside the PVP arena, `inventory`/`loadout` hold the PVP-only versions
   // and the player's regular versions are stashed here. On exit, 25% of the PVP
   // inventory is transferred into `regularInventory` and the regular inventory/
