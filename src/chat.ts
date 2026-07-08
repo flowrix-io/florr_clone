@@ -281,6 +281,12 @@ export class Chat {
         // Create chat container with updated styling
         this.chatContainer = document.createElement('div');
         this.chatContainer.className = 'chat-container';
+        // pointer-events: none — the container's own transparent background
+        // otherwise blocks touches/clicks meant for whatever's underneath it
+        // (e.g. the mobile joystick, which sits in this same bottom-left
+        // corner). Re-enabled per-element below on the pieces that are
+        // actually interactive: the input, the suggestions dropdown, and
+        // each individual message (so its links/buttons still work).
         this.chatContainer.style.cssText = `
           position: fixed;
           bottom: 10px;
@@ -291,6 +297,7 @@ export class Chat {
           display: flex;
           flex-direction: column;
           z-index: 200;
+          pointer-events: none;
           font-family: 'Ubuntu', sans-serif;
           font-weight: 700;
           text-shadow:
@@ -320,6 +327,7 @@ export class Chat {
           padding: 5px;
           background: transparent;
           z-index: 200;
+          pointer-events: auto;
       `;
 
         // Create input field with semi-transparent background
@@ -337,6 +345,7 @@ export class Chat {
           outline: none;
           font-family: inherit;
           z-index: 200;
+          pointer-events: auto;
       `;
 
         // Add event listeners
@@ -433,6 +442,7 @@ export class Chat {
           padding: 5px;
           font-size: 13px;
           z-index: 201;
+          pointer-events: auto;
       `;
 
         this.chatContainer.appendChild(this.chatMessages);
@@ -897,6 +907,7 @@ export class Chat {
           margin: 2px 0;
           font-size: 14px;
           word-wrap: break-word;
+          pointer-events: auto;
       `;
 
         const time = new Date(message.timestamp).toLocaleTimeString();

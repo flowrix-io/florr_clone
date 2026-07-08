@@ -69,7 +69,7 @@ export function applyZoomCompensation(canvas: HTMLCanvasElement, antialiasing: b
  * — e.g. the title screen's uiCanvas — the backing store already *is* the
  * logical space, so no division is applied.
  */
-export function canvasCoords(canvas: HTMLCanvasElement, e: MouseEvent, hidpi: boolean = false): { x: number; y: number } {
+export function canvasCoords(canvas: HTMLCanvasElement, e: { clientX: number; clientY: number }, hidpi: boolean = false): { x: number; y: number } {
     const rect = canvas.getBoundingClientRect();
     const s = hidpi ? baseDPR : 1;
     return {

@@ -101,6 +101,19 @@ class CanvasLoadoutBar {
             h: secondarySize
         };
     }
+    /** Total vertical footprint from the bottom of the canvas (both rows +
+     *  margins/padding), mirroring the math in layout(). Lets other bottom-
+     *  anchored HUD elements (e.g. MobileControls) sit above the bar instead
+     *  of guessing its height. */
+    getTotalHeight() {
+        const s = this.scale;
+        const primarySize = 70 * s;
+        const secondarySize = 50 * s;
+        const primaryMargin = 5 * s;
+        const secondaryMargin = 10 * s;
+        const bottomPad = 34 + secondaryMargin;
+        return bottomPad + secondarySize + secondaryMargin + primaryMargin + primarySize;
+    }
     /** Hit-test screen coordinates against slots and trash. Returns -1 / 0..N-1 / N (trash). */
     hitTest(screenX, screenY) {
         for (let i = 0; i < this.slots.length; i++) {

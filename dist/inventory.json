@@ -1,42 +1,42 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 566672916,
+      "totalXP": 566793498,
       "inventory": {
         "common": {
           "petal_light": 210,
           "petal_dandelion": 62,
           "petal_stinger": 103,
           "petal_yggdrasil": 23,
-          "speed_boost": 278,
+          "speed_boost": 279,
           "petal_sand": 63,
-          "petal_rock": 264,
+          "petal_rock": 265,
           "petal_clover": 76,
           "petal_bone": 97,
           "petal_cactus": 27,
           "petal_iris": 27,
           "petal_poison_cactus": 24,
           "petal_lightning": 77,
-          "petal_missile": 454,
+          "petal_missile": 455,
           "petal_jelly": 58,
-          "petal_leaf": 76,
+          "petal_leaf": 77,
           "petal_cutter": 2,
           "petal_wing": 362,
-          "petal_rose": 315,
+          "petal_rose": 316,
           "petal_basic": 88,
           "petal_square": 46,
           "petal_shield": 1,
           "petal_golden_leaf": 55,
           "petal_yucca": 47,
-          "petal_hornet_egg": 384,
-          "petal_dandelion_egg": 273,
+          "petal_hornet_egg": 385,
+          "petal_dandelion_egg": 274,
           "petal_ladybug_egg": 293,
           "petal_soldier_ant_egg": 300,
-          "petal_dark_ladybug_egg": 284,
-          "petal_bee_egg": 275,
+          "petal_dark_ladybug_egg": 286,
+          "petal_bee_egg": 276,
           "petal_fly_egg": 120,
           "petal_bubble_egg": 53,
-          "petal_rock_egg": 255,
+          "petal_rock_egg": 256,
           "petal_bush_egg": 15,
           "petal_roach_egg": 46,
           "petal_cactus_egg": 28,
@@ -75,12 +75,12 @@
           "petal_powder": 20,
           "petal_desert_centipede_egg": 11,
           "petal_peas": 325,
-          "petal_baby_ant_egg": 80,
+          "petal_baby_ant_egg": 82,
           "petal_worker_ant_egg": 50,
           "petal_worker_fire_ant_egg": 22,
           "petal_baby_fire_ant_egg": 15,
           "petal_soil": 11,
-          "shield": 124,
+          "shield": 125,
           "petal_magnet": 15,
           "petal_air": 11,
           "petal_lentil": 6,
@@ -92,7 +92,7 @@
           "health_potion": 21
         },
         "uncommon": {
-          "petal_light": 119,
+          "petal_light": 120,
           "petal_dandelion": 151,
           "petal_stinger": 72,
           "petal_yggdrasil": 10,
@@ -115,7 +115,7 @@
           "petal_square": 29,
           "petal_golden_leaf": 49,
           "petal_yucca": 27,
-          "petal_hornet_egg": 193,
+          "petal_hornet_egg": 195,
           "petal_dandelion_egg": 146,
           "petal_ladybug_egg": 130,
           "petal_soldier_ant_egg": 163,
@@ -123,7 +123,7 @@
           "petal_bee_egg": 150,
           "petal_fly_egg": 55,
           "petal_bubble_egg": 37,
-          "petal_rock_egg": 145,
+          "petal_rock_egg": 146,
           "petal_bush_egg": 10,
           "petal_roach_egg": 48,
           "petal_cactus_egg": 15,
@@ -141,9 +141,9 @@
           "petal_jellyfish_egg": 20,
           "petal_starfish_egg": 35,
           "petal_sponge_1_egg": 34,
-          "petal_sponge_2_egg": 26,
+          "petal_sponge_2_egg": 27,
           "petal_starfish": 41,
-          "petal_sponge": 51,
+          "petal_sponge": 53,
           "petal_blood_leaf": 10,
           "petal_javascript": 37,
           "petal_glitch": 42,
@@ -157,8 +157,8 @@
           "petal_cube_egg": 22,
           "petal_corn": 17,
           "petal_faster": 77,
-          "petal_shell_egg": 18,
-          "petal_pollen": 26,
+          "petal_shell_egg": 20,
+          "petal_pollen": 27,
           "petal_centipede_egg": 36,
           "petal_powder": 21,
           "petal_desert_centipede_egg": 5,
@@ -169,12 +169,12 @@
           "petal_baby_fire_ant_egg": 10,
           "petal_soil": 15,
           "shield": 224,
-          "petal_magnet": 12,
+          "petal_magnet": 13,
           "petal_air": 18,
           "petal_lentil": 2,
-          "petal_bubble": 9,
+          "petal_bubble": 11,
           "petal_yin_yang": 5,
-          "petal_antennae": 28,
+          "petal_antennae": 29,
           "petal_bomb": 3,
           "health_potion": 10,
           "petal_lightning_cutter": 1,
@@ -279,7 +279,7 @@
           "petal_bulb": 3,
           "petal_soldier_fire_ant_egg": 6,
           "petal_cactus_egg": 4,
-          "petal_sponge": 5,
+          "petal_sponge": 6,
           "petal_sponge_2_egg": 5,
           "petal_sponge_1_egg": 2,
           "petal_glitch_egg": 13,
@@ -289,9 +289,9 @@
           "petal_bush_egg": 1,
           "petal_javascript": 13,
           "petal_glass": 27,
-          "petal_starfish": 6,
+          "petal_starfish": 7,
           "petal_cube_egg": 5,
-          "petal_starfish_egg": 3,
+          "petal_starfish_egg": 4,
           "petal_faster": 35,
           "petal_corn": 9,
           "petal_roach_egg": 2,
@@ -313,7 +313,7 @@
           "petal_sparkle": 1,
           "petal_air": 1,
           "petal_bubble": 1,
-          "petal_magnet": 2
+          "petal_magnet": 3
         },
         "legendary": {
           "speed_boost": 179,
@@ -326,7 +326,7 @@
           "petal_cactus": 17,
           "petal_poison_cactus": 11,
           "petal_iris": 38,
-          "petal_missile": 282,
+          "petal_missile": 284,
           "petal_jelly": 18,
           "shield": 229,
           "petal_leaf": 48,
@@ -338,7 +338,7 @@
           "petal_square": 30,
           "petal_basic": 73,
           "petal_blood_leaf": 19,
-          "petal_dark_ladybug_egg": 144,
+          "petal_dark_ladybug_egg": 145,
           "petal_dandelion_egg": 197,
           "petal_hornet_egg": 293,
           "petal_ladybug_egg": 154,
@@ -362,11 +362,11 @@
           "petal_bulb": 9,
           "petal_mantis_egg": 1,
           "petal_sandstorm_egg": 17,
-          "petal_sponge_2_egg": 19,
+          "petal_sponge_2_egg": 20,
           "petal_starfish": 22,
           "petal_starfish_egg": 18,
           "petal_sponge": 32,
-          "petal_sponge_1_egg": 16,
+          "petal_sponge_1_egg": 18,
           "petal_glitch_egg": 36,
           "petal_glitch": 69,
           "petal_javascript": 58,
@@ -377,7 +377,7 @@
           "petal_glass": 167,
           "petal_shiny_ladybug_egg": 4,
           "petal_cube_egg": 19,
-          "petal_shell_egg": 23,
+          "petal_shell_egg": 25,
           "petal_faster": 61,
           "petal_lightning_cutter": 1,
           "petal_splitter": 1,
@@ -393,11 +393,11 @@
           "petal_worker_ant_egg": 44,
           "petal_baby_ant_egg": 47,
           "petal_yin_yang": 2,
-          "petal_air": 10,
+          "petal_air": 11,
           "petal_lentil": 2,
           "petal_magnet": 4,
           "petal_bubble": 5,
-          "petal_antennae": 24,
+          "petal_antennae": 25,
           "petal_soil": 3,
           "petal_pollen": 14,
           "petal_bomb": 3
@@ -412,7 +412,7 @@
           "health_potion": 56,
           "petal_light": 164,
           "petal_rock": 167,
-          "shield": 216,
+          "shield": 217,
           "petal_dandelion": 189,
           "petal_clover": 113,
           "petal_bone": 189,
@@ -431,7 +431,7 @@
           "petal_golden_leaf": 48,
           "petal_bee_egg": 171,
           "petal_rock_egg": 129,
-          "petal_hornet_egg": 257,
+          "petal_hornet_egg": 259,
           "petal_dark_ladybug_egg": 159,
           "petal_soldier_ant_egg": 264,
           "petal_ladybug_egg": 173,
@@ -445,10 +445,10 @@
           "petal_cactus_egg": 18,
           "petal_hel_beetle_egg": 10,
           "petal_blood_leaf": 2,
-          "petal_jelly": 15,
+          "petal_jelly": 16,
           "petal_jellyfish_egg": 28,
           "petal_soldier_fire_ant_egg": 81,
-          "petal_bubble_egg": 35,
+          "petal_bubble_egg": 36,
           "petal_bulb": 23,
           "petal_sandstorm_egg": 26,
           "petal_shiny_ladybug_egg": 11,
@@ -457,8 +457,8 @@
           "petal_starfish_egg": 41,
           "petal_sponge_2_egg": 14,
           "petal_sponge_1_egg": 19,
-          "petal_sponge": 32,
-          "petal_starfish": 27,
+          "petal_sponge": 34,
+          "petal_starfish": 28,
           "petal_glitch": 43,
           "petal_javascript": 25,
           "petal_javascript_egg": 18,
@@ -470,7 +470,7 @@
           "petal_glass": 164,
           "petal_cube_egg": 20,
           "petal_faster": 74,
-          "petal_shell_egg": 13,
+          "petal_shell_egg": 15,
           "petal_centipede_egg": 57,
           "petal_powder": 36,
           "petal_desert_centipede_egg": 6,
@@ -483,16 +483,16 @@
           "petal_lentil": 7,
           "petal_yin_yang": 1,
           "petal_worker_fire_ant_egg": 7,
-          "petal_magnet": 6,
+          "petal_magnet": 7,
           "petal_bubble": 3,
-          "petal_air": 2,
-          "petal_antennae": 9,
+          "petal_air": 3,
+          "petal_antennae": 10,
           "petal_bomb": 3,
           "petal_raindrop": 1,
           "petal_pollen": 4
         },
         "rare": {
-          "petal_rock": 49,
+          "petal_rock": 51,
           "petal_rose": 98,
           "petal_light": 93,
           "health_potion": 32,
@@ -525,7 +525,7 @@
           "petal_bee_egg": 76,
           "petal_garbage_egg": 39,
           "petal_moth_egg": 39,
-          "petal_rock_egg": 57,
+          "petal_rock_egg": 58,
           "petal_soldier_ant_egg": 104,
           "petal_dandelion_egg": 59,
           "petal_bush_egg": 4,
@@ -536,15 +536,15 @@
           "petal_gas": 76,
           "petal_blood_leaf": 2,
           "petal_roach_egg": 21,
-          "petal_jellyfish_egg": 23,
+          "petal_jellyfish_egg": 24,
           "petal_sandstorm_egg": 11,
           "petal_beetle_egg": 22,
-          "petal_bubble_egg": 10,
+          "petal_bubble_egg": 15,
           "petal_cactus_egg": 14,
-          "petal_starfish_egg": 30,
-          "petal_sponge_1_egg": 12,
-          "petal_sponge_2_egg": 17,
-          "petal_sponge": 17,
+          "petal_starfish_egg": 31,
+          "petal_sponge_1_egg": 13,
+          "petal_sponge_2_egg": 18,
+          "petal_sponge": 20,
           "petal_hel_beetle_egg": 5,
           "petal_javascript": 24,
           "petal_javascript_egg": 9,
@@ -556,17 +556,17 @@
           "petal_shiny_ladybug_egg": 4,
           "petal_cube_egg": 11,
           "petal_faster": 59,
-          "petal_shell_egg": 11,
+          "petal_shell_egg": 12,
           "petal_splitter": 2,
           "petal_centipede_egg": 28,
           "petal_desert_centipede_egg": 8,
-          "petal_peas": 108,
+          "petal_peas": 109,
           "petal_third_eye": 3,
           "petal_powder": 13,
           "petal_baby_ant_egg": 31,
           "petal_worker_ant_egg": 30,
           "petal_worker_fire_ant_egg": 7,
-          "petal_air": 12,
+          "petal_air": 16,
           "petal_baby_fire_ant_egg": 6,
           "petal_soil": 4,
           "petal_corn": 10,
@@ -817,19 +817,20 @@
           "petalType": "jelly"
         }
       ],
-      "tp": 7,
+      "tp": 1,
       "skills": {
         "playerHealth": "ultra",
         "secondChance": "uncommon",
         "healingMultiplier": "epic",
-        "petalHealth": "unique"
+        "petalHealth": "unique",
+        "absorbing": "rare"
       },
       "mobKills": {
         "ladybug": {
-          "common": 1407,
-          "legendary": 807,
-          "uncommon": 478,
-          "mythic": 756,
+          "common": 1408,
+          "legendary": 809,
+          "uncommon": 479,
+          "mythic": 757,
           "rare": 220,
           "ultra": 192,
           "epic": 330,
@@ -843,39 +844,39 @@
           "rare": 463,
           "mythic": 1274,
           "ultra": 145,
-          "uncommon": 598,
+          "uncommon": 600,
           "super": 17,
           "unique": 4,
           "apex": 2
         },
         "rock": {
-          "legendary": 586,
+          "legendary": 587,
           "ultra": 179,
-          "common": 1163,
+          "common": 1165,
           "mythic": 670,
-          "epic": 194,
-          "rare": 222,
-          "uncommon": 443,
+          "epic": 196,
+          "rare": 223,
+          "uncommon": 445,
           "super": 9,
           "unique": 3
         },
         "dark_ladybug": {
-          "common": 1581,
-          "legendary": 595,
-          "mythic": 653,
-          "uncommon": 582,
-          "rare": 229,
-          "epic": 194,
+          "common": 1583,
+          "legendary": 596,
+          "mythic": 655,
+          "uncommon": 583,
+          "rare": 230,
+          "epic": 195,
           "ultra": 230,
           "super": 16,
           "unique": 3
         },
         "hornet": {
-          "common": 1989,
+          "common": 1996,
           "legendary": 1158,
-          "mythic": 1288,
-          "uncommon": 914,
-          "rare": 402,
+          "mythic": 1291,
+          "uncommon": 915,
+          "rare": 405,
           "epic": 357,
           "ultra": 431,
           "super": 15,
@@ -883,20 +884,20 @@
         },
         "dandelion": {
           "legendary": 658,
-          "common": 1111,
+          "common": 1114,
           "mythic": 650,
-          "uncommon": 444,
+          "uncommon": 445,
           "unique": 9,
           "ultra": 210,
-          "rare": 233,
+          "rare": 234,
           "epic": 177,
           "super": 21
         },
         "bee": {
-          "common": 1380,
+          "common": 1387,
           "epic": 276,
-          "mythic": 700,
-          "uncommon": 515,
+          "mythic": 701,
+          "uncommon": 516,
           "legendary": 690,
           "rare": 245,
           "ultra": 198,
@@ -905,23 +906,23 @@
         },
         "bubble": {
           "ultra": 7,
-          "mythic": 123,
-          "legendary": 176,
-          "uncommon": 121,
-          "rare": 72,
-          "common": 107,
-          "epic": 48,
+          "mythic": 125,
+          "legendary": 182,
+          "uncommon": 124,
+          "rare": 75,
+          "common": 112,
+          "epic": 52,
           "super": 4
         },
         "jellyfish": {
-          "uncommon": 140,
+          "uncommon": 142,
           "ultra": 4,
-          "legendary": 148,
+          "legendary": 149,
           "mythic": 168,
           "unique": 1,
-          "epic": 87,
-          "common": 120,
-          "rare": 68,
+          "epic": 92,
+          "common": 121,
+          "rare": 70,
           "super": 3
         },
         "target_dummy": {
@@ -1093,31 +1094,31 @@
           "epic": 1
         },
         "starfish": {
-          "uncommon": 170,
-          "rare": 114,
-          "legendary": 200,
-          "common": 161,
-          "epic": 87,
-          "mythic": 161,
+          "uncommon": 171,
+          "rare": 117,
+          "legendary": 205,
+          "common": 164,
+          "epic": 90,
+          "mythic": 162,
           "super": 5,
           "ultra": 4
         },
         "sponge_1": {
-          "uncommon": 90,
-          "rare": 54,
+          "uncommon": 92,
+          "rare": 57,
           "legendary": 121,
-          "common": 81,
-          "epic": 49,
-          "mythic": 105,
+          "common": 84,
+          "epic": 55,
+          "mythic": 106,
           "ultra": 4,
           "super": 3
         },
         "sponge_2": {
-          "uncommon": 80,
-          "rare": 66,
-          "legendary": 92,
-          "common": 80,
-          "epic": 60,
+          "uncommon": 85,
+          "rare": 67,
+          "legendary": 97,
+          "common": 81,
+          "epic": 62,
           "mythic": 97,
           "ultra": 5,
           "super": 1
@@ -1176,12 +1177,12 @@
           "super": 1
         },
         "shell": {
-          "common": 125,
-          "uncommon": 72,
-          "mythic": 88,
-          "legendary": 78,
-          "rare": 25,
-          "epic": 47,
+          "common": 129,
+          "uncommon": 76,
+          "mythic": 89,
+          "legendary": 80,
+          "rare": 30,
+          "epic": 51,
           "super": 1
         },
         "sun": {
@@ -1190,8 +1191,8 @@
           "uncommon": 7
         },
         "centipede": {
-          "common": 371,
-          "uncommon": 169,
+          "common": 373,
+          "uncommon": 170,
           "legendary": 270,
           "epic": 91,
           "mythic": 329,
@@ -1200,11 +1201,11 @@
           "super": 3
         },
         "centipede_body": {
-          "common": 2582,
-          "uncommon": 1263,
+          "common": 2600,
+          "uncommon": 1272,
           "legendary": 1876,
           "mythic": 1955,
-          "epic": 694,
+          "epic": 699,
           "rare": 676,
           "ultra": 766
         },
@@ -1228,7 +1229,7 @@
           "ultra": 3
         },
         "worker_ant": {
-          "uncommon": 123,
+          "uncommon": 125,
           "rare": 92,
           "epic": 78,
           "legendary": 147,
@@ -1238,7 +1239,7 @@
           "unique": 1
         },
         "baby_ant": {
-          "uncommon": 171,
+          "uncommon": 174,
           "rare": 94,
           "epic": 95,
           "legendary": 138,
@@ -1266,7 +1267,7 @@
           "common": 3
         },
         "ant_hole": {
-          "uncommon": 41,
+          "uncommon": 43,
           "common": 77,
           "legendary": 38,
           "ultra": 18,
@@ -1284,7 +1285,7 @@
           "ultra": 1
         }
       },
-      "stars": 162120,
+      "stars": 162132,
       "dailyStreak": 3,
       "lastStreakDate": "2026-07-08",
       "renderFlags": 0,
@@ -2189,6 +2190,1637 @@
       },
       "renderFlags": 0,
       "equippedSkinId": ""
+    },
+    "r8u38emfp": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "1q2z4csjq": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "ngtzniugl": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "mm5qhgue9": {
+      "totalXP": 30,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5,
+          "petal_missile": 1,
+          "petal_hornet_egg": 1
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "hornet": {
+          "uncommon": 1
+        }
+      },
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "bk6ha597f": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "5x6kheu4q": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "yx8u8bp9f": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "4elbp4yxf": {
+      "totalXP": 10,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "hornet": {
+          "common": 1
+        }
+      },
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "twu2jkcfa": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "b5efg0ri2": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "8v13zd66m": {
+      "totalXP": 10,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "dandelion": {
+          "common": 1
+        }
+      },
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "jinkudhpx": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "sr9xqvi6q": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "sndyqqu6f": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "5x67ln5pu": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "sf4t684it": {
+      "totalXP": 10,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        },
+        "uncommon": {
+          "petal_dark_ladybug_egg": 1
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "dark_ladybug": {
+          "common": 1
+        }
+      },
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "3ij1ccz4m": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "z7slg287h": {
+      "totalXP": 40,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5,
+          "petal_hornet_egg": 1
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "hornet": {
+          "common": 1,
+          "uncommon": 1
+        }
+      },
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "uy4uye8n0": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "4wmp54phs": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "xj783yo9q": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "wz44em5g5": {
+      "totalXP": 30,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5,
+          "petal_antennae": 1,
+          "petal_missile": 1
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "hornet": {
+          "uncommon": 1
+        }
+      },
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "52oscg7kb": {
+      "totalXP": 10,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "centipede": {
+          "common": 1
+        }
+      },
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "bt0ddfsyk": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "jbrfxtgex": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "khsnpczho": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "8nld6h95p": {
+      "totalXP": 10,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5,
+          "petal_hornet_egg": 1,
+          "petal_missile": 1
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "hornet": {
+          "common": 1
+        }
+      },
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "s43ipexk4": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "jibq0f8oe": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "fbe4bf7oy": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "c82o0nn9x": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "ujsgmy5tu": {
+      "totalXP": 10,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {
+        "dandelion": {
+          "common": 1
+        }
+      },
+      "renderFlags": 0,
+      "equippedSkinId": ""
+    },
+    "6ek037yyv": {
+      "totalXP": 0,
+      "dailyStreak": 1,
+      "lastStreakDate": "2026-07-08",
+      "stars": 1,
+      "inventory": {
+        "common": {
+          "petal_basic": 5
+        }
+      },
+      "loadout": [
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        {
+          "type": "petal",
+          "rarity": "common",
+          "petalType": "basic"
+        },
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "tp": 1,
+      "skills": {},
+      "mobKills": {},
+      "renderFlags": 0,
+      "equippedSkinId": ""
     }
   },
   "users": {
@@ -2197,7 +3829,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1783535079209
+      "lastActiveAt": 1783542095821
     },
     "dev": {
       "id": "1g99g1gfk",
@@ -2294,6 +3926,204 @@
       "password": "$2b$12$d44jKCbT817ICIQjubhuwOrI3u/v8EkEBJ7sd6V0x/mi070Y02RQ2",
       "admin": true,
       "lastActiveAt": 1783479316159
+    },
+    "User93307022": {
+      "id": "r8u38emfp",
+      "username": "User93307022",
+      "password": "$2b$12$etwvRGIBqKDwg2mxYgeF/.sqjrd8oONUzpovtVCuU3ZcNlpovGvbC",
+      "lastActiveAt": 1783537518522
+    },
+    "User95493993": {
+      "id": "1q2z4csjq",
+      "username": "User95493993",
+      "password": "$2b$12$dQFF8rZKFhqLuxhiVs3Km.oVwi.HFGUkO3BGJ8oF4tGb6g/24A1Fm",
+      "lastActiveAt": 1783537593658
+    },
+    "User18696981": {
+      "id": "ngtzniugl",
+      "username": "User18696981",
+      "password": "$2b$12$UFd0wEMKphEVusvGVN9n/uG.4x4hAv0kypgf8wtmHI/tewM4OsqrC",
+      "lastActiveAt": 1783537626042
+    },
+    "User8565718": {
+      "id": "mm5qhgue9",
+      "username": "User8565718",
+      "password": "$2b$12$QTtGZk9Tbi4ObRtuMZ9pKOv7MHIQOPEJwQ0crGz1KMmuKRjEZmCcW",
+      "lastActiveAt": 1783537676666
+    },
+    "User25230318": {
+      "id": "bk6ha597f",
+      "username": "User25230318",
+      "password": "$2b$12$gzAjBZNJRpEqxZ9jEUtgWeAK5aDB/v5l8zyvdBFYniuzDi/xrRKUG",
+      "lastActiveAt": 1783537983841
+    },
+    "User18844273": {
+      "id": "5x6kheu4q",
+      "username": "User18844273",
+      "password": "$2b$12$wNpS9Nz.8eJGMO1KJN3DNOABgpg09bSJ/GnW.kZb6tZBHYCwC19F6",
+      "lastActiveAt": 1783538139802
+    },
+    "User72532505": {
+      "id": "yx8u8bp9f",
+      "username": "User72532505",
+      "password": "$2b$12$xxUkaijl.Scdxfqlp5zituwOdq.z/RCRnVB/aBQ.YDsBDXcu22A/a",
+      "lastActiveAt": 1783538279013
+    },
+    "User3396387": {
+      "id": "4elbp4yxf",
+      "username": "User3396387",
+      "password": "$2b$12$u3wRoxyUaDiAqZBaO5xb8u9Pmdih7xdK.gFPSnlz8Z0I6eZq8oC6u",
+      "lastActiveAt": 1783538298909
+    },
+    "User91424398": {
+      "id": "twu2jkcfa",
+      "username": "User91424398",
+      "password": "$2b$12$Po7S9/yXsGYpXWspXET.I.FXA1TYjiNLdPoUvcJc5yaLfEwkpBuza",
+      "lastActiveAt": 1783538308726
+    },
+    "User60559757": {
+      "id": "b5efg0ri2",
+      "username": "User60559757",
+      "password": "$2b$12$qHwhd/Ov1lUiZFPcpMnxPu0kt4wx06LaToFf2hSt3dYYOxG9pXNxS",
+      "lastActiveAt": 1783538319047
+    },
+    "User65267832": {
+      "id": "8v13zd66m",
+      "username": "User65267832",
+      "password": "$2b$12$.PJAmHIExaPTIdmNe/xbpe4HwSAenAxBIIorETNdzGJgwLq./u0eW",
+      "lastActiveAt": 1783538349513
+    },
+    "User37692903": {
+      "id": "jinkudhpx",
+      "username": "User37692903",
+      "password": "$2b$12$CIFhU6zzIcHuYuirwAVHGu9VzfCFk6LU/Kk0M4OyUujjL4CXy.SN2",
+      "lastActiveAt": 1783538359370
+    },
+    "User90494927": {
+      "id": "sr9xqvi6q",
+      "username": "User90494927",
+      "password": "$2b$12$HEH7EvVEbGYFqAgY.GVuleMLYhSeGP7X4StKHnXFxyzyIhKutVlWS",
+      "lastActiveAt": 1783538369728
+    },
+    "User94713628": {
+      "id": "sndyqqu6f",
+      "username": "User94713628",
+      "password": "$2b$12$oeJmtdje5Wog9y./.mkiyOw8G7cRFRIn2TNU07DsJo1AEqNnVRI4C",
+      "lastActiveAt": 1783538379805
+    },
+    "User38751750": {
+      "id": "5x67ln5pu",
+      "username": "User38751750",
+      "password": "$2b$12$lU9gemGShv/SD/wqUpgGC.zJYApnQQSEKeB7/mQi0LefGIJ.INLJC",
+      "lastActiveAt": 1783540033202
+    },
+    "User41949300": {
+      "id": "sf4t684it",
+      "username": "User41949300",
+      "password": "$2b$12$Whq/JzdwCO0oZ/OeGhqhqupZL6JBjigbq2ACUA3qwymUswrcxiDIm",
+      "lastActiveAt": 1783540043214
+    },
+    "User59393633": {
+      "id": "3ij1ccz4m",
+      "username": "User59393633",
+      "password": "$2b$12$6nE21s.zjaCBDnEbFPEcyOKRLWEYyrKHCZsA2qByARIlVJYQVwJxK",
+      "lastActiveAt": 1783540053114
+    },
+    "User53485476": {
+      "id": "z7slg287h",
+      "username": "User53485476",
+      "password": "$2b$12$WXv3W.2JJxfB.lZwDamvLe0NFl93mLzVlUv9gpIzj2hgW9WyWHqiG",
+      "lastActiveAt": 1783540062931
+    },
+    "User27056896": {
+      "id": "uy4uye8n0",
+      "username": "User27056896",
+      "password": "$2b$12$iJ.K3DklL2Ur/MOhIvHxROW.1R0QHP6N4xkskeoU54DcOOuOJ3tj.",
+      "lastActiveAt": 1783540072670
+    },
+    "User26582573": {
+      "id": "4wmp54phs",
+      "username": "User26582573",
+      "password": "$2b$12$X3XVwQE.Xdt/cRwJROsO5edXayfklAYgA3Le0.MwB/9H/mbezYR02",
+      "lastActiveAt": 1783540094111
+    },
+    "User84639149": {
+      "id": "xj783yo9q",
+      "username": "User84639149",
+      "password": "$2b$12$a3OzmLyqycUclg58rjKXiuSWo1x.vnhZKFW8RawvdZgkcyrgWcDP.",
+      "lastActiveAt": 1783540105742
+    },
+    "User60474506": {
+      "id": "wz44em5g5",
+      "username": "User60474506",
+      "password": "$2b$12$rI0HpobbpyesMrALRvNzwevB5yCOnE66f26aXQ6jNDz.5ukwGINYu",
+      "lastActiveAt": 1783540117246
+    },
+    "User91716566": {
+      "id": "52oscg7kb",
+      "username": "User91716566",
+      "password": "$2b$12$/qpHFgXkZpXSfN.mF0/3p.SdEGQxF1sKzs2/Ew71I.j2SikdUZH8.",
+      "lastActiveAt": 1783541270013
+    },
+    "User46896462": {
+      "id": "bt0ddfsyk",
+      "username": "User46896462",
+      "password": "$2b$12$eD7PwoBTYr4/aNnrICK5sOW5997LfL8HRlhK8mwrqVI1veys1iBIK",
+      "lastActiveAt": 1783541298994
+    },
+    "User71751484": {
+      "id": "jbrfxtgex",
+      "username": "User71751484",
+      "password": "$2b$12$ozIaMyxqGDzrZ562CKAueuuMTuJ2mx36pN8EiWah4lJYorUXc3toy",
+      "lastActiveAt": 1783541322613
+    },
+    "User57832061": {
+      "id": "khsnpczho",
+      "username": "User57832061",
+      "password": "$2b$12$KYY.uFT6ZQNR9fB4k/SlJugIMyqh3oVjCbp9ZttRz/YOtioC3tuqq",
+      "lastActiveAt": 1783541348446
+    },
+    "User4422745": {
+      "id": "8nld6h95p",
+      "username": "User4422745",
+      "password": "$2b$12$cn4cAq9CweEZUTTqfTBoneRwlf.GhzCJod95LYdJYsiyn7flwDheu",
+      "lastActiveAt": 1783541373593
+    },
+    "User75507704": {
+      "id": "s43ipexk4",
+      "username": "User75507704",
+      "password": "$2b$12$KPY1OxHvdOQVlIvuZ0sfkuCHpPtHCd/Mbouz.fFszQREabJBnOkwu",
+      "lastActiveAt": 1783541383705
+    },
+    "User65366956": {
+      "id": "jibq0f8oe",
+      "username": "User65366956",
+      "password": "$2b$12$khTgszI14qDZpOe0POCpyeDqPA5ac8IcxbuIjCocqMXr3cCPh6jPi",
+      "lastActiveAt": 1783541393826
+    },
+    "User63311246": {
+      "id": "fbe4bf7oy",
+      "username": "User63311246",
+      "password": "$2b$12$DLJjMFNjW3q8Wd8dEgGlAudwrKBB1XbXRxRRKM8YjoXOnvwDiOomS",
+      "lastActiveAt": 1783541776083
+    },
+    "User41301783": {
+      "id": "c82o0nn9x",
+      "username": "User41301783",
+      "password": "$2b$12$/6NGrZmUoMg2PWYideLEh.YiBf9SWrPVnW67oMvkSpQtW9zXrxv6G",
+      "lastActiveAt": 1783541800674
+    },
+    "User84257291": {
+      "id": "ujsgmy5tu",
+      "username": "User84257291",
+      "password": "$2b$12$D2uQg8taVi.yQxA9P6CBSehLkwhsogh73/.jXtyLgXyP17GcqOCiu",
+      "lastActiveAt": 1783541813490
+    },
+    "User26918114": {
+      "id": "6ek037yyv",
+      "username": "User26918114",
+      "password": "$2b$12$1HVoQlzMjTDGtEOA3/BfWOtEVHkK4yiNWZl1JSmCIHBJvKOgXIGua",
+      "lastActiveAt": 1783541825812
     }
   },
   "codes": {},

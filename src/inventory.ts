@@ -1,7 +1,7 @@
 import { Item, ItemWithRarity } from './item';
 import { Player } from './player';
 import { Socket } from './socket';
-import { getPetalStats, ITEM_RARITY_COLORS, ABSORB_XP } from './petals';
+import { getPetalStats, ITEM_RARITY_COLORS, ABSORB_XP, ABSORBING_SKILL_MULTIPLIERS } from './petals';
 import { Chat } from './chat';
 import { inventoryToDict, addItem as codecAddItem, removeItem as codecRemoveItem, getItemCount as codecGetItemCount, RARITY_TO_ID, ITEM_KEY_TO_ID } from './inventoryCodec';
 import { CanvasInventoryPanel, InventoryHitInfo } from './graphics/inventory-panel';
@@ -1920,8 +1920,9 @@ export class InventoryManager {
         }));
         this.canvasCraftingPanel.setCraftingItems(craftingItemsForCanvas);
         this.canvasCraftingPanel.setSuccessChance(this.calculateSuccessChance());
+        const absorbingMultiplier = ABSORBING_SKILL_MULTIPLIERS[player.skills?.absorbing || ''] || 1.0;
         this.canvasCraftingPanel.setAbsorbXpPreview(
-            this.craftingItems.reduce((sum, it) => sum + (ABSORB_XP[it.rarity || ''] || 0), 0)
+            Math.round(this.craftingItems.reduce((sum, it) => sum + (ABSORB_XP[it.rarity || ''] || 0), 0) * absorbingMultiplier)
         );
     }
 

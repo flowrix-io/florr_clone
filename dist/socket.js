@@ -784,7 +784,7 @@ function setupSocketListeners(game) {
         loadoutUpdateTimeout = setTimeout(() => {
             loadoutUpdateTimeout = null;
             if (game.isInventoryOpen) {
-                game.updateInventoryDisplay();
+                game.inventoryManager.updateInventoryDisplay();
             }
             if (game.inventoryManager) {
                 game.inventoryManager.updateLoadoutDisplay();
@@ -872,7 +872,7 @@ function setupSocketListeners(game) {
             registerPickupAnim(data.itemId, data.playerId);
             if (data.playerId === game.socket.id) {
                 if (game.isInventoryOpen) {
-                    game.updateInventoryDisplay();
+                    game.inventoryManager.updateInventoryDisplay();
                 }
             }
         }
@@ -883,7 +883,7 @@ function setupSocketListeners(game) {
             player.inventory = inventory;
             // Update inventory display if it's open
             if (game.isInventoryOpen) {
-                game.updateInventoryDisplay();
+                game.inventoryManager.updateInventoryDisplay();
             }
         }
     });
@@ -984,7 +984,7 @@ function setupSocketListeners(game) {
             // Update displays if this is the current player
             if (updatedPlayer.id === game.socket?.id) {
                 if (game.isInventoryOpen && inventoryChanged) {
-                    game.updateInventoryDisplay();
+                    game.inventoryManager.updateInventoryDisplay();
                 }
                 // Only update loadout display if loadout actually changed
                 if (game.inventoryManager && loadoutChanged) {

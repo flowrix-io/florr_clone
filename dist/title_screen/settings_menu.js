@@ -5,6 +5,7 @@ exports.getControls = getControls;
 const constants_1 = require("../constants");
 const render_utils_1 = require("./render_utils");
 const zoom_compensation_1 = require("../zoom-compensation");
+const mobile_controls_1 = require("../graphics/mobile-controls");
 /**
  * Push the persisted renderScale + antialiasing settings to the live game's
  * canvas so changes apply without a reload. Called on slider drag and
@@ -81,6 +82,7 @@ class SettingsMenu {
         this.debugMenuEnabled = false;
         this.numberKeysUseItems = false;
         this.useMouseControls = false;
+        this.requestMobile = false;
         this.antialiasing = true;
         this.renderScale = 1.0;
         this.serverIP = '';
@@ -116,6 +118,7 @@ class SettingsMenu {
         this.debugMenuEnabled = localStorage.getItem('debugMenuEnabled') === 'true';
         this.numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
         this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
+        this.requestMobile = (0, mobile_controls_1.resolveMobileControlsEnabled)();
         this.antialiasing = localStorage.getItem('antialiasing') !== 'false';
         const savedScale = parseFloat(localStorage.getItem('renderScale') || '1');
         this.renderScale = isNaN(savedScale) ? 1 : Math.max(0.25, Math.min(1, savedScale));
@@ -277,6 +280,8 @@ class SettingsMenu {
             this.drawCheckbox(ctx, contentX, cy, 22, this.numberKeysUseItems, 'Number Keys Use Items (off = swap loadout)', this.hoveredItem === 'cb_numberKeysUseItems');
             cy += rowH;
             this.drawCheckbox(ctx, contentX, cy, 22, this.useMouseControls, 'Use Mouse Controls (K toggles in-game)', this.hoveredItem === 'cb_useMouseControls');
+            cy += rowH;
+            this.drawCheckbox(ctx, contentX, cy, 22, this.requestMobile, 'Request Mobile (touch joystick & attack/retract buttons)', this.hoveredItem === 'cb_requestMobile');
             cy += rowH;
         }
         else if (this.tab === 'advanced') {
@@ -519,6 +524,11 @@ class SettingsMenu {
                 this.toggleCheckbox('useMouseControls');
                 return true;
             }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleCheckbox('requestMobile');
+                return true;
+            }
         }
         else if (this.tab === 'advanced') {
             cy += 25;
@@ -654,6 +664,11 @@ class SettingsMenu {
             cy += rowH;
             if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                 this.hoveredItem = 'cb_useMouseControls';
+                return;
+            }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'cb_requestMobile';
                 return;
             }
         }
@@ -873,6 +888,11 @@ class SettingsMenu {
             case 'useMouseControls':
                 this.useMouseControls = !this.useMouseControls;
                 localStorage.setItem('useMouseControls', this.useMouseControls.toString());
+                break;
+            case 'requestMobile':
+                this.requestMobile = !this.requestMobile;
+                localStorage.setItem('requestMobile', this.requestMobile.toString());
+                window.currentGame?.setMobileControlsEnabled(this.requestMobile);
                 break;
         }
     }

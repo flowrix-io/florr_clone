@@ -599,6 +599,38 @@ class Graphics {
         document.addEventListener('mouseup', () => {
             buttons.release();
         });
+        // Touch equivalents of the capture-phase mouse handlers above. Needed
+        // because mobile browsers only synthesize mousedown/mouseup once,
+        // right after touchend — too late to show a "pressed" state or
+        // reliably register a tap, so these buttons need real touch events.
+        const toLocalTouch = (t) => {
+            const r = this.canvas.getBoundingClientRect();
+            const s = (0, zoom_compensation_1.getBaseDeviceScale)();
+            return {
+                x: (t.clientX - r.left) * (this.canvas.width / r.width) / s,
+                y: (t.clientY - r.top) * (this.canvas.height / r.height) / s,
+            };
+        };
+        this.canvas.addEventListener('touchstart', (e) => {
+            const { x, y } = toLocalTouch(e.changedTouches[0]);
+            if (buttons.press(x, y)) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+            }
+        }, { capture: true, passive: false });
+        this.canvas.addEventListener('touchend', (e) => {
+            const { x, y } = toLocalTouch(e.changedTouches[0]);
+            if (buttons.releaseClick(x, y)) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+            }
+        }, { capture: true, passive: false });
+        document.addEventListener('touchend', () => {
+            buttons.release();
+        });
+        document.addEventListener('touchcancel', () => {
+            buttons.release();
+        });
     }
     setupItemSprites(itemSprites) {
         this.itemSprites = itemSprites;

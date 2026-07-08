@@ -1,6 +1,7 @@
 import { invalidateSettingsCache } from '../constants';
 import { drawRoundedRect, hsvAdjust, drawGardnButton } from './render_utils';
 import { applyZoomCompensation } from '../zoom-compensation';
+import { resolveMobileControlsEnabled } from '../graphics/mobile-controls';
 
 /**
  * Push the persisted renderScale + antialiasing settings to the live game's
@@ -81,6 +82,7 @@ export class SettingsMenu {
     private debugMenuEnabled = false;
     private numberKeysUseItems = false;
     private useMouseControls = false;
+    private requestMobile = false;
     private antialiasing = true;
     private renderScale = 1.0;
     private serverIP = '';
@@ -122,6 +124,7 @@ export class SettingsMenu {
         this.debugMenuEnabled = localStorage.getItem('debugMenuEnabled') === 'true';
         this.numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
         this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
+        this.requestMobile = resolveMobileControlsEnabled();
         this.antialiasing = localStorage.getItem('antialiasing') !== 'false';
         const savedScale = parseFloat(localStorage.getItem('renderScale') || '1');
         this.renderScale = isNaN(savedScale) ? 1 : Math.max(0.25, Math.min(1, savedScale));
@@ -311,6 +314,8 @@ export class SettingsMenu {
             this.drawCheckbox(ctx, contentX, cy, 22, this.numberKeysUseItems, 'Number Keys Use Items (off = swap loadout)', this.hoveredItem === 'cb_numberKeysUseItems');
             cy += rowH;
             this.drawCheckbox(ctx, contentX, cy, 22, this.useMouseControls, 'Use Mouse Controls (K toggles in-game)', this.hoveredItem === 'cb_useMouseControls');
+            cy += rowH;
+            this.drawCheckbox(ctx, contentX, cy, 22, this.requestMobile, 'Request Mobile (touch joystick & attack/retract buttons)', this.hoveredItem === 'cb_requestMobile');
             cy += rowH;
 
         } else if (this.tab === 'advanced') {
@@ -573,6 +578,11 @@ export class SettingsMenu {
                 this.toggleCheckbox('useMouseControls');
                 return true;
             }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.toggleCheckbox('requestMobile');
+                return true;
+            }
         } else if (this.tab === 'advanced') {
             cy += 25;
             const ipInputH = 32;
@@ -713,6 +723,11 @@ export class SettingsMenu {
             cy += rowH;
             if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                 this.hoveredItem = 'cb_useMouseControls';
+                return;
+            }
+            cy += rowH;
+            if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
+                this.hoveredItem = 'cb_requestMobile';
                 return;
             }
         } else if (this.tab === 'advanced') {
@@ -934,6 +949,11 @@ export class SettingsMenu {
             case 'useMouseControls':
                 this.useMouseControls = !this.useMouseControls;
                 localStorage.setItem('useMouseControls', this.useMouseControls.toString());
+                break;
+            case 'requestMobile':
+                this.requestMobile = !this.requestMobile;
+                localStorage.setItem('requestMobile', this.requestMobile.toString());
+                window.currentGame?.setMobileControlsEnabled(this.requestMobile);
                 break;
         }
     }

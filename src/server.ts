@@ -41,7 +41,7 @@ if (invalidEggTypes.size > 0) {
 import { ServerPlayer, PlayerInventory, FaceFlags } from './player';
 import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets, cleanupPlayerPetalActionState } from './petal_actions';
-import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType, ABSORB_XP } from './petals';
+import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType, ABSORB_XP, ABSORBING_SKILL_MULTIPLIERS } from './petals';
 import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, MAX_SPEED, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
 import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
@@ -1225,7 +1225,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             }
 
             // Initialize skills from saved progress or defaults
-            const savedSkills: { damage?: string; petalHealth?: string; playerHealth?: string; healingMultiplier?: string } = 
+            const savedSkills: { damage?: string; petalHealth?: string; playerHealth?: string; healingMultiplier?: string; absorbing?: string } =
                 (savedProgress as any)?.skills || {};
             
             // Check if TP was explicitly saved in the database
@@ -1245,8 +1245,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 }
                 return total;
             };
-            const spentTP = countSpentTP(savedSkills.damage) + countSpentTP(savedSkills.petalHealth) + 
-                          countSpentTP(savedSkills.playerHealth) + countSpentTP(savedSkills.healingMultiplier);
+            const spentTP = countSpentTP(savedSkills.damage) + countSpentTP(savedSkills.petalHealth) +
+                          countSpentTP(savedSkills.playerHealth) + countSpentTP(savedSkills.healingMultiplier) +
+                          countSpentTP(savedSkills.absorbing);
             
             // Use savedTP if it was explicitly saved (authoritative), otherwise calculate from level - spentTP
             // This prevents TP duplication when refreshing/re-authenticating
@@ -3318,7 +3319,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
 
         // Validate skill ID
-        const validSkills = ['damage', 'petalHealth', 'playerHealth', 'healingMultiplier', 'secondChance'];
+        const validSkills = ['damage', 'petalHealth', 'playerHealth', 'healingMultiplier', 'secondChance', 'absorbing'];
         if (!validSkills.includes(data.skillId)) {
             socket.emit('skillUpgradeError', { message: 'Invalid skill ID' });
             return;
@@ -3680,6 +3681,9 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 absorbedCount += entry.count;
             }
             if (xpGained > 0) {
+                // Absorption skill talent boosts Absorb-tab XP, up to 800% at apex.
+                const absorbingMultiplier = ABSORBING_SKILL_MULTIPLIERS[player.skills?.absorbing || ''] || 1.0;
+                xpGained = Math.round(xpGained * absorbingMultiplier);
                 addXPToPlayer(player, xpGained, socket.id);
             }
 

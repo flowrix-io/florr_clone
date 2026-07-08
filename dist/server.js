@@ -978,7 +978,8 @@ io.on('connection', (socket) => {
                 return total;
             };
             const spentTP = countSpentTP(savedSkills.damage) + countSpentTP(savedSkills.petalHealth) +
-                countSpentTP(savedSkills.playerHealth) + countSpentTP(savedSkills.healingMultiplier);
+                countSpentTP(savedSkills.playerHealth) + countSpentTP(savedSkills.healingMultiplier) +
+                countSpentTP(savedSkills.absorbing);
             // Use savedTP if it was explicitly saved (authoritative), otherwise calculate from level - spentTP
             // This prevents TP duplication when refreshing/re-authenticating
             const currentTP = hasSavedTP ? savedTP : Math.max(0, level - spentTP);
@@ -3017,7 +3018,7 @@ io.on('connection', (socket) => {
             return;
         }
         // Validate skill ID
-        const validSkills = ['damage', 'petalHealth', 'playerHealth', 'healingMultiplier', 'secondChance'];
+        const validSkills = ['damage', 'petalHealth', 'playerHealth', 'healingMultiplier', 'secondChance', 'absorbing'];
         if (!validSkills.includes(data.skillId)) {
             socket.emit('skillUpgradeError', { message: 'Invalid skill ID' });
             return;
@@ -3333,6 +3334,9 @@ io.on('connection', (socket) => {
                 absorbedCount += entry.count;
             }
             if (xpGained > 0) {
+                // Absorption skill talent boosts Absorb-tab XP, up to 800% at apex.
+                const absorbingMultiplier = petals_1.ABSORBING_SKILL_MULTIPLIERS[player.skills?.absorbing || ''] || 1.0;
+                xpGained = Math.round(xpGained * absorbingMultiplier);
                 addXPToPlayer(player, xpGained, socket.id);
             }
             socket.emit('itemsAbsorbed', {

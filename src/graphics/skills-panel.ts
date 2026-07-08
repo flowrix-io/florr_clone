@@ -3,7 +3,7 @@
 // playerHealth, healingMultiplier), each branch a chain of nine rarity tiers
 // connected by dashed lines. The center of the panel hosts a small flower-face
 // avatar representing the player; the bottom-right shows derived stat lines.
-import { RARITY_LEVELS, getRarityIndex, Rarity, ITEM_RARITY_COLORS } from '../petals';
+import { RARITY_LEVELS, getRarityIndex, Rarity, ITEM_RARITY_COLORS, ABSORBING_SKILL_MULTIPLIERS } from '../petals';
 
 interface GameAPI {
     getLocalPlayer(): any;
@@ -45,7 +45,7 @@ interface SkillDef {
     id: string;
     name: string;
     /** Glyph drawn inside the node. */
-    icon: 'cross' | 'swirl' | 'curve' | 'heart' | 'shield';
+    icon: 'cross' | 'swirl' | 'curve' | 'heart' | 'shield' | 'vortex';
     /** Maximum number of tiers for this skill (defaults to full 9 if omitted). */
     maxTiers?: number;
     /** If true the branch spirals inward at the end instead of continuing
@@ -63,11 +63,19 @@ interface SkillDef {
     prerequisiteRarity?: string;
 }
 
+// Custom tooltip text for each Absorption tier, generated from
+// ABSORBING_SKILL_MULTIPLIERS so the displayed percentage always matches the
+// actual XP bonus applied server-side.
+const ABSORBING_TIER_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
+    RARITY_LEVELS.map(r => [r, `${Math.round(ABSORBING_SKILL_MULTIPLIERS[r] * 100)}% absorb XP`])
+);
+
 const SKILLS: SkillDef[] = [
     { id: 'damage', name: 'Damage', icon: 'swirl', spiral: true },
     { id: 'petalHealth', name: 'Petal Health', icon: 'curve', spiral: true },
     { id: 'playerHealth', name: 'Flower Health', icon: 'cross', spiral: true },
     { id: 'healingMultiplier', name: 'Healing', icon: 'heart', maxTiers: 4 },
+    { id: 'absorbing', name: 'Absorption', icon: 'vortex', tierDescriptions: ABSORBING_TIER_DESCRIPTIONS },
     {
         id: 'secondChance',
         name: 'Second Chance',
@@ -705,6 +713,23 @@ export class CanvasSkillsPanel {
                 ctx.lineTo(cx + s * 0.8, cy + s * 0.1);    // upper-right
                 ctx.closePath();
                 ctx.fill();
+                break;
+            }
+            case 'vortex': {
+                // Inward spiral — represents absorbing/drawing-in.
+                ctx.beginPath();
+                const turns = 1.75;
+                const steps = 24;
+                for (let i = 0; i <= steps; i++) {
+                    const t = i / steps;
+                    const a = t * Math.PI * 2 * turns;
+                    const r = size * 0.36 * (1 - t * 0.85);
+                    const px = cx + Math.cos(a) * r;
+                    const py = cy + Math.sin(a) * r;
+                    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                }
+                ctx.lineWidth = size * 0.16;
+                ctx.stroke();
                 break;
             }
         }

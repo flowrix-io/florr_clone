@@ -1753,7 +1753,8 @@ class InventoryManager {
         }));
         this.canvasCraftingPanel.setCraftingItems(craftingItemsForCanvas);
         this.canvasCraftingPanel.setSuccessChance(this.calculateSuccessChance());
-        this.canvasCraftingPanel.setAbsorbXpPreview(this.craftingItems.reduce((sum, it) => sum + (petals_1.ABSORB_XP[it.rarity || ''] || 0), 0));
+        const absorbingMultiplier = petals_1.ABSORBING_SKILL_MULTIPLIERS[player.skills?.absorbing || ''] || 1.0;
+        this.canvasCraftingPanel.setAbsorbXpPreview(Math.round(this.craftingItems.reduce((sum, it) => sum + (petals_1.ABSORB_XP[it.rarity || ''] || 0), 0) * absorbingMultiplier));
     }
     showCraftingSuccess(newItem, successCount, petalsReturned = 0) {
         console.log('[INVENTORY] showCraftingSuccess called:', { newItem, successCount, petalsReturned });

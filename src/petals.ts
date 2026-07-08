@@ -112,6 +112,22 @@ export const ABSORB_XP: Record<string, number> = {
     apex: 98415
 };
 
+// Per-tier multiplier for the "Absorption" skill talent, applied to ABSORB_XP
+// when absorbing petals in the maze. Geometric progression (×~1.26/tier) so
+// apex lands on exactly 800% (8x).
+export const ABSORBING_SKILL_MULTIPLIERS: Record<string, number> = {
+    common: 1.0,
+    uncommon: 1.26,
+    rare: 1.59,
+    epic: 2.0,
+    legendary: 2.52,
+    mythic: 3.17,
+    ultra: 4.0,
+    super: 5.04,
+    unique: 6.35,
+    apex: 8.0
+};
+
 // Canonical UI rarity colors — single source of truth for all panels/UI
 export const ITEM_RARITY_COLORS: Record<string, string> = {
     common: '#7eef6d',

@@ -16,6 +16,7 @@ const tutorial_1 = require("./tutorial");
 const debug_menu_1 = require("./debug_menu");
 const asset_loader_1 = require("./asset_loader");
 const loadout_bar_1 = require("./graphics/loadout-bar");
+const mobile_controls_1 = require("./graphics/mobile-controls");
 class Game {
     get isInventoryOpen() {
         return this.inventoryManager?.getIsInventoryOpen() ?? false;
@@ -53,6 +54,8 @@ class Game {
         this.isPlayerDead = false;
         // Add control mode property
         this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
+        this.mobileControlsEnabled = (0, mobile_controls_1.resolveMobileControlsEnabled)();
+        this.mobileControls = new mobile_controls_1.MobileControls();
         this.mouseX = 0;
         this.mouseY = 0;
         this.normalizedMouseXOnScreen = 0;
@@ -131,6 +134,8 @@ class Game {
         this.showHitboxes = showHitboxes;
         this.showStats = showStats;
         this.interpolationAmount = parseFloat(localStorage.getItem('interpolationAmount') || '0.15');
+        const savedZoom = parseFloat(localStorage.getItem('zoomLevel') || '');
+        this.zoomLevel = isNaN(savedZoom) ? 1.0 : Math.max(this.MIN_ZOOM, Math.min(this.MAX_ZOOM, savedZoom));
         this.loadControls();
         console.log('[Game] Constructor called, using preloaded assets:', !!preloadedAssets, 'show stats:', showStats, 'dynamic skybox:', dynamicSkybox);
         // Initialize asset loader
@@ -382,6 +387,42 @@ class Game {
                 event.preventDefault();
             }
         }, { passive: false, signal: this.abortController.signal });
+        // Touch controls for the mobile joystick + attack/retract buttons.
+        // Only active when Request Mobile is on; preventDefault stops the
+        // page from scrolling/pinch-zooming while dragging the joystick.
+        // Touches landing on the icon-button strip are intercepted earlier
+        // (capture phase, see Graphics.setTitleCanvasButtons) and never reach
+        // here via stopImmediatePropagation.
+        const touchPoints = (touches) => {
+            const points = [];
+            for (let i = 0; i < touches.length; i++) {
+                const t = touches[i];
+                const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.canvas, t, true);
+                points.push({ identifier: t.identifier, x, y });
+            }
+            return points;
+        };
+        this.canvas.addEventListener('touchstart', (event) => {
+            if (!this.mobileControlsEnabled)
+                return;
+            event.preventDefault();
+            this.mobileControls.handleTouchStart(touchPoints(event.changedTouches));
+        }, { passive: false, signal: this.abortController.signal });
+        this.canvas.addEventListener('touchmove', (event) => {
+            if (!this.mobileControlsEnabled)
+                return;
+            event.preventDefault();
+            this.mobileControls.handleTouchMove(touchPoints(event.changedTouches));
+        }, { passive: false, signal: this.abortController.signal });
+        const endTouches = (event) => {
+            if (!this.mobileControlsEnabled)
+                return;
+            event.preventDefault();
+            const ids = Array.from(event.changedTouches).map(t => ({ identifier: t.identifier }));
+            this.mobileControls.handleTouchEnd(ids);
+        };
+        this.canvas.addEventListener('touchend', endTouches, { passive: false, signal: this.abortController.signal });
+        this.canvas.addEventListener('touchcancel', endTouches, { passive: false, signal: this.abortController.signal });
         // Initialize exit button
         this.exitButton = document.getElementById('exitButton');
         // Add exit button click handler
@@ -437,6 +478,10 @@ class Game {
         // Add to constructor after other UI initialization
         this.inventoryManager = new inventory_1.InventoryManager(this, this.chat);
         this.loadoutBar = new loadout_bar_1.CanvasLoadoutBar(this, 0.75);
+        // resizeCanvas() ran before loadoutBar existed, so mobileControls laid
+        // out using a 0 clearance above it — redo it now that its real height
+        // is available, so the joystick/buttons don't start out overlapping it.
+        this.mobileControls.layout(this.graphics.viewW, this.graphics.viewH, this.loadoutBar.getTotalHeight());
         this.skillsManager = new skills_1.SkillsManager(this);
         this.shopManager = new shop_1.ShopManager(this);
         this.assetLoader.loadAssets();
@@ -838,9 +883,14 @@ class Game {
     }
     zoomIn() {
         this.zoomLevel = Math.min(this.zoomLevel + this.ZOOM_STEP, this.MAX_ZOOM);
+        localStorage.setItem('zoomLevel', this.zoomLevel.toString());
     }
     zoomOut() {
         this.zoomLevel = Math.max(this.zoomLevel - this.ZOOM_STEP, this.MIN_ZOOM);
+        localStorage.setItem('zoomLevel', this.zoomLevel.toString());
+    }
+    setMobileControlsEnabled(enabled) {
+        this.mobileControlsEnabled = enabled;
     }
     updateCamera(player) {
         if (this.isAnimatingViewport) {
@@ -1002,6 +1052,9 @@ class Game {
             else
                 this.loadoutBar.hide();
             this.loadoutBar.draw(this.graphics.ctx, { x: 0, y: 0, width: this.graphics.viewW, height: this.graphics.viewH });
+        }
+        if (this.mobileControlsEnabled) {
+            this.mobileControls.draw(this.graphics.ctx);
         }
         if (this.showStats) {
             this.renderStatsOverlay();
@@ -1202,10 +1255,12 @@ class Game {
         const extensionSpeed = 12.0 * dt; // How fast petals extend/retract
         const maxExtension = 2.0; // Maximum extension multiplier
         const minExtension = 0.7; // Minimum extension multiplier
-        // Check for space key or left mouse button (button 0)
-        const extendPressed = this.keysPressed.has(' ') || this.mouseButtonsPressed.has(0);
-        // Check for shift key or right mouse button (button 2)
-        const retractPressed = this.keysPressed.has('Shift') || this.mouseButtonsPressed.has(2);
+        // Check for space key, left mouse button (button 0), or the mobile Attack button
+        const extendPressed = this.keysPressed.has(' ') || this.mouseButtonsPressed.has(0) ||
+            (this.mobileControlsEnabled && this.mobileControls.isAttackPressed());
+        // Check for shift key, right mouse button (button 2), or the mobile Retract button
+        const retractPressed = this.keysPressed.has('Shift') || this.mouseButtonsPressed.has(2) ||
+            (this.mobileControlsEnabled && this.mobileControls.isRetractPressed());
         if (extendPressed) {
             // Space key or left mouse - extend petals
             this.petalExtension = Math.min(maxExtension, this.petalExtension + extensionSpeed);
@@ -1249,8 +1304,23 @@ class Game {
             viewportWidth: this.graphics.viewW / this.getEffectiveZoom(),
             viewportHeight: this.graphics.viewH / this.getEffectiveZoom()
         };
-        // Calculate mouse movement direction on client when mouse controls are enabled
-        if (this.useMouseControls && !isAnyMenuOpen) {
+        // Mobile joystick: reuses the same direction-vector + speed-multiplier
+        // wire format as "Use Mouse Controls" (see computePredictionTarget and
+        // the server's playerState.ts consumer), just fed from touch instead
+        // of mouse-vs-center-of-screen.
+        if (this.mobileControlsEnabled && !isAnyMenuOpen) {
+            const jv = this.mobileControls.getJoystickVector();
+            if (jv) {
+                inputData.useMouse = true;
+                inputData.mouseDirectionX = jv.x;
+                inputData.mouseDirectionY = jv.y;
+                inputData.mouseSpeedMultiplier = Math.max(Math.pow(jv.magnitude, constants_1.MOUSE_NONLINEAR_EXPONENT), 0.15);
+            }
+            else {
+                inputData.useMouse = false;
+            }
+        }
+        else if (this.useMouseControls && !isAnyMenuOpen) {
             // Always use the stored target position (in world coordinates)
             // This ensures the target doesn't drift as the camera moves
             if (this.hasValidMouseTarget &&
@@ -1709,6 +1779,7 @@ class Game {
             // size the low-res render buffer off it.
             this.graphics.syncViewMetrics();
             this.graphics.syncWorldCanvasSize();
+            this.mobileControls.layout(this.graphics.viewW, this.graphics.viewH, this.loadoutBar?.getTotalHeight() ?? 0);
         }
         if (this.graphics?.ctx) {
             this.graphics.ctx.imageSmoothingEnabled = antialiasing;

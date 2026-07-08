@@ -85,6 +85,7 @@ export interface Player {
     playerHealth?: string;
     healingMultiplier?: string;
     secondChance?: string; // Invulnerability when reaching 1 HP
+    absorbing?: string; // Boosts maze Absorb-tab XP, up to 800% at apex
   };
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
@@ -122,6 +123,7 @@ export interface PlayerProgress {
     playerHealth?: string;
     healingMultiplier?: string;
     secondChance?: string; // Invulnerability when reaching 1 HP
+    absorbing?: string; // Boosts maze Absorb-tab XP, up to 800% at apex
   };
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
@@ -185,6 +187,7 @@ export interface ServerPlayer {
     playerHealth?: string;
     healingMultiplier?: string;
     secondChance?: string; // Invulnerability when reaching 1 HP
+    absorbing?: string; // Boosts maze Absorb-tab XP, up to 800% at apex
   };
   secondChanceCooldownUntil?: number; // Timestamp when second chance cooldown expires
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
