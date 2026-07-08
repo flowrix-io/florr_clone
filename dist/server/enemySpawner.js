@@ -17,6 +17,7 @@ const constants_1 = require("../constants");
 const gameState_1 = require("./gameState");
 const constants_2 = require("../constants");
 const map_data_1 = require("../map_data");
+const maze_1 = require("../maze");
 const mobs_1 = require("../mobs");
 const apiKeyApi_1 = require("./apiKeyApi");
 const playerManager_1 = require("./playerManager");
@@ -329,8 +330,10 @@ function createEnemy(helpers) {
     }
     // Pick the player with the fewest enemies in their viewport to balance density.
     // Only real (human) players drive spawning — bots shouldn't trigger mob spawns
-    // of their own, otherwise the world fills up with enemies per bot.
-    const realPlayerIds = Object.keys(constants_1.players).filter(id => !id.startsWith('bot_'));
+    // of their own, otherwise the world fills up with enemies per bot. Maze players
+    // are excluded too: the maze has its own spawner (mazeSpawner.ts) and their
+    // far-away coordinates would only burn spawn attempts here.
+    const realPlayerIds = Object.keys(constants_1.players).filter(id => !id.startsWith('bot_') && !constants_1.players[id]?.inMaze);
     if (realPlayerIds.length === 0) {
         return null;
     }
@@ -1168,6 +1171,11 @@ function updateSpecialMobCounts() {
     const activeSuperSections = new Set();
     for (const enemy of constants_1.enemies) {
         if (enemy.type === 'target_dummy')
+            continue;
+        // Maze bosses are managed by mazeSpawner — counting them here would
+        // suppress the main world's ultra/super spawns while the maze is
+        // populated.
+        if ((0, maze_1.isInMazeRegion)(enemy.x, enemy.y))
             continue;
         if (enemy.tier === 'ultra')
             ultra++;

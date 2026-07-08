@@ -39,9 +39,9 @@ if (invalidEggTypes.size > 0) {
 }
 
 import { ServerPlayer, PlayerInventory, FaceFlags } from './player';
-import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY } from './inventoryCodec';
+import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY, ITEM_KEY_TO_ID } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets, cleanupPlayerPetalActionState } from './petal_actions';
-import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType } from './petals';
+import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType, ABSORB_XP } from './petals';
 import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, MAX_SPEED, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
 import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
@@ -159,8 +159,20 @@ import {
     addXPToPlayer as addXPToPlayerModule,
     savePlayerProgress as savePlayerProgressModule,
     recalculatePlayerStats,
-    enterPvpArena
+    enterPvpArena,
+    getMazeSpawnPosition,
+    enforceMazeLoadoutCap,
+    applyMazeRarityShift,
+    consumeMazeFloorBaseline
 } from './server/playerManager';
+import {
+    getActiveMaze,
+    setActiveMazeDay,
+    getCurrentMazeDay,
+    isInMazeRegion,
+    MAZE_MAX_PETAL_RARITY_INDEX
+} from './maze';
+import { spawnMazeMobs, spawnMazeBosses, clearMazeEnemies, invalidateMazeMobPool } from './server/mazeSpawner';
 import { setupTransferEndpoints, transferPlayerToServer as transferPlayerToServerModule } from './server/crossServer';
 import {
     createEnemy as createEnemyModule,
@@ -176,6 +188,11 @@ import { updateSpawnZones } from './server/spawnZoneManager';
 import { rebuildEnemyGrid } from './server/enemyGrid';
 import { registerApiKeyRoutes, recordBossEvent, stripHtml } from './server/apiKeyApi';
 import { setSuperMobInSection } from './server/gameState';
+
+// Build today's maze up front so its spawn point and wall collision are live
+// before the first player connects. Daily rotation happens in an interval
+// further down (near the other spawn timers).
+setActiveMazeDay(getCurrentMazeDay());
 
 // Load persisted guilds into memory now that database + guildManager are both ready.
 loadGuildsFromDatabase();
@@ -856,7 +873,7 @@ interface AuthenticatedSocket extends Socket {
         l: number; s: number;
         e: number;
         f: number; q: number; r: number; k: string; m: number;
-        v: number; V: number; z: number;
+        v: number; M: number; V: number; z: number;
         n: string;
         sm: number;
         u: number;
@@ -1049,6 +1066,14 @@ const playerStateDeps: PlayerStateDependencies = {
 io.on('connection', (socket: AuthenticatedSocket) => {
     console.log('A user connected');
 
+    // Tell the client which daily maze to build. The layout is generated
+    // deterministically from the day number by the shared maze module, so
+    // this tiny message is all the "map data" the maze ever needs.
+    {
+        const maze = getActiveMaze() || setActiveMazeDay(getCurrentMazeDay());
+        socket.emit('mazeInfo', { day: maze.dayNumber, biome: maze.biome });
+    }
+
     // Map is bundled with the client via src/map_data.ts — no longer streamed
     // here. The server still imports WORLD_MAP / WALL_GRID locally for
     // collision, spawn, and pathfinding logic.
@@ -1115,6 +1140,12 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 spawnX = PVP_ARENA_SPAWN_X;
                 spawnY = PVP_ARENA_SPAWN_Y;
                 console.log(`Player ${credentials.playerName} spawning in PVP arena`);
+            } else if (credentials.spawnBiome === 'maze') {
+                // The maze also lives outside the regular map; drop the player at the maze entrance.
+                const mazeSpawn = getMazeSpawnPosition();
+                spawnX = mazeSpawn.x;
+                spawnY = mazeSpawn.y;
+                console.log(`Player ${credentials.playerName} spawning in the maze`);
             } else if (credentials.spawnBiome && credentials.spawnBiome !== 'default') {
                 const biomeSpawn = getSpawnPositionInBiome(credentials.spawnBiome);
                 if (biomeSpawn) {
@@ -1262,6 +1293,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 equippedSkinId: (savedProgress as any)?.equippedSkinId || '',
                 spawnBiome: credentials.spawnBiome || 'default',
                 inPvpArena: false,
+                inMaze: credentials.spawnBiome === 'maze',
                 pvpScore: 0
             };
 
@@ -1271,6 +1303,14 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             if (credentials.spawnBiome === 'pvp') {
                 enterPvpArena(players[socket.id], io);
             } else {
+                if (players[socket.id].inMaze) {
+                    // Maze rarity shift: the saved (regular-world) inventory and
+                    // loadout drop one rarity inside the maze; saves translate
+                    // back up. Then strip anything still above mythic from
+                    // active slots before pets/cooldowns are set up below.
+                    applyMazeRarityShift(players[socket.id]);
+                    enforceMazeLoadoutCap(players[socket.id], io);
+                }
                 // Recalculate player stats with modifiers after loadout is set
                 recalculatePlayerStats(players[socket.id], io);
             }
@@ -1375,6 +1415,18 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 streakExpiresAtMs: streakResult.streakExpiresAtMs,
                 totalStars: players[socket.id].stars
             });
+
+            // Explain the maze rules once on entry — otherwise the rarity
+            // shift looks like petals silently vanishing a tier.
+            if (players[socket.id].inMaze) {
+                const mazeNow = getActiveMaze();
+                const biomeName = mazeNow ? mazeNow.biome.charAt(0).toUpperCase() + mazeNow.biome.slice(1) : '';
+                socket.emit('chatMessage', {
+                    sender: 'System',
+                    content: `<span style="color: #c77dff;">Entered the ${biomeName} Maze. Your petals are one rarity lower in here (they return to normal when you leave), and petals found in the maze gain a rarity outside. Petals above Mythic are disabled.</span>`,
+                    timestamp: Date.now()
+                });
+            }
 
             // Send the user's current guild (if any) and notify online guild members so online list refreshes.
             if (socket.username) {
@@ -1833,6 +1885,20 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
         // console.log('[PET DEBUG] updateLoadout: Player found, processing loadout...');
         if (player) {
+            // Maze petal cap: only petals up to mythic may occupy active slots
+            // (0-9) inside the maze. Reject anything higher before validation —
+            // the diff passes below then leave the item in the inventory, and
+            // the corrected loadout is echoed back via 'playerUpdated'.
+            if (player.inMaze && Array.isArray(data.loadout)) {
+                const activeLen = Math.min(10, data.loadout.length);
+                for (let i = 0; i < activeLen; i++) {
+                    const item = data.loadout[i];
+                    if (item && item.rarity && getRarityIndex(item.rarity) > MAZE_MAX_PETAL_RARITY_INDEX) {
+                        data.loadout[i] = null;
+                    }
+                }
+            }
+
             // Track which slots had items before to detect changes
             const oldLoadout = player.loadout || [];
             const oldInventory = player.inventory || [];
@@ -3487,6 +3553,13 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 addItem(player.inventory, rarity, itemKey, toReturn);
             }
 
+            // Commons destroyed by maze crafting consume floor-baseline credit
+            // (see consumeMazeFloorBaseline) so surviving/maze-found commons
+            // keep their +1 on exit.
+            if (rarity === 'common') {
+                consumeMazeFloorBaseline(player, itemKey, totalLost);
+            }
+
             if (successfulCrafts > 0) {
                 addItem(player.inventory, newRarity, itemKey, successfulCrafts);
                 
@@ -3544,6 +3617,79 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
     });
 
+    // Absorb petals for XP — the "Switch" tab of the craft menu. Validates
+    // ownership of the full request before removing anything, so a failed
+    // request never eats a partial batch.
+    socket.on('absorbItems', (data: { items: Item[] }) => {
+        try {
+            const player = players[socket.id];
+            if (!player || !socket.username) {
+                socket.emit('absorbFailed', { message: 'Player not found' });
+                return;
+            }
+            // The PVP inventory is a sandbox (only 25% survives the exit) —
+            // absorbing it would launder sandboxed petals into permanent XP.
+            if (player.inPvpArena) {
+                socket.emit('absorbFailed', { message: 'Cannot absorb petals inside the PVP arena', inventory: player.inventory });
+                return;
+            }
+            if (!data || !Array.isArray(data.items) || data.items.length === 0 || data.items.length > 1000) {
+                socket.emit('absorbFailed', { message: 'Invalid absorb request', inventory: player.inventory });
+                return;
+            }
+
+            // Tally the request into (rarity, itemKey) stacks.
+            const tally = new Map<string, { rarity: string; itemKey: string; count: number }>();
+            for (const item of data.items) {
+                if (!item || item.type !== 'petal' || !item.petalType || !item.rarity || getRarityIndex(item.rarity) < 0) {
+                    socket.emit('absorbFailed', { message: 'Only petals can be absorbed', inventory: player.inventory });
+                    return;
+                }
+                const itemKey = `petal_${item.petalType}`;
+                const mapKey = `${item.rarity}|${itemKey}`;
+                const entry = tally.get(mapKey);
+                if (entry) entry.count++;
+                else tally.set(mapKey, { rarity: item.rarity, itemKey, count: 1 });
+            }
+            for (const entry of tally.values()) {
+                if (!hasItem(player.inventory, entry.rarity, entry.itemKey, entry.count)) {
+                    socket.emit('absorbFailed', { message: 'Missing items in inventory', inventory: player.inventory });
+                    return;
+                }
+            }
+
+            let xpGained = 0;
+            let absorbedCount = 0;
+            for (const entry of tally.values()) {
+                removeItem(player.inventory, entry.rarity, entry.itemKey, entry.count);
+                // Destroyed commons consume floor-baseline credit first, so
+                // commons found later in the maze keep their +1 on exit.
+                if (entry.rarity === 'common') {
+                    consumeMazeFloorBaseline(player, entry.itemKey, entry.count);
+                }
+                xpGained += (ABSORB_XP[entry.rarity] || 0) * entry.count;
+                absorbedCount += entry.count;
+            }
+            if (xpGained > 0) {
+                addXPToPlayer(player, xpGained, socket.id);
+            }
+
+            socket.emit('itemsAbsorbed', {
+                xpGained,
+                absorbedCount,
+                inventory: player.inventory
+            });
+
+            if (socket.userId) {
+                savePlayerProgress(player, socket.userId);
+            }
+        } catch (error) {
+            console.error('[ABSORB] Error during absorb:', error);
+            const player = players[socket.id];
+            socket.emit('absorbFailed', { message: 'An error occurred during absorbing', inventory: player?.inventory });
+        }
+    });
+
     // Shop handlers
     socket.on('shopBuy', (data: { petalType: string, rarity: string, price: number }) => {
         try {
@@ -3586,9 +3732,26 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             // Deduct stars
             player.stars = stars - data.price;
 
-            // Add item to inventory
+            // Add item to inventory. Shop listings are regular-world rarities;
+            // while in the maze the live inventory is shifted down one, so the
+            // purchase lands shifted too (it translates back on exit). A common
+            // purchase can't shift — record it in the floor baseline so it
+            // doesn't gain a free rarity on the way out.
             const itemKey = `petal_${data.petalType}`;
-            addItem(player.inventory, data.rarity, itemKey, 1);
+            let grantRarity = data.rarity;
+            if (player.inMaze && player.mazeRarityShifted) {
+                const rarityIdx = getRarityIndex(data.rarity);
+                if (rarityIdx > 0) {
+                    grantRarity = RARITY_LEVELS[rarityIdx - 1];
+                } else if (rarityIdx === 0) {
+                    const itemId = ITEM_KEY_TO_ID.get(itemKey);
+                    if (itemId !== undefined) {
+                        const baseline = player.mazeFloorBaseline || (player.mazeFloorBaseline = {});
+                        baseline[itemId] = (baseline[itemId] || 0) + 1;
+                    }
+                }
+            }
+            addItem(player.inventory, grantRarity, itemKey, 1);
 
             // Save progress
             const userId = playerUserIds[socket.id];
@@ -5443,12 +5606,13 @@ function start_loop() {
             checkItemWallCollisions(item);
         }
 
-        // Delete items that go out of bounds. The PVP arena lives well outside
-        // the regular world rectangle, so items inside it must be exempted.
+        // Delete items that go out of bounds. The PVP arena and the maze live
+        // well outside the regular world rectangle, so items inside them must
+        // be exempted.
         for (let i = items.length - 1; i >= 0; i--) {
             const item = items[i];
             const outOfBounds = item.x < 0 || item.x >= ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= ACTUAL_WORLD_HEIGHT;
-            if (outOfBounds && !isInPvpArena(item.x, item.y)) {
+            if (outOfBounds && !isInPvpArena(item.x, item.y) && !isInMazeRegion(item.x, item.y)) {
                 // Clean up expiration timeout
                 const timeout = itemExpirationTimeouts.get(item.id);
                 if (timeout) {
@@ -5596,6 +5760,7 @@ function start_loop() {
                 const se = quantize(petalExtension, 0.1);
                 const sv = p.inPvpArena ? 1 : 0;
                 const sV = p.pvpScore || 0;
+                const sMz = p.inMaze ? 1 : 0;
                 const sz = p.sizeMultiplier ?? 1.0;
                 const sn = p.name;
                 // Effective speed multiplier, sent to the owning client for prediction.
@@ -5655,6 +5820,7 @@ function start_loop() {
                 if (prev ? prev.k !== equippedSkinId : equippedSkinId !== '') { delta.k = equippedSkinId; changed = true; }
                 if (prev ? prev.m !== mouth : mouth !== 14.5) { delta.m = mouth; changed = true; }
                 if (prev ? prev.v !== sv : sv !== 0) { delta.v = sv; changed = true; }
+                if (prev ? prev.M !== sMz : sMz !== 0) { delta.M = sMz; changed = true; }
                 if (prev ? prev.V !== sV : sV !== 0) { delta.V = sV; changed = true; }
                 if (prev ? prev.z !== sz : sz !== 1.0) { delta.z = sz; changed = true; }
                 if (prev ? prev.n !== sn : true) { delta.n = sn; changed = true; }
@@ -5676,7 +5842,7 @@ function start_loop() {
                         x: sx, y: sy, a: sa, vx: svx, vy: svy, h: sh, H: sH,
                         l: sl, s: ss, e: se,
                         f: faceFlags, q: equipFlags, r: renderFlags, k: equippedSkinId, m: mouth,
-                        v: sv, V: sV, z: sz, n: sn,
+                        v: sv, M: sMz, V: sV, z: sz, n: sn,
                         sm,
                         u: su,
                         petalsSig,
@@ -5987,6 +6153,17 @@ setInterval(() => {
             enemies.push(mob);
         }
 
+        // Keep the maze corridors populated (tier by depth zone) and its
+        // ultra bosses alive in the deepest rooms.
+        const mazeMobs = spawnMazeMobs(3);
+        for (const mob of mazeMobs) {
+            enemies.push(mob);
+        }
+        const mazeBosses = spawnMazeBosses();
+        for (const boss of mazeBosses) {
+            enemies.push(boss);
+        }
+
         if (currentViewportEnemies < targetEnemyCount) {
             // Scale spawn cap with player count so each player's viewport fills at the same rate
             const enemiesToSpawn = Math.min(3 * playerCount, targetEnemyCount - currentViewportEnemies);
@@ -6020,6 +6197,35 @@ setInterval(() => {
         spawnSpecialMobs();
     }
 }, 60000); // 60 seconds
+
+// Daily maze rotation: at each UTC day boundary the maze gets a new layout
+// and the biome cycles garden → desert → ocean. Yesterday's mobs are cleared
+// (the new walls would strand them), players inside are moved to the new
+// entrance, and every client is told to rebuild via 'mazeInfo'.
+setInterval(() => {
+    const day = getCurrentMazeDay();
+    const currentMaze = getActiveMaze();
+    if (currentMaze && currentMaze.dayNumber === day) return;
+
+    const removedIds = clearMazeEnemies();
+    for (const id of removedIds) {
+        io.emit('enemyDestroyed', id);
+    }
+
+    const maze = setActiveMazeDay(day);
+    invalidateMazeMobPool();
+    io.emit('mazeInfo', { day: maze.dayNumber, biome: maze.biome });
+    console.log(`[MAZE] Rotated to day ${maze.dayNumber} (${maze.biome})`);
+
+    for (const pid in players) {
+        const p = players[pid];
+        if (!p?.inMaze) continue;
+        const spawn = getMazeSpawnPosition();
+        p.x = spawn.x;
+        p.y = spawn.y;
+        io.to(pid).emit('playerTeleported', { newX: spawn.x, newY: spawn.y, playerId: pid });
+    }
+}, 60000); // check once a minute
 
 // Initial spawn of special mobs when server starts
 setTimeout(() => {

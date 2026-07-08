@@ -8,6 +8,15 @@ import { PETAL_CONFIG } from './petals';
 import { io } from './ws_client';
 import { dictToInventory } from './inventoryCodec';
 import { WORLD_MAP } from './map_data';
+import { setActiveMazeDay, getCurrentMazeDay } from './maze';
+
+// Build today's maze immediately from the local clock. The server's
+// authoritative 'mazeInfo' (sent at socket connection and on daily rotation)
+// overrides this if the days ever disagree, but the local fallback guarantees
+// the maze exists client-side even if that early message arrives before any
+// listener is attached — otherwise maze walls would render (and predict) as
+// empty space.
+setActiveMazeDay(getCurrentMazeDay());
 
 let currentGame: Game | null = null;
 let preconnectedSocket: any = null; // Store preconnected socket
@@ -162,6 +171,12 @@ function preconnectToServer() {
 // returns to the title screen (so the connection — and the player's loot — is
 // reused rather than dropped and recreated under a new socket id).
 function attachTitleScreenSocketListeners(sock: any) {
+    // Daily maze descriptor — keeps the locally-generated maze in sync with
+    // the server (matters across the UTC day boundary / client clock skew).
+    sock.on('mazeInfo', (data: { day: number; biome?: string }) => {
+        if (typeof data?.day === 'number') setActiveMazeDay(data.day);
+    });
+
     sock.on('connect', () => {
         console.log(`[Index] Preconnected to server (socket ID: ${sock?.id})`);
         // Notify title screen that connection is complete

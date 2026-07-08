@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PETAL_CONFIG = exports.ITEM_RARITY_COLORS = exports.RARITY_LEVELS = void 0;
+exports.PETAL_CONFIG = exports.ITEM_RARITY_COLORS = exports.ABSORB_XP = exports.RARITY_LEVELS = void 0;
 exports.getRarityIndex = getRarityIndex;
 exports.getLightningDamage = getLightningDamage;
 exports.getLightningScalingInfo = getLightningScalingInfo;
@@ -30,6 +30,21 @@ exports.RARITY_LEVELS = [
 function getRarityIndex(rarity) {
     return exports.RARITY_LEVELS.indexOf(rarity);
 }
+// XP granted per petal absorbed in the craft menu's Absorb tab. Roughly half
+// the tier-based XP of a same-rarity mob kill (see getXPFromEnemy), so
+// absorbing spare drops is a meaningful but not dominant XP source.
+exports.ABSORB_XP = {
+    common: 5,
+    uncommon: 15,
+    rare: 45,
+    epic: 135,
+    legendary: 405,
+    mythic: 1215,
+    ultra: 3645,
+    super: 10935,
+    unique: 32805,
+    apex: 98415
+};
 // Canonical UI rarity colors — single source of truth for all panels/UI
 exports.ITEM_RARITY_COLORS = {
     common: '#7eef6d',

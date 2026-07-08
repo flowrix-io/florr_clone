@@ -96,6 +96,22 @@ export function getRarityIndex(rarity: Rarity | string): number {
     return RARITY_LEVELS.indexOf(rarity as Rarity);
 }
 
+// XP granted per petal absorbed in the craft menu's Absorb tab. Roughly half
+// the tier-based XP of a same-rarity mob kill (see getXPFromEnemy), so
+// absorbing spare drops is a meaningful but not dominant XP source.
+export const ABSORB_XP: Record<string, number> = {
+    common: 5,
+    uncommon: 15,
+    rare: 45,
+    epic: 135,
+    legendary: 405,
+    mythic: 1215,
+    ultra: 3645,
+    super: 10935,
+    unique: 32805,
+    apex: 98415
+};
+
 // Canonical UI rarity colors — single source of truth for all panels/UI
 export const ITEM_RARITY_COLORS: Record<string, string> = {
     common: '#7eef6d',

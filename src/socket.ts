@@ -5,6 +5,7 @@ import { Item, WorldItem } from './item';
 import { getMobStats } from './mobs';
 import { setCustomSkins, upsertCustomSkin, removeCustomSkin } from './graphics/player-skins';
 import { CustomSkin } from './skin_format';
+import { setActiveMazeDay } from './maze';
 
 function padLoadout(arr: (Item | null)[] | undefined, size: number): (Item | null)[] {
     const out: (Item | null)[] = new Array(size).fill(null);
@@ -281,6 +282,15 @@ function setupSocketListeners(game: any) {
     game.socket.on('transferFailed', (data: any) => {
         console.error('[CLIENT] Server transfer failed:', data.message);
         game.showTransferMessage('Transfer failed: ' + data.message);
+    });
+
+    // Daily maze descriptor: build the identical maze locally from the day
+    // number (shared generator), so wall rendering and movement prediction
+    // resolve exactly what the server resolves. Re-sent on daily rotation.
+    game.socket.on('mazeInfo', (data: { day: number; biome?: string }) => {
+        if (typeof data?.day !== 'number') return;
+        const maze = setActiveMazeDay(data.day);
+        console.log(`[CLIENT] Maze day ${maze.dayNumber} (${maze.biome})`);
     });
 
     // Handle same-server teleportation
@@ -1175,6 +1185,24 @@ function setupSocketListeners(game: any) {
         game.showSaveIndicator();
     });
 
+    // Absorb tab of the craft menu: server destroyed the petals and granted XP.
+    game.socket.on('itemsAbsorbed', (data: { xpGained: number, absorbedCount: number, inventory: any }) => {
+        const player = game.players.get(game.socket?.id || '');
+        if (player && data.inventory) {
+            player.inventory = data.inventory;
+        }
+        game.inventoryManager?.handleItemsAbsorbed(data);
+    });
+
+    game.socket.on('absorbFailed', (data: { message?: string, inventory?: any }) => {
+        console.warn('[CLIENT] absorbFailed:', data?.message);
+        const player = game.players.get(game.socket?.id || '');
+        if (player && data?.inventory) {
+            player.inventory = data.inventory;
+        }
+        game.inventoryManager?.handleAbsorbFailed();
+    });
+
     game.socket.on('craftingFinished', (data: { successCount: number, failCount: number, newItem: Item, inventory: any, petalsReturned?: number }) => {
         console.log('[CLIENT] craftingFinished received:', data);
         const player = game.players.get(game.socket?.id || '');
@@ -1348,6 +1376,7 @@ function setupSocketListeners(game: any) {
                     }
                     if (sp.k !== undefined) existing.equippedSkinId = sp.k;
                     if (sp.v !== undefined) (existing as any).inPvpArena = !!sp.v;
+                    if (sp.M !== undefined) (existing as any).inMaze = !!sp.M;
                     if (sp.V !== undefined) (existing as any).pvpScore = sp.V;
                     if (sp.z !== undefined) (existing as any).sizeMultiplier = sp.z;
                     if (sp.s !== undefined) (existing as any).score = sp.s;
@@ -1413,6 +1442,7 @@ function setupSocketListeners(game: any) {
                         equippedSkinId: sp.k ?? '',
                         mouth: sp.m ?? 14.5,
                         inPvpArena: !!sp.v,
+                        inMaze: !!sp.M,
                         pvpScore: sp.V ?? 0,
                         sizeMultiplier: sp.z ?? 1.0,
                         imageLoaded: true,

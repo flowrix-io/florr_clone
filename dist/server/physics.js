@@ -13,6 +13,7 @@ const constants_1 = require("../constants");
 const map_data_1 = require("../map_data");
 const mobs_1 = require("../mobs");
 const utils_1 = require("./utils");
+const maze_1 = require("../maze");
 // Boundary threshold for wall extension (same as out-of-bounds zone)
 const BOUNDARY_THRESHOLD = 100;
 /**
@@ -117,6 +118,10 @@ function hasLineOfSight(x1, y1, x2, y2, sampleCount = 20) {
     // If points are very close, assume clear line of sight
     if (distance < 10) {
         return true;
+    }
+    // Maze region uses its own wall grid (WALL_GRID doesn't cover it).
+    if ((0, maze_1.isInMazeRegion)(x1, y1) || (0, maze_1.isInMazeRegion)(x2, y2)) {
+        return !(0, maze_1.mazeBlocksLine)(x1, y1, x2, y2);
     }
     // Sample points along the line
     for (let i = 0; i <= sampleCount; i++) {

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+const maze_1 = require("../maze");
 core_1.Graphics.prototype.render = function (players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0, groundPollens) {
     // Cache timestamp for this frame to avoid Date.now() per enemy
     this.frameTimestamp = Date.now();
@@ -68,17 +69,29 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
         right: this.cameraX + visibleW,
         bottom: this.cameraY + visibleH,
     };
-    this.renderStaticMap(mapViewport);
-    // Draw spawn zones below walls/water when ALT is held
-    if (this.showRarityGlow) {
-        this.drawSpawnZones(this.mapData);
+    // When the whole viewport sits inside the maze region, the regular map
+    // passes have nothing visible to draw — skip them so the static-map cache
+    // doesn't bake empty far-away chunks (they'd churn its FIFO for nothing).
+    // The maze region is an axis-aligned square, so containing both opposite
+    // viewport corners means containing the whole viewport.
+    const viewportFullyInMaze = (0, maze_1.isInMazeRegion)(mapViewport.left, mapViewport.top) &&
+        (0, maze_1.isInMazeRegion)(mapViewport.right, mapViewport.bottom);
+    if (!viewportFullyInMaze) {
+        this.renderStaticMap(mapViewport);
+        // Draw spawn zones below walls/water when ALT is held
+        if (this.showRarityGlow) {
+            this.drawSpawnZones(this.mapData);
+        }
+        // Draw the map (dynamic overlays only — teleporters, spawn points,
+        // hitbox debug). The wall grid that used to live here is now baked
+        // into the static map cache above.
+        this.drawMap(this.mapData);
+        // Draw PVP arena boundary in world space (visible from inside the arena)
+        this.drawPvpArenaBoundary();
     }
-    // Draw the map (dynamic overlays only — teleporters, spawn points,
-    // hitbox debug). The wall grid that used to live here is now baked
-    // into the static map cache above.
-    this.drawMap(this.mapData);
-    // Draw PVP arena boundary in world space (visible from inside the arena)
-    this.drawPvpArenaBoundary();
+    // Draw the daily maze (biome ground + rrolf-style walls) when the camera
+    // is over its region — the static map cache doesn't cover it.
+    this.drawMazeWorld();
     // Draw ground pollen drops below enemies/items so they sit on the ground
     if (groundPollens && groundPollens.size > 0) {
         this.drawGroundPollens(groundPollens);

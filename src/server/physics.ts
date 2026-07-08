@@ -13,6 +13,7 @@ import {
 import { WALL_GRID } from '../map_data';
 import { getMobStats } from '../mobs';
 import { markEnemyDamaged } from './utils';
+import { isInMazeRegion, mazeBlocksLine } from '../maze';
 
 // Boundary threshold for wall extension (same as out-of-bounds zone)
 const BOUNDARY_THRESHOLD = 100;
@@ -132,10 +133,15 @@ export function hasLineOfSight(x1: number, y1: number, x2: number, y2: number, s
     const dx = x2 - x1;
     const dy = y2 - y1;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    
+
     // If points are very close, assume clear line of sight
     if (distance < 10) {
         return true;
+    }
+
+    // Maze region uses its own wall grid (WALL_GRID doesn't cover it).
+    if (isInMazeRegion(x1, y1) || isInMazeRegion(x2, y2)) {
+        return !mazeBlocksLine(x1, y1, x2, y2);
     }
     
     // Sample points along the line

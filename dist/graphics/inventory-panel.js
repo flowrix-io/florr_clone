@@ -116,6 +116,12 @@ class CanvasInventoryPanel {
         this.onItemHoverChange = null;
         /** Callback fired when the close button is clicked. */
         this.onClose = null;
+        /**
+         * When set, items for which this returns true render greyed-out and are
+         * blocked from mousedown/click/drag (e.g. ultra+ petals while in the maze,
+         * which the server refuses to equip).
+         */
+        this.isItemDisabled = null;
         this.handleMouseMove = (e) => {
             const { x, y } = this.toLocal(e);
             // Close button hover (used for visual brighten on next draw).
@@ -160,6 +166,11 @@ class CanvasInventoryPanel {
             const hit = this.hitTestClient(e.clientX, e.clientY);
             if (!hit)
                 return;
+            // Disabled items can't be picked up / equipped.
+            if (this.isItemDisabled && this.isItemDisabled(hit.rarity, hit.itemType)) {
+                e.preventDefault();
+                return;
+            }
             // Legacy mousedown callback (in-game uses this for its custom JS-level
             // drag). preventDefault suppresses the browser's HTML5 drag so the
             // custom system has full control.
@@ -190,6 +201,8 @@ class CanvasInventoryPanel {
             if (this.pointInRect(x, y, this.stackToggleRect))
                 return;
             const hit = this.hitTestClient(e.clientX, e.clientY);
+            if (hit && this.isItemDisabled && this.isItemDisabled(hit.rarity, hit.itemType))
+                return;
             if (hit && this.onItemClick) {
                 e.preventDefault();
                 this.onItemClick(hit.rarity, hit.itemType, e, hit);
@@ -200,6 +213,11 @@ class CanvasInventoryPanel {
             if (!hit) {
                 // Drag started on chrome / empty area — cancel so the canvas
                 // doesn't drag itself as an image.
+                e.preventDefault();
+                return;
+            }
+            // Disabled items can't be dragged to the loadout.
+            if (this.isItemDisabled && this.isItemDisabled(hit.rarity, hit.itemType)) {
                 e.preventDefault();
                 return;
             }
@@ -865,6 +883,18 @@ class CanvasInventoryPanel {
             ctx.strokeText(text, tx, ty);
             ctx.fillStyle = '#ffffff';
             ctx.fillText(text, tx, ty);
+            ctx.restore();
+        }
+        // Disabled items (e.g. ultra+ petals in the maze): grey the whole slot
+        // out so it reads as unusable — interactions are blocked in the input
+        // handlers via the same isItemDisabled hook.
+        if (this.isItemDisabled && this.isItemDisabled(r.rarity, r.itemType)) {
+            ctx.save();
+            ctx.globalAlpha = 0.6;
+            ctx.fillStyle = '#3a3a3a';
+            ctx.beginPath();
+            ctx.roundRect(r.x, r.y, r.w, r.h, radius);
+            ctx.fill();
             ctx.restore();
         }
     }

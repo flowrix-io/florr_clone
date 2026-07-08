@@ -29,6 +29,7 @@ import {
     isInPvpArena,
     stepPlayerMovement
 } from '../constants';
+import { isInMazeRegion, MAZE_ORIGIN_X, MAZE_ORIGIN_Y, MAZE_WORLD_SIZE } from '../maze';
 import { WORLD_MAP } from '../map_data';
 import {
     items,
@@ -647,9 +648,10 @@ export function validatePlayerPositions(io: SocketIOServer): void {
     for (const playerId in players) {
         const player = players[playerId];
         if (player) {
-            // Reset invalid positions to a safe default. PVP-arena coordinates
-            // sit outside the regular world but are still valid.
-            const inArena = isInPvpArena(player.x, player.y);
+            // Reset invalid positions to a safe default. PVP-arena and maze
+            // coordinates sit outside the regular world but are still valid.
+            const inArena = isInPvpArena(player.x, player.y)
+                || isInMazeRegion(player.x, player.y);
             if (!inArena && (isNaN(player.x) || isNaN(player.y) ||
                 player.x < 0 || player.x > ACTUAL_WORLD_WIDTH ||
                 player.y < 0 || player.y > ACTUAL_WORLD_HEIGHT)) {
@@ -2369,6 +2371,15 @@ export function updatePlayerState(
                 }
             }
         }
+    }
+
+    // Maze players stay inside the maze region. The maze's border ring is
+    // solid wall so collision already contains them — this is a safety net
+    // against knockback/teleport edge cases ejecting someone into the void.
+    if (player.inMaze) {
+        const margin = PLAYER_SIZE / 2;
+        newX = Math.max(MAZE_ORIGIN_X + margin, Math.min(MAZE_ORIGIN_X + MAZE_WORLD_SIZE - margin, newX));
+        newY = Math.max(MAZE_ORIGIN_Y + margin, Math.min(MAZE_ORIGIN_Y + MAZE_WORLD_SIZE - margin, newY));
     }
 
     // Clamp position to the PVP arena boundary if the player is currently inside it.

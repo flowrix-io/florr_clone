@@ -9,6 +9,14 @@ const petals_1 = require("./petals");
 const ws_client_1 = require("./ws_client");
 const inventoryCodec_1 = require("./inventoryCodec");
 const map_data_1 = require("./map_data");
+const maze_1 = require("./maze");
+// Build today's maze immediately from the local clock. The server's
+// authoritative 'mazeInfo' (sent at socket connection and on daily rotation)
+// overrides this if the days ever disagree, but the local fallback guarantees
+// the maze exists client-side even if that early message arrives before any
+// listener is attached — otherwise maze walls would render (and predict) as
+// empty space.
+(0, maze_1.setActiveMazeDay)((0, maze_1.getCurrentMazeDay)());
 let currentGame = null;
 let preconnectedSocket = null; // Store preconnected socket
 let isConnecting = false; // Flag to prevent multiple connection attempts
@@ -131,6 +139,12 @@ function preconnectToServer() {
 // returns to the title screen (so the connection — and the player's loot — is
 // reused rather than dropped and recreated under a new socket id).
 function attachTitleScreenSocketListeners(sock) {
+    // Daily maze descriptor — keeps the locally-generated maze in sync with
+    // the server (matters across the UTC day boundary / client clock skew).
+    sock.on('mazeInfo', (data) => {
+        if (typeof data?.day === 'number')
+            (0, maze_1.setActiveMazeDay)(data.day);
+    });
     sock.on('connect', () => {
         console.log(`[Index] Preconnected to server (socket ID: ${sock?.id})`);
         // Notify title screen that connection is complete

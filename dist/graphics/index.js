@@ -21,6 +21,7 @@ require("./background");
 require("./static-map-cache");
 require("./game-objects");
 require("./pvp-arena");
+require("./maze-render");
 require("./render");
 require("./utilities");
 const map_drawing_1 = require("./map-drawing");

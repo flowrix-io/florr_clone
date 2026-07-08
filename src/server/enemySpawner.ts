@@ -28,6 +28,7 @@ import {
     isTileIdBlocking
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
+import { isInMazeRegion } from '../maze';
 import { getMobStats, getAllMobTypes } from '../mobs';
 import { recordBossEvent } from './apiKeyApi';
 import { calculatePlayerModifiers } from './playerManager';
@@ -400,8 +401,10 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
 
     // Pick the player with the fewest enemies in their viewport to balance density.
     // Only real (human) players drive spawning — bots shouldn't trigger mob spawns
-    // of their own, otherwise the world fills up with enemies per bot.
-    const realPlayerIds = Object.keys(players).filter(id => !id.startsWith('bot_'));
+    // of their own, otherwise the world fills up with enemies per bot. Maze players
+    // are excluded too: the maze has its own spawner (mazeSpawner.ts) and their
+    // far-away coordinates would only burn spawn attempts here.
+    const realPlayerIds = Object.keys(players).filter(id => !id.startsWith('bot_') && !players[id]?.inMaze);
     if (realPlayerIds.length === 0) {
         return null as any;
     }
@@ -1305,6 +1308,10 @@ export function updateSpecialMobCounts() {
 
     for (const enemy of enemies) {
         if (enemy.type === 'target_dummy') continue;
+        // Maze bosses are managed by mazeSpawner — counting them here would
+        // suppress the main world's ultra/super spawns while the maze is
+        // populated.
+        if (isInMazeRegion(enemy.x, enemy.y)) continue;
         if (enemy.tier === 'ultra') ultra++;
         else if (enemy.tier === 'super') {
             super_++;

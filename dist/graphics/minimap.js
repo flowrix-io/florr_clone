@@ -60,6 +60,11 @@ core_1.Graphics.prototype.followPlayerOnMinimap = function (playerX, playerY) {
     this.setMinimapScroll(sectionCenterX - SECTION_SIZE / 2, sectionCenterY - SECTION_SIZE / 2);
 };
 core_1.Graphics.prototype.drawMinimap = function (players, socket) {
+    // Inside the maze, the section-based minimap is meaningless — draw the
+    // maze layout instead (returns false when the player isn't in the maze).
+    if (this.drawMazeMinimap(players, socket)) {
+        return;
+    }
     const minimapX = this.viewW - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
     const minimapY = this.MINIMAP_PADDING;
     // Always show exactly one section (20000x20000) - no zoom

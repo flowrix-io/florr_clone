@@ -41,6 +41,7 @@ exports.checkTileCollision = checkTileCollision;
 exports.resolveTileCollision = resolveTileCollision;
 exports.resolveEntityWallCollisions = resolveEntityWallCollisions;
 exports.stepPlayerMovement = stepPlayerMovement;
+const maze_1 = require("./maze");
 // Mob animation framerate utility - cached to avoid localStorage reads per frame
 let _cachedMobAnimFPS = null;
 let _cachedMobAnimFrameTime = null;
@@ -602,6 +603,23 @@ const MAX_COLLISION_REACH = 4096;
 let _lastBadHalfSize = NaN;
 // Check if a position collides with a wall or water tile, accounting for jagged edges.
 function checkTileCollision(worldX, worldY, halfSize) {
+    // Maze region: walls are the maze's corner-coded cell grid, not WALL_GRID.
+    // Used by projectile wall checks; movement goes through resolveMazeCollision.
+    if ((0, maze_1.isInMazeRegion)(worldX, worldY)) {
+        const rect = (0, maze_1.mazeCircleWallOverlap)(worldX, worldY, halfSize);
+        if (!rect)
+            return null;
+        return {
+            collided: true,
+            tileX: Math.floor(rect.left / exports.WALL_TILE_SIZE),
+            tileY: Math.floor(rect.top / exports.WALL_TILE_SIZE),
+            state: 1,
+            effectiveLeft: rect.left,
+            effectiveRight: rect.right,
+            effectiveTop: rect.top,
+            effectiveBottom: rect.bottom,
+        };
+    }
     // Reach includes COLLISION_BUFFER so an entity already resting at the buffer
     // distance still registers as in contact (see the inflated overlap test below).
     const reach = halfSize + exports.JAGGED_MAX_OFFSET + exports.COLLISION_BUFFER;
@@ -718,6 +736,12 @@ function resolveTileCollision(entityX, entityY, entityHalfSize, collision) {
 // Iteratively resolve wall/water collisions for an entity of the given size.
 // Mirrors the server's checkPlayerWallCollisions (4 iterations to escape corners).
 function resolveEntityWallCollisions(x, y, halfSize) {
+    // Maze region: use the rrolf-style circle resolver (flat-wall axis clamps +
+    // quarter-circle corner fillets). Shared by server physics and client
+    // prediction, so both resolve maze walls identically.
+    if ((0, maze_1.isInMazeRegion)(x, y)) {
+        return (0, maze_1.resolveMazeCollision)(x, y, halfSize);
+    }
     let newX = x;
     let newY = y;
     let collided = false;

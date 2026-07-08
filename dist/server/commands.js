@@ -12,6 +12,7 @@ const gameState_1 = require("./gameState");
 const server_1 = require("../server");
 const petals_1 = require("../petals");
 const playerManager_1 = require("./playerManager");
+const maze_1 = require("../maze");
 const botManager_1 = require("./botManager");
 const guildManager_1 = require("./guildManager");
 // Helper function to send message to admin or console
@@ -192,6 +193,13 @@ function executeServerCommand(command, executor, deps, socketId) {
                 // Teleport the player
                 targetPlayer.x = x;
                 targetPlayer.y = y;
+                // Teleporting a maze player out of the region must also drop
+                // the maze state — otherwise the per-tick maze clamp pins them
+                // at the region border and their inventory stays in
+                // maze-shifted rarities.
+                if (targetPlayer.inMaze && !(0, maze_1.isInMazeRegion)(x, y)) {
+                    (0, playerManager_1.exitMazeState)(targetPlayer);
+                }
                 // Emit teleport event to client for visual effects
                 io.to(targetPlayerId).emit('playerTeleported', {
                     newX: x,

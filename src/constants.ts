@@ -3,6 +3,7 @@ import { Dot } from "./enemy";
 import { Obstacle } from "./enemy";
 import { Enemy } from "./server_utils";
 import { Item } from "./item";
+import { isInMazeRegion, resolveMazeCollision, mazeCircleWallOverlap } from "./maze";
 
 // Mob animation framerate utility - cached to avoid localStorage reads per frame
 let _cachedMobAnimFPS: number | null = null;
@@ -748,6 +749,22 @@ let _lastBadHalfSize = NaN;
 
 // Check if a position collides with a wall or water tile, accounting for jagged edges.
 export function checkTileCollision(worldX: number, worldY: number, halfSize: number): TileCollisionResult | null {
+    // Maze region: walls are the maze's corner-coded cell grid, not WALL_GRID.
+    // Used by projectile wall checks; movement goes through resolveMazeCollision.
+    if (isInMazeRegion(worldX, worldY)) {
+        const rect = mazeCircleWallOverlap(worldX, worldY, halfSize);
+        if (!rect) return null;
+        return {
+            collided: true,
+            tileX: Math.floor(rect.left / WALL_TILE_SIZE),
+            tileY: Math.floor(rect.top / WALL_TILE_SIZE),
+            state: 1,
+            effectiveLeft: rect.left,
+            effectiveRight: rect.right,
+            effectiveTop: rect.top,
+            effectiveBottom: rect.bottom,
+        };
+    }
     // Reach includes COLLISION_BUFFER so an entity already resting at the buffer
     // distance still registers as in contact (see the inflated overlap test below).
     const reach = halfSize + JAGGED_MAX_OFFSET + COLLISION_BUFFER;
@@ -883,6 +900,12 @@ export function resolveEntityWallCollisions(
     y: number,
     halfSize: number
 ): { x: number; y: number; collided: boolean } {
+    // Maze region: use the rrolf-style circle resolver (flat-wall axis clamps +
+    // quarter-circle corner fillets). Shared by server physics and client
+    // prediction, so both resolve maze walls identically.
+    if (isInMazeRegion(x, y)) {
+        return resolveMazeCollision(x, y, halfSize);
+    }
     let newX = x;
     let newY = y;
     let collided = false;

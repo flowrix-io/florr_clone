@@ -407,6 +407,29 @@ export class TitleScreenInventoryManager {
             alert(error);
         });
 
+        // Absorb tab results (petals → XP), mirroring the in-game handlers.
+        this.socket.on('itemsAbsorbed', (data: { xpGained: number; absorbedCount: number; inventory: any }) => {
+            if (this.playerData && data.inventory) {
+                this.playerData.inventory = data.inventory;
+                this.gameAdapter.setPlayerData(this.playerData);
+            }
+            this.craftingInventoryManager.handleItemsAbsorbed(data);
+            if (this.craftingInventoryManager.isCraftingOpen) {
+                this.updateInventoryDisplay();
+            }
+        });
+
+        this.socket.on('absorbFailed', (data: { message?: string; inventory?: any }) => {
+            if (this.playerData && data?.inventory) {
+                this.playerData.inventory = data.inventory;
+                this.gameAdapter.setPlayerData(this.playerData);
+            }
+            this.craftingInventoryManager.handleAbsorbFailed();
+            if (this.craftingInventoryManager.isCraftingOpen) {
+                this.updateInventoryDisplay();
+            }
+        });
+
         // Listen for player updates to refresh inventory
         this.socket.on('playerUpdated', (updatedPlayer: any) => {
             if (updatedPlayer.inventory) {

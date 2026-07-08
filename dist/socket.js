@@ -4,6 +4,7 @@ exports.initMultiPlayerMode = initMultiPlayerMode;
 const ws_client_1 = require("./ws_client");
 const mobs_1 = require("./mobs");
 const player_skins_1 = require("./graphics/player-skins");
+const maze_1 = require("./maze");
 function padLoadout(arr, size) {
     const out = new Array(size).fill(null);
     if (arr)
@@ -247,6 +248,15 @@ function setupSocketListeners(game) {
     game.socket.on('transferFailed', (data) => {
         console.error('[CLIENT] Server transfer failed:', data.message);
         game.showTransferMessage('Transfer failed: ' + data.message);
+    });
+    // Daily maze descriptor: build the identical maze locally from the day
+    // number (shared generator), so wall rendering and movement prediction
+    // resolve exactly what the server resolves. Re-sent on daily rotation.
+    game.socket.on('mazeInfo', (data) => {
+        if (typeof data?.day !== 'number')
+            return;
+        const maze = (0, maze_1.setActiveMazeDay)(data.day);
+        console.log(`[CLIENT] Maze day ${maze.dayNumber} (${maze.biome})`);
     });
     // Handle same-server teleportation
     game.socket.on('playerTeleported', (data) => {
@@ -1021,6 +1031,22 @@ function setupSocketListeners(game) {
     game.socket.on('savePlayerProgress', () => {
         game.showSaveIndicator();
     });
+    // Absorb tab of the craft menu: server destroyed the petals and granted XP.
+    game.socket.on('itemsAbsorbed', (data) => {
+        const player = game.players.get(game.socket?.id || '');
+        if (player && data.inventory) {
+            player.inventory = data.inventory;
+        }
+        game.inventoryManager?.handleItemsAbsorbed(data);
+    });
+    game.socket.on('absorbFailed', (data) => {
+        console.warn('[CLIENT] absorbFailed:', data?.message);
+        const player = game.players.get(game.socket?.id || '');
+        if (player && data?.inventory) {
+            player.inventory = data.inventory;
+        }
+        game.inventoryManager?.handleAbsorbFailed();
+    });
     game.socket.on('craftingFinished', (data) => {
         console.log('[CLIENT] craftingFinished received:', data);
         const player = game.players.get(game.socket?.id || '');
@@ -1200,6 +1226,8 @@ function setupSocketListeners(game) {
                         existing.equippedSkinId = sp.k;
                     if (sp.v !== undefined)
                         existing.inPvpArena = !!sp.v;
+                    if (sp.M !== undefined)
+                        existing.inMaze = !!sp.M;
                     if (sp.V !== undefined)
                         existing.pvpScore = sp.V;
                     if (sp.z !== undefined)
@@ -1268,6 +1296,7 @@ function setupSocketListeners(game) {
                         equippedSkinId: sp.k ?? '',
                         mouth: sp.m ?? 14.5,
                         inPvpArena: !!sp.v,
+                        inMaze: !!sp.M,
                         pvpScore: sp.V ?? 0,
                         sizeMultiplier: sp.z ?? 1.0,
                         imageLoaded: true,

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryManager = void 0;
 const petals_1 = require("./petals");
+const maze_1 = require("./maze");
 const inventoryCodec_1 = require("./inventoryCodec");
 const inventory_panel_1 = require("./graphics/inventory-panel");
 const crafting_panel_1 = require("./graphics/crafting-panel");
@@ -377,6 +378,8 @@ class InventoryManager {
         this.craftingPanel = null;
         this.mobGalleryPanel = null;
         this.craftingItems = [];
+        /** True while the craft panel is switched to the Absorb tab (petals → XP). */
+        this.absorbMode = false;
         this.isInventoryOpen = false;
         this.isCraftingOpen = false;
         this.isMobGalleryOpen = false;
@@ -455,6 +458,14 @@ class InventoryManager {
             this.canvasInventoryPanel.onItemMouseDown = (rarity, itemType, e) => {
                 this.startDrag(e, { type: 'inventory', rarity, itemType }, null);
             };
+            // Inside the maze only petals up to mythic are usable — grey them out
+            // and block dragging/equipping them (the server rejects it anyway).
+            this.canvasInventoryPanel.isItemDisabled = (rarity, itemType) => {
+                const localPlayer = this.game.getLocalPlayer();
+                return !!localPlayer?.inMaze
+                    && itemType.startsWith('petal_')
+                    && (0, petals_1.getRarityIndex)(rarity) > maze_1.MAZE_MAX_PETAL_RARITY_INDEX;
+            };
             this.canvasInventoryPanel.onItemHoverChange = (hit) => {
                 this.handleCanvasInventoryHover(hit);
             };
@@ -469,13 +480,19 @@ class InventoryManager {
             this.canvasCraftingPanel = new crafting_panel_1.CanvasCraftingPanel(this.game);
             this.canvasCraftingPanel.attachTo(this.craftingPanel);
             this.canvasCraftingPanel.onClose = () => this.closeCrafting();
-            this.canvasCraftingPanel.onCraft = () => this.craftItems();
+            this.canvasCraftingPanel.onCraft = () => {
+                if (this.absorbMode)
+                    this.absorbItems();
+                else
+                    this.craftItems();
+            };
             this.canvasCraftingPanel.onItemClick = (rarity, itemType, shiftKey) => {
                 this.handleCraftingItemClick(rarity, itemType, shiftKey);
             };
             this.canvasCraftingPanel.onSlotClick = () => {
                 this.removeCraftingBatch();
             };
+            this.canvasCraftingPanel.onSwitchMode = () => this.toggleAbsorbMode();
             document.body.appendChild(this.craftingPanel);
         } // end crafting panel creation
         if (!craftingOnly) {
@@ -1156,6 +1173,18 @@ class InventoryManager {
         const player = this.game.getLocalPlayer();
         if (!player)
             return;
+        // Maze petal cap: block swaps that would land an over-mythic petal in
+        // an active slot (0-9). The server rejects them anyway, but its
+        // correction nulls the slot — kicking the petal out of the loadout —
+        // so refuse the swap here for a cleaner outcome.
+        if (player.inMaze) {
+            const overCap = (item) => !!item && !!item.rarity && (0, petals_1.getRarityIndex)(item.rarity) > maze_1.MAZE_MAX_PETAL_RARITY_INDEX;
+            const itemFrom = player.loadout[fromSlot];
+            const itemTo = player.loadout[toSlot];
+            if ((toSlot < 10 && overCap(itemFrom)) || (fromSlot < 10 && overCap(itemTo))) {
+                return;
+            }
+        }
         // Pad to full loadout length so secondary-row swaps always have valid targets
         const newLoadout = new Array(this.LOADOUT_SLOTS).fill(null);
         for (let i = 0; i < Math.min(player.loadout.length, this.LOADOUT_SLOTS); i++) {
@@ -1563,19 +1592,34 @@ class InventoryManager {
                 });
             }
         }
-        let amountToAdd;
-        if (isShiftClick) {
-            amountToAdd = itemsFromStack;
+        let totalItemsToAdd;
+        if (this.absorbMode) {
+            // Absorb accepts any count (no 5-batch requirement), petals only.
+            // Capped at the server's per-request limit so a huge shift-click
+            // stack can't stage a request the server would reject.
+            if (!isPetal)
+                return;
+            const available = this.getItemCount(rarity, type);
+            const room = InventoryManager.MAX_ABSORB_BATCH - this.craftingItems.length;
+            totalItemsToAdd = Math.min(isShiftClick ? available : Math.min(5, available), room);
+            if (totalItemsToAdd < 1)
+                return;
         }
         else {
-            amountToAdd = 5;
+            let amountToAdd;
+            if (isShiftClick) {
+                amountToAdd = itemsFromStack;
+            }
+            else {
+                amountToAdd = 5;
+            }
+            const actualAmountToAdd = Math.min(amountToAdd, this.getItemCount(rarity, type));
+            if (actualAmountToAdd < 5) {
+                return;
+            }
+            const batchesToAdd = Math.floor(actualAmountToAdd / 5);
+            totalItemsToAdd = batchesToAdd * 5;
         }
-        const actualAmountToAdd = Math.min(amountToAdd, this.getItemCount(rarity, type));
-        if (actualAmountToAdd < 5) {
-            return;
-        }
-        const batchesToAdd = Math.floor(actualAmountToAdd / 5);
-        const totalItemsToAdd = batchesToAdd * 5;
         const item = {
             type: itemType,
             rarity: rarity,
@@ -1585,6 +1629,57 @@ class InventoryManager {
             this.craftingItems.push(item);
         }
         this.removeItem(rarity, type, totalItemsToAdd);
+        this.updateCraftingDisplay();
+        this.updateInventoryDisplay();
+    }
+    /** Return everything currently sitting in the craft/absorb slots to the inventory. */
+    returnCraftingSlotItems() {
+        if (this.craftingItems.length === 0)
+            return;
+        const itemsToReturn = [...this.craftingItems];
+        this.craftingItems = [];
+        itemsToReturn.forEach(item => {
+            const itemKey = item.petalType ? `petal_${item.petalType}` : item.type;
+            if (item.rarity)
+                this.addItem(item.rarity, itemKey, 1);
+        });
+    }
+    /** Toggle between the Craft and Absorb tabs (the panel's Switch button). */
+    toggleAbsorbMode() {
+        if (this.canvasCraftingPanel?.isAnimating())
+            return;
+        // Return slot contents so craft selections never leak into absorb (and
+        // vice versa) — the two modes have different validation rules.
+        this.returnCraftingSlotItems();
+        this.absorbMode = !this.absorbMode;
+        this.canvasCraftingPanel?.setMode(this.absorbMode ? 'absorb' : 'craft');
+        this.updateCraftingDisplay();
+        this.updateInventoryDisplay();
+    }
+    /** Send the petals in the slots to the server to be absorbed for XP. */
+    absorbItems() {
+        if (!this.absorbMode)
+            return;
+        if (this.canvasCraftingPanel?.isAnimating())
+            return;
+        if (this.craftingItems.length === 0)
+            return;
+        this.game.getSocket()?.emit('absorbItems', { items: this.craftingItems });
+        this.craftingItems = [];
+        this.updateCraftingDisplay();
+    }
+    /** Server confirmed an absorb: show the +XP result and refresh displays.
+     *  (The authoritative inventory is applied by the socket handler first.) */
+    handleItemsAbsorbed(data) {
+        this.canvasCraftingPanel?.showAbsorbResult(data.xpGained || 0);
+        this.updateCraftingDisplay();
+        this.updateInventoryDisplay();
+    }
+    /** Server rejected an absorb: show feedback and re-sync from the authoritative inventory. */
+    handleAbsorbFailed() {
+        // Reuse the craft-failure display ("Failed!" in the slot circle) so the
+        // rejection isn't silent.
+        this.canvasCraftingPanel?.showCraftResult(false, null, 0);
         this.updateCraftingDisplay();
         this.updateInventoryDisplay();
     }
@@ -1645,6 +1740,7 @@ class InventoryManager {
         }));
         this.canvasCraftingPanel.setCraftingItems(craftingItemsForCanvas);
         this.canvasCraftingPanel.setSuccessChance(this.calculateSuccessChance());
+        this.canvasCraftingPanel.setAbsorbXpPreview(this.craftingItems.reduce((sum, it) => sum + (petals_1.ABSORB_XP[it.rarity || ''] || 0), 0));
     }
     showCraftingSuccess(newItem, successCount, petalsReturned = 0) {
         console.log('[INVENTORY] showCraftingSuccess called:', { newItem, successCount, petalsReturned });
@@ -1755,3 +1851,5 @@ class InventoryManager {
     }
 }
 exports.InventoryManager = InventoryManager;
+/** Server-side per-request limit for absorbItems — staging stops here. */
+InventoryManager.MAX_ABSORB_BATCH = 1000;

@@ -122,6 +122,8 @@ class TitleScreen {
         biomeNames.add('default');
         // PVP arena lives outside the regular map; surface it as its own pickable destination.
         biomeNames.add('pvp');
+        // Daily-rotating maze — also lives outside the regular map.
+        biomeNames.add('maze');
         // Scan map data for biome elements
         if (mapData && Array.isArray(mapData)) {
             console.log('Scanning map data for biomes, total elements:', mapData.length);

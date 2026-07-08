@@ -19,6 +19,7 @@ import './background';
 import './static-map-cache';
 import './game-objects';
 import './pvp-arena';
+import './maze-render';
 import './render';
 import './utilities';
 

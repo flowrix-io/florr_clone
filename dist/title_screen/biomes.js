@@ -12,6 +12,7 @@ const BIOME_CONFIGS = {
     'sewers': { color: 'rgb(128, 63, 2)', title: 'Sewers', displayName: 'Sewers' },
     'computer': { color: 'rgb(96, 255, 149)', title: 'Computer Lab', displayName: 'Computer Lab' },
     'pvp': { color: 'rgb(220, 60, 60)', title: 'PVP Arena', displayName: 'PVP Arena' },
+    'maze': { color: 'rgb(87, 61, 128)', title: 'Maze', displayName: 'Maze' },
 };
 const BIOME_SVG_MAP = {
     'default': 'land.svg',

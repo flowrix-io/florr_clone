@@ -90,6 +90,12 @@ Graphics.prototype.followPlayerOnMinimap = function(this: Graphics, playerX: num
 };
 
 Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, Player>, socket: string) {
+    // Inside the maze, the section-based minimap is meaningless — draw the
+    // maze layout instead (returns false when the player isn't in the maze).
+    if (this.drawMazeMinimap(players, socket)) {
+        return;
+    }
+
     const minimapX = this.viewW - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
     const minimapY = this.MINIMAP_PADDING;
 

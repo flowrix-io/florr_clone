@@ -97,12 +97,23 @@ export class CanvasCraftingPanel {
 
     // ----- Layout rects (CSS pixels) -----
     private closeBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+    private switchBtnRect = { x: 0, y: 0, w: 0, h: 0 };
     private craftBtnRect = { x: 0, y: 0, w: 0, h: 0 };
     private slotRects: { x: number; y: number; w: number; h: number }[] = [];
     private closeBtnHovered = false;
+    private switchBtnHovered = false;
     private craftBtnHovered = false;
     /** The Y offset where the scrollable inventory area starts. */
     private inventoryTop: number = 0;
+
+    // ----- Mode: craft (default) or absorb (petals → XP) -----
+    /** 'craft' = the normal tan crafting UI; 'absorb' = the purple absorb UI
+     *  (old talents-menu colors), toggled by the Switch button next to the X. */
+    private mode: 'craft' | 'absorb' = 'craft';
+    /** XP the current slot contents would grant if absorbed (client preview). */
+    private absorbXpPreview: number = 0;
+    /** XP granted by the last completed absorb (shown in the result state). */
+    private absorbResultXp: number = 0;
 
     // ----- Panel colors -----
     private static readonly PANEL_BG = '#d8a05d';
@@ -113,12 +124,23 @@ export class CanvasCraftingPanel {
     private static readonly CLOSE_BORDER = '#b56476';
     private static readonly CRAFT_BTN_BG = '#8a7a6a';
     private static readonly CRAFT_BTN_BORDER = '#6a5a4a';
+    // Absorb mode — the old talents menu's purple.
+    private static readonly ABSORB_PANEL_BG = '#9d4edd';
+    private static readonly ABSORB_PANEL_BORDER = '#7a3ba8';
+    private static readonly ABSORB_SLOT_BG = '#8b44c9';
+    private static readonly ABSORB_SLOT_BORDER = '#7a3ba8';
+    private static readonly ABSORB_BTN_BG = '#b06ae8';
+    private static readonly ABSORB_BTN_BORDER = '#7a3ba8';
+    private static readonly SWITCH_BG = '#8a7ac9';
+    private static readonly SWITCH_BORDER = '#6a5aa8';
 
     // ----- Callbacks -----
     public onClose: (() => void) | null = null;
     public onCraft: (() => void) | null = null;
     public onItemClick: ((rarity: string, itemType: string, shiftKey: boolean) => void) | null = null;
     public onSlotClick: (() => void) | null = null;
+    /** Fired when the Switch button (left of the X) is clicked. */
+    public onSwitchMode: (() => void) | null = null;
 
     constructor(game: GameAPI) {
         this.game = game;
@@ -184,6 +206,35 @@ export class CanvasCraftingPanel {
         this.successResult = result;
     }
 
+    /** Switch between the craft and absorb UIs. */
+    public setMode(mode: 'craft' | 'absorb') {
+        this.mode = mode;
+    }
+
+    public getMode(): 'craft' | 'absorb' {
+        return this.mode;
+    }
+
+    /** XP preview for the petals currently in the slots (absorb mode). */
+    public setAbsorbXpPreview(xp: number) {
+        this.absorbXpPreview = xp;
+    }
+
+    /** Show the "+N XP" result after the server confirms an absorb. */
+    public showAbsorbResult(xpGained: number) {
+        // Never hijack an in-flight craft spin (e.g. a delayed absorb response
+        // arriving after the player switched back and started crafting) — the
+        // XP is already granted server-side; only the toast is skipped.
+        if (this.animState === 'spinning') return;
+        this.animState = 'result';
+        this.resultStartTime = performance.now();
+        this.resultSuccess = true;
+        this.successResult = null;
+        this.animCraftItem = null;
+        this.failRemainingCount = 0;
+        this.absorbResultXp = xpGained;
+    }
+
     /** Start the spinning animation. Called when the user clicks Craft. */
     public startCraftAnimation(item: CraftingItem) {
         this.animState = 'spinning';
@@ -209,6 +260,9 @@ export class CanvasCraftingPanel {
         this.animState = 'result';
         this.resultStartTime = performance.now();
         this.resultSuccess = data.success;
+        // A craft result always replaces any lingering absorb result — never
+        // render "+N XP" superimposed on the crafted-item icon.
+        this.absorbResultXp = 0;
         if (data.success && data.result) {
             this.successResult = data.result;
         } else {
@@ -247,6 +301,15 @@ export class CanvasCraftingPanel {
             x: cssW - panelPad - closeSize,
             y: panelPad - 4,
             w: closeSize,
+            h: closeSize,
+        };
+
+        // Switch button (craft ⇄ absorb) — immediately left of the X.
+        const switchW = 58;
+        this.switchBtnRect = {
+            x: this.closeBtnRect.x - 6 - switchW,
+            y: this.closeBtnRect.y,
+            w: switchW,
             h: closeSize,
         };
 
@@ -422,14 +485,15 @@ export class CanvasCraftingPanel {
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, cssW, cssH);
 
-        // ----- Panel background + border -----
+        // ----- Panel background + border (purple in absorb mode) -----
+        const absorb = this.mode === 'absorb';
         const panelRadius = 3;
         const borderW = 4;
-        ctx.fillStyle = CanvasCraftingPanel.PANEL_BORDER;
+        ctx.fillStyle = absorb ? CanvasCraftingPanel.ABSORB_PANEL_BORDER : CanvasCraftingPanel.PANEL_BORDER;
         ctx.beginPath();
         (ctx as any).roundRect(0, 0, cssW, cssH, panelRadius);
         ctx.fill();
-        ctx.fillStyle = CanvasCraftingPanel.PANEL_BG;
+        ctx.fillStyle = absorb ? CanvasCraftingPanel.ABSORB_PANEL_BG : CanvasCraftingPanel.PANEL_BG;
         ctx.beginPath();
         (ctx as any).roundRect(borderW, borderW, cssW - borderW * 2, cssH - borderW * 2, Math.max(0, panelRadius - 2));
         ctx.fill();
@@ -443,7 +507,7 @@ export class CanvasCraftingPanel {
         // ----- Craft button -----
         this.drawCraftButton(ctx);
 
-        // ----- Success chance text -----
+        // ----- Success chance / absorb XP text -----
         const cb = this.craftBtnRect;
         ctx.save();
         ctx.font = 'bold 12px Ubuntu, sans-serif';
@@ -455,9 +519,11 @@ export class CanvasCraftingPanel {
         // A computed chance is always > 0 for a valid craft (even high tiers are
         // shown as fractions like 0.25%). A chance of 0 means there's nothing to
         // craft (empty slots / craft disabled), so show "?%" rather than "0%".
-        const chanceText = this.successChance > 0
-            ? `${this.successChance}% success chance`
-            : `?% success chance`;
+        const chanceText = absorb
+            ? (this.absorbXpPreview > 0 ? `+${this.absorbXpPreview} XP` : `+? XP`)
+            : (this.successChance > 0
+                ? `${this.successChance}% success chance`
+                : `?% success chance`);
         const chanceX = cb.x + cb.w / 2;
         const chanceY = cb.y + cb.h + 6;
         ctx.strokeText(chanceText, chanceX, chanceY);
@@ -473,9 +539,12 @@ export class CanvasCraftingPanel {
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
         ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-        ctx.strokeText('Combine 5 of the same petal to craft an upgrade', cssW / 2, instructionY + 4);
+        const instruction = absorb
+            ? 'Absorb petals to convert them into XP'
+            : 'Combine 5 of the same petal to craft an upgrade';
+        ctx.strokeText(instruction, cssW / 2, instructionY + 4);
         ctx.fillStyle = '#ffffff';
-        ctx.fillText('Combine 5 of the same petal to craft an upgrade', cssW / 2, instructionY + 4);
+        ctx.fillText(instruction, cssW / 2, instructionY + 4);
         ctx.restore();
 
         // ----- Scrollable inventory area -----
@@ -516,6 +585,7 @@ export class CanvasCraftingPanel {
 
     private drawHeader(ctx: CanvasRenderingContext2D, cssW: number) {
         // Title
+        const title = this.mode === 'absorb' ? 'Absorb' : 'Craft';
         ctx.save();
         ctx.font = 'bold 22px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
@@ -523,9 +593,31 @@ export class CanvasCraftingPanel {
         ctx.lineWidth = 4;
         ctx.lineJoin = 'round';
         ctx.strokeStyle = '#000000';
-        ctx.strokeText('Craft', cssW / 2, 14);
+        ctx.strokeText(title, cssW / 2, 14);
         ctx.fillStyle = '#ffffff';
-        ctx.fillText('Craft', cssW / 2, 14);
+        ctx.fillText(title, cssW / 2, 14);
+        ctx.restore();
+
+        // Switch button (craft ⇄ absorb) — left of the X.
+        const sb = this.switchBtnRect;
+        ctx.save();
+        ctx.fillStyle = CanvasCraftingPanel.SWITCH_BORDER;
+        ctx.beginPath();
+        (ctx as any).roundRect(sb.x, sb.y, sb.w, sb.h, 4);
+        ctx.fill();
+        ctx.fillStyle = this.switchBtnHovered ? '#a394e0' : CanvasCraftingPanel.SWITCH_BG;
+        ctx.beginPath();
+        (ctx as any).roundRect(sb.x + 2, sb.y + 2, sb.w - 4, sb.h - 4, 3);
+        ctx.fill();
+        ctx.font = 'bold 12px Ubuntu, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 3;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.strokeText('Switch', sb.x + sb.w / 2, sb.y + sb.h / 2 + 1);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Switch', sb.x + sb.w / 2, sb.y + sb.h / 2 + 1);
         ctx.restore();
 
         // Close button
@@ -574,6 +666,7 @@ export class CanvasCraftingPanel {
                 this.animCraftItem = null;
                 this.successResult = null;
                 this.spinAngle = 0;
+                this.absorbResultXp = 0;
             }
         }
 
@@ -587,12 +680,14 @@ export class CanvasCraftingPanel {
             const slotHasItem = hasItems && displayItem && !(
                 this.animState === 'result' && !this.resultSuccess && i >= this.failRemainingCount
             );
+            const emptyBg = this.mode === 'absorb' ? CanvasCraftingPanel.ABSORB_SLOT_BG : CanvasCraftingPanel.SLOT_BG;
+            const emptyBorder = this.mode === 'absorb' ? CanvasCraftingPanel.ABSORB_SLOT_BORDER : CanvasCraftingPanel.SLOT_BORDER;
             const bgColor = slotHasItem
-                ? (ITEM_RARITY_COLORS[displayItem!.rarity] || CanvasCraftingPanel.SLOT_BG)
-                : CanvasCraftingPanel.SLOT_BG;
+                ? (ITEM_RARITY_COLORS[displayItem!.rarity] || emptyBg)
+                : emptyBg;
             const borderColor = slotHasItem
-                ? darken(ITEM_RARITY_COLORS[displayItem!.rarity] || CanvasCraftingPanel.SLOT_BORDER, 25)
-                : CanvasCraftingPanel.SLOT_BORDER;
+                ? darken(ITEM_RARITY_COLORS[displayItem!.rarity] || emptyBorder, 25)
+                : emptyBorder;
 
             ctx.save();
             ctx.fillStyle = borderColor;
@@ -686,6 +781,21 @@ export class CanvasCraftingPanel {
             ctx.restore();
         }
 
+        // Absorb result — "+N XP" in the center.
+        if (this.animState === 'result' && this.resultSuccess && this.absorbResultXp > 0) {
+            ctx.save();
+            ctx.font = 'bold 22px Ubuntu, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.lineWidth = 4;
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+            ctx.strokeText(`+${this.absorbResultXp} XP`, center.cx, center.cy);
+            ctx.fillStyle = '#c9ffb3';
+            ctx.fillText(`+${this.absorbResultXp} XP`, center.cx, center.cy);
+            ctx.restore();
+        }
+
         // Draw "Failed" text in center on failure result
         if (this.animState === 'result' && !this.resultSuccess) {
             ctx.save();
@@ -746,16 +856,28 @@ export class CanvasCraftingPanel {
         const radius = 6;
         const bw = 3;
 
-        // Use next rarity color when items are present
-        const currentRarity = this.craftingItems.length > 0
-            ? this.craftingItems[0].rarity
-            : (this.animCraftItem?.rarity || '');
-        const nextRarity = CanvasCraftingPanel.RARITY_UPGRADES[currentRarity] || '';
-        const nextColor = ITEM_RARITY_COLORS[nextRarity] || '';
+        let btnBg: string;
+        let btnBorder: string;
+        let btnHover: string;
+        let label: string;
+        if (this.mode === 'absorb') {
+            btnBg = CanvasCraftingPanel.ABSORB_BTN_BG;
+            btnBorder = CanvasCraftingPanel.ABSORB_BTN_BORDER;
+            btnHover = '#c284f0';
+            label = 'Absorb';
+        } else {
+            // Use next rarity color when items are present
+            const currentRarity = this.craftingItems.length > 0
+                ? this.craftingItems[0].rarity
+                : (this.animCraftItem?.rarity || '');
+            const nextRarity = CanvasCraftingPanel.RARITY_UPGRADES[currentRarity] || '';
+            const nextColor = ITEM_RARITY_COLORS[nextRarity] || '';
 
-        const btnBg = nextColor || CanvasCraftingPanel.CRAFT_BTN_BG;
-        const btnBorder = nextColor ? darken(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
-        const btnHover = nextColor ? darken(nextColor, 10) : '#9a8a7a';
+            btnBg = nextColor || CanvasCraftingPanel.CRAFT_BTN_BG;
+            btnBorder = nextColor ? darken(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
+            btnHover = nextColor ? darken(nextColor, 10) : '#9a8a7a';
+            label = 'Craft';
+        }
 
         ctx.save();
         ctx.fillStyle = btnBorder;
@@ -774,21 +896,23 @@ export class CanvasCraftingPanel {
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
         ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-        ctx.strokeText('Craft', b.x + b.w / 2, b.y + b.h / 2);
+        ctx.strokeText(label, b.x + b.w / 2, b.y + b.h / 2);
         ctx.fillStyle = '#ffffff';
-        ctx.fillText('Craft', b.x + b.w / 2, b.y + b.h / 2);
+        ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2);
         ctx.restore();
     }
 
     private drawEmptySlot(ctx: CanvasRenderingContext2D, r: ItemRect) {
         const radius = 6;
         const bw = 3;
+        const border = this.mode === 'absorb' ? CanvasCraftingPanel.ABSORB_SLOT_BORDER : CanvasCraftingPanel.SLOT_BORDER;
+        const bg = this.mode === 'absorb' ? CanvasCraftingPanel.ABSORB_SLOT_BG : CanvasCraftingPanel.SLOT_BG;
         ctx.save();
-        ctx.fillStyle = CanvasCraftingPanel.SLOT_BORDER;
+        ctx.fillStyle = border;
         ctx.beginPath();
         (ctx as any).roundRect(r.x, r.y, r.w, r.h, radius);
         ctx.fill();
-        ctx.fillStyle = CanvasCraftingPanel.SLOT_BG;
+        ctx.fillStyle = bg;
         ctx.beginPath();
         (ctx as any).roundRect(r.x + bw, r.y + bw, r.w - bw * 2, r.h - bw * 2, Math.max(0, radius - 2));
         ctx.fill();
@@ -911,6 +1035,7 @@ export class CanvasCraftingPanel {
     private handleMouseMove = (e: MouseEvent) => {
         const { x, y } = this.toLocal(e);
         this.closeBtnHovered = this.pointInRect(x, y, this.closeBtnRect);
+        this.switchBtnHovered = this.pointInRect(x, y, this.switchBtnRect);
         this.craftBtnHovered = this.pointInRect(x, y, this.craftBtnRect);
 
         // Hit test inventory items
@@ -924,6 +1049,7 @@ export class CanvasCraftingPanel {
     private handleMouseLeave = () => {
         this.hoverIndex = -1;
         this.closeBtnHovered = false;
+        this.switchBtnHovered = false;
         this.craftBtnHovered = false;
     };
 
@@ -935,6 +1061,13 @@ export class CanvasCraftingPanel {
         if (this.pointInRect(x, y, this.closeBtnRect)) {
             e.preventDefault();
             if (this.onClose) this.onClose();
+            return;
+        }
+
+        // Switch button (craft ⇄ absorb)
+        if (this.pointInRect(x, y, this.switchBtnRect)) {
+            e.preventDefault();
+            if (this.onSwitchMode) this.onSwitchMode();
             return;
         }
 

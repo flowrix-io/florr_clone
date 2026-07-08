@@ -7,7 +7,8 @@ import { players } from '../constants';
 import { ENEMY_COUNT } from './gameState';
 import { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase, scheduleRestart, cancelScheduledRestart, getScheduledRestartInfo } from '../server';
 import { getPetalStats, RARITY_LEVELS } from '../petals';
-import { addItem } from './playerManager';
+import { addItem, exitMazeState } from './playerManager';
+import { isInMazeRegion } from '../maze';
 import { setTargetBotCount, getTargetBotCount, MAX_BOT_COUNT } from './botManager';
 import {
     forceJoinGuild,
@@ -211,6 +212,14 @@ export function executeServerCommand(
                 // Teleport the player
                 targetPlayer.x = x;
                 targetPlayer.y = y;
+
+                // Teleporting a maze player out of the region must also drop
+                // the maze state — otherwise the per-tick maze clamp pins them
+                // at the region border and their inventory stays in
+                // maze-shifted rarities.
+                if (targetPlayer.inMaze && !isInMazeRegion(x, y)) {
+                    exitMazeState(targetPlayer);
+                }
 
                 // Emit teleport event to client for visual effects
                 io.to(targetPlayerId).emit('playerTeleported', {

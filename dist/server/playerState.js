@@ -14,6 +14,7 @@ exports.updatePlayerState = updatePlayerState;
 const server_utils_1 = require("../server_utils");
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
+const maze_1 = require("../maze");
 const map_data_1 = require("../map_data");
 const gameState_1 = require("./gameState");
 const physics_1 = require("./physics");
@@ -515,9 +516,10 @@ function validatePlayerPositions(io) {
     for (const playerId in constants_1.players) {
         const player = constants_1.players[playerId];
         if (player) {
-            // Reset invalid positions to a safe default. PVP-arena coordinates
-            // sit outside the regular world but are still valid.
-            const inArena = (0, constants_1.isInPvpArena)(player.x, player.y);
+            // Reset invalid positions to a safe default. PVP-arena and maze
+            // coordinates sit outside the regular world but are still valid.
+            const inArena = (0, constants_1.isInPvpArena)(player.x, player.y)
+                || (0, maze_1.isInMazeRegion)(player.x, player.y);
             if (!inArena && (isNaN(player.x) || isNaN(player.y) ||
                 player.x < 0 || player.x > constants_1.ACTUAL_WORLD_WIDTH ||
                 player.y < 0 || player.y > constants_1.ACTUAL_WORLD_HEIGHT)) {
@@ -2063,6 +2065,14 @@ function updatePlayerState(player, deltaTime, deps) {
                 }
             }
         }
+    }
+    // Maze players stay inside the maze region. The maze's border ring is
+    // solid wall so collision already contains them — this is a safety net
+    // against knockback/teleport edge cases ejecting someone into the void.
+    if (player.inMaze) {
+        const margin = constants_1.PLAYER_SIZE / 2;
+        newX = Math.max(maze_1.MAZE_ORIGIN_X + margin, Math.min(maze_1.MAZE_ORIGIN_X + maze_1.MAZE_WORLD_SIZE - margin, newX));
+        newY = Math.max(maze_1.MAZE_ORIGIN_Y + margin, Math.min(maze_1.MAZE_ORIGIN_Y + maze_1.MAZE_WORLD_SIZE - margin, newY));
     }
     // Clamp position to the PVP arena boundary if the player is currently inside it.
     // Players can only leave via the central exit teleporter — never by walking out.
