@@ -7,7 +7,7 @@ import { players } from '../constants';
 import { ENEMY_COUNT } from './gameState';
 import { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase, scheduleRestart, cancelScheduledRestart, getScheduledRestartInfo, adminChangeMaze, simulateTickSpike, cancelSimulatedTickSpike, getSimulatedTickSpikeInfo } from '../server';
 import { getPetalStats, RARITY_LEVELS } from '../petals';
-import { addItem, exitMazeState } from './playerManager';
+import { addItem, exitMazeState, recalculatePlayerStats } from './playerManager';
 import { isInMazeRegion } from '../maze';
 import { setTargetBotCount, getTargetBotCount, MAX_BOT_COUNT } from './botManager';
 import {
@@ -215,10 +215,11 @@ export function executeServerCommand(
 
                 // Teleporting a maze player out of the region must also drop
                 // the maze state — otherwise the per-tick maze clamp pins them
-                // at the region border and their inventory stays in
-                // maze-shifted rarities.
+                // at the region border, their inventory stays in maze-shifted
+                // rarities, and their level/TP stay on the maze track.
                 if (targetPlayer.inMaze && !isInMazeRegion(x, y)) {
-                    exitMazeState(targetPlayer);
+                    exitMazeState(targetPlayer, io);
+                    recalculatePlayerStats(targetPlayer, io);
                 }
 
                 // Emit teleport event to client for visual effects

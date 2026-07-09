@@ -195,10 +195,11 @@ function executeServerCommand(command, executor, deps, socketId) {
                 targetPlayer.y = y;
                 // Teleporting a maze player out of the region must also drop
                 // the maze state — otherwise the per-tick maze clamp pins them
-                // at the region border and their inventory stays in
-                // maze-shifted rarities.
+                // at the region border, their inventory stays in maze-shifted
+                // rarities, and their level/TP stay on the maze track.
                 if (targetPlayer.inMaze && !(0, maze_1.isInMazeRegion)(x, y)) {
-                    (0, playerManager_1.exitMazeState)(targetPlayer);
+                    (0, playerManager_1.exitMazeState)(targetPlayer, io);
+                    (0, playerManager_1.recalculatePlayerStats)(targetPlayer, io);
                 }
                 // Emit teleport event to client for visual effects
                 io.to(targetPlayerId).emit('playerTeleported', {

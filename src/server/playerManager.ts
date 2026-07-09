@@ -1,5 +1,5 @@
 import { Server as SocketIOServer } from '../ws_server';
-import { ServerPlayer, PlayerInventory } from '../player';
+import { ServerPlayer, PlayerInventory, PlayerSkills } from '../player';
 import { Item } from '../item';
 import { getPetalStats, PlayerModifiers } from '../petals';
 import {
@@ -186,9 +186,63 @@ function loadoutItemKey(item: Item): string | null {
  */
 export function enterMazeState(player: ServerPlayer, io?: SocketIOServer): void {
     player.inMaze = true;
+    // Must run first: the rarity shift re-derives petal health through
+    // applyPetalHealthBonus, which reads player.skills — that has to already
+    // be the maze tree, not the outside one.
+    enterMazeProgression(player);
     applyMazeRarityShift(player);
     enforceMazeLoadoutCap(player, io);
     snapshotMazeEntryCounts(player);
+    emitSkillsUpdate(player, io);
+}
+
+/** Push the now-live track's TP pool and talent tree to the owning client. */
+function emitSkillsUpdate(player: ServerPlayer, io?: SocketIOServer): void {
+    if (!io) return;
+    io.to(player.id).emit('skillsUpdated', {
+        playerId: player.id,
+        tp: player.tp || 0,
+        skills: player.skills || {}
+    });
+}
+
+/**
+ * Park the outside level/TP/talents and make the maze track live. The maze
+ * track is permanent — it is loaded from the DB at auth and written back on
+ * exit and on every save — so re-entering resumes the maze level you left at.
+ * Idempotent per maze session via mazeXPSwapped.
+ */
+export function enterMazeProgression(player: ServerPlayer): void {
+    if (player.mazeXPSwapped) return;
+    player.regularTotalXP = calculateTotalXP(player.level, player.xp);
+    player.regularTp = player.tp || 0;
+    player.regularSkills = player.skills || {};
+
+    const mazeTotalXP = player.mazeTotalXP || 0;
+    applyTotalXPToLive(player, mazeTotalXP);
+    player.skills = player.mazeSkills || {};
+    player.tp = player.mazeTp ?? reconcileTP(player.level, player.skills);
+    player.mazeXPSwapped = true;
+}
+
+/**
+ * Write the live maze track back to its parked fields and restore the outside
+ * track. Runs before the loadout translation in exitMazeState so that the
+ * restored petals derive their health from the OUTSIDE petalHealth talent.
+ */
+export function exitMazeProgression(player: ServerPlayer): void {
+    if (!player.mazeXPSwapped) return;
+    player.mazeTotalXP = calculateTotalXP(player.level, player.xp);
+    player.mazeTp = player.tp || 0;
+    player.mazeSkills = player.skills || {};
+
+    applyTotalXPToLive(player, player.regularTotalXP || 0);
+    player.skills = player.regularSkills || {};
+    player.tp = player.regularTp || 0;
+    player.regularTotalXP = undefined;
+    player.regularTp = undefined;
+    player.regularSkills = undefined;
+    player.mazeXPSwapped = false;
 }
 
 /**
@@ -285,7 +339,12 @@ export function getMazeAbsorbableCount(player: ServerPlayer, rarity: string, ite
  * the normal exit path — leaving via the title screen — converts implicitly
  * through the save translation instead.
  */
-export function exitMazeState(player: ServerPlayer): void {
+export function exitMazeState(player: ServerPlayer, io?: SocketIOServer): void {
+    const wasSwapped = player.mazeXPSwapped;
+    // Restore the outside talents before the loadout is translated back up:
+    // applyPetalHealthBonus below must see the outside petalHealth tier.
+    exitMazeProgression(player);
+    if (wasSwapped) emitSkillsUpdate(player, io);
     if (player.mazeRarityShifted) {
         const regular = buildMazeRegularState(player);
         player.inventory = regular.inventory;
@@ -517,7 +576,7 @@ export function respawnPlayer(player: ServerPlayer, io: SocketIOServer) {
         // Not a maze respawn: make sure no maze-term state leaks out (also
         // converts the live inventory back if the player somehow left the
         // maze without a re-auth).
-        exitMazeState(player);
+        exitMazeState(player, io);
     }
 
     // First, try to spawn in the biome the player selected on the title screen
@@ -724,6 +783,64 @@ export function calculateMaxHealthFromLevel(level: number): number {
     return PLAYER_MAX_HEALTH + Math.ceil(Math.pow(level, 1.5) * HEALTH_PER_LEVEL);
 }
 
+/**
+ * TP already spent on a talent tree: for each skill, the sum of every tier
+ * cost from common up to the unlocked tier. Used to reconcile a track's TP
+ * pool from its level when no explicit TP figure was persisted.
+ */
+export function countSpentTP(skills: PlayerSkills | undefined): number {
+    if (!skills) return 0;
+    let total = 0;
+    for (const tier of Object.values(skills)) {
+        const index = tier ? getRarityIndex(tier) : -1;
+        for (let i = 0; i <= index; i++) total += RARITY_TP_COSTS[RARITY_LEVELS[i]];
+    }
+    return total;
+}
+
+/** Unspent TP for a track that earned 1 TP per level and spent some on `skills`. */
+export function reconcileTP(level: number, skills: PlayerSkills | undefined): number {
+    return Math.max(0, level - countSpentTP(skills));
+}
+
+/** True while the live level/xp/tp/skills describe the MAZE track. */
+export function isMazeTrackLive(player: ServerPlayer): boolean {
+    return !!(player.inMaze && player.mazeXPSwapped);
+}
+
+/** Total XP on the OUTSIDE track, wherever the player currently stands. */
+export function getOutsideTotalXP(player: ServerPlayer): number {
+    return isMazeTrackLive(player)
+        ? (player.regularTotalXP || 0)
+        : calculateTotalXP(player.level, player.xp);
+}
+
+/** Total XP on the MAZE track, wherever the player currently stands. */
+export function getMazeTotalXP(player: ServerPlayer): number {
+    return isMazeTrackLive(player)
+        ? calculateTotalXP(player.level, player.xp)
+        : (player.mazeTotalXP || 0);
+}
+
+/**
+ * The talent tree the `absorbing` skill is read from. Absorbing only pays out
+ * inside the maze but is bought outside, so it stays an outside-tree talent —
+ * moving it would silently void every TP already spent on it.
+ */
+export function getAbsorbingTier(player: ServerPlayer): string | undefined {
+    return isMazeTrackLive(player)
+        ? player.regularSkills?.absorbing
+        : player.skills?.absorbing;
+}
+
+/** Point the live level/xp/xpToNextLevel triple at a given totalXP. */
+function applyTotalXPToLive(player: ServerPlayer, totalXP: number): void {
+    const level = calculateLevelFromTotalXP(totalXP);
+    player.level = level;
+    player.xp = calculateCurrentLevelXP(totalXP, level);
+    player.xpToNextLevel = calculateXPRequirement(level);
+}
+
 export function calculateDamageFromLevel(level: number): number {
     return PLAYER_DAMAGE + Math.ceil(Math.pow(level, 1.5) * DAMAGE_PER_LEVEL);
 }
@@ -887,22 +1004,62 @@ export function recalculatePlayerStats(player: ServerPlayer, io?: SocketIOServer
     }
 }
 
+/**
+ * Grant XP on the OUTSIDE track. Every mob and boss kill routes here — kills
+ * made *inside* the maze included, which is the whole point of the split: maze
+ * mobs feed your outside level only. When the maze track is live the XP is
+ * banked into the parked outside total, so it produces no level-up, no TP and
+ * no stat change until the player leaves.
+ */
 export function addXPToPlayer(
-    player: ServerPlayer, 
-    xp: number, 
+    player: ServerPlayer,
+    xp: number,
     socketId: string | undefined,
+    io: SocketIOServer
+): void {
+    if (isMazeTrackLive(player)) {
+        player.regularTotalXP = Math.max(0, (player.regularTotalXP || 0) + xp);
+        return;
+    }
+    applyXPToLiveTrack(player, xp, io);
+}
+
+/**
+ * Grant XP on the MAZE track. Only absorbing does this, and it grants outside
+ * XP too (see the absorbItems handler) — absorbing is the sole way to raise
+ * your maze level.
+ */
+export function addMazeXPToPlayer(
+    player: ServerPlayer,
+    xp: number,
+    io: SocketIOServer
+): void {
+    if (isMazeTrackLive(player)) {
+        applyXPToLiveTrack(player, xp, io);
+        return;
+    }
+    player.mazeTotalXP = Math.max(0, (player.mazeTotalXP || 0) + xp);
+}
+
+/**
+ * Apply XP to whichever track is currently live, handling level-ups, TP awards
+ * and the stat recalculation that follows.
+ */
+function applyXPToLiveTrack(
+    player: ServerPlayer,
+    xp: number,
     io: SocketIOServer
 ): void {
     // Calculate current total XP
     const currentTotalXP = calculateTotalXP(player.level, player.xp);
     // Add the new XP
     const newTotalXP = currentTotalXP + xp;
-    
+
     // Calculate new level from total XP
     const oldLevel = player.level;
     const newLevel = calculateLevelFromTotalXP(newTotalXP);
     const newCurrentLevelXP = calculateCurrentLevelXP(newTotalXP, newLevel);
-    
+
     // Update player stats
     player.xp = newCurrentLevelXP;
     player.level = newLevel;
@@ -955,8 +1112,17 @@ export function savePlayerProgress(
     database: any
 ) {
     if (userId) {
-        // Calculate total XP from current level and XP
-        const totalXP = calculateTotalXP(player.level, player.xp);
+        // Both progression tracks are persisted every save, read through the
+        // accessors rather than off the live fields — inside the maze the live
+        // level/tp/skills are the MAZE track, and writing those into totalXP
+        // would destroy the player's outside level.
+        const totalXP = getOutsideTotalXP(player);
+        const mazeTotalXP = getMazeTotalXP(player);
+        const mazeLive = isMazeTrackLive(player);
+        const outsideTp = mazeLive ? (player.regularTp || 0) : (player.tp || 0);
+        const outsideSkills = mazeLive ? (player.regularSkills || {}) : (player.skills || {});
+        const mazeTp = mazeLive ? (player.tp || 0) : (player.mazeTp || 0);
+        const mazeSkills = mazeLive ? (player.skills || {}) : (player.mazeSkills || {});
 
         // While in PVP, the live `inventory`/`loadout` are the temporary PVP
         // versions; save the stashed regular versions so PVP play doesn't clobber
@@ -990,10 +1156,13 @@ export function savePlayerProgress(
 
         database.savePlayer(userId, {
             totalXP: totalXP,
+            mazeTotalXP: mazeTotalXP,
             inventory: inventoryToDict(inventoryToSave),
             loadout: cleanLoadout,
-            tp: player.tp || 0,
-            skills: player.skills || {},
+            tp: outsideTp,
+            skills: outsideSkills,
+            mazeTp: mazeTp,
+            mazeSkills: mazeSkills,
             mobKills: player.mobKills || {},
             stars: player.stars || 0,
             renderFlags: player.renderFlags || 0,

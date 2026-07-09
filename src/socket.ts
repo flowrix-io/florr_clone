@@ -1022,6 +1022,21 @@ function setupSocketListeners(game: any) {
         }
     });
 
+    // XP banked onto the OUTSIDE track while the player stands in the maze —
+    // every mob kill in there. The XP bar shows the maze level, so it must not
+    // move; we just record where the outside level has got to.
+    game.socket.on('outsideXpGained', (data: {
+        playerId: string;
+        xp: number;
+        outsideLevel: number;
+        outsideTotalXp: number;
+    }) => {
+        const player = game.players.get(data.playerId);
+        if (player) {
+            player.outsideLevel = data.outsideLevel;
+        }
+    });
+
     game.socket.on('levelUp', (data: {
         playerId: string;
         level: number;

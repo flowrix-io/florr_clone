@@ -22,6 +22,12 @@ interface PlayerInventory {
 
 export interface PlayerProgress {
     totalXP: number; // Total XP accumulated (level, maxHealth, damage calculated from this)
+    // The maze's independent progression: its own permanent level (derived from
+    // mazeTotalXP), its own TP pool and its own talent tree. Only absorbing
+    // grants maze XP; mob kills always bank into totalXP, even inside the maze.
+    mazeTotalXP?: number;
+    mazeTp?: number;
+    mazeSkills?: { [skillId: string]: string };
     inventory?: PlayerInventory;
     loadout?: (Item | null)[];
     mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count

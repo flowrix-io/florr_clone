@@ -124,7 +124,12 @@ core_1.Graphics.prototype.drawUI = function (players, socket) {
         const xpTextY = xpBarY + 15;
         this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = 3;
-        const xpText = `LVL ${player.level} - ${this.formatNumber(player.xp)}/${this.formatNumber(player.xpToNextLevel)}`;
+        // Inside the maze `player.level` is the maze track's level; the outside
+        // level (which maze mob kills bank into) trails it in parentheses.
+        const levelLabel = player.inMaze
+            ? `MAZE LVL ${player.level}${player.outsideLevel ? ` (LVL ${player.outsideLevel})` : ''}`
+            : `LVL ${player.level}`;
+        const xpText = `${levelLabel} - ${this.formatNumber(player.xp)}/${this.formatNumber(player.xpToNextLevel)}`;
         this.ctx.strokeText(xpText, xpTextX, xpTextY);
         this.ctx.fillStyle = 'white';
         this.ctx.fillText(xpText, xpTextX, xpTextY);

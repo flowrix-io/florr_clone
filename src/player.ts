@@ -31,6 +31,17 @@ export enum PlayerRenderFlags {
 // Compact inventory: flat number array of [rarityId, itemId, count, ...] triplets
 export type PlayerInventory = number[];
 
+// Talent tiers, keyed by skill id. The maze has its own independent tree
+// (ServerPlayer.mazeSkills), bought with its own TP pool.
+export interface PlayerSkills {
+  damage?: string; // Rarity tier: common, uncommon, rare, etc.
+  petalHealth?: string;
+  playerHealth?: string;
+  healingMultiplier?: string;
+  secondChance?: string; // Invulnerability when reaching 1 HP
+  absorbing?: string; // Boosts maze Absorb-tab XP, up to 800% at apex. Outside-tree only.
+}
+
 // Legacy string-based format used only for database storage and configs
 export interface PlayerInventoryDict {
     [rarity: string]: {
@@ -104,6 +115,9 @@ export interface Player {
   inPvpArena?: boolean;    // True when this player is currently inside the PVP arena
   pvpScore?: number;       // PVP arena score (resets when leaving the arena)
   inMaze?: boolean;        // True when this player is currently inside the maze
+  // While inMaze, `level`/`xp` describe the MAZE track. This mirrors the
+  // outside level so the HUD can show what mob kills in here are banking into.
+  outsideLevel?: number;
   // What this player brought into the maze ("rarityId|itemId" → count;
   // inventory in regular terms + loadout in maze-shifted terms). Sent by the
   // server on authenticate/respawn. Petals beyond these counts were obtained
@@ -117,14 +131,12 @@ export interface PlayerProgress {
   inventory: PlayerInventory;
   loadout: (Item | null)[];
   tp?: number; // Talent Points
-  skills?: {
-    damage?: string; // Rarity tier: common, uncommon, rare, etc.
-    petalHealth?: string;
-    playerHealth?: string;
-    healingMultiplier?: string;
-    secondChance?: string; // Invulnerability when reaching 1 HP
-    absorbing?: string; // Boosts maze Absorb-tab XP, up to 800% at apex
-  };
+  skills?: PlayerSkills;
+  // The maze's independent progression track (see ServerPlayer). Persisted
+  // separately from totalXP/tp/skills and never reset.
+  mazeTotalXP?: number;
+  mazeTp?: number;
+  mazeSkills?: PlayerSkills;
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
 }
@@ -180,15 +192,8 @@ export interface ServerPlayer {
   viewportWidth?: number; // Client's effective viewport width (canvas.width / zoomLevel)
   viewportHeight?: number; // Client's effective viewport height (canvas.height / zoomLevel)
   effects?: PlayerEffect[]; // Active petal effects
-  tp?: number; // Talent Points
-  skills?: {
-    damage?: string; // Rarity tier: common, uncommon, rare, etc.
-    petalHealth?: string;
-    playerHealth?: string;
-    healingMultiplier?: string;
-    secondChance?: string; // Invulnerability when reaching 1 HP
-    absorbing?: string; // Boosts maze Absorb-tab XP, up to 800% at apex
-  };
+  tp?: number; // Talent Points (of whichever track is live — see mazeXPSwapped)
+  skills?: PlayerSkills;
   secondChanceCooldownUntil?: number; // Timestamp when second chance cooldown expires
   mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
   stars?: number; // In-game currency earned from challenges and codes
@@ -222,6 +227,30 @@ export interface ServerPlayer {
   // to the surplus over this snapshot: only petals obtained during the maze
   // run may be absorbed. Cleared on maze exit; survives in-maze deaths.
   mazeEntryCounts?: Record<string, number>;
+
+  // --- Two-track progression ------------------------------------------------
+  // The maze has its own permanent level, TP pool and talent tree, separate
+  // from the outside world's. Exactly ONE track is live at a time: `level`,
+  // `xp`, `xpToNextLevel`, `tp` and `skills` always describe the track the
+  // player is currently standing in, so stat scaling, the XP bar and the
+  // skill menu all follow without special-casing. The other track is parked
+  // as a plain totalXP number. `mazeXPSwapped` says which way round we are.
+  //
+  //   outside:  live = outside track;  mazeTotalXP/mazeTp/mazeSkills   parked
+  //   in maze:  live = maze track;     regularTotalXP/Tp/Skills        parked
+  //
+  // Reads should go through getOutsideTotalXP()/getMazeTotalXP() rather than
+  // touching the parked fields, and saves are NEVER written from the live
+  // fields directly — savePlayerProgress persists both tracks explicitly, so
+  // a crash inside the maze can't overwrite the outside level.
+  mazeXPSwapped?: boolean;
+  mazeTotalXP?: number;      // parked maze totalXP (authoritative while OUTSIDE)
+  mazeTp?: number;
+  mazeSkills?: PlayerSkills;
+  regularTotalXP?: number;   // parked outside totalXP (authoritative while INSIDE)
+  regularTp?: number;
+  regularSkills?: PlayerSkills;
+
   // While inside the PVP arena, `inventory`/`loadout` hold the PVP-only versions
   // and the player's regular versions are stashed here. On exit, 25% of the PVP
   // inventory is transferred into `regularInventory` and the regular inventory/

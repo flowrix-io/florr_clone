@@ -7,6 +7,7 @@ exports.redeemedCodes = exports.sendBossMobDefeatedMessage = exports.trackDamage
 exports.handleMobDrops = handleMobDrops;
 exports.updateSpecialMobCounts = updateSpecialMobCounts;
 exports.addXPToPlayer = addXPToPlayer;
+exports.addMazeXPToPlayer = addMazeXPToPlayer;
 exports.saveCodeToDatabase = saveCodeToDatabase;
 exports.deleteCodeFromDatabase = deleteCodeFromDatabase;
 exports.simulateTickSpike = simulateTickSpike;
@@ -687,10 +688,16 @@ const RARITY_TP_COSTS = {
     apex: 30
 };
 // Functions moved to playerManager module - using imports
-// Wrapper for addXPToPlayer that passes io and handles additional events
-function addXPToPlayer(player, xp, socketId) {
-    (0, playerManager_1.addXPToPlayer)(player, xp, socketId, ioInstance);
-    // Emit xpGained event only to the affected player
+function saveAfterXP(player, socketId) {
+    if (!socketId)
+        return;
+    const socket = ioInstance.sockets.sockets.get(socketId);
+    if (socket?.userId) {
+        (0, playerManager_1.savePlayerProgress)(player, socket.userId, database_1.database);
+    }
+}
+// The live track's XP bar / level / stats changed — tell the owning client.
+function emitLiveXPGain(player, xp) {
     ioInstance.to(player.id).emit('xpGained', {
         playerId: player.id,
         xp: xp,
@@ -700,13 +707,40 @@ function addXPToPlayer(player, xp, socketId) {
         maxHealth: player.maxHealth,
         damage: player.damage
     });
-    // Save progress after XP gain if we have the socket ID
-    if (socketId) {
-        const socket = ioInstance.sockets.sockets.get(socketId);
-        if (socket?.userId) {
-            (0, playerManager_1.savePlayerProgress)(player, socket.userId, database_1.database);
-        }
+}
+/**
+ * Grant OUTSIDE XP. All mob and boss kills come through here. Inside the maze
+ * this silently banks into the parked outside total — the maze XP bar must not
+ * move, so we send `outsideXpGained` instead of `xpGained`.
+ */
+function addXPToPlayer(player, xp, socketId) {
+    const banked = (0, playerManager_1.isMazeTrackLive)(player);
+    (0, playerManager_1.addXPToPlayer)(player, xp, socketId, ioInstance);
+    if (banked) {
+        const outsideTotalXP = (0, playerManager_1.getOutsideTotalXP)(player);
+        ioInstance.to(player.id).emit('outsideXpGained', {
+            playerId: player.id,
+            xp: xp,
+            outsideLevel: (0, playerManager_1.calculateLevelFromTotalXP)(outsideTotalXP),
+            outsideTotalXp: outsideTotalXP
+        });
     }
+    else {
+        emitLiveXPGain(player, xp);
+    }
+    saveAfterXP(player, socketId);
+}
+/**
+ * Grant MAZE XP. Only absorbing calls this. Outside the maze it accumulates
+ * into the parked maze total (absorbing is maze-only today, so this is just
+ * defensive) and no client event is sent.
+ */
+function addMazeXPToPlayer(player, xp, socketId) {
+    const live = (0, playerManager_1.isMazeTrackLive)(player);
+    (0, playerManager_1.addMazeXPToPlayer)(player, xp, ioInstance);
+    if (live)
+        emitLiveXPGain(player, xp);
+    saveAfterXP(player, socketId);
 }
 // Wrapper for respawnPlayer that passes io
 function respawnPlayer(player) {
@@ -962,30 +996,19 @@ io.on('connection', (socket) => {
             }
             // Initialize skills from saved progress or defaults
             const savedSkills = savedProgress?.skills || {};
-            // Check if TP was explicitly saved in the database
+            // Use the saved TP if it was explicitly persisted (authoritative),
+            // otherwise reconcile it from level minus what the tree cost. This
+            // prevents TP duplication when refreshing/re-authenticating.
             const hasSavedTP = savedProgress && savedProgress.tp !== undefined;
-            const savedTP = hasSavedTP ? savedProgress.tp : 0;
-            // Calculate TP from level (1 TP per level)
-            // Count spent TP by summing costs of unlocked tiers
-            const countSpentTP = (tier) => {
-                if (!tier)
-                    return 0;
-                const index = (0, petals_1.getRarityIndex)(tier);
-                if (index < 0)
-                    return 0;
-                // Sum costs from common up to this tier
-                let total = 0;
-                for (let i = 0; i <= index; i++) {
-                    total += RARITY_TP_COSTS[petals_1.RARITY_LEVELS[i]];
-                }
-                return total;
-            };
-            const spentTP = countSpentTP(savedSkills.damage) + countSpentTP(savedSkills.petalHealth) +
-                countSpentTP(savedSkills.playerHealth) + countSpentTP(savedSkills.healingMultiplier) +
-                countSpentTP(savedSkills.absorbing);
-            // Use savedTP if it was explicitly saved (authoritative), otherwise calculate from level - spentTP
-            // This prevents TP duplication when refreshing/re-authenticating
-            const currentTP = hasSavedTP ? savedTP : Math.max(0, level - spentTP);
+            const currentTP = hasSavedTP ? savedProgress.tp : (0, playerManager_1.reconcileTP)(level, savedSkills);
+            // The maze's own permanent progression track, parked until the
+            // player actually enters the maze (enterMazeProgression swaps it in).
+            const mazeTotalXP = savedProgress?.mazeTotalXP || 0;
+            const mazeSkills = savedProgress?.mazeSkills || {};
+            const hasSavedMazeTP = savedProgress && savedProgress.mazeTp !== undefined;
+            const mazeTP = hasSavedMazeTP
+                ? savedProgress.mazeTp
+                : (0, playerManager_1.reconcileTP)((0, playerManager_1.calculateLevelFromTotalXP)(mazeTotalXP), mazeSkills);
             // Reconstruct loadout from saved data (only type/rarity/petalType saved)
             const reconstructLoadout = (savedLoadout) => {
                 if (!savedLoadout || !Array.isArray(savedLoadout)) {
@@ -1037,6 +1060,9 @@ io.on('connection', (socket) => {
                 speed_boost: 1,
                 tp: currentTP,
                 skills: savedSkills,
+                mazeTotalXP: mazeTotalXP,
+                mazeTp: mazeTP,
+                mazeSkills: mazeSkills,
                 mobKills: savedProgress?.mobKills || {},
                 stars: savedProgress?.stars || 0,
                 renderFlags: savedProgress?.renderFlags || 0,
@@ -1164,7 +1190,7 @@ io.on('connection', (socket) => {
                 const biomeName = mazeNow ? mazeNow.biome.charAt(0).toUpperCase() + mazeNow.biome.slice(1) : '';
                 socket.emit('chatMessage', {
                     sender: 'System',
-                    content: `<span style="color: #c77dff;">Entered the ${biomeName} Maze. Your equipped petals act one rarity lower in here and return to normal when you leave. You cannot equip new petals in the maze — set up your loadout on the title screen before entering. Petals found in the maze enter your inventory one rarity higher; petals above Ultra are unequipped at the entrance.</span>`,
+                    content: `<span style="color: #c77dff;">Entered the ${biomeName} Maze. Your equipped petals act one rarity lower in here and return to normal when you leave. You cannot equip new petals in the maze — set up your loadout on the title screen before entering. Petals found in the maze enter your inventory one rarity higher; petals above Ultra are unequipped at the entrance. The maze has its own level, talent points and talent tree, kept separately from your outside ones: only absorbing raises your maze level, while mobs killed in here give XP to your outside level.</span>`,
                     timestamp: Date.now()
                 });
             }
@@ -3026,6 +3052,13 @@ io.on('connection', (socket) => {
             socket.emit('skillUpgradeError', { message: 'Invalid skill ID' });
             return;
         }
+        // Absorbing only ever pays out on the maze's Absorb tab but is read
+        // from the outside tree (getAbsorbingTier), so buying it with maze TP
+        // would spend points on a node that never applies.
+        if (data.skillId === 'absorbing' && (0, playerManager_1.isMazeTrackLive)(player)) {
+            socket.emit('skillUpgradeError', { message: 'Absorption must be upgraded outside the maze' });
+            return;
+        }
         // Validate rarity
         if (!petals_1.RARITY_LEVELS.includes(data.rarity)) {
             socket.emit('skillUpgradeError', { message: 'Invalid rarity tier' });
@@ -3338,9 +3371,14 @@ io.on('connection', (socket) => {
             }
             if (xpGained > 0) {
                 // Absorption skill talent boosts Absorb-tab XP, up to 800% at apex.
-                const absorbingMultiplier = petals_1.ABSORBING_SKILL_MULTIPLIERS[player.skills?.absorbing || ''] || 1.0;
+                // Read from the OUTSIDE tree — absorbing is bought out there.
+                const absorbingMultiplier = petals_1.ABSORBING_SKILL_MULTIPLIERS[(0, playerManager_1.getAbsorbingTier)(player) || ''] || 1.0;
                 xpGained = Math.round(xpGained * absorbingMultiplier);
-                addXPToPlayer(player, xpGained, socket.id);
+                // Absorbing is the only source that feeds BOTH tracks: it raises
+                // the outside level (banked, silent) and the maze level (live).
+                // Only the second call saves — savePlayerProgress writes both.
+                addXPToPlayer(player, xpGained);
+                addMazeXPToPlayer(player, xpGained, socket.id);
             }
             socket.emit('itemsAbsorbed', {
                 xpGained,
