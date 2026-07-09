@@ -42,6 +42,6 @@ rm ~/inventory.json
 #    method that works, since the loop is too tight for --report-on-signal to fire.
 #  --report-on-signal is kept as a best-effort SIGUSR2 JS-stack report.
 # REMOVE both once the hang is fixed (the perf map grows slowly over a long session).
-pm2 start server.js --node-args="--report-on-signal --perf-basic-prof-only-functions"
+pm2 start server.js #--node-args="--report-on-signal --perf-basic-prof-only-functions"
 pm2 save
 sudo reboot

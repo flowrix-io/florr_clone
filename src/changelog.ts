@@ -410,6 +410,16 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Maze changes each day',
             'Added absorbing(only for petals collected in maze)',
         ]
+    },
+    {
+        date: 'July 8, 2026',
+        changes: [
+            'Maze now has a seperate leveling system than the main game',
+            'Made maze larger',
+            'Fixed some server bugs',
+            'Added mobile support',
+            'Added absorb talents'
+        ]
     }
 ];
 
