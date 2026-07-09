@@ -5462,6 +5462,52 @@ function updateGroundPollens() {
 
 // updatePlayerState moved to playerState module - using imported function
 
+// Admin test hook: force every tick's `deltaTime` to a fixed value for a
+// window, so a slow/GC-stalled tick (real load, e.g. a mob-dense maze) can be
+// reproduced on demand instead of waiting for it to happen live. This is what
+// caught the petal orbit spring instability (playerState.ts) — the spring is
+// unconditionally unstable once dt exceeds ~0.089s, which the server's own
+// MAX_DELTA (below) already allows. Use `/admin simtick <deltaSeconds>
+// <durationSeconds>` to hold dt there and watch for other divergence bugs
+// (petals, mob AI, projectiles, wall collision) instead of guessing.
+let simulatedTickSpikeUntilMs = 0;
+let simulatedTickSpikeDeltaSec = 0;
+const MAX_SIMULATED_TICK_DELTA_SEC = 10; // generous headroom past MAX_DELTA=0.1 for stress testing
+const MAX_SIMULATED_TICK_DURATION_MS = 5 * 60 * 1000;
+
+/** Force every tick's deltaTime to `deltaSeconds` for `durationMs` (admin test hook). */
+export function simulateTickSpike(deltaSeconds: number, durationMs: number): { ok: boolean; message: string } {
+    if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+        return { ok: false, message: 'deltaSeconds must be a positive number.' };
+    }
+    if (!Number.isFinite(durationMs) || durationMs <= 0) {
+        return { ok: false, message: 'durationMs must be a positive number.' };
+    }
+    if (deltaSeconds > MAX_SIMULATED_TICK_DELTA_SEC) {
+        return { ok: false, message: `deltaSeconds capped at ${MAX_SIMULATED_TICK_DELTA_SEC}.` };
+    }
+    if (durationMs > MAX_SIMULATED_TICK_DURATION_MS) {
+        return { ok: false, message: `durationMs capped at ${MAX_SIMULATED_TICK_DURATION_MS}.` };
+    }
+    simulatedTickSpikeDeltaSec = deltaSeconds;
+    simulatedTickSpikeUntilMs = performance.now() + durationMs;
+    return { ok: true, message: `Simulating a ${deltaSeconds}s tick delta for ${(durationMs / 1000).toFixed(1)}s. Use "simtick cancel" to stop early.` };
+}
+
+/** Cancel an active simulated tick spike. Returns true if one was active. */
+export function cancelSimulatedTickSpike(): boolean {
+    const wasActive = simulatedTickSpikeUntilMs > performance.now();
+    simulatedTickSpikeUntilMs = 0;
+    return wasActive;
+}
+
+/** Info about the active simulated tick spike, or null if none is running. */
+export function getSimulatedTickSpikeInfo(): { deltaSeconds: number; remainingMs: number } | null {
+    const remaining = simulatedTickSpikeUntilMs - performance.now();
+    if (remaining <= 0) return null;
+    return { deltaSeconds: simulatedTickSpikeDeltaSec, remainingMs: remaining };
+}
+
 function start_loop() {
     const TICK_RATE = 30;
     const TICK_INTERVAL = 1000 / TICK_RATE;
@@ -5481,6 +5527,17 @@ function start_loop() {
     const DELTA_SMOOTH = 0.1; // low-pass factor (~10-tick time constant)
     let lastTickMs = 0;
     let smoothedDelta = NOMINAL_DELTA;
+
+    // Real ticks keep firing at the normal ~30/s cadence even while a spike is
+    // simulated (see simulateTickSpike above) — only the deltaTime value is
+    // faked. Feeding every one of those real ticks the inflated deltaTime would
+    // advance the world faster than real time instead of at the same rate in
+    // fewer/bigger steps, which is what an actual slow tick does. So real
+    // elapsed time is banked here, and the world (players, petals, mobs,
+    // projectiles) is only actually advanced once enough has accumulated to
+    // equal one simulated tick. Reset to 0 whenever no spike is active so it
+    // never affects normal play.
+    let simTickAccumulatorSec = 0;
 
     // Tick-duration accounting for the client debug menu graphs. Accumulated
     // per full tick below and drained once per second by the debugStats
@@ -5502,8 +5559,41 @@ function start_loop() {
         lastTickMs = nowMs;
         if (rawDelta > MAX_DELTA) rawDelta = MAX_DELTA;
         smoothedDelta += (rawDelta - smoothedDelta) * DELTA_SMOOTH;
-        const deltaTime = smoothedDelta;
+        // Admin test hook: override the delta fed to game logic while a simulated
+        // tick spike is active, without touching the real smoothing state — so
+        // behavior snaps back to normal the instant the test window ends.
+        const deltaTime = simulatedTickSpikeUntilMs > nowMs ? simulatedTickSpikeDeltaSec : smoothedDelta;
         const deltaMs = deltaTime * 1000;
+
+        // See simTickAccumulatorSec above: while a spike is simulated, real ticks
+        // keep firing at the normal ~30/s cadence, but feeding every one of them
+        // the inflated deltaTime would advance the world MORE per real second than
+        // normal (more calls, each moving further) — the opposite of a real slow
+        // tick, which advances the world the *same* amount per real second, just
+        // in fewer/bigger steps. So gate every deltaTime/deltaMs-consuming update
+        // to fire only once enough real time has accumulated to equal one
+        // simulated tick, matching how a genuinely slow-ticking server would.
+        let runSimTick = true;
+        // moveEnemies() isn't deltaTime-scaled (fixed per-call step — see above),
+        // so a single throttled call would only move mobs the usual one tick's
+        // worth of distance despite representing a whole simulated tick's worth
+        // of real time, making them lag behind the (correctly dt-compensated)
+        // players/petals. Replaying it mobCatchupCalls times on the tick that
+        // fires makes mobs cover the same ground a real, uninterrupted 30Hz
+        // tick rate would have, so their real-world speed matches everything
+        // else's during the test instead of falling behind.
+        let mobCatchupCalls = 1;
+        if (simulatedTickSpikeUntilMs > nowMs) {
+            simTickAccumulatorSec += rawDelta;
+            if (simTickAccumulatorSec >= simulatedTickSpikeDeltaSec) {
+                simTickAccumulatorSec -= simulatedTickSpikeDeltaSec;
+                mobCatchupCalls = Math.max(1, Math.round(simulatedTickSpikeDeltaSec / NOMINAL_DELTA));
+            } else {
+                runSimTick = false;
+            }
+        } else {
+            simTickAccumulatorSec = 0;
+        }
 
         authenticatedPlayerIds.length = 0;
         authenticatedSockets.length = 0;
@@ -5532,23 +5622,27 @@ function start_loop() {
         // loops in updatePlayerState query this instead of scanning all enemies.
         rebuildEnemyGrid(enemies);
 
-        for (const id in players) {
-            updatePlayerState(players[id], deltaTime, playerStateDeps);
+        if (runSimTick) {
+            for (const id in players) {
+                updatePlayerState(players[id], deltaTime, playerStateDeps);
+            }
+
+            // Update petal actions
+            updatePetalActions(deltaTime);
+
+            // Update poison effects
+            updatePoisonEffects(deltaTime);
+
+            for (let i = 0; i < mobCatchupCalls; i++) {
+                moveEnemies();
+            }
+
+            // Update mob projectiles
+            updateMobProjectiles(deltaMs); // Pass real elapsed milliseconds
+
+            // Update player projectiles
+            updatePlayerProjectiles(deltaMs); // Pass real elapsed milliseconds
         }
-
-        // Update petal actions
-        updatePetalActions(deltaTime);
-
-        // Update poison effects
-        updatePoisonEffects(deltaTime);
-
-        moveEnemies();
-        
-        // Update mob projectiles
-        updateMobProjectiles(deltaMs); // Pass real elapsed milliseconds
-
-        // Update player projectiles
-        updatePlayerProjectiles(deltaMs); // Pass real elapsed milliseconds
 
         // Update ground pollen drops (damage zones from broken pollen petals)
         updateGroundPollens();

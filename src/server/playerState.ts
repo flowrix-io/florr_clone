@@ -1576,31 +1576,55 @@ export function updatePlayerState(
                 } else {
                     if (physicsState.glideUntil !== undefined) physicsState.glideUntil = undefined;
 
-                    const springDx = effectiveTargetX - physicsState.x;
-                    const springDy = effectiveTargetY - physicsState.y;
-                    const springDistance = Math.sqrt(springDx * springDx + springDy * springDy);
+                    // This semi-implicit Euler spring is unconditionally unstable once
+                    // dt exceeds sqrt(2*(1+damping)/(damping*springForce)) — ~0.089s at
+                    // the defaults above — because the tracked error's growth factor per
+                    // tick passes -( 1+damping) beyond that point and blows up exponentially,
+                    // with no restoring force able to bring it back (this is how a petal
+                    // "flies off and never returns"). The server's own tick-time smoothing
+                    // already allows dt up to 0.1s under load (server.ts MAX_DELTA), which
+                    // is past that threshold, so substep the integration to keep each
+                    // slice's dt safely below it regardless of real tick time.
+                    const SPRING_SUBSTEP_DT = 0.05;
+                    const substeps = Math.min(4, Math.max(1, Math.ceil(deltaTime / SPRING_SUBSTEP_DT)));
+                    const subDt = deltaTime / substeps;
 
-                    let springFx = 0;
-                    let springFy = 0;
+                    for (let sub = 0; sub < substeps; sub++) {
+                        const springDx = effectiveTargetX - physicsState.x;
+                        const springDy = effectiveTargetY - physicsState.y;
+                        const springDistance = Math.sqrt(springDx * springDx + springDy * springDy);
 
-                    if (springDistance > 0) {
-                        const normalizedSpringDx = springDx / springDistance;
-                        const normalizedSpringDy = springDy / springDistance;
+                        let springFx = 0;
+                        let springFy = 0;
 
-                        // Spring force is proportional to distance from target
-                        // Apply smooth factor to spring force (gradually increase after spawn)
-                        springFx = normalizedSpringDx * petalSpringForce * springDistance * deltaTime * smoothFactor;
-                        springFy = normalizedSpringDy * petalSpringForce * springDistance * deltaTime * smoothFactor;
+                        if (springDistance > 0) {
+                            const normalizedSpringDx = springDx / springDistance;
+                            const normalizedSpringDy = springDy / springDistance;
+
+                            // Spring force is proportional to distance from target
+                            // Apply smooth factor to spring force (gradually increase after spawn)
+                            springFx = normalizedSpringDx * petalSpringForce * springDistance * subDt * smoothFactor;
+                            springFy = normalizedSpringDy * petalSpringForce * springDistance * subDt * smoothFactor;
+                        }
+
+                        physicsState.vx += springFx;
+                        physicsState.vy += springFy;
+
+                        physicsState.vx *= petalDamping;
+                        physicsState.vy *= petalDamping;
+
+                        physicsState.x += physicsState.vx * subDt;
+                        physicsState.y += physicsState.vy * subDt;
                     }
 
-                    physicsState.vx += springFx;
-                    physicsState.vy += springFy;
-
-                    physicsState.vx *= petalDamping;
-                    physicsState.vy *= petalDamping;
-
-                    physicsState.x += physicsState.vx * deltaTime;
-                    physicsState.y += physicsState.vy * deltaTime;
+                    // Defense in depth: if the integrator ever ends up non-finite anyway,
+                    // self-heal to the target instead of leaving the petal stuck away forever.
+                    if (!Number.isFinite(physicsState.x) || !Number.isFinite(physicsState.y)) {
+                        physicsState.x = effectiveTargetX;
+                        physicsState.y = effectiveTargetY;
+                        physicsState.vx = 0;
+                        physicsState.vy = 0;
+                    }
                 }
                 
                 // Use physics-based position

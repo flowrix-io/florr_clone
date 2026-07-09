@@ -543,9 +543,15 @@ function mazeBlocksLine(x1, y1, x2, y2) {
         return false;
     if (!isInMazeRegion(x1, y1) && !isInMazeRegion(x2, y2))
         return false;
+    // A non-finite or absurdly distant endpoint (a degenerate caller position)
+    // would make `steps` NaN/huge and spin this loop forever — same guard
+    // pattern as checkTileCollision/queryEnemiesNear. No legitimate LOS check
+    // spans anywhere near this far.
+    if (!Number.isFinite(x1) || !Number.isFinite(y1) || !Number.isFinite(x2) || !Number.isFinite(y2))
+        return false;
     const dx = x2 - x1, dy = y2 - y1;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const steps = Math.max(1, Math.ceil(dist / (exports.MAZE_CELL_SIZE / 3)));
+    const steps = Math.min(1024, Math.max(1, Math.ceil(dist / (exports.MAZE_CELL_SIZE / 3))));
     for (let i = 0; i <= steps; i++) {
         const t = i / steps;
         if (mazeBlocksPoint(x1 + dx * t, y1 + dy * t))

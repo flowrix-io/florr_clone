@@ -673,6 +673,53 @@ function executeServerCommand(command, executor, deps, socketId) {
             }
         }
     }
+    else if (trimmedCommand === 'simtick' || trimmedCommand.startsWith('simtick ')) {
+        // simtick <deltaSeconds> <durationSeconds> -> force every tick's deltaTime
+        //   to <deltaSeconds> for <durationSeconds>, to reproduce a slow/GC-stalled
+        //   tick on demand (this is what a mob-dense maze does for real) and watch
+        //   whether anything else diverges the way the petal orbit spring did.
+        // simtick status  -> show the active simulated spike, if any
+        // simtick cancel  -> stop early
+        const arg = trimmedCommand.slice('simtick'.length).trim();
+        if (arg === 'status') {
+            const info = (0, server_1.getSimulatedTickSpikeInfo)();
+            if (!info)
+                sendOutput('No simulated tick spike active.', socketId, io);
+            else
+                sendOutput(`Simulating dt=${info.deltaSeconds}s for ${(info.remainingMs / 1000).toFixed(1)}s more.`, socketId, io);
+        }
+        else if (arg === 'cancel' || arg === 'stop') {
+            const wasActive = (0, server_1.cancelSimulatedTickSpike)();
+            sendOutput(wasActive ? 'Simulated tick spike cancelled.' : 'No simulated tick spike to cancel.', socketId, io);
+        }
+        else if (arg === '') {
+            sendOutput('Usage: simtick <deltaSeconds> <durationSeconds>|status|cancel', socketId, io);
+            sendOutput('  Simulates a sustained slow tick (GC pause / overload) without an actual', socketId, io);
+            sendOutput('  hang: the world (players, bots, petals, mobs, projectiles) only actually', socketId, io);
+            sendOutput('  advances once per deltaSeconds of real time instead of every real tick,', socketId, io);
+            sendOutput('  using deltaSeconds as its dt on that step — matching a genuinely slow', socketId, io);
+            sendOutput('  tick (same real-world speed, fewer/bigger steps) rather than speeding', socketId, io);
+            sendOutput('  everything up. Mobs (whose movement is not deltaTime-scaled) instead get', socketId, io);
+            sendOutput('  their normal per-tick step replayed enough times on that step to cover', socketId, io);
+            sendOutput('  the same ground, so they track everything else\'s speed too. Watch for', socketId, io);
+            sendOutput('  other "large dt" divergence bugs while it runs.', socketId, io);
+            sendOutput('  Examples:', socketId, io);
+            sendOutput('    simtick 0.1 10   (hold dt at the server MAX_DELTA for 10s)', socketId, io);
+            sendOutput('    simtick 0.3 5    (well past MAX_DELTA, for a harder stress test)', socketId, io);
+        }
+        else {
+            const parts = arg.split(/\s+/);
+            const deltaSeconds = parseFloat(parts[0]);
+            const durationSeconds = parts.length >= 2 ? parseFloat(parts[1]) : 10;
+            if (!Number.isFinite(deltaSeconds) || !Number.isFinite(durationSeconds)) {
+                sendOutput('Usage: simtick <deltaSeconds> <durationSeconds>|status|cancel', socketId, io);
+            }
+            else {
+                const result = (0, server_1.simulateTickSpike)(deltaSeconds, durationSeconds * 1000);
+                sendOutput(result.message, socketId, io);
+            }
+        }
+    }
 }
 // Generate a random code
 function generateCode() {
@@ -727,5 +774,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], change-maze [next|garden|desert|ocean|<dayNumber>]';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
 }
