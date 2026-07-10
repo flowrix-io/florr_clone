@@ -135,6 +135,19 @@ const TILE_TYPE_REGISTRY: Map<number, TileTypeConfig> = (() => {
     return m;
 })();
 
+// Flat blocking table mirroring the registry. isTileIdBlocking runs on every
+// raycast sample, A* neighbor expansion, and wall-collision tile scan — the
+// Map.get chain behind getTileTypeConfig showed up as ~3% of total server CPU,
+// so those reads go through this LUT instead. Rebuilt on every registry change.
+const TILE_BLOCKING_LUT = new Uint8Array(256);
+function rebuildTileBlockingLut(): void {
+    TILE_BLOCKING_LUT.fill(0);
+    for (const cfg of TILE_TYPE_REGISTRY.values()) {
+        TILE_BLOCKING_LUT[cfg.id] = (cfg.solid || cfg.water) ? 1 : 0;
+    }
+}
+rebuildTileBlockingLut();
+
 /** Register or override a tile type (typically called once at startup with custom map types). */
 export function registerTileType(config: TileTypeConfig): void {
     if (config.id < 0 || config.id > 255 || !Number.isInteger(config.id)) {
@@ -149,6 +162,7 @@ export function registerTileType(config: TileTypeConfig): void {
         }
     }
     TILE_TYPE_REGISTRY.set(config.id, config);
+    rebuildTileBlockingLut();
 }
 
 /** Replace the entire custom-tile portion of the registry. Built-ins are restored first. */
@@ -159,6 +173,7 @@ export function setCustomTileTypes(configs: TileTypeConfig[]): void {
         if (c.id < BUILTIN_TILE_TYPES.length) continue; // skip attempts to redefine built-ins via this path
         registerTileType(c);
     }
+    rebuildTileBlockingLut();
 }
 
 /** Look up a tile type by ID. Falls back to air for unknown IDs (so forward-compat reads don't crash). */
@@ -190,8 +205,8 @@ export function isTileIdWater(id: number): boolean {
  * system used `state === 1 || state === 2`.
  */
 export function isTileIdBlocking(id: number): boolean {
-    const cfg = getTileTypeConfig(id);
-    return cfg.solid || cfg.water;
+    // Out-of-range ids match getTileTypeConfig's air fallback (not blocking).
+    return id >= 0 && id <= 255 && TILE_BLOCKING_LUT[id] === 1;
 }
 
 // Density calculation constants (defined after world dimensions)

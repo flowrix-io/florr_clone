@@ -4044,7 +4044,9 @@ function spawnWaveMobs() {
     for (const enemy of enemies) {
         if ((enemy as any).isDead) continue;
 
-        const parentStats = getMobStats(enemy.type, enemy.tier);
+        // _mobStats is cached on grid insertion; only hole-type mobs have
+        // spawn_waves, so this skips ~all 1400 enemies without a stats lookup.
+        const parentStats = enemy._mobStats ?? getMobStats(enemy.type, enemy.tier);
         if (!parentStats || !parentStats.spawn_waves || parentStats.spawn_waves.length === 0) continue;
         const waves = parentStats.spawn_waves;
         const numWaves = waves.length - 1;
@@ -4121,6 +4123,8 @@ function spawnWaveMobs() {
 const TARGET_LOS_RAY_CAP = 8;
 const _targetScratch: Enemy[] = [];
 const _playerScratch: ServerPlayer[] = [];
+// Alive players for this moveEnemies pass (see top of moveEnemies).
+const _alivePlayersScratch: ServerPlayer[] = [];
 
 function _byScratchDist(a: any, b: any): number {
     return a._d2 - b._d2;
@@ -4190,6 +4194,17 @@ function moveEnemies() {
     for (const e of enemies) {
         if (e.ownerId && !(e as any).isDead && e.health > 0) petsThisTick.push(e);
     }
+
+    // Alive players snapshotted once per tick into a dense array. The hostile
+    // target scan and the sandstorm pull below run per enemy — iterating the
+    // `players` dictionary (a delete-heavy object, so V8 keeps it in slow
+    // hash-table mode) from inside those loops was measurably hot.
+    _alivePlayersScratch.length = 0;
+    for (const pid in players) {
+        const p = players[pid];
+        if (p && !p.isDead) _alivePlayersScratch.push(p);
+    }
+    const alivePlayers = _alivePlayersScratch;
 
     for (const enemy of enemies) {
         if (!isCentipedeBodyType(enemy.type) || !enemy.leaderId) continue;
@@ -4505,10 +4520,8 @@ function moveEnemies() {
             // from further away (effectively widening the chase range).
             const chaseRange = enemy.range || ENEMY_CHASE_RANGE;
             _playerScratch.length = 0;
-            for (const pid in players) {
-                const player = players[pid];
-                // Skip dead players (corpses)
-                if (player.isDead) continue;
+            for (let _pi = 0; _pi < alivePlayers.length; _pi++) {
+                const player = alivePlayers[_pi];
                 const dx = player.x - enemy.x;
                 const dy = player.y - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
@@ -4726,9 +4739,7 @@ function moveEnemies() {
             if (sandstormRarityIndex >= superRarityIndex) {
                 const SANDSTORM_SUCK_RANGE = 400;
                 const SANDSTORM_SUCK_FORCE = 1.5;
-                const playerArray: ServerPlayer[] = Object.values(players);
-                for (const player of playerArray) {
-                    if (player.isDead) continue;
+                for (const player of alivePlayers) {
                     const dx = enemy.x - player.x;
                     const dy = enemy.y - player.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -4893,13 +4904,28 @@ function moveEnemies() {
     // Second pass: propagate centipede chain positions from each head down to its body segments
     // Process each head's chain in order so segments always see their leader's freshly-updated position.
     // A "head" is either an original centipede or a body segment promoted after a chain was severed.
-    const centipedeHeads = enemies.filter(e => (isCentipedeHeadType(e.type) || isCentipedeBodyType(e.type)) && !e.leaderId);
+    // One pass groups segments by head (and reuses the tick's enemyById map for
+    // leader lookups) — this used to re-filter and .find() over all ~1400
+    // enemies per head and per segment, which was O(chains × enemies) per tick.
+    const segmentsByHead = new Map<string, Enemy[]>();
+    const centipedeHeads: Enemy[] = [];
+    for (const e of enemies) {
+        if (isCentipedeBodyType(e.type)) {
+            if (e.headId) {
+                let list = segmentsByHead.get(e.headId);
+                if (!list) { list = []; segmentsByHead.set(e.headId, list); }
+                list.push(e);
+            }
+            if (!e.leaderId) centipedeHeads.push(e);
+        } else if (isCentipedeHeadType(e.type) && !e.leaderId) {
+            centipedeHeads.push(e);
+        }
+    }
     for (const head of centipedeHeads) {
-        const chain = enemies
-            .filter(e => isCentipedeBodyType(e.type) && e.headId === head.id)
+        const chain = (segmentsByHead.get(head.id) || [])
             .sort((a, b) => (a.segmentIndex ?? 0) - (b.segmentIndex ?? 0));
         for (const segment of chain) {
-            const leader = enemies.find(e => e.id === segment.leaderId);
+            const leader = segment.leaderId ? enemyById.get(segment.leaderId) : undefined;
             if (!leader) continue;
             const segStats = getMobStats(segment.type, segment.tier);
             const segmentSize = segStats ? segStats.size * 40 : 40;
@@ -4958,6 +4984,13 @@ function moveEnemies() {
 
 // Update and move mob projectiles
 function updateMobProjectiles(deltaTimeMs: number) {
+    if (mobProjectiles.length === 0) return;
+    // Hoisted out of the per-projectile loop: each iteration used to allocate
+    // Object.values(players) AND linear-scan all ~1400 enemies for its shooter.
+    const playerArray: ServerPlayer[] = Object.values(players);
+    const enemyById = new Map<string, Enemy>();
+    for (const e of enemies) enemyById.set(e.id, e);
+
     for (let i = mobProjectiles.length - 1; i >= 0; i--) {
         const projectile = mobProjectiles[i];
         
@@ -4983,8 +5016,7 @@ function updateMobProjectiles(deltaTimeMs: number) {
         }
 
         // Check for collision with player body first (before petals)
-        const playerArray: ServerPlayer[] = Object.values(players);
-        const projectileEnemy = enemies.find(e => e.id === projectile.enemyId);
+        const projectileEnemy = enemyById.get(projectile.enemyId);
         const isPetProjectile = projectileEnemy?.ownerId;
         const petOwnerId = projectileEnemy?.ownerId;
         let hitPlayer = false;
@@ -5571,6 +5603,8 @@ function start_loop() {
     const DELTA_SMOOTH = 0.1; // low-pass factor (~10-tick time constant)
     let lastTickMs = 0;
     let smoothedDelta = NOMINAL_DELTA;
+    // Monotonic tick index for strided per-enemy passes (viewport/despawn).
+    let tickCounter = 0;
 
     // Real ticks keep firing at the normal ~30/s cadence even while a spike is
     // simulated (see simulateTickSpike above) — only the deltaTime value is
@@ -5596,6 +5630,7 @@ function start_loop() {
     const authenticatedSockets: AuthenticatedSocket[] = [];
 
     setInterval(() => {
+        tickCounter++;
         // Smoothed real elapsed time since the previous tick (seconds). Computed
         // before the no-players early-return so it stays one tick wide across idle.
         const nowMs = performance.now();
@@ -5658,13 +5693,14 @@ function start_loop() {
             return;
         }
 
+        // Build a spatial grid of enemies once per tick. Player/petal collision
+        // loops in updatePlayerState query this instead of scanning all enemies.
+        // Must run BEFORE updateBotAI: bot targeting queries this grid.
+        rebuildEnemyGrid(enemies);
+
         // Populate bot inputs before running the normal update pipeline so
         // bots move/attack just like real players.
         updateBotAI(io);
-
-        // Build a spatial grid of enemies once per tick. Player/petal collision
-        // loops in updatePlayerState query this instead of scanning all enemies.
-        rebuildEnemyGrid(enemies);
 
         if (runSimTick) {
             for (const id in players) {
@@ -5691,9 +5727,11 @@ function start_loop() {
         // Update ground pollen drops (damage zones from broken pollen petals)
         updateGroundPollens();
 
-        // Update viewport status for all enemies
-        updateEnemyViewportStatus();
-        
+        // Update viewport status for all enemies. Strided: this pass exists to
+        // feed a 30-second despawn timer, so a ~166 ms cadence is equivalent —
+        // no need to box-test all ~1400 enemies every tick.
+        if (tickCounter % 5 === 0) updateEnemyViewportStatus();
+
         // Spawn wave mobs from damaged spawners (e.g. ant holes) before emitting damage batch
         spawnWaveMobs();
 
@@ -5734,8 +5772,10 @@ function start_loop() {
             }
         }
         
-        // Despawn enemies that have been outside viewport for too long
-        despawnDistantEnemies();
+        // Despawn enemies that have been outside viewport for too long.
+        // Strided like updateEnemyViewportStatus (offset so the two 1400-enemy
+        // passes never land on the same tick): the despawn threshold is 30 s.
+        if (tickCounter % 5 === 2) despawnDistantEnemies();
 
         // Check and fix item-wall collisions for all items
         for (const item of items) {
@@ -6025,7 +6065,8 @@ function start_loop() {
                 // Default maxHealth comes from the mob config for (type, tier). When the
                 // server-side enemy matches that default, omit H entirely; the client looks
                 // it up the same way. Same for the default tier 'common'.
-                const defaultStats = getMobStats(e.type, e.tier);
+                // _mobStats is the same object, cached on the enemy by the collision grids.
+                const defaultStats = e._mobStats ?? getMobStats(e.type, e.tier);
                 const defaultMaxH = defaultStats ? Math.round(defaultStats.health) : eH;
                 if (!prev) {
                     const ed: any = { i: e.id, t: e.type, x: ex, y: ey };

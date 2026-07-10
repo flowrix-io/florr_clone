@@ -476,9 +476,22 @@ export interface PlayerStateDependencies {
 
 /**
  * Get viewports for all players
+ *
+ * Cached with a sub-tick TTL: callers invoke this per ENEMY (viewport counting,
+ * spawn checks — ~1400 calls per pass), and each call used to walk the whole
+ * `players` dictionary and allocate a fresh array. Players don't move within a
+ * tick, so one snapshot per half-tick is exact for every existing caller.
+ * Callers must treat the result as read-only (all current ones do).
  */
+const _viewportCache: Array<{x: number, y: number, width: number, height: number}> = [];
+let _viewportCacheAt = -1;
+const VIEWPORT_CACHE_TTL_MS = 16;
+
 export function getPlayerViewports(): Array<{x: number, y: number, width: number, height: number}> {
-    const viewports: Array<{x: number, y: number, width: number, height: number}> = [];
+    const now = Date.now();
+    if (now - _viewportCacheAt < VIEWPORT_CACHE_TTL_MS) return _viewportCache;
+    _viewportCacheAt = now;
+    _viewportCache.length = 0;
 
     for (const playerId in players) {
         // Bots don't dictate enemy spawn budget — otherwise 17 bots clustered
@@ -494,7 +507,7 @@ export function getPlayerViewports(): Array<{x: number, y: number, width: number
             const vpWidth = player.viewportWidth || VIEWPORT_WIDTH;
             const vpHeight = player.viewportHeight || VIEWPORT_HEIGHT;
 
-            viewports.push({
+            _viewportCache.push({
                 x: player.x - vpWidth / 2,
                 y: player.y - vpHeight / 2,
                 width: vpWidth,
@@ -503,7 +516,7 @@ export function getPlayerViewports(): Array<{x: number, y: number, width: number
         }
     }
 
-    return viewports;
+    return _viewportCache;
 }
 
 /**
@@ -515,21 +528,40 @@ export function getPlayerViewports(): Array<{x: number, y: number, width: number
  * viewports" even with a player standing on it, so the entire maze despawned
  * and respawned on a 30-second churn cycle.
  */
+// Flat box cache for isPositionNearAnyPlayer, same sub-tick TTL rationale as
+// getPlayerViewports: the function is called per enemy per pass (keep-alive +
+// despawn = ~2800 calls/tick), and walking the `players` dictionary each call
+// was ~6% of total server CPU. Boxes are [cx, cy, halfW, halfH] quads.
+const _nearBoxes: number[] = [];
+let _nearBoxesAt = -1;
+let _nearBoxesSawPlayer = false;
+
 export function isPositionNearAnyPlayer(x: number, y: number): boolean {
-    let sawPlayer = false;
-    for (const playerId in players) {
-        if (playerId.startsWith('bot_')) continue;
-        const player = players[playerId];
-        if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)) continue;
-        sawPlayer = true;
-        const vpWidth = (player.viewportWidth || VIEWPORT_WIDTH) / 2 + VIEWPORT_BUFFER;
-        const vpHeight = (player.viewportHeight || VIEWPORT_HEIGHT) / 2 + VIEWPORT_BUFFER;
-        if (Math.abs(x - player.x) <= vpWidth && Math.abs(y - player.y) <= vpHeight) {
+    const now = Date.now();
+    if (now - _nearBoxesAt >= VIEWPORT_CACHE_TTL_MS) {
+        _nearBoxesAt = now;
+        _nearBoxes.length = 0;
+        _nearBoxesSawPlayer = false;
+        for (const playerId in players) {
+            if (playerId.startsWith('bot_')) continue;
+            const player = players[playerId];
+            if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)) continue;
+            _nearBoxesSawPlayer = true;
+            _nearBoxes.push(
+                player.x,
+                player.y,
+                (player.viewportWidth || VIEWPORT_WIDTH) / 2 + VIEWPORT_BUFFER,
+                (player.viewportHeight || VIEWPORT_HEIGHT) / 2 + VIEWPORT_BUFFER
+            );
+        }
+    }
+    for (let i = 0; i < _nearBoxes.length; i += 4) {
+        if (Math.abs(x - _nearBoxes[i]) <= _nearBoxes[i + 2] && Math.abs(y - _nearBoxes[i + 1]) <= _nearBoxes[i + 3]) {
             return true;
         }
     }
     // No players connected: match isPositionInAnyViewport's permissive default.
-    return !sawPlayer;
+    return !_nearBoxesSawPlayer;
 }
 
 /**
@@ -543,20 +575,14 @@ export function isPositionInAnyViewport(x: number, y: number): boolean {
         return true;
     }
     
+    // Pure arithmetic — this runs per enemy from the viewport-count pass.
     for (const viewport of viewports) {
-        const extendedViewport = {
-            x: viewport.x - VIEWPORT_BUFFER,
-            y: viewport.y - VIEWPORT_BUFFER,
-            width: viewport.width + (VIEWPORT_BUFFER * 2),
-            height: viewport.height + (VIEWPORT_BUFFER * 2)
-        };
-        
-        if (x >= extendedViewport.x && x <= extendedViewport.x + extendedViewport.width &&
-            y >= extendedViewport.y && y <= extendedViewport.y + extendedViewport.height) {
+        if (x >= viewport.x - VIEWPORT_BUFFER && x <= viewport.x + viewport.width + VIEWPORT_BUFFER &&
+            y >= viewport.y - VIEWPORT_BUFFER && y <= viewport.y + viewport.height + VIEWPORT_BUFFER) {
             return true;
         }
     }
-    
+
     return false;
 }
 
@@ -571,23 +597,16 @@ export function isPositionInAnyViewport200Percent(x: number, y: number): boolean
         return true;
     }
     
-    // Use 200% of VIEWPORT_BUFFER (2x)
+    // Use 200% of VIEWPORT_BUFFER (2x). Pure arithmetic — this runs per enemy.
     const buffer200Percent = VIEWPORT_BUFFER * 2;
-    
+
     for (const viewport of viewports) {
-        const extendedViewport = {
-            x: viewport.x - buffer200Percent,
-            y: viewport.y - buffer200Percent,
-            width: viewport.width + (buffer200Percent * 2),
-            height: viewport.height + (buffer200Percent * 2)
-        };
-        
-        if (x >= extendedViewport.x && x <= extendedViewport.x + extendedViewport.width &&
-            y >= extendedViewport.y && y <= extendedViewport.y + extendedViewport.height) {
+        if (x >= viewport.x - buffer200Percent && x <= viewport.x + viewport.width + buffer200Percent &&
+            y >= viewport.y - buffer200Percent && y <= viewport.y + viewport.height + buffer200Percent) {
             return true;
         }
     }
-    
+
     return false;
 }
 

@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Graphics = exports.getSVGRenderer = exports.MOB_CONFIG = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.isUndroppableEggPetalType = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
 const petals_1 = require("../petals");
 const svg_renderer_1 = require("../svg_renderer");
+const svg_canvas_renderer_1 = require("../svg_canvas_renderer");
 const zoom_compensation_1 = require("../zoom-compensation");
 var player_1 = require("../player");
 Object.defineProperty(exports, "FaceFlags", { enumerable: true, get: function () { return player_1.FaceFlags; } });
@@ -195,6 +196,25 @@ class Graphics {
         this.petalGlowCache = {};
         this.spawnZoneElements = [];
         this.mobSVGCache = {};
+        // Baked mob bitmaps: single canvas (static SVG) or frame array (animated),
+        // keyed `${type}_${tier}`. `null` marks "not bakeable" (e.g. SVG embeds an
+        // async-loading <image>) so drawEnemy falls back to the live path renderer
+        // without re-checking every frame. See getMobCanvas.
+        this.mobCanvasCache = {};
+        // Baked radial-gradient glow sprites for emissive mobs/petals, keyed by
+        // `${hexColor}_${radius}` (radius is already quantized per mob config).
+        this.glowSpriteCache = {};
+        // Baked mob name + rarity text overlays, keyed `${type}_${tier}_${barWidth}`.
+        this.mobLabelCache = {};
+        // Baked minimap static layers (bg/zones/walls/teleporters); key is the
+        // section-snapped scroll + ALT-glow state. Player dots stay dynamic.
+        this.minimapStaticCache = null;
+        // Same idea for the maze minimap's walkable/zone layers, keyed per maze.
+        this.mazeMinimapStaticCache = null;
+        // Boss-bar candidates (super/unique mobs), refreshed at 4Hz by drawBossBars
+        // instead of scanning the whole enemies Map every frame.
+        this._bossCandidates = [];
+        this._bossCandidatesAt = 0;
         this.svgRenderer = (0, svg_renderer_1.getSVGRenderer)();
         // Section-based texture loading state
         this.currentSection = -1;
@@ -305,6 +325,104 @@ class Graphics {
             return cached[frameIndex];
         }
         return cached;
+    }
+    static svgHasImage(nodes) {
+        for (const n of nodes) {
+            if (n.imageEl)
+                return true;
+            if (n.children && Graphics.svgHasImage(n.children))
+                return true;
+        }
+        return false;
+    }
+    /** Longest animation duration in ms (0 = fully static). */
+    static svgAnimPeriod(nodes) {
+        let period = 0;
+        for (const n of nodes) {
+            for (const a of n.transformAnimations)
+                period = Math.max(period, a.dur);
+            for (const a of n.attributeAnimations)
+                period = Math.max(period, a.dur);
+            for (const a of n.pathAnimations)
+                period = Math.max(period, a.dur);
+            if (n.children)
+                period = Math.max(period, Graphics.svgAnimPeriod(n.children));
+        }
+        return period;
+    }
+    /**
+     * Baked bitmap for a mob, or null when this SVG must use the live path
+     * renderer. `sizePx` is the mob's fixed world size for its (type, tier).
+     */
+    getMobCanvas(cacheKey, svgString, sizePx, time) {
+        let entry = this.mobCanvasCache[cacheKey];
+        if (entry === undefined) {
+            entry = this.bakeMobCanvas(svgString, sizePx);
+            this.mobCanvasCache[cacheKey] = entry;
+        }
+        if (!entry)
+            return null;
+        if (entry.frames.length === 1)
+            return entry.frames[0];
+        const t = ((time % entry.periodMs) + entry.periodMs) % entry.periodMs;
+        return entry.frames[Math.min(entry.frames.length - 1, Math.floor((t / entry.periodMs) * entry.frames.length))];
+    }
+    bakeMobCanvas(svgString, sizePx) {
+        try {
+            const compiled = this.svgRenderer.compileSVG(svgString);
+            if (Graphics.svgHasImage(compiled.children))
+                return null;
+            const side = Math.max(8, Math.min(Graphics.MOB_BAKE_MAX_SIDE, Math.round(sizePx * Graphics.MOB_BAKE_SCALE)));
+            const periodMs = Graphics.svgAnimPeriod(compiled.children);
+            if (periodMs <= 0) {
+                return { frames: [(0, svg_canvas_renderer_1.renderCompiledSVGToCanvas)(compiled, side, side, 0)], periodMs: 1 };
+            }
+            // Frame count bends to a per-mob VRAM budget: a huge animated mob
+            // (apex tiers bake at up to 2048²=16MB/frame) gets fewer, choppier
+            // frames instead of hundreds of MB of bitmaps.
+            const BUDGET_BYTES = 32 * 1024 * 1024;
+            const bytesPerFrame = side * side * 4;
+            const budgetFrames = Math.max(2, Math.floor(BUDGET_BYTES / bytesPerFrame));
+            const frameCount = Math.max(2, Math.min(Graphics.MOB_BAKE_MAX_FRAMES, budgetFrames, Math.round(periodMs / Graphics.MOB_BAKE_FRAME_MS)));
+            const frames = [];
+            for (let i = 0; i < frameCount; i++) {
+                frames.push((0, svg_canvas_renderer_1.renderCompiledSVGToCanvas)(compiled, side, side, (i / frameCount) * periodMs));
+            }
+            return { frames, periodMs };
+        }
+        catch (e) {
+            console.error('[Graphics] mob bitmap bake failed, using live renderer:', e);
+            return null;
+        }
+    }
+    /**
+     * Baked radial glow sprite (transparent gradient disc). Replaces the
+     * per-entity-per-frame createRadialGradient + rgba-string building in the
+     * emissive mob/petal paths. The sprite is drawn with drawImage at the
+     * emitter's position; alpha handling is unchanged.
+     */
+    getGlowSprite(hexColor, radius) {
+        const key = `${hexColor}_${radius | 0}`;
+        let c = this.glowSpriteCache[key];
+        if (!c) {
+            const r = Math.max(2, radius | 0);
+            c = document.createElement('canvas');
+            c.width = c.height = r * 2;
+            const cctx = c.getContext('2d');
+            const rr = parseInt(hexColor.slice(1, 3), 16);
+            const gg = parseInt(hexColor.slice(3, 5), 16);
+            const bb = parseInt(hexColor.slice(5, 7), 16);
+            const grad = cctx.createRadialGradient(r, r, 0, r, r, r);
+            grad.addColorStop(0, `rgba(${rr},${gg},${bb},0.6)`);
+            grad.addColorStop(0.4, `rgba(${rr},${gg},${bb},0.25)`);
+            grad.addColorStop(1, `rgba(${rr},${gg},${bb},0)`);
+            cctx.fillStyle = grad;
+            cctx.beginPath();
+            cctx.arc(r, r, r, 0, Math.PI * 2);
+            cctx.fill();
+            this.glowSpriteCache[key] = c;
+        }
+        return c;
     }
     clear() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -679,3 +797,17 @@ class Graphics {
 }
 exports.Graphics = Graphics;
 Graphics.PETAL_GLOW_PAD = 16;
+// --- Mob bitmap cache -------------------------------------------------
+// Mobs used to be drawn by replaying compiled SVG canvas commands every
+// frame (per-node save/restore + fill/stroke + transform parsing) — the
+// single largest per-frame cost with many mobs on screen, and the first
+// thing to fold under CPU throttling. Petals already used baked offscreen
+// canvases; this gives mobs the same treatment. Static SVGs bake one
+// bitmap; animated SVGs bake a short frame loop over their animation
+// period. SVGs that embed an <image> element are NOT baked (the image
+// loads async, so an early bake would freeze a half-loaded mob) — those
+// keep the live path and are marked `null` so we don't retry per frame.
+Graphics.MOB_BAKE_SCALE = 2; // bake at 2x for zoom sharpness
+Graphics.MOB_BAKE_MAX_SIDE = 2048; // cap apex-sized bitmaps
+Graphics.MOB_BAKE_FRAME_MS = 42; // same step petals use
+Graphics.MOB_BAKE_MAX_FRAMES = 32;

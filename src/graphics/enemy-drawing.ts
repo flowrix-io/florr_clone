@@ -7,6 +7,7 @@ declare module './core' {
         getEligiblePetalTypes(): string[];
         drawGarbagePile(enemy: Enemy, enemySize: number): void;
         drawEnemyHealthBar(enemy: Enemy, enemySize: number): void;
+        getMobLabelCanvas(enemy: Enemy, healthBarWidth: number, mobName: string): HTMLCanvasElement;
     }
 }
 
@@ -156,27 +157,22 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
         enemySize *= deathScale;
     }
 
-    // Draw emissive light glow behind mob if emissive (before rotation/flip transforms)
+    // Draw emissive light glow behind mob if emissive (before rotation/flip
+    // transforms). The gradient disc is baked once per (color, radius) — a
+    // createRadialGradient + three rgba strings per mob per frame was one of
+    // the top per-frame costs under CPU throttling.
     if (mobStats?.emissive) {
         const hex = mobStats.light_color || mobStats.color || '#ffffff';
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
         const lightRadius = mobStats.light_radius ?? (enemySize * 2);
-        this.ctx.save();
-        this.ctx.translate(enemy.x, enemy.y);
+        const glow = this.getGlowSprite(hex, lightRadius);
         if (isDying) {
+            const prevAlpha = this.ctx.globalAlpha;
             this.ctx.globalAlpha = deathAlpha;
+            this.ctx.drawImage(glow, enemy.x - lightRadius, enemy.y - lightRadius, lightRadius * 2, lightRadius * 2);
+            this.ctx.globalAlpha = prevAlpha;
+        } else {
+            this.ctx.drawImage(glow, enemy.x - lightRadius, enemy.y - lightRadius, lightRadius * 2, lightRadius * 2);
         }
-        const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, lightRadius);
-        gradient.addColorStop(0, `rgba(${r},${g},${b},0.6)`);
-        gradient.addColorStop(0.4, `rgba(${r},${g},${b},0.25)`);
-        gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
-        this.ctx.fillStyle = gradient;
-        this.ctx.beginPath();
-        this.ctx.arc(0, 0, lightRadius, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.restore();
     }
 
     // Always set up the transform for the enemy position
@@ -240,15 +236,28 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
         currentTime = this.frameTimestamp * 2;
     }
 
-    // Try to use WASM SVG renderer with animations first
     let rendered = false;
 
-    // Check if WASM renderer is available and not in fallback mode
-    // Note: We check isInitialized() but not isUsingFallback() because
-    // the renderer might use WASM for animation even if image loading falls back
-    if (mobSVG && this.svgRenderer.isInitialized()) {
+    // Fast path: baked mob bitmap (single frame or animation loop) — one
+    // drawImage instead of replaying the SVG's canvas commands node by node.
+    // Death-animation scaling works because drawImage scales to enemySize.
+    if (mobSVG) {
+        // Bake at the mob's steady-state size — death animation scales the
+        // draw call, not the bitmap (enemySize was multiplied by deathScale).
+        const bakeSize = isDying ? enemySize / deathScale : enemySize;
+        const bmp = this.getMobCanvas(cacheKey, mobSVG, bakeSize, currentTime);
+        if (bmp) {
+            // The bitmap already contains antialiased edges; smoothing must be
+            // ON or scaled draws get nearest-neighbor artifacts.
+            this.ctx.imageSmoothingEnabled = true;
+            this.ctx.drawImage(bmp, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+            rendered = true;
+        }
+    }
+
+    // Live path renderer: only for SVGs the baker refuses (embedded <image>).
+    if (!rendered && mobSVG && this.svgRenderer.isInitialized()) {
         try {
-            // Use SVG renderer to render animated SVG (synchronous - uses cached canvases)
             // x, y, rotation are 0 because transforms are already applied by the context
             // Pass true to indicate this is a mob render (disable anti-aliasing)
             rendered = this.svgRenderer.renderSVGToCanvas(
@@ -262,10 +271,8 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
                 currentTime,
                 true // disableAntiAliasing flag
             );
-
-            // Debug: Log when WASM rendering is attempted
         } catch (error) {
-            console.error(`[Graphics] Error rendering enemy SVG with WASM for ${cacheKey}:`, error);
+            console.error(`[Graphics] Error rendering enemy SVG for ${cacheKey}:`, error);
         }
     }
 
@@ -408,8 +415,49 @@ Graphics.prototype.drawGarbagePile = function(this: Graphics, enemy: Enemy, enem
     }
 };
 
+// Static text overlay (mob name + rarity label, both stroke+fill) baked once
+// per (type, tier): four text draws + two font changes per mob per frame were
+// a top per-frame cost with many mobs on screen. The canvas spans from the
+// name line to the tier line; only the health-bar roundRects stay dynamic.
+const MOB_LABEL_PAD_X = 4;   // room for stroke overhang
+const MOB_LABEL_ASCENT = 14; // px above the name baseline kept in the canvas
+Graphics.prototype.getMobLabelCanvas = function(this: Graphics, enemy: Enemy, healthBarWidth: number, mobName: string): HTMLCanvasElement {
+    const key = `${enemy.type}_${enemy.tier}_${healthBarWidth | 0}`;
+    let c = this.mobLabelCache[key];
+    if (c) return c;
+
+    // Layout mirrors the draw code below: name baseline at y=0 (canvas-local
+    // MOB_LABEL_ASCENT), tier baseline at +healthBarHeight+16 below it.
+    const healthBarHeight = 8;
+    const tierDY = 4 + healthBarHeight + 12; // nameY -> tierY distance
+    c = document.createElement('canvas');
+    c.width = Math.ceil(healthBarWidth + MOB_LABEL_PAD_X * 2);
+    c.height = MOB_LABEL_ASCENT + tierDY + 6;
+    const cctx = c.getContext('2d')!;
+
+    cctx.textAlign = 'left';
+    cctx.font = '12px Ubuntu, sans-serif';
+    cctx.strokeStyle = '#000000';
+    cctx.lineWidth = 3;
+    cctx.strokeText(mobName, MOB_LABEL_PAD_X, MOB_LABEL_ASCENT);
+    cctx.fillStyle = 'white';
+    cctx.fillText(mobName, MOB_LABEL_PAD_X, MOB_LABEL_ASCENT);
+
+    cctx.textAlign = 'right';
+    cctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
+    cctx.font = '10px Ubuntu, sans-serif';
+    cctx.strokeStyle = '#000000';
+    cctx.lineWidth = 3;
+    const tierLabel = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
+    cctx.strokeText(tierLabel, MOB_LABEL_PAD_X + healthBarWidth, MOB_LABEL_ASCENT + tierDY);
+    cctx.fillText(tierLabel, MOB_LABEL_PAD_X + healthBarWidth, MOB_LABEL_ASCENT + tierDY);
+
+    this.mobLabelCache[key] = c;
+    return c;
+};
+
 Graphics.prototype.drawEnemyHealthBar = function(this: Graphics, enemy: Enemy, enemySize: number) {
-    const mobStats = getMobStats(enemy.type, enemy.tier);
+    const mobStats = (enemy as any)._mobStats ?? getMobStats(enemy.type, enemy.tier);
     const mobName = mobStats ? mobStats.name : `${enemy.tier} ${enemy.type}`;
 
     this.ctx.save();
@@ -420,17 +468,11 @@ Graphics.prototype.drawEnemyHealthBar = function(this: Graphics, enemy: Enemy, e
     const healthBarHeight = 8;
     const healthBarY = enemySize / 2 + 8;
     const radius = healthBarHeight / 2;
-
-    // Draw mob name above health bar, left-aligned
-    this.ctx.textAlign = 'left';
-    this.ctx.font = '12px Ubuntu, sans-serif';
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 3;
-    const nameX = -healthBarWidth / 2;
     const nameY = healthBarY - 4;
-    this.ctx.strokeText(mobName, nameX, nameY);
-    this.ctx.fillStyle = 'white';
-    this.ctx.fillText(mobName, nameX, nameY);
+
+    // Baked name + rarity overlay (see getMobLabelCanvas).
+    const label = this.getMobLabelCanvas(enemy, healthBarWidth, mobName);
+    this.ctx.drawImage(label, -healthBarWidth / 2 - MOB_LABEL_PAD_X, nameY - MOB_LABEL_ASCENT);
 
     // Health bar background (rounded)
     this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
@@ -446,23 +488,15 @@ Graphics.prototype.drawEnemyHealthBar = function(this: Graphics, enemy: Enemy, e
     this.ctx.roundRect(-healthBarWidth / 2, healthBarY, healthFillWidth, healthBarHeight, radius);
     this.ctx.fill();
 
-    // Draw rarity below the health bar at bottom right
-    this.ctx.textAlign = 'right';
-    this.ctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
-    this.ctx.font = '10px Ubuntu, sans-serif';
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 3;
     const tierX = healthBarWidth / 2;
     const tierY = healthBarY + healthBarHeight + 12;
-    const tierLabel = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
-    this.ctx.strokeText(tierLabel, tierX, tierY);
-    this.ctx.fillText(tierLabel, tierX, tierY);
 
     // Draw DPS for target dummies
     if (enemy.type === 'target_dummy' && enemy.currentDPS !== undefined) {
         const dps = enemy.currentDPS || 0;
         const formattedDPS = this.formatNumber(dps);
         const dpsText = `DPS: ${formattedDPS}`;
+        this.ctx.textAlign = 'right'; // was inherited from the tier draw before it was baked
         this.ctx.fillStyle = '#ffffff';
         this.ctx.font = '10px Ubuntu, sans-serif';
         this.ctx.strokeStyle = '#000000';

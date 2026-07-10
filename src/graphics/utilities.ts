@@ -322,10 +322,25 @@ Graphics.prototype.drawBossBars = function(this: Graphics, enemies: Map<string, 
         bottom: this.cameraY + scaledHeight
     };
 
-    // Find all super and unique mobs in view (ultras render with normal mob health bars)
+    // Find all super and unique mobs in view (ultras render with normal mob health bars).
+    // The super/unique candidate list is refreshed at 4Hz instead of scanning the whole
+    // enemies Map every frame — bosses (de)spawn rarely; the viewport test below still
+    // runs per frame so bars appear/disappear instantly as the camera moves.
+    const nowMs = this.frameTimestamp || Date.now();
+    if (nowMs - this._bossCandidatesAt > 250) {
+        this._bossCandidatesAt = nowMs;
+        this._bossCandidates.length = 0;
+        for (const e of enemies.values()) {
+            if (e.tier === 'super' || e.tier === 'unique') this._bossCandidates.push(e);
+        }
+    }
     const bossMobs: Enemy[] = [];
-    for (const enemy of enemies.values()) {
-        if (enemy.tier === 'super' || enemy.tier === 'unique') {
+    for (const candidate of this._bossCandidates) {
+        // Re-resolve by id: the list is up to 250ms stale, and the socket layer
+        // may replace enemy objects on update — always use the live object and
+        // skip bosses that despawned since the last refresh.
+        const enemy = enemies.get(candidate.id);
+        if (enemy) {
             // Check if enemy is in viewport (same logic as drawGameObjects)
             const mobStats = getMobStats(enemy.type, enemy.tier);
             const baseSize = mobStats ? mobStats.size * 40 : 40;

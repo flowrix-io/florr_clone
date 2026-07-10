@@ -144,64 +144,76 @@ core_1.Graphics.prototype.drawMazeMinimap = function (players, socket) {
     const minimapX = this.viewW - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
     const minimapY = this.MINIMAP_PADDING;
     const ctx = this.ctx;
-    const s = this.MINIMAP_WIDTH / maze.gridDim; // pixels per maze cell
-    // Dark backdrop = walls.
-    ctx.fillStyle = 'rgba(20, 20, 25, 0.9)';
-    ctx.fillRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
+    // The walkable-shape + zone-tint layers are pure functions of the maze
+    // itself (rotates once per day) — bake once and blit. This was a full
+    // gridDim² scan with per-cell beginPath/arc/fill, twice, every frame.
+    const mazeKey = `${maze.biome}_${maze.gridDim}_${this.MINIMAP_WIDTH}`;
+    if (!this.mazeMinimapStaticCache || this.mazeMinimapStaticCache.key !== mazeKey) {
+        const canvas = document.createElement('canvas');
+        canvas.width = this.MINIMAP_WIDTH;
+        canvas.height = this.MINIMAP_HEIGHT;
+        const bctx = canvas.getContext('2d');
+        const s = this.MINIMAP_WIDTH / maze.gridDim; // pixels per maze cell
+        // Dark backdrop = walls.
+        bctx.fillStyle = 'rgba(20, 20, 25, 0.9)';
+        bctx.fillRect(0, 0, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
+        // Walkable shapes in white, corner cells with the same fillet geometry
+        // (quarter-disc for convex floor corners, curved triangle for the carved
+        // corner of concave wall cells) — the inverse of the world-view shapes.
+        bctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+        for (let gy = 0; gy < maze.gridDim; gy++) {
+            for (let gx = 0; gx < maze.gridDim; gx++) {
+                const v = maze.values[gy * maze.gridDim + gx];
+                if (v === 0)
+                    continue;
+                const x0 = gx * s;
+                const y0 = gy * s;
+                bctx.beginPath();
+                if (v === 1) {
+                    bctx.rect(x0, y0, s + 0.5, s + 0.5);
+                    bctx.fill();
+                    continue;
+                }
+                const leftBit = (v >> 1) & 1;
+                const topBit = v & 1;
+                const concave = (v >> 3) & 1;
+                const cx = x0 + leftBit * s;
+                const cy = y0 + topBit * s;
+                // Walkable area is the complement of the wall shape: convex floor
+                // corners are the quarter-disc around the centre vertex; concave
+                // wall cells contribute just the carved curved triangle.
+                const sx = concave ? x0 + (1 - leftBit) * s : cx;
+                const sy = concave ? y0 + (1 - topBit) * s : cy;
+                const a0 = filletStartAngle(topBit, leftBit);
+                bctx.moveTo(sx, sy);
+                bctx.arc(cx, cy, s, a0, a0 + Math.PI / 2, false);
+                bctx.fill();
+            }
+        }
+        // Depth-zone tint over the corridors (common → mythic).
+        let lastZone = -1;
+        for (let gy = 0; gy < maze.gridDim; gy++) {
+            for (let gx = 0; gx < maze.gridDim; gx++) {
+                const v = maze.values[gy * maze.gridDim + gx];
+                if (v === 0 || (v >= 12 && v <= 15))
+                    continue; // walls carry no tint
+                const zone = maze.zones[gy * maze.gridDim + gx];
+                if (zone >= maze_1.MAZE_ZONE_TIERS.length)
+                    continue;
+                if (zone !== lastZone) {
+                    bctx.fillStyle = MAZE_ZONE_COLORS[zone];
+                    lastZone = zone;
+                }
+                bctx.fillRect(gx * s, gy * s, s + 0.5, s + 0.5);
+            }
+        }
+        this.mazeMinimapStaticCache = { key: mazeKey, canvas };
+    }
+    this.ctx.drawImage(this.mazeMinimapStaticCache.canvas, minimapX, minimapY);
     ctx.save();
     ctx.beginPath();
     ctx.rect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     ctx.clip();
-    // Walkable shapes in white, corner cells with the same fillet geometry
-    // (quarter-disc for convex floor corners, curved triangle for the carved
-    // corner of concave wall cells) — the inverse of the world-view shapes.
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    for (let gy = 0; gy < maze.gridDim; gy++) {
-        for (let gx = 0; gx < maze.gridDim; gx++) {
-            const v = maze.values[gy * maze.gridDim + gx];
-            if (v === 0)
-                continue;
-            const x0 = minimapX + gx * s;
-            const y0 = minimapY + gy * s;
-            ctx.beginPath();
-            if (v === 1) {
-                ctx.rect(x0, y0, s + 0.5, s + 0.5);
-                ctx.fill();
-                continue;
-            }
-            const leftBit = (v >> 1) & 1;
-            const topBit = v & 1;
-            const concave = (v >> 3) & 1;
-            const cx = x0 + leftBit * s;
-            const cy = y0 + topBit * s;
-            // Walkable area is the complement of the wall shape: convex floor
-            // corners are the quarter-disc around the centre vertex; concave
-            // wall cells contribute just the carved curved triangle.
-            const sx = concave ? x0 + (1 - leftBit) * s : cx;
-            const sy = concave ? y0 + (1 - topBit) * s : cy;
-            const a0 = filletStartAngle(topBit, leftBit);
-            ctx.moveTo(sx, sy);
-            ctx.arc(cx, cy, s, a0, a0 + Math.PI / 2, false);
-            ctx.fill();
-        }
-    }
-    // Depth-zone tint over the corridors (common → mythic).
-    let lastZone = -1;
-    for (let gy = 0; gy < maze.gridDim; gy++) {
-        for (let gx = 0; gx < maze.gridDim; gx++) {
-            const v = maze.values[gy * maze.gridDim + gx];
-            if (v === 0 || (v >= 12 && v <= 15))
-                continue; // walls carry no tint
-            const zone = maze.zones[gy * maze.gridDim + gx];
-            if (zone >= maze_1.MAZE_ZONE_TIERS.length)
-                continue;
-            if (zone !== lastZone) {
-                ctx.fillStyle = MAZE_ZONE_COLORS[zone];
-                lastZone = zone;
-            }
-            ctx.fillRect(minimapX + gx * s, minimapY + gy * s, s + 0.5, s + 0.5);
-        }
-    }
     // Player dots (same rules as the regular minimap: self always, squadmates
     // always, others only while ALT is held).
     const squadMemberIds = window.squadMemberIds || [];

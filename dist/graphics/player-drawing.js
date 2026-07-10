@@ -276,19 +276,13 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
             ctx.restore();
         }
         if (stats.emissive) {
+            // Baked gradient sprite — a Light loadout has ~70 emissive petal
+            // instances, and one createRadialGradient + 3 rgba strings each
+            // per frame was a top per-frame cost under CPU throttling.
             const hex = stats.lightColor || stats.color || '#ffffff';
-            const r = parseInt(hex.slice(1, 3), 16);
-            const g = parseInt(hex.slice(3, 5), 16);
-            const b = parseInt(hex.slice(5, 7), 16);
             const lightRadius = stats.lightRadius ?? (petalSize * 3);
-            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, lightRadius);
-            gradient.addColorStop(0, `rgba(${r},${g},${b},0.6)`);
-            gradient.addColorStop(0.4, `rgba(${r},${g},${b},0.25)`);
-            gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(0, 0, lightRadius, 0, Math.PI * 2);
-            ctx.fill();
+            const glow = this.getGlowSprite(hex, lightRadius);
+            ctx.drawImage(glow, -lightRadius, -lightRadius, lightRadius * 2, lightRadius * 2);
         }
         if (fixedDirection !== undefined) {
             ctx.rotate(fixedDirection);

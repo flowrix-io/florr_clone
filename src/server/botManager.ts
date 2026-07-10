@@ -23,6 +23,7 @@ import {
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { getPetalStats } from '../petals';
 import { getMobStats } from '../mobs';
+import { queryEnemiesNear } from './enemyGrid';
 import {
     calculateMaxHealthFromLevel,
     calculateDamageFromLevel,
@@ -230,6 +231,12 @@ interface BotAIState {
     lastStuckCheckTime?: number;
     lastStuckCheckX?: number;
     lastStuckCheckY?: number;
+    // followPath throttles: last A* recompute (raid anchors on moving bosses
+    // otherwise invalidate the goal every couple of ticks and drain the whole
+    // per-tick A* budget forever), and last greedy-LOS smoothing pass (the
+    // full waypoint-skip raycast loop is only needed a few times a second).
+    lastRepathAt?: number;
+    lastSmoothAt?: number;
 }
 
 interface Waypoint { x: number; y: number }
@@ -1227,9 +1234,13 @@ function findInterceptingMob(
 ): { enemy: typeof enemies[number]; dist: number } | null {
     let best: typeof enemies[number] | null = null;
     let bestDist = Infinity;
-    for (const enemy of enemies) {
-        if (enemy.ownerId) continue;
-        if ((enemy as any).isDead) continue;
+    // The acceptance test below is dist <= range + mobRadius — exactly the
+    // "hitbox overlaps circle(range)" contract of the fat-inserted grid, so a
+    // query at `range` returns a superset of every possible acceptance.
+    const near = queryEnemiesNear(botX, botY, range, _botQueryScratch);
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
+        if (enemy.isDead) continue;
         if (enemy.id === excludeId) continue;
         if (enemy.type === 'target_dummy') continue;
         if (enemy.type === 'item_spawner') continue;
@@ -1321,10 +1332,18 @@ function steerAroundWalls(
 // a whole raid recomputing together can't spike the frame.
 
 const PATH_MAX_NODES = 4000;
-const PATH_MAX_PER_TICK = 3;
+const PATH_MAX_PER_TICK = 2;
 const PATH_WAYPOINT_REACHED_DIST = WALL_TILE_SIZE * 0.55;   // ~165 px
 const PATH_STALE_MS = 5000;
 const PATH_GOAL_INVALIDATE_TILES = 2;
+// A bot may not re-run A* more often than this even if its goal keeps moving
+// (chasing a moving boss): it keeps following the slightly-stale path and lets
+// local steering close the gap. Profiling showed A* + its heap at ~10% of all
+// server CPU because raiding bots invalidated their paths every couple ticks.
+const PATH_MIN_REPATH_MS = 1500;
+// Full greedy-LOS waypoint smoothing runs at most this often per bot; between
+// passes a single ray re-validates the current waypoint (see followPath).
+const PATH_SMOOTH_INTERVAL_MS = 200;
 
 let pathBudgetThisTick = PATH_MAX_PER_TICK;
 
@@ -1508,15 +1527,26 @@ function followPath(
         || Math.abs(state.pathGoalTileX - goalTx) > PATH_GOAL_INVALIDATE_TILES
         || Math.abs((state.pathGoalTileY as number) - goalTy) > PATH_GOAL_INVALIDATE_TILES;
 
-    const stale = !state.pathNodes
+    let stale = !state.pathNodes
         || !state.pathCreatedAt
         || now - state.pathCreatedAt > PATH_STALE_MS
         || pathExhausted
         || goalMoved;
 
+    // Goal-moved / staleness may not force a recompute more often than
+    // PATH_MIN_REPATH_MS — keep following the existing path meanwhile.
+    // A bot with NO usable path (first call or exhausted) is exempt: without
+    // a path it cannot move at all, so it must be allowed to compute one.
+    const hasUsablePath = !!state.pathNodes && !pathExhausted && state.pathNodes.length > 0;
+    if (stale && hasUsablePath && state.lastRepathAt !== undefined
+        && now - state.lastRepathAt < PATH_MIN_REPATH_MS) {
+        stale = false;
+    }
+
     if (stale) {
         if (pathBudgetThisTick <= 0) return false;
         pathBudgetThisTick--;
+        state.lastRepathAt = now;
         const path = findPathAStar(bot.x, bot.y, goalX, goalY);
         if (!path || path.length === 0) {
             // Cache an empty path so we don't burn the budget every tick when
@@ -1554,10 +1584,21 @@ function followPath(
     // line of sight. Without this, bots steer tile-center to tile-center,
     // producing a visible zigzag that turns into fast left-right snapping
     // under powder's 2×+ speed boost.
-    while (state.pathIndex! + 1 < state.pathNodes!.length) {
-        const next = state.pathNodes![state.pathIndex! + 1];
-        if (rayHitsWall(bot.x, bot.y, next.x, next.y)) break;
-        state.pathIndex!++;
+    //
+    // The full multi-ray pass only runs every PATH_SMOOTH_INTERVAL_MS; between
+    // passes one ray re-validates the current waypoint and, if the bot slid
+    // behind a corner, the full pass runs immediately. Cuts steady-state path
+    // following from N rays/bot/tick to 1.
+    const needFullSmooth = state.lastSmoothAt === undefined
+        || now - state.lastSmoothAt >= PATH_SMOOTH_INTERVAL_MS
+        || rayHitsWall(bot.x, bot.y, state.pathNodes![state.pathIndex!].x, state.pathNodes![state.pathIndex!].y);
+    if (needFullSmooth) {
+        state.lastSmoothAt = now;
+        while (state.pathIndex! + 1 < state.pathNodes!.length) {
+            const next = state.pathNodes![state.pathIndex! + 1];
+            if (rayHitsWall(bot.x, bot.y, next.x, next.y)) break;
+            state.pathIndex!++;
+        }
     }
 
     const wp = state.pathNodes![state.pathIndex!];
@@ -1600,23 +1641,29 @@ function pickBestEnemyTarget(
     let bestScore = -Infinity;
     let bestDist = 0;
 
-    for (const enemy of enemies) {
-        if (enemy.ownerId) continue;
-        if ((enemy as any).isDead) continue;
-        if (enemy.type === 'item_spawner') continue;
-        if (enemy.type === 'target_dummy') continue;
+    // Non-boss candidates can only pass the range gate below within
+    // HIGH_TIER_AGGRO_RANGE (the largest non-boss aggro range), so a grid
+    // query at that radius sees every possible winner. Bosses have a much
+    // wider range (BOSS_RAID_RANGE) and skip the tether — they come from the
+    // per-tick bossIndex instead of the grid. Same selection as the old full
+    // scan, without iterating all ~1400 enemies per bot.
+    const near = queryEnemiesNear(bot.x, bot.y, HIGH_TIER_AGGRO_RANGE, _botQueryScratch);
+    const scoreEnemy = (enemy: typeof enemies[number]) => {
+        if (enemy.isDead) return;
+        if (enemy.type === 'item_spawner') return;
+        if (enemy.type === 'target_dummy') return;
 
         const isBoss = BOSS_TIERS.has(enemy.tier);
 
         // Tether applies to everything except bosses — bosses are raids and
         // bots are allowed to crowd up from across the map to fight them.
-        if (!isBoss && !withinAnchor(anchor, enemy.x, enemy.y, tetherRadius)) continue;
+        if (!isBoss && !withinAnchor(anchor, enemy.x, enemy.y, tetherRadius)) return;
 
         const range = aggroRangeForTier(enemy.tier);
         const dx = enemy.x - bot.x;
         const dy = enemy.y - bot.y;
         const d = Math.sqrt(dx * dx + dy * dy);
-        if (d > range) continue;
+        if (d > range) return;
 
         const priority = tierPriority(enemy.tier);
         const prefBonus = preferredTiers.has(enemy.tier) ? 0.5 : 0;
@@ -1626,7 +1673,13 @@ function pickBestEnemyTarget(
             best = enemy;
             bestDist = d;
         }
+    };
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
+        if (BOSS_TIERS.has(enemy.tier)) continue; // scored from bossIndex below
+        scoreEnemy(enemy);
     }
+    for (const boss of bossIndex) scoreEnemy(boss);
 
     return best ? { enemy: best, dist: bestDist } : null;
 }
@@ -1860,11 +1913,8 @@ function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist:
     // recently spawned, then proximity to the nearest human player.
     let pool: typeof enemies[number][] = [];
     let preferUnique = false;
-    for (const enemy of enemies) {
-        if (enemy.ownerId) continue;
-        if ((enemy as any).isDead) continue;
-        if (enemy.type === 'target_dummy') continue;
-        if (!BOSS_TIERS.has(enemy.tier)) continue;
+    for (const enemy of bossIndex) {
+        if (enemy.isDead) continue; // may have died since the index was built this tick
         const dx = enemy.x - bot.x;
         const dy = enemy.y - bot.y;
         if (dx * dx + dy * dy > BOSS_RAID_RANGE * BOSS_RAID_RANGE) continue;
@@ -1903,9 +1953,11 @@ function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist:
 
 function hasHighRarityMobNearby(bot: ServerPlayer, range: number): boolean {
     const rSq = range * range;
-    for (const enemy of enemies) {
-        if (enemy.ownerId) continue;
-        if ((enemy as any).isDead) continue;
+    // Grid broad-phase (pets and rebuild-time dead mobs are already excluded).
+    const near = queryEnemiesNear(bot.x, bot.y, range, _botQueryScratch);
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
+        if (enemy.isDead) continue;
         if (!HIGH_TIERS.has(enemy.tier)) continue;
         const dx = enemy.x - bot.x;
         const dy = enemy.y - bot.y;
@@ -2203,8 +2255,31 @@ function updateBotSquadMembership(io: SocketIOServer, now: number): void {
     }
 }
 
+// Per-tick indexes. Bot targeting used to do 4-5 full linear scans over all
+// ~1400 enemies PER BOT per tick (findNearestBossForBot ×2, hasHighRarityMobNearby,
+// pickBestEnemyTarget, findInterceptingMob) — ~300k iterations/tick at the 50-bot
+// cap, the single largest tick cost after the petal loops. Bosses are indexed once
+// per tick (there are only a handful), and the range-bounded scans go through the
+// enemy spatial grid instead. rebuildEnemyGrid() must run BEFORE updateBotAI in
+// the tick for the grid queries to see this tick's positions (see server.ts).
+const bossIndex: (typeof enemies[number])[] = [];
+// One shared broad-phase scratch: the three query users per bot (mode scan, target
+// pick, intercept) each fully consume their results before the next query runs.
+const _botQueryScratch: (typeof enemies[number])[] = [];
+
+function rebuildBossIndex(): void {
+    bossIndex.length = 0;
+    for (const enemy of enemies) {
+        if (enemy.ownerId) continue;
+        if (enemy.isDead) continue;
+        if (enemy.type === 'target_dummy') continue;
+        if (BOSS_TIERS.has(enemy.tier)) bossIndex.push(enemy);
+    }
+}
+
 export function updateBotAI(io: SocketIOServer): void {
     const now = Date.now();
+    rebuildBossIndex();
     updateBotSquadMembership(io, now);
 
     // Reset the per-tick A* budget so a single tick can't be dominated by

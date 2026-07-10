@@ -19,6 +19,7 @@ const constants_1 = require("../constants");
 const map_data_1 = require("../map_data");
 const petals_1 = require("../petals");
 const mobs_1 = require("../mobs");
+const enemyGrid_1 = require("./enemyGrid");
 const playerManager_1 = require("./playerManager");
 const gameState_1 = require("./gameState");
 const squadManager_1 = require("./squadManager");
@@ -1115,9 +1116,12 @@ function getMobRadius(enemy) {
 function findInterceptingMob(botX, botY, dirX, dirY, excludeId, range) {
     let best = null;
     let bestDist = Infinity;
-    for (const enemy of constants_1.enemies) {
-        if (enemy.ownerId)
-            continue;
+    // The acceptance test below is dist <= range + mobRadius — exactly the
+    // "hitbox overlaps circle(range)" contract of the fat-inserted grid, so a
+    // query at `range` returns a superset of every possible acceptance.
+    const near = (0, enemyGrid_1.queryEnemiesNear)(botX, botY, range, _botQueryScratch);
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
         if (enemy.isDead)
             continue;
         if (enemy.id === excludeId)
@@ -1209,10 +1213,18 @@ function steerAroundWalls(fromX, fromY, dirX, dirY, probeDistance = constants_1.
 // (PATH_MAX_PER_TICK) limits how many bots can recompute simultaneously so
 // a whole raid recomputing together can't spike the frame.
 const PATH_MAX_NODES = 4000;
-const PATH_MAX_PER_TICK = 3;
+const PATH_MAX_PER_TICK = 2;
 const PATH_WAYPOINT_REACHED_DIST = constants_1.WALL_TILE_SIZE * 0.55; // ~165 px
 const PATH_STALE_MS = 5000;
 const PATH_GOAL_INVALIDATE_TILES = 2;
+// A bot may not re-run A* more often than this even if its goal keeps moving
+// (chasing a moving boss): it keeps following the slightly-stale path and lets
+// local steering close the gap. Profiling showed A* + its heap at ~10% of all
+// server CPU because raiding bots invalidated their paths every couple ticks.
+const PATH_MIN_REPATH_MS = 1500;
+// Full greedy-LOS waypoint smoothing runs at most this often per bot; between
+// passes a single ray re-validates the current waypoint (see followPath).
+const PATH_SMOOTH_INTERVAL_MS = 200;
 let pathBudgetThisTick = PATH_MAX_PER_TICK;
 const A_STAR_NEIGHBORS = [
     [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
@@ -1390,15 +1402,25 @@ function followPath(bot, state, now, goalX, goalY, speedMult, petalExt) {
     const goalMoved = state.pathGoalTileX === undefined
         || Math.abs(state.pathGoalTileX - goalTx) > PATH_GOAL_INVALIDATE_TILES
         || Math.abs(state.pathGoalTileY - goalTy) > PATH_GOAL_INVALIDATE_TILES;
-    const stale = !state.pathNodes
+    let stale = !state.pathNodes
         || !state.pathCreatedAt
         || now - state.pathCreatedAt > PATH_STALE_MS
         || pathExhausted
         || goalMoved;
+    // Goal-moved / staleness may not force a recompute more often than
+    // PATH_MIN_REPATH_MS — keep following the existing path meanwhile.
+    // A bot with NO usable path (first call or exhausted) is exempt: without
+    // a path it cannot move at all, so it must be allowed to compute one.
+    const hasUsablePath = !!state.pathNodes && !pathExhausted && state.pathNodes.length > 0;
+    if (stale && hasUsablePath && state.lastRepathAt !== undefined
+        && now - state.lastRepathAt < PATH_MIN_REPATH_MS) {
+        stale = false;
+    }
     if (stale) {
         if (pathBudgetThisTick <= 0)
             return false;
         pathBudgetThisTick--;
+        state.lastRepathAt = now;
         const path = findPathAStar(bot.x, bot.y, goalX, goalY);
         if (!path || path.length === 0) {
             // Cache an empty path so we don't burn the budget every tick when
@@ -1435,11 +1457,22 @@ function followPath(bot, state, now, goalX, goalY, speedMult, petalExt) {
     // line of sight. Without this, bots steer tile-center to tile-center,
     // producing a visible zigzag that turns into fast left-right snapping
     // under powder's 2×+ speed boost.
-    while (state.pathIndex + 1 < state.pathNodes.length) {
-        const next = state.pathNodes[state.pathIndex + 1];
-        if (rayHitsWall(bot.x, bot.y, next.x, next.y))
-            break;
-        state.pathIndex++;
+    //
+    // The full multi-ray pass only runs every PATH_SMOOTH_INTERVAL_MS; between
+    // passes one ray re-validates the current waypoint and, if the bot slid
+    // behind a corner, the full pass runs immediately. Cuts steady-state path
+    // following from N rays/bot/tick to 1.
+    const needFullSmooth = state.lastSmoothAt === undefined
+        || now - state.lastSmoothAt >= PATH_SMOOTH_INTERVAL_MS
+        || rayHitsWall(bot.x, bot.y, state.pathNodes[state.pathIndex].x, state.pathNodes[state.pathIndex].y);
+    if (needFullSmooth) {
+        state.lastSmoothAt = now;
+        while (state.pathIndex + 1 < state.pathNodes.length) {
+            const next = state.pathNodes[state.pathIndex + 1];
+            if (rayHitsWall(bot.x, bot.y, next.x, next.y))
+                break;
+            state.pathIndex++;
+        }
     }
     const wp = state.pathNodes[state.pathIndex];
     const dx = wp.x - bot.x;
@@ -1472,26 +1505,31 @@ function pickBestEnemyTarget(bot, anchor, tetherRadius, preferredTiers) {
     let best = null;
     let bestScore = -Infinity;
     let bestDist = 0;
-    for (const enemy of constants_1.enemies) {
-        if (enemy.ownerId)
-            continue;
+    // Non-boss candidates can only pass the range gate below within
+    // HIGH_TIER_AGGRO_RANGE (the largest non-boss aggro range), so a grid
+    // query at that radius sees every possible winner. Bosses have a much
+    // wider range (BOSS_RAID_RANGE) and skip the tether — they come from the
+    // per-tick bossIndex instead of the grid. Same selection as the old full
+    // scan, without iterating all ~1400 enemies per bot.
+    const near = (0, enemyGrid_1.queryEnemiesNear)(bot.x, bot.y, HIGH_TIER_AGGRO_RANGE, _botQueryScratch);
+    const scoreEnemy = (enemy) => {
         if (enemy.isDead)
-            continue;
+            return;
         if (enemy.type === 'item_spawner')
-            continue;
+            return;
         if (enemy.type === 'target_dummy')
-            continue;
+            return;
         const isBoss = BOSS_TIERS.has(enemy.tier);
         // Tether applies to everything except bosses — bosses are raids and
         // bots are allowed to crowd up from across the map to fight them.
         if (!isBoss && !withinAnchor(anchor, enemy.x, enemy.y, tetherRadius))
-            continue;
+            return;
         const range = aggroRangeForTier(enemy.tier);
         const dx = enemy.x - bot.x;
         const dy = enemy.y - bot.y;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d > range)
-            continue;
+            return;
         const priority = tierPriority(enemy.tier);
         const prefBonus = preferredTiers.has(enemy.tier) ? 0.5 : 0;
         const score = (priority + prefBonus) * 10000 - d;
@@ -1500,7 +1538,15 @@ function pickBestEnemyTarget(bot, anchor, tetherRadius, preferredTiers) {
             best = enemy;
             bestDist = d;
         }
+    };
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
+        if (BOSS_TIERS.has(enemy.tier))
+            continue; // scored from bossIndex below
+        scoreEnemy(enemy);
     }
+    for (const boss of bossIndex)
+        scoreEnemy(boss);
     return best ? { enemy: best, dist: bestDist } : null;
 }
 function findPickupTarget(bot, anchor, tetherRadius) {
@@ -1748,15 +1794,9 @@ function findNearestBossForBot(bot) {
     // recently spawned, then proximity to the nearest human player.
     let pool = [];
     let preferUnique = false;
-    for (const enemy of constants_1.enemies) {
-        if (enemy.ownerId)
-            continue;
+    for (const enemy of bossIndex) {
         if (enemy.isDead)
-            continue;
-        if (enemy.type === 'target_dummy')
-            continue;
-        if (!BOSS_TIERS.has(enemy.tier))
-            continue;
+            continue; // may have died since the index was built this tick
         const dx = enemy.x - bot.x;
         const dy = enemy.y - bot.y;
         if (dx * dx + dy * dy > BOSS_RAID_RANGE * BOSS_RAID_RANGE)
@@ -1800,9 +1840,10 @@ function findNearestBossForBot(bot) {
 }
 function hasHighRarityMobNearby(bot, range) {
     const rSq = range * range;
-    for (const enemy of constants_1.enemies) {
-        if (enemy.ownerId)
-            continue;
+    // Grid broad-phase (pets and rebuild-time dead mobs are already excluded).
+    const near = (0, enemyGrid_1.queryEnemiesNear)(bot.x, bot.y, range, _botQueryScratch);
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
         if (enemy.isDead)
             continue;
         if (!HIGH_TIERS.has(enemy.tier))
@@ -2082,8 +2123,33 @@ function updateBotSquadMembership(io, now) {
         }
     }
 }
+// Per-tick indexes. Bot targeting used to do 4-5 full linear scans over all
+// ~1400 enemies PER BOT per tick (findNearestBossForBot ×2, hasHighRarityMobNearby,
+// pickBestEnemyTarget, findInterceptingMob) — ~300k iterations/tick at the 50-bot
+// cap, the single largest tick cost after the petal loops. Bosses are indexed once
+// per tick (there are only a handful), and the range-bounded scans go through the
+// enemy spatial grid instead. rebuildEnemyGrid() must run BEFORE updateBotAI in
+// the tick for the grid queries to see this tick's positions (see server.ts).
+const bossIndex = [];
+// One shared broad-phase scratch: the three query users per bot (mode scan, target
+// pick, intercept) each fully consume their results before the next query runs.
+const _botQueryScratch = [];
+function rebuildBossIndex() {
+    bossIndex.length = 0;
+    for (const enemy of constants_1.enemies) {
+        if (enemy.ownerId)
+            continue;
+        if (enemy.isDead)
+            continue;
+        if (enemy.type === 'target_dummy')
+            continue;
+        if (BOSS_TIERS.has(enemy.tier))
+            bossIndex.push(enemy);
+    }
+}
 function updateBotAI(io) {
     const now = Date.now();
+    rebuildBossIndex();
     updateBotSquadMembership(io, now);
     // Reset the per-tick A* budget so a single tick can't be dominated by
     // simultaneous recomputes (e.g., a whole raid repathing at once).

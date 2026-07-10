@@ -1172,8 +1172,11 @@ export class Game {
 
         this.update();
         
-        // Filter out items that this player has already picked up
-        const visibleItems = new Map<string, WorldItem>();
+        // Filter out items that this player has already picked up.
+        // The Map is reused across frames (clear + refill) — rebuilding it
+        // allocated a Map + entries every frame.
+        const visibleItems = this._visibleItemsScratch;
+        visibleItems.clear();
         for (const [itemId, item] of this.items.entries()) {
             if (!this.pickedUpItems.has(itemId)) {
                 visibleItems.set(itemId, item);
@@ -1664,14 +1667,23 @@ export class Game {
         player.y = this.predY - this.renderErrY;
     }
 
+    // Reused result for interpolateFromSnapshots: it runs once per remote
+    // player and per enemy per FRAME, and both call sites copy x/y/angle out
+    // immediately, so a fresh object per call was pure GC pressure.
+    private _interpScratch: { x: number; y: number; angle?: number } = { x: 0, y: 0, angle: undefined };
+    // Reused per-frame container for the not-yet-picked-up item filter.
+    private _visibleItemsScratch: Map<string, WorldItem> = new Map();
+
     // Snapshot interpolation: find the two snapshots bracketing `renderTime` and
     // return the linearly interpolated position. Returns null if the buffer is too
     // small or renderTime is newer than all snapshots (caller should fall back to lerp).
+    // NOTE: returns a reused scratch object — copy fields out before the next call.
     private interpolateFromSnapshots(
         snaps: { t: number; x: number; y: number; angle?: number }[],
         renderTime: number
     ): { x: number; y: number; angle?: number } | null {
         if (snaps.length < 2) return null;
+        const out = this._interpScratch;
         // Walk backward from the end to find the pair where snaps[i].t <= renderTime <= snaps[i+1].t
         let i = snaps.length - 2;
         while (i > 0 && snaps[i].t > renderTime) i--;
@@ -1681,30 +1693,35 @@ export class Game {
             // renderTime is after ALL snapshots (buffer hasn't caught up yet) — extrapolate
             // from the latest pair at most one server tick forward to avoid freezing.
             const dt = s1.t - s0.t;
-            if (dt <= 0) return { x: s1.x, y: s1.y, angle: s1.angle };
+            if (dt <= 0) {
+                out.x = s1.x; out.y = s1.y; out.angle = s1.angle;
+                return out;
+            }
             const overshoot = Math.min((renderTime - s1.t) / dt, 1);
-            return {
-                x: s1.x + (s1.x - s0.x) * overshoot,
-                y: s1.y + (s1.y - s0.y) * overshoot,
-                angle: s1.angle,
-            };
+            out.x = s1.x + (s1.x - s0.x) * overshoot;
+            out.y = s1.y + (s1.y - s0.y) * overshoot;
+            out.angle = s1.angle;
+            return out;
         }
         const span = s1.t - s0.t;
-        if (span <= 0) return { x: s1.x, y: s1.y, angle: s1.angle };
+        if (span <= 0) {
+            out.x = s1.x; out.y = s1.y; out.angle = s1.angle;
+            return out;
+        }
         // Clamp: renderTime can predate the oldest pair right after the buffer
         // seeds; a negative alpha would extrapolate backward past s0.
         const alpha = Math.max(0, (renderTime - s0.t) / span);
-        const result: { x: number; y: number; angle?: number } = {
-            x: s0.x + (s1.x - s0.x) * alpha,
-            y: s0.y + (s1.y - s0.y) * alpha,
-        };
-        if (s0.angle !== undefined && s1.angle !== undefined) {
-            let da = s1.angle - s0.angle;
-            if (da > Math.PI) da -= Math.PI * 2;
-            if (da < -Math.PI) da += Math.PI * 2;
-            result.angle = s0.angle + da * alpha;
-        }
-        return result;
+        out.x = s0.x + (s1.x - s0.x) * alpha;
+        out.y = s0.y + (s1.y - s0.y) * alpha;
+        out.angle = (s0.angle !== undefined && s1.angle !== undefined)
+            ? (() => {
+                let da = s1.angle - s0.angle;
+                if (da > Math.PI) da -= Math.PI * 2;
+                if (da < -Math.PI) da += Math.PI * 2;
+                return s0.angle + da * alpha;
+            })()
+            : undefined;
+        return out;
     }
 
     private getInputInterval(): number {

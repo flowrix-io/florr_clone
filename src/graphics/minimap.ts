@@ -25,8 +25,104 @@ declare module './core' {
         getMinimapZoom(): number;
         followPlayerOnMinimap(playerX: number, playerY: number): void;
         drawMinimap(players: Map<string, Player>, socket: string): void;
+        bakeMinimapStatic(minimapScale: { x: number; y: number }): HTMLCanvasElement;
     }
 }
+
+// Renders the minimap's static layers (background, spawn zones, wall tiles,
+// teleporter dots) into an offscreen canvas in minimap-local coordinates.
+// Rebaked only when the section-snapped scroll or the ALT-glow toggle changes.
+Graphics.prototype.bakeMinimapStatic = function(this: Graphics, minimapScale: { x: number; y: number }): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = this.MINIMAP_WIDTH;
+    canvas.height = this.MINIMAP_HEIGHT;
+    const ctx = canvas.getContext('2d')!;
+
+    // Background (white instead of black)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(0, 0, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
+
+    // Spawn zones when ALT is held (below walls/water)
+    if (this.showRarityGlow) {
+        const spawnElements = this.spawnZoneElements.length > 0 ? this.spawnZoneElements : this.mapData;
+        const sx = minimapScale.x;
+        const sy = minimapScale.y;
+        let lastFill = '';
+        for (let i = 0; i < spawnElements.length; i++) {
+            const element = spawnElements[i];
+            if (element.type !== 'spawn') continue;
+            const scaledX = (element.x - this.minimapScrollX) * sx;
+            const scaledY = (element.y - this.minimapScrollY) * sy;
+            const scaledWidth = element.width * sx;
+            const scaledHeight = element.height * sy;
+            if (scaledX + scaledWidth <= 0 || scaledX >= this.MINIMAP_WIDTH ||
+                scaledY + scaledHeight <= 0 || scaledY >= this.MINIMAP_HEIGHT) continue;
+            const spawnType = element.properties?.spawnType || 'common';
+            const fill = MINIMAP_SPAWN_COLORS[spawnType] || MINIMAP_SPAWN_COLORS.common;
+            if (fill !== lastFill) {
+                ctx.fillStyle = fill;
+                lastFill = fill;
+            }
+            ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+        }
+    }
+
+    // Wall grid tiles
+    const SECTION_SIZE = 20000;
+    const sectionX = Math.floor(this.minimapScrollX / SECTION_SIZE);
+    const sectionY = Math.floor(this.minimapScrollY / SECTION_SIZE);
+    const minTileX = Math.max(0, worldToTileX(sectionX * SECTION_SIZE));
+    const maxTileX = Math.min(WALL_GRID_WIDTH - 1, worldToTileX((sectionX + 1) * SECTION_SIZE));
+    const minTileY = Math.max(0, worldToTileY(sectionY * SECTION_SIZE));
+    const maxTileY = Math.min(WALL_GRID_HEIGHT - 1, worldToTileY((sectionY + 1) * SECTION_SIZE));
+
+    for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+        for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+            const state = getTileState(WALL_GRID, tileToWorldX(tileX), tileToWorldY(tileY));
+            if (state === 0) continue; // Skip air tiles
+
+            const worldX = tileToWorldX(tileX);
+            const worldY = tileToWorldY(tileY);
+            const scaledX = (worldX - this.minimapScrollX) * minimapScale.x;
+            const scaledY = (worldY - this.minimapScrollY) * minimapScale.y;
+            const tileSize = WALL_TILE_SIZE * minimapScale.x;
+
+            // Walls render as solid black for high-contrast minimap silhouettes;
+            // anything else (water, custom tile types) uses its configured color.
+            if (isTileIdSolid(state)) {
+                ctx.fillStyle = '#000000';
+            } else {
+                ctx.fillStyle = getTileTypeConfig(state).color;
+            }
+            ctx.fillRect(scaledX, scaledY, tileSize, tileSize);
+        }
+    }
+
+    // Map elements (teleporter dots)
+    this.mapData.forEach(element => {
+        const scaledX = (element.x - this.minimapScrollX) * minimapScale.x;
+        const scaledY = (element.y - this.minimapScrollY) * minimapScale.y;
+        const scaledWidth = element.width * minimapScale.x;
+        const scaledHeight = element.height * minimapScale.y;
+
+        if (scaledX + scaledWidth > 0 && scaledX < this.MINIMAP_WIDTH &&
+            scaledY + scaledHeight > 0 && scaledY < this.MINIMAP_HEIGHT) {
+            if (element.type === 'teleporter') {
+                const dotX = scaledX + scaledWidth / 2;
+                const dotY = scaledY + scaledHeight / 2;
+                ctx.fillStyle = element.properties?.teleportTo?.serverPort ? '#FFD700' : '#00FF00';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+    });
+
+    return canvas;
+};
 
 Graphics.prototype.scrollMinimap = function(this: Graphics, deltaX: number, deltaY: number) {
     // Minimap scrolling is disabled - it automatically shows the current 9th section
@@ -106,100 +202,21 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
         y: this.MINIMAP_HEIGHT / MINIMAP_AREA_SIZE
     };
 
-    // Draw minimap background (white instead of black)
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    this.ctx.fillRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
+    // Static layers (background, spawn zones, wall tiles, teleporter dots)
+    // depend only on the section-snapped scroll position and the ALT-glow
+    // toggle — bake them once and blit. The per-tile wall scan every frame was
+    // one of the top per-frame costs under CPU throttling.
+    const staticKey = `${this.minimapScrollX}_${this.minimapScrollY}_${this.showRarityGlow ? 1 : 0}`;
+    if (!this.minimapStaticCache || this.minimapStaticCache.key !== staticKey) {
+        this.minimapStaticCache = { key: staticKey, canvas: this.bakeMinimapStatic(minimapScale) };
+    }
+    this.ctx.drawImage(this.minimapStaticCache.canvas, minimapX, minimapY);
 
-    // Set up clipping region for minimap to prevent drawing outside bounds
+    // Set up clipping region for the dynamic layer (player dots)
     this.ctx.save();
     this.ctx.beginPath();
     this.ctx.rect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     this.ctx.clip();
-
-    // Draw spawn zones on minimap when ALT is held (below walls/water)
-    if (this.showRarityGlow) {
-        const spawnElements = this.spawnZoneElements.length > 0 ? this.spawnZoneElements : this.mapData;
-        const mapRight = minimapX + this.MINIMAP_WIDTH;
-        const mapBottom = minimapY + this.MINIMAP_HEIGHT;
-        const sx = minimapScale.x;
-        const sy = minimapScale.y;
-        let lastFill = '';
-        for (let i = 0; i < spawnElements.length; i++) {
-            const element = spawnElements[i];
-            if (element.type !== 'spawn') continue;
-            const scaledX = minimapX + ((element.x - this.minimapScrollX) * sx);
-            const scaledY = minimapY + ((element.y - this.minimapScrollY) * sy);
-            const scaledWidth = element.width * sx;
-            const scaledHeight = element.height * sy;
-            if (scaledX + scaledWidth <= minimapX || scaledX >= mapRight ||
-                scaledY + scaledHeight <= minimapY || scaledY >= mapBottom) continue;
-            const spawnType = element.properties?.spawnType || 'common';
-            const fill = MINIMAP_SPAWN_COLORS[spawnType] || MINIMAP_SPAWN_COLORS.common;
-            if (fill !== lastFill) {
-                this.ctx.fillStyle = fill;
-                lastFill = fill;
-            }
-            this.ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
-        }
-    }
-
-    // Draw wall grid tiles on minimap
-    const SECTION_SIZE = 20000;
-    const sectionX = Math.floor(this.minimapScrollX / SECTION_SIZE);
-    const sectionY = Math.floor(this.minimapScrollY / SECTION_SIZE);
-    const minTileX = Math.max(0, worldToTileX(sectionX * SECTION_SIZE));
-    const maxTileX = Math.min(WALL_GRID_WIDTH - 1, worldToTileX((sectionX + 1) * SECTION_SIZE));
-    const minTileY = Math.max(0, worldToTileY(sectionY * SECTION_SIZE));
-    const maxTileY = Math.min(WALL_GRID_HEIGHT - 1, worldToTileY((sectionY + 1) * SECTION_SIZE));
-
-    for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
-        for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
-            const state = getTileState(WALL_GRID, tileToWorldX(tileX), tileToWorldY(tileY));
-            if (state === 0) continue; // Skip air tiles
-
-            const worldX = tileToWorldX(tileX);
-            const worldY = tileToWorldY(tileY);
-            const scaledX = minimapX + ((worldX - this.minimapScrollX) * minimapScale.x);
-            const scaledY = minimapY + ((worldY - this.minimapScrollY) * minimapScale.y);
-            const tileSize = WALL_TILE_SIZE * minimapScale.x;
-
-            // Walls render as solid black for high-contrast minimap silhouettes;
-            // anything else (water, custom tile types) uses its configured color.
-            if (isTileIdSolid(state)) {
-                this.ctx.fillStyle = '#000000';
-            } else {
-                this.ctx.fillStyle = getTileTypeConfig(state).color;
-            }
-            this.ctx.fillRect(scaledX, scaledY, tileSize, tileSize);
-        }
-    }
-
-    // Draw map elements (spawn, biome, teleporter) on minimap
-    this.mapData.forEach(element => {
-        const scaledX = minimapX + ((element.x - this.minimapScrollX) * minimapScale.x);
-        const scaledY = minimapY + ((element.y - this.minimapScrollY) * minimapScale.y);
-        const scaledWidth = element.width * minimapScale.x;
-        const scaledHeight = element.height * minimapScale.y;
-
-        // Only draw if the element is within the visible minimap area
-        if (scaledX + scaledWidth > minimapX && scaledX < minimapX + this.MINIMAP_WIDTH &&
-            scaledY + scaledHeight > minimapY && scaledY < minimapY + this.MINIMAP_HEIGHT) {
-            if (element.type === 'teleporter') {
-                // Draw teleporter as a point on minimap
-                const dotX = scaledX + scaledWidth / 2;
-                const dotY = scaledY + scaledHeight / 2;
-                this.ctx.fillStyle = element.properties?.teleportTo?.serverPort ? '#FFD700' : '#00FF00';
-                this.ctx.strokeStyle = '#000000';
-                this.ctx.lineWidth = 1;
-                this.ctx.beginPath();
-                this.ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
-                this.ctx.fill();
-                this.ctx.stroke();
-            } else {
-                return; // Skip unknown types
-            }
-        }
-    });
 
     // Draw all players on minimap with solid colors (with scroll offset)
     const squadMemberIds: string[] = (window as any).squadMemberIds || [];
@@ -266,6 +283,9 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
     this.ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
 
     // Get section config for custom name
+    const SECTION_SIZE = 20000;
+    const sectionX = Math.floor(this.minimapScrollX / SECTION_SIZE);
+    const sectionY = Math.floor(this.minimapScrollY / SECTION_SIZE);
     const sectionIndex = sectionY * 3 + sectionX;
     const sectionConfig = SECTION_CONFIGS[sectionIndex];
     const sectionName = sectionConfig?.name || `Section ${sectionIndex + 1}`;
