@@ -420,6 +420,13 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Added mobile support',
             'Added absorb talents'
         ]
+    },
+    {
+        date: 'July 9, 2026',
+        changes: [
+            'New desert background',
+            'Server and client optimizations'
+        ]
     }
 ];
 
