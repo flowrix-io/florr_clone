@@ -423,7 +423,7 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
     const petRange = (mobStats.range || 0) + rangeBonus;
     // Create the pet enemy
     const currentTime = Date.now();
-    const pet = {
+    const pet = (0, server_utils_1.makeEnemy)({
         id: Math.random().toString(36).substr(2, 9),
         type: mobType,
         tier: tier,
@@ -443,7 +443,7 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
         spawnTime: currentTime,
         lastViewportCheck: currentTime,
         petImage: mobStats.petImage // Use pet image if available
-    };
+    });
     // Add to enemies array
     constants_1.enemies.push(pet);
     // Notify all clients

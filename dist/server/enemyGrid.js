@@ -1,25 +1,29 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rebuildEnemyGrid = rebuildEnemyGrid;
-exports.getMaxEnemyRadius = getMaxEnemyRadius;
 exports.queryEnemiesNear = queryEnemiesNear;
 const mobs_1 = require("../mobs");
 const constants_1 = require("../constants");
-// Cell size chosen so a 3x3 query covers any plausible enemy radius + petal radius
-// (largest mobs have radius < ~400). Smaller cells = fewer false positives but more
-// query cells; 512 is a reasonable middle-ground for this world (60000 wide).
+// Cell size chosen so a typical query (a petal or player radius, tens of px) touches
+// only one or two cells per axis. Mobs larger than a cell are inserted into every cell
+// they overlap, so cell size no longer has to bound the largest mob radius.
 const CELL_SIZE = 512;
 const KEY_OFFSET = 1024; // allow negative cell coords (PVP arena lives outside main world)
 // Sanity bounds. No legitimate mob radius or broad-phase query radius comes close to
 // these — they exist purely to stop a degenerate (NaN/Infinity/huge) value from making
 // the cell-range loops span the whole coordinate space and spin forever at 100% CPU
 // (the long-session server hang). Hit values are logged so the real cause is visible.
-const MAX_MOB_RADIUS = 4096; // mob _radius = size*40/2; real mobs are < ~400
-const MAX_QUERY_RADIUS = 8192; // playerRadius + maxEnemyRadius (+aura); real < ~1500
+const MAX_MOB_RADIUS = 4096; // mob _radius = size*40/2; the largest real mob is ant_hole/apex at 1718
+const MAX_QUERY_RADIUS = 8192; // a caller's own radius (petal/player/aura); real < ~1500
 let _lastBadMobRadius = NaN;
 let _lastBadQuery = NaN;
 const grid = new Map();
-let maxRadius = 0;
+// Monotonic per-query stamp. A mob wider than a cell lives in several buckets, so a
+// query spanning those buckets would otherwise return it more than once — and callers
+// apply damage per returned candidate, so a duplicate is a double hit. Stamping is O(1)
+// and needs no reset: the counter only ever increases, so a stale `_qs` can never equal
+// the current stamp.
+let queryStamp = 0;
 function key(cx, cy) {
     return ((cy + KEY_OFFSET) << 16) | ((cx + KEY_OFFSET) & 0xFFFF);
 }
@@ -27,18 +31,30 @@ function key(cx, cy) {
  * Rebuild the spatial grid from the current enemies array. Pets (ownerId set) and
  * dead enemies are excluded so callers don't need to filter them.
  *
- * Side-effect: caches mob radius / mobStats on each enemy as `_radius` /
- * `_mobStats` so per-collision lookups don't have to call getMobStats again.
+ * Each enemy is inserted into every cell its own radius overlaps ("fat" insertion).
+ * That is what lets `queryEnemiesNear` take only the *caller's* radius. The old grid
+ * stored each enemy in the single cell holding its centre, so every caller had to
+ * query `ownRadius + getMaxEnemyRadius()` to avoid missing a large mob whose centre
+ * was far away but whose edge was touching. Because that max is global, a single
+ * ant_hole/apex (radius 1718px) anywhere in the world — a maze boss room, say —
+ * inflated every petal's query from ~9 cells to ~64, for every player. With a Light
+ * loadout (~70 petal instances, one query each) that dominated the tick.
+ *
+ * Side-effect: caches mob radius / mobStats on each enemy as `_radius` / `_mobStats`
+ * so per-collision lookups don't have to call getMobStats again.
  * type/tier never change after spawn, so the cache is safe.
  */
 function rebuildEnemyGrid(enemies) {
     grid.clear();
-    maxRadius = 0;
     for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
         if (e.ownerId)
             continue;
         if (e.isDead)
+            continue;
+        // A non-finite position would make the cell range below Infinity/NaN and spin
+        // the nested loops forever. Such a mob simply isn't in the grid this tick.
+        if (!Number.isFinite(e.x) || !Number.isFinite(e.y))
             continue;
         // Cache derived stats once per spawn lifetime.
         if (e._radius === undefined) {
@@ -47,8 +63,8 @@ function rebuildEnemyGrid(enemies) {
             e._mobStats = mobStats;
         }
         let r = e._radius;
-        // A degenerate mob radius would poison getMaxEnemyRadius() and blow up every
-        // queryEnemiesNear cell range. Clamp + log, and persist so it's only logged once.
+        // A degenerate mob radius would blow up the insertion cell range below.
+        // Clamp + log, and persist so it's only logged once.
         if (!(r >= 0 && r <= MAX_MOB_RADIUS)) {
             if (r !== _lastBadMobRadius) {
                 console.warn(`[enemyGrid] degenerate mob _radius=${r} for ${e.type}/${e.tier}; clamping to ${constants_1.ENEMY_SIZE / 2}`);
@@ -57,26 +73,31 @@ function rebuildEnemyGrid(enemies) {
             r = constants_1.ENEMY_SIZE / 2;
             e._radius = r;
         }
-        if (r > maxRadius)
-            maxRadius = r;
-        const cx = Math.floor(e.x / CELL_SIZE);
-        const cy = Math.floor(e.y / CELL_SIZE);
-        const k = key(cx, cy);
-        let bucket = grid.get(k);
-        if (!bucket) {
-            bucket = [];
-            grid.set(k, bucket);
+        const minCX = Math.floor((e.x - r) / CELL_SIZE);
+        const maxCX = Math.floor((e.x + r) / CELL_SIZE);
+        const minCY = Math.floor((e.y - r) / CELL_SIZE);
+        const maxCY = Math.floor((e.y + r) / CELL_SIZE);
+        for (let cy = minCY; cy <= maxCY; cy++) {
+            for (let cx = minCX; cx <= maxCX; cx++) {
+                const k = key(cx, cy);
+                let bucket = grid.get(k);
+                if (!bucket) {
+                    bucket = [];
+                    grid.set(k, bucket);
+                }
+                bucket.push(e);
+            }
         }
-        bucket.push(e);
     }
 }
-/** Largest enemy radius in the current grid; callers add this to their own radius. */
-function getMaxEnemyRadius() {
-    return maxRadius;
-}
 /**
- * Append all enemy candidates within `radius` of (x, y) into `out` (cleared first).
- * Returns `out`. Caller still does precise distance checks — this is a broad-phase.
+ * Append every enemy whose hitbox may overlap a circle of `radius` around (x, y) into
+ * `out` (cleared first), each at most once. Returns `out`.
+ *
+ * `radius` is the CALLER's own radius (petal, player, aura, spawn clearance) — do NOT
+ * add the largest mob radius to it. The grid already accounts for each mob's own size.
+ * Caller still does the precise `dist < radius + enemy._radius` test: this is a
+ * broad phase over cell AABBs, so it can return a few extra corner cases.
  */
 function queryEnemiesNear(x, y, radius, out) {
     out.length = 0;
@@ -97,6 +118,7 @@ function queryEnemiesNear(x, y, radius, out) {
         }
         radius = MAX_QUERY_RADIUS;
     }
+    const stamp = ++queryStamp;
     const minCX = Math.floor((x - radius) / CELL_SIZE);
     const maxCX = Math.floor((x + radius) / CELL_SIZE);
     const minCY = Math.floor((y - radius) / CELL_SIZE);
@@ -106,8 +128,13 @@ function queryEnemiesNear(x, y, radius, out) {
             const bucket = grid.get(key(cx, cy));
             if (!bucket)
                 continue;
-            for (let i = 0; i < bucket.length; i++)
-                out.push(bucket[i]);
+            for (let i = 0; i < bucket.length; i++) {
+                const e = bucket[i];
+                if (e._qs === stamp)
+                    continue; // already returned from another cell
+                e._qs = stamp;
+                out.push(e);
+            }
         }
     }
     return out;

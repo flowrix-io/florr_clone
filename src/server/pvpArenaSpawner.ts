@@ -1,4 +1,4 @@
-import { Enemy } from '../server_utils';
+import { Enemy, makeEnemy } from '../server_utils';
 import {
     players,
     enemies,
@@ -133,7 +133,7 @@ export function spawnArenaMobs(limit: number = 3): Enemy[] {
         if (!position) continue;
 
         const currentTime = Date.now();
-        const enemy: Enemy = {
+        const enemy: Enemy = makeEnemy({
             id: Math.random().toString(36).slice(2, 11),
             type: mobEntry.type as Enemy['type'],
             tier: tierEntry.tier,
@@ -151,7 +151,7 @@ export function spawnArenaMobs(limit: number = 3): Enemy[] {
             reversed: stats.reversed ?? false,
             spawnTime: currentTime,
             lastViewportCheck: currentTime,
-        };
+        });
         spawned.push(enemy);
     }
     return spawned;

@@ -1,5 +1,5 @@
 import { Server as SocketIOServer } from '../ws_server';
-import { Enemy, isCentipedeHeadType, isCentipedeBodyType, getCentipedeBodyType } from '../server_utils';
+import { Enemy, makeEnemy, isCentipedeHeadType, isCentipedeBodyType, getCentipedeBodyType } from '../server_utils';
 import { 
     players,
     enemies
@@ -769,7 +769,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
     }
 
     const currentTime = Date.now();
-    const enemy: Enemy = {
+    const enemy: Enemy = makeEnemy({
         id: Math.random().toString(36).substr(2, 9),
         type: mobType,
         tier,
@@ -787,7 +787,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): Enemy | null {
         reversed: reversed ?? mobStats.reversed ?? false,
         spawnTime: currentTime,
         lastViewportCheck: currentTime  // Mark as in viewport since we spawned it there
-    };
+    });
 
     // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
 
@@ -990,7 +990,7 @@ export function createEnemyInZone(
     if (overlapsExistingMob) return null;
 
     const currentTime = Date.now();
-    const enemy: Enemy = {
+    const enemy: Enemy = makeEnemy({
         id: Math.random().toString(36).substr(2, 9),
         type: mobType,
         tier,
@@ -1008,7 +1008,7 @@ export function createEnemyInZone(
         reversed: reversed ?? mobStats.reversed ?? false,
         spawnTime: currentTime,
         lastViewportCheck: currentTime
-    };
+    });
 
     // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
 
@@ -1038,7 +1038,7 @@ export function spawnInitialSpawns(parent: Enemy): void {
         if (!childStats) continue;
         const angle = Math.random() * Math.PI * 2;
         const dist = parentRadius + 30 + Math.random() * parentRadius;
-        const child: Enemy = {
+        const child: Enemy = makeEnemy({
             id: Math.random().toString(36).substr(2, 9),
             type: childType as Enemy['type'],
             tier: parent.tier,
@@ -1057,7 +1057,7 @@ export function spawnInitialSpawns(parent: Enemy): void {
             spawnTime: currentTime,
             lastViewportCheck: currentTime,
             parentHoleId: parent.id,
-        };
+        });
         enemies.push(child);
     }
 }
@@ -1088,7 +1088,7 @@ export function spawnCentipedeBodySegments(head: Enemy): void {
     for (let i = 1; i <= segmentCount; i++) {
         const segX = prevX + dirX * spacing;
         const segY = prevY + dirY * spacing;
-        const segment: Enemy = {
+        const segment: Enemy = makeEnemy({
             id: Math.random().toString(36).substr(2, 9),
             type: bodyType as Enemy['type'],
             tier: head.tier,
@@ -1104,13 +1104,14 @@ export function spawnCentipedeBodySegments(head: Enemy): void {
             aiType: bodyStats.ai_type,
             range: bodyStats.range,
             reversed: bodyStats.reversed ?? false,
+            // undefined for wild centipedes, set for pet ones — either way the key exists.
+            ownerId: head.ownerId,
             spawnTime: currentTime,
             lastViewportCheck: currentTime,
             leaderId: prevId,
             headId: head.id,
             segmentIndex: i,
-        };
-        if (head.ownerId) segment.ownerId = head.ownerId;
+        });
         enemies.push(segment);
         prevId = segment.id;
         prevX = segX;
@@ -1275,7 +1276,7 @@ export function createSpecialMob(
     }
 
     const currentTime = Date.now();
-    return {
+    return makeEnemy({
         id: Math.random().toString(36).substr(2, 9),
         type: mobType,
         tier: tier,
@@ -1291,7 +1292,7 @@ export function createSpecialMob(
         aiType: mobStats.ai_type,
         range: mobStats.range,
         spawnTime: currentTime
-    };
+    });
 }
 
 /**

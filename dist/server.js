@@ -614,7 +614,7 @@ function spawnMob(mobType, rarity, x, y) {
     }
     // Create the enemy
     const currentTime = Date.now();
-    const enemy = {
+    const enemy = (0, server_utils_1.makeEnemy)({
         id: Math.random().toString(36).substr(2, 9),
         type: mobType,
         tier: tier,
@@ -632,7 +632,7 @@ function spawnMob(mobType, rarity, x, y) {
         reversed: mobStats.reversed ?? false,
         spawnTime: currentTime,
         lastViewportCheck: currentTime
-    };
+    });
     // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
     // Add to enemies array
     constants_2.enemies.push(enemy);
@@ -3690,7 +3690,7 @@ function spawnWaveMobs() {
                     continue;
                 const angle = Math.random() * Math.PI * 2;
                 const dist = parentRadius + 10 + Math.random() * parentRadius;
-                const child = {
+                const child = (0, server_utils_1.makeEnemy)({
                     id: Math.random().toString(36).substr(2, 9),
                     type: childType,
                     tier: enemy.tier,
@@ -3709,7 +3709,7 @@ function spawnWaveMobs() {
                     spawnTime: currentTime,
                     lastViewportCheck: currentTime,
                     parentHoleId: enemy.id,
-                };
+                });
                 constants_2.enemies.push(child);
                 io.emit('enemySpawned', child);
             }

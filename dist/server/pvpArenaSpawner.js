@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.spawnArenaMobs = spawnArenaMobs;
+const server_utils_1 = require("../server_utils");
 const constants_1 = require("../constants");
 const mobs_1 = require("../mobs");
 // Garden-themed mobs + spider. Weights control relative spawn frequency.
@@ -125,7 +126,7 @@ function spawnArenaMobs(limit = 3) {
         if (!position)
             continue;
         const currentTime = Date.now();
-        const enemy = {
+        const enemy = (0, server_utils_1.makeEnemy)({
             id: Math.random().toString(36).slice(2, 11),
             type: mobEntry.type,
             tier: tierEntry.tier,
@@ -143,7 +144,7 @@ function spawnArenaMobs(limit = 3) {
             reversed: stats.reversed ?? false,
             spawnTime: currentTime,
             lastViewportCheck: currentTime,
-        };
+        });
         spawned.push(enemy);
     }
     return spawned;

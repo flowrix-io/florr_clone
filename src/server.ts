@@ -44,7 +44,7 @@ import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnA
 import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType, ABSORB_XP, ABSORBING_SKILL_MULTIPLIERS } from './petals';
 import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, MAX_SPEED, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
-import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
+import { Enemy, makeEnemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { MobProjectile } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getPetalStats } from './petals';
@@ -805,7 +805,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
 
     // Create the enemy
     const currentTime = Date.now();
-    const enemy: Enemy = {
+    const enemy: Enemy = makeEnemy({
         id: Math.random().toString(36).substr(2, 9),
         type: mobType as Enemy['type'],
         tier: tier,
@@ -823,7 +823,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
         reversed: mobStats.reversed ?? false,
         spawnTime: currentTime,
         lastViewportCheck: currentTime
-    };
+    });
 
     // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
 
@@ -4079,7 +4079,7 @@ function spawnWaveMobs() {
                 if (!childStats) continue;
                 const angle = Math.random() * Math.PI * 2;
                 const dist = parentRadius + 10 + Math.random() * parentRadius;
-                const child: Enemy = {
+                const child: Enemy = makeEnemy({
                     id: Math.random().toString(36).substr(2, 9),
                     type: childType as Enemy['type'],
                     tier: enemy.tier,
@@ -4098,7 +4098,7 @@ function spawnWaveMobs() {
                     spawnTime: currentTime,
                     lastViewportCheck: currentTime,
                     parentHoleId: enemy.id,
-                };
+                });
                 enemies.push(child);
                 io.emit('enemySpawned', child);
             }

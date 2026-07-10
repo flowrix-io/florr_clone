@@ -1,7 +1,7 @@
 import { PetalAction, parsePetalActions, getRarityIndex } from './petals';
 import { ServerPlayer } from './player';
 import { Item } from './item';
-import { Enemy, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
+import { Enemy, makeEnemy, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
 import { players, enemies } from './constants';
 import { getMobStats, getAllMobTypes } from './mobs';
@@ -529,7 +529,7 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
 
     // Create the pet enemy
     const currentTime = Date.now();
-    const pet: Enemy = {
+    const pet: Enemy = makeEnemy({
         id: Math.random().toString(36).substr(2, 9),
         type: mobType as Enemy['type'],
         tier: tier,
@@ -549,7 +549,7 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
         spawnTime: currentTime,
         lastViewportCheck: currentTime,
         petImage: mobStats.petImage // Use pet image if available
-    };
+    });
 
     // Add to enemies array
     enemies.push(pet);

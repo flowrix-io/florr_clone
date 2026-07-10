@@ -1,8 +1,8 @@
-import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
+import { Enemy, makeEnemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
 import { players, enemies, ORIGINAL_ENEMY_DENSITY } from '../constants';
 import { getMobStats, getAllMobTypes } from '../mobs';
 import { spawnCentipedeBodySegments } from './enemySpawner';
-import { rebuildEnemyGrid, queryEnemiesNear, getMaxEnemyRadius } from './enemyGrid';
+import { rebuildEnemyGrid, queryEnemiesNear } from './enemyGrid';
 import {
     getActiveMaze,
     isInMazeRegion,
@@ -145,7 +145,8 @@ function isTooCloseToPlayersOrMobs(x: number, y: number, mobRadius: number): boo
     // Spatial-grid query instead of an all-enemies scan: at full maze density
     // (~1300 mobs) a linear pass per placement attempt would make the fill
     // burst quadratic. Caller refreshes the grid once per spawn batch.
-    const reach = mobRadius + getMaxEnemyRadius() + MIN_SPAWN_DISTANCE_FROM_MOB;
+    // Own radius + clearance only; the grid accounts for each other mob's size.
+    const reach = mobRadius + MIN_SPAWN_DISTANCE_FROM_MOB;
     const nearby = queryEnemiesNear(x, y, reach, _spawnQueryScratch);
     for (const enemy of nearby) {
         const otherStats = getMobStats(enemy.type, enemy.tier);
@@ -189,7 +190,7 @@ function buildEnemy(type: string, tier: Enemy['tier'], x: number, y: number): En
     const stats = getMobStats(type, tier);
     if (!stats) return null;
     const currentTime = Date.now();
-    return {
+    return makeEnemy({
         id: Math.random().toString(36).slice(2, 11),
         type: type as Enemy['type'],
         tier,
@@ -207,7 +208,7 @@ function buildEnemy(type: string, tier: Enemy['tier'], x: number, y: number): En
         reversed: stats.reversed ?? false,
         spawnTime: currentTime,
         lastViewportCheck: currentTime,
-    };
+    });
 }
 
 /**

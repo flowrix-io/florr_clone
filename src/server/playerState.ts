@@ -62,10 +62,14 @@ import {
     despawnAllPlayerPets
 } from '../petal_actions';
 import { getMobStats } from '../mobs';
-import { queryEnemiesNear, getMaxEnemyRadius } from './enemyGrid';
+import { queryEnemiesNear } from './enemyGrid';
 
-// Reusable per-call buffer for enemy grid queries; avoids per-petal array allocs.
+// Reusable per-call buffers for enemy grid queries; avoids per-petal array allocs.
+// Two separate buffers because queryEnemiesNear() clears the one it is handed:
+// the petal-attraction query and the petal-collision query run in the same petal
+// iteration, so sharing one buffer would let the second clobber the first.
 const _enemyQueryBuffer: Enemy[] = [];
+const _attractionQueryBuffer: Enemy[] = [];
 import { addItem, applyPetalHealthBonus, calculatePlayerModifiers, enterPvpArena, exitPvpArena } from './playerManager';
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { trackDamage, cleanupEnemy, markEnemyDamaged } from './utils';
@@ -410,14 +414,14 @@ function applyRaindropAuraDamage(player: ServerPlayer, deps: PlayerStateDependen
         raindropAuraLastDamage.set(player.id, lastDamageMap);
     }
 
-    const candidates = queryEnemiesNear(player.x, player.y, bestRadius + getMaxEnemyRadius(), _enemyQueryBuffer);
+    const candidates = queryEnemiesNear(player.x, player.y, bestRadius, _enemyQueryBuffer);
     for (let i = 0; i < candidates.length; i++) {
         const enemy = candidates[i];
-        if ((enemy as any).isDead) continue;
+        if (enemy.isDead) continue;
 
         const dx = enemy.x - player.x;
         const dy = enemy.y - player.y;
-        const enemyRadius = (enemy as any)._radius ?? (ENEMY_SIZE / 2);
+        const enemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
         const hitDist = bestRadius + enemyRadius;
         if (dx * dx + dy * dy >= hitDist * hitDist) continue;
 
@@ -995,7 +999,7 @@ export function updatePlayerState(
     // Spatial-grid broad-phase: only test enemies whose center is within
     // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
     const _playerRadius = effectivePlayerSize / 2;
-    const _candidates = queryEnemiesNear(newX, newY, _playerRadius + getMaxEnemyRadius(), _enemyQueryBuffer);
+    const _candidates = queryEnemiesNear(newX, newY, _playerRadius, _enemyQueryBuffer);
     for (let _ci = 0; _ci < _candidates.length; _ci++) {
         const enemy = _candidates[_ci];
         const collisionInfo = checkPlayerEnemyCollision(newX, newY, effectivePlayerSize, enemy);
@@ -1246,17 +1250,10 @@ export function updatePlayerState(
         const playerOrbitPhase = player.petalOrbitPhase;
         const playerPetalAttractionRadius = playerModifiers.petalAttractionRadius ?? 0;
 
-        // Filter out pets up-front; per-petal eligibility (mob within
-        // playerPetalAttractionRadius of the petal's own orbit position) is checked
-        // inside the petal physics loop, so each petal only attracts to mobs that are
-        // actually near where *it* will swing past.
-        const attractionCandidates: typeof enemies = [];
-        if (playerPetalAttractionRadius > 0) {
-            for (const enemy of enemies) {
-                if (enemy.ownerId) continue;
-                attractionCandidates.push(enemy);
-            }
-        }
+        // Per-petal eligibility (mob within playerPetalAttractionRadius of the petal's
+        // own orbit position) is checked inside the petal physics loop via a spatial-grid
+        // broad-phase, so each petal only considers mobs actually near where *it* will
+        // swing past. See the query at the attraction block below.
 
         // Initialize petal positions array
         player.petalPositions = [];
@@ -1504,19 +1501,36 @@ export function updatePlayerState(
                 // where the petal will naturally swing past.
                 let closestEnemy: typeof enemies[number] | null = null;
                 let closestDistanceSq = Infinity;
-                for (const enemy of attractionCandidates) {
-                    // A mob killed earlier this tick (by another petal in this same
-                    // loop) is spliced out of `enemies` but still referenced here.
-                    if ((enemy as any).isDead) continue;
-                    const candidateMobStats = getMobStats(enemy.type, enemy.tier);
-                    const candidateEnemyRadius = candidateMobStats ? (candidateMobStats.size * 40) / 2 : ENEMY_SIZE / 2;
-                    const dx = enemy.x - targetX;
-                    const dy = enemy.y - targetY;
-                    const distSq = dx * dx + dy * dy;
-                    const maxDist = playerPetalAttractionRadius + candidateEnemyRadius;
-                    if (distSq <= maxDist * maxDist && distSq < closestDistanceSq) {
-                        closestDistanceSq = distSq;
-                        closestEnemy = enemy;
+                if (playerPetalAttractionRadius > 0) {
+                    // Broad-phase around this petal's own orbit point. The eligibility test
+                    // below is `dist <= attractionRadius + thatMob's radius`, so querying
+                    // `attractionRadius + largest mob radius` returns a strict superset of
+                    // the eligible mobs — same closest-mob result as scanning every enemy,
+                    // but not O(mobs) per petal. That mattered: a full Light loadout is ~70
+                    // petal instances, and with a populated maze `enemies` is ~1400 long, so
+                    // the old scan cost ~100k iterations per player per tick.
+                    // The grid already excludes pets and mobs that were dead at rebuild.
+                    const attractionCandidates = queryEnemiesNear(
+                        targetX,
+                        targetY,
+                        playerPetalAttractionRadius,
+                        _attractionQueryBuffer
+                    );
+                    for (let ai = 0; ai < attractionCandidates.length; ai++) {
+                        const enemy = attractionCandidates[ai];
+                        // A mob killed earlier this tick (by another petal in this same
+                        // loop) is spliced out of `enemies` but is still in the grid.
+                        if (enemy.isDead) continue;
+                        // _radius is cached on every grid member by rebuildEnemyGrid.
+                        const candidateEnemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
+                        const dx = enemy.x - targetX;
+                        const dy = enemy.y - targetY;
+                        const distSq = dx * dx + dy * dy;
+                        const maxDist = playerPetalAttractionRadius + candidateEnemyRadius;
+                        if (distSq <= maxDist * maxDist && distSq < closestDistanceSq) {
+                            closestDistanceSq = distSq;
+                            closestEnemy = enemy;
+                        }
                     }
                 }
 
@@ -1785,13 +1799,13 @@ export function updatePlayerState(
             // Pets and dead enemies are excluded by the grid.
             const _petalSize = 40 * effectiveSize;
             const _petalRadius = _petalSize / 2;
-            const candidates = queryEnemiesNear(petalX, petalY, _petalRadius + getMaxEnemyRadius(), _enemyQueryBuffer);
+            const candidates = queryEnemiesNear(petalX, petalY, _petalRadius, _enemyQueryBuffer);
             for (let _ei = 0; _ei < candidates.length; _ei++) {
                 const enemy = candidates[_ei];
 
                 // Cached on the enemy by rebuildEnemyGrid — type/tier never change after spawn.
-                const mobStats = (enemy as any)._mobStats || getMobStats(enemy.type, enemy.tier);
-                const enemyRadius = (enemy as any)._radius ?? (ENEMY_SIZE / 2);
+                const mobStats = enemy._mobStats || getMobStats(enemy.type, enemy.tier);
+                const enemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
                 const petalSize = _petalSize;
                 const petalRadius = _petalRadius;
 

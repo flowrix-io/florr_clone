@@ -77,6 +77,102 @@ export interface Enemy {
   leaderId?: string;  // ID of the segment this one follows (undefined for the head)
   headId?: string;  // ID of the centipede head for the whole chain
   segmentIndex?: number;  // 0 = head, 1..N = body segments
+  // Server-internal caches. Declared here rather than bolted on through `as any`
+  // so they are part of the shape from birth (see makeEnemy).
+  isDead?: boolean;             // spliced from `enemies` at end of tick; still referenced by in-flight loops
+  _radius?: number;             // collision radius, cached by rebuildEnemyGrid
+  _mobStats?: any;              // getMobStats(type, tier), cached by rebuildEnemyGrid
+  _ci?: number;                 // pair-dedup stamp for the enemy-enemy collision grid
+  _qs?: number;                 // per-query dedup stamp for queryEnemiesNear (mobs span several cells)
+  _spawnWavePrevHealth?: number; // ant-hole wave bookkeeping
+}
+
+/**
+ * Every field of Enemy except the ten that have no sensible default.
+ * `Partial<Enemy>` alone would let a caller omit `id`/`x`/`y`; the Pick re-requires them.
+ */
+export type EnemyInit = Partial<Enemy> &
+  Pick<Enemy, 'id' | 'type' | 'tier' | 'x' | 'y' | 'angle' | 'health' | 'maxHealth' | 'speed' | 'damage'>;
+
+/**
+ * The ONLY place a server-side enemy object may be created.
+ *
+ * Why this exists: V8 gives an object a hidden class determined by its exact set of
+ * properties *and the order they were added*. Enemies used to be built from ten
+ * different object literals with different key sets (pets added `ownerId`/`petImage`,
+ * special mobs omitted `reversed`/`lastViewportCheck`, centipede segments added
+ * `leaderId`/`headId`/`segmentIndex`), and `_radius`/`_mobStats`/`isDead` were bolted
+ * on later still. Any property read that saw more than four of those shapes went
+ * megamorphic, so `enemy.x` in the petal/collision hot loops became a hash lookup in
+ * V8's global IC cache instead of an inlined offset load — profiling prod showed ~48%
+ * of all server CPU sitting in Builtins_*LoadIC_Megamorphic.
+ *
+ * Emitting one literal with every key, always in this order, gives every enemy in the
+ * process one identical hidden class, so those loads go monomorphic.
+ *
+ * Rules for anyone editing this file:
+ *  - Add new fields to BOTH the interface and this literal, in the same position.
+ *  - Never `delete` a property off an enemy (that demotes it to dictionary mode).
+ *  - Optional fields default to `undefined`, never `0`/`false`/`null`: raw enemies are
+ *    emitted to clients by `enemiesUpdate` and `enemySpawned`, and JSON.stringify drops
+ *    undefined values, so the wire format is unchanged. A concrete default would add
+ *    new keys to those payloads.
+ */
+export function makeEnemy(init: EnemyInit): Enemy {
+  return {
+    id: init.id,
+    type: init.type,
+    tier: init.tier,
+    x: init.x,
+    y: init.y,
+    angle: init.angle,
+    health: init.health,
+    maxHealth: init.maxHealth,
+    speed: init.speed,
+    damage: init.damage,
+    knockbackX: init.knockbackX,
+    knockbackY: init.knockbackY,
+    aiType: init.aiType,
+    isChasing: init.isChasing,
+    targetPlayerId: init.targetPlayerId,
+    targetEnemyId: init.targetEnemyId,
+    targetPetId: init.targetPetId,
+    range: init.range,
+    wanderTargetX: init.wanderTargetX,
+    wanderTargetY: init.wanderTargetY,
+    lastWanderTime: init.lastWanderTime,
+    passiveState: init.passiveState,
+    passiveStateStart: init.passiveStateStart,
+    velX: init.velX,
+    velY: init.velY,
+    wobblePhase: init.wobblePhase,
+    parentHoleId: init.parentHoleId,
+    returningToHole: init.returningToHole,
+    spawnTime: init.spawnTime,
+    lastViewportCheck: init.lastViewportCheck,
+    damageContributors: init.damageContributors,
+    poisonEffects: init.poisonEffects,
+    lastProjectileTime: init.lastProjectileTime,
+    lastMeleeAttackTime: init.lastMeleeAttackTime,
+    reversed: init.reversed,
+    ownerId: init.ownerId,
+    petImage: init.petImage,
+    dpsHistoryTimes: init.dpsHistoryTimes,
+    dpsHistoryDamages: init.dpsHistoryDamages,
+    dpsStartTime: init.dpsStartTime,
+    currentDPS: init.currentDPS,
+    challengeOwnerId: init.challengeOwnerId,
+    challengeStarsReward: init.challengeStarsReward,
+    leaderId: init.leaderId,
+    headId: init.headId,
+    segmentIndex: init.segmentIndex,
+    isDead: init.isDead,
+    _radius: init._radius,
+    _mobStats: init._mobStats,
+    _ci: init._ci,
+    _qs: init._qs,
+    _spawnWavePrevHealth: init._spawnWavePrevHealth,
+  };
 }
 
 export interface Obstacle {

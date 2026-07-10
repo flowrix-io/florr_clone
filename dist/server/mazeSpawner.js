@@ -141,7 +141,8 @@ function isTooCloseToPlayersOrMobs(x, y, mobRadius) {
     // Spatial-grid query instead of an all-enemies scan: at full maze density
     // (~1300 mobs) a linear pass per placement attempt would make the fill
     // burst quadratic. Caller refreshes the grid once per spawn batch.
-    const reach = mobRadius + (0, enemyGrid_1.getMaxEnemyRadius)() + MIN_SPAWN_DISTANCE_FROM_MOB;
+    // Own radius + clearance only; the grid accounts for each other mob's size.
+    const reach = mobRadius + MIN_SPAWN_DISTANCE_FROM_MOB;
     const nearby = (0, enemyGrid_1.queryEnemiesNear)(x, y, reach, _spawnQueryScratch);
     for (const enemy of nearby) {
         const otherStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
@@ -189,7 +190,7 @@ function buildEnemy(type, tier, x, y) {
     if (!stats)
         return null;
     const currentTime = Date.now();
-    return {
+    return (0, server_utils_1.makeEnemy)({
         id: Math.random().toString(36).slice(2, 11),
         type: type,
         tier,
@@ -207,7 +208,7 @@ function buildEnemy(type, tier, x, y) {
         reversed: stats.reversed ?? false,
         spawnTime: currentTime,
         lastViewportCheck: currentTime,
-    };
+    });
 }
 /**
  * Keep the maze corridors populated. Tier comes from the depth zone the spawn
