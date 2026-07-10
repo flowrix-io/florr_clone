@@ -98,6 +98,7 @@ import {
 } from './server/guildManager';
 import {
     checkEnemyWallCollisions,
+    applyEnemyKnockback,
     checkItemWallCollisions,
     checkProjectileWallCollision,
     hasLineOfSight,
@@ -4236,16 +4237,16 @@ function moveEnemies() {
     }
 
     enemies.forEach(enemy => {
-        // Apply knockback if it exists
-        if (enemy.knockbackX) {
-            enemy.knockbackX *= KNOCKBACK_RECOVERY_SPEED;
-            enemy.x += enemy.knockbackX;
-            if (Math.abs(enemy.knockbackX) < 0.1) enemy.knockbackX = 0;
-        }
-        if (enemy.knockbackY) {
-            enemy.knockbackY *= KNOCKBACK_RECOVERY_SPEED;
-            enemy.y += enemy.knockbackY;
-            if (Math.abs(enemy.knockbackY) < 0.1) enemy.knockbackY = 0;
+        // Apply knockback if it exists: decay, then move. The move is
+        // substepped through wall checks (applyEnemyKnockback) because a
+        // high-tier jelly impulse covers thousands of px per tick — enough to
+        // jump past walls, and past the world edge where everything is air.
+        if (enemy.knockbackX || enemy.knockbackY) {
+            if (enemy.knockbackX) enemy.knockbackX *= KNOCKBACK_RECOVERY_SPEED;
+            if (enemy.knockbackY) enemy.knockbackY *= KNOCKBACK_RECOVERY_SPEED;
+            applyEnemyKnockback(enemy);
+            if (enemy.knockbackX && Math.abs(enemy.knockbackX) < 0.1) enemy.knockbackX = 0;
+            if (enemy.knockbackY && Math.abs(enemy.knockbackY) < 0.1) enemy.knockbackY = 0;
         }
 
         // Centipede body segments skip normal AI unless they've been promoted

@@ -102,6 +102,60 @@ export function checkEnemyWallCollisions(enemy: Enemy): void {
     enemy.y = resolved.y;
 }
 
+// Bound on wall-checked substeps per tick of knockback travel. Extreme
+// impulses (apex jelly's knockback stat is 100000) would otherwise need
+// thousands of steps in one tick; travel beyond the cap stays banked in
+// knockbackX/Y and plays out over the following ticks (decaying as usual),
+// so a would-be teleport becomes fast multi-tick motion walls can stop.
+const KNOCKBACK_MAX_SUBSTEPS = 16;
+
+/**
+ * Apply this tick's knockback displacement (already decayed by the caller),
+ * substepped so a large impulse can't tunnel through walls — or off the map
+ * entirely, since past the world edge every tile reads as air — in a single
+ * jump. Step size is bounded by half the hitbox (same invariant as
+ * stepPlayerMovement) so consecutive wall checks sample overlapping
+ * positions along the path. Hitting a wall zeroes velocity and knockback on
+ * the blocked axis, matching checkEnemyWallCollisions; knockback left on the
+ * other axis slides along the wall over subsequent ticks.
+ */
+export function applyEnemyKnockback(enemy: Enemy): void {
+    const kx = enemy.knockbackX ?? 0;
+    const ky = enemy.knockbackY ?? 0;
+    const distance = Math.sqrt(kx * kx + ky * ky);
+    if (distance === 0) return;
+
+    const mobStats = getMobStats(enemy.type, enemy.tier);
+    const halfSize = Math.max(1, (mobStats ? mobStats.size * 40 : ENEMY_SIZE) / 2);
+
+    // A displacement within one substep can't skip a tile: take it in one
+    // jump (the pre-substep behavior) and let the end-of-tick wall pass
+    // resolve any contact.
+    if (distance <= halfSize) {
+        enemy.x += kx;
+        enemy.y += ky;
+        return;
+    }
+
+    const dirX = kx / distance;
+    const dirY = ky / distance;
+    let remaining = Math.min(distance, halfSize * KNOCKBACK_MAX_SUBSTEPS);
+    while (remaining > 0) {
+        const stepLen = Math.min(halfSize, remaining);
+        const trialX = enemy.x + dirX * stepLen;
+        const trialY = enemy.y + dirY * stepLen;
+        const resolved = resolveEntityWallCollisions(trialX, trialY, halfSize);
+        enemy.x = resolved.x;
+        enemy.y = resolved.y;
+        const blockedX = resolved.x !== trialX;
+        const blockedY = resolved.y !== trialY;
+        if (blockedX) { enemy.velX = 0; enemy.knockbackX = 0; }
+        if (blockedY) { enemy.velY = 0; enemy.knockbackY = 0; }
+        if (blockedX || blockedY) return;
+        remaining -= stepLen;
+    }
+}
+
 /**
  * Check and resolve item-wall collisions using tile grid
  */
