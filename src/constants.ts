@@ -914,7 +914,7 @@ export function resolveEntityWallCollisions(
     x: number,
     y: number,
     halfSize: number
-): { x: number; y: number; collided: boolean } {
+): { x: number; y: number; collided: boolean; unresolved?: boolean } {
     // Maze region: use the rrolf-style circle resolver (flat-wall axis clamps +
     // quarter-circle corner fillets). Shared by server physics and client
     // prediction, so both resolve maze walls identically.
@@ -924,6 +924,7 @@ export function resolveEntityWallCollisions(
     let newX = x;
     let newY = y;
     let collided = false;
+    let cleared = true;
     for (let i = 0; i < 4; i++) {
         const collision = checkTileCollision(newX, newY, halfSize);
         if (collision && collision.collided) {
@@ -931,11 +932,75 @@ export function resolveEntityWallCollisions(
             newX = resolved.x;
             newY = resolved.y;
             collided = true;
+            cleared = false;
         } else {
+            cleared = true;
             break;
         }
     }
-    return { x: newX, y: newY, collided };
+    // All 4 iterations hit, so the final push was never re-checked. One extra
+    // check (deep multi-tile overlap only — never on ordinary wall contact)
+    // decides whether the position actually came out clear. Callers use
+    // `unresolved` to refuse entering a state the resolver can't untangle,
+    // because accepting one lets min-overlap ejection flip to a tile's far
+    // face and carry the entity through the wall.
+    if (!cleared) {
+        const residual = checkTileCollision(newX, newY, halfSize);
+        cleared = !(residual && residual.collided);
+    }
+    return { x: newX, y: newY, collided, unresolved: !cleared };
+}
+
+// Liang-Barsky: does the segment (x0,y0)→(x1,y1) touch the axis-aligned rect?
+function segmentTouchesRect(
+    x0: number, y0: number, x1: number, y1: number,
+    left: number, top: number, right: number, bottom: number
+): boolean {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    let t0 = 0;
+    let t1 = 1;
+    const clip = (p: number, q: number): boolean => {
+        if (p === 0) return q >= 0; // parallel to this edge: inside iff q >= 0
+        const r = q / p;
+        if (p < 0) {
+            if (r > t1) return false;
+            if (r > t0) t0 = r;
+        } else {
+            if (r < t0) return false;
+            if (r < t1) t1 = r;
+        }
+        return true;
+    };
+    return clip(-dx, x0 - left) && clip(dx, right - x0)
+        && clip(-dy, y0 - top) && clip(dy, bottom - y0)
+        && t0 <= t1;
+}
+
+// True if the straight path between two entity-center positions touches any
+// blocking tile. Exact segment-vs-rect tests (tiles expanded by a hair so a
+// path grazing the corner point of a diagonal wall seam still counts — such
+// grazes can be sub-pixel). Used by stepPlayerMovement to refuse wall
+// resolutions that would carry the center across solid: per-tile min-overlap
+// ejection is free to choose the far side, and accepting that teleports the
+// entity through walls / across sealed diagonal seams.
+function centerPathCrossesWall(x0: number, y0: number, x1: number, y1: number): boolean {
+    const EPS = 0.5;
+    const minTX = worldToTileX(Math.min(x0, x1) - EPS);
+    const maxTX = worldToTileX(Math.max(x0, x1) + EPS);
+    const minTY = worldToTileY(Math.min(y0, y1) - EPS);
+    const maxTY = worldToTileY(Math.max(y0, y1) + EPS);
+    for (let tileY = minTY; tileY <= maxTY; tileY++) {
+        for (let tileX = minTX; tileX <= maxTX; tileX++) {
+            if (!isTileIdBlocking(getTileState(WALL_GRID, tileToWorldX(tileX), tileToWorldY(tileY)))) continue;
+            if (segmentTouchesRect(
+                x0, y0, x1, y1,
+                tileX * WALL_TILE_SIZE - EPS, tileY * WALL_TILE_SIZE - EPS,
+                (tileX + 1) * WALL_TILE_SIZE + EPS, (tileY + 1) * WALL_TILE_SIZE + EPS
+            )) return true;
+        }
+    }
+    return false;
 }
 
 // ── Shared player movement step ─────────────────────────────────────────────
@@ -977,7 +1042,13 @@ export function stepPlayerMovement(
     // MAX_STEP would be 0 and moveDistance/0 = Infinity → steps = Infinity. A blown-up
     // velocity makes moveDistance huge for the same effect. So: floor the step at 1px,
     // and hard-cap the substep count (also catches NaN, which fails the >=1 test).
-    const MAX_STEP = effectiveSize > 0 ? effectiveSize / 2 : 1;
+    // Additionally cap the substep below half a tile minus the edge inflation:
+    // penetrating past a tile's midline flips resolveTileCollision's min-overlap
+    // axis to the FAR face — a through-the-wall ejection. halfSize-bounded steps
+    // only keep penetration shy of the midline for hitboxes smaller than a tile;
+    // giant hitboxes (stacked size petals) need the absolute cap.
+    const MAX_STEP_HARD = WALL_TILE_SIZE / 2 - JAGGED_MAX_OFFSET - COLLISION_BUFFER;
+    const MAX_STEP = effectiveSize > 0 ? Math.min(effectiveSize / 2, MAX_STEP_HARD) : 1;
     const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     let steps = Math.ceil(moveDistance / MAX_STEP);
     if (!(steps >= 1)) steps = 1;          // NaN, 0, or negative → 1
@@ -988,9 +1059,48 @@ export function stepPlayerMovement(
     let newX = state.x;
     let newY = state.y;
     for (let i = 0; i < steps; i++) {
+        const prevX = newX;
+        const prevY = newY;
         newX += stepX;
         newY += stepY;
         const wall = resolveEntityWallCollisions(newX, newY, effectiveSize / 2);
+        // A center already inside a blocking tile (teleported into geometry) is
+        // exempt from the containment guards below — resolver output is its
+        // only way out, arbitrary as the direction may be.
+        const startEmbedded = isTileIdBlocking(getTileState(WALL_GRID, prevX, prevY));
+        if (wall.unresolved) {
+            // The resolver couldn't untangle the trial position (deep multi-tile
+            // overlap — e.g. the hitbox grew via a size petal while wedged in a
+            // corner and a fast substep pressed it further in). Accepting its
+            // output would ratchet the entity through the wall over a few ticks.
+            // Fall back to the pre-step position: if that resolves cleanly to
+            // somewhere its center can reach without crossing solid, take that
+            // ejection (pops back into open space and stops this tick's
+            // movement); otherwise pin at the pre-step position — wedged until
+            // it moves toward open space, but never trading a shallow overlap
+            // for a deeper one.
+            if (!startEmbedded) {
+                const prev = resolveEntityWallCollisions(prevX, prevY, effectiveSize / 2);
+                if (!prev.unresolved && !centerPathCrossesWall(prevX, prevY, prev.x, prev.y)) {
+                    newX = prev.x;
+                    newY = prev.y;
+                } else {
+                    newX = prevX;
+                    newY = prevY;
+                }
+                break;
+            }
+        } else if (wall.collided && !startEmbedded
+            && centerPathCrossesWall(prevX, prevY, wall.x, wall.y)) {
+            // The resolver's ejection would carry the center across a blocking
+            // tile — a through-the-wall or diagonal-seam-hop teleport (per-tile
+            // min-overlap resolution is free to pick the far side; a just-grown
+            // hitbox wedged at a seam corner reliably triggers this). Refuse it
+            // and stop this tick's movement at the pre-step position.
+            newX = prevX;
+            newY = prevY;
+            break;
+        }
         newX = wall.x;
         newY = wall.y;
     }

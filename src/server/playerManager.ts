@@ -968,12 +968,16 @@ export function recalculatePlayerStats(player: ServerPlayer, io?: SocketIOServer
         ? PVP_MAX_HEALTH
         : Math.round(baseMaxHealth * healthMultiplier * (petalModifiers.maxHealth ?? 1.0));
     player.damage = Math.round(baseDamage * damageMultiplier * (petalModifiers.damage ?? 1.0));
-    // Clamp to a sane range: an Infinity/NaN/<=0 or absurdly stacked playerRadius
-    // (the product of many grow petals' modifiers) would give a degenerate hitbox that
-    // hangs the tile-collision scans (see checkTileCollision's guard). 100x base keeps
-    // any legitimate big-flower build intact while capping the pathological extreme.
+    // Clamp to what the collision system can contain. Beyond 6x the hitbox
+    // (PLAYER_SIZE 40 → 240px) approaches WALL_TILE_SIZE (300px), and the
+    // per-tile min-overlap wall resolver cannot reliably contain a body as
+    // large as the tiles themselves — stacked size petals (two apex airs = 9x)
+    // let players squeeze through walls. 6x keeps every single-copy build
+    // intact (largest is air apex × soil apex = 5.4x) and, as before, guards
+    // the Infinity/NaN/<=0 degenerate hitbox that hangs the tile-collision
+    // scans (see checkTileCollision's guard).
     const rawSizeMult = petalModifiers.playerRadius ?? 1.0;
-    player.sizeMultiplier = (Number.isFinite(rawSizeMult) && rawSizeMult > 0) ? Math.min(rawSizeMult, 100) : 1.0;
+    player.sizeMultiplier = (Number.isFinite(rawSizeMult) && rawSizeMult > 0) ? Math.min(rawSizeMult, 6) : 1.0;
     player.magnetism = petalModifiers.magnetism ?? 0;
     player.aggroRadiusBonus = petalModifiers.aggroRadius ?? 0;
     
