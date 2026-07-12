@@ -1359,7 +1359,6 @@ function setupSocketListeners(game: any) {
                 const isSelf = id === (game.activePlayerId || game.socket?.id);
                 const existing = game.players.get(id);
                 if (existing) {
-                    if (isSelf) (game as any).lastSelfSnapshotMs = performance.now();
                     if (sp.x !== undefined) existing.targetX = sp.x;
                     if (sp.y !== undefined) existing.targetY = sp.y;
                     if (!isSelf && existing.targetX !== undefined && existing.targetY !== undefined) {
@@ -1396,7 +1395,6 @@ function setupSocketListeners(game: any) {
                     if (sp.z !== undefined) (existing as any).sizeMultiplier = sp.z;
                     if (sp.s !== undefined) (existing as any).score = sp.s;
                     if (sp.sm !== undefined) existing.speedFactor = sp.sm;
-                    if (sp.u !== undefined) (game as any).lastAckInputSeq = sp.u;
                     if (sp.e !== undefined) existing.petalExtension = sp.e || 1.0;
                     if (Array.isArray(sp.p)) {
                         const serverPetalPositions = sp.p;
@@ -1470,8 +1468,6 @@ function setupSocketListeners(game: any) {
                     };
                     if (sp.vx !== undefined) newPlayer.velocityX = sp.vx;
                     if (sp.vy !== undefined) newPlayer.velocityY = sp.vy;
-                    if (isSelf) (game as any).lastSelfSnapshotMs = performance.now();
-                    if (sp.u !== undefined) (game as any).lastAckInputSeq = sp.u;
                     if (Array.isArray(sp.p)) {
                         newPlayer.petalPositions = sp.p.map((pos: any) => ({
                             loadoutIndex: pos.L,

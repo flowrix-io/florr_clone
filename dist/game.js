@@ -70,26 +70,11 @@ class Game {
         this.lastInterpolationTime = 0;
         // Client-side prediction state for the local player. The local flower is
         // simulated locally with the same gardn physics the server uses, so input is
-        // reflected instantly instead of waiting a round-trip. predTargetV* is the
-        // input-derived target velocity (set in updatePlayerMovement); predVel* is the
-        // integrated predicted velocity; pred*/predInit are the predicted position;
-        // renderErr* is a decaying offset that blends authoritative re-anchors (incl.
-        // bubble/knockback/wall pushes the client can't predict) instead of snapping;
-        // lastSrv* tracks the last server position to detect new snapshots. See
-        // predictLocalPlayer().
-        this.predTargetVX = 0;
-        this.predTargetVY = 0;
-        this.predVelX = 0;
-        this.predVelY = 0;
-        this.predX = 0;
-        this.predY = 0;
-        this.renderErrX = 0;
-        this.renderErrY = 0;
-        this.lastSrvX = 0;
-        this.lastSrvY = 0;
+        // The local flower renders with gardn-style eased interpolation toward the
+        // authoritative server position (see predictLocalPlayer()); predInit tracks
+        // whether it has snapped onto the first authoritative position yet (reset on
+        // death so it re-snaps on respawn). inputSeq stamps outgoing inputs.
         this.inputSeq = 0;
-        this.lastAckInputSeq = 0;
-        this.lastSelfSnapshotMs = 0;
         this.predInit = false;
         this.fpsCounter = 0;
         this.fpsUpdateTime = 0;
@@ -1117,25 +1102,14 @@ class Game {
         const renderTime = now - RENDER_DELAY_MS;
         const localPlayerId = this.activePlayerId || this.socket?.id || '';
         for (const [pid, player] of this.players.entries()) {
-            // The local player's position is owned by client-side prediction
-            // (predictLocalPlayer); don't also lerp it toward the server here or the
-            // two would fight. Remote players still interpolate toward server targets.
+            // The local flower's position (and its _refX/_refY petal anchor) is
+            // owned by predictLocalPlayer() — gardn eased interpolation, applied
+            // later this frame. Don't also lerp it here or the two would fight;
+            // just fall through to the shared petal interpolation below. Remote
+            // players still interpolate toward their server targets.
             const isLocalPredicted = pid === localPlayerId && !player.isDead;
             if (isLocalPredicted) {
-                // player.x/y is owned by prediction. Still maintain a smoothly-
-                // interpolated server reference (same smoothing as petals) so the
-                // local player's absolute petal positions can be anchored to it
-                // without picking up the raw 30Hz snapshot stairstep.
-                if (player.targetX !== undefined && player.targetY !== undefined) {
-                    if (player._refX === undefined || player._refY === undefined) {
-                        player._refX = player.targetX;
-                        player._refY = player.targetY;
-                    }
-                    else {
-                        player._refX += (player.targetX - player._refX) * smoothingFactor;
-                        player._refY += (player.targetY - player._refY) * smoothingFactor;
-                    }
-                }
+                // no-op: handled by predictLocalPlayer()
             }
             else if (player.targetX !== undefined && player.targetY !== undefined) {
                 const snaps = player._snapshots;
@@ -1187,22 +1161,27 @@ class Game {
                 if (interp) {
                     enemy.x = interp.x;
                     enemy.y = interp.y;
-                    if (interp.angle !== undefined)
-                        enemy.angle = interp.angle;
                 }
             }
             else if (enemy.targetX !== undefined && enemy.targetY !== undefined) {
                 // Fallback to lerp until buffer has at least two entries
                 enemy.x += (enemy.targetX - enemy.x) * smoothingFactor;
                 enemy.y += (enemy.targetY - enemy.y) * smoothingFactor;
-                if (enemy.targetAngle !== undefined) {
-                    let angleDiff = enemy.targetAngle - enemy.angle;
-                    if (angleDiff > Math.PI)
-                        angleDiff -= Math.PI * 2;
-                    if (angleDiff < -Math.PI)
-                        angleDiff += Math.PI * 2;
-                    enemy.angle += angleDiff * smoothingFactor;
-                }
+            }
+            // Facing: ease toward the authoritative angle (gardn's angle.step_angle)
+            // instead of taking it straight from the snapshot interpolation. The
+            // passive AI changes heading in one discrete server jump (up to 180°);
+            // snapshot-interpolating that whips the mob through the whole turn in a
+            // single ~33ms snapshot interval, which reads as a snap. Easing spreads
+            // it over gardn's time constant (~150ms) for a smooth rotation. Uses
+            // targetAngle (last authoritative), never the render-mutated .angle.
+            if (enemy.targetAngle !== undefined) {
+                let angleDiff = enemy.targetAngle - enemy.angle;
+                if (angleDiff > Math.PI)
+                    angleDiff -= Math.PI * 2;
+                if (angleDiff < -Math.PI)
+                    angleDiff += Math.PI * 2;
+                enemy.angle += angleDiff * smoothingFactor;
             }
         }
         // Dead-reckon projectiles locally so the server doesn't need to broadcast their
@@ -1241,10 +1220,11 @@ class Game {
         this.updatePetalExtension(frameDeltaMs);
         const player = this.getLocalPlayer();
         if (player) {
-            this.updatePlayerMovement(player, 1); // Sends input + refreshes the prediction target
-            // Predict the local flower's position locally for instant input response;
-            // when dead, fall back to plain server interpolation (handled in the loop
-            // above) and reset prediction so it re-anchors cleanly on respawn.
+            this.updatePlayerMovement(player, 1); // Sends input to the server
+            // Ease the local flower toward the authoritative server position
+            // (gardn client model); when dead, fall back to plain server
+            // interpolation (handled in the loop above) and reset so it re-snaps
+            // cleanly onto the authoritative position on respawn.
             if (!player.isDead) {
                 this.predictLocalPlayer(player, frameDeltaMs);
             }
@@ -1314,16 +1294,17 @@ class Game {
             viewportHeight: this.graphics.viewH / this.getEffectiveZoom()
         };
         // Mobile joystick: reuses the same direction-vector + speed-multiplier
-        // wire format as "Use Mouse Controls" (see computePredictionTarget and
-        // the server's playerState.ts consumer), just fed from touch instead
-        // of mouse-vs-center-of-screen.
+        // wire format as "Use Mouse Controls" (consumed by the server's
+        // playerState.ts), just fed from touch instead of mouse-vs-center-of-screen.
         if (this.mobileControlsEnabled && !isAnyMenuOpen) {
             const jv = this.mobileControls.getJoystickVector();
             if (jv) {
                 inputData.useMouse = true;
                 inputData.mouseDirectionX = jv.x;
                 inputData.mouseDirectionY = jv.y;
-                inputData.mouseSpeedMultiplier = Math.max(Math.pow(jv.magnitude, constants_1.MOUSE_NONLINEAR_EXPONENT), 0.15);
+                // Linear deflection→speed, matching the gardn mouse law above
+                // (full stick = full speed, easing to 0 at center; no floor).
+                inputData.mouseSpeedMultiplier = Math.min(jv.magnitude, 1.0);
             }
             else {
                 inputData.useMouse = false;
@@ -1346,7 +1327,6 @@ class Game {
                 }
                 else {
                     inputData.useMouse = false;
-                    this.computePredictionTarget(inputData, dx, dy);
                     // Throttle input sending
                     const now = performance.now();
                     if (now - this.lastInputSendTime >= this.getInputInterval()) {
@@ -1357,28 +1337,36 @@ class Game {
                 }
             }
             // Use normalized screen coordinates as direction vector (-1 to 1)
-            // These represent the direction from center of screen to mouse cursor
+            // These represent the direction from center of screen to mouse cursor.
+            // Because the camera keeps the flower screen-centered, this screen
+            // offset is proportional to the world offset from the flower, so the
+            // unit direction is identical in screen and world space.
             const dirX = this.normalizedMouseXOnScreen;
             const dirY = this.normalizedMouseYOnScreen;
-            const distance = Math.sqrt(dirX * dirX + dirY * dirY);
-            // Only send mouse input if distance is significant (greater than 0.01 to allow small movements)
-            if (distance > 0.01) {
+            const screenFrac = Math.sqrt(dirX * dirX + dirY * dirY);
+            // Only send mouse input if the cursor is off the flower's center.
+            if (screenFrac > 0.001) {
                 // Normalize the direction vector to ensure it's a unit vector
-                const normalizedDirX = dirX / distance;
-                const normalizedDirY = dirY / distance;
-                // Calculate nonlinear speed multiplier based on distance from center
-                // Distance is already normalized (0 to ~1.414 for corner), so we can use it directly
-                const normalizedDistance = Math.min(distance, 1.0);
-                const speedMultiplier = Math.pow(normalizedDistance, constants_1.MOUSE_NONLINEAR_EXPONENT);
-                // Add minimum speed multiplier to prevent movement from becoming too slow when close to center
-                const minSpeedMultiplier = 0.15;
-                const finalSpeedMultiplier = Math.max(speedMultiplier, minSpeedMultiplier);
+                const normalizedDirX = dirX / screenFrac;
+                const normalizedDirY = dirY / screenFrac;
+                // gardn control law (Server/Client.cc): speed scales LINEARLY with
+                // the world-space distance from the flower to the cursor, reaching
+                // full at MOUSE_FULL_SPEED_DISTANCE units and capping there.
+                // normalizedMouse*OnScreen is measured in units of (screen offset
+                // from center) / (viewH/2), so screenFrac * (viewH/2) is the pixel
+                // offset and dividing by the live zoom converts it to world units.
+                // Deriving it from the screen anchor (not mouseX-flowerX) keeps the
+                // distance constant while the mouse is held still and the flower
+                // cruises, and makes the feel identical at any zoom.
+                const zoom = this.getEffectiveZoom() || 1;
+                const worldDist = (screenFrac * (this.graphics.viewH / 2)) / zoom;
+                const mult = Math.min(worldDist / constants_1.MOUSE_FULL_SPEED_DISTANCE, 1.0);
                 // Send normalized direction and speed multiplier to server
                 // Server will apply MAX_SPEED, speed_boost, and other multipliers
                 inputData.useMouse = true;
                 inputData.mouseDirectionX = normalizedDirX;
                 inputData.mouseDirectionY = normalizedDirY;
-                inputData.mouseSpeedMultiplier = finalSpeedMultiplier;
+                inputData.mouseSpeedMultiplier = mult;
             }
             else {
                 inputData.useMouse = false;
@@ -1391,7 +1379,6 @@ class Game {
                 this.hasValidMouseTarget = false;
             }
         }
-        this.computePredictionTarget(inputData, dx, dy);
         // Throttle input sending based on connection quality
         const now = performance.now();
         if (now - this.lastInputSendTime >= this.getInputInterval()) {
@@ -1400,136 +1387,57 @@ class Game {
             this.lastInputSendTime = now;
         }
     }
-    // Derive the local player's target velocity (world units/sec) from the input
-    // being sent, mirroring the server's speed calc (constants.MAX_SPEED, mouse
-    // distance multiplier). speed_boost / petal speed multipliers aren't known
-    // client-side; predictLocalPlayer's reconciliation against the authoritative
-    // position absorbs that difference.
-    computePredictionTarget(inputData, dx, dy) {
-        // Match the server's effective speed: base MAX_SPEED × the speed factor it
-        // sends (speed boosts / speed petals). Without this, prediction moves at base
-        // speed while a boosted server moves faster, so the error blows past the snap
-        // threshold and the flower repeatedly snaps ("jumping around").
-        const speedFactor = this.getLocalPlayer()?.speedFactor ?? 1;
-        const baseSpeed = constants_1.MAX_SPEED * speedFactor;
-        if (inputData.useMouse && inputData.mouseDirectionX !== undefined && inputData.mouseDirectionY !== undefined) {
-            const sp = baseSpeed * (inputData.mouseSpeedMultiplier ?? 1);
-            this.predTargetVX = inputData.mouseDirectionX * sp;
-            this.predTargetVY = inputData.mouseDirectionY * sp;
-        }
-        else if (dx !== 0 || dy !== 0) {
-            const len = Math.hypot(dx, dy) || 1;
-            this.predTargetVX = (dx / len) * baseSpeed;
-            this.predTargetVY = (dy / len) * baseSpeed;
-        }
-        else {
-            this.predTargetVX = 0;
-            this.predTargetVY = 0;
-        }
-    }
-    // Client-side prediction for the local flower.
+    // Local flower rendering — gardn client model (Client/Simulation.cc +
+    // Client/Game.cc). The flower's rendered position eases exponentially toward
+    // the AUTHORITATIVE server position every frame. There is NO client-side
+    // prediction and NO latency extrapolation, so nothing can overshoot (no
+    // rubber-band) and every server correction — input, bubble propulsion,
+    // knockback, wall resolution — arrives as a smooth ease instead of a snap.
+    // The cost is a little input latency (~half-ping + the ease time constant),
+    // which is exactly the tradeoff gardn makes for its buttery feel.
     //
-    // Per frame, advance the predicted position (predX/predY) with the same gardn
-    // physics the server runs, so input reacts instantly. Each server snapshot,
-    // re-anchor predX to the authoritative position extrapolated forward by latency
-    // (predVel * lead) — the authoritative position already includes EVERYTHING the
-    // server did (input + bubble propulsion + knockback + wall resolution), so those
-    // come through automatically. Re-anchoring at 30Hz would pop, so the re-anchor
-    // delta is pushed into a decaying renderErr offset and the *rendered* position
-    // (player.x) trails predX by that offset, which decays to 0 — a smooth blend
-    // instead of a snap or a slow rubber-band. This is why bubble/knockback/odd-wall
-    // pushes no longer "jump": they're blended in, not fought as prediction error.
+    // The camera stays locked to this eased position (updateCamera), so the world
+    // scrolls at the same smooth rate while the flower remains screen-centered —
+    // which keeps the mouse-control mapping (cursor-relative-to-center) exact.
+    //
+    // Eases at the SAME rate (interpolationAmount) as remote entities and the
+    // local server-anchored petal ring, and republishes it as _refX/_refY, so the
+    // flower and its petals move in lockstep with no drift. gardn uses 0.2.
     predictLocalPlayer(player, frameDeltaMs) {
         if (player.targetX === undefined || player.targetY === undefined)
             return;
-        const dt = Math.min(frameDeltaMs, 100) / 1000;
-        if (dt <= 0)
-            return;
-        // (Re)initialise on first run or after a respawn/teleport (predInit cleared
-        // while dead). Start exactly on the authoritative position, no offset.
+        // On first run / after respawn (predInit cleared while dead), snap onto
+        // the authoritative position rather than gliding in from a stale spot.
         if (!this.predInit) {
-            this.predX = player.targetX;
-            this.predY = player.targetY;
-            this.predVelX = 0;
-            this.predVelY = 0;
-            this.renderErrX = 0;
-            this.renderErrY = 0;
-            this.lastSrvX = player.targetX;
-            this.lastSrvY = player.targetY;
-            if (this.lastSelfSnapshotMs <= 0)
-                this.lastSelfSnapshotMs = performance.now();
+            player.x = player.targetX;
+            player.y = player.targetY;
+            player._refX = player.targetX;
+            player._refY = player.targetY;
             this.predInit = true;
+            return;
         }
-        const now = performance.now();
-        const unackedInputs = Math.max(0, this.inputSeq - this.lastAckInputSeq);
-        const selfSnapshotAgeMs = this.lastSelfSnapshotMs > 0 ? now - this.lastSelfSnapshotMs : 0;
-        const serverStale = selfSnapshotAgeMs > 250 || unackedInputs > 12;
-        const targetVX = serverStale ? 0 : this.predTargetVX;
-        const targetVY = serverStale ? 0 : this.predTargetVY;
-        // 1. Advance prediction with the SHARED movement step — byte-for-byte the
-        //    same gardn friction + substepped wall/water collision the server runs
-        //    (src/constants.ts stepPlayerMovement, called from playerState.ts). So in
-        //    open movement there's nothing to reconcile, and walls/water resolve
-        //    exactly as the server resolves them (no jitter, no spring).
-        const effectiveSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
-        const moved = (0, constants_1.stepPlayerMovement)({ x: this.predX, y: this.predY, vx: this.predVelX, vy: this.predVelY }, targetVX, targetVY, dt, effectiveSize);
-        this.predX = moved.x;
-        this.predY = moved.y;
-        this.predVelX = moved.vx;
-        this.predVelY = moved.vy;
-        // 2. On a new server snapshot, re-anchor to the authoritative position
-        //    extrapolated forward by latency. Extrapolate by SIMULATING the shared
-        //    movement step forward by `lead` (not a raw linear velocity projection):
-        //    that way the lead respects walls/water via the same substepped collision
-        //    and never projects into or across a wall — which is what made walls
-        //    jitter and let the client glitch through subpixel gaps. The re-anchor
-        //    delta is absorbed into renderErr so the rendered position doesn't jump.
-        if (player.targetX !== this.lastSrvX || player.targetY !== this.lastSrvY) {
-            // averagePing is round-trip time. To project an authoritative snapshot
-            // from server-time to client-now, use roughly one-way latency plus one
-            // server tick of slack. Full RTT over-projects badly on high ping and
-            // turns every correction into a visible forward/backward wobble.
-            const oneWayMs = this.averagePing > 0 ? this.averagePing * 0.5 : 33;
-            const inputBacklogMs = serverStale ? 0 : Math.min(50, unackedInputs * this.MIN_INPUT_INTERVAL);
-            const lead = Math.min(0.24, Math.max(0.03, (oneWayMs + 33 + inputBacklogMs) / 1000));
-            const serverVelX = Number.isFinite(player.velocityX) ? player.velocityX : this.predVelX;
-            const serverVelY = Number.isFinite(player.velocityY) ? player.velocityY : this.predVelY;
-            const ext = (0, constants_1.stepPlayerMovement)({ x: player.targetX, y: player.targetY, vx: serverVelX, vy: serverVelY }, targetVX, targetVY, lead, effectiveSize);
-            const authX = ext.x;
-            const authY = ext.y;
-            const adx = authX - this.predX;
-            const ady = authY - this.predY;
-            if (adx * adx + ady * ady > 400 * 400) {
-                // Huge divergence (teleport / respawn / desync): hard reset.
-                this.predX = authX;
-                this.predY = authY;
-                this.renderErrX = 0;
-                this.renderErrY = 0;
-                this.predVelX = serverVelX;
-                this.predVelY = serverVelY;
-            }
-            else {
-                // Keep the rendered position put across the re-anchor, then let the
-                // offset decay so it eases to the authoritative position.
-                this.renderErrX += adx;
-                this.renderErrY += ady;
-                this.predX = authX;
-                this.predY = authY;
-                this.predVelX = ext.vx;
-                this.predVelY = ext.vy;
-            }
-            this.lastSrvX = player.targetX;
-            this.lastSrvY = player.targetY;
+        // Frame-rate-independent exponential lerp; same shape as gardn's
+        // Ui::lerp_amount = 1 - (1 - k)^(dt*60). interpolationAmount is k at 60fps.
+        const dtMs = Math.min(frameDeltaMs, 100);
+        const k = Math.min(0.999, Math.max(0.001, this.interpolationAmount));
+        const rate = -Math.log(1 - k) * 60;
+        const amt = 1 - Math.exp(-rate * dtMs / 1000);
+        const dx = player.targetX - player.x;
+        const dy = player.targetY - player.y;
+        if (dx * dx + dy * dy > 600 * 600) {
+            // Teleport / portal / big desync: snap instead of gliding across the map.
+            player.x = player.targetX;
+            player.y = player.targetY;
         }
-        // 3. Decay the render-error offset and render. At higher RTTs, use a
-        // slightly longer blend so unavoidable corrections do not arrive as sharp
-        // snaps between less-regular network updates.
-        const correctionRate = this.averagePing > 200 ? 9 : this.averagePing > 100 ? 12 : 15;
-        const errDecay = Math.exp(-correctionRate * dt);
-        this.renderErrX *= errDecay;
-        this.renderErrY *= errDecay;
-        player.x = this.predX - this.renderErrX;
-        player.y = this.predY - this.renderErrY;
+        else {
+            player.x += dx * amt;
+            player.y += dy * amt;
+        }
+        // Local petals are drawn as (serverPetalAbsolute - _refX) offset from the
+        // flower render (player-drawing.ts). Anchoring _refX to the exact render
+        // position keeps the petal ring centered on the flower with no drift.
+        player._refX = player.x;
+        player._refY = player.y;
     }
     // Snapshot interpolation: find the two snapshots bracketing `renderTime` and
     // return the linearly interpolated position. Returns null if the buffer is too

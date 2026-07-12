@@ -254,9 +254,22 @@ export const RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerabilit
 // × SIM_RATE (20) = 300 units/sec. This is the terminal velocity the friction
 // model in playerState.ts converges to (before speed_boost / multipliers).
 export const MAX_SPEED = 300;
-// Nonlinear mouse movement parameters
-export const MOUSE_NONLINEAR_SCALE = 200; // Reference distance for nonlinear scaling (pixels)
-export const MOUSE_NONLINEAR_EXPONENT = 0.6; // Power curve exponent (0.6 = slower for small distances, faster for large)
+// Mouse-control speed law, matched to gardn (Server/Client.cc): the flower's
+// speed scales LINEARLY with the world-space distance from the flower to the
+// cursor, reaching full speed at MOUSE_FULL_SPEED_DISTANCE units and capping
+// there (gardn's `m > 200 ? full : m/200 * full`). Since MAX_SPEED is 1:1 with
+// gardn's units, gardn's 200-unit reference ports directly. Full speed engages
+// at a modest cursor throw (~200 units ≈ 5 flower-radii out), which is the
+// snappy gardn feel; the previous screen-relative power curve only hit full
+// speed at a half-screen throw (sluggish) and its exploding derivative near
+// center turned tiny cursor jiggles into speed swings (jitter). No minimum
+// floor — near the flower the speed eases to 0 for precise positioning, exactly
+// like gardn (which has no floor).
+export const MOUSE_FULL_SPEED_DISTANCE = 200;
+// Legacy nonlinear params — no longer used by mouse/joystick control (kept for
+// any external importers). See MOUSE_FULL_SPEED_DISTANCE above.
+export const MOUSE_NONLINEAR_SCALE = 200;
+export const MOUSE_NONLINEAR_EXPONENT = 0.6;
 
 // Add knockback constants at the top with other constants
 export const KNOCKBACK_FORCE = 5; // Reduced for faster movement with many enemies
