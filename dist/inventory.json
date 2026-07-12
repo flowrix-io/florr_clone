@@ -1,7 +1,7 @@
 {
   "players": {
     "ocu977p98": {
-      "totalXP": 579637883,
+      "totalXP": 579644434,
       "inventory": {
         "common": {
           "petal_light": 220,
@@ -14,7 +14,7 @@
           "petal_clover": 76,
           "petal_bone": 104,
           "petal_cactus": 27,
-          "petal_iris": 27,
+          "petal_iris": 28,
           "petal_poison_cactus": 24,
           "petal_lightning": 77,
           "petal_missile": 469,
@@ -59,8 +59,8 @@
           "petal_blood_leaf": 16,
           "petal_javascript": 84,
           "petal_glitch": 68,
-          "petal_javascript_egg": 58,
-          "petal_glitch_egg": 60,
+          "petal_javascript_egg": 59,
+          "petal_glitch_egg": 61,
           "petal_dust_egg": 53,
           "petal_bulb": 21,
           "petal_third_eye": 11,
@@ -147,9 +147,9 @@
           "petal_sponge": 59,
           "petal_blood_leaf": 10,
           "petal_javascript": 37,
-          "petal_glitch": 42,
+          "petal_glitch": 43,
           "petal_javascript_egg": 26,
-          "petal_glitch_egg": 26,
+          "petal_glitch_egg": 27,
           "petal_dust_egg": 29,
           "petal_bulb": 15,
           "petal_third_eye": 6,
@@ -176,7 +176,7 @@
           "petal_bubble": 11,
           "petal_yin_yang": 5,
           "petal_antennae": 33,
-          "petal_bomb": 3,
+          "petal_bomb": 4,
           "health_potion": 13,
           "petal_lightning_cutter": 1,
           "petal_observer": 1
@@ -368,10 +368,10 @@
           "petal_starfish_egg": 18,
           "petal_sponge": 32,
           "petal_sponge_1_egg": 18,
-          "petal_glitch_egg": 36,
-          "petal_glitch": 69,
+          "petal_glitch_egg": 37,
+          "petal_glitch": 70,
           "petal_javascript": 58,
-          "petal_javascript_egg": 46,
+          "petal_javascript_egg": 47,
           "petal_dust_egg": 24,
           "petal_gas": 9,
           "petal_third_eye": 1,
@@ -555,7 +555,7 @@
           "petal_starfish": 23,
           "petal_glass": 70,
           "petal_shiny_ladybug_egg": 4,
-          "petal_cube_egg": 11,
+          "petal_cube_egg": 12,
           "petal_faster": 61,
           "petal_shell_egg": 12,
           "petal_splitter": 2,
@@ -894,7 +894,7 @@
           "super": 22
         },
         "bee": {
-          "common": 1443,
+          "common": 1444,
           "epic": 300,
           "mythic": 740,
           "uncommon": 578,
@@ -1136,20 +1136,20 @@
         },
         "javascript": {
           "unique": 3,
-          "common": 135,
+          "common": 136,
           "epic": 69,
-          "rare": 47,
-          "uncommon": 107,
-          "legendary": 92,
+          "rare": 48,
+          "uncommon": 108,
+          "legendary": 94,
           "mythic": 164,
           "ultra": 29,
           "super": 6
         },
         "dust": {
-          "common": 107,
-          "uncommon": 113,
+          "common": 109,
+          "uncommon": 114,
           "rare": 55,
-          "epic": 71,
+          "epic": 72,
           "legendary": 107,
           "mythic": 180,
           "ultra": 26,
@@ -1157,23 +1157,23 @@
           "unique": 1
         },
         "glitch": {
-          "common": 126,
-          "rare": 70,
-          "uncommon": 123,
+          "common": 127,
+          "rare": 73,
+          "uncommon": 125,
           "epic": 83,
-          "mythic": 172,
-          "legendary": 133,
+          "mythic": 173,
+          "legendary": 134,
           "ultra": 20,
           "super": 1
         },
         "cube": {
           "common": 76,
           "uncommon": 61,
-          "legendary": 83,
+          "legendary": 84,
           "mythic": 125,
           "ultra": 12,
           "epic": 42,
-          "rare": 47,
+          "rare": 48,
           "super": 1
         },
         "shell": {
@@ -1285,7 +1285,7 @@
           "ultra": 1
         }
       },
-      "stars": 163342,
+      "stars": 163343,
       "dailyStreak": 7,
       "lastStreakDate": "2026-07-12",
       "renderFlags": 0,
@@ -3837,7 +3837,7 @@
       "username": "sussy",
       "admin": true,
       "password": "$2b$12$79LO/OAur/I97q/.3JNc.eRI.JxDA7gy2.3GuGE0iaq.F57SErWI6",
-      "lastActiveAt": 1783824506321
+      "lastActiveAt": 1783881901004
     },
     "dev": {
       "id": "1g99g1gfk",

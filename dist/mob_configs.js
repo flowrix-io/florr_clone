@@ -1690,7 +1690,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 500,
-        section: [5],
+        section: [],
         projectile: {
             count: 1,
             distance: 500,
@@ -1848,7 +1848,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: [5],
+        section: [],
     },
     bush: {
         name: "Bush",
@@ -1891,7 +1891,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: [5],
+        section: [],
     },
     target_dummy: {
         name: "Target Dummy",
@@ -2065,7 +2065,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 100,
-        section: [8],
+        section: [],
         noEggDrop: true,
     },
     spider: {
@@ -2183,7 +2183,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 300,
-        section: [8],
+        section: [],
     },
     soldier_fire_ant_pet: {
         name: "Soldier Fire Ant Pet",
@@ -2235,7 +2235,7 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'passive',
         range: 300,
-        section: [8],
+        section: [],
     },
     javascript: {
         name: "JavaScript",
