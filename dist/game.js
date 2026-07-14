@@ -76,6 +76,10 @@ class Game {
         // death so it re-snaps on respawn). inputSeq stamps outgoing inputs.
         this.inputSeq = 0;
         this.predInit = false;
+        // One covered frame must render after the camera snaps before the join
+        // iris reveals — that frame bakes the visible mob bitmaps behind the
+        // cover (see gameLoop / startIrisRevealHold).
+        this._irisBakeFrameRendered = false;
         this.fpsCounter = 0;
         this.fpsUpdateTime = 0;
         // Rolling per-frame work-time average (ms). If this is well under
@@ -1037,6 +1041,18 @@ class Game {
             }
         }
         this.update();
+        // Release the join iris hold (see startIrisRevealHold) once the first
+        // authoritative position has snapped the camera AND one covered frame
+        // has rendered — that covered frame draws the now-visible mobs, baking
+        // their bitmaps behind the cover so the reveal itself is jank-free.
+        if (this.graphics.irisWaiting && this.predInit) {
+            if (this._irisBakeFrameRendered) {
+                this.graphics.beginIrisReveal();
+            }
+            else {
+                this._irisBakeFrameRendered = true;
+            }
+        }
         // Filter out items that this player has already picked up.
         // The Map is reused across frames (clear + refill) — rebuilding it
         // allocated a Map + entries every frame.

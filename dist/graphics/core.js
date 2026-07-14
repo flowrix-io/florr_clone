@@ -255,6 +255,15 @@ class Graphics {
         this.irisOnComplete = null;
         this.IRIS_TRANSITION_DURATION = 800;
         this.IRIS_OUTLINE_WIDTH = 6;
+        // Join hold: the iris stays fully closed (title screenshot covering the
+        // whole screen) instead of revealing on a timer, so the world is never
+        // shown at the origin (0,0) before the first authoritative player
+        // position arrives. Game.gameLoop calls beginIrisReveal() once the player
+        // has spawned AND one covered frame has baked the visible mobs, so the
+        // reveal is smooth. irisWaitStartTime feeds a timeout fallback.
+        this.irisWaiting = false;
+        this.irisWaitStartTime = 0;
+        this.IRIS_WAIT_TIMEOUT_MS = 6000;
         // Canvas-based death screen
         this.deathScreenVisible = false;
         this.deathScreenKilledBy = '';
@@ -493,12 +502,17 @@ class Graphics {
                 xs.push(cell.x);
                 ys.push(cell.y);
             }
-            // Force the touched sheets to real pixels NOW. An unaccelerated
-            // canvas keeps a deferred display list as its backing; leaving the
-            // sheet deferred makes every later drawImage FROM it replay the
-            // recording (all the SVG renders baked so far) — ~200ms/frame.
-            for (const sheet of new Set(sheets)) {
-                sheet.getContext('2d').getImageData(0, 0, 1, 1);
+            // Software-canvas only: force the touched sheets to real pixels
+            // NOW. An unaccelerated canvas keeps a deferred display list as
+            // its backing; leaving it deferred makes every later drawImage
+            // FROM the sheet replay the whole recording (~200ms/frame). On a
+            // GPU-backed canvas this getImageData is instead an expensive
+            // GPU→CPU readback stall (~tens of ms per bake, felt as join
+            // lag), and the sheet rasterizes fine on its own — so skip it.
+            if (!(0, constants_1.getGpuAcceleration)()) {
+                for (const sheet of new Set(sheets)) {
+                    sheet.getContext('2d').getImageData(0, 0, 1, 1);
+                }
             }
             return { sheets, xs, ys, side, count: frameCount, periodMs: period };
         }

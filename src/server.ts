@@ -618,6 +618,27 @@ function spawnSpecialMobs() {
     spawnSpecialMobsModule(enemySpawnerHelpers, io);
 }
 
+// Remove every wild mob from the world at once (admin "kill all" command).
+// Pets (enemies with an ownerId) are left alone: they belong to players and are
+// tracked/despawned through the pet system, so splicing them here would corrupt
+// that bookkeeping. Returns the number of mobs cleared. No XP/loot is awarded —
+// this is a clean despawn, not a scored kill.
+function clearAllMobs(): number {
+    let removed = 0;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        if (enemy.ownerId) continue; // keep player pets
+        cleanupEnemy(enemy);
+        enemies.splice(i, 1);
+        io.emit('enemyDestroyed', enemy.id);
+        removed++;
+    }
+    // Special-mob counters (ultra/super/unique, section tracking) are derived from
+    // the enemies array, so refresh them after the bulk removal.
+    updateSpecialMobCounts();
+    return removed;
+}
+
 // Wrapper for createEnemy
 function createEnemy(): Enemy | null {
     const enemy = createEnemyModule(enemySpawnerHelpers);
@@ -661,7 +682,11 @@ function announceAmbientSuper(superMob: Enemy): void {
 }
 
 // Function to spawn a specific mob with a specific rarity at optional coordinates
-function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void {
+function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count: number = 1, stack: boolean = false): void {
+    // Clamp requested amount to a sane range so an admin typo can't flood the world.
+    const MAX_SPAWN_COUNT = 500;
+    count = Math.max(1, Math.min(MAX_SPAWN_COUNT, Math.floor(count) || 1));
+
     // Validate mob type
     const allMobTypes = getAllMobTypes();
     if (!allMobTypes.includes(mobType)) {
@@ -804,57 +829,80 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number): void
         return;
     }
 
-    // Create the enemy
+    // Create the mob(s). When `count` > 1 the same validated base position is
+    // reused; whether the copies stay piled or spread out is decided by `stack`:
+    //
+    //   stack === true  -> every copy spawns at the EXACT same (x, y). The
+    //     enemy-enemy collision pass only separates pairs whose distance > 0
+    //     (see checkEnemyEnemyCollisions), so a perfect overlap never resolves
+    //     and the mobs stay in a permanent pile.
+    //   stack === false -> each copy is offset by up to one collision radius, so
+    //     distance > 0 and the collision pass eases them apart over the next few
+    //     ticks — i.e. spawning "triggers" mob-to-mob collision.
     const currentTime = Date.now();
-    const enemy: Enemy = makeEnemy({
-        id: Math.random().toString(36).substr(2, 9),
-        type: mobType as Enemy['type'],
-        tier: tier,
-        x: spawnX,
-        y: spawnY,
-        angle: Math.random() * Math.PI * 2,
-        health: mobStats.health,
-        maxHealth: mobStats.health,
-        speed: mobStats.speed,
-        damage: mobStats.damage,
-        knockbackX: 0,
-        knockbackY: 0,
-        aiType: mobStats.ai_type,
-        range: mobStats.range,
-        reversed: mobStats.reversed ?? false,
-        spawnTime: currentTime,
-        lastViewportCheck: currentTime
-    });
+    const jitterRadius = mobStats.size ? (mobStats.size * 40) / 2 : ENEMY_SIZE / 2;
 
-    // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
+    for (let n = 0; n < count; n++) {
+        let ex = spawnX;
+        let ey = spawnY;
+        if (!stack && count > 1) {
+            const jitterAngle = Math.random() * Math.PI * 2;
+            const jitterDist = Math.random() * jitterRadius;
+            ex = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, spawnX + Math.cos(jitterAngle) * jitterDist));
+            ey = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, spawnY + Math.sin(jitterAngle) * jitterDist));
+        }
 
-    // Add to enemies array
-    enemies.push(enemy);
+        const enemy: Enemy = makeEnemy({
+            id: Math.random().toString(36).substr(2, 9),
+            type: mobType as Enemy['type'],
+            tier: tier,
+            x: ex,
+            y: ey,
+            angle: Math.random() * Math.PI * 2,
+            health: mobStats.health,
+            maxHealth: mobStats.health,
+            speed: mobStats.speed,
+            damage: mobStats.damage,
+            knockbackX: 0,
+            knockbackY: 0,
+            aiType: mobStats.ai_type,
+            range: mobStats.range,
+            reversed: mobStats.reversed ?? false,
+            spawnTime: currentTime,
+            lastViewportCheck: currentTime
+        });
 
-    // Notify all clients
-    io.emit('enemySpawned', enemy);
+        // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
 
-    // Centipedes need their trailing body chain; without it the head behaves
-    // like any other mob and the chain-specific features (severing, avoidance)
-    // have nothing to act on.
-    if (isCentipedeHeadType(mobType)) {
-        const beforeCount = enemies.length;
-        spawnCentipedeBodySegments(enemy);
-        for (let i = beforeCount; i < enemies.length; i++) {
-            io.emit('enemySpawned', enemies[i]);
+        // Add to enemies array
+        enemies.push(enemy);
+
+        // Notify all clients
+        io.emit('enemySpawned', enemy);
+
+        // Centipedes need their trailing body chain; without it the head behaves
+        // like any other mob and the chain-specific features (severing, avoidance)
+        // have nothing to act on.
+        if (isCentipedeHeadType(mobType)) {
+            const beforeCount = enemies.length;
+            spawnCentipedeBodySegments(enemy);
+            for (let i = beforeCount; i < enemies.length; i++) {
+                io.emit('enemySpawned', enemies[i]);
+            }
+        }
+
+        // Mobs with initial_spawns (e.g. ant holes) arrive with a pre-spawned cluster.
+        if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
+            const beforeCount = enemies.length;
+            spawnInitialSpawns(enemy);
+            for (let j = beforeCount; j < enemies.length; j++) {
+                io.emit('enemySpawned', enemies[j]);
+            }
         }
     }
 
-    // Mobs with initial_spawns (e.g. ant holes) arrive with a pre-spawned cluster.
-    if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
-        const beforeCount = enemies.length;
-        spawnInitialSpawns(enemy);
-        for (let j = beforeCount; j < enemies.length; j++) {
-            io.emit('enemySpawned', enemies[j]);
-        }
-    }
-
-    console.log(`Spawned ${tier} ${mobType} at (${Math.round(spawnX)}, ${Math.round(spawnY)})`);
+    const stackNote = count > 1 ? (stack ? ' (stacked)' : ' (unstacked)') : '';
+    console.log(`Spawned ${count > 1 ? count + 'x ' : ''}${tier} ${mobType} at (${Math.round(spawnX)}, ${Math.round(spawnY)})${stackNote}`);
 }
 
 // respawnPlayer moved to playerManager module - using wrapper function defined earlier
@@ -1099,6 +1147,7 @@ const commandDeps: CommandHandlerDependencies = {
     savePlayerProgress,
     spawnMob,
     spawnSpecialMobs,
+    clearAllMobs,
     createEnemy,
     adjustEnemyCount
 };

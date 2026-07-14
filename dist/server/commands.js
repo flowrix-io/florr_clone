@@ -31,7 +31,7 @@ function sendOutput(message, socketId, io) {
  */
 function executeServerCommand(command, executor, deps, socketId) {
     const trimmedCommand = command.trim();
-    const { io, savePlayerProgress, spawnMob, spawnSpecialMobs, adjustEnemyCount } = deps;
+    const { io, savePlayerProgress, spawnMob, spawnSpecialMobs, clearAllMobs, adjustEnemyCount } = deps;
     if (executor) {
         sendOutput(`[ADMIN] ${executor} executed: ${trimmedCommand}`, socketId, io);
     }
@@ -127,36 +127,104 @@ function executeServerCommand(command, executor, deps, socketId) {
         spawnSpecialMobs();
         sendOutput('Special mobs spawned', socketId, io);
     }
+    else if (trimmedCommand === 'killall' || trimmedCommand === 'kill_all' || trimmedCommand === 'clear_mobs') {
+        const removed = clearAllMobs();
+        sendOutput(`Killed ${removed} mob${removed === 1 ? '' : 's'} (pets left intact)`, socketId, io);
+    }
     else if (trimmedCommand.startsWith('spawn')) {
         const parts = trimmedCommand.split(' ');
-        if (parts.length === 3) {
-            // spawn <mobType> <rarity>
-            const mobType = parts[1];
-            const rarity = parts[2];
-            spawnMob(mobType, rarity);
-            sendOutput(`Spawned ${rarity} ${mobType}`, socketId, io);
-        }
-        else if (parts.length === 5) {
-            // spawn <mobType> <rarity> <x> <y>
-            const mobType = parts[1];
-            const rarity = parts[2];
-            const x = parseFloat(parts[3]);
-            const y = parseFloat(parts[4]);
-            if (isNaN(x) || isNaN(y)) {
-                sendOutput('Invalid coordinates. Usage: spawn <mobType> <rarity> [x] [y]', socketId, io);
-            }
-            else {
-                spawnMob(mobType, rarity, x, y);
-                sendOutput(`Spawned ${rarity} ${mobType} at (${x}, ${y})`, socketId, io);
-            }
-        }
-        else {
-            sendOutput('Usage: spawn <mobType> <rarity> [x] [y]', socketId, io);
+        // Grammar (everything after `spawn <mobType> <rarity>` is optional):
+        //   spawn <mobType> <rarity>                             -> 1 mob on you
+        //   spawn <mobType> <rarity> <amount> [stack|unstack]    -> N mobs on you
+        //   spawn <mobType> <rarity> <x> <y>                     -> 1 mob at (x,y)
+        //   spawn <mobType> <rarity> <x> <y> <amount> [stack]    -> N mobs at (x,y)
+        // With no x/y the mobs spawn on the player who ran the command (or at a
+        // random spot when run from the server console/stdin).
+        // "stack" piles every copy on one spot; the default (unstacked) offsets
+        // them so mob-to-mob collision spreads them apart on spawn.
+        const isStackWord = (s) => s !== undefined && ['stack', 'stacked'].includes(s.toLowerCase());
+        const isUnstackWord = (s) => s !== undefined && ['unstack', 'unstacked', 'nostack'].includes(s.toLowerCase());
+        const isStackFlag = (s) => isStackWord(s) || isUnstackWord(s);
+        if (parts.length < 3) {
+            sendOutput('Usage: spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack]', socketId, io);
+            sendOutput('  No x/y spawns on you (or randomly if run from the server console).', socketId, io);
+            sendOutput('  amount: how many to spawn (default 1, max 500). stack piles them on', socketId, io);
+            sendOutput('  one spot; the default (unstacked) spreads them via mob collision.', socketId, io);
             sendOutput('  Examples:', socketId, io);
             sendOutput('    spawn bee rare', socketId, io);
-            sendOutput('    spawn bee legendary 1000 2000', socketId, io);
+            sendOutput('    spawn bee rare 10                (10 bees, spread apart)', socketId, io);
+            sendOutput('    spawn bee rare 10 stack          (10 bees in a pile)', socketId, io);
+            sendOutput('    spawn bee legendary 1000 2000    (1 bee at 1000,2000)', socketId, io);
+            sendOutput('    spawn bee legendary 1000 2000 5  (5 bees at 1000,2000)', socketId, io);
             sendOutput(`Available mob types: ${(0, mobs_1.getAllMobTypes)().join(', ')}`, socketId, io);
             sendOutput('Valid rarities: common, uncommon, rare, epic, legendary, mythic, ultra, super, unique', socketId, io);
+        }
+        else {
+            const mobType = parts[1];
+            const rarity = parts[2];
+            // Coordinates are present only when parts[3] AND parts[4] are both
+            // numbers. `spawn bee rare 10 stack` has a stack word in slot 4, so
+            // parts[3] there is an amount, not an x-coordinate.
+            const hasCoords = parts.length >= 5 &&
+                !isNaN(parseFloat(parts[3])) && !isNaN(parseFloat(parts[4])) &&
+                !isStackFlag(parts[4]);
+            let x;
+            let y;
+            let amountTok;
+            let stackTok;
+            if (hasCoords) {
+                x = parseFloat(parts[3]);
+                y = parseFloat(parts[4]);
+                amountTok = parts[5];
+                stackTok = parts[6];
+            }
+            else {
+                amountTok = parts[3];
+                stackTok = parts[4];
+            }
+            // Parse amount (defaults to 1). A stack word in the amount slot means
+            // no amount was given (e.g. `spawn bee rare stack`).
+            let count = 1;
+            if (amountTok !== undefined && !isStackFlag(amountTok)) {
+                const parsed = parseInt(amountTok, 10);
+                if (isNaN(parsed) || parsed < 1) {
+                    sendOutput(`Invalid amount "${amountTok}". Amount must be a positive whole number.`, socketId, io);
+                    return;
+                }
+                count = parsed;
+            }
+            else if (isStackFlag(amountTok)) {
+                // `spawn bee rare stack` — treat the word as the stack flag.
+                stackTok = amountTok;
+            }
+            // Parse stack flag (defaults to unstacked).
+            let stack = false;
+            if (stackTok !== undefined) {
+                if (isStackWord(stackTok))
+                    stack = true;
+                else if (isUnstackWord(stackTok))
+                    stack = false;
+                else {
+                    sendOutput(`Unknown option "${stackTok}". Expected "stack" or "unstack".`, socketId, io);
+                    return;
+                }
+            }
+            // With no explicit coords, spawn on the player who ran the command.
+            // From stdin (no associated player) leave coords undefined so spawnMob
+            // picks a random valid spot.
+            let onExecutor = false;
+            if (!hasCoords && socketId && constants_1.players[socketId]) {
+                x = constants_1.players[socketId].x;
+                y = constants_1.players[socketId].y;
+                onExecutor = true;
+            }
+            spawnMob(mobType, rarity, x, y, count, stack);
+            const where = hasCoords ? ` at (${x}, ${y})`
+                : onExecutor ? ' at your location'
+                    : ' at a random location';
+            const many = count > 1 ? `${count}x ` : '';
+            const mode = count > 1 ? (stack ? ', stacked' : ', unstacked') : '';
+            sendOutput(`Spawned ${many}${rarity} ${mobType}${where}${mode}`, socketId, io);
         }
     }
     else if (trimmedCommand.startsWith('teleport ') || trimmedCommand.startsWith('tp ')) {
@@ -427,11 +495,21 @@ function executeServerCommand(command, executor, deps, socketId) {
     }
     else if (trimmedCommand.startsWith('give ')) {
         const parts = trimmedCommand.split(' ');
-        if (parts.length === 4) {
-            // give <playerId/name> <itemType> <rarity>
+        if (parts.length === 4 || parts.length === 5) {
+            // give <playerId/name> <itemType> <rarity> [amount]
             const playerIdentifier = parts[1];
             const itemType = parts[2].toLowerCase();
             const rarity = parts[3].toLowerCase();
+            // Parse optional amount (defaults to 1).
+            let amount = 1;
+            if (parts.length === 5) {
+                const parsed = parseInt(parts[4], 10);
+                if (isNaN(parsed) || parsed < 1) {
+                    sendOutput(`Invalid amount "${parts[4]}". Amount must be a positive whole number.`, socketId, io);
+                    return;
+                }
+                amount = parsed;
+            }
             // Validate rarity
             if (!petals_1.RARITY_LEVELS.includes(rarity)) {
                 sendOutput(`Invalid rarity. Valid rarities: ${petals_1.RARITY_LEVELS.join(', ')}`, socketId, io);
@@ -482,7 +560,7 @@ function executeServerCommand(command, executor, deps, socketId) {
                 // Add item to player's inventory. The inventory is always in
                 // regular-world terms — even inside the maze (only the locked
                 // loadout shifts) — so the given rarity is stored literally.
-                (0, playerManager_1.addItem)(targetPlayer.inventory, rarity, itemKey, 1);
+                (0, playerManager_1.addItem)(targetPlayer.inventory, rarity, itemKey, amount);
                 // Emit inventory update to the player
                 if (targetSocket) {
                     io.to(targetPlayerId).emit('inventoryUpdated', targetPlayer.inventory);
@@ -491,7 +569,8 @@ function executeServerCommand(command, executor, deps, socketId) {
                 if (targetSocket?.userId) {
                     savePlayerProgress(targetPlayer, targetSocket.userId);
                 }
-                sendOutput(`Gave ${rarity} ${itemDisplayName} to ${targetPlayer.name} (${targetPlayerId})`, socketId, io);
+                const amountLabel = amount > 1 ? `${amount}x ` : '';
+                sendOutput(`Gave ${amountLabel}${rarity} ${itemDisplayName} to ${targetPlayer.name} (${targetPlayerId})`, socketId, io);
             }
             else {
                 // Not connected right now — write straight to the persisted account so
@@ -504,9 +583,10 @@ function executeServerCommand(command, executor, deps, socketId) {
                         progress.inventory = {};
                     if (!progress.inventory[rarity])
                         progress.inventory[rarity] = {};
-                    progress.inventory[rarity][itemKey] = (progress.inventory[rarity][itemKey] || 0) + 1;
+                    progress.inventory[rarity][itemKey] = (progress.inventory[rarity][itemKey] || 0) + amount;
                     database_1.database.savePlayer(offlineUserId, progress);
-                    sendOutput(`Gave ${rarity} ${itemDisplayName} to ${playerIdentifier} (offline)`, socketId, io);
+                    const amountLabel = amount > 1 ? `${amount}x ` : '';
+                    sendOutput(`Gave ${amountLabel}${rarity} ${itemDisplayName} to ${playerIdentifier} (offline)`, socketId, io);
                 }
                 else {
                     sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see online players, or double-check the username for offline accounts.`, socketId, io);
@@ -514,13 +594,14 @@ function executeServerCommand(command, executor, deps, socketId) {
             }
         }
         else {
-            sendOutput('Usage: give <playerId/username> <itemType> <rarity>', socketId, io);
+            sendOutput('Usage: give <playerId/username> <itemType> <rarity> [amount]', socketId, io);
+            sendOutput('  amount: how many to give (default 1).', socketId, io);
             sendOutput('  Works for online players (by socket id or username) and offline', socketId, io);
             sendOutput('  accounts (by username) — offline gives are saved directly to the account.', socketId, io);
             sendOutput('  Examples:', socketId, io);
             sendOutput('    give abc123 basic rare', socketId, io);
-            sendOutput('    give Username rose legendary', socketId, io);
-            sendOutput('    give abc123 health_potion epic', socketId, io);
+            sendOutput('    give Username rose legendary 5', socketId, io);
+            sendOutput('    give abc123 health_potion epic 10', socketId, io);
             sendOutput('  Item types:', socketId, io);
             sendOutput('    Petals: any petal type (e.g., basic, rose, stinger)', socketId, io);
             sendOutput('    Consumables: health_potion, speed_boost, shield', socketId, io);
@@ -775,5 +856,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y], teleport <playerId/username> <x> <y>, give <playerId/username> <rarity>, set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
 }

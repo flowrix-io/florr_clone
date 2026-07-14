@@ -307,8 +307,10 @@ function setupGameEventListeners() {
                 const sctx = screenshot.getContext('2d');
                 if (titleCanvas)
                     sctx.drawImage(titleCanvas, 0, 0, screenshot.width, screenshot.height);
-                currentGame.graphics.startIrisTransition(screenshot);
-                currentGame.graphics.irisTitleScreen = true;
+                // Hold the title screenshot fully covering the screen until the
+                // first server position arrives (Game.gameLoop calls
+                // beginIrisReveal), so the world never flashes at the origin.
+                currentGame.graphics.startIrisRevealHold(screenshot);
             }
             // Hide title screen and show game
             titleScreen?.hideTitleScreen();
