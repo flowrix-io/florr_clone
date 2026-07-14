@@ -427,6 +427,16 @@ export const CHANGELOG: ChangelogEntry[] = [
             'New desert background',
             'Server and client optimizations'
         ]
+    },
+    {
+        date: 'July 14, 2026',
+        changes: [
+            'Fix client FPS',
+            'New setting: GPU Acceleration',
+            'Patched some glitches where players could get into walls',
+            'Admin give and spawn mob commands can now have amounts',
+            'New admin command: killall',
+        ]
     }
 ];
 
