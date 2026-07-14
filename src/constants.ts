@@ -9,6 +9,8 @@ import { isInMazeRegion, resolveMazeCollision, mazeCircleWallOverlap } from "./m
 let _cachedMobAnimFPS: number | null = null;
 let _cachedMobAnimFrameTime: number | null = null;
 let _cachedHighQualityMobs: boolean | null = null;
+let _cachedDisableUltraParticles: boolean | null = null;
+let _cachedGpuAcceleration: boolean | null = null;
 
 export function getMobAnimationFramerate(): number {
     if (_cachedMobAnimFPS === null) {
@@ -34,11 +36,35 @@ export function getHighQualityMobs(): boolean {
     return _cachedHighQualityMobs;
 }
 
+// Disable ultra+ petal particles setting utility - cached
+export function getDisableUltraParticles(): boolean {
+    if (_cachedDisableUltraParticles === null) {
+        const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('disableUltraParticles') : null;
+        _cachedDisableUltraParticles = saved === 'true';
+    }
+    return _cachedDisableUltraParticles;
+}
+
+// GPU acceleration for the main game canvas. Default ON. When OFF we pass
+// `willReadFrequently: true` to getContext, which makes Chrome keep the
+// canvas in system memory (software rasterization) instead of a GPU texture.
+// Only honored when the 2D context is first created, so a change needs a
+// canvas/page reload to take effect (see applyGpuAcceleration / core.ts).
+export function getGpuAcceleration(): boolean {
+    if (_cachedGpuAcceleration === null) {
+        const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('gpuAcceleration') : null;
+        _cachedGpuAcceleration = saved !== 'false';
+    }
+    return _cachedGpuAcceleration;
+}
+
 // Call this when settings change to invalidate caches
 export function invalidateSettingsCache(): void {
     _cachedMobAnimFPS = null;
     _cachedMobAnimFrameTime = null;
     _cachedHighQualityMobs = null;
+    _cachedDisableUltraParticles = null;
+    _cachedGpuAcceleration = null;
 }
 
 // Server protocol configuration

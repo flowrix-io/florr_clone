@@ -1,4 +1,5 @@
 import { Graphics, Player, Enemy, WorldItem, PLAYER_SIZE, getMobStats, getPetalStats } from './core';
+import { DEATH_ANIMATION_DURATION } from './enemy-drawing';
 
 declare module './core' {
     interface Graphics {
@@ -19,6 +20,14 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
 
     // Draw enemies first (including pets) - below players and petals
     const mobsT0 = performance.now();
+    // Snapshot the camera transform once; drawEnemy composes each mob's
+    // translate/rotate/flip into a single setTransform against this. Copied
+    // to plain numbers — reading DOMMatrix accessors per mob is slow.
+    const tf = this.ctx.getTransform();
+    this._worldBaseTf = { a: tf.a, b: tf.b, c: tf.c, d: tf.d, e: tf.e, f: tf.f };
+    // Smoothing ON once for the whole mob pass (baked bitmaps need it) —
+    // per-mob toggles forced a canvas pipeline flush per mob on the GPU path.
+    this.ctx.imageSmoothingEnabled = true;
     for (const enemy of enemies.values()) {
         // Calculate actual enemy size for accurate culling
         const mobStats = getMobStats(enemy.type, enemy.tier);
@@ -39,12 +48,17 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
             continue;
         }
 
+        this._hbEnemies.push(enemy);
+        this._hbSizes.push(enemySize);
         try {
             this.drawEnemy(enemy);
         } catch (error) {
             console.error('[Graphics] Error drawing enemy:', error, enemy);
             // Draw a simple fallback circle if rendering fails
             try {
+                // drawEnemy may have died mid-mob with its local frame active.
+                const b = this._worldBaseTf!;
+                this.ctx.setTransform(b.a, b.b, b.c, b.d, b.e, b.f);
                 this.ctx.save();
                 this.ctx.translate(enemy.x, enemy.y);
                 this.ctx.fillStyle = '#ff0000';
@@ -56,6 +70,31 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
                 console.error('[Graphics] Fallback rendering also failed:', fallbackError);
             }
         }
+    }
+
+    // Health bars for every mob drawn above, in one world-frame pass.
+    // drawEnemy leaves each mob's local transform active, so the camera
+    // transform is restored once here instead of once per mob — the
+    // per-mob save()/setTransform pairs were the top cost of this section
+    // under CPU throttling. Side effect: bars now draw on top of all mob
+    // bodies rather than interleaved with them.
+    {
+        const b = this._worldBaseTf!;
+        this.ctx.setTransform(b.a, b.b, b.c, b.d, b.e, b.f);
+        this.ctx.imageSmoothingEnabled = this.antialiasing;
+        const hbEnemies = this._hbEnemies;
+        const hbSizes = this._hbSizes;
+        for (let i = 0; i < hbEnemies.length; i++) {
+            const enemy = hbEnemies[i];
+            // Skip while the death animation runs (mirrors drawEnemy's isDying).
+            if (this.mobDeathAnimation && enemy.deathAnimationStartTime &&
+                this.frameTimestamp - enemy.deathAnimationStartTime < DEATH_ANIMATION_DURATION) {
+                continue;
+            }
+            this.drawEnemyHealthBar(enemy, hbSizes[i]);
+        }
+        hbEnemies.length = 0;
+        hbSizes.length = 0;
     }
 
     // Draw players (with petals) - above enemies

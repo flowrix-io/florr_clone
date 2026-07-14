@@ -7,9 +7,13 @@ declare module './core' {
         getEligiblePetalTypes(): string[];
         drawGarbagePile(enemy: Enemy, enemySize: number): void;
         drawEnemyHealthBar(enemy: Enemy, enemySize: number): void;
-        getMobLabelCanvas(enemy: Enemy, healthBarWidth: number, mobName: string): HTMLCanvasElement;
+        getMobLabelCanvas(enemy: Enemy, healthBarWidth: number, mobName: string): { canvas: HTMLCanvasElement; sx: number; sy: number; w: number; h: number };
     }
 }
+
+// Shared with drawGameObjects' health-bar pass, which must skip mobs whose
+// death animation is running (drawEnemy scales/fades them instead).
+export const DEATH_ANIMATION_DURATION = 200; // ms
 
 Graphics.prototype.drawMobProjectile = function(this: Graphics, projectile: any, currentTime?: number, petalStats?: any) {
     if (!projectile || typeof projectile.x !== 'number' || typeof projectile.y !== 'number') {
@@ -126,7 +130,6 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
     }
 
     // Check if enemy is in death animation (only if setting is enabled)
-    const DEATH_ANIMATION_DURATION = 200; // 200ms animation
     let isDying = false;
     let deathProgress = 0;
     if (this.mobDeathAnimation && enemy.deathAnimationStartTime) {
@@ -157,42 +160,49 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
         enemySize *= deathScale;
     }
 
-    // Draw emissive light glow behind mob if emissive (before rotation/flip
-    // transforms). The gradient disc is baked once per (color, radius) — a
-    // createRadialGradient + three rgba strings per mob per frame was one of
-    // the top per-frame costs under CPU throttling.
-    if (mobStats?.emissive) {
-        const hex = mobStats.light_color || mobStats.color || '#ffffff';
-        const lightRadius = mobStats.light_radius ?? (enemySize * 2);
-        const glow = this.getGlowSprite(hex, lightRadius);
-        if (isDying) {
-            const prevAlpha = this.ctx.globalAlpha;
-            this.ctx.globalAlpha = deathAlpha;
-            this.ctx.drawImage(glow, enemy.x - lightRadius, enemy.y - lightRadius, lightRadius * 2, lightRadius * 2);
-            this.ctx.globalAlpha = prevAlpha;
-        } else {
-            this.ctx.drawImage(glow, enemy.x - lightRadius, enemy.y - lightRadius, lightRadius * 2, lightRadius * 2);
-        }
+    // Enter the mob's local frame (translate/rotate/flip) with a single
+    // setTransform composed against the camera snapshot. The save()/translate/
+    // rotate/restore quartet this replaces was ~50% of the mobs section under
+    // CPU throttling — save() copies the full context state per call. The
+    // local frame is deliberately left active on return: the next mob's
+    // setTransform overwrites it, and drawGameObjects restores the base
+    // transform once before the health-bar pass. Non-transform state
+    // (fillStyle, font, ...) is likewise not restored, matching the codebase
+    // norm of setting style state before each use; alpha is reset at the
+    // exits below.
+    let baseTf = this._worldBaseTf;
+    if (!baseTf) {
+        const tf = this.ctx.getTransform();
+        baseTf = this._worldBaseTf = { a: tf.a, b: tf.b, c: tf.c, d: tf.d, e: tf.e, f: tf.f };
     }
-
-    // Always set up the transform for the enemy position
-    // The context already has camera transforms applied, so we translate to world position
-    this.ctx.save();
-    this.ctx.translate(enemy.x, enemy.y);
-
-    // Only apply rotation if hideRotation is not set
-    if (!mobStats?.hideRotation) {
-        this.ctx.rotate(enemy.angle || 0);
-    }
-
-    // Flip horizontally if reversed is true
-    if (enemy.reversed || mobStats?.reversed) {
-        this.ctx.scale(-1, 1);
-    }
+    const angle = mobStats?.hideRotation ? 0 : (enemy.angle || 0);
+    const flip = (enemy.reversed || mobStats?.reversed) ? -1 : 1;
+    const cosA = Math.cos(angle), sinA = Math.sin(angle);
+    this.ctx.setTransform(
+        (baseTf.a * cosA + baseTf.c * sinA) * flip,
+        (baseTf.b * cosA + baseTf.d * sinA) * flip,
+        baseTf.c * cosA - baseTf.a * sinA,
+        baseTf.d * cosA - baseTf.b * sinA,
+        baseTf.a * enemy.x + baseTf.c * enemy.y + baseTf.e,
+        baseTf.b * enemy.x + baseTf.d * enemy.y + baseTf.f
+    );
 
     // Apply death animation: transparency (before drawing, preserves transparency)
     if (isDying) {
         this.ctx.globalAlpha = deathAlpha;
+    }
+
+    // Emissive light glow behind the mob, drawn in the local frame at the
+    // origin — the gradient disc is radially symmetric, so the frame's
+    // rotation/flip don't matter. Baked once per (color, radius); a
+    // createRadialGradient + three rgba strings per mob per frame was one of
+    // the top per-frame costs under CPU throttling. deathAlpha (set above)
+    // fades the glow along with the body.
+    if (mobStats?.emissive) {
+        const hex = mobStats.light_color || mobStats.color || '#ffffff';
+        const lightRadius = mobStats.light_radius ?? (enemySize * 2);
+        const glow = this.getGlowSprite(hex, lightRadius);
+        this.ctx.drawImage(glow, -lightRadius, -lightRadius, lightRadius * 2, lightRadius * 2);
     }
 
     // Special rendering for garbage mob - render as a pile of random petals
@@ -208,21 +218,15 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
             this.ctx.globalCompositeOperation = 'source-over';
         }
 
-        this.ctx.restore();
-
-        // Don't draw health bar during death animation
-        if (!isDying) {
-            // Draw health bar and tier (after restore, so we need to set up transforms again)
-            this.drawEnemyHealthBar(enemy, enemySize);
-        }
+        // Local frame stays active (next mob overwrites it); health bars are
+        // drawn by drawGameObjects in a single world-frame pass afterwards.
+        if (isDying) this.ctx.globalAlpha = 1.0;
         return;
     }
 
-    // Disable anti-aliasing for mobs (pixelated look)
-    this.ctx.imageSmoothingEnabled = false;
-
-    // Debug: Always draw something visible to verify coordinates work
-    // This ensures we can see enemies even if images/sprites fail
+    // NOTE: imageSmoothingEnabled is NOT touched per mob — drawGameObjects
+    // sets it once for the whole pass. Per-mob toggles broke Chrome's canvas
+    // op batching (a pipeline flush per mob on the GPU path).
 
     const cacheKey = `${enemy.type}_${enemy.tier}`;
     const mobSVG = this.mobSVGCache[cacheKey];
@@ -239,18 +243,17 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
     let rendered = false;
 
     // Fast path: baked mob bitmap (single frame or animation loop) — one
-    // drawImage instead of replaying the SVG's canvas commands node by node.
-    // Death-animation scaling works because drawImage scales to enemySize.
+    // drawImage from the per-type spritesheet instead of replaying the SVG's
+    // canvas commands node by node. Death-animation scaling works because
+    // drawImage scales to enemySize. Smoothing is already ON for the pass.
     if (mobSVG) {
         // Bake at the mob's steady-state size — death animation scales the
         // draw call, not the bitmap (enemySize was multiplied by deathScale).
         const bakeSize = isDying ? enemySize / deathScale : enemySize;
-        const bmp = this.getMobCanvas(cacheKey, mobSVG, bakeSize, currentTime);
-        if (bmp) {
-            // The bitmap already contains antialiased edges; smoothing must be
-            // ON or scaled draws get nearest-neighbor artifacts.
-            this.ctx.imageSmoothingEnabled = true;
-            this.ctx.drawImage(bmp, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
+        const frame = this.getMobCanvas(cacheKey, mobSVG, bakeSize, currentTime);
+        if (frame && frame.canvas) {
+            this.ctx.drawImage(frame.canvas, frame.sx, frame.sy, frame.size, frame.size,
+                -enemySize / 2, -enemySize / 2, enemySize, enemySize);
             rendered = true;
         }
     }
@@ -318,13 +321,9 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
         this.ctx.globalCompositeOperation = 'source-over';
     }
 
-    this.ctx.restore();
-
-    // Don't draw health bar during death animation
-    if (!isDying) {
-        // Draw health bar and tier
-        this.drawEnemyHealthBar(enemy, enemySize);
-    }
+    // Local frame stays active (next mob overwrites it); health bars are
+    // drawn by drawGameObjects in a single world-frame pass afterwards.
+    if (isDying) this.ctx.globalAlpha = 1.0;
 };
 
 Graphics.prototype.getEligiblePetalTypes = function(this: Graphics): string[] {
@@ -413,35 +412,55 @@ Graphics.prototype.drawGarbagePile = function(this: Graphics, enemy: Enemy, enem
         this.ctx.arc(0, 0, baseSize / 2, 0, Math.PI * 2);
         this.ctx.stroke();
     }
+
+    // Restore pass-wide smoothing (see drawGameObjects) — the pixelated look
+    // above is garbage-pile-local, and later mobs' baked draws need it ON.
+    this.ctx.imageSmoothingEnabled = true;
 };
 
-// Static text overlay (mob name + rarity label, both stroke+fill) baked once
-// per (type, tier): four text draws + two font changes per mob per frame were
-// a top per-frame cost with many mobs on screen. The canvas spans from the
-// name line to the tier line; only the health-bar roundRects stay dynamic.
+// Static overlay (mob name + rarity label + health-bar background) baked once
+// per (type, tier): four text draws, two font changes, and a rounded-rect
+// fill per mob per frame were a top per-frame cost with many mobs on screen.
+// The canvas spans from the name line to the tier line; only the green
+// health-fill roundRect stays dynamic.
 const MOB_LABEL_PAD_X = 4;   // room for stroke overhang
 const MOB_LABEL_ASCENT = 14; // px above the name baseline kept in the canvas
-Graphics.prototype.getMobLabelCanvas = function(this: Graphics, enemy: Enemy, healthBarWidth: number, mobName: string): HTMLCanvasElement {
+Graphics.prototype.getMobLabelCanvas = function(this: Graphics, enemy: Enemy, healthBarWidth: number, mobName: string): { canvas: HTMLCanvasElement; sx: number; sy: number; w: number; h: number } {
     const key = `${enemy.type}_${enemy.tier}_${healthBarWidth | 0}`;
-    let c = this.mobLabelCache[key];
-    if (c) return c;
+    let cell = this.mobLabelCache[key];
+    if (cell) return cell;
 
-    // Layout mirrors the draw code below: name baseline at y=0 (canvas-local
-    // MOB_LABEL_ASCENT), tier baseline at +healthBarHeight+16 below it.
+    // Layout mirrors the draw code below: name baseline at y=0 (cell-local
+    // MOB_LABEL_ASCENT), bar top 4px below it, tier baseline
+    // +healthBarHeight+16 below the name. Baked into the shared atlas
+    // sheets — see mobLabelCache.
     const healthBarHeight = 8;
     const tierDY = 4 + healthBarHeight + 12; // nameY -> tierY distance
-    c = document.createElement('canvas');
-    c.width = Math.ceil(healthBarWidth + MOB_LABEL_PAD_X * 2);
-    c.height = MOB_LABEL_ASCENT + tierDY + 6;
-    const cctx = c.getContext('2d')!;
+    const w = Math.ceil(healthBarWidth + MOB_LABEL_PAD_X * 2);
+    const h = MOB_LABEL_ASCENT + tierDY + 6;
+    const alloc = this.atlasAlloc(w, h);
+    const canvas = alloc.canvas;
+    const ox = alloc.x, oy = alloc.y;
+    const cctx = canvas.getContext('2d')!;
+    cctx.save();
+    cctx.beginPath();
+    cctx.rect(ox, oy, w, h);
+    cctx.clip();
 
     cctx.textAlign = 'left';
     cctx.font = '12px Ubuntu, sans-serif';
     cctx.strokeStyle = '#000000';
     cctx.lineWidth = 3;
-    cctx.strokeText(mobName, MOB_LABEL_PAD_X, MOB_LABEL_ASCENT);
+    cctx.strokeText(mobName, ox + MOB_LABEL_PAD_X, oy + MOB_LABEL_ASCENT);
     cctx.fillStyle = 'white';
-    cctx.fillText(mobName, MOB_LABEL_PAD_X, MOB_LABEL_ASCENT);
+    cctx.fillText(mobName, ox + MOB_LABEL_PAD_X, oy + MOB_LABEL_ASCENT);
+
+    // Health bar background (rounded), drawn after the name so it covers
+    // descenders exactly like the old world-space draw order did.
+    cctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
+    cctx.beginPath();
+    cctx.roundRect(ox + MOB_LABEL_PAD_X - 1, oy + MOB_LABEL_ASCENT + 3, healthBarWidth + 2, healthBarHeight + 2, healthBarHeight / 2);
+    cctx.fill();
 
     cctx.textAlign = 'right';
     cctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
@@ -449,62 +468,56 @@ Graphics.prototype.getMobLabelCanvas = function(this: Graphics, enemy: Enemy, he
     cctx.strokeStyle = '#000000';
     cctx.lineWidth = 3;
     const tierLabel = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
-    cctx.strokeText(tierLabel, MOB_LABEL_PAD_X + healthBarWidth, MOB_LABEL_ASCENT + tierDY);
-    cctx.fillText(tierLabel, MOB_LABEL_PAD_X + healthBarWidth, MOB_LABEL_ASCENT + tierDY);
+    cctx.strokeText(tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY);
+    cctx.fillText(tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY);
+    cctx.restore();
 
-    this.mobLabelCache[key] = c;
-    return c;
+    cell = { canvas, sx: ox, sy: oy, w, h };
+    this.mobLabelCache[key] = cell;
+    return cell;
 };
 
+// Drawn in world coordinates under the camera transform — no save/translate/
+// restore of its own (a second per-mob save() pair showed up hot under CPU
+// throttling). Steady-state cost is one drawImage + one roundRect fill.
 Graphics.prototype.drawEnemyHealthBar = function(this: Graphics, enemy: Enemy, enemySize: number) {
     const mobStats = (enemy as any)._mobStats ?? getMobStats(enemy.type, enemy.tier);
     const mobName = mobStats ? mobStats.name : `${enemy.tier} ${enemy.type}`;
 
-    this.ctx.save();
-    this.ctx.translate(enemy.x, enemy.y);
-
     const minHealthBarWidth = 60; // Minimum size: common hornet (size 1.0 * 40 * visual_scale 1.5)
     const healthBarWidth = Math.max(enemySize, minHealthBarWidth);
     const healthBarHeight = 8;
-    const healthBarY = enemySize / 2 + 8;
+    const healthBarY = enemy.y + enemySize / 2 + 8;
     const radius = healthBarHeight / 2;
     const nameY = healthBarY - 4;
 
-    // Baked name + rarity overlay (see getMobLabelCanvas).
+    // Baked name + rarity + bar-background overlay (see getMobLabelCanvas),
+    // blitted 1:1 from its shared-atlas cell.
     const label = this.getMobLabelCanvas(enemy, healthBarWidth, mobName);
-    this.ctx.drawImage(label, -healthBarWidth / 2 - MOB_LABEL_PAD_X, nameY - MOB_LABEL_ASCENT);
-
-    // Health bar background (rounded)
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
-    this.ctx.beginPath();
-    this.ctx.roundRect(-healthBarWidth / 2 - 1, healthBarY - 1, healthBarWidth + 2, healthBarHeight + 2, radius);
-    this.ctx.fill();
+    this.ctx.drawImage(label.canvas, label.sx, label.sy, label.w, label.h,
+        enemy.x - healthBarWidth / 2 - MOB_LABEL_PAD_X, nameY - MOB_LABEL_ASCENT, label.w, label.h);
 
     // Health bar fill (rounded) - same green as player health bar
     const clampedHealth = Math.max(0, Math.min(enemy.health, enemy.maxHealth));
     const healthFillWidth = (clampedHealth / enemy.maxHealth) * healthBarWidth;
     this.ctx.fillStyle = '#73ff54';
     this.ctx.beginPath();
-    this.ctx.roundRect(-healthBarWidth / 2, healthBarY, healthFillWidth, healthBarHeight, radius);
+    this.ctx.roundRect(enemy.x - healthBarWidth / 2, healthBarY, healthFillWidth, healthBarHeight, radius);
     this.ctx.fill();
-
-    const tierX = healthBarWidth / 2;
-    const tierY = healthBarY + healthBarHeight + 12;
 
     // Draw DPS for target dummies
     if (enemy.type === 'target_dummy' && enemy.currentDPS !== undefined) {
         const dps = enemy.currentDPS || 0;
         const formattedDPS = this.formatNumber(dps);
         const dpsText = `DPS: ${formattedDPS}`;
-        this.ctx.textAlign = 'right'; // was inherited from the tier draw before it was baked
+        this.ctx.textAlign = 'right';
         this.ctx.fillStyle = '#ffffff';
         this.ctx.font = '10px Ubuntu, sans-serif';
         this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = 2;
-        const dpsY = tierY + 14;
-        this.ctx.strokeText(dpsText, tierX, dpsY);
-        this.ctx.fillText(dpsText, tierX, dpsY);
+        const dpsY = healthBarY + healthBarHeight + 12 + 14;
+        this.ctx.strokeText(dpsText, enemy.x + healthBarWidth / 2, dpsY);
+        this.ctx.fillText(dpsText, enemy.x + healthBarWidth / 2, dpsY);
+        this.ctx.textAlign = 'start'; // no restore() here anymore — reset explicitly
     }
-
-    this.ctx.restore();
 };

@@ -84,6 +84,8 @@ class SettingsMenu {
         this.useMouseControls = false;
         this.requestMobile = false;
         this.antialiasing = true;
+        this.gpuAcceleration = true;
+        this.disableUltraParticles = false;
         this.renderScale = 1.0;
         this.serverIP = '';
         this.serverIPFocused = false;
@@ -120,6 +122,8 @@ class SettingsMenu {
         this.useMouseControls = localStorage.getItem('useMouseControls') === 'true';
         this.requestMobile = (0, mobile_controls_1.resolveMobileControlsEnabled)();
         this.antialiasing = localStorage.getItem('antialiasing') !== 'false';
+        this.gpuAcceleration = localStorage.getItem('gpuAcceleration') !== 'false';
+        this.disableUltraParticles = localStorage.getItem('disableUltraParticles') === 'true';
         const savedScale = parseFloat(localStorage.getItem('renderScale') || '1');
         this.renderScale = isNaN(savedScale) ? 1 : Math.max(0.25, Math.min(1, savedScale));
         this.serverIP = localStorage.getItem('serverIP') || window.location.origin;
@@ -193,6 +197,8 @@ class SettingsMenu {
                 { id: 'dynamicSkybox', label: 'Dynamic Skybox', value: this.dynamicSkybox },
                 { id: 'mobDeathAnimation', label: 'Mob Death Animation', value: this.mobDeathAnimation },
                 { id: 'antialiasing', label: 'Anti-aliasing', value: this.antialiasing },
+                { id: 'gpuAcceleration', label: 'GPU Acceleration', value: this.gpuAcceleration },
+                { id: 'disableUltraParticles', label: 'Disable Ultra+ Particles', value: this.disableUltraParticles },
                 { id: 'showConsoleLogs', label: 'Show Console Logs', value: this.showConsoleLogs },
             ];
             for (const cb of checkboxes) {
@@ -450,7 +456,7 @@ class SettingsMenu {
         const rowH = 32;
         let cy = contentTop + this.scrollY;
         if (this.tab === 'graphics') {
-            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'antialiasing', 'showConsoleLogs'];
+            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'antialiasing', 'gpuAcceleration', 'disableUltraParticles', 'showConsoleLogs'];
             for (const id of checkboxIds) {
                 if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                     this.toggleCheckbox(id);
@@ -600,7 +606,7 @@ class SettingsMenu {
         const rowH = 32;
         let cy = contentTop + this.scrollY;
         if (this.tab === 'graphics') {
-            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'antialiasing', 'showConsoleLogs'];
+            const checkboxIds = ['showHitboxes', 'showStats', 'dynamicSkybox', 'mobDeathAnimation', 'antialiasing', 'gpuAcceleration', 'disableUltraParticles', 'showConsoleLogs'];
             for (const id of checkboxIds) {
                 if (y >= cy && y <= cy + rowH && x >= contentX && x <= contentX + contentW) {
                     this.hoveredItem = `cb_${id}`;
@@ -861,6 +867,24 @@ class SettingsMenu {
                 this.antialiasing = !this.antialiasing;
                 localStorage.setItem('antialiasing', this.antialiasing.toString());
                 applyRenderScaleToActiveGame();
+                break;
+            case 'gpuAcceleration':
+                this.gpuAcceleration = !this.gpuAcceleration;
+                localStorage.setItem('gpuAcceleration', this.gpuAcceleration.toString());
+                (0, constants_1.invalidateSettingsCache)();
+                // The main canvas's GPU-vs-software backing is fixed at 2D
+                // context creation and can't switch on a live canvas, so a
+                // reload is required to apply. Only reload if a context has
+                // already been committed (i.e. a game has run this session);
+                // otherwise it applies cleanly on the first join.
+                if (window.__mainCanvasCtxCommitted) {
+                    window.location.reload();
+                }
+                break;
+            case 'disableUltraParticles':
+                this.disableUltraParticles = !this.disableUltraParticles;
+                localStorage.setItem('disableUltraParticles', this.disableUltraParticles.toString());
+                (0, constants_1.invalidateSettingsCache)();
                 break;
             case 'showConsoleLogs':
                 this.showConsoleLogs = !this.showConsoleLogs;

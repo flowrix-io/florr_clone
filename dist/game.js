@@ -83,6 +83,14 @@ class Game {
         this.frameTimeAvgMs = 0;
         this.frameTimeSamples = 0;
         this.frameTimeAccum = 0;
+        // Per-section render times (items/mobs/projectiles), same 1s rollover as
+        // frameTimeAvgMs. The raw per-frame values twitch too much to read — a
+        // single mob-bitmap bake spikes one frame — so the overlay shows avg and
+        // the worst frame of the last second instead.
+        this.sectionMsAvg = { items: 0, mobs: 0, proj: 0 };
+        this.sectionMsMax = { items: 0, mobs: 0, proj: 0 };
+        this.sectionMsAccum = { items: 0, mobs: 0, proj: 0 };
+        this.sectionMsPeak = { items: 0, mobs: 0, proj: 0 };
         // Connection quality tracking for slow connection optimization
         this.averagePing = 0;
         this.pingSamples = [];
@@ -1016,6 +1024,14 @@ class Game {
                 this.frameTimeAvgMs = this.frameTimeSamples > 0
                     ? this.frameTimeAccum / this.frameTimeSamples
                     : 0;
+                for (const k of ['items', 'mobs', 'proj']) {
+                    this.sectionMsAvg[k] = this.frameTimeSamples > 0
+                        ? this.sectionMsAccum[k] / this.frameTimeSamples
+                        : 0;
+                    this.sectionMsMax[k] = this.sectionMsPeak[k];
+                    this.sectionMsAccum[k] = 0;
+                    this.sectionMsPeak[k] = 0;
+                }
                 this.frameTimeAccum = 0;
                 this.frameTimeSamples = 0;
             }
@@ -1068,6 +1084,13 @@ class Game {
         if (this.showStats) {
             this.frameTimeAccum += performance.now() - frameStartMs;
             this.frameTimeSamples++;
+            const g = this.graphics;
+            this.sectionMsAccum.items += g.perfItemsMs;
+            this.sectionMsAccum.mobs += g.perfMobsMs;
+            this.sectionMsAccum.proj += g.perfProjectilesMs;
+            this.sectionMsPeak.items = Math.max(this.sectionMsPeak.items, g.perfItemsMs);
+            this.sectionMsPeak.mobs = Math.max(this.sectionMsPeak.mobs, g.perfMobsMs);
+            this.sectionMsPeak.proj = Math.max(this.sectionMsPeak.proj, g.perfProjectilesMs);
         }
         requestAnimationFrame(() => this.gameLoop());
     }
@@ -1544,11 +1567,16 @@ class Game {
         // If ms/frame is well under the FPS cap's budget the cap is vsync.
         const ftStr = this.frameTimeAvgMs > 0 ? `${this.frameTimeAvgMs.toFixed(2)}ms` : '--';
         lines.push({ text: `FPS: ${this.fpsCounter} (${ftStr}/frame) | Memory: ${memoryMB.toFixed(2)} MB`, color: '#00ff00' });
-        // Per-section render time (last frame). Helps isolate which subsystem
-        // is eating frame budget when something feels slow.
+        // Per-section render time, averaged over the last second with the
+        // worst frame alongside (avg/peak). Helps isolate which subsystem is
+        // eating frame budget when something feels slow — the avg is the
+        // steady cost, the peak catches one-frame spikes (e.g. a mob-bitmap
+        // bake on first sighting) that a raw last-frame readout turns into
+        // unreadable flicker.
         const g = this.graphics;
+        const sec = (k) => `${this.sectionMsAvg[k].toFixed(2)}/${this.sectionMsMax[k].toFixed(1)}ms`;
         lines.push({
-            text: `Render: items ${g.perfItemsMs.toFixed(2)}ms (${g.perfItemsCount}) | mobs ${g.perfMobsMs.toFixed(2)}ms | proj ${g.perfProjectilesMs.toFixed(2)}ms`,
+            text: `Render avg/peak: items ${sec('items')} (${g.perfItemsCount}) | mobs ${sec('mobs')} | proj ${sec('proj')}`,
             color: '#facc15'
         });
         // Draw from bottom up

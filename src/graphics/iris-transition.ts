@@ -3,6 +3,8 @@ import { Graphics } from './core';
 declare module './core' {
     interface Graphics {
         startIrisTransition(screenshot: HTMLCanvasElement | null): void;
+        startIrisRevealHold(screenshot: HTMLCanvasElement | null): void;
+        beginIrisReveal(): void;
         startIrisClose(screenshot: HTMLCanvasElement | null, onComplete: () => void): void;
         captureScreenshot(): HTMLCanvasElement;
         drawIrisTransition(): void;
@@ -16,6 +18,31 @@ Graphics.prototype.startIrisTransition = function(this: Graphics, screenshot: HT
     this.irisClosing = false;
     this.irisTitleScreen = false;
     this.irisOnComplete = null;
+    this.irisWaiting = false;
+};
+
+/**
+ * Title→game join: hold the title screenshot covering the whole screen
+ * (iris fully closed) until beginIrisReveal() is called, instead of
+ * revealing on a fixed timer. Prevents the world from flashing at (0,0)
+ * before the first server position arrives.
+ */
+Graphics.prototype.startIrisRevealHold = function(this: Graphics, screenshot: HTMLCanvasElement | null): void {
+    this.irisTransitionActive = true;
+    this.irisScreenshot = screenshot;
+    this.irisClosing = false;
+    this.irisTitleScreen = true;
+    this.irisOnComplete = null;
+    this.irisWaiting = true;
+    this.irisWaitStartTime = Date.now();
+    this.irisTransitionStartTime = Date.now();
+};
+
+/** Release the join hold and start the timed reveal from full-cover. */
+Graphics.prototype.beginIrisReveal = function(this: Graphics): void {
+    if (!this.irisWaiting) return;
+    this.irisWaiting = false;
+    this.irisTransitionStartTime = Date.now();
 };
 
 Graphics.prototype.startIrisClose = function(this: Graphics, screenshot: HTMLCanvasElement | null, onComplete: () => void): void {
@@ -39,6 +66,25 @@ Graphics.prototype.captureScreenshot = function(this: Graphics): HTMLCanvasEleme
 };
 
 Graphics.prototype.drawIrisTransition = function(this: Graphics): void {
+    // Join hold: keep the title screenshot covering the whole screen until
+    // beginIrisReveal() (or the timeout) releases it. Drawn as a plain full
+    // cover — the growing-circle math below only kicks in once released.
+    if (this.irisWaiting) {
+        if (Date.now() - this.irisWaitStartTime > this.IRIS_WAIT_TIMEOUT_MS) {
+            this.beginIrisReveal(); // fallback: don't hang the screen forever
+        } else {
+            if (this.irisScreenshot) {
+                this.ctx.drawImage(this.irisScreenshot, 0, 0, this.viewW, this.viewH);
+            } else {
+                this.ctx.save();
+                this.ctx.fillStyle = 'black';
+                this.ctx.fillRect(0, 0, this.viewW, this.viewH);
+                this.ctx.restore();
+            }
+            return;
+        }
+    }
+
     const elapsed = Date.now() - this.irisTransitionStartTime;
     const progress = Math.min(elapsed / this.IRIS_TRANSITION_DURATION, 1);
 

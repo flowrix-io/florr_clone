@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Graphics = exports.getSVGRenderer = exports.MOB_CONFIG = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.isUndroppableEggPetalType = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
+const constants_1 = require("../constants");
 const petals_1 = require("../petals");
 const svg_renderer_1 = require("../svg_renderer");
 const svg_canvas_renderer_1 = require("../svg_canvas_renderer");
@@ -8,24 +9,24 @@ const zoom_compensation_1 = require("../zoom-compensation");
 var player_1 = require("../player");
 Object.defineProperty(exports, "FaceFlags", { enumerable: true, get: function () { return player_1.FaceFlags; } });
 Object.defineProperty(exports, "EquipmentFlags", { enumerable: true, get: function () { return player_1.EquipmentFlags; } });
-var constants_1 = require("../constants");
-Object.defineProperty(exports, "ACTUAL_WORLD_WIDTH", { enumerable: true, get: function () { return constants_1.ACTUAL_WORLD_WIDTH; } });
-Object.defineProperty(exports, "ACTUAL_WORLD_HEIGHT", { enumerable: true, get: function () { return constants_1.ACTUAL_WORLD_HEIGHT; } });
-Object.defineProperty(exports, "PLAYER_SIZE", { enumerable: true, get: function () { return constants_1.PLAYER_SIZE; } });
-Object.defineProperty(exports, "getMobAnimationFrameTime", { enumerable: true, get: function () { return constants_1.getMobAnimationFrameTime; } });
-Object.defineProperty(exports, "getHighQualityMobs", { enumerable: true, get: function () { return constants_1.getHighQualityMobs; } });
-Object.defineProperty(exports, "WALL_GRID", { enumerable: true, get: function () { return constants_1.WALL_GRID; } });
-Object.defineProperty(exports, "WALL_TILE_SIZE", { enumerable: true, get: function () { return constants_1.WALL_TILE_SIZE; } });
-Object.defineProperty(exports, "WALL_GRID_WIDTH", { enumerable: true, get: function () { return constants_1.WALL_GRID_WIDTH; } });
-Object.defineProperty(exports, "WALL_GRID_HEIGHT", { enumerable: true, get: function () { return constants_1.WALL_GRID_HEIGHT; } });
-Object.defineProperty(exports, "worldToTileX", { enumerable: true, get: function () { return constants_1.worldToTileX; } });
-Object.defineProperty(exports, "worldToTileY", { enumerable: true, get: function () { return constants_1.worldToTileY; } });
-Object.defineProperty(exports, "tileToWorldX", { enumerable: true, get: function () { return constants_1.tileToWorldX; } });
-Object.defineProperty(exports, "tileToWorldY", { enumerable: true, get: function () { return constants_1.tileToWorldY; } });
-Object.defineProperty(exports, "getTileState", { enumerable: true, get: function () { return constants_1.getTileState; } });
-Object.defineProperty(exports, "SECTION_CONFIGS", { enumerable: true, get: function () { return constants_1.SECTION_CONFIGS; } });
-Object.defineProperty(exports, "seededRandom", { enumerable: true, get: function () { return constants_1.seededRandom; } });
-Object.defineProperty(exports, "getTileJaggedEdges", { enumerable: true, get: function () { return constants_1.getTileJaggedEdges; } });
+var constants_2 = require("../constants");
+Object.defineProperty(exports, "ACTUAL_WORLD_WIDTH", { enumerable: true, get: function () { return constants_2.ACTUAL_WORLD_WIDTH; } });
+Object.defineProperty(exports, "ACTUAL_WORLD_HEIGHT", { enumerable: true, get: function () { return constants_2.ACTUAL_WORLD_HEIGHT; } });
+Object.defineProperty(exports, "PLAYER_SIZE", { enumerable: true, get: function () { return constants_2.PLAYER_SIZE; } });
+Object.defineProperty(exports, "getMobAnimationFrameTime", { enumerable: true, get: function () { return constants_2.getMobAnimationFrameTime; } });
+Object.defineProperty(exports, "getHighQualityMobs", { enumerable: true, get: function () { return constants_2.getHighQualityMobs; } });
+Object.defineProperty(exports, "WALL_GRID", { enumerable: true, get: function () { return constants_2.WALL_GRID; } });
+Object.defineProperty(exports, "WALL_TILE_SIZE", { enumerable: true, get: function () { return constants_2.WALL_TILE_SIZE; } });
+Object.defineProperty(exports, "WALL_GRID_WIDTH", { enumerable: true, get: function () { return constants_2.WALL_GRID_WIDTH; } });
+Object.defineProperty(exports, "WALL_GRID_HEIGHT", { enumerable: true, get: function () { return constants_2.WALL_GRID_HEIGHT; } });
+Object.defineProperty(exports, "worldToTileX", { enumerable: true, get: function () { return constants_2.worldToTileX; } });
+Object.defineProperty(exports, "worldToTileY", { enumerable: true, get: function () { return constants_2.worldToTileY; } });
+Object.defineProperty(exports, "tileToWorldX", { enumerable: true, get: function () { return constants_2.tileToWorldX; } });
+Object.defineProperty(exports, "tileToWorldY", { enumerable: true, get: function () { return constants_2.tileToWorldY; } });
+Object.defineProperty(exports, "getTileState", { enumerable: true, get: function () { return constants_2.getTileState; } });
+Object.defineProperty(exports, "SECTION_CONFIGS", { enumerable: true, get: function () { return constants_2.SECTION_CONFIGS; } });
+Object.defineProperty(exports, "seededRandom", { enumerable: true, get: function () { return constants_2.seededRandom; } });
+Object.defineProperty(exports, "getTileJaggedEdges", { enumerable: true, get: function () { return constants_2.getTileJaggedEdges; } });
 var petals_2 = require("../petals");
 Object.defineProperty(exports, "getPetalStats", { enumerable: true, get: function () { return petals_2.getPetalStats; } });
 Object.defineProperty(exports, "getAllPetalTypes", { enumerable: true, get: function () { return petals_2.getAllPetalTypes; } });
@@ -74,7 +75,9 @@ class Graphics {
             this.worldCanvas.width = w;
             this.worldCanvas.height = h;
         }
-        this.worldCtx = this.worldCanvas.getContext('2d');
+        // Match the main canvas's backing (GPU vs software) — see the
+        // getContext call in the constructor and getGpuAcceleration.
+        this.worldCtx = this.worldCanvas.getContext('2d', { willReadFrequently: !(0, constants_1.getGpuAcceleration)() });
     }
     constructor(canvas, playerSprite, wallTexture, healthPotionSprite, speedBoostSprite, shieldSprite, backgroundTexture) {
         this.cameraX = 0;
@@ -196,15 +199,24 @@ class Graphics {
         this.petalGlowCache = {};
         this.spawnZoneElements = [];
         this.mobSVGCache = {};
-        // Baked mob bitmaps: single canvas (static SVG) or frame array (animated),
-        // keyed `${type}_${tier}`. `null` marks "not bakeable" (e.g. SVG embeds an
-        // async-loading <image>) so drawEnemy falls back to the live path renderer
-        // without re-checking every frame. See getMobCanvas.
+        // Baked mob bitmaps: ONE spritesheet canvas per (type, tier) — a grid of
+        // side×side frames (1 cell for static SVGs), keyed `${type}_${tier}`.
+        // `null` marks "not bakeable" (e.g. SVG embeds an async-loading <image>)
+        // so drawEnemy falls back to the live path renderer without re-checking
+        // every frame. See getMobCanvas / bakeMobCanvas.
+        // Baked frames live in the SHARED atlas sheets (see atlasAlloc): per
+        // frame the renderer references 1-3 unique source canvases in total, no
+        // matter how many mob types are visible. Canvas 2D pays a per-UNIQUE-
+        // SOURCE cost every frame — measured: 100 draws from 73 distinct big
+        // canvases 21ms (software) / GPU texture thrash; the same draws from one
+        // shared canvas 0.2ms. Entries store per-frame sheet + position.
         this.mobCanvasCache = {};
         // Baked radial-gradient glow sprites for emissive mobs/petals, keyed by
         // `${hexColor}_${radius}` (radius is already quantized per mob config).
         this.glowSpriteCache = {};
-        // Baked mob name + rarity text overlays, keyed `${type}_${tier}_${barWidth}`.
+        // Baked mob name + rarity + bar-background overlays, keyed
+        // `${type}_${tier}_${barWidth}`. Cells in the shared atlas sheets — a
+        // per-label canvas would put ~80 unique sources back on the hot path.
         this.mobLabelCache = {};
         // Baked minimap static layers (bg/zones/walls/teleporters); key is the
         // section-snapped scroll + ALT-glow state. Player dots stay dynamic.
@@ -215,6 +227,19 @@ class Graphics {
         // instead of scanning the whole enemies Map every frame.
         this._bossCandidates = [];
         this._bossCandidatesAt = 0;
+        // World (camera) transform snapshot, refreshed by drawGameObjects each
+        // frame. Lets drawEnemy position mobs with one setTransform instead of
+        // save()/translate/rotate/restore — ctx.save() snapshots the full context
+        // state and was ~40% of the whole mobs section under CPU throttling.
+        // Plain numbers, NOT a DOMMatrix: DOMMatrix fields are native accessors
+        // and the DOMMatrix setTransform overload is far slower than the
+        // 6-number one (measured — it gave the savings right back).
+        this._worldBaseTf = null;
+        // Scratch lists of the mobs drawn this frame (and their sizes), reused
+        // across frames. drawGameObjects fills them during the body loop and
+        // drains them in the single world-frame health-bar pass.
+        this._hbEnemies = [];
+        this._hbSizes = [];
         this.svgRenderer = (0, svg_renderer_1.getSVGRenderer)();
         // Section-based texture loading state
         this.currentSection = -1;
@@ -254,6 +279,20 @@ class Graphics {
         this.perfItemsCount = 0;
         this.perfMobsMs = 0;
         this.perfProjectilesMs = 0;
+        // Reused result object for getMobCanvas — one per Graphics, never
+        // allocated per mob per frame. Copy out if you must hold it.
+        this._mobFrameScratch = { canvas: null, sx: 0, sy: 0, size: 0 };
+        // ---- Shared atlas sheets ------------------------------------------
+        // All baked mob frames and label overlays are shelf-packed into a few
+        // large shared canvases. This is the load-bearing property of the whole
+        // bake system: canvas 2D pays a per-unique-source cost on every frame it
+        // references a source (software: op-buffer image pinning; GPU: texture
+        // bind/upload). ~80 distinct source canvases per frame measured 20-200ms
+        // per frame (software) and GPU upload thrash (Pi at GPU 100%); the same
+        // draws against 1-3 shared sheets are ~free. Do NOT go back to
+        // per-mob-type canvases.
+        this._atlasSheets = [];
+        this._atlasCursor = { sheet: -1, x: 0, y: 0, rowH: 0 };
         this.skinStudioManager = null;
         /**
          * Wire the title-screen canvas-button strip into the in-game render loop
@@ -265,7 +304,14 @@ class Graphics {
         this.titleCanvasButtons = null;
         this.titleButtonListenersAttached = false;
         this.canvas = canvas;
-        this.ctx = this.canvas.getContext('2d');
+        // willReadFrequently:true forces software (CPU) rasterization — this is
+        // the "Enable GPU Acceleration" setting's off state (see getGpuAcceleration).
+        this.ctx = this.canvas.getContext('2d', { willReadFrequently: !(0, constants_1.getGpuAcceleration)() });
+        // The main-canvas 2D context's backing (GPU vs software) is locked in
+        // by the getContext call above and can't change on a live canvas — the
+        // settings toggle reloads the page when this flag is set.
+        if (typeof window !== 'undefined')
+            window.__mainCanvasCtxCommitted = true;
         this.playerSprite = playerSprite;
         this.wallTexture = wallTexture;
         this.healthPotionSprite = healthPotionSprite;
@@ -326,6 +372,19 @@ class Graphics {
         }
         return cached;
     }
+    /**
+     * Effective bake resolution multiplier. Baking above device resolution
+     * only helps zoomed-in sharpness, but costs 4x texture memory and texel
+     * bandwidth per doubling — enough to pin a Raspberry-Pi-class GPU at
+     * 100%. So: bake at device pixel ratio (capped at 2x), and let the
+     * High Quality Mobs setting force the full 2x on low-DPI screens.
+     */
+    static mobBakeScale() {
+        if ((0, constants_1.getHighQualityMobs)())
+            return Graphics.MOB_BAKE_SCALE;
+        const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+        return Math.max(1, Math.min(Graphics.MOB_BAKE_SCALE, Math.round(dpr)));
+    }
     static svgHasImage(nodes) {
         for (const n of nodes) {
             if (n.imageEl)
@@ -350,9 +409,41 @@ class Graphics {
         }
         return period;
     }
+    /** Shelf-pack a w×h cell into the shared sheets; returns sheet + origin. */
+    atlasAlloc(w, h) {
+        const S = Graphics.ATLAS_SHEET_SIDE;
+        const wp = Math.min(S, w + Graphics.ATLAS_PAD);
+        const hp = Math.min(S, h + Graphics.ATLAS_PAD);
+        const cur = this._atlasCursor;
+        if (cur.sheet >= 0) {
+            if (cur.x + wp > S) {
+                cur.y += cur.rowH;
+                cur.x = 0;
+                cur.rowH = 0;
+            }
+            if (cur.y + hp > S)
+                cur.sheet = -1; // sheet full → open a new one
+        }
+        if (cur.sheet < 0) {
+            const c = document.createElement('canvas');
+            c.width = c.height = S;
+            this._atlasSheets.push(c);
+            cur.sheet = this._atlasSheets.length - 1;
+            cur.x = 0;
+            cur.y = 0;
+            cur.rowH = 0;
+        }
+        const out = { canvas: this._atlasSheets[cur.sheet], x: cur.x, y: cur.y };
+        cur.x += wp;
+        if (hp > cur.rowH)
+            cur.rowH = hp;
+        return out;
+    }
     /**
-     * Baked bitmap for a mob, or null when this SVG must use the live path
-     * renderer. `sizePx` is the mob's fixed world size for its (type, tier).
+     * Baked bitmap frame for a mob (shared sheet + source rect), or null
+     * when this SVG must use the live path renderer. `sizePx` is the mob's
+     * fixed world size for its (type, tier). Returns a REUSED scratch
+     * object — consume immediately, don't store.
      */
     getMobCanvas(cacheKey, svgString, sizePx, time) {
         let entry = this.mobCanvasCache[cacheKey];
@@ -362,33 +453,54 @@ class Graphics {
         }
         if (!entry)
             return null;
-        if (entry.frames.length === 1)
-            return entry.frames[0];
-        const t = ((time % entry.periodMs) + entry.periodMs) % entry.periodMs;
-        return entry.frames[Math.min(entry.frames.length - 1, Math.floor((t / entry.periodMs) * entry.frames.length))];
+        let fi = 0;
+        if (entry.count > 1) {
+            const t = ((time % entry.periodMs) + entry.periodMs) % entry.periodMs;
+            fi = Math.min(entry.count - 1, Math.floor((t / entry.periodMs) * entry.count));
+        }
+        const s = this._mobFrameScratch;
+        s.canvas = entry.sheets[fi];
+        s.size = entry.side;
+        s.sx = entry.xs[fi];
+        s.sy = entry.ys[fi];
+        return s;
     }
     bakeMobCanvas(svgString, sizePx) {
         try {
             const compiled = this.svgRenderer.compileSVG(svgString);
             if (Graphics.svgHasImage(compiled.children))
                 return null;
-            const side = Math.max(8, Math.min(Graphics.MOB_BAKE_MAX_SIDE, Math.round(sizePx * Graphics.MOB_BAKE_SCALE)));
+            // Per-type byte budgets keep the shared sheets small enough that
+            // the whole visible mob set fits the GPU texture budget of weak
+            // devices; High Quality Mobs opts into the big bakes.
+            const hq = (0, constants_1.getHighQualityMobs)();
+            const maxSide = hq ? Graphics.MOB_BAKE_MAX_SIDE : Graphics.MOB_BAKE_MAX_SIDE_LQ;
+            const side = Math.max(8, Math.min(maxSide, Math.round(sizePx * Graphics.mobBakeScale())));
             const periodMs = Graphics.svgAnimPeriod(compiled.children);
-            if (periodMs <= 0) {
-                return { frames: [(0, svg_canvas_renderer_1.renderCompiledSVGToCanvas)(compiled, side, side, 0)], periodMs: 1 };
-            }
-            // Frame count bends to a per-mob VRAM budget: a huge animated mob
-            // (apex tiers bake at up to 2048²=16MB/frame) gets fewer, choppier
-            // frames instead of hundreds of MB of bitmaps.
-            const BUDGET_BYTES = 32 * 1024 * 1024;
+            const BUDGET_BYTES = (hq ? 32 : 6) * 1024 * 1024;
             const bytesPerFrame = side * side * 4;
             const budgetFrames = Math.max(2, Math.floor(BUDGET_BYTES / bytesPerFrame));
-            const frameCount = Math.max(2, Math.min(Graphics.MOB_BAKE_MAX_FRAMES, budgetFrames, Math.round(periodMs / Graphics.MOB_BAKE_FRAME_MS)));
-            const frames = [];
+            const frameCount = periodMs <= 0 ? 1 : Math.max(2, Math.min(Graphics.MOB_BAKE_MAX_FRAMES, budgetFrames, Math.round(periodMs / Graphics.MOB_BAKE_FRAME_MS)));
+            const period = periodMs <= 0 ? 1 : periodMs;
+            const sheets = [];
+            const xs = [];
+            const ys = [];
             for (let i = 0; i < frameCount; i++) {
-                frames.push((0, svg_canvas_renderer_1.renderCompiledSVGToCanvas)(compiled, side, side, (i / frameCount) * periodMs));
+                const frame = (0, svg_canvas_renderer_1.renderCompiledSVGToCanvas)(compiled, side, side, (i / frameCount) * period);
+                const cell = this.atlasAlloc(side, side);
+                cell.canvas.getContext('2d').drawImage(frame, cell.x, cell.y);
+                sheets.push(cell.canvas);
+                xs.push(cell.x);
+                ys.push(cell.y);
             }
-            return { frames, periodMs };
+            // Force the touched sheets to real pixels NOW. An unaccelerated
+            // canvas keeps a deferred display list as its backing; leaving the
+            // sheet deferred makes every later drawImage FROM it replay the
+            // recording (all the SVG renders baked so far) — ~200ms/frame.
+            for (const sheet of new Set(sheets)) {
+                sheet.getContext('2d').getImageData(0, 0, 1, 1);
+            }
+            return { sheets, xs, ys, side, count: frameCount, periodMs: period };
         }
         catch (e) {
             console.error('[Graphics] mob bitmap bake failed, using live renderer:', e);
@@ -402,10 +514,14 @@ class Graphics {
      * emitter's position; alpha handling is unchanged.
      */
     getGlowSprite(hexColor, radius) {
-        const key = `${hexColor}_${radius | 0}`;
+        // Bake capped at 256px radius and let drawImage scale up — a radial
+        // gradient upscales invisibly, and an uncapped light_radius 2000 glow
+        // bakes a 4000x4000 (61MB) texture: pure texel bandwidth + memory on
+        // weak GPUs. The cap also quantizes the cache key.
+        const r = Math.min(256, Math.max(2, radius | 0));
+        const key = `${hexColor}_${r}`;
         let c = this.glowSpriteCache[key];
         if (!c) {
-            const r = Math.max(2, radius | 0);
             c = document.createElement('canvas');
             c.width = c.height = r * 2;
             const cctx = c.getContext('2d');
@@ -558,6 +674,9 @@ class Graphics {
     }
     showPetalParticleEffect(x, y, rarity) {
         if (!['ultra', 'super', 'unique', 'apex'].includes(rarity)) {
+            return;
+        }
+        if ((0, constants_1.getDisableUltraParticles)()) {
             return;
         }
         const particles = [];
@@ -807,7 +926,14 @@ Graphics.PETAL_GLOW_PAD = 16;
 // period. SVGs that embed an <image> element are NOT baked (the image
 // loads async, so an early bake would freeze a half-loaded mob) — those
 // keep the live path and are marked `null` so we don't retry per frame.
-Graphics.MOB_BAKE_SCALE = 2; // bake at 2x for zoom sharpness
-Graphics.MOB_BAKE_MAX_SIDE = 2048; // cap apex-sized bitmaps
+Graphics.MOB_BAKE_SCALE = 2; // bake at 2x for zoom sharpness (high-quality / HiDPI)
+Graphics.MOB_BAKE_MAX_SIDE = 2048; // cap apex-sized bitmaps (high quality)
+Graphics.MOB_BAKE_MAX_SIDE_LQ = 1024; // default cap — a 2048² frame is 16MB of texture
 Graphics.MOB_BAKE_FRAME_MS = 42; // same step petals use
 Graphics.MOB_BAKE_MAX_FRAMES = 32;
+// 2048² (16MB) per sheet, NOT larger: Chrome's GPU image cache has a
+// per-item size cap — a 4096² (64MB) canvas source never caches and
+// re-uploads every frame (~10ms/frame each, measured). 2048² sheets stay
+// resident. Frames larger than a sheet get their own dedicated canvas.
+Graphics.ATLAS_SHEET_SIDE = 2048;
+Graphics.ATLAS_PAD = 2; // gutter so bilinear sampling can't bleed neighbors

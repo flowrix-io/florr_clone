@@ -5,6 +5,8 @@ exports.COLLISION_BUFFER = exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFS
 exports.getMobAnimationFramerate = getMobAnimationFramerate;
 exports.getMobAnimationFrameTime = getMobAnimationFrameTime;
 exports.getHighQualityMobs = getHighQualityMobs;
+exports.getDisableUltraParticles = getDisableUltraParticles;
+exports.getGpuAcceleration = getGpuAcceleration;
 exports.invalidateSettingsCache = invalidateSettingsCache;
 exports.registerTileType = registerTileType;
 exports.setCustomTileTypes = setCustomTileTypes;
@@ -46,6 +48,8 @@ const maze_1 = require("./maze");
 let _cachedMobAnimFPS = null;
 let _cachedMobAnimFrameTime = null;
 let _cachedHighQualityMobs = null;
+let _cachedDisableUltraParticles = null;
+let _cachedGpuAcceleration = null;
 function getMobAnimationFramerate() {
     if (_cachedMobAnimFPS === null) {
         const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('mobAnimationFramerate') : null;
@@ -67,11 +71,33 @@ function getHighQualityMobs() {
     }
     return _cachedHighQualityMobs;
 }
+// Disable ultra+ petal particles setting utility - cached
+function getDisableUltraParticles() {
+    if (_cachedDisableUltraParticles === null) {
+        const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('disableUltraParticles') : null;
+        _cachedDisableUltraParticles = saved === 'true';
+    }
+    return _cachedDisableUltraParticles;
+}
+// GPU acceleration for the main game canvas. Default ON. When OFF we pass
+// `willReadFrequently: true` to getContext, which makes Chrome keep the
+// canvas in system memory (software rasterization) instead of a GPU texture.
+// Only honored when the 2D context is first created, so a change needs a
+// canvas/page reload to take effect (see applyGpuAcceleration / core.ts).
+function getGpuAcceleration() {
+    if (_cachedGpuAcceleration === null) {
+        const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('gpuAcceleration') : null;
+        _cachedGpuAcceleration = saved !== 'false';
+    }
+    return _cachedGpuAcceleration;
+}
 // Call this when settings change to invalidate caches
 function invalidateSettingsCache() {
     _cachedMobAnimFPS = null;
     _cachedMobAnimFrameTime = null;
     _cachedHighQualityMobs = null;
+    _cachedDisableUltraParticles = null;
+    _cachedGpuAcceleration = null;
 }
 // Server protocol configuration
 exports.USE_HTTPS = typeof process !== 'undefined' && process.env ? process.env.USE_HTTPS !== 'false' : true; // Default to HTTPS, set USE_HTTPS=false to use HTTP
