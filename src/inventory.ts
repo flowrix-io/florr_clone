@@ -31,6 +31,11 @@ export class InventoryManager {
     private absorbMode: boolean = false;
     /** Server-side per-request limit for absorbItems — staging stops here. */
     private static readonly MAX_ABSORB_BATCH = 1000;
+    /** True when the current craft slot contents were staged via a shift-click.
+     *  A shift-craft asks the server to keep crafting the leftovers of the same
+     *  petal (failure-returns + remainder) in one pass, until fewer than 5 are
+     *  left — resolved server-side so the client animates only once. */
+    private shiftStaged: boolean = false;
     private isInventoryOpen: boolean = false;
     public isCraftingOpen: boolean = false;
     private isMobGalleryOpen: boolean = false;
@@ -751,6 +756,7 @@ export class InventoryManager {
 
     public closeCrafting() {
         if (!this.craftingPanel || !this.isCraftingOpen) return;
+        this.shiftStaged = false;
         this.craftingPanel.classList.remove('open');
         this.showChat();
         this.clearCraftingSuccessDisplay();
@@ -1716,6 +1722,9 @@ export class InventoryManager {
         }
 
         this.craftingItems[slotIndex] = item;
+        // A hand-placed single item is a deliberate batch, not a "craft
+        // everything" shift-craft.
+        this.shiftStaged = false;
 
         this.removeItem(rarity, type, 1);
 
@@ -1773,6 +1782,9 @@ export class InventoryManager {
 
             const batchesToAdd = Math.floor(actualAmountToAdd / 5);
             totalItemsToAdd = batchesToAdd * 5;
+            // A shift-click stages the whole stack and arms auto-recraft; a plain
+            // click (5 at a time) is a deliberate single batch, so disarm it.
+            this.shiftStaged = isShiftClick;
         }
 
         const item: Item = {
@@ -1792,6 +1804,7 @@ export class InventoryManager {
 
     /** Return everything currently sitting in the craft/absorb slots to the inventory. */
     private returnCraftingSlotItems() {
+        this.shiftStaged = false;
         if (this.craftingItems.length === 0) return;
         const itemsToReturn = [...this.craftingItems];
         this.craftingItems = [];
@@ -1846,6 +1859,9 @@ export class InventoryManager {
     }
 
     public removeCraftingBatch() {
+        // Removing a batch by hand disarms the shift-craft "craft everything"
+        // intent for whatever remains staged.
+        this.shiftStaged = false;
         if (this.craftingItems.length === 0) return;
 
         const itemsToRemove = this.craftingItems.splice(-5);
@@ -1877,6 +1893,12 @@ export class InventoryManager {
 
         console.log('[CLIENT] Sending craftItems request:', { itemCount: this.craftingItems.length });
 
+        // A shift-craft asks the server to keep crafting the leftovers of this
+        // same petal (failure-returns + remainder) until fewer than 5 remain,
+        // all in one pass — so the client plays the spin animation only once.
+        const craftAll = this.shiftStaged;
+        this.shiftStaged = false;
+
         // Start the spin animation with the first item info
         const firstItem = this.craftingItems[0];
         const animItem: CraftingItem = {
@@ -1887,7 +1909,7 @@ export class InventoryManager {
         this.canvasCraftingPanel?.startCraftAnimation(animItem);
 
         // Send to server
-        this.game.getSocket()?.emit('craftItems', { items: this.craftingItems });
+        this.game.getSocket()?.emit('craftItems', { items: this.craftingItems, craftAll });
 
         this.craftingItems = [];
         this.updateCraftingDisplay();

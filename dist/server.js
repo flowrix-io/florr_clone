@@ -3296,23 +3296,59 @@ io.on('connection', (socket) => {
                 return;
             }
             let successfulCrafts = 0;
-            let totalLost = 0;
-            const numBatches = data.items.length / 5;
-            for (let i = 0; i < numBatches; i++) {
-                if (Math.random() * 100 < successChance) {
-                    successfulCrafts++;
-                    totalLost += 5; // All 5 consumed on success
+            let numBatches = 0;
+            let petalsReturned = 0;
+            if (data.craftAll) {
+                // Shift "craft all": pool the staged petals with the rest of
+                // this petal still in inventory, then craft whole batches —
+                // recycling the petals returned from failed batches — until
+                // fewer than 5 remain, so it all resolves in one pass.
+                // Bounded: each batch removes 5 and returns at most 4, so the
+                // pool strictly shrinks and the loop always terminates.
+                let pool = data.items.length; // staged petals were removed above
+                const remainder = (0, inventoryCodec_1.getItemCount)(player.inventory, rarity, itemKey);
+                if (remainder > 0) {
+                    (0, playerManager_1.removeItem)(player.inventory, rarity, itemKey, remainder);
+                    pool += remainder;
                 }
-                else {
-                    // On failure, lose 1-4 petals (return 1-4 back)
-                    const lost = 1 + Math.floor(Math.random() * 4); // 1 to 4
-                    totalLost += lost;
+                while (pool >= 5) {
+                    pool -= 5;
+                    numBatches++;
+                    if (Math.random() * 100 < successChance) {
+                        successfulCrafts++; // all 5 consumed for one upgrade
+                    }
+                    else {
+                        // On failure, lose 1-4 petals; the survivors go back
+                        // into the pool to be crafted again.
+                        pool += 5 - (1 + Math.floor(Math.random() * 4));
+                    }
+                }
+                petalsReturned = pool; // sub-batch remainder (< 5)
+                if (pool > 0) {
+                    (0, playerManager_1.addItem)(player.inventory, rarity, itemKey, pool);
                 }
             }
-            // Return the petals that weren't lost
-            const toReturn = data.items.length - totalLost;
-            if (toReturn > 0) {
-                (0, playerManager_1.addItem)(player.inventory, rarity, itemKey, toReturn);
+            else {
+                // Normal craft: exactly the staged batches. Failure returns are
+                // handed back but not re-crafted.
+                let totalLost = 0;
+                numBatches = data.items.length / 5;
+                for (let i = 0; i < numBatches; i++) {
+                    if (Math.random() * 100 < successChance) {
+                        successfulCrafts++;
+                        totalLost += 5; // All 5 consumed on success
+                    }
+                    else {
+                        // On failure, lose 1-4 petals (return 1-4 back)
+                        const lost = 1 + Math.floor(Math.random() * 4); // 1 to 4
+                        totalLost += lost;
+                    }
+                }
+                // Return the petals that weren't lost
+                petalsReturned = data.items.length - totalLost;
+                if (petalsReturned > 0) {
+                    (0, playerManager_1.addItem)(player.inventory, rarity, itemKey, petalsReturned);
+                }
             }
             if (successfulCrafts > 0) {
                 (0, playerManager_1.addItem)(player.inventory, newRarity, itemKey, successfulCrafts);
@@ -3355,7 +3391,7 @@ io.on('connection', (socket) => {
                 failCount: numBatches - successfulCrafts,
                 newItem: successfulCrafts > 0 ? { type: itemKey, rarity: newRarity } : { type: itemKey, rarity: rarity },
                 inventory: player.inventory,
-                petalsReturned: data.items.length - totalLost
+                petalsReturned
             });
             console.log('[CRAFT] craftingFinished event emitted');
         }

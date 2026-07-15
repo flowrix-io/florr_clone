@@ -179,6 +179,28 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
         super: 1200000,
         unique: 6800000
     },
+    worker_ant: {
+        common: 1,
+        uncommon: 4,
+        rare: 40,
+        epic: 300,
+        legendary: 2000,
+        mythic: 42000,
+        ultra: 220000,
+        super: 1800000,
+        unique: 8000000,
+    },
+    baby_ant: {
+        common: 2,
+        uncommon: 6,
+        rare: 60,
+        epic: 540,
+        legendary: 2800,
+        mythic: 64000,
+        ultra: 300000,
+        super: 2400000,
+        unique: 13600000,
+    },
     rock: {
         common: 1,
         uncommon: 1,
