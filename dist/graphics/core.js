@@ -4,7 +4,6 @@ exports.Graphics = exports.getSVGRenderer = exports.MOB_CONFIG = exports.getMobT
 const constants_1 = require("../constants");
 const petals_1 = require("../petals");
 const svg_renderer_1 = require("../svg_renderer");
-const svg_canvas_renderer_1 = require("../svg_canvas_renderer");
 const zoom_compensation_1 = require("../zoom-compensation");
 var player_1 = require("../player");
 Object.defineProperty(exports, "FaceFlags", { enumerable: true, get: function () { return player_1.FaceFlags; } });
@@ -199,18 +198,6 @@ class Graphics {
         this.petalGlowCache = {};
         this.spawnZoneElements = [];
         this.mobSVGCache = {};
-        // Baked mob bitmaps: ONE spritesheet canvas per (type, tier) — a grid of
-        // side×side frames (1 cell for static SVGs), keyed `${type}_${tier}`.
-        // `null` marks "not bakeable" (e.g. SVG embeds an async-loading <image>)
-        // so drawEnemy falls back to the live path renderer without re-checking
-        // every frame. See getMobCanvas / bakeMobCanvas.
-        // Baked frames live in the SHARED atlas sheets (see atlasAlloc): per
-        // frame the renderer references 1-3 unique source canvases in total, no
-        // matter how many mob types are visible. Canvas 2D pays a per-UNIQUE-
-        // SOURCE cost every frame — measured: 100 draws from 73 distinct big
-        // canvases 21ms (software) / GPU texture thrash; the same draws from one
-        // shared canvas 0.2ms. Entries store per-frame sheet + position.
-        this.mobCanvasCache = {};
         // Baked radial-gradient glow sprites for emissive mobs/petals, keyed by
         // `${hexColor}_${radius}` (radius is already quantized per mob config).
         this.glowSpriteCache = {};
@@ -288,9 +275,16 @@ class Graphics {
         this.perfItemsCount = 0;
         this.perfMobsMs = 0;
         this.perfProjectilesMs = 0;
-        // Reused result object for getMobCanvas — one per Graphics, never
-        // allocated per mob per frame. Copy out if you must hold it.
-        this._mobFrameScratch = { canvas: null, sx: 0, sy: 0, size: 0 };
+        // --- Mob rendering ----------------------------------------------------
+        // Mobs draw straight from their compiled SVG canvas commands every frame
+        // (see drawEnemy). A bitmap bake in front of this was tried (e847451) and
+        // removed after measurement: it saved ~0.5ms/frame at 100 mobs while
+        // costing first-sight bake stalls (18ms in a single frame — the "lagspike
+        // when moving"), an atlas that reached GBs because nothing ever evicted it,
+        // and animation quantized to the baked frame count. Past ~256px the live
+        // path is faster than blitting a bake anyway. Don't reintroduce it without
+        // numbers that beat those. The shared atlas below stays — mob LABEL
+        // overlays still use it, and they're small, static, and few.
         // ---- Shared atlas sheets ------------------------------------------
         // All baked mob frames and label overlays are shelf-packed into a few
         // large shared canvases. This is the load-bearing property of the whole
@@ -381,43 +375,6 @@ class Graphics {
         }
         return cached;
     }
-    /**
-     * Effective bake resolution multiplier. Baking above device resolution
-     * only helps zoomed-in sharpness, but costs 4x texture memory and texel
-     * bandwidth per doubling — enough to pin a Raspberry-Pi-class GPU at
-     * 100%. So: bake at device pixel ratio (capped at 2x), and let the
-     * High Quality Mobs setting force the full 2x on low-DPI screens.
-     */
-    static mobBakeScale() {
-        if ((0, constants_1.getHighQualityMobs)())
-            return Graphics.MOB_BAKE_SCALE;
-        const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
-        return Math.max(1, Math.min(Graphics.MOB_BAKE_SCALE, Math.round(dpr)));
-    }
-    static svgHasImage(nodes) {
-        for (const n of nodes) {
-            if (n.imageEl)
-                return true;
-            if (n.children && Graphics.svgHasImage(n.children))
-                return true;
-        }
-        return false;
-    }
-    /** Longest animation duration in ms (0 = fully static). */
-    static svgAnimPeriod(nodes) {
-        let period = 0;
-        for (const n of nodes) {
-            for (const a of n.transformAnimations)
-                period = Math.max(period, a.dur);
-            for (const a of n.attributeAnimations)
-                period = Math.max(period, a.dur);
-            for (const a of n.pathAnimations)
-                period = Math.max(period, a.dur);
-            if (n.children)
-                period = Math.max(period, Graphics.svgAnimPeriod(n.children));
-        }
-        return period;
-    }
     /** Shelf-pack a w×h cell into the shared sheets; returns sheet + origin. */
     atlasAlloc(w, h) {
         const S = Graphics.ATLAS_SHEET_SIDE;
@@ -447,79 +404,6 @@ class Graphics {
         if (hp > cur.rowH)
             cur.rowH = hp;
         return out;
-    }
-    /**
-     * Baked bitmap frame for a mob (shared sheet + source rect), or null
-     * when this SVG must use the live path renderer. `sizePx` is the mob's
-     * fixed world size for its (type, tier). Returns a REUSED scratch
-     * object — consume immediately, don't store.
-     */
-    getMobCanvas(cacheKey, svgString, sizePx, time) {
-        let entry = this.mobCanvasCache[cacheKey];
-        if (entry === undefined) {
-            entry = this.bakeMobCanvas(svgString, sizePx);
-            this.mobCanvasCache[cacheKey] = entry;
-        }
-        if (!entry)
-            return null;
-        let fi = 0;
-        if (entry.count > 1) {
-            const t = ((time % entry.periodMs) + entry.periodMs) % entry.periodMs;
-            fi = Math.min(entry.count - 1, Math.floor((t / entry.periodMs) * entry.count));
-        }
-        const s = this._mobFrameScratch;
-        s.canvas = entry.sheets[fi];
-        s.size = entry.side;
-        s.sx = entry.xs[fi];
-        s.sy = entry.ys[fi];
-        return s;
-    }
-    bakeMobCanvas(svgString, sizePx) {
-        try {
-            const compiled = this.svgRenderer.compileSVG(svgString);
-            if (Graphics.svgHasImage(compiled.children))
-                return null;
-            // Per-type byte budgets keep the shared sheets small enough that
-            // the whole visible mob set fits the GPU texture budget of weak
-            // devices; High Quality Mobs opts into the big bakes.
-            const hq = (0, constants_1.getHighQualityMobs)();
-            const maxSide = hq ? Graphics.MOB_BAKE_MAX_SIDE : Graphics.MOB_BAKE_MAX_SIDE_LQ;
-            const side = Math.max(8, Math.min(maxSide, Math.round(sizePx * Graphics.mobBakeScale())));
-            const periodMs = Graphics.svgAnimPeriod(compiled.children);
-            const BUDGET_BYTES = (hq ? 32 : 6) * 1024 * 1024;
-            const bytesPerFrame = side * side * 4;
-            const budgetFrames = Math.max(2, Math.floor(BUDGET_BYTES / bytesPerFrame));
-            const frameCount = periodMs <= 0 ? 1 : Math.max(2, Math.min(Graphics.MOB_BAKE_MAX_FRAMES, budgetFrames, Math.round(periodMs / Graphics.MOB_BAKE_FRAME_MS)));
-            const period = periodMs <= 0 ? 1 : periodMs;
-            const sheets = [];
-            const xs = [];
-            const ys = [];
-            for (let i = 0; i < frameCount; i++) {
-                const frame = (0, svg_canvas_renderer_1.renderCompiledSVGToCanvas)(compiled, side, side, (i / frameCount) * period);
-                const cell = this.atlasAlloc(side, side);
-                cell.canvas.getContext('2d').drawImage(frame, cell.x, cell.y);
-                sheets.push(cell.canvas);
-                xs.push(cell.x);
-                ys.push(cell.y);
-            }
-            // Software-canvas only: force the touched sheets to real pixels
-            // NOW. An unaccelerated canvas keeps a deferred display list as
-            // its backing; leaving it deferred makes every later drawImage
-            // FROM the sheet replay the whole recording (~200ms/frame). On a
-            // GPU-backed canvas this getImageData is instead an expensive
-            // GPU→CPU readback stall (~tens of ms per bake, felt as join
-            // lag), and the sheet rasterizes fine on its own — so skip it.
-            if (!(0, constants_1.getGpuAcceleration)()) {
-                for (const sheet of new Set(sheets)) {
-                    sheet.getContext('2d').getImageData(0, 0, 1, 1);
-                }
-            }
-            return { sheets, xs, ys, side, count: frameCount, periodMs: period };
-        }
-        catch (e) {
-            console.error('[Graphics] mob bitmap bake failed, using live renderer:', e);
-            return null;
-        }
     }
     /**
      * Baked radial glow sprite (transparent gradient disc). Replaces the
@@ -930,21 +814,6 @@ class Graphics {
 }
 exports.Graphics = Graphics;
 Graphics.PETAL_GLOW_PAD = 16;
-// --- Mob bitmap cache -------------------------------------------------
-// Mobs used to be drawn by replaying compiled SVG canvas commands every
-// frame (per-node save/restore + fill/stroke + transform parsing) — the
-// single largest per-frame cost with many mobs on screen, and the first
-// thing to fold under CPU throttling. Petals already used baked offscreen
-// canvases; this gives mobs the same treatment. Static SVGs bake one
-// bitmap; animated SVGs bake a short frame loop over their animation
-// period. SVGs that embed an <image> element are NOT baked (the image
-// loads async, so an early bake would freeze a half-loaded mob) — those
-// keep the live path and are marked `null` so we don't retry per frame.
-Graphics.MOB_BAKE_SCALE = 2; // bake at 2x for zoom sharpness (high-quality / HiDPI)
-Graphics.MOB_BAKE_MAX_SIDE = 2048; // cap apex-sized bitmaps (high quality)
-Graphics.MOB_BAKE_MAX_SIDE_LQ = 1024; // default cap — a 2048² frame is 16MB of texture
-Graphics.MOB_BAKE_FRAME_MS = 42; // same step petals use
-Graphics.MOB_BAKE_MAX_FRAMES = 32;
 // 2048² (16MB) per sheet, NOT larger: Chrome's GPU image cache has a
 // per-item size cap — a 4096² (64MB) canvas source never caches and
 // re-uploads every frame (~10ms/frame each, measured). 2048² sheets stay

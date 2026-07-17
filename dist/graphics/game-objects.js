@@ -19,8 +19,9 @@ core_1.Graphics.prototype.drawGameObjects = function (players, enemies, items, m
     // to plain numbers — reading DOMMatrix accessors per mob is slow.
     const tf = this.ctx.getTransform();
     this._worldBaseTf = { a: tf.a, b: tf.b, c: tf.c, d: tf.d, e: tf.e, f: tf.f };
-    // Smoothing ON once for the whole mob pass (baked bitmaps need it) —
-    // per-mob toggles forced a canvas pipeline flush per mob on the GPU path.
+    // Smoothing ON once for the whole mob pass — the drawImage-based bits
+    // (glow sprites, baked label overlays) need it, and per-mob toggles forced
+    // a canvas pipeline flush per mob on the GPU path.
     this.ctx.imageSmoothingEnabled = true;
     for (const enemy of enemies.values()) {
         // Calculate actual enemy size for accurate culling

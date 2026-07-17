@@ -30,6 +30,10 @@ export interface PlayerProgress {
     mazeSkills?: { [skillId: string]: string };
     inventory?: PlayerInventory;
     loadout?: (Item | null)[];
+    // Separate maze loadout preset (regular-world terms), persisted independently
+    // of `loadout`. undefined = never customised (defaults to the regular loadout
+    // on first maze entry). See ServerPlayer.mazeLoadout.
+    mazeLoadout?: (Item | null)[];
     mobKills?: { [mobType: string]: { [rarity: string]: number } }; // Track mob kills: mobType -> rarity -> count
     stars?: number; // In-game currency earned from challenges and codes
     renderFlags?: number; // Bitmask of PlayerRenderFlags — the player's owned/active built-in skin, persisted per account

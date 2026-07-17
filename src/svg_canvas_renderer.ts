@@ -49,6 +49,11 @@ export interface PathAnimation {
     keyTimes: number[] | null;
     calcMode: string;
     keySplines: number[][] | null;
+    // Two-slot (time -> path) memo, filled at draw time. See interpolatePathAnim.
+    memoTime0?: number;
+    memoPath0?: Path2D | null;
+    memoTime1?: number;
+    memoPath1?: Path2D | null;
 }
 
 export interface AttributeAnimation {
@@ -87,6 +92,13 @@ export interface CompiledSVG {
     viewBox: ViewBox;
     children: CompiledNode[];
     clipPaths: Map<string, Path2D>;
+    /**
+     * True if any node is an <image>. Computed once here so per-frame callers
+     * don't walk the tree: imageSmoothingEnabled only affects drawImage, so an
+     * SVG made purely of paths must not pay a smoothing state write (see
+     * renderSVGToCanvas).
+     */
+    hasImage: boolean;
 }
 
 // === Parsing Utilities ===
@@ -573,7 +585,7 @@ export class SVGCanvasCompiler {
         const rootStyle = parseStyleWithInheritance(svgEl, ROOT_INHERITED_STYLE);
         const children = compileChildren(svgEl, doc, rootStyle);
 
-        const compiled: CompiledSVG = { viewBox, children, clipPaths };
+        const compiled: CompiledSVG = { viewBox, children, clipPaths, hasImage: treeHasImage(children) };
         this.cache.set(svgString, compiled);
         return compiled;
     }
@@ -585,6 +597,14 @@ export class SVGCanvasCompiler {
     getCacheSize(): number {
         return this.cache.size;
     }
+}
+
+function treeHasImage(nodes: CompiledNode[]): boolean {
+    for (const n of nodes) {
+        if (n.tag === 'image' || n.imageEl) return true;
+        if (n.children && treeHasImage(n.children)) return true;
+    }
+    return false;
 }
 
 // === Animation Interpolation ===
@@ -765,7 +785,35 @@ function buildAnimatedShapePath(node: CompiledNode, time: number): Path2D | null
     return node.path2d;
 }
 
+/**
+ * Interpolated path for `anim` at `time`, memoized.
+ *
+ * Every instance of a mob type shares one compiled node tree (the compiler
+ * caches by SVG string) and every mob is drawn at the same frameTimestamp, so
+ * all N instances ask for the identical path each frame. The miss path below
+ * allocates a number array, rebuilds the `d` string and parses a fresh Path2D
+ * — the live renderer's single hottest operation — so memoizing collapses that
+ * from once per mob to once per frame.
+ *
+ * Two slots, not one: chasing mobs animate at time*2 (see drawEnemy), so a type
+ * can legitimately be asked for two distinct times within the same frame, and a
+ * single slot would thrash to a 0% hit rate when both are on screen.
+ *
+ * Returned paths are only ever read (fillStrokePath), never mutated, so handing
+ * the same Path2D to every instance is safe.
+ */
 function interpolatePathAnim(anim: PathAnimation, time: number): Path2D | null {
+    if (anim.memoTime0 === time) return anim.memoPath0!;
+    if (anim.memoTime1 === time) return anim.memoPath1!;
+    const path = computePathAnim(anim, time);
+    anim.memoTime1 = anim.memoTime0;
+    anim.memoPath1 = anim.memoPath0;
+    anim.memoTime0 = time;
+    anim.memoPath0 = path;
+    return path;
+}
+
+function computePathAnim(anim: PathAnimation, time: number): Path2D | null {
     const n = anim.keyframes.length;
     const { seg, lp } = getAnimationSegment(n, anim.keyTimes, anim.calcMode, anim.keySplines, time, anim.dur, anim.begin);
 
@@ -848,9 +896,28 @@ function applyAnimatedTransforms(ctx: CanvasRenderingContext2D, anims: Transform
     }
 }
 
+/**
+ * When set, every fill/stroke is blended this far toward `tintColor` as it is
+ * painted. Module-scoped because drawing is synchronous and single-threaded,
+ * and threading it through drawNode's recursion buys nothing.
+ *
+ * This is how the mob death tint works. It must NOT be done by compositing a
+ * coloured rect over the mob with `source-atop`: that clips to the whole
+ * canvas's alpha, and the world background is opaque by then, so it tinted a
+ * mob-sized SQUARE of ground (verified by pixel probe). Blending per shape
+ * tints exactly the pixels the mob paints, and — unlike drawing a second
+ * tinted pass on top — overlapping parts can't double-tint.
+ */
+let tintColor: string | null = null;
+let tintAmount = 0;
+
+function tinted(color: string): string {
+    return tintColor ? (interpolateColor(color, tintColor, tintAmount) ?? color) : color;
+}
+
 function fillStrokePath(ctx: CanvasRenderingContext2D, path: Path2D, style: StyleAttrs): void {
     if (style.fill) {
-        ctx.fillStyle = style.fill;
+        ctx.fillStyle = tinted(style.fill);
         if (style.fillOpacity < 1) {
             const prev = ctx.globalAlpha;
             ctx.globalAlpha *= style.fillOpacity;
@@ -861,7 +928,7 @@ function fillStrokePath(ctx: CanvasRenderingContext2D, path: Path2D, style: Styl
         }
     }
     if (style.stroke) {
-        ctx.strokeStyle = style.stroke;
+        ctx.strokeStyle = tinted(style.stroke);
         ctx.lineWidth = style.strokeWidth;
         ctx.lineCap = style.strokeLinecap;
         ctx.lineJoin = style.strokeLinejoin;
@@ -949,7 +1016,7 @@ function drawNode(ctx: CanvasRenderingContext2D, node: CompiledNode, time: numbe
                 getAnimatedNumber(node, 'x2', node.x2, time),
                 getAnimatedNumber(node, 'y2', node.y2, time),
             );
-            ctx.strokeStyle = style.stroke;
+            ctx.strokeStyle = tinted(style.stroke);
             ctx.lineWidth = style.strokeWidth;
             ctx.lineCap = style.strokeLinecap;
             ctx.lineJoin = style.strokeLinejoin;
@@ -975,8 +1042,12 @@ export function drawCompiledSVG(
     height: number,
     rotation: number = 0,
     time: number = 0,
+    tint: { color: string; amount: number } | null = null,
 ): void {
     const vb = compiled.viewBox;
+
+    tintColor = tint && tint.amount > 0 ? tint.color : null;
+    tintAmount = tint ? tint.amount : 0;
 
     ctx.save();
 
@@ -989,11 +1060,19 @@ export function drawCompiledSVG(
     ctx.scale(scale, scale);
     ctx.translate(-vb.x - vb.w / 2, -vb.y - vb.h / 2);
 
-    for (const child of compiled.children) {
-        drawNode(ctx, child, time, compiled.clipPaths);
+    try {
+        for (const child of compiled.children) {
+            drawNode(ctx, child, time, compiled.clipPaths);
+        }
+    } finally {
+        ctx.restore();
+        // finally, not a plain reset: drawNode throwing must not leave the tint
+        // armed. Callers catch render errors, so a leak would silently tint the
+        // next mob — and petal bakes, which call drawNode without going through
+        // this function.
+        tintColor = null;
+        tintAmount = 0;
     }
-
-    ctx.restore();
 }
 
 /**
@@ -1006,6 +1085,11 @@ export function renderCompiledSVGToCanvas(
     height: number,
     time: number = 0,
 ): HTMLCanvasElement {
+    // This path draws nodes directly, so it must state its own tint: an
+    // offscreen bake is never tinted.
+    tintColor = null;
+    tintAmount = 0;
+
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;

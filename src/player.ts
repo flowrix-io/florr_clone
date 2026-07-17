@@ -211,17 +211,16 @@ export interface ServerPlayer {
                            // regular inventory stays live — petals found in the maze are kept
                            // permanently. The loadout is LOCKED inside (updateLoadout rejects
                            // every change): petals must be equipped on the title screen.
-  // Maze rarity shift: on entry the equipped LOADOUT (only) is shifted DOWN
-  // one rarity; on any save (and implicitly on leaving via re-auth) it is
-  // translated back UP one. The inventory stays in regular-world terms the
-  // whole run — drops are upgraded one rarity at pickup instead — which is
-  // safe precisely because the locked loadout and the inventory never mix.
+  // Maze loadout: on entry the pristine regular loadout is stashed in
+  // `regularLoadout` (like PVP) and the player runs on a DERIVED loadout that
+  // is shifted DOWN one rarity, with active-slot petals above the maze cap
+  // benched. The stash is restored verbatim on exit and is what every save
+  // persists, so the maze never mutates the regular loadout. The inventory
+  // stays in regular-world terms the whole run — drops are upgraded one rarity
+  // at pickup instead — which is safe because the locked loadout (updateLoadout
+  // rejects every change) and the inventory never mix. True while the derived
+  // maze loadout is live.
   mazeRarityShifted?: boolean;
-  // Loadout slots whose item was already common at entry (couldn't shift
-  // down). These stay common when translating back up, so a maze round trip
-  // can't mint free uncommons. Slot-keyed, which is stable because the
-  // loadout is locked inside the maze.
-  mazeFlooredSlots?: number[];
   // Snapshot of everything brought into the maze (inventory + loadout, in
   // post-shift terms), keyed "rarityId|itemId" → count. Absorbing is limited
   // to the surplus over this snapshot: only petals obtained during the maze
@@ -251,12 +250,24 @@ export interface ServerPlayer {
   regularTp?: number;
   regularSkills?: PlayerSkills;
 
-  // While inside the PVP arena, `inventory`/`loadout` hold the PVP-only versions
-  // and the player's regular versions are stashed here. On exit, 25% of the PVP
-  // inventory is transferred into `regularInventory` and the regular inventory/
-  // loadout are restored.
+  // Pristine regular loadout/inventory stashed while a mode-specific loadout is
+  // live, so the mode never touches the persisted regular data. In PVP both are
+  // stashed: `loadout` becomes fixed basics, `inventory` becomes the PVP-only
+  // inventory, and on exit 25% of the PVP inventory is transferred into
+  // `regularInventory` before both are restored. In the maze only
+  // `regularLoadout` is stashed (the inventory stays live and regular-world);
+  // `loadout` runs on the derived maze loadout and the stash is restored on
+  // exit. Exactly one mode is ever active at a time, so the fields don't clash.
   regularInventory?: PlayerInventory;
   regularLoadout?: (Item | null)[];
+  // The player's SEPARATE maze loadout preset, in regular-world terms, shared
+  // across maze runs and persisted independently of the regular `loadout`.
+  // Configured on the title screen when the maze biome is selected. A preset
+  // over the full collection (inventory + regular loadout) — the same owned
+  // petal may appear in both builds; it does not physically consume from the
+  // inventory. `undefined` = never customised (defaults to a copy of the
+  // regular loadout on first maze entry); an explicit array is respected.
+  mazeLoadout?: (Item | null)[];
   lastDamagedByPlayerId?: string; // ID of the most recent player to damage this player (for PVP kill credit)
   spongeDamageEffects?: Array<{
     remainingDamage: number;

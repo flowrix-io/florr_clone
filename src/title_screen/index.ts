@@ -936,6 +936,9 @@ export class TitleScreen {
         localStorage.setItem('spawnBiome', selectedBiome);
         console.log('Selected spawn biome:', selectedBiome);
         this.background.loadTexture(selectedBiome);
+        // The maze uses a SEPARATE loadout preset; switching to/from the maze
+        // biome changes which loadout + inventory view the editor shows.
+        this.titleScreenInventoryManager?.refreshForContext();
     }
 
     /**

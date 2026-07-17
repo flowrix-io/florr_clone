@@ -168,7 +168,9 @@ import {
     isMazeTrackLive,
     getOutsideTotalXP,
     getAbsorbingTier,
-    reconcileTP
+    reconcileTP,
+    buildCollection,
+    capLoadoutToCollection
 } from './server/playerManager';
 import {
     getActiveMaze,
@@ -1358,6 +1360,14 @@ io.on('connection', (socket: AuthenticatedSocket) => {
             };
 
             const reconstructedLoadout = reconstructLoadout(savedProgress?.loadout);
+            // Separate maze loadout preset. Only reconstruct it if the player has
+            // actually saved one; otherwise leave it undefined so the first maze
+            // entry defaults it to a copy of the regular loadout (and so a save
+            // for a never-customised player doesn't erase anything).
+            const reconstructedMazeLoadout: (Item | null)[] | undefined =
+                Array.isArray((savedProgress as any)?.mazeLoadout)
+                    ? reconstructLoadout((savedProgress as any).mazeLoadout)
+                    : undefined;
 
             players[socket.id] = {
                 id: socket.id,
@@ -1373,6 +1383,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 damage: baseDamage, // Will be recalculated with modifiers
                 inventory: savedProgress?.inventory ? dictToInventory(savedProgress.inventory as any) : createInitialInventory(),
                 loadout: reconstructedLoadout,
+                mazeLoadout: reconstructedMazeLoadout,
                 isInvulnerable: true,
                 level: level,
                 xp: currentLevelXP,
@@ -1403,10 +1414,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 enterPvpArena(players[socket.id], io);
             } else {
                 if (players[socket.id].inMaze) {
-                    // Maze entry: the saved (regular-world) loadout drops one
-                    // rarity inside the maze (saves translate back up), over-cap
-                    // petals are stripped, and the absorb baseline is snapshotted
-                    // — all before pets/cooldowns are set up below.
+                    // Maze entry: the regular loadout is stashed pristine and the
+                    // player runs on a derived loadout that drops one rarity, with
+                    // over-cap petals benched (saves persist the pristine stash, so
+                    // the regular loadout is never changed), and the absorb baseline
+                    // is snapshotted — all before pets/cooldowns are set up below.
                     enterMazeState(players[socket.id], io);
                 }
                 // Recalculate player stats with modifiers after loadout is set
@@ -1958,7 +1970,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         return validatedLoadout;
     }
 
-    socket.on('updateLoadout', (data: { loadout: (Item | null)[]; inventory: PlayerInventory }) => {
+    socket.on('updateLoadout', (data: { loadout: (Item | null)[]; inventory: PlayerInventory; inPvpArena?: boolean; context?: 'regular' | 'maze' }) => {
         // console.log('[PET DEBUG] updateLoadout called for socket:', socket.id);
         // Check if player is split and route to the active player
         const { splitPlayers } = require('./petal_actions');
@@ -1983,6 +1995,23 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         }
         // console.log('[PET DEBUG] updateLoadout: Player found, processing loadout...');
         if (player) {
+            // Maze-loadout edit (from the title screen when the maze biome is
+            // selected). The maze loadout is a SEPARATE preset over the player's
+            // full collection (inventory + regular loadout); the same owned petal
+            // may sit in both builds and it does NOT consume from the inventory.
+            // Validate/cap the proposed preset against the collection and store
+            // it — never touching the regular inventory/loadout. Rejected while
+            // actually inside the maze (the loadout is locked in there).
+            if (data.context === 'maze') {
+                if (!player.inMaze) {
+                    const collection = buildCollection(player.inventory, player.loadout);
+                    player.mazeLoadout = capLoadoutToCollection(data.loadout || [], collection);
+                    if (socket.userId) savePlayerProgressImmediate(player, socket.userId);
+                }
+                socket.emit('mazeLoadoutUpdated', { mazeLoadout: player.mazeLoadout || null });
+                return;
+            }
+
             // The loadout is LOCKED inside the maze — petals must be equipped
             // on the title screen before entering. Reject the whole update and
             // echo the authoritative state back so the client's optimistic
@@ -1996,6 +2025,21 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                     content: '<span style="color: #c77dff;">You cannot equip new petals in the maze — set up your loadout on the title screen before entering.</span>',
                     timestamp: Date.now()
                 });
+                return;
+            }
+
+            // Mode-tag guard for the PVP arena. The arena is a physical region
+            // the player walks in/out of, and enter/exit runs on a movement
+            // tick that swaps `loadout` between the PVP basics and the stashed
+            // regular loadout. The client tags each edit with the arena state it
+            // believed it was in; if that no longer matches the server, this is
+            // a stale edit straddling the boundary (e.g. a PVP loadout edit that
+            // arrived just after the player left the arena). Applying it would
+            // overwrite the just-restored regular loadout with PVP petals and
+            // persist it. Reject and echo authoritative state so the client
+            // resyncs. A missing tag is treated as "not in PVP".
+            if (!!data.inPvpArena !== !!player.inPvpArena) {
+                socket.emit('playerUpdated', player);
                 return;
             }
 

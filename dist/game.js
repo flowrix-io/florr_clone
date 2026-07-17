@@ -77,9 +77,12 @@ class Game {
         this.inputSeq = 0;
         this.predInit = false;
         // One covered frame must render after the camera snaps before the join
-        // iris reveals — that frame bakes the visible mob bitmaps behind the
-        // cover (see gameLoop / startIrisRevealHold).
-        this._irisBakeFrameRendered = false;
+        // iris reveals, so the first visible frame is guaranteed to have been drawn
+        // with the authoritative camera rather than the origin (see gameLoop /
+        // startIrisRevealHold). This also used to absorb the first-sight mob bitmap
+        // bakes behind the cover; there is no bake any more (mobs draw live), so
+        // that part is moot — the covered frame is now purely a camera guarantee.
+        this._irisCoveredFrameRendered = false;
         this.fpsCounter = 0;
         this.fpsUpdateTime = 0;
         // Rolling per-frame work-time average (ms). If this is well under
@@ -88,9 +91,8 @@ class Game {
         this.frameTimeSamples = 0;
         this.frameTimeAccum = 0;
         // Per-section render times (items/mobs/projectiles), same 1s rollover as
-        // frameTimeAvgMs. The raw per-frame values twitch too much to read — a
-        // single mob-bitmap bake spikes one frame — so the overlay shows avg and
-        // the worst frame of the last second instead.
+        // frameTimeAvgMs. The raw per-frame values twitch too much to read, so the
+        // overlay shows the avg and the worst frame of the last second instead.
         this.sectionMsAvg = { items: 0, mobs: 0, proj: 0 };
         this.sectionMsMax = { items: 0, mobs: 0, proj: 0 };
         this.sectionMsAccum = { items: 0, mobs: 0, proj: 0 };
@@ -1046,11 +1048,11 @@ class Game {
         // has rendered — that covered frame draws the now-visible mobs, baking
         // their bitmaps behind the cover so the reveal itself is jank-free.
         if (this.graphics.irisWaiting && this.predInit) {
-            if (this._irisBakeFrameRendered) {
+            if (this._irisCoveredFrameRendered) {
                 this.graphics.beginIrisReveal();
             }
             else {
-                this._irisBakeFrameRendered = true;
+                this._irisCoveredFrameRendered = true;
             }
         }
         // Filter out items that this player has already picked up.
@@ -1586,9 +1588,8 @@ class Game {
         // Per-section render time, averaged over the last second with the
         // worst frame alongside (avg/peak). Helps isolate which subsystem is
         // eating frame budget when something feels slow — the avg is the
-        // steady cost, the peak catches one-frame spikes (e.g. a mob-bitmap
-        // bake on first sighting) that a raw last-frame readout turns into
-        // unreadable flicker.
+        // steady cost, the peak catches one-frame spikes that a raw last-frame
+        // readout turns into unreadable flicker.
         const g = this.graphics;
         const sec = (k) => `${this.sectionMsAvg[k].toFixed(2)}/${this.sectionMsMax[k].toFixed(1)}ms`;
         lines.push({

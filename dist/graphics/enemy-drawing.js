@@ -167,14 +167,14 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
     // Special rendering for garbage mob - render as a pile of random petals
     if (enemy.type === 'garbage') {
         this.drawGarbagePile(enemy, enemySize);
-        // Apply red tint overlay for death animation using composite operations
-        if (isDying) {
-            const tintIntensity = 0.15 + (deathProgress * 0.15);
-            this.ctx.globalCompositeOperation = 'source-atop';
-            this.ctx.fillStyle = `rgba(255, 0, 0, ${tintIntensity})`;
-            this.ctx.fillRect(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
-            this.ctx.globalCompositeOperation = 'source-over';
-        }
+        // No death tint for the garbage pile. It's drawn from baked petal
+        // bitmaps, so there's no per-shape colour to blend the way the mob path
+        // does — and the source-atop rect this used to do tinted a square of
+        // the ground rather than the pile (source-atop clips to the whole
+        // canvas's alpha, and the world background is opaque by then). Tinting
+        // bitmaps correctly needs an offscreen layer per dying mob, which isn't
+        // worth it for one mob type; the scale-up and fade-out still read as a
+        // death. Revisit if petals ever gain a vector draw path.
         // Local frame stays active (next mob overwrites it); health bars are
         // drawn by drawGameObjects in a single world-frame pass afterwards.
         if (isDying)
@@ -194,30 +194,27 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
         currentTime = this.frameTimestamp * 2;
     }
     let rendered = false;
-    // Fast path: baked mob bitmap (single frame or animation loop) — one
-    // drawImage from the per-type spritesheet instead of replaying the SVG's
-    // canvas commands node by node. Death-animation scaling works because
-    // drawImage scales to enemySize. Smoothing is already ON for the pass.
-    if (mobSVG) {
-        // Bake at the mob's steady-state size — death animation scales the
-        // draw call, not the bitmap (enemySize was multiplied by deathScale).
-        const bakeSize = isDying ? enemySize / deathScale : enemySize;
-        const frame = this.getMobCanvas(cacheKey, mobSVG, bakeSize, currentTime);
-        if (frame && frame.canvas) {
-            this.ctx.drawImage(frame.canvas, frame.sx, frame.sy, frame.size, frame.size, -enemySize / 2, -enemySize / 2, enemySize, enemySize);
-            rendered = true;
-        }
-    }
-    // Live path renderer: only for SVGs the baker refuses (embedded <image>).
-    if (!rendered && mobSVG && this.svgRenderer.isInitialized()) {
+    // Mobs are drawn straight from their compiled canvas commands, at the mob's
+    // real size, every frame. There is deliberately NO bitmap bake in front of
+    // this — one was added in e847451 and removed again after measurement: it
+    // bought ~0.5ms/frame at 100 mobs and cost first-sight bake stalls (18ms in
+    // one frame, hundreds under throttle), an atlas that grew to GBs because
+    // nothing evicted it, and animation quantized to the baked frame count.
+    // Above ~256px the live path is also simply FASTER than blitting a baked
+    // frame, since the bake downscales a big source on every draw.
+    if (mobSVG && this.svgRenderer.isInitialized()) {
         try {
             // x, y, rotation are 0 because transforms are already applied by the context
             // Pass true to indicate this is a mob render (disable anti-aliasing)
             rendered = this.svgRenderer.renderSVGToCanvas(this.ctx, mobSVG, 0, // x (already translated)
             0, // y (already translated)
             enemySize, enemySize, 0, // rotation (already rotated)
-            currentTime, true // disableAntiAliasing flag
-            );
+            currentTime, true, // disableAntiAliasing flag
+            // Death tint: blended into each shape as it's painted. Doing it
+            // afterwards with a source-atop rect (as this used to) tinted a
+            // square of the world instead of the mob — source-atop clips to
+            // the whole canvas's alpha and the background is opaque by then.
+            isDying ? { color: '#ff0000', amount: 0.15 + deathProgress * 0.15 } : null);
         }
         catch (error) {
             console.error(`[Graphics] Error rendering enemy SVG for ${cacheKey}:`, error);
@@ -252,14 +249,9 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
         this.ctx.arc(0, 0, baseSize / 2, 0, Math.PI * 2);
         this.ctx.stroke();
     }
-    // Apply red tint overlay for death animation using composite operations
-    if (isDying) {
-        const tintIntensity = 0.15 + (deathProgress * 0.15);
-        this.ctx.globalCompositeOperation = 'source-atop';
-        this.ctx.fillStyle = `rgba(255, 0, 0, ${tintIntensity})`;
-        this.ctx.fillRect(-enemySize / 2, -enemySize / 2, enemySize, enemySize);
-        this.ctx.globalCompositeOperation = 'source-over';
-    }
+    // No post-hoc tint pass here: the death tint is blended per shape by the
+    // renderer (see the `tint` argument above), so it lands on the mob instead
+    // of on a rectangle of whatever was underneath it.
     // Local frame stays active (next mob overwrites it); health bars are
     // drawn by drawGameObjects in a single world-frame pass afterwards.
     if (isDying)
@@ -342,7 +334,7 @@ core_1.Graphics.prototype.drawGarbagePile = function (enemy, enemySize) {
         this.ctx.stroke();
     }
     // Restore pass-wide smoothing (see drawGameObjects) — the pixelated look
-    // above is garbage-pile-local, and later mobs' baked draws need it ON.
+    // above is garbage-pile-local, and later glow/label draws need it ON.
     this.ctx.imageSmoothingEnabled = true;
 };
 // Static overlay (mob name + rarity label + health-bar background) baked once

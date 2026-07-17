@@ -50,17 +50,25 @@ class SVGRendererWrapper {
      * Render an SVG to a canvas context using compiled canvas commands.
      * Animations are evaluated in real-time based on the time parameter.
      */
-    renderSVGToCanvas(ctx, svgString, x, y, width, height, rotation = 0, time = Date.now(), disableAntiAliasing = false) {
+    renderSVGToCanvas(ctx, svgString, x, y, width, height, rotation = 0, time = Date.now(), disableAntiAliasing = false, tint = null) {
         if (!svgString)
             return false;
         try {
             const compiled = this.compileSVG(svgString);
+            // imageSmoothingEnabled only affects drawImage, so touching it for a
+            // path-only SVG is a pure cost — and not a free one: a smoothing
+            // write per mob breaks Chrome's canvas op batching (a pipeline flush
+            // each), which is why the mob pass sets it once globally instead.
+            // EVERY mob comes through here now, so almost all of them are
+            // path-only and must not pay it; only the <image> SVGs that want the
+            // pixelated look do.
+            const toggleSmoothing = disableAntiAliasing && compiled.hasImage;
             const originalSmoothing = ctx.imageSmoothingEnabled;
-            if (disableAntiAliasing) {
+            if (toggleSmoothing) {
                 ctx.imageSmoothingEnabled = false;
             }
-            (0, svg_canvas_renderer_1.drawCompiledSVG)(ctx, compiled, x, y, width, height, rotation, time);
-            if (disableAntiAliasing) {
+            (0, svg_canvas_renderer_1.drawCompiledSVG)(ctx, compiled, x, y, width, height, rotation, time, tint);
+            if (toggleSmoothing) {
                 ctx.imageSmoothingEnabled = originalSmoothing;
             }
             return true;

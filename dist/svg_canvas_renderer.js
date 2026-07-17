@@ -475,7 +475,7 @@ class SVGCanvasCompiler {
         // unset.
         const rootStyle = parseStyleWithInheritance(svgEl, ROOT_INHERITED_STYLE);
         const children = compileChildren(svgEl, doc, rootStyle);
-        const compiled = { viewBox, children, clipPaths };
+        const compiled = { viewBox, children, clipPaths, hasImage: treeHasImage(children) };
         this.cache.set(svgString, compiled);
         return compiled;
     }
@@ -487,6 +487,15 @@ class SVGCanvasCompiler {
     }
 }
 exports.SVGCanvasCompiler = SVGCanvasCompiler;
+function treeHasImage(nodes) {
+    for (const n of nodes) {
+        if (n.tag === 'image' || n.imageEl)
+            return true;
+        if (n.children && treeHasImage(n.children))
+            return true;
+    }
+    return false;
+}
 // === Animation Interpolation ===
 function cubicBezierEase(t, p1x, p1y, p2x, p2y) {
     let lo = 0, hi = 1;
@@ -653,7 +662,36 @@ function buildAnimatedShapePath(node, time) {
     }
     return node.path2d;
 }
+/**
+ * Interpolated path for `anim` at `time`, memoized.
+ *
+ * Every instance of a mob type shares one compiled node tree (the compiler
+ * caches by SVG string) and every mob is drawn at the same frameTimestamp, so
+ * all N instances ask for the identical path each frame. The miss path below
+ * allocates a number array, rebuilds the `d` string and parses a fresh Path2D
+ * — the live renderer's single hottest operation — so memoizing collapses that
+ * from once per mob to once per frame.
+ *
+ * Two slots, not one: chasing mobs animate at time*2 (see drawEnemy), so a type
+ * can legitimately be asked for two distinct times within the same frame, and a
+ * single slot would thrash to a 0% hit rate when both are on screen.
+ *
+ * Returned paths are only ever read (fillStrokePath), never mutated, so handing
+ * the same Path2D to every instance is safe.
+ */
 function interpolatePathAnim(anim, time) {
+    if (anim.memoTime0 === time)
+        return anim.memoPath0;
+    if (anim.memoTime1 === time)
+        return anim.memoPath1;
+    const path = computePathAnim(anim, time);
+    anim.memoTime1 = anim.memoTime0;
+    anim.memoPath1 = anim.memoPath0;
+    anim.memoTime0 = time;
+    anim.memoPath0 = path;
+    return path;
+}
+function computePathAnim(anim, time) {
     const n = anim.keyframes.length;
     const { seg, lp } = getAnimationSegment(n, anim.keyTimes, anim.calcMode, anim.keySplines, time, anim.dur, anim.begin);
     const idx = seg;
@@ -740,9 +778,26 @@ function applyAnimatedTransforms(ctx, anims, time) {
         }
     }
 }
+/**
+ * When set, every fill/stroke is blended this far toward `tintColor` as it is
+ * painted. Module-scoped because drawing is synchronous and single-threaded,
+ * and threading it through drawNode's recursion buys nothing.
+ *
+ * This is how the mob death tint works. It must NOT be done by compositing a
+ * coloured rect over the mob with `source-atop`: that clips to the whole
+ * canvas's alpha, and the world background is opaque by then, so it tinted a
+ * mob-sized SQUARE of ground (verified by pixel probe). Blending per shape
+ * tints exactly the pixels the mob paints, and — unlike drawing a second
+ * tinted pass on top — overlapping parts can't double-tint.
+ */
+let tintColor = null;
+let tintAmount = 0;
+function tinted(color) {
+    return tintColor ? (interpolateColor(color, tintColor, tintAmount) ?? color) : color;
+}
 function fillStrokePath(ctx, path, style) {
     if (style.fill) {
-        ctx.fillStyle = style.fill;
+        ctx.fillStyle = tinted(style.fill);
         if (style.fillOpacity < 1) {
             const prev = ctx.globalAlpha;
             ctx.globalAlpha *= style.fillOpacity;
@@ -754,7 +809,7 @@ function fillStrokePath(ctx, path, style) {
         }
     }
     if (style.stroke) {
-        ctx.strokeStyle = style.stroke;
+        ctx.strokeStyle = tinted(style.stroke);
         ctx.lineWidth = style.strokeWidth;
         ctx.lineCap = style.strokeLinecap;
         ctx.lineJoin = style.strokeLinejoin;
@@ -834,7 +889,7 @@ function drawNode(ctx, node, time, clipPaths) {
             const lp = new Path2D();
             lp.moveTo(getAnimatedNumber(node, 'x1', node.x1, time), getAnimatedNumber(node, 'y1', node.y1, time));
             lp.lineTo(getAnimatedNumber(node, 'x2', node.x2, time), getAnimatedNumber(node, 'y2', node.y2, time));
-            ctx.strokeStyle = style.stroke;
+            ctx.strokeStyle = tinted(style.stroke);
             ctx.lineWidth = style.strokeWidth;
             ctx.lineCap = style.strokeLinecap;
             ctx.lineJoin = style.strokeLinejoin;
@@ -848,8 +903,10 @@ function drawNode(ctx, node, time, clipPaths) {
  * Draw a compiled SVG to a canvas context, centered at (x, y).
  * Uses uniform scaling (preserveAspectRatio="xMidYMid meet" equivalent).
  */
-function drawCompiledSVG(ctx, compiled, x, y, width, height, rotation = 0, time = 0) {
+function drawCompiledSVG(ctx, compiled, x, y, width, height, rotation = 0, time = 0, tint = null) {
     const vb = compiled.viewBox;
+    tintColor = tint && tint.amount > 0 ? tint.color : null;
+    tintAmount = tint ? tint.amount : 0;
     ctx.save();
     // Position and rotate
     if (x !== 0 || y !== 0)
@@ -860,16 +917,30 @@ function drawCompiledSVG(ctx, compiled, x, y, width, height, rotation = 0, time 
     const scale = Math.min(width / vb.w, height / vb.h);
     ctx.scale(scale, scale);
     ctx.translate(-vb.x - vb.w / 2, -vb.y - vb.h / 2);
-    for (const child of compiled.children) {
-        drawNode(ctx, child, time, compiled.clipPaths);
+    try {
+        for (const child of compiled.children) {
+            drawNode(ctx, child, time, compiled.clipPaths);
+        }
     }
-    ctx.restore();
+    finally {
+        ctx.restore();
+        // finally, not a plain reset: drawNode throwing must not leave the tint
+        // armed. Callers catch render errors, so a leak would silently tint the
+        // next mob — and petal bakes, which call drawNode without going through
+        // this function.
+        tintColor = null;
+        tintAmount = 0;
+    }
 }
 /**
  * Render a compiled SVG to an offscreen canvas (for petal caching etc.)
  * Uses uniform scaling to fill the canvas while preserving aspect ratio.
  */
 function renderCompiledSVGToCanvas(compiled, width, height, time = 0) {
+    // This path draws nodes directly, so it must state its own tint: an
+    // offscreen bake is never tinted.
+    tintColor = null;
+    tintAmount = 0;
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;

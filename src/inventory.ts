@@ -959,7 +959,11 @@ export class InventoryManager {
 
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,
-            inventory: player.inventory
+            inventory: player.inventory,
+            // Mode tag: the server rejects the edit if this no longer matches
+            // the arena state it holds, closing the PVP-exit race that could
+            // persist a PVP loadout as the regular one.
+            inPvpArena: !!(player as any).inPvpArena
         });
 
         window.dispatchEvent(new CustomEvent('loadout:equip'));
@@ -1312,7 +1316,8 @@ export class InventoryManager {
 
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,
-            inventory: player.inventory
+            inventory: player.inventory,
+            inPvpArena: !!(player as any).inPvpArena
         });
 
         this.updateLoadoutDisplay();
@@ -1678,7 +1683,8 @@ export class InventoryManager {
 
         this.game.getSocket()?.emit('updateLoadout', {
             loadout: newLoadout,
-            inventory: player.inventory
+            inventory: player.inventory,
+            inPvpArena: !!(player as any).inPvpArena
         });
 
         requestAnimationFrame(() => {

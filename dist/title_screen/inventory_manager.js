@@ -7,6 +7,7 @@ const inventoryCodec_1 = require("../inventoryCodec");
 const loadout_bar_1 = require("../graphics/loadout-bar");
 const inventory_panel_1 = require("../graphics/inventory-panel");
 const game_adapter_1 = require("./game_adapter");
+const zoom_compensation_1 = require("../zoom-compensation");
 /**
  * Title Screen Inventory Manager
  * Handles inventory and loadout on the title screen using the preconnected socket.
@@ -91,8 +92,11 @@ class TitleScreenInventoryManager {
             // the inventory.
             if (this.loadoutCanvas && target === this.loadoutCanvas && this.canvasLoadoutBar) {
                 const r = this.loadoutCanvas.getBoundingClientRect();
-                const x = (dragEvent.clientX - r.left) * (this.loadoutCanvas.width / r.width);
-                const y = (dragEvent.clientY - r.top) * (this.loadoutCanvas.height / r.height);
+                // Logical coords (see titleCanvasCoords): divide by the base device
+                // scale so the hit-test matches the slots on HiDPI displays.
+                const scale = (0, zoom_compensation_1.getBaseDeviceScale)();
+                const x = (dragEvent.clientX - r.left) * (this.loadoutCanvas.width / r.width) / scale;
+                const y = (dragEvent.clientY - r.top) * (this.loadoutCanvas.height / r.height) / scale;
                 if (this.canvasLoadoutBar.hitTest(x, y) >= 0)
                     return;
             }
@@ -118,7 +122,7 @@ class TitleScreenInventoryManager {
         const adapter = {
             canvas,
             getLocalPlayer: () => ({
-                loadout: this.playerData?.loadout ?? new Array(this.LOADOUT_SLOTS).fill(null)
+                loadout: this.getActiveLoadout()
             }),
             getPetalCanvas: (petalType, rarity, _time) => {
                 const assets = window.preloadedAssets;
@@ -174,12 +178,20 @@ class TitleScreenInventoryManager {
     showLoadoutBar() {
         this.canvasLoadoutBar?.show();
     }
-    /** Map a mouse/drag event to title-canvas internal coords. */
+    /**
+     * Map a mouse/drag event to the title-canvas coordinate space the loadout
+     * slots live in. The title UI is painted under a base `scale(getBaseDeviceScale())`
+     * transform (background.ts sets it before onFrame), so the slot rects are in
+     * LOGICAL coords (canvas.width / baseDeviceScale). We must divide the physical
+     * pointer position by the same factor, or on HiDPI displays (baseDPR > 1)
+     * every hit-test is off by that factor and drag-and-drop drops miss.
+     */
     titleCanvasCoords(canvas, e) {
         const r = canvas.getBoundingClientRect();
+        const scale = (0, zoom_compensation_1.getBaseDeviceScale)();
         return {
-            x: (e.clientX - r.left) * (canvas.width / r.width),
-            y: (e.clientY - r.top) * (canvas.height / r.height),
+            x: (e.clientX - r.left) * (canvas.width / r.width) / scale,
+            y: (e.clientY - r.top) * (canvas.height / r.height) / scale,
         };
     }
     /**
@@ -265,7 +277,7 @@ class TitleScreenInventoryManager {
                 e.preventDefault();
                 return;
             }
-            const item = this.playerData.loadout[hit];
+            const item = this.getActiveLoadout()[hit];
             if (!item) {
                 e.preventDefault();
                 return;
@@ -365,6 +377,24 @@ class TitleScreenInventoryManager {
                 // Update skills data in inventory manager
                 this.updateSkillsData(data.tp, data.skills);
             }
+        });
+        // Authoritative maze-loadout preset from the server (after it validated/
+        // capped an edit against the collection). Apply unless a newer local edit
+        // is still in flight, so capping corrections land without flickering.
+        this.socket.on('mazeLoadoutUpdated', (data) => {
+            if (!this.playerData)
+                return;
+            if (Date.now() - this.lastLocalLoadoutChange < this.LOADOUT_SYNC_SUPPRESS_MS)
+                return;
+            const src = data.mazeLoadout || [];
+            const padded = new Array(this.LOADOUT_SLOTS).fill(null);
+            for (let i = 0; i < Math.min(src.length, this.LOADOUT_SLOTS); i++) {
+                if (src[i])
+                    src[i].onCooldown = false;
+                padded[i] = src[i] || null;
+            }
+            this.playerData.mazeLoadout = padded;
+            this.refreshForContext();
         });
     }
     setupCraftingSocketListeners() {
@@ -503,14 +533,24 @@ class TitleScreenInventoryManager {
                 const normalizedInv = Array.isArray(rawInv)
                     ? rawInv
                     : (rawInv ? (0, inventoryCodec_1.dictToInventory)(rawInv) : []);
-                this.playerData = {
-                    inventory: normalizedInv,
-                    loadout: (() => { const a = response.player.loadout || []; const o = new Array(20).fill(null); for (let i = 0; i < Math.min(a.length, 20); i++) {
+                const padLoadout = (a) => {
+                    const o = new Array(20).fill(null);
+                    for (let i = 0; i < Math.min((a || []).length, 20); i++) {
                         if (a[i]) {
                             a[i].onCooldown = false;
                         }
                         o[i] = a[i] || null;
-                    } return o; })(),
+                    }
+                    return o;
+                };
+                this.playerData = {
+                    inventory: normalizedInv,
+                    loadout: padLoadout(response.player.loadout || []),
+                    // Separate maze loadout preset. undefined when never customised
+                    // (getMazeLoadout then defaults it to a copy of the regular loadout).
+                    mazeLoadout: Array.isArray(response.player.mazeLoadout)
+                        ? padLoadout(response.player.mazeLoadout)
+                        : undefined,
                     tp: response.player.tp,
                     skills: response.player.skills,
                     stars: response.player.stars || 0,
@@ -561,10 +601,104 @@ class TitleScreenInventoryManager {
         itemName = itemName.replace('_', ' ');
         return itemName;
     }
+    /** True when the maze biome is selected — edits target the maze loadout preset. */
+    isMazeContext() {
+        return (localStorage.getItem('spawnBiome') || 'default') === 'maze';
+    }
+    /** Inventory key for a loadout item (petal_<type> for petals, else the type). */
+    itemKey(item) {
+        if (!item || !item.rarity)
+            return null;
+        if (item.type === 'petal')
+            return item.petalType ? `petal_${item.petalType}` : null;
+        return item.type;
+    }
+    /** Full owned collection = free inventory + everything equipped in the regular loadout. */
+    getCollection() {
+        const inv = this.playerData?.inventory ? [...this.playerData.inventory] : [];
+        for (const item of this.playerData?.loadout || []) {
+            const key = this.itemKey(item);
+            if (key && item.rarity)
+                (0, inventoryCodec_1.addItem)(inv, item.rarity, key, 1);
+        }
+        return inv;
+    }
+    /**
+     * The maze loadout preset, lazily defaulted to a copy of the regular loadout
+     * the first time it's needed (matches the server's default). Mutating the
+     * returned array is fine — it IS playerData.mazeLoadout.
+     */
+    getMazeLoadout() {
+        if (!this.playerData)
+            return new Array(this.LOADOUT_SLOTS).fill(null);
+        if (this.playerData.mazeLoadout === undefined) {
+            const copy = new Array(this.LOADOUT_SLOTS).fill(null);
+            for (let i = 0; i < Math.min(this.playerData.loadout.length, this.LOADOUT_SLOTS); i++) {
+                const it = this.playerData.loadout[i];
+                copy[i] = it ? { ...it } : null;
+            }
+            this.playerData.mazeLoadout = copy;
+        }
+        return this.playerData.mazeLoadout;
+    }
+    /** The loadout being edited/displayed: the maze preset or the regular loadout. */
+    getActiveLoadout() {
+        return this.isMazeContext() ? this.getMazeLoadout() : (this.playerData?.loadout || []);
+    }
+    /**
+     * Inventory view for the active context. Regular = the physical inventory.
+     * Maze = collection − mazeLoadout: the maze preset is a shared preset that
+     * doesn't consume from the inventory, so we derive the "available" view by
+     * removing the preset's petals from the full collection.
+     */
+    getActiveInventory() {
+        if (!this.isMazeContext())
+            return this.playerData?.inventory || [];
+        const inv = this.getCollection();
+        for (const item of this.getMazeLoadout()) {
+            const key = this.itemKey(item);
+            if (key && item.rarity)
+                (0, inventoryCodec_1.removeItem)(inv, item.rarity, key, 1);
+        }
+        return inv;
+    }
+    /**
+     * Persist a loadout edit for the active context. Maze edits go to the
+     * mazeLoadout preset (tagged context 'maze'; the server validates against the
+     * collection and never touches the regular loadout/inventory). Regular edits
+     * keep the existing physical model.
+     */
+    commitLoadoutEdit(newLoadout) {
+        if (!this.playerData)
+            return;
+        this.lastLocalLoadoutChange = Date.now();
+        const emitReady = this.socket && this.socket.connected && this.isAuthenticated && this.socket.username;
+        if (this.isMazeContext()) {
+            this.playerData.mazeLoadout = newLoadout;
+            if (emitReady) {
+                this.socket.emit('updateLoadout', { loadout: newLoadout, inventory: [], inPvpArena: false, context: 'maze' });
+            }
+        }
+        else {
+            this.playerData.loadout = newLoadout;
+            if (emitReady) {
+                this.socket.emit('updateLoadout', { loadout: newLoadout, inventory: this.playerData.inventory, inPvpArena: false, context: 'regular' });
+            }
+        }
+        this.updateLoadoutDisplay();
+        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
+            this.updateInventoryDisplay();
+        }
+    }
+    /** Refresh loadout + inventory display when the selected biome changes. */
+    refreshForContext() {
+        this.updateLoadoutDisplay();
+        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
+            this.updateInventoryDisplay();
+        }
+    }
     getItemCount(rarity, type) {
-        if (!this.playerData || !this.playerData.inventory)
-            return 0;
-        return (0, inventoryCodec_1.getItemCount)(this.playerData.inventory, rarity, type);
+        return (0, inventoryCodec_1.getItemCount)(this.getActiveInventory(), rarity, type);
     }
     removeItem(rarity, type, count) {
         if (!this.playerData || !this.playerData.inventory)
@@ -603,119 +737,60 @@ class TitleScreenInventoryManager {
                 item.onCooldown = false;
             }
         }
-        // Pad to full loadout length so secondary-row writes are preserved
+        // Pad the ACTIVE loadout (maze preset or regular) to full length.
+        const activeLoadout = this.getActiveLoadout();
         const newLoadout = new Array(this.LOADOUT_SLOTS).fill(null);
-        for (let i = 0; i < Math.min(this.playerData.loadout.length, this.LOADOUT_SLOTS); i++) {
-            newLoadout[i] = this.playerData.loadout[i] || null;
+        for (let i = 0; i < Math.min(activeLoadout.length, this.LOADOUT_SLOTS); i++) {
+            newLoadout[i] = activeLoadout[i] || null;
         }
-        this.removeItem(rarity, type, 1);
-        const existingItem = newLoadout[loadoutSlot];
-        if (existingItem && existingItem.rarity) {
-            const existingKey = existingItem.type === 'petal' ? `${existingItem.type}_${existingItem.petalType}` : existingItem.type;
-            this.addItem(existingItem.rarity, existingKey, 1);
+        // The regular loadout uses the physical inventory model (equip removes
+        // from inventory, swap-out returns to it). The maze preset is a shared
+        // preset: it doesn't consume from the inventory — the derived maze
+        // inventory (collection − preset) reflects the change automatically.
+        if (!this.isMazeContext()) {
+            this.removeItem(rarity, type, 1);
+            const existingItem = newLoadout[loadoutSlot];
+            if (existingItem && existingItem.rarity) {
+                const existingKey = existingItem.type === 'petal' ? `${existingItem.type}_${existingItem.petalType}` : existingItem.type;
+                this.addItem(existingItem.rarity, existingKey, 1);
+            }
         }
         newLoadout[loadoutSlot] = item;
-        this.playerData.loadout = newLoadout;
-        this.lastLocalLoadoutChange = Date.now();
-        // Emit to server - ensure socket is authenticated and player exists
-        if (this.socket && this.socket.connected && this.isAuthenticated && this.socket.username) {
-            console.log('[TitleScreen] Emitting updateLoadout (equipItemToLoadout):', {
-                socketId: this.socket.id,
-                loadout: newLoadout,
-                inventory: this.playerData.inventory
-            });
-            this.socket.emit('updateLoadout', {
-                loadout: newLoadout,
-                inventory: this.playerData.inventory
-            });
-        }
-        else {
-            console.warn('[TitleScreen] Cannot emit updateLoadout - socket not ready:', {
-                hasSocket: !!this.socket,
-                connected: this.socket?.connected,
-                authenticated: this.isAuthenticated,
-                hasUsername: !!this.socket?.username,
-                socketId: this.socket?.id
-            });
-        }
-        this.updateLoadoutDisplay();
-        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
-            this.updateInventoryDisplay();
-        }
+        this.commitLoadoutEdit(newLoadout);
     }
     moveItemToInventory(loadoutSlot) {
-        if (!this.playerData || loadoutSlot >= this.playerData.loadout.length)
+        if (!this.playerData)
             return;
-        const item = this.playerData.loadout[loadoutSlot];
+        const activeLoadout = this.getActiveLoadout();
+        if (loadoutSlot >= activeLoadout.length)
+            return;
+        const item = activeLoadout[loadoutSlot];
         if (!item || !item.rarity)
             return;
-        const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
-        this.addItem(item.rarity, itemKey, 1);
+        // Regular: physically return the petal to the inventory. Maze: no-op —
+        // the derived maze inventory reflects the freed preset slot.
+        if (!this.isMazeContext()) {
+            const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+            this.addItem(item.rarity, itemKey, 1);
+        }
         const newLoadout = new Array(this.LOADOUT_SLOTS).fill(null);
-        for (let i = 0; i < Math.min(this.playerData.loadout.length, this.LOADOUT_SLOTS); i++) {
-            newLoadout[i] = this.playerData.loadout[i] || null;
+        for (let i = 0; i < Math.min(activeLoadout.length, this.LOADOUT_SLOTS); i++) {
+            newLoadout[i] = activeLoadout[i] || null;
         }
         newLoadout[loadoutSlot] = null;
-        this.playerData.loadout = newLoadout;
-        this.lastLocalLoadoutChange = Date.now();
-        // Emit to server - ensure socket is authenticated and player exists
-        if (this.socket && this.socket.connected && this.isAuthenticated && this.socket.username) {
-            console.log('[TitleScreen] Emitting updateLoadout (moveItemToInventory):', {
-                socketId: this.socket.id,
-                loadout: newLoadout,
-                inventory: this.playerData.inventory
-            });
-            this.socket.emit('updateLoadout', {
-                loadout: newLoadout,
-                inventory: this.playerData.inventory
-            });
-        }
-        else {
-            console.warn('[TitleScreen] Cannot emit updateLoadout - socket not ready:', {
-                hasSocket: !!this.socket,
-                connected: this.socket?.connected,
-                authenticated: this.isAuthenticated,
-                hasUsername: !!this.socket?.username,
-                socketId: this.socket?.id
-            });
-        }
-        this.updateLoadoutDisplay();
-        if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {
-            this.updateInventoryDisplay();
-        }
+        this.commitLoadoutEdit(newLoadout);
     }
     swapLoadoutItems(fromSlot, toSlot) {
         if (!this.playerData)
             return;
+        const activeLoadout = this.getActiveLoadout();
         const newLoadout = new Array(this.LOADOUT_SLOTS).fill(null);
-        for (let i = 0; i < Math.min(this.playerData.loadout.length, this.LOADOUT_SLOTS); i++) {
-            newLoadout[i] = this.playerData.loadout[i] || null;
+        for (let i = 0; i < Math.min(activeLoadout.length, this.LOADOUT_SLOTS); i++) {
+            newLoadout[i] = activeLoadout[i] || null;
         }
         [newLoadout[fromSlot], newLoadout[toSlot]] = [newLoadout[toSlot], newLoadout[fromSlot]];
-        this.playerData.loadout = newLoadout;
-        this.lastLocalLoadoutChange = Date.now();
-        // Emit to server - ensure socket is authenticated and player exists
-        if (this.socket && this.socket.connected && this.isAuthenticated && this.socket.username) {
-            console.log('[TitleScreen] Emitting updateLoadout (swapLoadoutItems):', {
-                socketId: this.socket.id,
-                loadout: newLoadout,
-                inventory: this.playerData.inventory
-            });
-            this.socket.emit('updateLoadout', {
-                loadout: newLoadout,
-                inventory: this.playerData.inventory
-            });
-        }
-        else {
-            console.warn('[TitleScreen] Cannot emit updateLoadout - socket not ready:', {
-                hasSocket: !!this.socket,
-                connected: this.socket?.connected,
-                authenticated: this.isAuthenticated,
-                hasUsername: !!this.socket?.username,
-                socketId: this.socket?.id
-            });
-        }
-        this.updateLoadoutDisplay();
+        // Swaps never change the inventory in either context.
+        this.commitLoadoutEdit(newLoadout);
     }
     createInventoryItemElement(rarity, type, count) {
         // Skip eggs on title screen
@@ -761,7 +836,7 @@ class TitleScreenInventoryManager {
         itemElement.addEventListener('click', () => {
             if (!this.playerData)
                 return;
-            const loadout = this.playerData.loadout;
+            const loadout = this.getActiveLoadout();
             let emptySlot = -1;
             for (let i = 0; i < loadout_bar_1.LOADOUT_SLOT_COUNT; i++) {
                 if (!loadout[i]) {
@@ -905,7 +980,9 @@ class TitleScreenInventoryManager {
             return;
         }
         const rarities = ['unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
-        const invDict = this.playerData?.inventory ? (0, inventoryCodec_1.inventoryToDict)(this.playerData.inventory) : {};
+        // Active inventory view: regular inventory, or (in maze context) the
+        // collection minus the maze preset so equipped maze petals aren't shown.
+        const invDict = (0, inventoryCodec_1.inventoryToDict)(this.getActiveInventory());
         // Build set of current item keys for removal detection
         const currentKeys = new Set();
         for (const rarity in invDict) {
@@ -1244,15 +1321,31 @@ class TitleScreenInventoryManager {
             inventoryPanel.style.boxShadow = 'none';
             inventoryPanel.style.width = '380px';
             inventoryPanel.style.overflow = 'visible';
-            this.canvasInventoryPanel = new inventory_panel_1.CanvasInventoryPanel(this.gameAdapter);
+            // Maze-aware adapter: the inventory panel shows the ACTIVE inventory
+            // view (regular inventory, or collection − mazeLoadout in maze
+            // context) so maze-equipped petals aren't double-shown and regular-
+            // loadout petals appear available for the maze build. It reads
+            // getLocalPlayer() every frame, so switching biome updates it live.
+            // (The shared gameAdapter stays regular so crafting is unaffected.)
+            const inventoryPanelAdapter = {
+                getLocalPlayer: () => ({
+                    inventory: this.getActiveInventory(),
+                    loadout: this.getActiveLoadout(),
+                }),
+                getPetalCanvas: (pt, r, t) => this.gameAdapter.getPetalCanvas(pt, r, t),
+                getPetalStats: (pt, r) => this.gameAdapter.getPetalStats(pt, r),
+                getItemSpriteDataUrl: (t) => this.gameAdapter.getItemSpriteDataUrl(t),
+            };
+            this.canvasInventoryPanel = new inventory_panel_1.CanvasInventoryPanel(inventoryPanelAdapter);
             this.canvasInventoryPanel.attachTo(inventoryPanel);
             // Click (mouseup without drag) auto-equips to first empty loadout slot.
             this.canvasInventoryPanel.onItemClick = (rarity, itemType) => {
                 if (!this.playerData)
                     return;
+                const activeLoadout = this.getActiveLoadout();
                 let emptySlot = -1;
                 for (let i = 0; i < loadout_bar_1.LOADOUT_SLOT_COUNT; i++) {
-                    if (!this.playerData.loadout[i]) {
+                    if (!activeLoadout[i]) {
                         emptySlot = i;
                         break;
                     }
@@ -1371,6 +1464,9 @@ class TitleScreenInventoryManager {
         tooltip.style.top = `${top}px`;
     }
     updateFromPlayerData(playerData) {
+        // Preserve the separate maze loadout preset across regular-state syncs —
+        // this incoming payload only carries the regular loadout/inventory.
+        const preservedMazeLoadout = this.playerData?.mazeLoadout;
         // Suppress stale server-pushed loadout data while an optimistic edit is in flight
         if (this.playerData && Date.now() - this.lastLocalLoadoutChange < this.LOADOUT_SYNC_SUPPRESS_MS) {
             // Keep local loadout, merge other fields
@@ -1378,6 +1474,7 @@ class TitleScreenInventoryManager {
                 ...playerData,
                 loadout: this.playerData.loadout,
                 inventory: this.playerData.inventory,
+                mazeLoadout: preservedMazeLoadout,
             };
         }
         else {
@@ -1386,7 +1483,7 @@ class TitleScreenInventoryManager {
             const src = playerData.loadout || [];
             for (let i = 0; i < Math.min(src.length, this.LOADOUT_SLOTS); i++)
                 padded[i] = src[i] || null;
-            this.playerData = { ...playerData, loadout: padded };
+            this.playerData = { ...playerData, loadout: padded, mazeLoadout: preservedMazeLoadout };
         }
         this.updateLoadoutDisplay();
         if (this.inventoryPanel && this.inventoryPanel.style.display === 'block') {

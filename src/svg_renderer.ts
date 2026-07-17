@@ -63,21 +63,30 @@ class SVGRendererWrapper {
         height: number,
         rotation: number = 0,
         time: number = Date.now(),
-        disableAntiAliasing: boolean = false
+        disableAntiAliasing: boolean = false,
+        tint: { color: string; amount: number } | null = null
     ): boolean {
         if (!svgString) return false;
 
         try {
             const compiled = this.compileSVG(svgString);
 
+            // imageSmoothingEnabled only affects drawImage, so touching it for a
+            // path-only SVG is a pure cost — and not a free one: a smoothing
+            // write per mob breaks Chrome's canvas op batching (a pipeline flush
+            // each), which is why the mob pass sets it once globally instead.
+            // EVERY mob comes through here now, so almost all of them are
+            // path-only and must not pay it; only the <image> SVGs that want the
+            // pixelated look do.
+            const toggleSmoothing = disableAntiAliasing && compiled.hasImage;
             const originalSmoothing = ctx.imageSmoothingEnabled;
-            if (disableAntiAliasing) {
+            if (toggleSmoothing) {
                 ctx.imageSmoothingEnabled = false;
             }
 
-            drawCompiledSVG(ctx, compiled, x, y, width, height, rotation, time);
+            drawCompiledSVG(ctx, compiled, x, y, width, height, rotation, time, tint);
 
-            if (disableAntiAliasing) {
+            if (toggleSmoothing) {
                 ctx.imageSmoothingEnabled = originalSmoothing;
             }
 

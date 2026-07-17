@@ -146,6 +146,13 @@ export function exitPvpArena(
 
     if (io) {
         io.to(player.id).emit('inventoryUpdated', player.inventory);
+        // Push the restored regular loadout authoritatively so the client stops
+        // holding the PVP loadout the instant it leaves the arena. Without this
+        // the client keeps the PVP petals until the next tick sync and can emit
+        // a stale `updateLoadout` that the server would persist as the regular
+        // loadout (the mode-tag guard in the updateLoadout handler is the other
+        // half of that fix).
+        io.to(player.id).emit('playerUpdated', player);
     }
     if (savePlayerProgress) {
         const userId = playerUserIds[player.id];
@@ -177,21 +184,23 @@ function loadoutItemKey(item: Item): string | null {
 }
 
 /**
- * Put a player into maze state: shift the LOADOUT down one rarity, strip
- * anything still above the equip cap, and snapshot entry holdings for the
- * Absorb tab. This is the single entry point (auth + respawn) — the three
- * steps must run in this order, because the cap strip returns petals to the
- * inventory at regular-world rarity and the snapshot must count them there,
- * not double-count or mark them absorbable.
+ * Put a player into maze state: swap in the SEPARATE maze loadout preset (see
+ * applyMazeLoadout), stash the pristine regular loadout for restore on exit,
+ * and snapshot entry holdings for the Absorb tab. This is the single entry
+ * point (auth + respawn). The regular loadout is NEVER mutated — it is stashed
+ * verbatim in `regularLoadout` and restored untouched on exit — so entering the
+ * maze can't change or destroy the player's persisted regular loadout. The
+ * steps must run in order: enterMazeProgression first so the maze talent tree
+ * is live when applyMazeLoadout re-derives petal health, then the snapshot last
+ * so it counts the maze-terms holdings.
  */
 export function enterMazeState(player: ServerPlayer, io?: SocketIOServer): void {
     player.inMaze = true;
-    // Must run first: the rarity shift re-derives petal health through
+    // Must run first: applyMazeLoadout re-derives petal health through
     // applyPetalHealthBonus, which reads player.skills — that has to already
     // be the maze tree, not the outside one.
     enterMazeProgression(player);
-    applyMazeRarityShift(player);
-    enforceMazeLoadoutCap(player, io);
+    applyMazeLoadout(player, io);
     snapshotMazeEntryCounts(player);
     emitSkillsUpdate(player, io);
 }
@@ -245,39 +254,121 @@ export function exitMazeProgression(player: ServerPlayer): void {
     player.mazeXPSwapped = false;
 }
 
+/** Shallow clone of a PlayerInventory (flat numeric triples). */
+function cloneInventory(inv?: PlayerInventory): PlayerInventory {
+    return inv ? [...inv] : [];
+}
+
 /**
- * Shift the player's equipped LOADOUT down one rarity for the maze ("petals
- * obtained in regular maps decrease 1 in rarity going in"). The INVENTORY is
- * not touched: it stays in regular-world terms for the whole run — the
- * loadout is locked inside the maze (updateLoadout rejects every change), so
- * shifted loadout and regular inventory can never mix. Slots that are
- * already common can't shift; they're recorded in player.mazeFlooredSlots so
- * buildMazeRegularState won't hand them a free +1 on the way out (slot
- * indices are stable precisely because the loadout is locked). Idempotent
- * per maze session via mazeRarityShifted.
- *
- * Persisted saves are NEVER stored in shifted terms — savePlayerProgress
- * translates through buildMazeRegularState — so a crash mid-maze can't
- * corrupt anyone's loadout.
+ * Everything the player currently owns = free inventory + everything equipped
+ * in the given loadout. Equipping physically removes a petal from the
+ * inventory, so inventory ∪ loadout is the full collection. Returned in
+ * regular-world terms (callers pass regular-terms inputs).
  */
-export function applyMazeRarityShift(player: ServerPlayer): void {
-    if (player.mazeRarityShifted) return;
-    const floored: number[] = [];
-    const loadout = player.loadout || [];
-    for (let i = 0; i < loadout.length; i++) {
-        const item = loadout[i];
+export function buildCollection(inventory: PlayerInventory | undefined, loadout: (Item | null)[] | undefined): PlayerInventory {
+    const collection = cloneInventory(inventory);
+    for (const item of loadout || []) {
         if (!item || !item.rarity) continue;
-        const idx = getRarityIndex(item.rarity);
-        if (idx > 0) {
-            item.rarity = RARITY_LEVELS[idx - 1] as Item['rarity'];
-            // Re-derive petal health for the new (lower) rarity.
-            applyPetalHealthBonus(item, player);
-        } else if (idx === 0) {
-            floored.push(i);
-        }
+        const key = loadoutItemKey(item);
+        if (key) addItem(collection, item.rarity, key, 1);
     }
-    player.mazeFlooredSlots = floored;
+    return collection;
+}
+
+/**
+ * Cap a loadout PRESET to what the collection actually contains: walk the slots
+ * in order and keep a petal only while an unused copy remains in a working copy
+ * of the collection, else null that slot. Lets a preset reference petals that
+ * are also equipped in the OTHER loadout (shared presets) while never
+ * over-committing beyond the owned count. Pure — returns a fresh array.
+ */
+export function capLoadoutToCollection(loadout: (Item | null)[] | undefined, collection: PlayerInventory): (Item | null)[] {
+    const remaining = cloneInventory(collection);
+    return (loadout || []).map(item => {
+        if (!item || !item.rarity) return item ? { ...item } : null;
+        const key = loadoutItemKey(item);
+        if (key && hasItem(remaining, item.rarity, key, 1)) {
+            removeItem(remaining, item.rarity, key, 1);
+            return { type: item.type, rarity: item.rarity, petalType: item.petalType } as Item;
+        }
+        return null;
+    });
+}
+
+/**
+ * Regular-world state for a player currently inside the maze. player.inventory
+ * holds the maze inventory (collection − mazePreset, regular terms) and
+ * player.mazeLoadout holds the preset (regular terms), so their union is the
+ * full collection. Restore the stashed regular loadout preset (capped to that
+ * collection — a petal absorbed away mid-run drops out) and split the remainder
+ * into the regular free inventory. Pure; used by both savePlayerProgress and
+ * exitMazeState so a crash mid-maze and a clean exit produce identical results.
+ */
+export function buildRegularFromMaze(player: ServerPlayer): { inventory: PlayerInventory; loadout: (Item | null)[] } {
+    const collection = buildCollection(player.inventory, player.mazeLoadout);
+    const loadout = capLoadoutToCollection(player.regularLoadout, collection);
+    const inventory = cloneInventory(collection);
+    for (const item of loadout) {
+        if (!item || !item.rarity) continue;
+        const key = loadoutItemKey(item);
+        if (key) removeItem(inventory, item.rarity, key, 1);
+    }
+    return { inventory, loadout };
+}
+
+/**
+ * Enter the maze on the player's SEPARATE maze loadout preset — the regular
+ * loadout is never touched. Steps:
+ *   1. collection = regular inventory + regular loadout (everything owned).
+ *   2. Stash the pristine regular loadout in `regularLoadout` for exit restore.
+ *   3. Resolve the maze preset: player.mazeLoadout if set, else default to a
+ *      copy of the regular loadout (so players who never customise get the old
+ *      "enter on your regular build" behaviour). Cap it to the collection.
+ *   4. Maze inventory = collection − preset, so a maze-equipped petal isn't also
+ *      shown/absorbable in the inventory. Regular terms; live during the run.
+ *   5. Live loadout = preset shifted DOWN one rarity ("petals decrease 1 rarity
+ *      going in"), with active-slot (0-9) petals still above the maze cap
+ *      (MAZE_MAX_PETAL_RARITY_INDEX = regular super+) BENCHED — left out of the
+ *      live loadout but preserved in the preset, so they return on exit and are
+ *      never dumped into the inventory. Secondary slots 10+ shift, never capped.
+ * Idempotent per maze session via mazeRarityShifted. Saves persist the
+ * regular-world translation via buildRegularFromMaze, so the DB never holds maze
+ * terms and a crash can't corrupt the regular loadout.
+ */
+export function applyMazeLoadout(player: ServerPlayer, io?: SocketIOServer): void {
+    if (player.mazeRarityShifted) return;
+    // Everything owned at entry.
+    const collection = buildCollection(player.inventory, player.loadout);
+    // Stash the pristine regular loadout for exit restore.
+    if (!player.regularLoadout) {
+        player.regularLoadout = (player.loadout || []).map(item => (item ? { ...item } : null));
+    }
+    // Maze preset (regular terms): configured maze loadout, or default to the
+    // regular loadout the first time. Capped to what's actually owned.
+    const rawPreset = player.mazeLoadout !== undefined ? player.mazeLoadout : (player.loadout || []);
+    const preset = capLoadoutToCollection(rawPreset, collection);
+    player.mazeLoadout = preset.map(item => (item ? { ...item } : null));
+    // Maze inventory = collection − preset.
+    const mazeInventory = cloneInventory(collection);
+    for (const item of preset) {
+        if (!item || !item.rarity) continue;
+        const key = loadoutItemKey(item);
+        if (key) removeItem(mazeInventory, item.rarity, key, 1);
+    }
+    player.inventory = mazeInventory;
+    // Live loadout = preset shifted down, over-cap active slots benched.
+    const maxCapIdx = MAZE_MAX_PETAL_RARITY_INDEX;
+    player.loadout = preset.map((item, slot) => {
+        if (!item || !item.rarity) return null;
+        const idx = getRarityIndex(item.rarity);
+        const shiftedIdx = idx > 0 ? idx - 1 : 0;
+        if (slot < 10 && shiftedIdx > maxCapIdx) return null;
+        const shifted: Item = { ...item, rarity: RARITY_LEVELS[shiftedIdx] as Item['rarity'] };
+        if (shifted.type === 'petal') applyPetalHealthBonus(shifted, player);
+        return shifted;
+    });
     player.mazeRarityShifted = true;
+    recalculatePlayerStats(player, io);
 }
 
 /**
@@ -333,96 +424,35 @@ export function getMazeAbsorbableCount(player: ServerPlayer, rarity: string, ite
 }
 
 /**
- * Leave maze terms in place: translate the LIVE loadout back to
- * regular-world rarities and clear the shift bookkeeping. Used when a player
- * is moved out of the maze without a re-authentication (e.g. admin teleport);
- * the normal exit path — leaving via the title screen — converts implicitly
- * through the save translation instead.
+ * Take a player out of maze state: rebuild the regular-world state (regular
+ * loadout preset restored from the stash and capped to the current collection,
+ * the rest split back into the regular free inventory) and clear the maze
+ * bookkeeping. Petals picked up / absorbed during the run are already folded
+ * into player.inventory (the maze inventory), so buildRegularFromMaze carries
+ * them across. Used when a player is moved out of the maze without a
+ * re-authentication (respawn outside, admin teleport); leaving via the title
+ * screen restores implicitly because the last save wrote the same translation.
  */
 export function exitMazeState(player: ServerPlayer, io?: SocketIOServer): void {
     const wasSwapped = player.mazeXPSwapped;
-    // Restore the outside talents before the loadout is translated back up:
-    // applyPetalHealthBonus below must see the outside petalHealth tier.
+    // Restore the outside talents before petal health is re-derived below:
+    // applyPetalHealthBonus must see the outside petalHealth tier.
     exitMazeProgression(player);
     if (wasSwapped) emitSkillsUpdate(player, io);
     if (player.mazeRarityShifted) {
-        const regular = buildMazeRegularState(player);
+        const regular = buildRegularFromMaze(player);
         player.inventory = regular.inventory;
         player.loadout = regular.loadout;
+        player.regularLoadout = undefined;
         player.mazeRarityShifted = false;
-        player.mazeFlooredSlots = undefined;
         player.mazeEntryCounts = undefined;
-        // Re-derive petal health for the restored (higher) rarities.
+        // Re-derive petal health for the restored rarities under outside talents.
         for (const item of player.loadout) {
             if (item && item.type === 'petal') applyPetalHealthBonus(item, player);
         }
+        recalculatePlayerStats(player, io);
     }
     player.inMaze = false;
-}
-
-/**
- * Translate a maze-shifted player back into regular-world terms. Only the
- * LOADOUT is shifted inside the maze: +1 to undo the entry shift, except the
- * slots recorded in mazeFlooredSlots (common at entry, couldn't shift down —
- * they stay common so a round trip can't mint free uncommons). The inventory
- * lives in regular terms for the whole run — drops are upgraded the moment
- * they're picked up — so it passes through unchanged. Slot-keyed flooring is
- * safe because the loadout is locked inside the maze (updateLoadout rejects
- * all changes; petal break/restore recreates the same petal in place).
- * Pure — returns copies; the live player state is untouched. Used by
- * savePlayerProgress while the player is inside the maze, which also makes
- * leaving via the title screen "just work": the last save IS the exit
- * conversion.
- */
-export function buildMazeRegularState(player: ServerPlayer): { inventory: PlayerInventory; loadout: (Item | null)[] } {
-    const maxIdx = RARITY_LEVELS.length - 1;
-    const floored = new Set(player.mazeFlooredSlots || []);
-
-    const loadout = (player.loadout || []).map((item, slot) => {
-        if (!item || !item.rarity) return item ? { ...item } : null;
-        const idx = getRarityIndex(item.rarity);
-        if (idx < 0 || floored.has(slot)) return { ...item };
-        return { ...item, rarity: RARITY_LEVELS[Math.min(idx + 1, maxIdx)] as Item['rarity'] };
-    });
-
-    return { inventory: [...(player.inventory || [])], loadout };
-}
-
-/**
- * Enforce the maze petal cap: only petals up to mythic (in shifted maze
- * terms — regular-world ultra) may stay equipped in active slots (0-9).
- * Anything above is moved back into the inventory at its REGULAR-WORLD
- * rarity (shifted + 1): this runs right after the entry shift, and the
- * inventory is never in maze terms. Returns true if anything was stripped.
- */
-export function enforceMazeLoadoutCap(player: ServerPlayer, io?: SocketIOServer): boolean {
-    if (!player.loadout) return false;
-    const maxIdx = RARITY_LEVELS.length - 1;
-    let changed = false;
-    const activeLen = Math.min(player.loadout.length, 10);
-    for (let i = 0; i < activeLen; i++) {
-        const item = player.loadout[i];
-        if (!item || !item.rarity) continue;
-        const idx = getRarityIndex(item.rarity);
-        if (idx <= MAZE_MAX_PETAL_RARITY_INDEX) continue;
-        const key = loadoutItemKey(item);
-        if (key) {
-            if (!player.inventory) player.inventory = [];
-            const regularRarity = player.mazeRarityShifted
-                ? RARITY_LEVELS[Math.min(idx + 1, maxIdx)]
-                : item.rarity;
-            addItem(player.inventory, regularRarity, key, 1);
-        }
-        player.loadout[i] = null;
-        changed = true;
-    }
-    if (changed) {
-        recalculatePlayerStats(player, io);
-        if (io) {
-            io.to(player.id).emit('inventoryUpdated', player.inventory);
-        }
-    }
-    return changed;
 }
 
 /**
@@ -1128,19 +1158,21 @@ export function savePlayerProgress(
         const mazeTp = mazeLive ? (player.tp || 0) : (player.mazeTp || 0);
         const mazeSkills = mazeLive ? (player.skills || {}) : (player.mazeSkills || {});
 
-        // While in PVP, the live `inventory`/`loadout` are the temporary PVP
-        // versions; save the stashed regular versions so PVP play doesn't clobber
-        // the player's persisted data. While in the maze, the live versions are
-        // shifted down one rarity — persist the regular-world translation so the
-        // DB never holds maze-term rarities (crash-safe, and the last save doubles
-        // as the exit conversion when the player leaves via the title screen).
+        // While in PVP OR the maze, the live `loadout`/`inventory` are temporary
+        // mode-specific versions and the persisted REGULAR state must be
+        // reconstructed so mode play never clobbers it (crash-safe, and the last
+        // save doubles as the exit conversion when leaving via the title screen).
+        // PVP stashes both regular versions. The maze runs on its own preset with
+        // a maze inventory (collection − preset); buildRegularFromMaze folds the
+        // preset back in and restores the regular loadout to get regular-world
+        // terms. The maze loadout preset itself is persisted separately below.
         let inventoryToSave: PlayerInventory;
         let loadoutSource: (Item | null)[];
         if (player.inPvpArena) {
             inventoryToSave = player.regularInventory || [];
             loadoutSource = player.regularLoadout || [];
         } else if (player.inMaze && player.mazeRarityShifted) {
-            const regular = buildMazeRegularState(player);
+            const regular = buildRegularFromMaze(player);
             inventoryToSave = regular.inventory;
             loadoutSource = regular.loadout;
         } else {
@@ -1157,12 +1189,22 @@ export function savePlayerProgress(
                 petalType: item.petalType
             };
         });
+        // The separate maze loadout preset (regular-world terms) is persisted on
+        // every save so it survives across sessions, independent of the regular
+        // loadout. undefined = never customised (defaults to the regular loadout
+        // on first maze entry); an explicit array (incl. all-null) is respected.
+        const cleanMazeLoadout = player.mazeLoadout === undefined
+            ? undefined
+            : player.mazeLoadout.map(item => item
+                ? { type: item.type, rarity: item.rarity, petalType: item.petalType }
+                : null);
 
         database.savePlayer(userId, {
             totalXP: totalXP,
             mazeTotalXP: mazeTotalXP,
             inventory: inventoryToDict(inventoryToSave),
             loadout: cleanLoadout,
+            mazeLoadout: cleanMazeLoadout,
             tp: outsideTp,
             skills: outsideSkills,
             mazeTp: mazeTp,
