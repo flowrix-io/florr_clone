@@ -296,6 +296,7 @@ export class Chat {
           left: 100px;
           width: 300px;
           height: 200px;
+          padding: 10px;
           background: transparent;
           display: flex;
           flex-direction: column;
@@ -317,8 +318,10 @@ export class Chat {
         this.chatMessages.style.cssText = `
           flex-grow: 1;
           overflow-y: auto;
+          margin-bottom: 10px;
           padding: 5px;
           color: white;
+          font-size: 14px;
           background: transparent;
           z-index: 200;
       `;
@@ -327,6 +330,7 @@ export class Chat {
         const inputContainer = document.createElement('div');
         inputContainer.className = 'chat-input-container';
         inputContainer.style.cssText = `
+          height: 30px;
           padding: 5px;
           background: transparent;
           z-index: 200;
@@ -340,6 +344,7 @@ export class Chat {
         this.chatInput.className = 'chat-input';
         this.chatInput.style.cssText = `
           width: 100%;
+          height: 100%;
           padding: 5px;
           border: 1px solid rgba(255, 255, 255, 0.3);
           border-radius: 3px;
@@ -925,7 +930,7 @@ export class Chat {
         });
 
         messageElement.innerHTML = `
-          <span class="chat-time" style="color: rgba(255, 255, 255, 0.6);">[${time}]</span>
+          <span class="chat-time" style="color: rgba(255, 255, 255, 0.6); font-size: 12px;">[${time}]</span>
           <span class="chat-sender" style="color: #00ff00;">${message.sender}:</span>
           <span style="color: white;">${sanitizedContent}</span>
       `;

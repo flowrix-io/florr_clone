@@ -1,5 +1,10 @@
 node_modules
-dist/inventory.json
+dist/
+public_build_florrclone.zip
+db_backups/
+src/inventory.json
+server_*.log
+server_*.pid
 .DS_Store
 **/.DS_Store
 ._*
