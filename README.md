@@ -2,6 +2,11 @@
 
 A browser-based multiplayer survival game inspired by [florr.io](https://florr.io).
 
+> **License notice:** As of July 2026 this project is licensed under the
+> [GNU General Public License v3.0 or later](LICENSE) (previously ISC).
+> If you distribute this software or a modified version of it, you must do so
+> under the same license and make the corresponding source code available.
+
 ## Quick start
 
 Requires Node.js 22+
@@ -98,4 +103,16 @@ TypeScript, Canvas 2D, Socket.IO + `ws`, Express, `better-sqlite3`, Webpack
 
 ## License
 
-ISC (per `package.json`).
+Copyright (c) 2026 sussybite8888
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See [LICENSE](LICENSE) for the full text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+Versions of this project prior to the relicense were distributed under the
+ISC License.
