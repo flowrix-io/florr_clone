@@ -14,6 +14,7 @@ const petals_1 = require("../petals");
 const playerManager_1 = require("./playerManager");
 const maze_1 = require("../maze");
 const botManager_1 = require("./botManager");
+const autoUpdate_1 = require("./autoUpdate");
 const guildManager_1 = require("./guildManager");
 // Helper function to send message to admin or console
 function sendOutput(message, socketId, io) {
@@ -694,6 +695,103 @@ function executeServerCommand(command, executor, deps, socketId) {
             });
         }
     }
+    else if (trimmedCommand === 'backup_db' || trimmedCommand.startsWith('backup_db ')
+        || trimmedCommand === 'db_backup' || trimmedCommand.startsWith('db_backup ')) {
+        // backup_db        -> snapshot the database to db_backups/ (outside dist/)
+        // backup_db list   -> list existing backups, newest first
+        const arg = trimmedCommand.replace(/^(backup_db|db_backup)\s*/, '').trim();
+        if (arg === 'list') {
+            const backups = database_1.database.listDatabaseBackups();
+            if (backups.length === 0) {
+                sendOutput('No database backups yet. Run "backup_db" to create one.', socketId, io);
+            }
+            else {
+                sendOutput(`Database backups (${backups.length}, newest first):`, socketId, io);
+                backups.forEach(b => {
+                    sendOutput(`  ${b.file} — ${(b.bytes / 1024).toFixed(1)} KB — ${new Date(b.mtimeMs).toLocaleString()}`, socketId, io);
+                });
+                sendOutput('To restore: copy a backup over inventory.json (in dist/) and restart the server.', socketId, io);
+            }
+        }
+        else if (arg === '') {
+            try {
+                const result = database_1.database.backupDatabase(executor ? `manual-${executor}` : 'manual');
+                sendOutput(`Database backed up to ${result.file} (${(result.bytes / 1024).toFixed(1)} KB)`, socketId, io);
+            }
+            catch (error) {
+                const msg = error instanceof Error ? error.message : String(error);
+                sendOutput(`Database backup FAILED: ${msg}`, socketId, io);
+            }
+        }
+        else {
+            sendOutput('Usage: backup_db [list]', socketId, io);
+        }
+    }
+    else if (trimmedCommand === 'update' || trimmedCommand.startsWith('update ')) {
+        // update                  -> backup DB, install latest build, restart in 60s
+        // update now              -> same, restart immediately
+        // update <N>(s|m|h)       -> same, restart after the given delay
+        // update status           -> show current/last update state
+        // update cancel           -> cancel the pending post-update restart
+        // The database is ALWAYS backed up first; if the backup fails the
+        // update aborts before touching anything.
+        const arg = trimmedCommand.slice('update'.length).trim();
+        if (arg === 'status') {
+            sendOutput((0, autoUpdate_1.isUpdateInProgress)() ? `Update in progress. ${(0, autoUpdate_1.getLastUpdateStatus)()}` : (0, autoUpdate_1.getLastUpdateStatus)(), socketId, io);
+            const info = (0, server_1.getScheduledRestartInfo)();
+            if (info?.reason === 'update') {
+                sendOutput(`Post-update restart in ${Math.ceil(info.remainingMs / 1000)}s.`, socketId, io);
+            }
+        }
+        else if (arg === 'cancel' || arg === 'abort') {
+            if ((0, autoUpdate_1.isUpdateInProgress)()) {
+                sendOutput('Update is mid-install and cannot be cancelled (it only takes a few seconds).', socketId, io);
+            }
+            else if ((0, server_1.getScheduledRestartInfo)()?.reason === 'update' && (0, server_1.cancelScheduledRestart)()) {
+                sendOutput('Post-update restart cancelled. The new build is already on disk and will load on the next restart.', socketId, io);
+            }
+            else {
+                sendOutput('No pending post-update restart to cancel.', socketId, io);
+            }
+        }
+        else if (arg === 'help' || arg === '?') {
+            sendOutput('Usage: update [now|<N>(s|m|h)|status|cancel]', socketId, io);
+            sendOutput('  Backs up the database FIRST (aborts if that fails), downloads the latest', socketId, io);
+            sendOutput('  build (dist/) from the GitHub repo, installs it over the running server', socketId, io);
+            sendOutput('  (inventory.json is never touched), then restarts. Default restart delay', socketId, io);
+            sendOutput('  is 60s so players get warned.', socketId, io);
+        }
+        else {
+            // '', 'now', or a delay — same duration grammar as `restart`.
+            let delayMs = 60 * 1000;
+            if (arg === 'now') {
+                delayMs = 0;
+            }
+            else if (arg !== '') {
+                const match = arg.match(/^(\d+)\s*(s|sec|secs|m|min|mins|h|hr|hrs)?$/i);
+                if (!match) {
+                    sendOutput('Usage: update [now|<N>(s|m|h)|status|cancel]', socketId, io);
+                    return;
+                }
+                const n = parseInt(match[1], 10);
+                const unit = (match[2] || 's').toLowerCase();
+                delayMs = unit.startsWith('h') ? n * 60 * 60 * 1000
+                    : unit.startsWith('m') ? n * 60 * 1000
+                        : n * 1000;
+            }
+            if ((0, autoUpdate_1.isUpdateInProgress)()) {
+                sendOutput('An update is already in progress. Use "update status" to check on it.', socketId, io);
+                return;
+            }
+            (0, autoUpdate_1.runAutoUpdate)({
+                report: (msg) => sendOutput(msg, socketId, io),
+                restartDelayMs: delayMs,
+            }).catch((error) => {
+                const msg = error instanceof Error ? error.message : String(error);
+                sendOutput(`[UPDATE] FAILED: ${msg}`, socketId, io);
+            });
+        }
+    }
     else if (trimmedCommand === 'restart' || trimmedCommand.startsWith('restart ')) {
         // restart                       -> default 60s
         // restart <seconds>             -> seconds
@@ -856,5 +954,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], backup_db [list], update [now|<N>(s|m|h)|status|cancel] (backs up DB first, then installs latest build + restarts), change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
 }

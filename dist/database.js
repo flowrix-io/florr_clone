@@ -32,6 +32,26 @@ if (fs.existsSync(dbPath)) {
     fs.unlinkSync(dbPath);
 }
 const inventoryPath = path.join(__dirname, 'inventory.json');
+// Database backups: timestamped snapshots of inventory.json, kept one level
+// above the runtime dir (outside dist/) so redeploys can't delete them.
+const backupDir = path.join(__dirname, '..', 'db_backups');
+const BACKUP_FILE_PATTERN = /^inventory-.*\.json$/;
+const MAX_DB_BACKUPS = 30;
+const pruneOldBackups = () => {
+    try {
+        const backups = fs.readdirSync(backupDir)
+            .filter(f => BACKUP_FILE_PATTERN.test(f))
+            .map(f => ({ f, mtimeMs: fs.statSync(path.join(backupDir, f)).mtimeMs }))
+            .sort((a, b) => b.mtimeMs - a.mtimeMs);
+        for (const { f } of backups.slice(MAX_DB_BACKUPS)) {
+            fs.unlinkSync(path.join(backupDir, f));
+        }
+    }
+    catch (error) {
+        // Pruning is best-effort; never let it fail a successful backup.
+        console.error('Error pruning old database backups:', error);
+    }
+};
 // Password hashing configuration
 const SALT_ROUNDS = 12;
 let db = { players: {}, users: {} };
@@ -525,6 +545,35 @@ exports.database = {
             return true;
         }
         return false;
+    },
+    // ── Database backups ──────────────────────────────────────────────────
+    // Snapshots the in-memory db (the authoritative state — a debounced write
+    // to inventory.json may still be pending) to a timestamped file. Backups
+    // live OUTSIDE dist/ because full redeploys (update_aws.sh) rm -rf dist;
+    // in prod that puts them in ~/db_backups, in dev at the repo root.
+    backupDatabase: (label = 'manual') => {
+        const safeLabel = label.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').slice(0, 40) || 'manual';
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        fs.mkdirSync(backupDir, { recursive: true });
+        const file = path.join(backupDir, `inventory-${timestamp}-${safeLabel}.json`);
+        const json = JSON.stringify(db, null, 2);
+        fs.writeFileSync(file, json);
+        // Read back and parse so a truncated/corrupt write can never pass as a
+        // good backup (callers abort updates when this throws).
+        JSON.parse(fs.readFileSync(file, 'utf-8'));
+        pruneOldBackups();
+        return { file, bytes: Buffer.byteLength(json) };
+    },
+    listDatabaseBackups: () => {
+        if (!fs.existsSync(backupDir))
+            return [];
+        return fs.readdirSync(backupDir)
+            .filter(f => BACKUP_FILE_PATTERN.test(f))
+            .map(f => {
+            const stat = fs.statSync(path.join(backupDir, f));
+            return { file: path.join(backupDir, f), bytes: stat.size, mtimeMs: stat.mtimeMs };
+        })
+            .sort((a, b) => b.mtimeMs - a.mtimeMs);
     },
     // Delete guest accounts that still have the default initial inventory/loadout
     deleteGuestAccounts: () => {
