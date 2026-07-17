@@ -101,6 +101,15 @@ MapEditor.html              # standalone biome map editor
 
 TypeScript, Canvas 2D, Socket.IO + `ws`, Express, `better-sqlite3`, Webpack
 
+## Set up production server
+
+Make sure you have PM2 installed
+Paste update_aws.sh contents into terminal
+
+## Update production server
+
+Run "/admin update" in server chat
+
 ## License
 
 Copyright (c) 2026 sussybite8888
