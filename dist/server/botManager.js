@@ -1,0 +1,2507 @@
+"use strict";
+// AI-controlled bots that fill empty player slots so the game always has ~20 players.
+// Bots are regular ServerPlayer objects inserted into the shared `players` dict,
+// so the existing tick, rendering, combat, and petal systems handle them with no
+// special-casing beyond skipping save/save-game paths (no socket/userId).
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MAX_BOT_COUNT = void 0;
+exports.setTargetBotCount = setTargetBotCount;
+exports.getTargetBotCount = getTargetBotCount;
+exports.initializeBotGuilds = initializeBotGuilds;
+exports.isBot = isBot;
+exports.getBotLevelForName = getBotLevelForName;
+exports.getBotLoadoutForName = getBotLoadoutForName;
+exports.removeAllBots = removeAllBots;
+exports.maintainBotCount = maintainBotCount;
+exports.triggerBotRaid = triggerBotRaid;
+exports.updateBotAI = updateBotAI;
+const constants_1 = require("../constants");
+const map_data_1 = require("../map_data");
+const petals_1 = require("../petals");
+const mobs_1 = require("../mobs");
+const enemyGrid_1 = require("./enemyGrid");
+const playerManager_1 = require("./playerManager");
+const gameState_1 = require("./gameState");
+const squadManager_1 = require("./squadManager");
+const guildManager_1 = require("./guildManager");
+const petal_actions_1 = require("../petal_actions");
+const BOT_ID_PREFIX = 'bot_';
+const TARGET_TOTAL_PLAYERS = 23;
+const MAINTAIN_INTERVAL_MS = 1500;
+const SPAWN_BURST_CAP = 4;
+exports.MAX_BOT_COUNT = 50;
+// How long to keep bots running after the last human disconnects, so the
+// world isn't immediately empty if someone reconnects quickly.
+const BOT_IDLE_TIMEOUT_MS = 45000;
+// When set, maintainBotCount targets exactly this many bots regardless of how
+// many real players are connected. null = default behavior (fill up to
+// TARGET_TOTAL_PLAYERS minus real players).
+let targetBotCountOverride = null;
+function setTargetBotCount(count) {
+    if (count === null) {
+        targetBotCountOverride = null;
+        return;
+    }
+    targetBotCountOverride = Math.max(0, Math.min(exports.MAX_BOT_COUNT, Math.floor(count)));
+}
+function getTargetBotCount() {
+    return targetBotCountOverride;
+}
+// Combat tuning
+const REGULAR_AGGRO_RANGE = 500; // common/uncommon/rare
+const HIGH_TIER_AGGRO_RANGE = 900; // epic/legendary/mythic
+// Distance bands are now computed dynamically from petal reach + mob radius.
+// Buffer added on top of (petal reach + mob radius) to keep the player body
+// outside the mob's collision circle.
+const STANDOFF_SAFETY_BUFFER = 18;
+const FLEE_HEALTH_RATIO = 0.22;
+const ITEM_SEEK_RANGE = 600;
+const BOT_RESPAWN_DELAY_MS = 3000;
+const BOT_SPAWN_INVULNERABILITY_MS = 3000;
+// Tether: keep bots clustered near a real player so their viewports overlap
+// and the enemy spawner doesn't inflate mob counts across the map.
+const TETHER_RADIUS = 1400; // bot stays within this of its anchor
+const TETHER_RETURN_RADIUS = 2200; // past this, drop whatever it's doing and regroup
+const SPAWN_JITTER = 500; // jitter radius around spawn anchor
+// Ultra+ bots roam mythic zones looking for boss spawns — wider tether so
+// they can patrol the full zone and engage mobs across it.
+const ULTRA_ROAM_RADIUS = 2400;
+const ULTRA_ROAM_RETURN = 3200;
+// Boss raiding: bosses ignore the tether so bots can converge across the map.
+const BOSS_RAID_RANGE = 4000; // bots within this distance of a boss will raid
+// Tight clump around the boss — sized so every raiding bot shares ~90% of
+// its viewport with every other raider (10% of VIEWPORT_WIDTH / HEIGHT).
+const RAID_CLUSTER_RADIUS = 90;
+const RAID_CLUSTER_RETURN = 180;
+// High-rarity (legendary+) zones: bots form sub-groups of 4-10 with a moderate
+// clump, rather than clinging to the human or spreading out individually.
+const HIGH_RARITY_SCAN_RANGE = 1200; // a legendary+ mob this close → high-rarity mode
+const GROUP_CLUSTER_RADIUS = 500;
+const GROUP_CLUSTER_RETURN = 900;
+const GROUP_TARGET_SIZE = 7; // target group size (4-10 band)
+const GROUP_MIN_FOR_MODE = 4; // don't enter group mode unless this many bots are in the group
+// Raid targets only. Ultras are explicitly excluded — bots treat them as
+// high-tier mobs, not raid rally points.
+const BOSS_TIERS = new Set(['super', 'unique', 'apex']);
+const HIGH_TIERS = new Set(['epic', 'legendary', 'mythic', 'ultra']);
+// Raid traversal: when the bot is farther than this from the raid anchor,
+// swap slot 0 for powder to close distance faster. Beyond combat range.
+const RAID_POWDER_MIN_DIST = 600;
+const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
+// Powder has no common tier, so we clamp the floor at uncommon.
+const POWDER_MIN_RARITY_IDX = 1;
+// Long-haul raid routing — activated when the bot is this far from the boss.
+// Under this threshold, bots just walk (with powder) using the normal raid
+// navigation.
+const RAID_SHORTCUT_MIN_DIST = 4000;
+// A teleporter is only worth taking if its destination is closer to the boss
+// than this fraction of the bot's current distance to the boss.
+const RAID_TELE_PAYOFF_RATIO = 0.55;
+function tierPriority(tier) {
+    if (!tier)
+        return 0;
+    // Unique ranks above super so raids always commit to uniques when both exist.
+    if (tier === 'unique')
+        return 4;
+    if (tier === 'super')
+        return 3;
+    if (HIGH_TIERS.has(tier))
+        return 2;
+    return 1;
+}
+function aggroRangeForTier(tier) {
+    if (!tier)
+        return REGULAR_AGGRO_RANGE;
+    // Boss raiding: much wider range so bots across the map can converge.
+    if (BOSS_TIERS.has(tier))
+        return BOSS_RAID_RANGE;
+    if (HIGH_TIERS.has(tier))
+        return HIGH_TIER_AGGRO_RANGE;
+    return REGULAR_AGGRO_RANGE;
+}
+const BOT_NAMES = [
+    'm28', 'M28', 'uwu', '67', 'Play Zorr.pro', '', '', 'petal',
+    'super hunter', 'mark m28', 'dev', 'fake dev', 'admin', 'pytorch', 'urmom', 'skibidi', 'florrio',
+    'CraftApexPetal', 'developer', 'hi', 'hello', '4167', 'florrrrr', 'bro', 'bruh', 'You suck',
+    'pls loot super', 'powder', 'skibidi ohio rizz', 'rizzler', 'pro', 'noob', 'nub', '[YT]', 'killer', 'flower', 'ur mom', 'random flower',
+    'centi', 'petall', 'ygg pls', 'SUPER BASIC', 'carry pls', 'lol', 'floor', 'ded', 'noooo', 'nl super', 'nah', 'm29', 'm56', 'florr67', 'get good', 'super raider', 'real admin',
+    'not bot', 'bot', 'scripts', 'ban dupers', 'absorbed super', 'Guest #1234', 'Guest #6767', 'Guest #4167', 'UwU', 'm27', 'n28', 'super petal', 'apex petal', 'apex crafter', 'uniques',
+    'i use scripts', 'm28 bad', 'guests', 'leech squad', 'leecher'
+];
+// Only use passive petals, yggdrasil, and powder
+const BOT_PETAL_POOL = ['basic', 'stinger', 'iris', 'faster', 'cutter', 'missile', 'bone', 'glass', 'dandelion', 'yggdrasil', 'rock', 'third_eye', 'powder', 'javascript', 'soil'];
+const BOT_GUILDS = [
+    {
+        name: 'PRO1',
+        members: ['developer', 'dev', 'fake dev', 'admin', 'real admin'],
+    },
+    {
+        name: 'SUPERS',
+        members: ['m28', 'M28', 'm29', 'm56'],
+    },
+    {
+        name: 'YGG',
+        members: ['super hunter', 'SUPER BASIC', 'super raider', 'pls loot super', 'nl super', 'absorbed super'],
+    },
+    {
+        name: 'LOL',
+        members: ['skibidi', 'skibidi ohio rizz', 'rizzler'],
+    },
+    {
+        name: 'AA',
+        members: ['[YT]', 'Play Zorr.pro', 'florrio', 'CraftApexPetal'],
+    },
+    {
+        name: 'ABCDE',
+        members: ['bot', 'not bot', 'scripts', 'ban dupers'],
+    },
+];
+function initializeBotGuilds() {
+    (0, guildManager_1.clearBotGuilds)();
+    for (const def of BOT_GUILDS) {
+        if (def.members.length === 0)
+            continue;
+        const [leader, ...rest] = def.members;
+        (0, guildManager_1.registerBotGuild)(def.name, leader, rest);
+    }
+}
+const botAIState = new Map();
+let lastMaintainTime = 0;
+// Timestamp of the last tick that saw at least one real player. Used to keep
+// bots alive for BOT_IDLE_TIMEOUT_MS after the server goes empty.
+let lastActivePlayerTime = Date.now();
+// Natural drift around the base bot target so the population doesn't look
+// pinned to a fixed number. Random-walked each maintain tick and clamped to
+// a small band around zero. Not used when targetBotCountOverride is set.
+const BOT_COUNT_JITTER_MIN = -3;
+const BOT_COUNT_JITTER_MAX = 2;
+const BOT_COUNT_JITTER_STEP_CHANCE = 0.35;
+let botCountJitter = 0;
+let forcedRaid = null;
+const FORCED_RAID_DURATION_MS = 45000; // 45s — enough for bots to traverse the map and engage
+// Boss announcements: when a super/unique boss first appears, the nearest bot
+// shouts it in chat, which also triggers the raid. Tracked by enemy id so we
+// don't re-announce the same boss every tick.
+const announcedBosses = new Set();
+// Cooldown between boss announcements / raid calls. Randomized per-announcement
+// in [MIN, MAX] so bots don't chain-call raids the instant a new boss pops.
+const BOSS_ANNOUNCE_COOLDOWN_MIN_MS = 60000;
+const BOSS_ANNOUNCE_COOLDOWN_MAX_MS = 90000;
+let nextBossAnnounceAllowedAt = 0;
+// On the first announce pass, suppress bosses that already existed when the
+// module came online (server boot / initial super spawn wave) so bots don't
+// spam chat with a flood of callouts.
+let bossAnnounceInitialized = false;
+// Casual phrasings for boss sightings. Kept lower-case / inconsistently
+// punctuated on purpose so bot chatter blends in with the usual player chat.
+// Every template must include "super" or "unique" as a bare word so human-
+// typed versions of these messages still trigger the chat-handler raid.
+// {tier} = "super" | "unique", {mob} = e.g. "beetle", {code} = squad ID.
+// Templates containing {code} are only used when the announcing bot is in a
+// squad — they're filtered out otherwise.
+const BOSS_SHOUT_TEMPLATES_SUPER = [
+    '{tier} {mob}',
+    '{tier} {mob} come',
+    '{tier} {mob} lets go',
+    'who wants {tier} {mob}',
+    'need help {tier} {mob}',
+    '{tier} {mob} anyone',
+    '{mob} {tier} here',
+    '{tier} {mob} spawn',
+    '{tier} {mob} free',
+    '{tier} {mob} free mzone',
+    '{tier} {mob} free lzone',
+    'super shiny',
+    'free {tier} {mob}',
+    '{tier} {mob} deep',
+    '{tier} {mob} lured',
+    's{mob}',
+    's{mob} unfree',
+    'less than 20 ppl at {tier} {mob}',
+    '{tier} {mob} free carry',
+    'I have previously said things which I regret. Now I ponder in silence.',
+    'pls carry',
+    'free carry {code}',
+    '{tier} {mob} carry code {code}',
+];
+const BOSS_SHOUT_TEMPLATES_UNIQUE = [
+    'q{mob}',
+    'how {tier} {mob}',
+    '{tier} {mob} come',
+    '{tier} {mob} lets go',
+    'who wants {tier} {mob}',
+    '{tier} {mob} anyone',
+    '{mob} {tier} here',
+    '{tier} {mob} so free',
+    'WHAT {tier} {mob}',
+    'q{mob} pls loot',
+    'q{mob} pls carry',
+    '{tier} {mob} pls carry',
+    '{tier} {mob} pls loot',
+    'q{mob} so free',
+    'less than 20 ppl at {tier} {mob}',
+    'I have previously said things which I regret. Now I ponder in silence.',
+    'pls carry',
+    'free carry {code}',
+    '{tier} {mob} carry code {code}',
+];
+function isBot(id) {
+    return id.startsWith(BOT_ID_PREFIX);
+}
+function generateBotId() {
+    return BOT_ID_PREFIX + Math.random().toString(36).substring(2, 10);
+}
+// Per-level-band rarity weights derived (offline) from aggregating real-player
+// inventories in server_inventory.json. Each band covers 10 levels. Within a
+// band the values are relative weights; they're converted to a cumulative
+// distribution at startup and sampled with a weighted roll.
+//
+// Methodology (one-time analysis):
+//   * For every saved player, compute level from totalXP and bucket by
+//     floor((level-1)/10).
+//   * Sum petal counts per rarity, capped at 20 per player to prevent a
+//     single whale/admin inventory from dominating a band.
+//   * Drop `unique` in low bands (1-80) where it's clearly admin stock.
+//   * Fill missing bands by interpolating from neighbours.
+const LEVEL_BAND_SIZE = 10;
+const RARITY_WEIGHTS_BY_BAND = {
+    0: [['common', 300], ['uncommon', 55], ['rare', 1]], // levels 1-10
+    1: [['common', 40], ['uncommon', 24], ['rare', 15], ['epic', 2]], // levels 11-20
+    2: [['common', 30], ['uncommon', 24], ['rare', 20], ['epic', 5]], // levels 21-30 (interpolated)
+    3: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 5]], // levels 31-40
+    4: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 1]], // levels 41-50
+    5: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 4]], // levels 51-60
+    6: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 11]], // levels 61-70
+    7: [['common', 18], ['uncommon', 18], ['rare', 20], ['epic', 20], ['legendary', 15], ['mythic', 1]], // levels 71-80
+    8: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 2]], // levels 81-90
+    9: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 5]], // levels 91-100
+    10: [['common', 40], ['uncommon', 40], ['rare', 40], ['epic', 40], ['legendary', 40], ['mythic', 17]], // levels 101-110
+    11: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 11], ['ultra', 1]], // levels 111-120
+    12: [['common', 40], ['uncommon', 40], ['rare', 40], ['epic', 40], ['legendary', 40], ['mythic', 40], ['ultra', 21], ['super', 1]], // levels 121-130
+    13: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 20], ['ultra', 20], ['super', 20]], // levels 131-140
+    14: [['common', 20], ['uncommon', 20], ['rare', 20], ['epic', 20], ['legendary', 20], ['mythic', 20], ['ultra', 20], ['super', 20], ['unique', 1]], // levels 141-199
+    // Apex band — level 200+. Loadout skews heavily toward end-game rarities,
+    // with apex as the headliner. Routed by explicit level check below, not
+    // the normal rawBand / LEVEL_BAND_SIZE math.
+    // Unique kept rare: bots wearing any unique petal show as unique-rarity in
+    // the world, and at 10 petal slots even a small per-slot weight produces a
+    // lot of "unique" bots if it's not held down.
+    20: [['mythic', 10], ['ultra', 20], ['super', 20], ['unique', 2], ['apex', 30]]
+};
+const APEX_BAND = 20;
+const APEX_LEVEL_THRESHOLD = 200;
+const MAX_PRE_APEX_BAND = 14;
+const CUMULATIVE_BY_BAND = {};
+for (const bandKey of Object.keys(RARITY_WEIGHTS_BY_BAND)) {
+    const band = Number(bandKey);
+    const weights = RARITY_WEIGHTS_BY_BAND[band];
+    const cumulative = [];
+    const rarities = [];
+    let acc = 0;
+    for (const [rarity, w] of weights) {
+        acc += w;
+        cumulative.push(acc);
+        rarities.push(rarity);
+    }
+    CUMULATIVE_BY_BAND[band] = { cumulative, rarities, total: acc };
+}
+// djb2-style string hash → 32-bit unsigned int. Stable across runs, so a bot
+// with the same name always hashes to the same seed.
+function hashString(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) {
+        h = (Math.imul(h, 33) ^ s.charCodeAt(i)) | 0;
+    }
+    return h >>> 0;
+}
+// mulberry32 — fast deterministic PRNG. Same seed → same stream, so name-
+// seeded bots reproduce the same level + loadout every spawn.
+function seededRng(seed) {
+    let s = seed >>> 0;
+    return () => {
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+function pickRarityForLevel(level, rng) {
+    // Apex is a separate band, not a linear extension of the level→band map:
+    // levels 200+ always roll from the apex pool.
+    let band;
+    if (level >= APEX_LEVEL_THRESHOLD) {
+        band = APEX_BAND;
+    }
+    else {
+        const rawBand = Math.floor(Math.max(1, level - 1) / LEVEL_BAND_SIZE);
+        band = Math.min(rawBand, MAX_PRE_APEX_BAND);
+    }
+    const entry = CUMULATIVE_BY_BAND[band] || CUMULATIVE_BY_BAND[0];
+    const roll = (rng() * 2) + entry.total - 2;
+    for (let i = 0; i < entry.cumulative.length; i++) {
+        if (roll < entry.cumulative[i])
+            return entry.rarities[i];
+    }
+    return entry.rarities[entry.rarities.length - 1];
+}
+function rollBotLevel(rng) {
+    // Uniform 1-225. Roughly 11% of bots land at apex tier (level >= 200).
+    // Derived from the name-seeded rng so same-name bots share a level.
+    return Math.floor(rng() * 225) + 1;
+}
+// Recompute the level a bot named `name` would roll. Mirrors the rng draw
+// order in createBot so callers (e.g. /level-from-string) see the same value
+// without needing to spawn the bot.
+function getBotLevelForName(name) {
+    const rng = seededRng(hashString(name));
+    return rollBotLevel(rng);
+}
+// Recompute the loadout a bot named `name` would roll. Must consume `rollBotLevel`
+// first so the rng stream lines up with createBot — otherwise the loadout would
+// diverge from what an actual bot of that name carries.
+function getBotLoadoutForName(name) {
+    const rng = seededRng(hashString(name));
+    const level = rollBotLevel(rng);
+    return buildBotLoadout(level, rng);
+}
+function buildBotLoadout(level, rng) {
+    const loadout = [];
+    // Fill all 10 slots so bots have a full active loadout (matches max real-
+    // player capacity) rather than 5 equipped + 5 empty slots.
+    for (let i = 0; i < 10; i++) {
+        const petalType = BOT_PETAL_POOL[Math.floor(rng() * BOT_PETAL_POOL.length)];
+        const rarity = pickRarityForLevel(level, rng);
+        const stats = (0, petals_1.getPetalStats)(petalType, rarity);
+        if (stats) {
+            loadout.push({
+                type: 'petal',
+                rarity,
+                petalType,
+                health: stats.health,
+                maxHealth: stats.health,
+                onCooldown: false
+            });
+        }
+        else {
+            const fallback = (0, petals_1.getPetalStats)('basic', 'common');
+            loadout.push({
+                type: 'petal',
+                rarity: 'common',
+                petalType: 'basic',
+                health: fallback?.health ?? 10,
+                maxHealth: fallback?.health ?? 10,
+                onCooldown: false
+            });
+        }
+    }
+    return loadout;
+}
+function pickPowderRarity(loadout) {
+    let maxIdx = 0;
+    if (loadout) {
+        for (const item of loadout) {
+            if (!item || item.type !== 'petal' || !item.rarity)
+                continue;
+            const idx = RARITY_ORDER.indexOf(item.rarity);
+            if (idx > maxIdx)
+                maxIdx = idx;
+        }
+    }
+    return RARITY_ORDER[Math.max(POWDER_MIN_RARITY_IDX, maxIdx)];
+}
+// Bot's "power rarity" — the max petal rarity across their loadout. Drives
+// target selection: a common-loadout bot hunts uncommon mobs, a mythic bot
+// hunts mythic, ultra+ bots go boss hunting.
+function getBotMaxRarityIdx(bot) {
+    let maxIdx = 0;
+    if (bot.loadout) {
+        for (const item of bot.loadout) {
+            if (!item || item.type !== 'petal' || !item.rarity)
+                continue;
+            const idx = RARITY_ORDER.indexOf(item.rarity);
+            if (idx > maxIdx)
+                maxIdx = idx;
+        }
+    }
+    return maxIdx;
+}
+// Which mob tier(s) this bot prefers to engage. Mirrors the progression rule
+// "one tier above your gear, except mythic stays on mythic and ultra+ hunts
+// bosses". Empty set = no preference (fall through to standard priority).
+const MYTHIC_IDX = 5;
+const ULTRA_IDX = 6;
+function preferredMobTiersForBot(botIdx) {
+    if (botIdx >= ULTRA_IDX)
+        return new Set(['super', 'unique', 'apex']);
+    if (botIdx === MYTHIC_IDX)
+        return new Set(['mythic']);
+    if (botIdx >= 0 && botIdx < RARITY_ORDER.length - 1) {
+        return new Set([RARITY_ORDER[botIdx + 1]]);
+    }
+    return new Set();
+}
+const spawnZoneCache = new Map();
+function getSpawnZonesByType(zoneType) {
+    const cached = spawnZoneCache.get(zoneType);
+    if (cached)
+        return cached;
+    const out = [];
+    for (const el of map_data_1.WORLD_MAP) {
+        if (el.type !== 'spawn')
+            continue;
+        if (el.properties?.spawnType !== zoneType)
+            continue;
+        if (el.width <= 0 || el.height <= 0)
+            continue;
+        out.push({
+            cx: (el.x + el.width / 2) * constants_1.SCALE_FACTOR,
+            cy: (el.y + el.height / 2) * constants_1.SCALE_FACTOR
+        });
+    }
+    spawnZoneCache.set(zoneType, out);
+    return out;
+}
+// Map a bot's max gear rarity to the spawn zone type it should farm in. The
+// bot already prefers to fight mobs one tier above its gear (see
+// preferredMobTiersForBot), and spawn zones spawn mobs of their declared
+// type, so the right zone for farming is the one that produces the bot's
+// preferred tier.
+function getFarmingZoneType(rarityIdx) {
+    if (rarityIdx >= ULTRA_IDX)
+        return 'mythic'; // ultra+ hunt mythic-zone bosses
+    if (rarityIdx === MYTHIC_IDX)
+        return 'mythic'; // mythic bots stay on mythic
+    if (rarityIdx === 4)
+        return 'mythic'; // legendary -> mythic
+    if (rarityIdx === 3)
+        return 'legendary'; // epic -> legendary
+    if (rarityIdx === 2)
+        return 'epic'; // rare -> epic
+    if (rarityIdx === 1)
+        return 'rare'; // uncommon -> rare
+    return 'uncommon'; // common -> uncommon
+}
+// Pick a farming-zone anchor of the given type. Uses the bot id as a stable
+// hash so different bots gravitate toward different zones instead of all
+// piling onto the nearest one. Falls back through neighbour zone types when
+// the bot's preferred type isn't on the map (so a map without rare zones
+// still routes uncommon-tier bots somewhere sensible).
+function pickFarmingZoneAnchor(bot, rarityIdx) {
+    // Try the bot's preferred type first, then walk down toward common, then
+    // up toward mythic. Stops as soon as some zone type has any zones.
+    const tried = new Set();
+    const preferred = getFarmingZoneType(rarityIdx);
+    const candidates = [preferred];
+    for (let i = rarityIdx; i >= 0; i--) {
+        const t = getFarmingZoneType(i);
+        if (!tried.has(t)) {
+            tried.add(t);
+            candidates.push(t);
+        }
+    }
+    for (let i = rarityIdx + 1; i <= 6; i++) {
+        const t = getFarmingZoneType(i);
+        if (!tried.has(t)) {
+            tried.add(t);
+            candidates.push(t);
+        }
+    }
+    let zones = [];
+    for (const t of candidates) {
+        zones = getSpawnZonesByType(t);
+        if (zones.length > 0)
+            break;
+    }
+    if (zones.length === 0)
+        return null;
+    let h = 0;
+    for (let i = 0; i < bot.id.length; i++)
+        h = ((h * 31) + bot.id.charCodeAt(i)) | 0;
+    const offset = Math.abs(h) % zones.length;
+    // Sort by distance and pick the `offset`-th nearest so bots spread across
+    // available zones rather than all clustering on the closest one.
+    const scored = zones
+        .map(z => ({ z, d: (z.cx - bot.x) ** 2 + (z.cy - bot.y) ** 2 }))
+        .sort((a, b) => a.d - b.d);
+    const pick = scored[Math.min(offset, scored.length - 1)].z;
+    return { x: pick.cx, y: pick.cy };
+}
+function equipRaidPowder(bot, state) {
+    if (state.raidPowderSlot !== undefined)
+        return;
+    if (!bot.loadout || bot.loadout.length === 0)
+        return;
+    const slot = 0;
+    const current = bot.loadout[slot];
+    // Already a powder here — nothing to swap, nothing to track.
+    if (current && current.type === 'petal' && current.petalType === 'powder')
+        return;
+    const rarity = pickPowderRarity(bot.loadout);
+    const stats = (0, petals_1.getPetalStats)('powder', rarity);
+    if (!stats)
+        return;
+    state.raidPowderSlot = { slot, original: current };
+    bot.loadout[slot] = {
+        type: 'petal',
+        rarity: rarity,
+        petalType: 'powder',
+        health: stats.health,
+        maxHealth: stats.health,
+        onCooldown: false
+    };
+}
+function unequipRaidPowder(bot, state) {
+    if (state.raidPowderSlot === undefined)
+        return;
+    const { slot, original } = state.raidPowderSlot;
+    if (bot.loadout && slot < bot.loadout.length) {
+        bot.loadout[slot] = original;
+    }
+    state.raidPowderSlot = undefined;
+}
+// Range within which a bot will keep yggdrasil equipped. Picked to roughly
+// match the BOT_GROUP scan range so a bot that's already moving with peers
+// also packs the heal petal. The revive range itself (in playerState.ts) is
+// only 80 px, so the petal is only useful when the bots are tight.
+const YGGDRASIL_BUDDY_RANGE = 600;
+// Range at which a bot will go out of its way to revive a downed teammate.
+// Larger than the petal's actual revive range so the bot has time to close
+// the last bit of distance before its rotating petals brush the corpse.
+const YGGDRASIL_REVIVE_SEEK_RANGE = 1500;
+// Returns the rarity tier the yggdrasil swap should pick. Mirrors how the
+// powder swap matches the bot's existing loadout: the new petal can't out-tier
+// what they're already wearing, otherwise apex bots would walk around with
+// permanently-rolled apex yggdrasils nobody else can craft.
+function pickYggdrasilRarity(loadout) {
+    let maxIdx = 0;
+    if (loadout) {
+        for (const item of loadout) {
+            if (!item || item.type !== 'petal' || !item.rarity)
+                continue;
+            const idx = RARITY_ORDER.indexOf(item.rarity);
+            if (idx > maxIdx)
+                maxIdx = idx;
+        }
+    }
+    return RARITY_ORDER[maxIdx];
+}
+function equipYggdrasilSlot(bot, state) {
+    if (state.yggdrasilSlot !== undefined)
+        return;
+    if (!bot.loadout || bot.loadout.length < 2)
+        return;
+    const slot = 1;
+    const current = bot.loadout[slot];
+    // Already a yggdrasil here — nothing to swap, nothing to track.
+    if (current && current.type === 'petal' && current.petalType === 'yggdrasil')
+        return;
+    // Don't overwrite the powder swap if the powder swap also picked slot 1
+    // for any reason (currently it always uses slot 0, but keep this check so
+    // a future tweak doesn't silently clobber the saved original).
+    if (state.raidPowderSlot && state.raidPowderSlot.slot === slot)
+        return;
+    const rarity = pickYggdrasilRarity(bot.loadout);
+    const stats = (0, petals_1.getPetalStats)('yggdrasil', rarity);
+    if (!stats)
+        return;
+    state.yggdrasilSlot = { slot, original: current };
+    bot.loadout[slot] = {
+        type: 'petal',
+        rarity: rarity,
+        petalType: 'yggdrasil',
+        health: stats.health,
+        maxHealth: stats.health,
+        onCooldown: false
+    };
+}
+function unequipYggdrasilSlot(bot, state) {
+    if (state.yggdrasilSlot === undefined)
+        return;
+    const { slot, original } = state.yggdrasilSlot;
+    if (bot.loadout && slot < bot.loadout.length) {
+        bot.loadout[slot] = original;
+    }
+    state.yggdrasilSlot = undefined;
+}
+// True if there's at least one other live bot within YGGDRASIL_BUDDY_RANGE.
+// Used to decide whether to keep yggdrasil equipped — there's no point
+// carrying a revive petal when the bot is alone.
+function hasNearbyBotBuddy(bot) {
+    const rSq = YGGDRASIL_BUDDY_RANGE * YGGDRASIL_BUDDY_RANGE;
+    for (const id in constants_1.players) {
+        if (id === bot.id)
+            continue;
+        if (!isBot(id))
+            continue;
+        const other = constants_1.players[id];
+        if (!other || other.isDead)
+            continue;
+        const dx = other.x - bot.x;
+        const dy = other.y - bot.y;
+        if (dx * dx + dy * dy <= rSq)
+            return true;
+    }
+    return false;
+}
+// Closest dead bot inside YGGDRASIL_REVIVE_SEEK_RANGE that's worth diverting
+// to revive. Returns null if there's no such corpse or this bot has no
+// yggdrasil equipped (we'd waste the trip).
+function findReviveTarget(bot, state) {
+    // No yggdrasil equipped → no revive capability. We only count the swapped
+    // slot here; if a bot happens to have yggdrasil in its native loadout the
+    // existing petal-touch revival in playerState.ts already covers it.
+    if (state.yggdrasilSlot === undefined) {
+        // Still check native loadout for yggdrasil so naturally-rolled
+        // yggdrasil bots also actively seek corpses.
+        let hasYgg = false;
+        if (bot.loadout) {
+            for (const item of bot.loadout) {
+                if (item && item.type === 'petal' && item.petalType === 'yggdrasil') {
+                    hasYgg = true;
+                    break;
+                }
+            }
+        }
+        if (!hasYgg)
+            return null;
+    }
+    const rSq = YGGDRASIL_REVIVE_SEEK_RANGE * YGGDRASIL_REVIVE_SEEK_RANGE;
+    let best = null;
+    let bestDistSq = Infinity;
+    for (const id in constants_1.players) {
+        if (id === bot.id)
+            continue;
+        if (!isBot(id))
+            continue;
+        const other = constants_1.players[id];
+        if (!other || !other.isDead)
+            continue;
+        const dx = other.x - bot.x;
+        const dy = other.y - bot.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > rSq)
+            continue;
+        if (d2 < bestDistSq) {
+            best = other;
+            bestDistSq = d2;
+        }
+    }
+    return best;
+}
+// Pick the single-hop teleporter whose destination minimises total travel to
+// the boss. Returns the teleporter source position (where the bot needs to
+// walk to) or null if no teleporter is worth using. Cross-server teleporters
+// are skipped — bots stay on their own server.
+function findRaidTeleporterSrc(botX, botY, bossX, bossY) {
+    const directDist = Math.sqrt((bossX - botX) ** 2 + (bossY - botY) ** 2);
+    let bestTotal = directDist;
+    let bestX = 0, bestY = 0;
+    let found = false;
+    for (const el of map_data_1.WORLD_MAP) {
+        if (el.type !== 'teleporter')
+            continue;
+        const dest = el.properties?.teleportTo;
+        if (!dest)
+            continue;
+        if (dest.serverPort)
+            continue;
+        const srcX = el.x + el.width / 2;
+        const srcY = el.y + el.height / 2;
+        const srcToBot = Math.sqrt((srcX - botX) ** 2 + (srcY - botY) ** 2);
+        const destToBoss = Math.sqrt((dest.x - bossX) ** 2 + (dest.y - bossY) ** 2);
+        // Only worth it if the teleport destination is actually close to the boss
+        if (destToBoss > directDist * RAID_TELE_PAYOFF_RATIO)
+            continue;
+        const total = srcToBot + destToBoss;
+        if (total < bestTotal) {
+            bestTotal = total;
+            bestX = srcX;
+            bestY = srcY;
+            found = true;
+        }
+    }
+    return found ? { x: bestX, y: bestY } : null;
+}
+// Handles long-haul raid navigation: either route via teleporter or warp the
+// bot to a spawn zone near the boss. Returns true when this tick was handled
+// (caller should `continue`), false to fall through to normal raid movement.
+function handleRaidShortcut(bot, state, now, anchor, distToAnchor) {
+    if (distToAnchor < RAID_SHORTCUT_MIN_DIST)
+        return false;
+    // Preferred: a teleporter that gets the bot meaningfully closer.
+    const teleSrc = findRaidTeleporterSrc(bot.x, bot.y, anchor.x, anchor.y);
+    if (teleSrc) {
+        const dx = teleSrc.x - bot.x;
+        const dy = teleSrc.y - bot.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        // Inside the teleporter's activation radius — hold still so the 1s
+        // timer fires. The teleporter logic in playerState runs for all
+        // players including bots.
+        if (d < constants_1.TELEPORTER_RADIUS * 0.6) {
+            bot.inputs.useMouse = false;
+            bot.inputs.keys = [];
+            bot.inputs.petalExtension = 1.0;
+            return true;
+        }
+        // Navigate to the teleporter source. A* first, cheap steer as fallback.
+        if (followPath(bot, state, now, teleSrc.x, teleSrc.y, 1.0, 1.0))
+            return true;
+        const nd = d || 1;
+        const steered = steerAroundWalls(bot.x, bot.y, dx / nd, dy / nd);
+        driveMove(bot, steered.x, steered.y, 1.0, 1.0);
+        return true;
+    }
+    // No teleporter helps — bot walks the rest of the way. Respawn-near-boss
+    // is handled on death via respawnBot, not by warping a live bot.
+    return false;
+}
+function nearestRealPlayer(x, y) {
+    let best = null;
+    let bestD = Infinity;
+    for (const id in constants_1.players) {
+        if (isBot(id))
+            continue;
+        const p = constants_1.players[id];
+        if (!p || p.isDead)
+            continue;
+        const dx = p.x - x;
+        const dy = p.y - y;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) {
+            bestD = d;
+            best = p;
+        }
+    }
+    return best;
+}
+function getSpawnAnchorElements() {
+    // Spawn zones and teleporters are the natural "entry points" of the map —
+    // real players appear at these, so bots spawning here blend in and stay
+    // close to where humans tend to be.
+    return map_data_1.WORLD_MAP.filter(e => (e.type === 'spawn' || e.type === 'teleporter') && e.width > 0 && e.height > 0);
+}
+function pickBotSpawnPosition() {
+    const anchors = getSpawnAnchorElements();
+    if (anchors.length > 0) {
+        // Try a handful of spawn/portal anchors to find a safe spot nearby.
+        const shuffled = [...anchors].sort(() => Math.random() - 0.5).slice(0, 8);
+        for (const anchor of shuffled) {
+            const padding = 20;
+            const baseArea = {
+                x: anchor.x + padding,
+                y: anchor.y + padding,
+                width: Math.max(0, anchor.width - padding * 2),
+                height: Math.max(0, anchor.height - padding * 2)
+            };
+            // First try inside the zone itself
+            if (baseArea.width > 0 && baseArea.height > 0) {
+                const inside = (0, playerManager_1.findSafeSpawnPosition)(baseArea, 10);
+                if (inside)
+                    return inside;
+            }
+            // Otherwise jitter around the anchor's center (useful for portals
+            // which are small and surrounded by walkable terrain).
+            const cx = anchor.x + anchor.width / 2;
+            const cy = anchor.y + anchor.height / 2;
+            for (let i = 0; i < 6; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 100 + Math.random() * SPAWN_JITTER;
+                const jitterArea = {
+                    x: cx + Math.cos(angle) * dist - 60,
+                    y: cy + Math.sin(angle) * dist - 60,
+                    width: 120,
+                    height: 120
+                };
+                const safe = (0, playerManager_1.findSafeSpawnPosition)(jitterArea, 4);
+                if (safe)
+                    return safe;
+            }
+        }
+        // Final fallback: centre of a random anchor (scaled to world coords)
+        const anchor = anchors[Math.floor(Math.random() * anchors.length)];
+        return {
+            x: (anchor.x + anchor.width / 2) * constants_1.SCALE_FACTOR,
+            y: (anchor.y + anchor.height / 2) * constants_1.SCALE_FACTOR
+        };
+    }
+    // No spawn zones configured — fall back to a world-wide safe spawn
+    const safe = (0, playerManager_1.findSafeSpawnPosition)({ x: 0, y: 0, width: constants_1.ACTUAL_WORLD_WIDTH, height: constants_1.ACTUAL_WORLD_HEIGHT }, 30);
+    if (safe)
+        return safe;
+    return {
+        x: Math.random() * constants_1.ACTUAL_WORLD_WIDTH,
+        y: Math.random() * constants_1.ACTUAL_WORLD_HEIGHT
+    };
+}
+function pickBotName() {
+    const base = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+    return `${base}`;
+}
+function createBot(io) {
+    const id = generateBotId();
+    // Name-derived rng: bot level + full loadout are deterministic from the
+    // name. Two bots that happen to roll the same name will have the same
+    // build, which is the whole point — "a bot named X plays like X".
+    const name = pickBotName();
+    const rng = seededRng(hashString(name));
+    const level = rollBotLevel(rng);
+    const maxHealth = (0, playerManager_1.calculateMaxHealthFromLevel)(level);
+    const damage = (0, playerManager_1.calculateDamageFromLevel)(level);
+    const pos = pickBotSpawnPosition();
+    const botGuildName = (0, guildManager_1.getBotGuildNameForBot)(name) || undefined;
+    const bot = {
+        id,
+        name,
+        x: pos.x,
+        y: pos.y,
+        angle: 0,
+        score: 0,
+        velocityX: 0,
+        velocityY: 0,
+        health: maxHealth,
+        maxHealth,
+        damage,
+        inventory: (0, playerManager_1.createInitialInventory)(),
+        loadout: buildBotLoadout(level, rng),
+        isInvulnerable: true,
+        level,
+        xp: 0,
+        xpToNextLevel: (0, playerManager_1.calculateXPRequirement)(level),
+        knockbackX: 0,
+        knockbackY: 0,
+        inputs: { keys: [], petalExtension: 1.0 },
+        speed_boost: 1,
+        isDead: false,
+        skills: {},
+        mobKills: {},
+        stars: 0,
+        guildName: botGuildName
+    };
+    constants_1.players[id] = bot;
+    botAIState.set(id, {
+        wanderTargetX: bot.x,
+        wanderTargetY: bot.y,
+        nextWanderTime: 0
+    });
+    setTimeout(() => {
+        if (constants_1.players[id]) {
+            constants_1.players[id].isInvulnerable = false;
+            io.emit('playerInvulnerabilityEnded', { playerId: id });
+        }
+    }, BOT_SPAWN_INVULNERABILITY_MS);
+    io.emit('newPlayer', bot);
+    return bot;
+}
+function removeBot(id, io) {
+    if (!isBot(id))
+        return;
+    if (!constants_1.players[id])
+        return;
+    // If bot was in a squad, remove it and notify remaining members.
+    if (squadManager_1.playerSquadMap.has(id)) {
+        const squad = (0, squadManager_1.getSquadForPlayer)(id);
+        const botName = constants_1.players[id].name;
+        (0, squadManager_1.leaveSquad)(id, io);
+        if (squad) {
+            const remaining = squad.memberIds;
+            if (remaining.length > 0) {
+                (0, squadManager_1.sendSquadSystemMessage)(squad, io, `${botName} has left the squad.`);
+                for (const memberId of remaining) {
+                    if (memberId.startsWith('bot_'))
+                        continue;
+                    io.to(memberId).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
+                }
+            }
+        }
+    }
+    delete constants_1.players[id];
+    botAIState.delete(id);
+    botJitter.delete(id);
+    botSquadNextTick.delete(id);
+    (0, petal_actions_1.cleanupPlayerPetalActionState)(id);
+    io.emit('playerDisconnected', id);
+}
+function removeAllBots(io) {
+    const botIds = Object.keys(constants_1.players).filter(isBot);
+    for (const id of botIds)
+        removeBot(id, io);
+}
+function countBots() {
+    let count = 0;
+    for (const id in constants_1.players)
+        if (isBot(id))
+            count++;
+    return count;
+}
+function listBotIds() {
+    return Object.keys(constants_1.players).filter(isBot);
+}
+/**
+ * Keep total player count near TARGET_TOTAL_PLAYERS by spawning/removing bots.
+ * If there are no real (human) players, all bots are despawned to avoid wasted
+ * simulation while nobody is watching.
+ */
+function maintainBotCount(io, realPlayerCount) {
+    const now = Date.now();
+    if (realPlayerCount > 0) {
+        lastActivePlayerTime = now;
+    }
+    else {
+        // Keep bots running for BOT_IDLE_TIMEOUT_MS after the last human leaves
+        // so reconnecting quickly doesn't hit an empty world. Past the timeout,
+        // despawn everything to avoid wasted simulation.
+        if (now - lastActivePlayerTime >= BOT_IDLE_TIMEOUT_MS) {
+            if (countBots() > 0)
+                removeAllBots(io);
+            return;
+        }
+    }
+    if (now - lastMaintainTime < MAINTAIN_INTERVAL_MS)
+        return;
+    lastMaintainTime = now;
+    const currentBots = countBots();
+    // Drift the jitter by ±1 each tick so the population wanders slowly instead
+    // of sitting at a fixed target. Bounded so it can't collapse the server.
+    if (Math.random() < BOT_COUNT_JITTER_STEP_CHANCE) {
+        botCountJitter += Math.random() < 0.5 ? -1 : 1;
+        if (botCountJitter < BOT_COUNT_JITTER_MIN)
+            botCountJitter = BOT_COUNT_JITTER_MIN;
+        if (botCountJitter > BOT_COUNT_JITTER_MAX)
+            botCountJitter = BOT_COUNT_JITTER_MAX;
+    }
+    const desiredBots = targetBotCountOverride !== null
+        ? targetBotCountOverride
+        : Math.max(0, TARGET_TOTAL_PLAYERS - realPlayerCount + botCountJitter);
+    if (currentBots < desiredBots) {
+        const deficit = desiredBots - currentBots;
+        const toSpawn = Math.min(deficit, SPAWN_BURST_CAP);
+        for (let i = 0; i < toSpawn; i++)
+            createBot(io);
+    }
+    else if (currentBots > desiredBots) {
+        const excess = currentBots - desiredBots;
+        const ids = listBotIds().slice(0, excess);
+        for (const id of ids)
+            removeBot(id, io);
+    }
+}
+function respawnBot(bot, io) {
+    const pos = pickBotSpawnPosition();
+    bot.x = pos.x;
+    bot.y = pos.y;
+    bot.velocityX = 0;
+    bot.velocityY = 0;
+    bot.health = bot.maxHealth;
+    bot.isDead = false;
+    bot.isInvulnerable = true;
+    bot.killedBy = undefined;
+    // Refresh any broken petals so the bot is combat-ready
+    if (bot.loadout) {
+        for (let i = 0; i < bot.loadout.length; i++) {
+            const p = bot.loadout[i];
+            if (p && p.type === 'petal' && p.onCooldown && p.petalType && p.rarity) {
+                const stats = (0, petals_1.getPetalStats)(p.petalType, p.rarity);
+                if (stats) {
+                    bot.loadout[i] = {
+                        type: 'petal',
+                        rarity: p.rarity,
+                        petalType: p.petalType,
+                        health: stats.health,
+                        maxHealth: stats.health,
+                        onCooldown: false
+                    };
+                }
+            }
+        }
+    }
+    const state = botAIState.get(bot.id);
+    if (state) {
+        state.wanderTargetX = bot.x;
+        state.wanderTargetY = bot.y;
+        state.nextWanderTime = 0;
+        state.respawnAt = undefined;
+    }
+    io.emit('playerRespawned', bot);
+    setTimeout(() => {
+        if (constants_1.players[bot.id]) {
+            constants_1.players[bot.id].isInvulnerable = false;
+            io.emit('playerInvulnerabilityEnded', { playerId: bot.id });
+        }
+    }, BOT_SPAWN_INVULNERABILITY_MS);
+}
+function clampToWorld(v, margin, max) {
+    return Math.max(margin, Math.min(max - margin, v));
+}
+// Aggregate the multiplicative speed modifier from a bot's equipped petals.
+// Matches calculatePlayerModifiers in playerManager.ts: powder, etc. multiply
+// together. Used to keep per-tick combat motion consistent regardless of how
+// much speed gear the bot is wearing — without this, a bot wearing powder
+// runs every standoff band at 2× the intended pace and oscillates.
+function getBotSpeedMod(bot) {
+    if (!bot.loadout)
+        return 1.0;
+    let mult = 1.0;
+    for (const item of bot.loadout) {
+        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
+            continue;
+        const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+        const m = stats?.playerModifiers?.speed;
+        if (typeof m === 'number')
+            mult *= m;
+    }
+    return mult;
+}
+// Aggregate the multiplicative range modifier from a bot's equipped petals.
+// Mirrors calculatePlayerModifiers — petals like third_eye boost everyone's
+// orbit. The server's hit math multiplies each petal's stats.range by this
+// aggregate, so the standoff math has to as well or the bot parks at a
+// distance where its petals don't actually reach the target.
+function getBotRangeMod(bot) {
+    if (!bot.loadout)
+        return 1.0;
+    let mult = 1.0;
+    for (const item of bot.loadout) {
+        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
+            continue;
+        const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+        const m = stats?.playerModifiers?.range;
+        if (typeof m === 'number')
+            mult *= m;
+    }
+    return mult;
+}
+// Largest distance from bot center that a petal can still strike a target
+// at, given petalExtension and this bot's equipped petals' size/range.
+function computePetalReach(bot, petalExtension) {
+    const sizeMult = bot.sizeMultiplier ?? 1.0;
+    const baseRadius = (60 + (constants_1.PLAYER_SIZE / 2) * (sizeMult - 1)) * petalExtension;
+    const playerRangeMod = getBotRangeMod(bot);
+    let maxRangeMult = 1.0;
+    let maxPetalHalfSize = 0;
+    if (bot.loadout) {
+        for (const item of bot.loadout) {
+            if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
+                continue;
+            const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
+            if (!stats)
+                continue;
+            const effectiveSize = item.customSize ?? stats.size ?? 1.0;
+            maxPetalHalfSize = Math.max(maxPetalHalfSize, (40 * effectiveSize) / 2);
+            if (stats.range !== undefined) {
+                // Server-side reach folds in playerRangeMod (e.g. third_eye)
+                // for every petal. Match that or the standoff is wrong.
+                maxRangeMult = Math.max(maxRangeMult, stats.range * playerRangeMod);
+            }
+            else {
+                // Petals without an explicit range still sit at base orbit ×
+                // playerRangeMod, so the floor must include the modifier too.
+                maxRangeMult = Math.max(maxRangeMult, playerRangeMod);
+            }
+        }
+    }
+    return baseRadius * maxRangeMult + maxPetalHalfSize + STANDOFF_SAFETY_BUFFER;
+}
+function getMobRadius(enemy) {
+    const stats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+    const size = stats?.size ?? 1.0;
+    return (size * 40) / 2;
+}
+// Find any non-target mob sitting inside a forward cone of the bot's movement
+// vector close enough that continuing without engaging would body-slam into
+// it. Returns the closest such mob (with distance) or null. Used to override
+// the bot's combat target when a non-target mob is in the path: the bot drops
+// into normal combat bands against the obstacle for one tick, lets its petals
+// hit it, then resumes pursuit of the original target next tick.
+function findInterceptingMob(botX, botY, dirX, dirY, excludeId, range) {
+    let best = null;
+    let bestDist = Infinity;
+    // The acceptance test below is dist <= range + mobRadius — exactly the
+    // "hitbox overlaps circle(range)" contract of the fat-inserted grid, so a
+    // query at `range` returns a superset of every possible acceptance.
+    const near = (0, enemyGrid_1.queryEnemiesNear)(botX, botY, range, _botQueryScratch);
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
+        if (enemy.isDead)
+            continue;
+        if (enemy.id === excludeId)
+            continue;
+        if (enemy.type === 'target_dummy')
+            continue;
+        if (enemy.type === 'item_spawner')
+            continue;
+        const dx = enemy.x - botX;
+        const dy = enemy.y - botY;
+        const d2 = dx * dx + dy * dy;
+        if (d2 === 0)
+            continue;
+        const mobR = getMobRadius(enemy);
+        const cutoff = range + mobR;
+        if (d2 > cutoff * cutoff)
+            continue;
+        const d = Math.sqrt(d2);
+        // Forward-cone test: > 0.3 ≈ a ~70° arc in front of the bot.
+        const dot = (dx / d) * dirX + (dy / d) * dirY;
+        if (dot < 0.3)
+            continue;
+        if (d < bestDist) {
+            best = enemy;
+            bestDist = d;
+        }
+    }
+    return best ? { enemy: best, dist: bestDist } : null;
+}
+// --- Wall avoidance ---
+// Cheap raycast against WALL_GRID. State 1 = wall, 2 = water — both block.
+function rayHitsWall(x0, y0, x1, y1) {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    // Guard a degenerate ray: a 0/NaN dist means no hit; a non-finite or huge dist
+    // (e.g. raycasting toward an entity flung to an enormous coordinate) would make
+    // `steps` blow up and spin this loop forever — bound it. 1024 half-tile samples
+    // covers any legitimate on-screen ray; beyond that the target is bogus anyway.
+    if (!(dist > 0) || !Number.isFinite(dist))
+        return false;
+    // Sample every half-tile so we don't skip over a wall tile diagonally
+    const step = constants_1.WALL_TILE_SIZE / 2;
+    const steps = Math.min(1024, Math.ceil(dist / step));
+    for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const x = x0 + dx * t;
+        const y = y0 + dy * t;
+        const s = (0, constants_1.getTileState)(map_data_1.WALL_GRID, x, y);
+        if ((0, constants_1.isTileIdBlocking)(s))
+            return true;
+    }
+    return false;
+}
+// Steer around walls when moving long distance toward a target. Probes the
+// requested direction, then progressively wider angle offsets, and returns
+// the first clear one (or the original if everything is blocked).
+const STEER_OFFSETS = [
+    0,
+    Math.PI / 6, -Math.PI / 6,
+    Math.PI / 3, -Math.PI / 3,
+    Math.PI / 2, -Math.PI / 2,
+    (2 * Math.PI) / 3, -(2 * Math.PI) / 3
+];
+function steerAroundWalls(fromX, fromY, dirX, dirY, probeDistance = constants_1.WALL_TILE_SIZE * 1.4) {
+    for (const off of STEER_OFFSETS) {
+        const c = Math.cos(off);
+        const s = Math.sin(off);
+        // Rotate (dirX, dirY) by `off`
+        const dx = dirX * c - dirY * s;
+        const dy = dirX * s + dirY * c;
+        if (!rayHitsWall(fromX, fromY, fromX + dx * probeDistance, fromY + dy * probeDistance)) {
+            return { x: dx, y: dy };
+        }
+    }
+    return { x: dirX, y: dirY };
+}
+// --- A* pathfinding on the WALL_GRID ---
+//
+// Used for raid and group-mode long-distance navigation around wall clusters.
+// Simple steering handles a single wall fine but fails on concavities; A*
+// gives proper path-around behavior.
+//
+// Cost model: 8-connected, orthogonal=1 / diagonal=√2, octile heuristic.
+// Corner cutting is disallowed (diagonal requires both orthogonal neighbors
+// clear). Goal tile snaps to nearest walkable if blocked.
+//
+// Cost per call is capped by PATH_MAX_NODES. A per-tick budget
+// (PATH_MAX_PER_TICK) limits how many bots can recompute simultaneously so
+// a whole raid recomputing together can't spike the frame.
+const PATH_MAX_NODES = 4000;
+const PATH_MAX_PER_TICK = 2;
+const PATH_WAYPOINT_REACHED_DIST = constants_1.WALL_TILE_SIZE * 0.55; // ~165 px
+const PATH_STALE_MS = 5000;
+const PATH_GOAL_INVALIDATE_TILES = 2;
+// A bot may not re-run A* more often than this even if its goal keeps moving
+// (chasing a moving boss): it keeps following the slightly-stale path and lets
+// local steering close the gap. Profiling showed A* + its heap at ~10% of all
+// server CPU because raiding bots invalidated their paths every couple ticks.
+const PATH_MIN_REPATH_MS = 1500;
+// Full greedy-LOS waypoint smoothing runs at most this often per bot; between
+// passes a single ray re-validates the current waypoint (see followPath).
+const PATH_SMOOTH_INTERVAL_MS = 200;
+let pathBudgetThisTick = PATH_MAX_PER_TICK;
+const A_STAR_NEIGHBORS = [
+    [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
+    [1, 1, Math.SQRT2], [1, -1, Math.SQRT2],
+    [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]
+];
+function tileBlocked(tx, ty) {
+    if (ty < 0 || tx < 0)
+        return true;
+    if (ty >= map_data_1.WALL_GRID.length)
+        return true;
+    const row = map_data_1.WALL_GRID[ty];
+    if (!row || tx >= row.length)
+        return true;
+    const s = row[tx];
+    return (0, constants_1.isTileIdBlocking)(s);
+}
+function octileHeuristic(ax, ay, bx, by) {
+    const dx = Math.abs(ax - bx);
+    const dy = Math.abs(ay - by);
+    return (dx + dy) + (Math.SQRT2 - 2) * Math.min(dx, dy);
+}
+function tileCenter(tx, ty) {
+    return {
+        x: tx * constants_1.WALL_TILE_SIZE + constants_1.WALL_TILE_SIZE / 2,
+        y: ty * constants_1.WALL_TILE_SIZE + constants_1.WALL_TILE_SIZE / 2
+    };
+}
+function heapPush(h, item) {
+    h.push(item);
+    let i = h.length - 1;
+    while (i > 0) {
+        const p = (i - 1) >> 1;
+        if (h[p].f <= h[i].f)
+            break;
+        const tmp = h[p];
+        h[p] = h[i];
+        h[i] = tmp;
+        i = p;
+    }
+}
+function heapPop(h) {
+    if (h.length === 0)
+        return undefined;
+    const top = h[0];
+    const last = h.pop();
+    if (h.length === 0)
+        return top;
+    h[0] = last;
+    let i = 0;
+    const n = h.length;
+    while (true) {
+        const l = 2 * i + 1;
+        const r = 2 * i + 2;
+        let s = i;
+        if (l < n && h[l].f < h[s].f)
+            s = l;
+        if (r < n && h[r].f < h[s].f)
+            s = r;
+        if (s === i)
+            break;
+        const tmp = h[i];
+        h[i] = h[s];
+        h[s] = tmp;
+        i = s;
+    }
+    return top;
+}
+// Snap a blocked goal tile to the nearest walkable tile within `maxR` rings.
+function snapGoalToWalkable(gx, gy, maxR = 4) {
+    if (!tileBlocked(gx, gy))
+        return { gx, gy };
+    for (let r = 1; r <= maxR; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) {
+                // Only visit the shell at radius `r`
+                if (Math.abs(dx) !== r && Math.abs(dy) !== r)
+                    continue;
+                if (!tileBlocked(gx + dx, gy + dy)) {
+                    return { gx: gx + dx, gy: gy + dy };
+                }
+            }
+        }
+    }
+    return null;
+}
+function findPathAStar(startX, startY, goalX, goalY) {
+    const gridW = (map_data_1.WALL_GRID[0]?.length ?? 0);
+    if (gridW === 0 || map_data_1.WALL_GRID.length === 0)
+        return null;
+    const sx = (0, constants_1.worldToTileX)(startX);
+    const sy = (0, constants_1.worldToTileY)(startY);
+    let gx = (0, constants_1.worldToTileX)(goalX);
+    let gy = (0, constants_1.worldToTileY)(goalY);
+    const snapped = snapGoalToWalkable(gx, gy);
+    if (!snapped)
+        return null;
+    gx = snapped.gx;
+    gy = snapped.gy;
+    if (sx === gx && sy === gy)
+        return [];
+    const idxOf = (tx, ty) => ty * gridW + tx;
+    const gScore = new Map();
+    const cameFrom = new Map();
+    const open = [];
+    const startIdx = idxOf(sx, sy);
+    gScore.set(startIdx, 0);
+    heapPush(open, { f: octileHeuristic(sx, sy, gx, gy), tx: sx, ty: sy });
+    let expanded = 0;
+    while (open.length > 0 && expanded < PATH_MAX_NODES) {
+        const cur = heapPop(open);
+        if (cur.tx === gx && cur.ty === gy) {
+            // Reconstruct from goal back to start (exclusive)
+            const path = [];
+            let idx = idxOf(cur.tx, cur.ty);
+            while (idx !== startIdx) {
+                const tx = idx % gridW;
+                const ty = (idx - tx) / gridW;
+                path.unshift(tileCenter(tx, ty));
+                const prev = cameFrom.get(idx);
+                if (prev === undefined)
+                    break;
+                idx = prev;
+            }
+            return path;
+        }
+        expanded++;
+        const curIdx = idxOf(cur.tx, cur.ty);
+        // Skip stale heap entries (node was re-pushed with lower f)
+        const curG = gScore.get(curIdx);
+        if (curG === undefined)
+            continue;
+        // Heuristic admissible, so if we already popped this node via a lower f we can skip now
+        if (cur.f > curG + octileHeuristic(cur.tx, cur.ty, gx, gy) + 1e-9)
+            continue;
+        for (const [dx, dy, stepCost] of A_STAR_NEIGHBORS) {
+            const nx = cur.tx + dx;
+            const ny = cur.ty + dy;
+            if (tileBlocked(nx, ny))
+                continue;
+            // Disallow corner cutting: both orthogonals must be clear for diagonals
+            if (dx !== 0 && dy !== 0) {
+                if (tileBlocked(cur.tx + dx, cur.ty))
+                    continue;
+                if (tileBlocked(cur.tx, cur.ty + dy))
+                    continue;
+            }
+            const tentativeG = curG + stepCost;
+            const nIdx = idxOf(nx, ny);
+            const existingG = gScore.get(nIdx);
+            if (existingG === undefined || tentativeG < existingG) {
+                gScore.set(nIdx, tentativeG);
+                cameFrom.set(nIdx, curIdx);
+                heapPush(open, {
+                    f: tentativeG + octileHeuristic(nx, ny, gx, gy),
+                    tx: nx, ty: ny
+                });
+            }
+        }
+    }
+    return null;
+}
+/**
+ * Follow (and lazily compute) an A* path toward (goalX, goalY). Writes into
+ * bot.inputs when a path is being followed. Returns true if the bot is
+ * actively moving along a path this tick; false when path isn't available or
+ * is finished, so the caller can fall back to simple steering.
+ */
+function followPath(bot, state, now, goalX, goalY, speedMult, petalExt) {
+    const goalTx = (0, constants_1.worldToTileX)(goalX);
+    const goalTy = (0, constants_1.worldToTileY)(goalY);
+    const pathExhausted = !!state.pathNodes
+        && state.pathIndex !== undefined
+        && state.pathIndex >= state.pathNodes.length;
+    const goalMoved = state.pathGoalTileX === undefined
+        || Math.abs(state.pathGoalTileX - goalTx) > PATH_GOAL_INVALIDATE_TILES
+        || Math.abs(state.pathGoalTileY - goalTy) > PATH_GOAL_INVALIDATE_TILES;
+    let stale = !state.pathNodes
+        || !state.pathCreatedAt
+        || now - state.pathCreatedAt > PATH_STALE_MS
+        || pathExhausted
+        || goalMoved;
+    // Goal-moved / staleness may not force a recompute more often than
+    // PATH_MIN_REPATH_MS — keep following the existing path meanwhile.
+    // A bot with NO usable path (first call or exhausted) is exempt: without
+    // a path it cannot move at all, so it must be allowed to compute one.
+    const hasUsablePath = !!state.pathNodes && !pathExhausted && state.pathNodes.length > 0;
+    if (stale && hasUsablePath && state.lastRepathAt !== undefined
+        && now - state.lastRepathAt < PATH_MIN_REPATH_MS) {
+        stale = false;
+    }
+    if (stale) {
+        if (pathBudgetThisTick <= 0)
+            return false;
+        pathBudgetThisTick--;
+        state.lastRepathAt = now;
+        const path = findPathAStar(bot.x, bot.y, goalX, goalY);
+        if (!path || path.length === 0) {
+            // Cache an empty path so we don't burn the budget every tick when
+            // blocked — retry after PATH_STALE_MS.
+            state.pathNodes = [];
+            state.pathIndex = 0;
+            state.pathGoalTileX = goalTx;
+            state.pathGoalTileY = goalTy;
+            state.pathCreatedAt = now;
+            return false;
+        }
+        state.pathNodes = path;
+        state.pathIndex = 0;
+        state.pathGoalTileX = goalTx;
+        state.pathGoalTileY = goalTy;
+        state.pathCreatedAt = now;
+    }
+    // Skip over waypoints we've already reached (handles overshoot from movement smoothing)
+    const reachedSq = PATH_WAYPOINT_REACHED_DIST * PATH_WAYPOINT_REACHED_DIST;
+    while (state.pathIndex < state.pathNodes.length) {
+        const wp = state.pathNodes[state.pathIndex];
+        const dx = wp.x - bot.x;
+        const dy = wp.y - bot.y;
+        if (dx * dx + dy * dy < reachedSq) {
+            state.pathIndex++;
+        }
+        else {
+            break;
+        }
+    }
+    if (state.pathIndex >= state.pathNodes.length)
+        return false;
+    // Greedy LOS smoothing: skip ahead to the farthest waypoint with clear
+    // line of sight. Without this, bots steer tile-center to tile-center,
+    // producing a visible zigzag that turns into fast left-right snapping
+    // under powder's 2×+ speed boost.
+    //
+    // The full multi-ray pass only runs every PATH_SMOOTH_INTERVAL_MS; between
+    // passes one ray re-validates the current waypoint and, if the bot slid
+    // behind a corner, the full pass runs immediately. Cuts steady-state path
+    // following from N rays/bot/tick to 1.
+    const needFullSmooth = state.lastSmoothAt === undefined
+        || now - state.lastSmoothAt >= PATH_SMOOTH_INTERVAL_MS
+        || rayHitsWall(bot.x, bot.y, state.pathNodes[state.pathIndex].x, state.pathNodes[state.pathIndex].y);
+    if (needFullSmooth) {
+        state.lastSmoothAt = now;
+        while (state.pathIndex + 1 < state.pathNodes.length) {
+            const next = state.pathNodes[state.pathIndex + 1];
+            if (rayHitsWall(bot.x, bot.y, next.x, next.y))
+                break;
+            state.pathIndex++;
+        }
+    }
+    const wp = state.pathNodes[state.pathIndex];
+    const dx = wp.x - bot.x;
+    const dy = wp.y - bot.y;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    driveMove(bot, dx / d, dy / d, speedMult, petalExt);
+    return true;
+}
+// Per-bot strafe direction (+1 or -1). Deterministic so the bot commits to
+// one circling direction instead of oscillating.
+function tangentDirection(botId) {
+    // Simple hash: sum of char codes, parity picks direction
+    let h = 0;
+    for (let i = 0; i < botId.length; i++)
+        h = (h + botId.charCodeAt(i)) | 0;
+    return (h & 1) === 0 ? 1 : -1;
+}
+function withinAnchor(anchor, x, y, radius) {
+    if (!anchor)
+        return true;
+    const dx = anchor.x - x;
+    const dy = anchor.y - y;
+    return dx * dx + dy * dy <= radius * radius;
+}
+function pickBestEnemyTarget(bot, anchor, tetherRadius, preferredTiers) {
+    // Score = priority * 10000 - distance, so bosses within their aggro range
+    // beat every regular mob and the closer target wins among same tier.
+    // Preferred-tier (matches bot's rarity progression) gets a +0.5 priority
+    // bump so it beats same-tier-class unpreferred mobs, but never bosses.
+    let best = null;
+    let bestScore = -Infinity;
+    let bestDist = 0;
+    // Non-boss candidates can only pass the range gate below within
+    // HIGH_TIER_AGGRO_RANGE (the largest non-boss aggro range), so a grid
+    // query at that radius sees every possible winner. Bosses have a much
+    // wider range (BOSS_RAID_RANGE) and skip the tether — they come from the
+    // per-tick bossIndex instead of the grid. Same selection as the old full
+    // scan, without iterating all ~1400 enemies per bot.
+    const near = (0, enemyGrid_1.queryEnemiesNear)(bot.x, bot.y, HIGH_TIER_AGGRO_RANGE, _botQueryScratch);
+    const scoreEnemy = (enemy) => {
+        if (enemy.isDead)
+            return;
+        if (enemy.type === 'item_spawner')
+            return;
+        if (enemy.type === 'target_dummy')
+            return;
+        const isBoss = BOSS_TIERS.has(enemy.tier);
+        // Tether applies to everything except bosses — bosses are raids and
+        // bots are allowed to crowd up from across the map to fight them.
+        if (!isBoss && !withinAnchor(anchor, enemy.x, enemy.y, tetherRadius))
+            return;
+        const range = aggroRangeForTier(enemy.tier);
+        const dx = enemy.x - bot.x;
+        const dy = enemy.y - bot.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > range)
+            return;
+        const priority = tierPriority(enemy.tier);
+        const prefBonus = preferredTiers.has(enemy.tier) ? 0.5 : 0;
+        const score = (priority + prefBonus) * 10000 - d;
+        if (score > bestScore) {
+            bestScore = score;
+            best = enemy;
+            bestDist = d;
+        }
+    };
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
+        if (BOSS_TIERS.has(enemy.tier))
+            continue; // scored from bossIndex below
+        scoreEnemy(enemy);
+    }
+    for (const boss of bossIndex)
+        scoreEnemy(boss);
+    return best ? { enemy: best, dist: bestDist } : null;
+}
+function findPickupTarget(bot, anchor, tetherRadius) {
+    let best = null;
+    let bestDist = ITEM_SEEK_RANGE;
+    for (const item of gameState_1.items) {
+        if (item.pickedUpBy && item.pickedUpBy.has(bot.id))
+            continue;
+        // Only chase items this bot is actually eligible for (it was a damage contributor)
+        if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+            if (!item.eligiblePlayers.includes(bot.id))
+                continue;
+        }
+        // Don't chase drops that would drag the bot outside the cluster
+        if (!withinAnchor(anchor, item.x, item.y, tetherRadius))
+            continue;
+        const dx = item.x - bot.x;
+        const dy = item.y - bot.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < bestDist) {
+            bestDist = d;
+            best = item;
+        }
+    }
+    return best ? { item: best, dist: bestDist } : null;
+}
+// --- Mode detection ---
+// Squared distance from a point to the nearest non-bot, non-dead player.
+// Returns Infinity when no human player is connected — in that case the
+// recency comparison alone decides the raid target.
+function distSqToNearestHumanPlayer(x, y) {
+    let best = Infinity;
+    for (const id in constants_1.players) {
+        if (isBot(id))
+            continue;
+        const p = constants_1.players[id];
+        if (!p || p.isDead)
+            continue;
+        const dx = p.x - x;
+        const dy = p.y - y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < best)
+            best = d2;
+    }
+    return best;
+}
+// Prefer uniques strictly; only consider supers if no uniques exist anywhere.
+// Within the chosen tier, pick the most recently spawned boss, with proximity
+// to the nearest human player as a tiebreaker. This makes bots commit to
+// freshly-spawned bosses bothering humans rather than chasing whatever stale
+// boss happens to come first in the enemies array.
+function pickRaidTargetGlobal() {
+    let pool = [];
+    let preferUnique = false;
+    for (const enemy of constants_1.enemies) {
+        if (enemy.ownerId)
+            continue;
+        if (enemy.isDead)
+            continue;
+        if (enemy.type === 'target_dummy')
+            continue;
+        if (enemy.tier === 'unique') {
+            if (!preferUnique) {
+                pool = [];
+                preferUnique = true;
+            }
+            pool.push(enemy);
+        }
+        else if (enemy.tier === 'super' && !preferUnique) {
+            pool.push(enemy);
+        }
+    }
+    if (pool.length === 0)
+        return null;
+    let best = pool[0];
+    let bestSpawn = best.spawnTime ?? 0;
+    let bestDistSq = distSqToNearestHumanPlayer(best.x, best.y);
+    for (let i = 1; i < pool.length; i++) {
+        const enemy = pool[i];
+        const spawn = enemy.spawnTime ?? 0;
+        if (spawn > bestSpawn) {
+            best = enemy;
+            bestSpawn = spawn;
+            bestDistSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+        }
+        else if (spawn === bestSpawn) {
+            const distSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+            if (distSq < bestDistSq) {
+                best = enemy;
+                bestDistSq = distSq;
+            }
+        }
+    }
+    return { x: best.x, y: best.y, tier: best.tier };
+}
+/**
+ * Force all bots into raid mode on the best available target (unique > super,
+ * never ultra). No-op if no super/unique bosses exist. Returns the target info
+ * if a raid was triggered, null otherwise. Called from the chat handler when
+ * someone says "super" or "unique".
+ */
+function triggerBotRaid() {
+    const target = pickRaidTargetGlobal();
+    if (!target) {
+        forcedRaid = null;
+        return null;
+    }
+    forcedRaid = {
+        x: target.x,
+        y: target.y,
+        tier: target.tier,
+        until: Date.now() + FORCED_RAID_DURATION_MS
+    };
+    // Invalidate every bot's cached path so they replan toward the raid target.
+    for (const s of botAIState.values()) {
+        s.pathNodes = undefined;
+        s.pathIndex = undefined;
+        s.pathGoalTileX = undefined;
+        s.pathGoalTileY = undefined;
+        s.pathCreatedAt = undefined;
+    }
+    return target;
+}
+// Returns the forced-raid rally point if it's still active AND the target
+// boss tier still exists in the world; otherwise clears the forced state.
+function getActiveForcedRaidAnchor() {
+    if (!forcedRaid)
+        return null;
+    if (Date.now() > forcedRaid.until) {
+        forcedRaid = null;
+        return null;
+    }
+    // Refresh the rally point to the nearest live boss of the preferred tier
+    // so bots home in on a live target rather than a stale position.
+    const refreshed = pickRaidTargetGlobal();
+    if (!refreshed) {
+        forcedRaid = null;
+        return null;
+    }
+    forcedRaid.x = refreshed.x;
+    forcedRaid.y = refreshed.y;
+    forcedRaid.tier = refreshed.tier;
+    return { x: forcedRaid.x, y: forcedRaid.y };
+}
+// Scan for new super/unique bosses and have the nearest live bot shout them
+// out in chat. Emitting through io.emit (not the socket handler) means we
+// bypass the built-in chat-triggered raid — so we also call triggerBotRaid()
+// directly. Rate-limited globally to avoid spam when multiple bosses spawn
+// at once.
+function announceNewBosses(io, now) {
+    // First pass: silently absorb any bosses that were already alive when the
+    // bot manager spun up (or that existed before this guard was in place).
+    // Prevents a burst of "super X come!" chatter the instant supers spawn.
+    if (!bossAnnounceInitialized) {
+        for (const enemy of constants_1.enemies) {
+            if (enemy.ownerId)
+                continue;
+            if (enemy.isDead)
+                continue;
+            if (!BOSS_TIERS.has(enemy.tier))
+                continue;
+            if (enemy.type === 'target_dummy')
+                continue;
+            announcedBosses.add(enemy.id);
+        }
+        bossAnnounceInitialized = true;
+        // Require a full cooldown before the very first real announcement too.
+        nextBossAnnounceAllowedAt = now + BOSS_ANNOUNCE_COOLDOWN_MIN_MS +
+            Math.random() * (BOSS_ANNOUNCE_COOLDOWN_MAX_MS - BOSS_ANNOUNCE_COOLDOWN_MIN_MS);
+    }
+    if (now < nextBossAnnounceAllowedAt)
+        return;
+    for (const enemy of constants_1.enemies) {
+        if (enemy.ownerId)
+            continue;
+        if (enemy.isDead)
+            continue;
+        if (!BOSS_TIERS.has(enemy.tier))
+            continue;
+        if (enemy.type === 'target_dummy')
+            continue;
+        if (announcedBosses.has(enemy.id))
+            continue;
+        let announcerId = null;
+        let bestD = Infinity;
+        for (const pid in constants_1.players) {
+            if (!isBot(pid))
+                continue;
+            const b = constants_1.players[pid];
+            if (!b || b.isDead)
+                continue;
+            const dx = b.x - enemy.x;
+            const dy = b.y - enemy.y;
+            const d = dx * dx + dy * dy;
+            if (d < bestD) {
+                bestD = d;
+                announcerId = pid;
+            }
+        }
+        if (!announcerId)
+            return;
+        const bot = constants_1.players[announcerId];
+        const tierWord = enemy.tier === 'unique' ? 'unique' : 'super';
+        const fullPool = tierWord === 'unique' ? BOSS_SHOUT_TEMPLATES_UNIQUE : BOSS_SHOUT_TEMPLATES_SUPER;
+        // {code} templates only make sense when the bot is in a squad.
+        const squadId = bot.squadId;
+        const pool = squadId ? fullPool : fullPool.filter(t => !t.includes('{code}'));
+        let shout = pool[Math.floor(Math.random() * pool.length)]
+            .replace('{tier}', tierWord)
+            .replace('{mob}', enemy.type.replace(/_/g, ' '));
+        if (squadId)
+            shout = shout.replace('{code}', squadId);
+        io.emit('chatMessage', {
+            sender: bot.name,
+            content: `[<span style="color: yellow;">${bot.name}</span>] ${shout}`,
+            timestamp: now
+        });
+        announcedBosses.add(enemy.id);
+        nextBossAnnounceAllowedAt = now + BOSS_ANNOUNCE_COOLDOWN_MIN_MS +
+            Math.random() * (BOSS_ANNOUNCE_COOLDOWN_MAX_MS - BOSS_ANNOUNCE_COOLDOWN_MIN_MS);
+        // Rally every bot — the chat handler's regex trigger won't fire for
+        // messages we emit directly, so invoke it explicitly.
+        triggerBotRaid();
+        return; // One announcement per tick batch
+    }
+    // GC: drop ids of bosses that no longer exist so the set doesn't grow.
+    if (announcedBosses.size > 32) {
+        const live = new Set();
+        for (const e of constants_1.enemies) {
+            if (BOSS_TIERS.has(e.tier) && !e.isDead)
+                live.add(e.id);
+        }
+        for (const id of announcedBosses) {
+            if (!live.has(id))
+                announcedBosses.delete(id);
+        }
+    }
+}
+function findNearestBossForBot(bot) {
+    // Per-bot raid pick: only consider bosses within BOSS_RAID_RANGE of THIS
+    // bot. Without the range gate, every bot in the world enters raid mode for
+    // any boss anywhere — they then equip powder, blitz across the map, and
+    // ram every mob in their path because powder mode skips the standoff
+    // bands. Among in-range bosses, prefer uniques over supers, then most
+    // recently spawned, then proximity to the nearest human player.
+    let pool = [];
+    let preferUnique = false;
+    for (const enemy of bossIndex) {
+        if (enemy.isDead)
+            continue; // may have died since the index was built this tick
+        const dx = enemy.x - bot.x;
+        const dy = enemy.y - bot.y;
+        if (dx * dx + dy * dy > BOSS_RAID_RANGE * BOSS_RAID_RANGE)
+            continue;
+        if (enemy.tier === 'unique') {
+            if (!preferUnique) {
+                pool = [];
+                preferUnique = true;
+            }
+            pool.push(enemy);
+        }
+        else if (enemy.tier === 'super' && !preferUnique) {
+            pool.push(enemy);
+        }
+    }
+    if (pool.length === 0)
+        return null;
+    let best = pool[0];
+    let bestSpawn = best.spawnTime ?? 0;
+    let bestDistSq = distSqToNearestHumanPlayer(best.x, best.y);
+    for (let i = 1; i < pool.length; i++) {
+        const enemy = pool[i];
+        const spawn = enemy.spawnTime ?? 0;
+        if (spawn > bestSpawn) {
+            best = enemy;
+            bestSpawn = spawn;
+            bestDistSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+        }
+        else if (spawn === bestSpawn) {
+            const distSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+            if (distSq < bestDistSq) {
+                best = enemy;
+                bestDistSq = distSq;
+            }
+        }
+    }
+    const dx = best.x - bot.x;
+    const dy = best.y - bot.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    return { x: best.x, y: best.y, dist };
+}
+function hasHighRarityMobNearby(bot, range) {
+    const rSq = range * range;
+    // Grid broad-phase (pets and rebuild-time dead mobs are already excluded).
+    const near = (0, enemyGrid_1.queryEnemiesNear)(bot.x, bot.y, range, _botQueryScratch);
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
+        if (enemy.isDead)
+            continue;
+        if (!HIGH_TIERS.has(enemy.tier))
+            continue;
+        const dx = enemy.x - bot.x;
+        const dy = enemy.y - bot.y;
+        if (dx * dx + dy * dy <= rSq)
+            return true;
+    }
+    return false;
+}
+// Assign each raiding bot a fixed angular slot around its raid anchor so
+// bots spread evenly around the boss rather than clumping on one side.
+// Recomputed each tick — if N raiders share an anchor, slot i gets angle
+// (i / N) * 2π. Stable sort by id so slots don't shuffle tick to tick.
+function computeRaidSlots() {
+    const byAnchor = new Map();
+    const forced = getActiveForcedRaidAnchor();
+    for (const id in constants_1.players) {
+        if (!isBot(id))
+            continue;
+        const b = constants_1.players[id];
+        if (!b || b.isDead)
+            continue;
+        let anchor = null;
+        if (forced) {
+            anchor = forced;
+        }
+        else {
+            const boss = findNearestBossForBot(b);
+            if (boss)
+                anchor = { x: boss.x, y: boss.y };
+        }
+        if (!anchor)
+            continue;
+        // Round anchor coords so bots raiding the same boss share a bucket
+        // even as the boss drifts by a pixel or two.
+        const key = `${Math.round(anchor.x / 8)}:${Math.round(anchor.y / 8)}`;
+        let bucket = byAnchor.get(key);
+        if (!bucket) {
+            bucket = { ids: [] };
+            byAnchor.set(key, bucket);
+        }
+        bucket.ids.push(id);
+    }
+    const slots = new Map();
+    for (const { ids } of byAnchor.values()) {
+        ids.sort();
+        const n = ids.length;
+        for (let i = 0; i < n; i++) {
+            slots.set(ids[i], (i / n) * Math.PI * 2);
+        }
+    }
+    return slots;
+}
+function computeBotGroups() {
+    const botIds = [];
+    for (const id in constants_1.players) {
+        if (!isBot(id))
+            continue;
+        const b = constants_1.players[id];
+        if (!b || b.isDead)
+            continue;
+        botIds.push(id);
+    }
+    if (botIds.length === 0)
+        return new Map();
+    botIds.sort(); // stable assignment across ticks
+    const numGroups = Math.max(1, Math.ceil(botIds.length / GROUP_TARGET_SIZE));
+    const buckets = Array.from({ length: numGroups }, () => []);
+    // Round-robin so groups stay balanced (4-10 members each) when counts shift.
+    for (let i = 0; i < botIds.length; i++) {
+        buckets[i % numGroups].push(botIds[i]);
+    }
+    const result = new Map();
+    for (const bucket of buckets) {
+        if (bucket.length === 0)
+            continue;
+        let cx = 0, cy = 0;
+        for (const id of bucket) {
+            const p = constants_1.players[id];
+            cx += p.x;
+            cy += p.y;
+        }
+        cx /= bucket.length;
+        cy /= bucket.length;
+        const info = { center: { x: cx, y: cy }, size: bucket.length };
+        for (const id of bucket)
+            result.set(id, info);
+    }
+    return result;
+}
+function computeBotMode(bot, groups) {
+    // Forced raid (chat-triggered): every bot rallies on the target regardless
+    // of distance or whether any human is in that biome. Without this, bots
+    // stay tethered to the nearest human and never cross into an empty biome
+    // to engage a super/unique that spawned there.
+    const forced = getActiveForcedRaidAnchor();
+    if (forced) {
+        return {
+            kind: 'raid',
+            anchor: forced,
+            tetherRadius: RAID_CLUSTER_RADIUS,
+            returnRadius: RAID_CLUSTER_RETURN
+        };
+    }
+    // Raid: any boss within BOSS_RAID_RANGE. Rally on the boss position,
+    // clump tight enough to share ~90% viewport.
+    const boss = findNearestBossForBot(bot);
+    if (boss) {
+        return {
+            kind: 'raid',
+            anchor: { x: boss.x, y: boss.y },
+            tetherRadius: RAID_CLUSTER_RADIUS,
+            returnRadius: RAID_CLUSTER_RETURN
+        };
+    }
+    // High rarity: legendary+ mob nearby AND this bot's group has enough
+    // members to justify grouping. Rally on the group centroid.
+    if (hasHighRarityMobNearby(bot, HIGH_RARITY_SCAN_RANGE)) {
+        const g = groups.get(bot.id);
+        if (g && g.size >= GROUP_MIN_FOR_MODE) {
+            return {
+                kind: 'highRarity',
+                anchor: g.center,
+                tetherRadius: GROUP_CLUSTER_RADIUS,
+                returnRadius: GROUP_CLUSTER_RETURN
+            };
+        }
+    }
+    // Every bot heads to the spawn zone matching its band so it actually
+    // farms the mob tier its loadout was tuned for, instead of just wandering
+    // wherever it spawned. Ultra+ bots get the wider mythic-zone roam radius
+    // (they're hunting boss spawns), everyone else uses the standard tether.
+    const botRarityIdx = getBotMaxRarityIdx(bot);
+    const zone = pickFarmingZoneAnchor(bot, botRarityIdx);
+    if (zone) {
+        const isHighTier = botRarityIdx >= ULTRA_IDX;
+        return {
+            kind: 'normal',
+            anchor: zone,
+            tetherRadius: isHighTier ? ULTRA_ROAM_RADIUS : TETHER_RADIUS,
+            returnRadius: isHighTier ? ULTRA_ROAM_RETURN : TETHER_RETURN_RADIUS
+        };
+    }
+    // Map has no spawn zones at all — fall back to tethering to a human if
+    // one exists, otherwise free-roam from the bot's current position.
+    const human = nearestRealPlayer(bot.x, bot.y);
+    return {
+        kind: 'normal',
+        anchor: human ? { x: human.x, y: human.y } : null,
+        tetherRadius: TETHER_RADIUS,
+        returnRadius: TETHER_RETURN_RADIUS
+    };
+}
+// Radius within which another bot pushes us aside. Tuned to just larger than
+// two player bodies so bots don't overlap but don't scatter across the map.
+const BOT_SEPARATION_RADIUS = constants_1.PLAYER_SIZE * 2.2;
+// How strongly the separation vector blends into intended direction.
+const BOT_SEPARATION_STRENGTH = 0.9;
+// Per-bot persistent tiny jitter so two bots chasing the same spot still drift
+// a few px apart instead of sitting on identical coordinates. Keyed by bot id.
+// standoffBias: signed radial offset (±px) so each bot parks on a slightly
+// different ring around a target — kills the feedback loop where every bot
+// converges on the same standoff and then oscillates as separation shoves
+// them in and out of adjacent bands.
+const botJitter = new Map();
+function getBotJitter(id) {
+    let j = botJitter.get(id);
+    if (!j) {
+        const a = Math.random() * Math.PI * 2;
+        j = {
+            x: Math.cos(a),
+            y: Math.sin(a),
+            standoffBias: (Math.random() - 0.5) * 30, // ±15 px
+        };
+        botJitter.set(id, j);
+    }
+    return j;
+}
+function driveMove(bot, dirX, dirY, speedMult, petalExtension) {
+    // Separation: push away from any other bot inside BOT_SEPARATION_RADIUS,
+    // weighted by 1 - dist/radius so near-touches dominate over mid-range
+    // neighbors. Keeps squads from collapsing to a single point.
+    let sepX = 0;
+    let sepY = 0;
+    for (const pid in constants_1.players) {
+        if (pid === bot.id)
+            continue;
+        if (!isBot(pid))
+            continue;
+        const other = constants_1.players[pid];
+        if (!other || other.isDead)
+            continue;
+        const dx = bot.x - other.x;
+        const dy = bot.y - other.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 === 0 || d2 > BOT_SEPARATION_RADIUS * BOT_SEPARATION_RADIUS)
+            continue;
+        const d = Math.sqrt(d2);
+        const w = (1 - d / BOT_SEPARATION_RADIUS) / d;
+        sepX += dx * w;
+        sepY += dy * w;
+    }
+    // Persistent per-bot bias + a tiny tick-level wobble so motion looks alive
+    // instead of pixel-locked. Kept small (<0.15) so it never overrides intent.
+    const jitter = getBotJitter(bot.id);
+    const wobbleX = jitter.x * 0.08 + (Math.random() - 0.5) * 0.06;
+    const wobbleY = jitter.y * 0.08 + (Math.random() - 0.5) * 0.06;
+    let outX = dirX + sepX * BOT_SEPARATION_STRENGTH + wobbleX;
+    let outY = dirY + sepY * BOT_SEPARATION_STRENGTH + wobbleY;
+    const mag = Math.sqrt(outX * outX + outY * outY);
+    if (mag > 0) {
+        outX /= mag;
+        outY /= mag;
+    }
+    else {
+        outX = dirX;
+        outY = dirY;
+    }
+    bot.inputs.useMouse = true;
+    bot.inputs.mouseDirectionX = outX;
+    bot.inputs.mouseDirectionY = outY;
+    bot.inputs.mouseSpeedMultiplier = speedMult;
+    bot.inputs.petalExtension = petalExtension;
+}
+/**
+ * Update bot AI — decides movement + combat posture each tick and writes into
+ * `bot.inputs`, which the normal updatePlayerState pipeline then consumes.
+ *
+ * Priority: flee at low HP > attack boss/mob target > collect eligible drops > wander.
+ */
+// How often (ms) to consider a bot squad action. Staggered per-bot.
+const BOT_SQUAD_TICK_MS = 8000;
+// Chance per tick of this bot creating a public squad (if not in one).
+const BOT_SQUAD_CREATE_CHANCE = 0.03;
+// Chance per tick of this bot joining an available public squad.
+const BOT_SQUAD_JOIN_CHANCE = 0.5;
+const botSquadNextTick = new Map();
+function updateBotSquadMembership(io, now) {
+    for (const id in constants_1.players) {
+        if (!isBot(id))
+            continue;
+        const bot = constants_1.players[id];
+        if (!bot || bot.isDead)
+            continue;
+        const next = botSquadNextTick.get(id) || 0;
+        if (now < next)
+            continue;
+        // Jitter the next tick so bots don't all evaluate simultaneously.
+        botSquadNextTick.set(id, now + BOT_SQUAD_TICK_MS + Math.floor(Math.random() * 4000));
+        if (squadManager_1.playerSquadMap.has(id))
+            continue;
+        // Prefer joining an existing public squad with room.
+        const publicSquads = (0, squadManager_1.listPublicSquads)();
+        if (publicSquads.length > 0 && Math.random() < BOT_SQUAD_JOIN_CHANCE) {
+            const squad = publicSquads[Math.floor(Math.random() * publicSquads.length)];
+            const { squad: joined, error } = (0, squadManager_1.joinPublicSquad)(squad.id, id);
+            if (!error && joined) {
+                bot.squadId = joined.id;
+                (0, squadManager_1.sendSquadSystemMessage)(joined, io, `${bot.name} has joined the squad.`);
+                for (const memberId of joined.memberIds) {
+                    if (memberId.startsWith('bot_'))
+                        continue;
+                    io.to(memberId).emit('squadUpdate', { squadId: joined.id, memberIds: joined.memberIds, leaderId: joined.leaderId });
+                }
+            }
+            continue;
+        }
+        // Occasionally host a new public squad. The bot will advertise the
+        // code on its next boss callout via the {code} templates.
+        if (Math.random() < BOT_SQUAD_CREATE_CHANCE) {
+            const squad = (0, squadManager_1.createSquad)(id, true);
+            if (squad) {
+                bot.squadId = squad.id;
+            }
+        }
+    }
+}
+// Per-tick indexes. Bot targeting used to do 4-5 full linear scans over all
+// ~1400 enemies PER BOT per tick (findNearestBossForBot ×2, hasHighRarityMobNearby,
+// pickBestEnemyTarget, findInterceptingMob) — ~300k iterations/tick at the 50-bot
+// cap, the single largest tick cost after the petal loops. Bosses are indexed once
+// per tick (there are only a handful), and the range-bounded scans go through the
+// enemy spatial grid instead. rebuildEnemyGrid() must run BEFORE updateBotAI in
+// the tick for the grid queries to see this tick's positions (see server.ts).
+const bossIndex = [];
+// One shared broad-phase scratch: the three query users per bot (mode scan, target
+// pick, intercept) each fully consume their results before the next query runs.
+const _botQueryScratch = [];
+function rebuildBossIndex() {
+    bossIndex.length = 0;
+    for (const enemy of constants_1.enemies) {
+        if (enemy.ownerId)
+            continue;
+        if (enemy.isDead)
+            continue;
+        if (enemy.type === 'target_dummy')
+            continue;
+        if (BOSS_TIERS.has(enemy.tier))
+            bossIndex.push(enemy);
+    }
+}
+function updateBotAI(io) {
+    const now = Date.now();
+    rebuildBossIndex();
+    updateBotSquadMembership(io, now);
+    // Reset the per-tick A* budget so a single tick can't be dominated by
+    // simultaneous recomputes (e.g., a whole raid repathing at once).
+    pathBudgetThisTick = PATH_MAX_PER_TICK;
+    // Bots call out fresh super/unique boss sightings in chat — this also
+    // triggers the global raid rally via triggerBotRaid().
+    announceNewBosses(io, now);
+    // Bot groupings are only needed for highRarity mode but it's cheaper to
+    // build once and reuse than recompute per-bot.
+    const groups = computeBotGroups();
+    // Angular slot assignments so raiding bots spread evenly around the boss.
+    const raidSlots = computeRaidSlots();
+    for (const id in constants_1.players) {
+        if (!isBot(id))
+            continue;
+        const bot = constants_1.players[id];
+        if (!bot)
+            continue;
+        let state = botAIState.get(id);
+        if (!state) {
+            state = { wanderTargetX: bot.x, wanderTargetY: bot.y, nextWanderTime: 0 };
+            botAIState.set(id, state);
+        }
+        if (bot.isDead) {
+            // Restore the combat loadout before respawn so the bot isn't stuck
+            // with the swapped petals if it died mid-traversal.
+            unequipRaidPowder(bot, state);
+            unequipYggdrasilSlot(bot, state);
+            if (state.respawnAt === undefined) {
+                state.respawnAt = now + BOT_RESPAWN_DELAY_MS;
+            }
+            else if (now >= state.respawnAt) {
+                respawnBot(bot, io);
+            }
+            continue;
+        }
+        const mode = computeBotMode(bot, groups);
+        const anchor = mode.anchor;
+        const anchorDist = anchor
+            ? Math.sqrt((anchor.x - bot.x) ** 2 + (anchor.y - bot.y) ** 2)
+            : 0;
+        const preferredTiers = preferredMobTiersForBot(getBotMaxRarityIdx(bot));
+        // Swap in a powder petal whenever the bot is far enough from its
+        // anchor that traversal speed actually matters — both raid traversal
+        // (heading to a boss) and normal mode (heading to its band's farming
+        // zone) qualify. Restored once the bot is in engagement range, so
+        // combat slot 0 is back online before petals are needed.
+        if (anchorDist > RAID_POWDER_MIN_DIST) {
+            equipRaidPowder(bot, state);
+        }
+        else {
+            unequipRaidPowder(bot, state);
+        }
+        // Yggdrasil buddy swap: when another bot is close enough that they
+        // could plausibly need a revive, slot 1 is replaced with a yggdrasil
+        // petal. Restored when the bot is alone again.
+        if (hasNearbyBotBuddy(bot)) {
+            equipYggdrasilSlot(bot, state);
+        }
+        else {
+            unequipYggdrasilSlot(bot, state);
+        }
+        // Revive seek: if a teammate has gone down within range and this bot
+        // is carrying a yggdrasil, head straight to the corpse. The actual
+        // revive (in playerState.ts) fires when one of our orbiting petals
+        // touches the body, so we just need to get the body inside our orbit.
+        const reviveTarget = findReviveTarget(bot, state);
+        if (reviveTarget) {
+            const dx = reviveTarget.x - bot.x;
+            const dy = reviveTarget.y - bot.y;
+            const d = Math.sqrt(dx * dx + dy * dy) || 1;
+            // Stand right on top of the corpse — the revive trigger uses the
+            // petal position, and orbiting petals sweep through the centre.
+            // Petals are extended (2.0) so they can clip the corpse from a
+            // small radius without us body-blocking nearby allies.
+            const steered = steerAroundWalls(bot.x, bot.y, dx / d, dy / d);
+            driveMove(bot, steered.x, steered.y, 0.95, 2.0);
+            continue;
+        }
+        // Long-haul raid routing: hop through a teleporter when one puts the
+        // bot meaningfully closer to the boss, or warp the bot to a spawn zone
+        // in the boss's section if no teleporter helps.
+        if (mode.kind === 'raid' && anchor && handleRaidShortcut(bot, state, now, anchor, anchorDist)) {
+            continue;
+        }
+        let target = pickBestEnemyTarget(bot, anchor, mode.tetherRadius, preferredTiers);
+        let isBossTarget = !!(target && BOSS_TIERS.has(target.enemy.tier));
+        // Ram interception: if a non-target mob is sitting in the bot's path
+        // close enough to body-slam, hijack the target so combat bands engage
+        // it for a tick. Without this, a bot beelining for a far-away boss
+        // (especially powdered up during raid traversal) plows straight
+        // through every mob in between without its petals ever locking on.
+        // Only fires when the bot is actually moving toward something — i.e.
+        // there's a target whose direction we can read.
+        if (target) {
+            const tdx = target.enemy.x - bot.x;
+            const tdy = target.enemy.y - bot.y;
+            const tDist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
+            const intercept = findInterceptingMob(bot.x, bot.y, tdx / tDist, tdy / tDist, target.enemy.id, 160);
+            // Only divert when the interceptor is meaningfully closer than the
+            // real target — otherwise we'd swap to the same mob we're already
+            // engaging and clobber the boss-slot logic.
+            if (intercept && intercept.dist < tDist - 40) {
+                target = { enemy: intercept.enemy, dist: intercept.dist };
+                isBossTarget = false;
+            }
+        }
+        // If bot has drifted outside its cluster (boss raid / group / tether),
+        // abandon the current task and regroup. Skipped when raiding a boss
+        // target — bots commit to the fight even if the anchor is far.
+        if (anchor && anchorDist > mode.returnRadius && !(mode.kind === 'raid' && isBossTarget)) {
+            // Raid & group crowds use A* to navigate around wall clusters.
+            // Normal-mode regroup stays on the cheap steering probe.
+            if (mode.kind !== 'normal' && followPath(bot, state, now, anchor.x, anchor.y, 1.0, 1.0)) {
+                continue;
+            }
+            const dx = anchor.x - bot.x;
+            const dy = anchor.y - bot.y;
+            const d = anchorDist || 1;
+            const steered = steerAroundWalls(bot.x, bot.y, dx / d, dy / d);
+            driveMove(bot, steered.x, steered.y, 1.0, 1.0);
+            continue;
+        }
+        const healthRatio = bot.health / Math.max(1, bot.maxHealth);
+        // Bosses are too valuable to flee — commit unless critically low
+        const fleeThreshold = isBossTarget ? FLEE_HEALTH_RATIO * 0.5 : FLEE_HEALTH_RATIO;
+        if (target && healthRatio < fleeThreshold) {
+            const dx = bot.x - target.enemy.x;
+            const dy = bot.y - target.enemy.y;
+            const d = Math.sqrt(dx * dx + dy * dy) || 1;
+            driveMove(bot, dx / d, dy / d, 1.0, 0.7);
+            continue;
+        }
+        if (target) {
+            const dx = target.enemy.x - bot.x;
+            const dy = target.enemy.y - bot.y;
+            const d = target.dist || Math.sqrt(dx * dx + dy * dy) || 1;
+            const dirX = dx / d;
+            const dirY = dy / d;
+            // Compute the actual standoff distance: petal orbit reach + mob
+            // radius + buffer. This is how far petals can hit from and keeps
+            // the bot's body out of the mob's collision circle.
+            // 2.0 matches the player's max attack-state extension (space/LMB).
+            const extendedPetalExt = 2.0;
+            const petalReach = computePetalReach(bot, extendedPetalExt);
+            const mobRadius = getMobRadius(target.enemy);
+            // True max hit distance (bot centre → mob centre) where a petal's
+            // far edge just touches the mob edge is petalReach - the safety
+            // buffer + mobRadius. Stand ~10 px inside that so position jitter
+            // still lands hits. Without this subtraction the safety buffer
+            // gets double-counted and bots park just outside actual reach.
+            const baseStandoff = petalReach - STANDOFF_SAFETY_BUFFER + mobRadius - 10;
+            // Per-bot radial bias spreads the equilibrium ring so neighboring
+            // bots don't all target the same distance and thrash between the
+            // retreat/strafe/creep bands.
+            const standoff = baseStandoff + getBotJitter(bot.id).standoffBias;
+            const dangerDist = constants_1.PLAYER_SIZE / 2 + mobRadius + 6; // body-touch threshold
+            let moveX;
+            let moveY;
+            let speedMult;
+            let petalExt;
+            // Boss raiders: each bot owns an angular slot around the boss so
+            // they spread out instead of stacking. Kicks in once inside the
+            // engagement band (d < standoff + 80); approach from farther away
+            // still uses the direct-path logic below.
+            const slotAngle = isBossTarget ? raidSlots.get(bot.id) : undefined;
+            if (d < dangerDist) {
+                // Too close — shove off at full speed but stay in attack state
+                // so petals remain extended while killing the mob.
+                moveX = -dirX;
+                moveY = -dirY;
+                speedMult = 1.0;
+                petalExt = extendedPetalExt;
+            }
+            else if (slotAngle !== undefined && d < standoff + 80) {
+                // Steer to the slot position around the boss. When the bot is
+                // already at its slot, fall through to a small tangential
+                // strafe so it isn't a sitting duck for AoE.
+                const slotX = target.enemy.x + Math.cos(slotAngle) * standoff;
+                const slotY = target.enemy.y + Math.sin(slotAngle) * standoff;
+                const sx = slotX - bot.x;
+                const sy = slotY - bot.y;
+                const sd = Math.sqrt(sx * sx + sy * sy);
+                if (sd > 40) {
+                    moveX = sx / (sd || 1);
+                    moveY = sy / (sd || 1);
+                    speedMult = Math.min(0.8, 0.3 + sd / 400);
+                }
+                else {
+                    const dir = tangentDirection(bot.id);
+                    moveX = -dirY * dir;
+                    moveY = dirX * dir;
+                    speedMult = 0.2;
+                }
+                petalExt = extendedPetalExt;
+            }
+            else if (d < standoff - 20) {
+                // Inside standoff but past the body-collision threshold — back
+                // out while keeping petals trained on the mob. Band widened
+                // vs. the strafe band below so small position wobble can't
+                // flip the bot between retreating and strafing every tick.
+                const dir = tangentDirection(bot.id);
+                // 70% retreat + 30% strafe (deterministic direction)
+                moveX = dirX * -0.7 + -dirY * dir * 0.3;
+                moveY = dirY * -0.7 + dirX * dir * 0.3;
+                speedMult = 0.6;
+                petalExt = extendedPetalExt;
+            }
+            else if (d < standoff + 20) {
+                // In the sweet spot — pure strafe, no forward/backward component
+                // (deterministic per-bot direction so bots don't oscillate).
+                const dir = tangentDirection(bot.id);
+                moveX = -dirY * dir;
+                moveY = dirX * dir;
+                speedMult = 0.35;
+                petalExt = extendedPetalExt;
+            }
+            else if (d < standoff + 80) {
+                // Just outside reach — creep in slowly so we don't overshoot
+                // the sweet spot under movement smoothing.
+                moveX = dirX;
+                moveY = dirY;
+                speedMult = 0.35;
+                petalExt = extendedPetalExt;
+            }
+            else {
+                // Far away — close distance at full speed. Raid/group bots
+                // use A* to navigate around wall clusters; normal bots use
+                // the cheap steering probe. (No speed-mod compensation: this
+                // is the traversal branch where powder is supposed to help.)
+                if (mode.kind !== 'normal' && followPath(bot, state, now, target.enemy.x, target.enemy.y, 0.95, extendedPetalExt)) {
+                    continue;
+                }
+                const steered = steerAroundWalls(bot.x, bot.y, dirX, dirY);
+                moveX = steered.x;
+                moveY = steered.y;
+                speedMult = 0.95;
+                petalExt = extendedPetalExt;
+                driveMove(bot, moveX, moveY, speedMult, petalExt);
+                continue;
+            }
+            // Close-range bands (everything except "far away"): cancel out the
+            // bot's aggregated speed modifier (powder, etc.) so per-tick
+            // movement matches what each band's speedMult was tuned for. A
+            // powder-wearing bot moving 2× through the standoff zone otherwise
+            // overshoots every band and ping-pongs between shove / retreat /
+            // strafe instead of orbiting in the sweet spot.
+            const speedMod = getBotSpeedMod(bot);
+            const effectiveSpeedMult = speedMod > 1.0 ? speedMult / speedMod : speedMult;
+            driveMove(bot, moveX, moveY, effectiveSpeedMult, petalExt);
+            continue;
+        }
+        // No combat target — try to grab a nearby drop we earned
+        const pickup = findPickupTarget(bot, anchor, mode.tetherRadius);
+        if (pickup) {
+            const dx = pickup.item.x - bot.x;
+            const dy = pickup.item.y - bot.y;
+            const d = pickup.dist || Math.sqrt(dx * dx + dy * dy) || 1;
+            // Only steer when the pickup is far enough that walls could
+            // genuinely block; close-range pickup doesn't need pathing.
+            if (d > constants_1.WALL_TILE_SIZE) {
+                const steered = steerAroundWalls(bot.x, bot.y, dx / d, dy / d);
+                driveMove(bot, steered.x, steered.y, 0.9, 1.0);
+            }
+            else {
+                driveMove(bot, dx / d, dy / d, 0.9, 1.0);
+            }
+            continue;
+        }
+        // Stuck detection: if the bot hasn't moved meaningfully since the last
+        // check, force a fresh wander target. Without this, bots that wander
+        // into a concave wall pocket spend the next 3-7 seconds flailing —
+        // steerAroundWalls returns the blocked direction when every offset
+        // hits a wall, and the per-tick wobble in driveMove makes it look
+        // like the bot is twitching in random directions.
+        const STUCK_CHECK_INTERVAL_MS = 1500;
+        const STUCK_MOVE_THRESHOLD = 30;
+        if (state.lastStuckCheckTime === undefined) {
+            state.lastStuckCheckTime = now;
+            state.lastStuckCheckX = bot.x;
+            state.lastStuckCheckY = bot.y;
+        }
+        else if (now - state.lastStuckCheckTime >= STUCK_CHECK_INTERVAL_MS) {
+            const moved = Math.hypot(bot.x - (state.lastStuckCheckX ?? bot.x), bot.y - (state.lastStuckCheckY ?? bot.y));
+            if (moved < STUCK_MOVE_THRESHOLD) {
+                state.nextWanderTime = 0; // force a re-pick below
+            }
+            state.lastStuckCheckTime = now;
+            state.lastStuckCheckX = bot.x;
+            state.lastStuckCheckY = bot.y;
+        }
+        // Wander — keep target inside the current cluster radius so raid/
+        // group bots stay tight and normal bots stay tethered.
+        if (now > state.nextWanderTime) {
+            const center = anchor ?? { x: bot.x, y: bot.y };
+            const maxDist = Math.max(80, mode.tetherRadius - 100);
+            // Try a few random angles and pick the first one with line of
+            // sight from the bot's current position. Bots that pick a wander
+            // target through a wall have no way to actually reach it and end
+            // up parked against the wall until nextWanderTime fires again.
+            let pickedX = bot.x;
+            let pickedY = bot.y;
+            let foundClear = false;
+            for (let attempt = 0; attempt < 8; attempt++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.min(maxDist, 200) + Math.random() * Math.max(0, maxDist - 200);
+                const tx = clampToWorld(center.x + Math.cos(angle) * dist, 100, constants_1.ACTUAL_WORLD_WIDTH);
+                const ty = clampToWorld(center.y + Math.sin(angle) * dist, 100, constants_1.ACTUAL_WORLD_HEIGHT);
+                if (!rayHitsWall(bot.x, bot.y, tx, ty)) {
+                    pickedX = tx;
+                    pickedY = ty;
+                    foundClear = true;
+                    break;
+                }
+            }
+            // If everything is walled off, scoot a short distance in any clear
+            // direction so the bot at least moves and unsticks itself.
+            if (!foundClear) {
+                for (let attempt = 0; attempt < 8; attempt++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const tx = clampToWorld(bot.x + Math.cos(angle) * 200, 100, constants_1.ACTUAL_WORLD_WIDTH);
+                    const ty = clampToWorld(bot.y + Math.sin(angle) * 200, 100, constants_1.ACTUAL_WORLD_HEIGHT);
+                    if (!rayHitsWall(bot.x, bot.y, tx, ty)) {
+                        pickedX = tx;
+                        pickedY = ty;
+                        break;
+                    }
+                }
+            }
+            state.wanderTargetX = pickedX;
+            state.wanderTargetY = pickedY;
+            state.nextWanderTime = now + 3000 + Math.random() * 4000;
+        }
+        const wdx = state.wanderTargetX - bot.x;
+        const wdy = state.wanderTargetY - bot.y;
+        const wd = Math.sqrt(wdx * wdx + wdy * wdy);
+        if (wd < 30) {
+            bot.inputs.useMouse = false;
+            bot.inputs.keys = [];
+            bot.inputs.petalExtension = 1.0;
+            state.nextWanderTime = Math.min(state.nextWanderTime, now + 600);
+        }
+        else {
+            // Steer around walls on wanders too, otherwise bots park against a
+            // wall tile until nextWanderTime fires and the target is reshuffled.
+            if (wd > constants_1.WALL_TILE_SIZE) {
+                const steered = steerAroundWalls(bot.x, bot.y, wdx / wd, wdy / wd);
+                driveMove(bot, steered.x, steered.y, 0.55, 1.0);
+            }
+            else {
+                driveMove(bot, wdx / wd, wdy / wd, 0.55, 1.0);
+            }
+        }
+    }
+}

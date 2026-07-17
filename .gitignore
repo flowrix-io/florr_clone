@@ -1,5 +1,8 @@
 node_modules
-dist/
+# dist/ is committed on purpose: the in-game `update` command installs from the
+# GitHub branch zipball, and a fresh clone should run without a build step.
+# The live database must never be committed, though:
+dist/inventory.json
 public_build_florrclone.zip
 db_backups/
 src/inventory.json
