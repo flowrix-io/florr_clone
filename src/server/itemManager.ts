@@ -129,8 +129,8 @@ export function handleMobDrops(enemyData: { type?: string, tier: string, x: numb
     }
     
     for (const drop of drops) {
-        // Determine quantity
-        const quantity = 1; // Simplified to always drop 1 item
+        // Determine quantity — apex mobs drop 10x loot
+        const quantity = enemyData.tier === 'apex' ? 10 : 1;
         
         // Create items for each quantity
         for (let q = 0; q < quantity; q++) {
@@ -169,6 +169,11 @@ export function handleMobDrops(enemyData: { type?: string, tier: string, x: numb
                 if (finalRarityIndex < minRarityIndex) {
                     finalRarity = RARITY_ORDER[minRarityIndex];
                 }
+            }
+
+            // Apex mobs never drop apex-rarity items
+            if (enemyData.tier === 'apex' && finalRarity === 'apex') {
+                finalRarity = 'unique';
             }
             
             // Handle random petal selection for garbage mob
