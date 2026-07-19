@@ -881,6 +881,7 @@ function setupSocketListeners(game) {
         const player = game.players.get(game.socket?.id || '');
         if (player) {
             player.inventory = inventory;
+            game.inventoryManager?.reconcileStagedWithInventory();
             // Update inventory display if it's open
             if (game.isInventoryOpen) {
                 game.inventoryManager.updateInventoryDisplay();
@@ -990,6 +991,12 @@ function setupSocketListeners(game) {
                 player.targetX = newX;
                 player.targetY = newY;
             }
+            // The snapshot resurrected any craft-slot staged items into the
+            // inventory (staging is client-side only) — re-deduct them so the
+            // slots and inventory don't double-count (craft dupe glitch).
+            if (inventoryChanged) {
+                game.inventoryManager?.reconcileStagedWithInventory();
+            }
             // Update displays if this is the current player
             if (updatedPlayer.id === game.socket?.id) {
                 if (game.isInventoryOpen && inventoryChanged) {
@@ -1045,6 +1052,7 @@ function setupSocketListeners(game) {
         const player = game.players.get(game.socket?.id || '');
         if (player && data.inventory) {
             player.inventory = data.inventory;
+            game.inventoryManager?.reconcileStagedWithInventory();
         }
         game.inventoryManager?.handleItemsAbsorbed(data);
     });
@@ -1053,6 +1061,7 @@ function setupSocketListeners(game) {
         const player = game.players.get(game.socket?.id || '');
         if (player && data?.inventory) {
             player.inventory = data.inventory;
+            game.inventoryManager?.reconcileStagedWithInventory();
         }
         game.inventoryManager?.handleAbsorbFailed();
     });
@@ -1061,6 +1070,9 @@ function setupSocketListeners(game) {
         const player = game.players.get(game.socket?.id || '');
         if (player) {
             player.inventory = data.inventory;
+            // Anything staged into the slots after this craft was sent is
+            // still present in the snapshot — re-deduct it (dupe guard).
+            game.inventoryManager?.reconcileStagedWithInventory();
             if (game.inventoryManager.isCraftingOpen) {
                 // Parse item type and petalType from itemKey
                 const itemKey = data.newItem.type;
@@ -1098,6 +1110,7 @@ function setupSocketListeners(game) {
         if (player) {
             player.inventory = data.inventory;
             player.stars = data.stars;
+            game.inventoryManager?.reconcileStagedWithInventory();
             if (game.inventoryManager) {
                 game.inventoryManager.updateInventoryDisplay();
             }
@@ -1412,6 +1425,8 @@ function setupSocketListeners(game) {
                 if (!suppress) {
                     player.inventory = serverPlayer.inventory;
                     player.loadout = padLoadout(serverPlayer.loadout, 20);
+                    if (isLocal)
+                        game.inventoryManager?.reconcileStagedWithInventory();
                 }
                 else {
                     // Still overlay server-side per-petal state (cooldowns, health) onto matching

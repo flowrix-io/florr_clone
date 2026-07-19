@@ -407,6 +407,9 @@ class TitleScreenInventoryManager {
             if (this.playerData) {
                 this.playerData.inventory = data.inventory;
                 this.gameAdapter.setPlayerData(this.playerData);
+                // Re-deduct anything still staged in the craft slots — the
+                // snapshot includes those copies (staging is client-side only).
+                this.craftingInventoryManager.reconcileStagedWithInventory();
             }
             const itemKey = data.newItem.type;
             let itemType = 'petal';
@@ -442,6 +445,7 @@ class TitleScreenInventoryManager {
             if (this.playerData && data.inventory) {
                 this.playerData.inventory = data.inventory;
                 this.gameAdapter.setPlayerData(this.playerData);
+                this.craftingInventoryManager.reconcileStagedWithInventory();
             }
             this.craftingInventoryManager.handleItemsAbsorbed(data);
             if (this.craftingInventoryManager.isCraftingOpen) {
@@ -452,6 +456,7 @@ class TitleScreenInventoryManager {
             if (this.playerData && data?.inventory) {
                 this.playerData.inventory = data.inventory;
                 this.gameAdapter.setPlayerData(this.playerData);
+                this.craftingInventoryManager.reconcileStagedWithInventory();
             }
             this.craftingInventoryManager.handleAbsorbFailed();
             if (this.craftingInventoryManager.isCraftingOpen) {
@@ -464,6 +469,7 @@ class TitleScreenInventoryManager {
                 if (this.playerData) {
                     this.playerData.inventory = updatedPlayer.inventory;
                     this.gameAdapter.setPlayerData(this.playerData);
+                    this.craftingInventoryManager.reconcileStagedWithInventory();
                 }
                 if (this.craftingInventoryManager.isCraftingOpen) {
                     this.craftingInventoryManager.updateCraftingDisplay();
@@ -559,6 +565,7 @@ class TitleScreenInventoryManager {
                 console.log('[TitleScreenInventory] Normalized inventory, len=', normalizedInv.length, 'rawType=', Array.isArray(rawInv) ? 'array' : typeof rawInv);
                 // Sync adapter so the real InventoryManager can access player data
                 this.gameAdapter.setPlayerData(this.playerData);
+                this.craftingInventoryManager.reconcileStagedWithInventory();
                 this.updateLoadoutDisplay();
                 // Always refresh the inventory display if the panel exists.
                 // The user may have already clicked the inventory button before
@@ -1491,6 +1498,7 @@ class TitleScreenInventoryManager {
         }
         // Update the game adapter and crafting display
         this.gameAdapter.setPlayerData(this.playerData);
+        this.craftingInventoryManager.reconcileStagedWithInventory();
         if (this.craftingInventoryManager.isCraftingOpen) {
             this.craftingInventoryManager.updateCraftingDisplay();
         }

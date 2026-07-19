@@ -1663,6 +1663,35 @@ class InventoryManager {
                 this.addItem(item.rarity, itemKey, 1);
         });
     }
+    /** Re-apply the craft-slot staging deduction after the local inventory was
+     *  replaced with a server snapshot. Staging is client-side only — the
+     *  server's inventory still contains every staged item, so any
+     *  authoritative snapshot (playerUpdated fires on every mob kill,
+     *  craftingFinished, shop purchases, ...) resurrects the staged items into
+     *  the inventory while copies still sit in the slots; returning the slots'
+     *  contents then double-counts them (the craft / shift-craft dupe). Must be
+     *  called exactly once after each `inventory = <fresh server copy>`
+     *  assignment. Staged copies the snapshot no longer contains (consumed
+     *  server-side) are dropped from the slots instead of deducted. */
+    reconcileStagedWithInventory() {
+        if (this.craftingItems.length === 0)
+            return;
+        const kept = [];
+        for (const item of this.craftingItems) {
+            const itemKey = item.petalType ? `petal_${item.petalType}` : item.type;
+            if (item.rarity && this.getItemCount(item.rarity, itemKey) > 0) {
+                this.removeItem(item.rarity, itemKey, 1);
+                kept.push(item);
+            }
+        }
+        if (kept.length !== this.craftingItems.length) {
+            this.craftingItems = kept;
+            if (this.craftingItems.length === 0)
+                this.shiftStaged = false;
+        }
+        if (this.isCraftingOpen)
+            this.updateCraftingDisplay();
+    }
     /** Toggle between the Craft and Absorb tabs (the panel's Switch button).
      *  Absorb is maze-only: entering it outside the maze is refused (the
      *  Switch button is greyed out then anyway); leaving is always allowed. */
