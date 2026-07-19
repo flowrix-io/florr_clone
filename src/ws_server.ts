@@ -46,6 +46,12 @@ export class WSSocket {
     private server: WSServer;
     private _connected: boolean = true;
 
+    // Event names whose frames uWS discarded (send status 2) since last
+    // consumed. The server tick loop reads + clears this to trigger the
+    // appropriate per-channel resync — a dropped frame otherwise silently
+    // desyncs any stateful protocol (delta updates, one-shot spawns/removes).
+    droppedEvents: Set<string> | null = null;
+
     // Allow dynamic properties (userId, username, etc.)
     [key: string]: any;
 
@@ -129,16 +135,29 @@ export class WSSocket {
     }
 
     emit(event: string, ...args: any[]): boolean {
-        if (!this.ws || !this._connected) return false;
+        return this.emitWithStatus(event, ...args) !== -1;
+    }
+
+    /**
+     * Like emit, but returns the raw uWS send status so callers can detect
+     * silently dropped frames: 1 = sent, 0 = queued behind backpressure (will
+     * drain in order), 2 = DROPPED because the socket's buffered amount
+     * exceeded maxBackpressure, -1 = not connected / send threw. Stateful
+     * delta protocols must treat 2 as "the client never saw this message"
+     * and arrange a resync — see the gameStateUpdate loop in server.ts.
+     */
+    emitWithStatus(event: string, ...args: any[]): number {
+        if (!this.ws || !this._connected) return -1;
         try {
             const payload = encode([event, ...args]);
             recordBytes(event, payload.byteLength, 'out');
             // (data, isBinary, compress) — compress=false matches the perMessageDeflate
             // disable from the previous `ws`-backed implementation.
-            this.ws.send(payload, SEND_BINARY, SEND_COMPRESSED);
-            return true;
+            const status = this.ws.send(payload, SEND_BINARY, SEND_COMPRESSED);
+            if (status === 2) (this.droppedEvents ??= new Set()).add(event);
+            return status;
         } catch {
-            return false;
+            return -1;
         }
     }
 
@@ -146,7 +165,8 @@ export class WSSocket {
     sendRaw(payload: Uint8Array, event?: string): boolean {
         if (!this.ws || !this._connected) return false;
         try {
-            this.ws.send(payload, SEND_BINARY, SEND_COMPRESSED);
+            const status = this.ws.send(payload, SEND_BINARY, SEND_COMPRESSED);
+            if (status === 2 && event) (this.droppedEvents ??= new Set()).add(event);
             if (event) recordBytes(event, payload.byteLength, 'out');
             return true;
         } catch {
@@ -207,6 +227,13 @@ export class WSServer {
         uApp.ws<SocketUserData>('/ws', {
             compression: uWS.DISABLED,
             maxPayloadLength: 16 * 1024 * 1024,
+            // Default is 64KB, past which uWS *silently drops* outgoing frames
+            // (send() returns 2). Burst ticks in busy scenes can exceed that on
+            // a momentarily-stalled link, and a dropped frame breaks the delta
+            // protocol (one-shot enemy removals are lost → permanent ghosts).
+            // 1MB lets bursts queue and drain instead; drops become rare and
+            // are recovered via the F=1 resync path in server.ts.
+            maxBackpressure: 1024 * 1024,
             idleTimeout: 120,
             sendPingsAutomatically: true,
 

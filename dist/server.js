@@ -719,6 +719,30 @@ for (let i = 0; i < constants_2.DECORATION_COUNT; i++) {
 for (let i = 0; i < constants_2.SAND_COUNT; i++) {
     gameState_1.sands.push((0, server_utils_1.createSand)());
 }
+// Item wire events whose loss desyncs the client's item map. A dropped spawn
+// leaves loot the client never renders; a dropped remove/pickup leaves a
+// ghost item. All are recovered by one itemsUpdate full replace.
+const ITEM_CHANNEL_EVENTS = ['itemsSpawned', 'itemSpawned', 'itemRemoved', 'itemPickedUp', 'itemsUpdate'];
+// All world items this socket's player (including split-screen halves) can
+// currently see: eligibility-listed for them and not yet picked up by them.
+// Used on authenticate and as the drop-recovery payload.
+function getEligibleItemsForSocket(socketId) {
+    const { splitPlayers } = require('./petal_actions');
+    const originalId = socketId.replace('_split2', '').replace('_split1', '');
+    const splitState = splitPlayers.get(originalId);
+    const playerIds = splitState ? [splitState.player1.id, splitState.player2.id, originalId] : [socketId];
+    return gameState_1.items.filter(item => {
+        if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+            if (!playerIds.some(playerId => item.eligiblePlayers.includes(playerId))) {
+                return false; // Not eligible
+            }
+        }
+        if (item.pickedUpBy && playerIds.some(playerId => item.pickedUpBy.has(playerId))) {
+            return false; // Already picked up
+        }
+        return true;
+    });
+}
 // TP costs for each rarity tier (total = 100 TP for full tree)
 const RARITY_TP_COSTS = {
     common: 1,
@@ -1283,29 +1307,7 @@ io.on('connection', (socket) => {
             socket.emit('enemiesUpdate', enemiesInViewport);
             socket.emit('obstaclesUpdate', constants_2.obstacles);
             // Filter items to only send ones this player is eligible for and hasn't picked up yet
-            // Check if player is split and get all split player IDs
-            const { splitPlayers } = require('./petal_actions');
-            const originalId = socket.id.replace('_split2', '').replace('_split1', '');
-            const splitState = splitPlayers.get(originalId);
-            const playerIds = splitState ? [splitState.player1.id, splitState.player2.id, originalId] : [socket.id];
-            const eligibleItems = gameState_1.items.filter(item => {
-                // If item has eligibility list, check if this player (or any split player) is eligible
-                if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                    const isEligible = playerIds.some(playerId => item.eligiblePlayers.includes(playerId));
-                    if (!isEligible) {
-                        return false; // Not eligible
-                    }
-                }
-                // Check if this player (or any split player) has already picked up this item
-                if (item.pickedUpBy) {
-                    const alreadyPickedUp = playerIds.some(playerId => item.pickedUpBy.has(playerId));
-                    if (alreadyPickedUp) {
-                        return false; // Already picked up
-                    }
-                }
-                return true;
-            });
-            socket.emit('itemsUpdate', eligibleItems);
+            socket.emit('itemsUpdate', getEligibleItemsForSocket(socket.id));
             socket.emit('decorationsUpdate', gameState_1.decorations);
             socket.emit('sandsUpdate', gameState_1.sands);
             // Notify other players
@@ -5510,6 +5512,41 @@ function start_loop() {
             const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
             const anglePrecision = quality === 'slow' ? 0.1 : 0.05;
             const player = constants_2.players[playerId];
+            // Translate transport-level drop records into channel resyncs.
+            // emitWithStatus/sendRaw note the event name whenever uWS discards
+            // a frame to this socket; consume them here once per tick. Item-
+            // channel losses (spawns/removes/pickups fire from timers and
+            // pickup handlers, not just this loop) are recovered with a full
+            // itemsUpdate replace — the client clears and refills its item map.
+            const dropped = socket.droppedEvents;
+            if (dropped && dropped.size > 0) {
+                if (dropped.has('gameStateUpdate'))
+                    socket.needsEntityResync = true;
+                for (const ev of ITEM_CHANNEL_EVENTS) {
+                    if (dropped.has(ev)) {
+                        socket.needsItemResync = true;
+                        break;
+                    }
+                }
+                dropped.clear();
+            }
+            if (socket.needsItemResync) {
+                // Status 2 = this resync was itself dropped; keep the flag armed.
+                if (socket.emitWithStatus('itemsUpdate', getEligibleItemsForSocket(playerId)) !== 2) {
+                    socket.needsItemResync = false;
+                }
+            }
+            // A previous frame to this socket was dropped by uWS (backpressure
+            // over maxBackpressure), but the delta maps below were already
+            // committed as if the client received it — any one-shot removal in
+            // that frame is otherwise lost forever. Recover by clearing the
+            // maps so everything re-sends as first-sight full records, and tag
+            // the frame F=1 so the client drops enemies it doesn't mention.
+            const fullResync = socket.needsEntityResync === true;
+            if (fullResync) {
+                socket.lastSentPlayers?.clear();
+                socket.lastSentEnemies?.clear();
+            }
             if (!socket.lastSentPlayers)
                 socket.lastSentPlayers = new Map();
             const lastPlayers = socket.lastSentPlayers;
@@ -5778,7 +5815,9 @@ function start_loop() {
             }
             // Skip emit entirely when nothing changed this tick — quiet scenes use
             // zero bandwidth instead of an empty-but-still-emitted heartbeat.
-            if (changedPlayers.length === 0 && changedEnemies.length === 0 && removedEnemyIds.length === 0) {
+            // Never skip a pending resync: even an empty F=1 snapshot is
+            // meaningful (it tells the client its remaining enemies are stale).
+            if (!fullResync && changedPlayers.length === 0 && changedEnemies.length === 0 && removedEnemyIds.length === 0) {
                 socket.lastUpdateTime = now;
                 continue;
             }
@@ -5794,8 +5833,19 @@ function start_loop() {
                 gameState.E = changedEnemies;
             if (removedEnemyIds.length > 0)
                 gameState.R = removedEnemyIds;
+            if (fullResync)
+                gameState.F = 1;
             socket.lastUpdateTime = now;
-            io.to(playerId).emit('gameStateUpdate', gameState);
+            const sendStatus = socket.emitWithStatus('gameStateUpdate', gameState);
+            if (sendStatus === 2) {
+                // uWS discarded the frame — the deltas committed above never
+                // reached the client. Schedule a full resync; this also
+                // re-arms if the resync frame itself gets dropped.
+                socket.needsEntityResync = true;
+            }
+            else if (fullResync) {
+                socket.needsEntityResync = false;
+            }
         }
         // Record how long this tick's work actually took (idle early-return
         // ticks never reach here, so they don't dilute the average).

@@ -729,6 +729,18 @@ function setupSocketListeners(game) {
         items.forEach(item => {
             game.items.set(item.id, item);
         });
+        // This full replace is also the server's drop-recovery payload (a
+        // spawn/remove frame to us was discarded under backpressure). Clear
+        // animation entries for items that no longer exist — their items are
+        // gone from the map, so they'd linger in these Maps forever.
+        game.graphics.itemSpawnAnim?.forEach((_, id) => {
+            if (!game.items.has(id))
+                game.graphics.itemSpawnAnim.delete(id);
+        });
+        game.graphics.itemDeathAnim?.forEach((_, id) => {
+            if (!game.items.has(id))
+                game.graphics.itemDeathAnim.delete(id);
+        });
     });
     const registerSpawnAnim = (item) => {
         if (!game.graphics.itemSpawnAnim) {
@@ -1161,7 +1173,9 @@ function setupSocketListeners(game) {
     //   P = newly-changed players (delta fields)
     //   E = newly-changed enemies (delta fields, or full fields on first sight)
     //   R = enemies to remove (left viewport or died)
-    // Unmentioned entities keep their current state.
+    //   F = 1 marks a full-resync snapshot (server detected a dropped frame):
+    //       E lists every viewport enemy, so unmentioned enemies are stale.
+    // Otherwise, unmentioned entities keep their current state.
     // Per-player keys: i,n,x,y,a,h,H,l,s,e,f,q,r,k,m,v,V,z, p (petalPositions array).
     // Per-petal keys: L=loadoutIndex,I=instanceIndex,x,y,N=noPhysics.
     // Per-enemy keys: i,t=type,T=tier,x,y,a,h,H. Missing fields = unchanged.
@@ -1349,6 +1363,21 @@ function setupSocketListeners(game) {
         if (removedEnemyIds) {
             for (const id of removedEnemyIds)
                 handleEnemyOutOfView(id);
+        }
+        // Full-resync snapshot: a frame to us was dropped under backpressure, so
+        // one of our enemies may be a ghost whose one-shot removal never arrived.
+        // E now lists the entire viewport — anything we hold beyond it is stale.
+        // (Mid-death-animation enemies are skipped by handleEnemyOutOfView and
+        // cleaned up by the game loop's 200ms animation timer.)
+        if (data.F) {
+            const mentioned = new Set();
+            if (serverEnemies)
+                for (const e of serverEnemies)
+                    mentioned.add(e.i);
+            for (const id of Array.from(game.enemies.keys())) {
+                if (!mentioned.has(id))
+                    handleEnemyOutOfView(id);
+            }
         }
         if (serverEnemies) {
             for (const e of serverEnemies) {
