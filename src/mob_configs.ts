@@ -582,7 +582,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
       type="rotate"
       from="0 0 0"
       to="360 0 0"
-      dur="12s"
+      dur="1s"
       repeatCount="indefinite" />
 
     <polygon 
@@ -597,7 +597,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         type="rotate"
         from="0 0 0"
         to="360 0 0"
-        dur="12s"
+        dur="1s"
         repeatCount="indefinite" />
 
       <polygon 
@@ -612,7 +612,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
           type="rotate"
           from="0 0 0"
           to="360 0 0"
-          dur="12s"
+          dur="1s"
           repeatCount="indefinite" />
 
         <polygon 

@@ -549,7 +549,7 @@ exports.BASE_MOB_CONFIGS = {
       type="rotate"
       from="0 0 0"
       to="360 0 0"
-      dur="12s"
+      dur="1s"
       repeatCount="indefinite" />
 
     <polygon 
@@ -564,7 +564,7 @@ exports.BASE_MOB_CONFIGS = {
         type="rotate"
         from="0 0 0"
         to="360 0 0"
-        dur="12s"
+        dur="1s"
         repeatCount="indefinite" />
 
       <polygon 
@@ -579,7 +579,7 @@ exports.BASE_MOB_CONFIGS = {
           type="rotate"
           from="0 0 0"
           to="360 0 0"
-          dur="12s"
+          dur="1s"
           repeatCount="indefinite" />
 
         <polygon 
