@@ -801,6 +801,14 @@ export interface TileCollisionResult {
 const MAX_COLLISION_REACH = 4096;
 let _lastBadHalfSize = NaN;
 
+// Sanity cap for world coordinates. The furthest legitimate region is the maze
+// (origin 200000, span ~77k); nothing real lives past 1e6. Positions far beyond
+// it break the grid-index math: past 2^53 a tile/cell index can no longer be
+// incremented (`i++` is a float no-op), so even a "one tile" scan loop spins
+// forever. Admin commands validate against this; grid code treats coordinates
+// beyond it like non-finite ones.
+export const MAX_SANE_WORLD_COORD = 1_000_000;
+
 // Check if a position collides with a wall or water tile, accounting for jagged edges.
 export function checkTileCollision(worldX: number, worldY: number, halfSize: number): TileCollisionResult | null {
     // Maze region: walls are the maze's corner-coded cell grid, not WALL_GRID.
@@ -834,10 +842,15 @@ export function checkTileCollision(worldX: number, worldY: number, halfSize: num
         }
         return null;
     }
-    const minTileX = worldToTileX(worldX - reach);
-    const maxTileX = worldToTileX(worldX + reach);
-    const minTileY = worldToTileY(worldY - reach);
-    const maxTileY = worldToTileY(worldY + reach);
+    // Clamp the scan to the wall grid. Tiles outside it are air (getTileState
+    // returns 0), so skipping them changes nothing — and it keeps the loop
+    // counters small. Unclamped, a far-off position (e.g. a teleport to 1e20)
+    // yields tile indices past 2^53 where `tileX++` no longer increments and
+    // the loops below spin forever, even over a "single" tile.
+    const minTileX = Math.max(0, worldToTileX(worldX - reach));
+    const maxTileX = Math.min(WALL_GRID_WIDTH - 1, worldToTileX(worldX + reach));
+    const minTileY = Math.max(0, worldToTileY(worldY - reach));
+    const maxTileY = Math.min(WALL_GRID_HEIGHT - 1, worldToTileY(worldY + reach));
 
     const entityLeft = worldX - halfSize;
     const entityRight = worldX + halfSize;
@@ -1025,10 +1038,12 @@ function segmentTouchesRect(
 // entity through walls / across sealed diagonal seams.
 function centerPathCrossesWall(x0: number, y0: number, x1: number, y1: number): boolean {
     const EPS = 0.5;
-    const minTX = worldToTileX(Math.min(x0, x1) - EPS);
-    const maxTX = worldToTileX(Math.max(x0, x1) + EPS);
-    const minTY = worldToTileY(Math.min(y0, y1) - EPS);
-    const maxTY = worldToTileY(Math.max(y0, y1) + EPS);
+    // Clamped to the wall grid for the same reason as checkTileCollision's scan:
+    // off-grid tiles are air, and unclamped indices past 2^53 stall the loops.
+    const minTX = Math.max(0, worldToTileX(Math.min(x0, x1) - EPS));
+    const maxTX = Math.min(WALL_GRID_WIDTH - 1, worldToTileX(Math.max(x0, x1) + EPS));
+    const minTY = Math.max(0, worldToTileY(Math.min(y0, y1) - EPS));
+    const maxTY = Math.min(WALL_GRID_HEIGHT - 1, worldToTileY(Math.max(y0, y1) + EPS));
     for (let tileY = minTY; tileY <= maxTY; tileY++) {
         for (let tileX = minTX; tileX <= maxTX; tileX++) {
             if (!isTileIdBlocking(getTileState(WALL_GRID, tileToWorldX(tileX), tileToWorldY(tileY)))) continue;

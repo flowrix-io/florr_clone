@@ -1,6 +1,6 @@
 import { Enemy } from '../server_utils';
 import { getMobStats } from '../mobs';
-import { ENEMY_SIZE } from '../constants';
+import { ENEMY_SIZE, MAX_SANE_WORLD_COORD } from '../constants';
 
 // Cell size chosen so a typical query (a petal or player radius, tens of px) touches
 // only one or two cells per axis. Mobs larger than a cell are inserted into every cell
@@ -53,9 +53,11 @@ export function rebuildEnemyGrid(enemies: Enemy[]): void {
         const e = enemies[i];
         if (e.ownerId) continue;
         if (e.isDead) continue;
-        // A non-finite position would make the cell range below Infinity/NaN and spin
-        // the nested loops forever. Such a mob simply isn't in the grid this tick.
-        if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
+        // A non-finite position would make the cell range below Infinity/NaN, and a
+        // finite-but-absurd one (cell index past 2^53) stalls `cx++` outright — either
+        // way the nested loops spin forever. Such a mob simply isn't in the grid this tick.
+        if (!Number.isFinite(e.x) || !Number.isFinite(e.y)
+            || Math.abs(e.x) > MAX_SANE_WORLD_COORD || Math.abs(e.y) > MAX_SANE_WORLD_COORD) continue;
 
         // Cache derived stats once per spawn lifetime.
         if (e._radius === undefined) {
@@ -101,9 +103,11 @@ export function rebuildEnemyGrid(enemies: Enemy[]): void {
  */
 export function queryEnemiesNear(x: number, y: number, radius: number, out: Enemy[]): Enemy[] {
     out.length = 0;
-    // A non-finite position would make the cell range below NaN/Infinity and spin the
-    // nested loops forever — bail safely (can't query from a corrupt position).
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    // A non-finite position would make the cell range below NaN/Infinity, and a
+    // finite-but-absurd one (cell index past 2^53) stalls `cx++` outright — either way
+    // the nested loops spin forever. Bail safely (can't query from a corrupt position).
+    if (!Number.isFinite(x) || !Number.isFinite(y)
+        || Math.abs(x) > MAX_SANE_WORLD_COORD || Math.abs(y) > MAX_SANE_WORLD_COORD) {
         if (x !== _lastBadQuery) {
             console.warn(`[enemyGrid] non-finite query position (${x},${y}); skipping query`);
             _lastBadQuery = x;

@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = exports.KNOCKBACK_RECOVERY_SPEED = exports.KNOCKBACK_FORCE = exports.MOUSE_NONLINEAR_EXPONENT = exports.MOUSE_NONLINEAR_SCALE = exports.MOUSE_FULL_SPEED_DISTANCE = exports.MAX_SPEED = exports.RESPAWN_INVULNERABILITY_TIME = exports.MAX_INVENTORY_SIZE = exports.ENEMY_TIERS = exports.MAX_SAND_RADIUS = exports.MIN_SAND_RADIUS = exports.SAND_COUNT = exports.DECORATION_COUNT = exports.ENEMY_DAMAGE = exports.PLAYER_DAMAGE = exports.ENEMY_MAX_HEALTH = exports.PLAYER_MAX_HEALTH = exports.OBSTACLE_COUNT = exports.SCALE_FACTOR = exports.PVP_WORLD_HEIGHT = exports.PVP_WORLD_WIDTH = exports.OLD_WORLD_HEIGHT = exports.OLD_WORLD_WIDTH = exports.ENEMIES_PER_VIEWPORT = exports.VIEWPORT_WITH_BUFFER_AREA = exports.ORIGINAL_ENEMY_DENSITY = exports.ORIGINAL_ENEMY_COUNT = exports.TOTAL_WORLD_AREA = exports.BUILTIN_TILE_TYPES = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.enemies = exports.dots = exports.players = exports.VIEWPORT_AREA = exports.VIEWPORT_HEIGHT = exports.VIEWPORT_WIDTH = exports.ENEMY_DESPAWN_TIME = exports.VIEWPORT_BUFFER = exports.SERVER_PROTOCOL = exports.USE_HTTPS = void 0;
-exports.COLLISION_BUFFER = exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.DEFAULT_SERVER_CONFIGS = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.PVP_MAX_HEALTH = exports.PVP_INVENTORY_KEEP_RATIO = exports.PVP_EXIT_RETURN_Y = exports.PVP_EXIT_RETURN_X = exports.PVP_ARENA_SPAWN_Y = exports.PVP_ARENA_SPAWN_X = exports.PVP_ARENA_RADIUS = exports.PVP_ARENA_CENTER_Y = exports.PVP_ARENA_CENTER_X = exports.TELEPORTER_COOLDOWN = exports.TELEPORTER_SUCTION_FORCE = exports.TELEPORTER_SUCTION_RADIUS = exports.TELEPORTER_RADIUS = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = void 0;
+exports.MAX_SANE_WORLD_COORD = exports.COLLISION_BUFFER = exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.DEFAULT_SERVER_CONFIGS = exports.DROP_CHANCES = exports.ENEMY_SIZE_MULTIPLIERS = exports.SECTION_CONFIGS = exports.ZONE_BOUNDARIES = exports.PVP_MAX_HEALTH = exports.PVP_INVENTORY_KEEP_RATIO = exports.PVP_EXIT_RETURN_Y = exports.PVP_EXIT_RETURN_X = exports.PVP_ARENA_SPAWN_Y = exports.PVP_ARENA_SPAWN_X = exports.PVP_ARENA_RADIUS = exports.PVP_ARENA_CENTER_Y = exports.PVP_ARENA_CENTER_X = exports.TELEPORTER_COOLDOWN = exports.TELEPORTER_SUCTION_FORCE = exports.TELEPORTER_SUCTION_RADIUS = exports.TELEPORTER_RADIUS = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = void 0;
 exports.getMobAnimationFramerate = getMobAnimationFramerate;
 exports.getMobAnimationFrameTime = getMobAnimationFrameTime;
 exports.getHighQualityMobs = getHighQualityMobs;
@@ -654,6 +654,13 @@ exports.COLLISION_BUFFER = 5; // Buffer between entities and walls
 // and spin forever. Used only to bound those loops against a degenerate size.
 const MAX_COLLISION_REACH = 4096;
 let _lastBadHalfSize = NaN;
+// Sanity cap for world coordinates. The furthest legitimate region is the maze
+// (origin 200000, span ~77k); nothing real lives past 1e6. Positions far beyond
+// it break the grid-index math: past 2^53 a tile/cell index can no longer be
+// incremented (`i++` is a float no-op), so even a "one tile" scan loop spins
+// forever. Admin commands validate against this; grid code treats coordinates
+// beyond it like non-finite ones.
+exports.MAX_SANE_WORLD_COORD = 1000000;
 // Check if a position collides with a wall or water tile, accounting for jagged edges.
 function checkTileCollision(worldX, worldY, halfSize) {
     // Maze region: walls are the maze's corner-coded cell grid, not WALL_GRID.
@@ -688,10 +695,15 @@ function checkTileCollision(worldX, worldY, halfSize) {
         }
         return null;
     }
-    const minTileX = worldToTileX(worldX - reach);
-    const maxTileX = worldToTileX(worldX + reach);
-    const minTileY = worldToTileY(worldY - reach);
-    const maxTileY = worldToTileY(worldY + reach);
+    // Clamp the scan to the wall grid. Tiles outside it are air (getTileState
+    // returns 0), so skipping them changes nothing — and it keeps the loop
+    // counters small. Unclamped, a far-off position (e.g. a teleport to 1e20)
+    // yields tile indices past 2^53 where `tileX++` no longer increments and
+    // the loops below spin forever, even over a "single" tile.
+    const minTileX = Math.max(0, worldToTileX(worldX - reach));
+    const maxTileX = Math.min(exports.WALL_GRID_WIDTH - 1, worldToTileX(worldX + reach));
+    const minTileY = Math.max(0, worldToTileY(worldY - reach));
+    const maxTileY = Math.min(exports.WALL_GRID_HEIGHT - 1, worldToTileY(worldY + reach));
     const entityLeft = worldX - halfSize;
     const entityRight = worldX + halfSize;
     const entityTop = worldY - halfSize;
@@ -862,10 +874,12 @@ function segmentTouchesRect(x0, y0, x1, y1, left, top, right, bottom) {
 // entity through walls / across sealed diagonal seams.
 function centerPathCrossesWall(x0, y0, x1, y1) {
     const EPS = 0.5;
-    const minTX = worldToTileX(Math.min(x0, x1) - EPS);
-    const maxTX = worldToTileX(Math.max(x0, x1) + EPS);
-    const minTY = worldToTileY(Math.min(y0, y1) - EPS);
-    const maxTY = worldToTileY(Math.max(y0, y1) + EPS);
+    // Clamped to the wall grid for the same reason as checkTileCollision's scan:
+    // off-grid tiles are air, and unclamped indices past 2^53 stall the loops.
+    const minTX = Math.max(0, worldToTileX(Math.min(x0, x1) - EPS));
+    const maxTX = Math.min(exports.WALL_GRID_WIDTH - 1, worldToTileX(Math.max(x0, x1) + EPS));
+    const minTY = Math.max(0, worldToTileY(Math.min(y0, y1) - EPS));
+    const maxTY = Math.min(exports.WALL_GRID_HEIGHT - 1, worldToTileY(Math.max(y0, y1) + EPS));
     for (let tileY = minTY; tileY <= maxTY; tileY++) {
         for (let tileX = minTX; tileX <= maxTX; tileX++) {
             if (!isTileIdBlocking(getTileState(exports.WALL_GRID, tileToWorldX(tileX), tileToWorldY(tileY))))

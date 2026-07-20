@@ -228,6 +228,14 @@ function checkEnemyEnemyCollisions(enemies, io) {
         if (e._radius > maxHalfSize)
             maxHalfSize = e._radius;
         e._ci = i; // pair-dedup stamp — replaces the old `j > i` inner loop
+        // Same guard as enemyGrid: a non-finite or absurd position makes the query
+        // cell-range loop below spin forever (past 2^53, `cellX++` is a no-op).
+        // Such a mob sits out the collision pass this tick.
+        if (!Number.isFinite(e.x) || !Number.isFinite(e.y)
+            || Math.abs(e.x) > constants_1.MAX_SANE_WORLD_COORD || Math.abs(e.y) > constants_1.MAX_SANE_WORLD_COORD) {
+            e._ci = -1; // also excludes it as a pair target
+            continue;
+        }
         const cellX = Math.floor(e.x / COLLISION_CELL_SIZE);
         const cellY = Math.floor(e.y / COLLISION_CELL_SIZE);
         const k = collisionKey(cellX, cellY);
@@ -240,6 +248,8 @@ function checkEnemyEnemyCollisions(enemies, io) {
     }
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
+        if (enemy._ci === -1)
+            continue; // degenerate position — skipped above
         const mobStats = enemy._mobStats;
         const halfSize = enemy._radius;
         // Anything close enough to collide is within this enemy's radius plus

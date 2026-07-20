@@ -16,6 +16,11 @@ const maze_1 = require("../maze");
 const botManager_1 = require("./botManager");
 const autoUpdate_1 = require("./autoUpdate");
 const guildManager_1 = require("./guildManager");
+// Coordinate validation for commands that place entities (teleport, spawn).
+// Positions past MAX_SANE_WORLD_COORD are always typos — and large enough ones
+// push tile/cell indices past 2^53 where the collision scan loops can no longer
+// increment their counters, hanging the tick loop at 100% CPU.
+const isSaneCoord = (v) => Number.isFinite(v) && Math.abs(v) <= constants_1.MAX_SANE_WORLD_COORD;
 // Helper function to send message to admin or console
 function sendOutput(message, socketId, io) {
     console.log(message);
@@ -176,6 +181,10 @@ function executeServerCommand(command, executor, deps, socketId) {
             if (hasCoords) {
                 x = parseFloat(parts[3]);
                 y = parseFloat(parts[4]);
+                if (!isSaneCoord(x) || !isSaneCoord(y)) {
+                    sendOutput(`Coordinates out of range: (${parts[3]}, ${parts[4]}). Max is ±${constants_1.MAX_SANE_WORLD_COORD}.`, socketId, io);
+                    return;
+                }
                 amountTok = parts[5];
                 stackTok = parts[6];
             }
@@ -236,7 +245,11 @@ function executeServerCommand(command, executor, deps, socketId) {
             const x = parseFloat(parts[2]);
             const y = parseFloat(parts[3]);
             if (isNaN(x) || isNaN(y)) {
-                console.log('Invalid coordinates. Usage: teleport <playerId/name> <x> <y>');
+                sendOutput('Invalid coordinates. Usage: teleport <playerId/name> <x> <y>', socketId, io);
+                return;
+            }
+            if (!isSaneCoord(x) || !isSaneCoord(y)) {
+                sendOutput(`Coordinates out of range: (${parts[2]}, ${parts[3]}). Max is ±${constants_1.MAX_SANE_WORLD_COORD}.`, socketId, io);
                 return;
             }
             // Try to find player by ID first, then by username

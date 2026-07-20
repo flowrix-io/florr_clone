@@ -52,9 +52,11 @@ function rebuildEnemyGrid(enemies) {
             continue;
         if (e.isDead)
             continue;
-        // A non-finite position would make the cell range below Infinity/NaN and spin
-        // the nested loops forever. Such a mob simply isn't in the grid this tick.
-        if (!Number.isFinite(e.x) || !Number.isFinite(e.y))
+        // A non-finite position would make the cell range below Infinity/NaN, and a
+        // finite-but-absurd one (cell index past 2^53) stalls `cx++` outright — either
+        // way the nested loops spin forever. Such a mob simply isn't in the grid this tick.
+        if (!Number.isFinite(e.x) || !Number.isFinite(e.y)
+            || Math.abs(e.x) > constants_1.MAX_SANE_WORLD_COORD || Math.abs(e.y) > constants_1.MAX_SANE_WORLD_COORD)
             continue;
         // Cache derived stats once per spawn lifetime.
         if (e._radius === undefined) {
@@ -101,9 +103,11 @@ function rebuildEnemyGrid(enemies) {
  */
 function queryEnemiesNear(x, y, radius, out) {
     out.length = 0;
-    // A non-finite position would make the cell range below NaN/Infinity and spin the
-    // nested loops forever — bail safely (can't query from a corrupt position).
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    // A non-finite position would make the cell range below NaN/Infinity, and a
+    // finite-but-absurd one (cell index past 2^53) stalls `cx++` outright — either way
+    // the nested loops spin forever. Bail safely (can't query from a corrupt position).
+    if (!Number.isFinite(x) || !Number.isFinite(y)
+        || Math.abs(x) > constants_1.MAX_SANE_WORLD_COORD || Math.abs(y) > constants_1.MAX_SANE_WORLD_COORD) {
         if (x !== _lastBadQuery) {
             console.warn(`[enemyGrid] non-finite query position (${x},${y}); skipping query`);
             _lastBadQuery = x;

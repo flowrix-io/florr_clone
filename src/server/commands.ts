@@ -3,7 +3,7 @@ import { ServerPlayer, PlayerRenderFlags } from '../player';
 import { Enemy } from '../server_utils';
 import { database, RedeemedCode, Notification } from '../database';
 import { getAllMobTypes } from '../mobs';
-import { players } from '../constants';
+import { players, MAX_SANE_WORLD_COORD } from '../constants';
 import { ENEMY_COUNT } from './gameState';
 import { redeemedCodes, saveCodeToDatabase, deleteCodeFromDatabase, scheduleRestart, cancelScheduledRestart, getScheduledRestartInfo, adminChangeMaze, simulateTickSpike, cancelSimulatedTickSpike, getSimulatedTickSpikeInfo } from '../server';
 import { getPetalStats, RARITY_LEVELS } from '../petals';
@@ -38,6 +38,13 @@ export interface CommandHandlerDependencies {
     createEnemy: () => Enemy | null;
     adjustEnemyCount: () => void;
 }
+
+// Coordinate validation for commands that place entities (teleport, spawn).
+// Positions past MAX_SANE_WORLD_COORD are always typos — and large enough ones
+// push tile/cell indices past 2^53 where the collision scan loops can no longer
+// increment their counters, hanging the tick loop at 100% CPU.
+const isSaneCoord = (v: number): boolean =>
+    Number.isFinite(v) && Math.abs(v) <= MAX_SANE_WORLD_COORD;
 
 // Helper function to send message to admin or console
 function sendOutput(message: string, socketId?: string, io?: SocketIOServer): void {
@@ -201,6 +208,10 @@ export function executeServerCommand(
             if (hasCoords) {
                 x = parseFloat(parts[3]);
                 y = parseFloat(parts[4]);
+                if (!isSaneCoord(x) || !isSaneCoord(y)) {
+                    sendOutput(`Coordinates out of range: (${parts[3]}, ${parts[4]}). Max is ±${MAX_SANE_WORLD_COORD}.`, socketId, io);
+                    return;
+                }
                 amountTok = parts[5];
                 stackTok = parts[6];
             } else {
@@ -260,9 +271,13 @@ export function executeServerCommand(
             const playerIdentifier = parts[1];
             const x = parseFloat(parts[2]);
             const y = parseFloat(parts[3]);
-            
+
             if (isNaN(x) || isNaN(y)) {
-                console.log('Invalid coordinates. Usage: teleport <playerId/name> <x> <y>');
+                sendOutput('Invalid coordinates. Usage: teleport <playerId/name> <x> <y>', socketId, io);
+                return;
+            }
+            if (!isSaneCoord(x) || !isSaneCoord(y)) {
+                sendOutput(`Coordinates out of range: (${parts[2]}, ${parts[3]}). Max is ±${MAX_SANE_WORLD_COORD}.`, socketId, io);
                 return;
             }
             
