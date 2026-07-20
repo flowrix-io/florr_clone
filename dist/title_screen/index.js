@@ -12,6 +12,7 @@ const guildMenu_1 = require("../guildMenu");
 const skinStudio_1 = require("../skinStudio");
 require("../graphics/flower");
 const zoom_compensation_1 = require("../zoom-compensation");
+const mobile_text_input_1 = require("./mobile_text_input");
 const inventory_manager_1 = require("./inventory_manager");
 const render_utils_1 = require("./render_utils");
 const biomes_1 = require("./biomes");
@@ -39,6 +40,9 @@ class TitleScreen {
         this.skinStudio = (0, skinStudio_1.getSkinStudio)();
         this.playerName = '';
         this.isNameInputFocused = false;
+        // Real focusable <input> behind the canvas name field — required for the
+        // mobile on-screen keyboard to open.
+        this.nameTextInput = new mobile_text_input_1.HiddenTextInput();
         this.hoveredBiomeIndex = -1;
         this.hoveredStartButton = false;
         // Auth form state (canvas-based)
@@ -785,6 +789,21 @@ class TitleScreen {
         const nameInputWidth = 280; // Match the rendering width
         if (x >= nameInputX && x <= nameInputX + nameInputWidth && y >= nameInputY && y <= nameInputY + 42) {
             this.isNameInputFocused = true;
+            this.nameTextInput.focus({
+                value: this.playerName,
+                maxLength: 20,
+                onInput: (v) => {
+                    this.playerName = v;
+                    localStorage.setItem('playerName', this.playerName);
+                    this.syncPlayerNameToInput();
+                },
+                onEnter: () => {
+                    this.nameTextInput.blur();
+                    this.isNameInputFocused = false;
+                    this.handleStartButtonClick();
+                },
+                onBlur: () => { this.isNameInputFocused = false; },
+            });
             return;
         }
         // Check if clicking on start button
@@ -811,6 +830,7 @@ class TitleScreen {
         });
         // Clicking elsewhere unfocuses name input
         this.isNameInputFocused = false;
+        this.nameTextInput.blur();
     }
     /**
      * Handles canvas hover events

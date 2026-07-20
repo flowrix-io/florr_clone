@@ -10,6 +10,7 @@ import { GuildMenuManager } from '../guildMenu';
 import { SkinStudio, getSkinStudio } from '../skinStudio';
 import '../graphics/flower';
 import { applyZoomCompensation, canvasCoords, getBaseDeviceScale } from '../zoom-compensation';
+import { HiddenTextInput } from './mobile_text_input';
 import { TitleScreenInventoryManager } from './inventory_manager';
 import { drawRoundedRect, hsvAdjust, drawGardnButton } from './render_utils';
 import { getBiomeConfig } from './biomes';
@@ -47,6 +48,9 @@ export class TitleScreen {
     private get logicalH(): number { return this.background.getCanvas().height / getBaseDeviceScale(); }
     private playerName: string = '';
     private isNameInputFocused: boolean = false;
+    // Real focusable <input> behind the canvas name field — required for the
+    // mobile on-screen keyboard to open.
+    private readonly nameTextInput = new HiddenTextInput();
     private hoveredBiomeIndex: number = -1;
     private hoveredStartButton: boolean = false;
     
@@ -837,6 +841,21 @@ export class TitleScreen {
         const nameInputWidth = 280; // Match the rendering width
         if (x >= nameInputX && x <= nameInputX + nameInputWidth && y >= nameInputY && y <= nameInputY + 42) {
             this.isNameInputFocused = true;
+            this.nameTextInput.focus({
+                value: this.playerName,
+                maxLength: 20,
+                onInput: (v) => {
+                    this.playerName = v;
+                    localStorage.setItem('playerName', this.playerName);
+                    this.syncPlayerNameToInput();
+                },
+                onEnter: () => {
+                    this.nameTextInput.blur();
+                    this.isNameInputFocused = false;
+                    this.handleStartButtonClick();
+                },
+                onBlur: () => { this.isNameInputFocused = false; },
+            });
             return;
         }
 
@@ -867,6 +886,7 @@ export class TitleScreen {
 
         // Clicking elsewhere unfocuses name input
         this.isNameInputFocused = false;
+        this.nameTextInput.blur();
     }
 
     /**

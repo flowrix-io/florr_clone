@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthForm = void 0;
 const render_utils_1 = require("./render_utils");
+const mobile_text_input_1 = require("./mobile_text_input");
 /**
  * Owns the canvas-based login/register form: state, hit-testing, rendering,
  * and keyboard handling. Network-side login/register/guest flows live on
@@ -19,13 +20,16 @@ class AuthForm {
         this.password = '';
         this.confirmPassword = '';
         this.serverIP = window.location.origin;
+        // Real focusable <input> behind the canvas fields — without it, mobile
+        // browsers never open the on-screen keyboard.
+        this.textInput = new mobile_text_input_1.HiddenTextInput();
         this.callbacks = callbacks;
     }
     isVisible() { return this.visible; }
     show() { this.visible = true; }
     hide() {
         this.visible = false;
-        this.focusedField = null;
+        this.setFocusedField(null);
         this.hoveredButton = null;
     }
     isConnectingState() { return this.connecting; }
@@ -33,7 +37,63 @@ class AuthForm {
     isFormLogin() { return this.loginMode; }
     setLoginMode(login) {
         this.loginMode = login;
-        this.focusedField = null;
+        this.setFocusedField(null);
+    }
+    getFieldValue(field) {
+        if (field === 'username')
+            return this.username;
+        if (field === 'password')
+            return this.password;
+        if (field === 'confirmPassword')
+            return this.confirmPassword;
+        if (field === 'serverIP')
+            return this.serverIP;
+        return '';
+    }
+    setFieldValue(field, value) {
+        if (field === 'username')
+            this.username = value;
+        else if (field === 'password')
+            this.password = value;
+        else if (field === 'confirmPassword')
+            this.confirmPassword = value;
+        else if (field === 'serverIP')
+            this.serverIP = value;
+    }
+    nextField(field) {
+        if (this.loginMode) {
+            if (field === 'username')
+                return 'password';
+            if (field === 'password')
+                return this.advancedSettingsVisible ? 'serverIP' : 'username';
+            return 'username';
+        }
+        if (field === 'username')
+            return 'password';
+        if (field === 'password')
+            return 'confirmPassword';
+        if (field === 'confirmPassword')
+            return this.advancedSettingsVisible ? 'serverIP' : 'username';
+        return 'username';
+    }
+    setFocusedField(field) {
+        this.focusedField = field;
+        if (!field) {
+            this.textInput.blur();
+            return;
+        }
+        this.textInput.focus({
+            value: this.getFieldValue(field),
+            password: field === 'password' || field === 'confirmPassword',
+            maxLength: AuthForm.FIELD_MAX[field],
+            onInput: (v) => this.setFieldValue(field, v),
+            onEnter: () => this.callbacks.onAction(this.loginMode ? 'login' : 'register'),
+            onTab: () => this.setFocusedField(this.nextField(field)),
+            onBlur: () => {
+                if (this.focusedField === field)
+                    this.focusedField = null;
+            },
+        });
     }
     getHoveredButton() { return this.hoveredButton; }
     clearHover() { this.hoveredButton = null; }
@@ -165,18 +225,18 @@ class AuthForm {
             currentY += 30;
         currentY += 10;
         if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + inputHeight) {
-            this.focusedField = 'username';
+            this.setFocusedField('username');
             return;
         }
         currentY += inputHeight + 15;
         if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + inputHeight) {
-            this.focusedField = 'password';
+            this.setFocusedField('password');
             return;
         }
         currentY += inputHeight + 15;
         if (!this.loginMode) {
             if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + inputHeight) {
-                this.focusedField = 'confirmPassword';
+                this.setFocusedField('confirmPassword');
                 return;
             }
             currentY += inputHeight + 15;
@@ -190,7 +250,7 @@ class AuthForm {
         currentY += advancedButtonHeight + 10;
         if (this.advancedSettingsVisible) {
             if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + inputHeight) {
-                this.focusedField = 'serverIP';
+                this.setFocusedField('serverIP');
                 return;
             }
             currentY += inputHeight + 15;
@@ -205,8 +265,7 @@ class AuthForm {
             }
             currentY += buttonHeight + buttonSpacing;
             if (x >= inputX && x <= inputX + inputWidth && y >= currentY && y <= currentY + buttonHeight) {
-                this.loginMode = false;
-                this.focusedField = null;
+                this.setLoginMode(false);
                 return;
             }
             currentY += buttonHeight + buttonSpacing;
@@ -231,12 +290,11 @@ class AuthForm {
             }
             currentY += buttonHeight + buttonSpacing;
             if (y >= currentY && y <= currentY + 20) {
-                this.loginMode = true;
-                this.focusedField = null;
+                this.setLoginMode(true);
                 return;
             }
         }
-        this.focusedField = null;
+        this.setFocusedField(null);
     }
     handleHover(x, y, centerX, centerY) {
         const formWidth = 400;
@@ -327,31 +385,7 @@ class AuthForm {
         }
         if (e.key === 'Tab') {
             e.preventDefault();
-            if (this.loginMode) {
-                if (this.focusedField === 'username') {
-                    this.focusedField = 'password';
-                }
-                else if (this.focusedField === 'password') {
-                    this.focusedField = this.advancedSettingsVisible ? 'serverIP' : 'username';
-                }
-                else {
-                    this.focusedField = 'username';
-                }
-            }
-            else {
-                if (this.focusedField === 'username') {
-                    this.focusedField = 'password';
-                }
-                else if (this.focusedField === 'password') {
-                    this.focusedField = 'confirmPassword';
-                }
-                else if (this.focusedField === 'confirmPassword') {
-                    this.focusedField = this.advancedSettingsVisible ? 'serverIP' : 'username';
-                }
-                else {
-                    this.focusedField = 'username';
-                }
-            }
+            this.setFocusedField(this.nextField(this.focusedField));
             return true;
         }
         if (e.key.length === 1) {
@@ -370,3 +404,6 @@ class AuthForm {
     }
 }
 exports.AuthForm = AuthForm;
+AuthForm.FIELD_MAX = {
+    username: 50, password: 100, confirmPassword: 100,
+};
