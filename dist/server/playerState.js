@@ -1282,7 +1282,7 @@ function updatePlayerState(player, deltaTime, deps) {
             let petalX;
             let petalY;
             // Rose-style burst heal (rysteria_gardn): once the petal has been in orbit
-            // past its charge time and the flower is below half health, it detaches,
+            // past its charge time and the flower is below max health, it detaches,
             // homes to the flower, heals a burst and is consumed. Set inside the
             // physics branch (needs the petal's spawn time); consumed after the
             // position is final.
@@ -1326,7 +1326,7 @@ function updatePlayerState(player, deltaTime, deps) {
                 // means "30 px attraction" reliably lights up when a mob is 30 px from
                 // where the petal will naturally swing past.
                 burstHealHoming = !!petalStats.burstHeal &&
-                    player.health < player.maxHealth / 2 &&
+                    player.health < player.maxHealth &&
                     timeSinceSpawn >= (petalStats.burstHealChargeMs ?? 1000);
                 let closestEnemy = null;
                 let closestDistanceSq = Infinity;
