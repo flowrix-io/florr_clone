@@ -969,56 +969,57 @@ for (const mobType in BASE_MOB_CONFIGS) {
     }
 }
 
+const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
+
+// Scale a drop's rarity to the mob's rarity: 90% chance the item is one tier
+// below the mob, 10% chance it keeps its table rarity.
+function scaleDropRarity(drop: DropItem, mobRarityIndex: number): DropItem {
+    const adjusted = { ...drop };
+    if (mobRarityIndex > 0 && Math.random() < 0.9) {
+        adjusted.rarity = RARITY_ORDER[mobRarityIndex - 1] as DropItem['rarity'];
+    }
+    return adjusted;
+}
+
 // Function to calculate drops for a mob based on its rarity
 export function calculateMobDrops(mobType: string, mobRarity: string): DropItem[] {
     const dropTable = MOB_DROP_TABLES[mobType];
-    if (!dropTable) {
+    if (!dropTable || dropTable.drops.length === 0) {
         return [];
     }
 
+    const rarityIndex = RARITY_ORDER.indexOf(mobRarity);
+    const uncommonIndex = RARITY_ORDER.indexOf('uncommon');
+
+    // Unusual mobs drop every item in their table, guaranteed, at table rarity.
+    if (rarityIndex === uncommonIndex) {
+        return dropTable.drops.map(drop => ({ ...drop }));
+    }
+
+    // Above unusual: probabilities are treated as weights normalized to 100%,
+    // and exactly one drop is chosen.
+    if (rarityIndex > uncommonIndex) {
+        const totalWeight = dropTable.drops.reduce((sum, drop) => sum + drop.probability, 0);
+        if (totalWeight <= 0) {
+            return [];
+        }
+        let roll = Math.random() * totalWeight;
+        for (const drop of dropTable.drops) {
+            roll -= drop.probability;
+            if (roll <= 0) {
+                return [scaleDropRarity(drop, rarityIndex)];
+            }
+        }
+        return [scaleDropRarity(dropTable.drops[dropTable.drops.length - 1], rarityIndex)];
+    }
+
+    // Common mobs roll each drop independently at its table probability, so they
+    // can never grant more than the full guaranteed set an unusual mob drops.
     const drops: DropItem[] = [];
-    
-    // For non-common mobs, adjust rarity probabilities
-    if (mobRarity !== 'common') {
-        const rarityIndex = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'].indexOf(mobRarity);
-        
-        // Process each drop in the table
-        for (const drop of dropTable.drops) {
-            let adjustedDrop = { ...drop };
-            
-            // Adjust rarity based on mob rarity
-            // if (drop.type === 'petal') {
-                // 90% chance for one rarity lower, 10% chance for same rarity
-                const random = Math.random();
-                if (random < 0.9 && rarityIndex > 0) {
-                    // One rarity lower
-                    const lowerRarityIndex = rarityIndex - 1;
-                    adjustedDrop.rarity = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'][lowerRarityIndex] as any;
-                }
-                // Otherwise keep same rarity (10% chance)
-            // }
-            
-            // Check if this drop should occur
-            if (Math.random() < adjustedDrop.probability) {
-                drops.push(adjustedDrop);
-            }
-        }
-        if (drops.length === 0 && dropTable.guaranteed) {
-            drops.push({
-                type: dropTable.drops[0].type,
-                itemType: dropTable.drops[0].itemType,
-                rarity: ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'][rarityIndex - 1] as any,
-                probability: 1.0,
-            });
-        }
-    } else {
-        // For common mobs, use original probabilities
-        for (const drop of dropTable.drops) {
-            if (Math.random() < drop.probability) {
-                drops.push(drop);
-            }
+    for (const drop of dropTable.drops) {
+        if (Math.random() < drop.probability) {
+            drops.push({ ...drop });
         }
     }
-    
     return drops;
 }

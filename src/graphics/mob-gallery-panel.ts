@@ -58,101 +58,69 @@ interface DropEntry {
     multiplier?: number;
 }
 
+// Mob-rarity order including apex (items themselves never display as apex).
+const MOB_RARITY_ORDER: string[] = [...DROP_RARITY_ORDER, 'apex'];
+
 /**
- * Reproduce the DOM tooltip's drop-table calculation so the canvas tooltip
- * can render the same outcomes. For non-common mobs, each drop expands into
- * a 90% path (mob-rarity-1) and a 10% path (drop's listed rarity), with each
- * path branching into downgrade/same/upgrade outcomes. Common mobs use the
- * drop's listed rarity directly.
+ * Mirror the server drop pipeline (mob_drops.ts + server/itemManager.ts) so
+ * the canvas tooltip shows real rates:
+ * - Common mobs roll each table entry independently at its listed probability.
+ * - Unusual (uncommon) mobs drop every table entry, guaranteed, at table rarity.
+ * - Above unusual, entries are weights normalized to 100% and exactly one drop
+ *   is chosen per kill; it lands one tier below the mob 90% of the time and at
+ *   its table rarity the other 10%.
+ * Each outcome then branches into the pickup downgrade/same/upgrade split,
+ * with rare+ mobs clamped to their minimum drop rarity.
  */
 function computeMobDrops(mobType: string, mobRarity: string): DropEntry[] {
     const dropTable = MOB_DROP_TABLES[mobType];
-    if (!dropTable) return [];
-    const rarityIndex = DROP_RARITY_ORDER.indexOf(mobRarity as Rarity);
-    const isCommon = mobRarity === 'common';
+    if (!dropTable || dropTable.drops.length === 0) return [];
+    const rarityIndex = MOB_RARITY_ORDER.indexOf(mobRarity);
+    const uncommonIndex = MOB_RARITY_ORDER.indexOf('uncommon');
     const ultraMultiplier = mobRarity === 'ultra' ? 20 : 1;
 
-    // Combine common+uncommon variants of the same item for non-common mobs
-    // (the legacy DOM did this so a single rose-listed-twice doesn't render
-    // as duplicate cards).
-    type DropDef = (typeof dropTable.drops)[number];
-    let processedDrops: DropDef[];
-    if (!isCommon) {
-        const groups = new Map<string, DropDef[]>();
-        for (const drop of dropTable.drops) {
-            const key = `${drop.type}_${drop.itemType}`;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key)!.push(drop);
-        }
-        processedDrops = [];
-        for (const group of groups.values()) {
-            const c = group.find((d) => d.rarity === 'common');
-            const u = group.find((d) => d.rarity === 'uncommon');
-            const others = group.filter((d) => d.rarity !== 'common' && d.rarity !== 'uncommon');
-            if (c && u) {
-                processedDrops.push({
-                    ...u,
-                    probability: c.probability + u.probability,
-                    minQuantity: Math.min(c.minQuantity || 1, u.minQuantity || 1),
-                    maxQuantity: Math.max(c.maxQuantity || 1, u.maxQuantity || 1),
-                    rarity: 'uncommon',
-                });
-                processedDrops.push(...others);
-            } else {
-                processedDrops.push(...group);
-            }
-        }
-    } else {
-        processedDrops = dropTable.drops.slice();
-    }
+    // Server-side floor: rare mobs never drop below mob-1, epic+ below mob-2.
+    const minRarityIndex = rarityIndex >= 3 ? rarityIndex - 2 : rarityIndex === 2 ? 1 : 0;
+    const clampRarity = (r: Rarity): Rarity => {
+        const idx = DROP_RARITY_ORDER.indexOf(r);
+        return idx >= 0 && idx < minRarityIndex ? DROP_RARITY_ORDER[minRarityIndex] : r;
+    };
 
+    type DropDef = (typeof dropTable.drops)[number];
     const out: DropEntry[] = [];
 
+    // baseProb is a 0-1 chance; outcome chances are percentages, so pushed
+    // probabilities land on the 0-100 display scale.
     const pushOutcomes = (baseRarity: Rarity, baseProb: number, drop: DropDef) => {
         const upgrade = Math.min(100, getDropUpgradeChance(baseRarity) * ultraMultiplier);
         const downgrade = getDropDowngradeChance(baseRarity);
         const same = Math.max(0, 100 - upgrade - downgrade);
         const mul = drop.maxQuantity && drop.maxQuantity > 1 ? drop.maxQuantity : undefined;
-        if (downgrade > 0) {
+        const push = (rarity: Rarity, probability: number) => {
+            if (probability <= 0) return;
             out.push({
                 itemType: drop.itemType,
                 type: drop.type,
-                rarity: downgradeRarity(baseRarity),
-                probability: baseProb * downgrade,
+                rarity: clampRarity(rarity),
+                probability,
                 multiplier: mul,
             });
-        }
-        if (same > 0) {
-            out.push({
-                itemType: drop.itemType,
-                type: drop.type,
-                rarity: baseRarity,
-                probability: baseProb * same,
-                multiplier: mul,
-            });
-        }
-        if (upgrade > 0) {
-            out.push({
-                itemType: drop.itemType,
-                type: drop.type,
-                rarity: upgradeRarity(baseRarity),
-                probability: baseProb * upgrade,
-                multiplier: mul,
-            });
-        }
+        };
+        push(downgradeRarity(baseRarity), baseProb * downgrade);
+        push(baseRarity, baseProb * same);
+        push(upgradeRarity(baseRarity), baseProb * upgrade);
     };
 
-    for (const drop of processedDrops) {
-        if (!isCommon && rarityIndex > 0 && rarityIndex < DROP_RARITY_ORDER.length) {
-            const lower = DROP_RARITY_ORDER[rarityIndex - 1] as Rarity;
-            // 90% path: scaled to mob-rarity-1 (always shown).
-            pushOutcomes(lower, drop.probability * 0.9, drop);
-            // 10% path: scaled to the drop's listed rarity. Common/uncommon
-            // listed drop rates are common-mob-only — drops listed at those
-            // rarities don't surface for non-common mobs in the 10% branch.
-            if (drop.rarity !== 'common' && drop.rarity !== 'uncommon') {
-                pushOutcomes(drop.rarity as Rarity, drop.probability * 0.1, drop);
-            }
+    const totalWeight = dropTable.drops.reduce((sum, d) => sum + d.probability, 0);
+    for (const drop of dropTable.drops) {
+        if (rarityIndex === uncommonIndex) {
+            // Guaranteed full table at listed rarity.
+            pushOutcomes(drop.rarity as Rarity, 1, drop);
+        } else if (rarityIndex > uncommonIndex && totalWeight > 0) {
+            const share = drop.probability / totalWeight;
+            const lower = DROP_RARITY_ORDER[Math.min(rarityIndex - 1, DROP_RARITY_ORDER.length - 1)];
+            pushOutcomes(lower, share * 0.9, drop);
+            pushOutcomes(drop.rarity as Rarity, share * 0.1, drop);
         } else {
             pushOutcomes(drop.rarity as Rarity, drop.probability, drop);
         }
@@ -775,10 +743,12 @@ export class CanvasMobGalleryPanel {
             ctx.fillText(text, cardX + cardSize - 2, cardY + 2);
         }
 
-        // Probability label below the card.
+        // Probability label below the card. Aggregated branches can push the
+        // expected count past 1 (e.g. duplicate table entries all guaranteed
+        // at unusual tier) — cap the display at 100%.
         const probStr = d.probability < 0.01
             ? '<0.01%'
-            : d.probability.toFixed(2) + '%';
+            : Math.min(100, d.probability).toFixed(2) + '%';
         ctx.font = probFont;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
