@@ -2132,7 +2132,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         name: "Azalea",
         damage: 3,
         health: 3,
-        size: 0.33,
+        size: 1.0,
         cooldown: 1.2,
         description: "Much more powerful than rose",
         color: "#FF00FF",
