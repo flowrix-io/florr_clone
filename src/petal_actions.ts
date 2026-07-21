@@ -1,8 +1,10 @@
 import { PetalAction, parsePetalActions, getRarityIndex } from './petals';
 import { ServerPlayer } from './player';
 import { Item } from './item';
-import { Enemy, makeEnemy, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
+import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
+import { buildEnemy } from './server/shared/buildEnemy';
+import { killEnemy, type KillContext } from './server/shared/killHandler';
 import { players, enemies } from './constants';
 import { getMobStats, getAllMobTypes } from './mobs';
 import { spawnCentipedeBodySegments } from './server/enemySpawner';
@@ -19,6 +21,30 @@ export interface ActionContext {
     petalId?: string; // Unique ID for the petal instance
     loadoutIndex?: number; // Index in player loadout
     instanceIndex?: number; // Instance index for multi-count petals
+}
+
+/**
+ * Build a kill context for the partial death handlers in explodePetal /
+ * strikeLightning. Those paths never call trackMobKill or cleanupEnemy
+ * (trackMobKillTiming: 'none', skipCleanup: true), so the corresponding ctx
+ * fields are stubbed — they exist only to satisfy the KillContext type.
+ */
+function makePetalKillCtx(io: any): KillContext {
+    return {
+        io,
+        players,
+        // Stubs — never invoked for the partial (no-track, no-cleanup) path.
+        playerUserIds: undefined!,
+        database: undefined!,
+        savePlayerProgress: undefined!,
+        trackMobKill: undefined!,
+        cleanupEnemy: undefined!,
+        // Real deps:
+        addXPToPlayer,
+        handleMobDrops,
+        sendBossMobDefeatedMessage,
+        updateSpecialMobCounts,
+    };
 }
 
 // Control flow state
@@ -280,23 +306,17 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
             
             // Check if enemy dies
             if (enemy.health <= 0) {
-                // Handle XP and drops if player is provided
-                if (player) {
-                    const xpGained = getXPFromEnemy(enemy);
-                    addXPToPlayer(player, xpGained, player.id);
-                    handleMobDrops(enemy);
-                    sendBossMobDefeatedMessage(enemy, io, players);
-                    updateSpecialMobCounts();
-                }
-                
-                // Remove enemy from array
-                enemies.splice(i, 1);
-                // Emit enemy destroyed event
-                io.emit('enemyDestroyed', enemy.id);
+                // Explode/lightning never ran cleanupEnemy or trackMobKill
+                // historically (skipCleanup + timing 'none' preserve that).
+                killEnemy(enemy, i, enemies, makePetalKillCtx(io), {
+                    killerPlayerId: player?.id,
+                    skipCleanup: true,
+                    trackMobKillTiming: 'none',
+                });
             }
         }
     }
-    
+
     // Emit explosion effect to clients
     io.emit('petalExplosion', {
         x: x,
@@ -390,23 +410,15 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
             
             // Check if enemy dies
             if (enemy.health <= 0) {
-                // Handle XP and drops if player is provided
-                if (player) {
-                    const xpGained = getXPFromEnemy(enemy);
-                    addXPToPlayer(player, xpGained, player.id);
-                    handleMobDrops(enemy);
-                    sendBossMobDefeatedMessage(enemy, io, players);
-                    updateSpecialMobCounts();
-                }
-                
-                // Remove enemy from array
-                enemies.splice(i, 1);
-                // Emit enemy destroyed event
-                io.emit('enemyDestroyed', enemy.id);
+                killEnemy(enemy, i, enemies, makePetalKillCtx(io), {
+                    killerPlayerId: player?.id,
+                    skipCleanup: true,
+                    trackMobKillTiming: 'none',
+                });
             }
         }
     }
-    
+
     // Emit lightning effect to clients
     io.emit('lightningStrike', {
         x: x,
@@ -528,28 +540,12 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     const petRange = (mobStats.range || 0) + rangeBonus;
 
     // Create the pet enemy
-    const currentTime = Date.now();
-    const pet: Enemy = makeEnemy({
-        id: Math.random().toString(36).substr(2, 9),
-        type: mobType as Enemy['type'],
-        tier: tier,
-        x: x,
-        y: y,
-        angle: Math.random() * Math.PI * 2,
-        health: mobStats.health,
-        maxHealth: mobStats.health,
-        speed: mobStats.speed,
-        damage: mobStats.damage,
-        knockbackX: 0,
-        knockbackY: 0,
+    const pet = buildEnemy(mobType, tier, x, y, {
         aiType: 'passive', // Pets are not hostile to players
         range: petRange,
-        reversed: mobStats.reversed ?? false,
-        ownerId: ownerId, // Set the owner
-        spawnTime: currentTime,
-        lastViewportCheck: currentTime,
-        petImage: mobStats.petImage // Use pet image if available
-    });
+        ownerId, // Set the owner
+        petImage: mobStats.petImage, // Use pet image if available
+    })!; // mobStats validated above
 
     // Add to enemies array
     enemies.push(pet);

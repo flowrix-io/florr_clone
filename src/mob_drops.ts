@@ -1,6 +1,7 @@
 // Mob drop table data and calculation logic — extracted from mobs.ts for file-size management.
 
 import { BASE_MOB_CONFIGS } from './mob_configs';
+import { RARITY_ORDER, Rarity } from './server/shared/rarity';
 
 export interface DropItem {
     type: 'petal' | 'consumable';
@@ -969,8 +970,6 @@ for (const mobType in BASE_MOB_CONFIGS) {
     }
 }
 
-const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
-
 // Scale a drop's rarity to the mob's rarity: 90% chance the item is one tier
 // below the mob, 10% chance it keeps its table rarity.
 function scaleDropRarity(drop: DropItem, mobRarityIndex: number): DropItem {
@@ -988,7 +987,7 @@ export function calculateMobDrops(mobType: string, mobRarity: string): DropItem[
         return [];
     }
 
-    const rarityIndex = RARITY_ORDER.indexOf(mobRarity);
+    const rarityIndex = RARITY_ORDER.indexOf(mobRarity as Rarity);
     const uncommonIndex = RARITY_ORDER.indexOf('uncommon');
 
     // Unusual mobs drop every item in their table, guaranteed, at table rarity.

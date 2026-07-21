@@ -18,55 +18,7 @@ function getEligiblePetalTypes() {
 }
 const physics_1 = require("./physics");
 const petals_1 = require("../petals");
-// Rarity order from lowest to highest
-const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
-// Calculate crafting chance for upgrading from one rarity to the next
-function getCraftingChance(rarityIndex) {
-    const baseChance = 64;
-    return baseChance / Math.pow(2, rarityIndex);
-}
-// Calculate upgrade chance for a drop (crafting chance of upgraded rarity / 3)
-// The crafting chance for upgrading TO a rarity is calculated FROM the previous rarity
-function getDropUpgradeChance(currentRarity) {
-    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
-    if (currentIndex === -1 || currentIndex >= RARITY_ORDER.length - 1) {
-        return 0; // Invalid rarity or already at max tier
-    }
-    // Crafting chance for upgrading TO the next tier is calculated FROM the current tier
-    // (same as crafting from currentRarity to nextRarity)
-    const craftingChance = getCraftingChance(currentIndex);
-    // Upgrade chance is crafting chance divided by 3
-    return craftingChance / 3;
-}
-// Upgrade a rarity by one tier if possible
-function upgradeRarity(rarity) {
-    const currentIndex = RARITY_ORDER.indexOf(rarity);
-    if (currentIndex >= 0 && currentIndex < RARITY_ORDER.length - 1) {
-        return RARITY_ORDER[currentIndex + 1];
-    }
-    return rarity; // Already at max tier
-}
-// Calculate downgrade chance for a drop (1 / (1 + craft chance to that rarity))
-// The crafting chance for upgrading TO a rarity is calculated FROM the previous rarity
-function getDropDowngradeChance(currentRarity) {
-    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
-    if (currentIndex === -1 || currentIndex === 0) {
-        return 0; // Invalid rarity or already at lowest tier (common)
-    }
-    // Crafting chance for upgrading TO the current tier is calculated FROM the previous tier
-    // (craft chance from currentIndex-1 to currentIndex)
-    const craftingChanceToCurrentRarity = getCraftingChance(currentIndex - 1);
-    // Downgrade chance is 1 / (1 + craft chance to that rarity)
-    return 1 / (1 + craftingChanceToCurrentRarity);
-}
-// Downgrade a rarity by one tier if possible
-function downgradeRarity(rarity) {
-    const currentIndex = RARITY_ORDER.indexOf(rarity);
-    if (currentIndex > 0 && currentIndex < RARITY_ORDER.length) {
-        return RARITY_ORDER[currentIndex - 1];
-    }
-    return rarity; // Already at lowest tier
-}
+const rarity_1 = require("./shared/rarity");
 // Function to handle mob drops when a mob dies
 // Accepts enemy data object instead of live enemy to avoid issues with cleaned up enemies
 function handleMobDrops(enemyData, io) {
@@ -117,30 +69,30 @@ function handleMobDrops(enemyData, io) {
             // Apply drop upgrade or downgrade chance (mutually exclusive)
             // Try upgrade first, if it doesn't happen, try downgrade
             let finalRarity = drop.rarity;
-            const baseUpgradeChance = getDropUpgradeChance(drop.rarity);
+            const baseUpgradeChance = (0, rarity_1.getDropUpgradeChance)(drop.rarity);
             const upgradeChance = enemyData.tier === 'ultra' ? baseUpgradeChance * 20 : baseUpgradeChance;
             const upgradeRoll = upgradeChance > 0 ? Math.random() * 100 : 1;
             if (upgradeRoll < upgradeChance) {
                 // Upgrade succeeded
-                finalRarity = upgradeRarity(drop.rarity);
+                finalRarity = (0, rarity_1.upgradeRarity)(drop.rarity);
             }
             else {
                 // Upgrade didn't happen, try downgrade
-                const downgradeChance = getDropDowngradeChance(drop.rarity);
+                const downgradeChance = (0, rarity_1.getDropDowngradeChance)(drop.rarity);
                 if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    finalRarity = downgradeRarity(drop.rarity);
+                    finalRarity = (0, rarity_1.downgradeRarity)(drop.rarity);
                 }
             }
             // Prevent rare+ mobs from dropping below a minimum rarity
             // Rare mobs: min tier - 1, Epic+ mobs: min tier - 2
-            const mobRarityIndex = RARITY_ORDER.indexOf(enemyData.tier);
+            const mobRarityIndex = rarity_1.RARITY_ORDER.indexOf(enemyData.tier);
             if (mobRarityIndex >= 2) {
                 const minRarityIndex = mobRarityIndex >= 3
                     ? mobRarityIndex - 2
                     : mobRarityIndex - 1;
-                const finalRarityIndex = RARITY_ORDER.indexOf(finalRarity);
+                const finalRarityIndex = rarity_1.RARITY_ORDER.indexOf(finalRarity);
                 if (finalRarityIndex < minRarityIndex) {
-                    finalRarity = RARITY_ORDER[minRarityIndex];
+                    finalRarity = rarity_1.RARITY_ORDER[minRarityIndex];
                 }
             }
             // Apex mobs never drop apex-rarity items

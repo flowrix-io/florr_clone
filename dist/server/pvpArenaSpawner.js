@@ -1,9 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.spawnArenaMobs = spawnArenaMobs;
-const server_utils_1 = require("../server_utils");
 const constants_1 = require("../constants");
 const mobs_1 = require("../mobs");
+const weighted_1 = require("./shared/weighted");
+const buildEnemy_1 = require("./shared/buildEnemy");
 // Garden-themed mobs + spider. Weights control relative spawn frequency.
 // Spider is intentionally rarer — it's the standout threat in the arena.
 const ARENA_MOB_POOL = [
@@ -28,16 +29,6 @@ const MOBS_PER_PLAYER = 12;
 const MAX_ARENA_MOBS = 60;
 const MIN_SPAWN_DISTANCE_FROM_PLAYER = 300;
 const MIN_SPAWN_DISTANCE_FROM_MOB = 80;
-function pickWeighted(pool) {
-    const total = pool.reduce((sum, entry) => sum + entry.weight, 0);
-    let roll = Math.random() * total;
-    for (const entry of pool) {
-        roll -= entry.weight;
-        if (roll <= 0)
-            return entry;
-    }
-    return pool[pool.length - 1];
-}
 function countArenaPlayers() {
     let count = 0;
     for (const id in constants_1.players) {
@@ -116,8 +107,8 @@ function spawnArenaMobs(limit = 3) {
         return [];
     const spawned = [];
     for (let i = 0; i < needed; i++) {
-        const mobEntry = pickWeighted(ARENA_MOB_POOL);
-        const tierEntry = pickWeighted(ARENA_TIER_WEIGHTS);
+        const mobEntry = (0, weighted_1.pickWeighted)(ARENA_MOB_POOL);
+        const tierEntry = (0, weighted_1.pickWeighted)(ARENA_TIER_WEIGHTS);
         const stats = (0, mobs_1.getMobStats)(mobEntry.type, tierEntry.tier);
         if (!stats)
             continue;
@@ -125,26 +116,9 @@ function spawnArenaMobs(limit = 3) {
         const position = findArenaSpawnPosition(mobRadius);
         if (!position)
             continue;
-        const currentTime = Date.now();
-        const enemy = (0, server_utils_1.makeEnemy)({
-            id: Math.random().toString(36).slice(2, 11),
-            type: mobEntry.type,
-            tier: tierEntry.tier,
-            x: position.x,
-            y: position.y,
-            angle: Math.random() * Math.PI * 2,
-            health: stats.health,
-            maxHealth: stats.health,
-            speed: stats.speed,
-            damage: stats.damage,
-            knockbackX: 0,
-            knockbackY: 0,
-            aiType: stats.ai_type,
-            range: stats.range,
-            reversed: stats.reversed ?? false,
-            spawnTime: currentTime,
-            lastViewportCheck: currentTime,
-        });
+        const enemy = (0, buildEnemy_1.buildEnemy)(mobEntry.type, tierEntry.tier, position.x, position.y);
+        if (!enemy)
+            continue;
         spawned.push(enemy);
     }
     return spawned;

@@ -1,4 +1,4 @@
-import { Enemy, makeEnemy } from '../server_utils';
+import { Enemy } from '../server_utils';
 import {
     players,
     enemies,
@@ -8,6 +8,8 @@ import {
     isInPvpArena
 } from '../constants';
 import { getMobStats } from '../mobs';
+import { pickWeighted } from './shared/weighted';
+import { buildEnemy } from './shared/buildEnemy';
 
 // Garden-themed mobs + spider. Weights control relative spawn frequency.
 // Spider is intentionally rarer — it's the standout threat in the arena.
@@ -35,16 +37,6 @@ const MOBS_PER_PLAYER = 12;
 const MAX_ARENA_MOBS = 60;
 const MIN_SPAWN_DISTANCE_FROM_PLAYER = 300;
 const MIN_SPAWN_DISTANCE_FROM_MOB = 80;
-
-function pickWeighted<T extends { weight: number }>(pool: T[]): T {
-    const total = pool.reduce((sum, entry) => sum + entry.weight, 0);
-    let roll = Math.random() * total;
-    for (const entry of pool) {
-        roll -= entry.weight;
-        if (roll <= 0) return entry;
-    }
-    return pool[pool.length - 1];
-}
 
 function countArenaPlayers(): number {
     let count = 0;
@@ -132,26 +124,8 @@ export function spawnArenaMobs(limit: number = 3): Enemy[] {
         const position = findArenaSpawnPosition(mobRadius);
         if (!position) continue;
 
-        const currentTime = Date.now();
-        const enemy: Enemy = makeEnemy({
-            id: Math.random().toString(36).slice(2, 11),
-            type: mobEntry.type as Enemy['type'],
-            tier: tierEntry.tier,
-            x: position.x,
-            y: position.y,
-            angle: Math.random() * Math.PI * 2,
-            health: stats.health,
-            maxHealth: stats.health,
-            speed: stats.speed,
-            damage: stats.damage,
-            knockbackX: 0,
-            knockbackY: 0,
-            aiType: stats.ai_type,
-            range: stats.range,
-            reversed: stats.reversed ?? false,
-            spawnTime: currentTime,
-            lastViewportCheck: currentTime,
-        });
+        const enemy = buildEnemy(mobEntry.type, tierEntry.tier, position.x, position.y);
+        if (!enemy) continue;
         spawned.push(enemy);
     }
     return spawned;

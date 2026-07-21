@@ -1,4 +1,4 @@
-import { Enemy, makeEnemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
+import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
 import { players, enemies, ORIGINAL_ENEMY_DENSITY } from '../constants';
 import { getMobStats, getAllMobTypes } from '../mobs';
 import { spawnCentipedeBodySegments } from './enemySpawner';
@@ -15,6 +15,9 @@ import {
     MAZE_ORIGIN_X,
     MAZE_ORIGIN_Y
 } from '../maze';
+import { RARITY_ORDER as TIER_ORDER } from './shared/rarity';
+import { pickWeighted } from './shared/weighted';
+import { buildEnemy } from './shared/buildEnemy';
 
 // Population control. Unlike the open world (which only populates viewports),
 // the maze is a bounded dungeon populated rrolf-style: mobs spawn across ALL
@@ -59,8 +62,6 @@ const MAZE_BOSS_COUNT = 2;
 // spawners would flood the corridors, and utility mobs make no sense here.
 const MAZE_EXCLUDED_TYPES = new Set(['ant_hole', 'fire_ant_hole', 'target_dummy', 'item_spawner', 'garbage']);
 
-const TIER_ORDER: Enemy['tier'][] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
-
 let poolBiome: MazeBiome | null = null;
 let poolTypes: Array<{ type: string; weight: number }> = [];
 
@@ -89,16 +90,6 @@ function getMazeMobPool(): Array<{ type: string; weight: number }> {
 export function invalidateMazeMobPool(): void {
     poolBiome = null;
     poolTypes = [];
-}
-
-function pickWeighted<T extends { weight: number }>(pool: T[]): T {
-    const total = pool.reduce((sum, entry) => sum + entry.weight, 0);
-    let roll = Math.random() * total;
-    for (const entry of pool) {
-        roll -= entry.weight;
-        if (roll <= 0) return entry;
-    }
-    return pool[pool.length - 1];
 }
 
 function getMazePlayerIds(): string[] {
@@ -184,31 +175,6 @@ function findMazeSpawnPosition(mobRadius: number): { x: number; y: number } | nu
         return { x, y };
     }
     return null;
-}
-
-function buildEnemy(type: string, tier: Enemy['tier'], x: number, y: number): Enemy | null {
-    const stats = getMobStats(type, tier);
-    if (!stats) return null;
-    const currentTime = Date.now();
-    return makeEnemy({
-        id: Math.random().toString(36).slice(2, 11),
-        type: type as Enemy['type'],
-        tier,
-        x,
-        y,
-        angle: Math.random() * Math.PI * 2,
-        health: stats.health,
-        maxHealth: stats.health,
-        speed: stats.speed,
-        damage: stats.damage,
-        knockbackX: 0,
-        knockbackY: 0,
-        aiType: stats.ai_type,
-        range: stats.range,
-        reversed: stats.reversed ?? false,
-        spawnTime: currentTime,
-        lastViewportCheck: currentTime,
-    });
 }
 
 /**

@@ -44,7 +44,7 @@ import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnA
 import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType, ABSORB_XP, ABSORBING_SKILL_MULTIPLIERS } from './petals';
 import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, MAX_SPEED, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
 import { WORLD_MAP, WALL_GRID } from './map_data';
-import { Enemy, makeEnemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
+import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { MobProjectile } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
 import { getPetalStats } from './petals';
@@ -193,6 +193,10 @@ import {
 import { spawnArenaMobs } from './server/pvpArenaSpawner';
 import { updateSpawnZones } from './server/spawnZoneManager';
 import { rebuildEnemyGrid } from './server/enemyGrid';
+import { buildEnemy } from './server/shared/buildEnemy';
+import { isInOutOfBoundsZone, clampToWorld, isWallAt, samplePointInViewport } from './server/shared/positions';
+import { killEnemy } from './server/shared/killHandler';
+import type { KillContext } from './server/shared/killHandler';
 import { registerApiKeyRoutes, recordBossEvent, stripHtml } from './server/apiKeyApi';
 import { setSuperMobInSection } from './server/gameState';
 
@@ -722,33 +726,20 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
 
     // If coordinates are provided, validate them
     if (spawnX !== undefined && spawnY !== undefined) {
-        // Validate provided coordinates
-        spawnX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, spawnX));
-        spawnY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, spawnY));
-        
-        // Check if position is in out-of-bounds zone
-        const BOUNDARY_THRESHOLD = 100;
-        const isInOutOfBoundsZone = spawnX < BOUNDARY_THRESHOLD || 
-                                    spawnX > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD ||
-                                    spawnY < BOUNDARY_THRESHOLD || 
-                                    spawnY > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
-        
-        if (isInOutOfBoundsZone) {
+        const clamped = clampToWorld(spawnX, spawnY);
+        spawnX = clamped.x;
+        spawnY = clamped.y;
+
+        if (isInOutOfBoundsZone(spawnX, spawnY)) {
             console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) are in out-of-bounds zone. Finding alternative position...`);
             spawnX = undefined;
             spawnY = undefined;
+        } else if (!isWallAt(spawnX, spawnY)) {
+            validPosition = true;
         } else {
-            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-            const tileState = getTileState(WALL_GRID, spawnX!, spawnY!);
-            const collidesWithWall = isTileIdBlocking(tileState);
-
-            if (!collidesWithWall) {
-                validPosition = true;
-            } else {
-                console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) collide with a wall. Finding alternative position...`);
-                spawnX = undefined;
-                spawnY = undefined;
-            }
+            console.log(`Warning: Provided coordinates (${spawnX}, ${spawnY}) collide with a wall. Finding alternative position...`);
+            spawnX = undefined;
+            spawnY = undefined;
         }
     }
 
@@ -756,73 +747,24 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
     if (!validPosition) {
         // Try to spawn near a player if available
         const playerIds = Object.keys(players);
-        if (playerIds.length > 0) {
+        const samplePoint = (): { x: number; y: number } => {
+            if (playerIds.length > 0) {
+                const player = players[playerIds[Math.floor(Math.random() * playerIds.length)]];
+                return samplePointInViewport(player);
+            }
+            return { x: Math.random() * ACTUAL_WORLD_WIDTH, y: Math.random() * ACTUAL_WORLD_HEIGHT };
+        };
+
         while (!validPosition && attempts < MAX_ATTEMPTS) {
             attempts++;
-            const randomPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)];
-            const player = players[randomPlayerId];
-            
-            // Spawn within viewport of a random player
-            const vpW = player.viewportWidth || VIEWPORT_WIDTH;
-            const vpH = player.viewportHeight || VIEWPORT_HEIGHT;
-            const viewportBuffer = VIEWPORT_BUFFER;
-            const minX = player.x - vpW/2 - viewportBuffer;
-            const maxX = player.x + vpW/2 + viewportBuffer;
-            const minY = player.y - vpH/2 - viewportBuffer;
-            const maxY = player.y + vpH/2 + viewportBuffer;
-            
-            spawnX = minX + Math.random() * (maxX - minX);
-            spawnY = minY + Math.random() * (maxY - minY);
-            
-            // Clamp to world boundaries
-            spawnX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, spawnX));
-            spawnY = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, spawnY));
+            const point = samplePoint();
+            spawnX = point.x;
+            spawnY = point.y;
 
-            // Skip if position is in out-of-bounds zone
-            const BOUNDARY_THRESHOLD = 100;
-            const isInOutOfBoundsZone = spawnX! < BOUNDARY_THRESHOLD || 
-                                        spawnX! > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD ||
-                                        spawnY! < BOUNDARY_THRESHOLD || 
-                                        spawnY! > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
-            
-            if (isInOutOfBoundsZone) {
-                continue;
-            }
-
-            // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-            const tileState2 = getTileState(WALL_GRID, spawnX!, spawnY!);
-            const collidesWithWall = isTileIdBlocking(tileState2);
-
-            if (!collidesWithWall) {
-                validPosition = true;
-            }
-        }
-        } else {
-            // No players online, spawn at random valid position
-            while (!validPosition && attempts < MAX_ATTEMPTS) {
-                attempts++;
-                spawnX = Math.random() * ACTUAL_WORLD_WIDTH;
-                spawnY = Math.random() * ACTUAL_WORLD_HEIGHT;
-
-                // Skip if position is in out-of-bounds zone
-                const BOUNDARY_THRESHOLD = 100;
-                const isInOutOfBoundsZone = spawnX! < BOUNDARY_THRESHOLD || 
-                                            spawnX! > ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD ||
-                                            spawnY! < BOUNDARY_THRESHOLD || 
-                                            spawnY! > ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
-                
-                if (isInOutOfBoundsZone) {
-                    continue;
-                }
-
-                // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-                const tileState3 = getTileState(WALL_GRID, spawnX!, spawnY!);
-                const collidesWithWall = isTileIdBlocking(tileState3);
-
-                if (!collidesWithWall) {
-                    validPosition = true;
-                }
-            }
+            // Skip if position is in out-of-bounds zone or collides with a wall
+            // (state 1 = wall, state 2 = water).
+            if (isInOutOfBoundsZone(spawnX, spawnY)) continue;
+            if (!isWallAt(spawnX, spawnY)) validPosition = true;
         }
     }
 
@@ -841,7 +783,6 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
     //   stack === false -> each copy is offset by up to one collision radius, so
     //     distance > 0 and the collision pass eases them apart over the next few
     //     ticks — i.e. spawning "triggers" mob-to-mob collision.
-    const currentTime = Date.now();
     const jitterRadius = mobStats.size ? (mobStats.size * 40) / 2 : ENEMY_SIZE / 2;
 
     for (let n = 0; n < count; n++) {
@@ -850,29 +791,16 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
         if (!stack && count > 1) {
             const jitterAngle = Math.random() * Math.PI * 2;
             const jitterDist = Math.random() * jitterRadius;
-            ex = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH, spawnX + Math.cos(jitterAngle) * jitterDist));
-            ey = Math.max(0, Math.min(ACTUAL_WORLD_HEIGHT, spawnY + Math.sin(jitterAngle) * jitterDist));
+            const clamped = clampToWorld(
+                spawnX + Math.cos(jitterAngle) * jitterDist,
+                spawnY + Math.sin(jitterAngle) * jitterDist,
+            );
+            ex = clamped.x;
+            ey = clamped.y;
         }
 
-        const enemy: Enemy = makeEnemy({
-            id: Math.random().toString(36).substr(2, 9),
-            type: mobType as Enemy['type'],
-            tier: tier,
-            x: ex,
-            y: ey,
-            angle: Math.random() * Math.PI * 2,
-            health: mobStats.health,
-            maxHealth: mobStats.health,
-            speed: mobStats.speed,
-            damage: mobStats.damage,
-            knockbackX: 0,
-            knockbackY: 0,
-            aiType: mobStats.ai_type,
-            range: mobStats.range,
-            reversed: mobStats.reversed ?? false,
-            spawnTime: currentTime,
-            lastViewportCheck: currentTime
-        });
+        const enemy = buildEnemy(mobType, tier, ex, ey);
+        if (!enemy) continue;
 
         // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
 
@@ -1203,6 +1131,22 @@ const playerStateDeps: PlayerStateDependencies = {
     useHttps: USE_HTTPS,
     database,
     trackMobKill
+};
+
+// Kill-handler context for the consolidated death sequence (see shared/killHandler).
+// Mirrors the kill-related subset of playerStateDeps; built once at boot.
+const killCtx: KillContext = {
+    io,
+    players,
+    playerUserIds,
+    database,
+    savePlayerProgress,
+    addXPToPlayer,
+    handleMobDrops,
+    sendBossMobDefeatedMessage,
+    updateSpecialMobCounts,
+    cleanupEnemy,
+    trackMobKill,
 };
 
 io.on('connection', (socket: AuthenticatedSocket) => {
@@ -4177,8 +4121,6 @@ function computeOwnSegmentAvoidance(enemy: Enemy): { x: number; y: number } | nu
  * Mirrors the kAntHole damage behavior from the gardn reference project.
  */
 function spawnWaveMobs() {
-    const currentTime = Date.now();
-
     for (const enemy of enemies) {
         if ((enemy as any).isDead) continue;
 
@@ -4215,30 +4157,16 @@ function spawnWaveMobs() {
             const wave = waves[waveIndex];
 
             for (const childType of wave) {
-                const childStats = getMobStats(childType, enemy.tier);
-                if (!childStats) continue;
                 const angle = Math.random() * Math.PI * 2;
                 const dist = parentRadius + 10 + Math.random() * parentRadius;
-                const child: Enemy = makeEnemy({
-                    id: Math.random().toString(36).substr(2, 9),
-                    type: childType as Enemy['type'],
-                    tier: enemy.tier,
-                    x: enemy.x + Math.cos(angle) * dist,
-                    y: enemy.y + Math.sin(angle) * dist,
-                    angle: Math.random() * Math.PI * 2,
-                    health: childStats.health,
-                    maxHealth: childStats.health,
-                    speed: childStats.speed,
-                    damage: childStats.damage,
-                    knockbackX: 0,
-                    knockbackY: 0,
-                    aiType: childStats.ai_type,
-                    range: childStats.range,
-                    reversed: childStats.reversed ?? false,
-                    spawnTime: currentTime,
-                    lastViewportCheck: currentTime,
-                    parentHoleId: enemy.id,
-                });
+                const child = buildEnemy(
+                    childType,
+                    enemy.tier,
+                    enemy.x + Math.cos(angle) * dist,
+                    enemy.y + Math.sin(angle) * dist,
+                    { parentHoleId: enemy.id },
+                );
+                if (!child) continue;
                 enemies.push(child);
                 io.emit('enemySpawned', child);
             }
@@ -5269,37 +5197,13 @@ function updateMobProjectiles(deltaTimeMs: number) {
                     
                     // Check if enemy dies
                     if (targetEnemy.health <= 0 && !(targetEnemy as any).isDead) {
-                        (targetEnemy as any).isDead = true;
-                        
-                        const owner = players[petOwnerId];
-                        if (owner) {
-                            // Follow same path as lightning damage - synchronous execution
-                            const xpGained = getXPFromEnemy(targetEnemy);
-                            addXPToPlayer(owner, xpGained, petOwnerId);
-                            handleMobDrops(targetEnemy);
-                            sendBossMobDefeatedMessage(targetEnemy, io, players);
-                            updateSpecialMobCounts();
-                        }
-                        
-                        // Remove enemy from array
-                        cleanupEnemy(targetEnemy);
-                        enemies.splice(j, 1);
-                        // Emit enemy destroyed event
-                        io.emit('enemyDestroyed', targetEnemy.id);
-                        
-                        // Defer trackMobKill since it's expensive (emits playerUpdated to all players)
-                        // Copy enemy data before cleanup to ensure trackMobKill has all needed info
-                        const damageContributorsCopy = targetEnemy.damageContributors ? new Map(targetEnemy.damageContributors) : undefined;
-                        if (damageContributorsCopy && owner) {
-                            const enemyDataForTracking = {
-                                type: targetEnemy.type,
-                                tier: targetEnemy.tier,
-                                damageContributors: damageContributorsCopy
-                            };
-                            setImmediate(() => {
-                                trackMobKill(enemyDataForTracking as Enemy, players, playerUserIds, database, io, savePlayerProgress);
-                            });
-                        }
+                        // trackMobKill is deferred via setImmediate here: it's
+                        // expensive (emits playerUpdated to all players), and
+                        // deferring keeps the projectile tick budget intact.
+                        killEnemy(targetEnemy, j, enemies, killCtx, {
+                            killerPlayerId: petOwnerId,
+                            trackMobKillTiming: 'deferred',
+                        });
                     }
                     
                     // Remove projectile after hitting enemy
@@ -5511,42 +5415,10 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
                 
                 // Check if enemy dies (only process once per enemy)
                 if (enemy.health <= 0 && !(enemy as any).isDead) {
-                    // Mark enemy as dead to prevent multiple death handlers
-                    (enemy as any).isDead = true;
-                    
-                    const player = players[projectile.playerId];
-                    if (player) {
-                        // Follow same path as lightning damage - synchronous execution
-                        const xpGained = getXPFromEnemy(enemy);
-                        addXPToPlayer(player, xpGained, projectile.playerId);
-                        handleMobDrops(enemy);
-                        sendBossMobDefeatedMessage(enemy, io, players);
-                        updateSpecialMobCounts();
-                    }
-                    
-                    // Remove enemy from array
-                    cleanupEnemy(enemy);
-                    enemies.splice(j, 1);
-                    // Emit enemy destroyed event
-                    io.emit('enemyDestroyed', enemy.id);
-                    
-                    // Call trackMobKill synchronously to ensure it runs
-                    // Copy enemy data before cleanup to ensure trackMobKill has all needed info
-                    const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
-                    if (damageContributorsCopy && player) {
-                        const enemyDataForTracking = {
-                            type: enemy.type,
-                            tier: enemy.tier,
-                            damageContributors: damageContributorsCopy
-                        };
-                        console.log('[Server] Calling trackMobKill synchronously (projectile)', {
-                            enemyType: enemyDataForTracking.type,
-                            enemyTier: enemyDataForTracking.tier,
-                            hasIo: !!io,
-                            damageContributorsSize: enemyDataForTracking.damageContributors.size
-                        });
-                        trackMobKill(enemyDataForTracking as Enemy, players, playerUserIds, database, io, savePlayerProgress);
-                    }
+                    killEnemy(enemy, j, enemies, killCtx, {
+                        killerPlayerId: projectile.playerId,
+                        trackMobKillTiming: 'sync-snapshot',
+                    });
                 }
                 
                 // Remove projectile after hitting enemy
@@ -5649,26 +5521,10 @@ function updateGroundPollens() {
             markEnemyDamaged(enemy);
 
             if (enemy.health <= 0 && !(enemy as any).isDead) {
-                (enemy as any).isDead = true;
-                if (player) {
-                    const xpGained = getXPFromEnemy(enemy);
-                    addXPToPlayer(player, xpGained, pollen.playerId);
-                    handleMobDrops(enemy);
-                    sendBossMobDefeatedMessage(enemy, io, players);
-                    updateSpecialMobCounts();
-                }
-                const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
-                cleanupEnemy(enemy);
-                enemies.splice(j, 1);
-                io.emit('enemyDestroyed', enemy.id);
-                if (damageContributorsCopy && player) {
-                    const enemyDataForTracking = {
-                        type: enemy.type,
-                        tier: enemy.tier,
-                        damageContributors: damageContributorsCopy
-                    };
-                    trackMobKill(enemyDataForTracking as Enemy, players, playerUserIds, database, io, savePlayerProgress);
-                }
+                killEnemy(enemy, j, enemies, killCtx, {
+                    killerPlayerId: pollen.playerId,
+                    trackMobKillTiming: 'sync-snapshot',
+                });
             }
         }
     }

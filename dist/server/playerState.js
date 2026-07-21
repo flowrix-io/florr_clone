@@ -12,7 +12,6 @@ exports.isPositionInPlayerPetalRange = isPositionInPlayerPetalRange;
 exports.getEnemiesInViewportCount = getEnemiesInViewportCount;
 exports.validatePlayerPositions = validatePlayerPositions;
 exports.updatePlayerState = updatePlayerState;
-const server_utils_1 = require("../server_utils");
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
 const maze_1 = require("../maze");
@@ -32,6 +31,26 @@ const _attractionQueryBuffer = [];
 const playerManager_1 = require("./playerManager");
 const inventoryCodec_1 = require("../inventoryCodec");
 const utils_1 = require("./utils");
+const killHandler_1 = require("./shared/killHandler");
+/**
+ * Adapt the PlayerStateDependencies bag (built in server.ts) to the kill-handler
+ * context. The two share the same kill-related fields; this just projects them.
+ */
+function killCtxFromDeps(deps) {
+    return {
+        io: deps.io,
+        players: constants_1.players,
+        playerUserIds: gameState_1.playerUserIds,
+        database: deps.database,
+        savePlayerProgress: deps.savePlayerProgress,
+        addXPToPlayer: deps.addXPToPlayer,
+        handleMobDrops: deps.handleMobDrops,
+        sendBossMobDefeatedMessage: deps.sendBossMobDefeatedMessage,
+        updateSpecialMobCounts: deps.updateSpecialMobCounts,
+        cleanupEnemy: utils_1.cleanupEnemy,
+        trackMobKill: deps.trackMobKill,
+    };
+}
 const PETAL_SPAWN_GLIDE_MS = 300; // reload/spawn: fly-out from the flower into orbit
 const PETAL_RELEASE_GLIDE_MS = 250; // attracting mob died: glide back into orbit
 const PETAL_GLIDE_RATE = 14; // 1/s first-order approach rate (~95% converged in 220ms)
@@ -340,7 +359,6 @@ function applyRaindropAuraDamage(player, deps) {
     }
     if (bestRadius <= 0 || bestDamage <= 0)
         return;
-    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, trackMobKill, database, savePlayerProgress } = deps;
     const now = Date.now();
     const damageMultiplier = (0, petal_actions_1.getDamageMultiplier)(player);
     const finalDamage = bestDamage * damageMultiplier;
@@ -368,26 +386,11 @@ function applyRaindropAuraDamage(player, deps) {
         enemy.health = Math.max(0, enemy.health - finalDamage);
         (0, utils_1.markEnemyDamaged)(enemy);
         if (enemy.health <= 0 && !enemy.isDead) {
-            enemy.isDead = true;
-            const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
-            addXPToPlayer(player, xpGained, player.id);
-            handleMobDrops(enemy);
-            sendBossMobDefeatedMessage(enemy, io, constants_1.players);
-            updateSpecialMobCounts();
-            const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
-            (0, utils_1.cleanupEnemy)(enemy);
             const idx = constants_1.enemies.findIndex(e => e.id === enemy.id);
-            if (idx !== -1)
-                constants_1.enemies.splice(idx, 1);
-            io.emit('enemyDestroyed', enemy.id);
-            if (damageContributorsCopy) {
-                const enemyDataForTracking = {
-                    type: enemy.type,
-                    tier: enemy.tier,
-                    damageContributors: damageContributorsCopy
-                };
-                trackMobKill(enemyDataForTracking, constants_1.players, gameState_1.playerUserIds, database, io, savePlayerProgress);
-            }
+            (0, killHandler_1.killEnemy)(enemy, idx, constants_1.enemies, killCtxFromDeps(deps), {
+                killerPlayerId: player.id,
+                trackMobKillTiming: 'sync-snapshot',
+            });
         }
     }
 }
@@ -763,7 +766,7 @@ function updatePlayerState(player, deltaTime, deps) {
     if (player.isDead) {
         return;
     }
-    const { io, addXPToPlayer, handleMobDrops, sendBossMobDefeatedMessage, updateSpecialMobCounts, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database, trackMobKill } = deps;
+    const { io, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
     // Update player effects
     (0, petal_actions_1.updatePlayerEffects)(player, deltaTime);
     updateSpongeDamage(player, deltaTime, io);
@@ -943,68 +946,17 @@ function updatePlayerState(player, deltaTime, deps) {
                 // Mark enemy for batched damage update at end of frame
                 (0, utils_1.markEnemyDamaged)(enemy);
                 if (enemy.health <= 0 && !enemy.isDead) {
-                    // console.log('[Server] Enemy health reached 0 from petal damage', {
-                    //     enemyId: enemy.id,
-                    //     enemyType: enemy.type,
-                    //     enemyTier: enemy.tier,
-                    //     oldHealth,
-                    //     newHealth: enemy.health,
-                    //     playerId: player.id,
-                    //     hasDamageContributors: !!enemy.damageContributors,
-                    //     damageContributorsSize: enemy.damageContributors?.size || 0
-                    // });
-                    // Mark enemy as dead to prevent multiple death handlers
-                    enemy.isDead = true;
                     const index = constants_1.enemies.findIndex(e => e.id === enemy.id);
-                    // console.log('[Server] Enemy death handler - found index:', index, 'enemyId:', enemy.id);
+                    // Original gated the entire death sequence on the enemy still
+                    // being in the array (it can already be gone if another damage
+                    // source finished it this tick). killEnemy handles a -1 index
+                    // by skipping just the splice, so preserve the gate here.
                     if (index !== -1) {
-                        // Copy enemy data BEFORE cleanup to ensure trackMobKill has all needed info
-                        const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
-                        // console.log('[Server] Enemy killed by petal collision - BEFORE cleanup', {
-                        //     enemyType: enemy.type,
-                        //     enemyTier: enemy.tier,
-                        //     hasDamageContributors: !!enemy.damageContributors,
-                        //     damageContributorsSize: enemy.damageContributors?.size || 0,
-                        //     damageContributorsEntries: enemy.damageContributors ? Array.from(enemy.damageContributors.entries()) : [],
-                        //     hasDamageContributorsCopy: !!damageContributorsCopy,
-                        //     copySize: damageContributorsCopy?.size || 0,
-                        //     hasIo: !!io
-                        // });
-                        // Follow same path as lightning damage - synchronous execution
-                        const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
-                        addXPToPlayer(player, xpGained, player.id);
-                        handleMobDrops(enemy);
-                        sendBossMobDefeatedMessage(enemy, io, constants_1.players);
-                        updateSpecialMobCounts();
-                        // Remove enemy from array
-                        (0, utils_1.cleanupEnemy)(enemy);
-                        constants_1.enemies.splice(index, 1);
-                        // Emit enemy destroyed event
-                        io.emit('enemyDestroyed', enemy.id);
-                        // Call trackMobKill synchronously to ensure it runs (was deferred but causing issues)
-                        if (damageContributorsCopy && damageContributorsCopy.size > 0) {
-                            const enemyDataForTracking = {
-                                type: enemy.type,
-                                tier: enemy.tier,
-                                damageContributors: damageContributorsCopy
-                            };
-                            // console.log('[Server] Calling trackMobKill synchronously', {
-                            //     enemyType: enemyDataForTracking.type,
-                            //     enemyTier: enemyDataForTracking.tier,
-                            //     hasIo: !!io,
-                            //     damageContributorsSize: enemyDataForTracking.damageContributors.size
-                            // });
-                            trackMobKill(enemyDataForTracking, constants_1.players, gameState_1.playerUserIds, database, io, savePlayerProgress);
-                        }
-                        else {
-                            // console.warn('[Server] No damageContributorsCopy or empty, skipping trackMobKill', {
-                            //     hasCopy: !!damageContributorsCopy,
-                            //     copySize: damageContributorsCopy?.size || 0
-                            // });
-                        }
-                    }
-                    else {
-                        // console.warn('[Server] Enemy not found in enemies array when trying to process death');
+                        (0, killHandler_1.killEnemy)(enemy, index, constants_1.enemies, killCtxFromDeps(deps), {
+                            killerPlayerId: player.id,
+                            trackMobKillTiming: 'sync-snapshot',
+                            requireNonEmptyContributors: true,
+                        });
                     }
                 }
                 if (player.health <= 0) {
@@ -1995,61 +1947,12 @@ function updatePlayerState(player, deltaTime, deps) {
                     }
                     // Check if enemy dies (only process once per enemy)
                     if (enemy.health <= 0 && !enemy.isDead) {
-                        // console.log('[Server] Enemy died from petal collision', {
-                        //     enemyId: enemy.id,
-                        //     enemyType: enemy.type,
-                        //     enemyTier: enemy.tier,
-                        //     enemyHealth: enemy.health,
-                        //     playerId: player.id,
-                        //     hasDamageContributors: !!enemy.damageContributors,
-                        //     damageContributorsSize: enemy.damageContributors?.size || 0
-                        // });
-                        // Mark enemy as dead to prevent multiple death handlers
-                        enemy.isDead = true;
                         const index = constants_1.enemies.findIndex(e => e.id === enemy.id);
                         if (index !== -1) {
-                            // console.log('[Server] Enemy death handler - found index', { enemyId: enemy.id });
-                            // CRITICAL: Copy damageContributors BEFORE cleanupEnemy clears it
-                            const damageContributorsCopy = enemy.damageContributors ? new Map(enemy.damageContributors) : undefined;
-                            // console.log('[Server] Enemy killed by petal collision (second handler) - BEFORE cleanup', {
-                            //     enemyType: enemy.type,
-                            //     enemyTier: enemy.tier,
-                            //     hasDamageContributors: !!enemy.damageContributors,
-                            //     damageContributorsSize: enemy.damageContributors?.size || 0,
-                            //     hasDamageContributorsCopy: !!damageContributorsCopy,
-                            //     copySize: damageContributorsCopy?.size || 0,
-                            //     hasIo: !!io
-                            // });
-                            // Follow same path as lightning damage - synchronous execution
-                            const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
-                            addXPToPlayer(player, xpGained, player.id);
-                            handleMobDrops(enemy);
-                            sendBossMobDefeatedMessage(enemy, io, constants_1.players);
-                            updateSpecialMobCounts();
-                            // Remove enemy from array
-                            (0, utils_1.cleanupEnemy)(enemy);
-                            constants_1.enemies.splice(index, 1);
-                            // Emit enemy destroyed event
-                            io.emit('enemyDestroyed', enemy.id);
-                            // Call trackMobKill synchronously to ensure it runs
-                            // Use the copy we made BEFORE cleanupEnemy
-                            if (damageContributorsCopy) {
-                                const enemyDataForTracking = {
-                                    type: enemy.type,
-                                    tier: enemy.tier,
-                                    damageContributors: damageContributorsCopy
-                                };
-                                // console.log('[Server] Calling trackMobKill synchronously (second handler)', {
-                                //     enemyType: enemyDataForTracking.type,
-                                //     enemyTier: enemyDataForTracking.tier,
-                                //     hasIo: !!io,
-                                //     damageContributorsSize: enemyDataForTracking.damageContributors.size
-                                // });
-                                trackMobKill(enemyDataForTracking, constants_1.players, gameState_1.playerUserIds, database, io, savePlayerProgress);
-                            }
-                            else {
-                                // console.warn('[Server] No damageContributorsCopy (second handler), skipping trackMobKill');
-                            }
+                            (0, killHandler_1.killEnemy)(enemy, index, constants_1.enemies, killCtxFromDeps(deps), {
+                                killerPlayerId: player.id,
+                                trackMobKillTiming: 'sync-snapshot',
+                            });
                         }
                     }
                 }

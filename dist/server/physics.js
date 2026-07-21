@@ -14,6 +14,7 @@ const constants_1 = require("../constants");
 const map_data_1 = require("../map_data");
 const mobs_1 = require("../mobs");
 const utils_1 = require("./utils");
+const killHandler_1 = require("./shared/killHandler");
 const maze_1 = require("../maze");
 // Boundary threshold for wall extension (same as out-of-bounds zone)
 const BOUNDARY_THRESHOLD = 100;
@@ -336,10 +337,7 @@ function checkEnemyEnemyCollisions(enemies, io) {
                             if (io)
                                 (0, utils_1.markEnemyDamaged)(otherEnemy);
                             if (otherEnemy.health <= 0) {
-                                otherEnemy.isDead = true;
-                                if (io) {
-                                    io.emit('enemyDestroyed', otherEnemy.id);
-                                }
+                                (0, killHandler_1.markDeadAndEmit)(otherEnemy, io);
                             }
                         }
                     }
@@ -350,10 +348,7 @@ function checkEnemyEnemyCollisions(enemies, io) {
                             if (io)
                                 (0, utils_1.markEnemyDamaged)(otherEnemy);
                             if (otherEnemy.health <= 0) {
-                                otherEnemy.isDead = true;
-                                if (io) {
-                                    io.emit('enemyDestroyed', otherEnemy.id);
-                                }
+                                (0, killHandler_1.markDeadAndEmit)(otherEnemy, io);
                             }
                         }
                     }
@@ -368,10 +363,7 @@ function checkEnemyEnemyCollisions(enemies, io) {
                             if (io)
                                 (0, utils_1.markEnemyDamaged)(enemy);
                             if (enemy.health <= 0) {
-                                enemy.isDead = true;
-                                if (io) {
-                                    io.emit('enemyDestroyed', enemy.id);
-                                }
+                                (0, killHandler_1.markDeadAndEmit)(enemy, io);
                             }
                         }
                     }
@@ -382,10 +374,7 @@ function checkEnemyEnemyCollisions(enemies, io) {
                             if (io)
                                 (0, utils_1.markEnemyDamaged)(enemy);
                             if (enemy.health <= 0) {
-                                enemy.isDead = true;
-                                if (io) {
-                                    io.emit('enemyDestroyed', enemy.id);
-                                }
+                                (0, killHandler_1.markDeadAndEmit)(enemy, io);
                             }
                         }
                     }

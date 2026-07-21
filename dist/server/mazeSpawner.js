@@ -11,6 +11,9 @@ const mobs_1 = require("../mobs");
 const enemySpawner_1 = require("./enemySpawner");
 const enemyGrid_1 = require("./enemyGrid");
 const maze_1 = require("../maze");
+const rarity_1 = require("./shared/rarity");
+const weighted_1 = require("./shared/weighted");
+const buildEnemy_1 = require("./shared/buildEnemy");
 // Population control. Unlike the open world (which only populates viewports),
 // the maze is a bounded dungeon populated rrolf-style: mobs spawn across ALL
 // corridors and persist while anyone is inside (despawnDistantEnemies exempts
@@ -51,7 +54,6 @@ const MAZE_BOSS_COUNT = 2;
 // Mob types that never spawn in the maze even if their section matches: wave
 // spawners would flood the corridors, and utility mobs make no sense here.
 const MAZE_EXCLUDED_TYPES = new Set(['ant_hole', 'fire_ant_hole', 'target_dummy', 'item_spawner', 'garbage']);
-const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 let poolBiome = null;
 let poolTypes = [];
 /** Mob pool for the current maze biome (garden/desert/ocean section rosters). */
@@ -83,16 +85,6 @@ function invalidateMazeMobPool() {
     poolBiome = null;
     poolTypes = [];
 }
-function pickWeighted(pool) {
-    const total = pool.reduce((sum, entry) => sum + entry.weight, 0);
-    let roll = Math.random() * total;
-    for (const entry of pool) {
-        roll -= entry.weight;
-        if (roll <= 0)
-            return entry;
-    }
-    return pool[pool.length - 1];
-}
 function getMazePlayerIds() {
     const ids = [];
     for (const id in constants_1.players) {
@@ -123,7 +115,7 @@ function countMazeMobs() {
         // the boss cap several times over and starve the other boss room.
         if ((0, server_utils_1.isCentipedeBodyType)(enemy.type))
             continue;
-        if (TIER_ORDER.indexOf(enemy.tier) >= TIER_ORDER.indexOf('ultra'))
+        if (rarity_1.RARITY_ORDER.indexOf(enemy.tier) >= rarity_1.RARITY_ORDER.indexOf('ultra'))
             ultras++;
     }
     return { total, ultras };
@@ -185,31 +177,6 @@ function findMazeSpawnPosition(mobRadius) {
     }
     return null;
 }
-function buildEnemy(type, tier, x, y) {
-    const stats = (0, mobs_1.getMobStats)(type, tier);
-    if (!stats)
-        return null;
-    const currentTime = Date.now();
-    return (0, server_utils_1.makeEnemy)({
-        id: Math.random().toString(36).slice(2, 11),
-        type: type,
-        tier,
-        x,
-        y,
-        angle: Math.random() * Math.PI * 2,
-        health: stats.health,
-        maxHealth: stats.health,
-        speed: stats.speed,
-        damage: stats.damage,
-        knockbackX: 0,
-        knockbackY: 0,
-        aiType: stats.ai_type,
-        range: stats.range,
-        reversed: stats.reversed ?? false,
-        spawnTime: currentTime,
-        lastViewportCheck: currentTime,
-    });
-}
 /**
  * Keep the maze corridors populated. Tier comes from the depth zone the spawn
  * position lands in (common at the entrance through mythic at the deepest
@@ -236,7 +203,7 @@ function spawnMazeMobs(limit = 3) {
     (0, enemyGrid_1.rebuildEnemyGrid)(constants_1.enemies);
     const spawned = [];
     for (let i = 0; i < needed; i++) {
-        const mobEntry = pickWeighted(pool);
+        const mobEntry = (0, weighted_1.pickWeighted)(pool);
         const prelimStats = (0, mobs_1.getMobStats)(mobEntry.type, 'common');
         const mobRadius = prelimStats ? (prelimStats.size * 40) / 2 : 20;
         const position = findMazeSpawnPosition(mobRadius);
@@ -260,7 +227,7 @@ function spawnMazeMobs(limit = 3) {
         const tierRadius = tierStats ? (tierStats.size * 40) / 2 : mobRadius;
         if (tierRadius > mobRadius && !mazeBodyFits(position.x, position.y, tierRadius))
             continue;
-        const enemy = buildEnemy(mobEntry.type, tier, position.x, position.y);
+        const enemy = (0, buildEnemy_1.buildEnemy)(mobEntry.type, tier, position.x, position.y);
         if (!enemy)
             continue;
         spawned.push(enemy);
@@ -310,7 +277,7 @@ function spawnMazeBosses() {
         for (const enemy of constants_1.enemies) {
             if ((0, server_utils_1.isCentipedeBodyType)(enemy.type))
                 continue;
-            if (TIER_ORDER.indexOf(enemy.tier) < TIER_ORDER.indexOf('ultra'))
+            if (rarity_1.RARITY_ORDER.indexOf(enemy.tier) < rarity_1.RARITY_ORDER.indexOf('ultra'))
                 continue;
             const dx = enemy.x - spot.x, dy = enemy.y - spot.y;
             if (dx * dx + dy * dy < 2000 * 2000) {
@@ -320,8 +287,8 @@ function spawnMazeBosses() {
         }
         if (bossHere)
             continue;
-        const mobEntry = pickWeighted(pool);
-        const boss = buildEnemy(mobEntry.type, 'ultra', spot.x, spot.y);
+        const mobEntry = (0, weighted_1.pickWeighted)(pool);
+        const boss = (0, buildEnemy_1.buildEnemy)(mobEntry.type, 'ultra', spot.x, spot.y);
         if (!boss)
             continue;
         if ((0, server_utils_1.isCentipedeHeadType)(boss.type)) {

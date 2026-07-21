@@ -25,6 +25,7 @@ const gameState_1 = require("./gameState");
 const squadManager_1 = require("./squadManager");
 const guildManager_1 = require("./guildManager");
 const petal_actions_1 = require("../petal_actions");
+const rarity_1 = require("./shared/rarity");
 const BOT_ID_PREFIX = 'bot_';
 const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
@@ -87,7 +88,6 @@ const HIGH_TIERS = new Set(['epic', 'legendary', 'mythic', 'ultra']);
 // Raid traversal: when the bot is farther than this from the raid anchor,
 // swap slot 0 for powder to close distance faster. Beyond combat range.
 const RAID_POWDER_MIN_DIST = 600;
-const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 // Powder has no common tier, so we clamp the floor at uncommon.
 const POWDER_MIN_RARITY_IDX = 1;
 // Long-haul raid routing — activated when the bot is this far from the boss.
@@ -403,12 +403,12 @@ function pickPowderRarity(loadout) {
         for (const item of loadout) {
             if (!item || item.type !== 'petal' || !item.rarity)
                 continue;
-            const idx = RARITY_ORDER.indexOf(item.rarity);
+            const idx = rarity_1.RARITY_ORDER.indexOf(item.rarity);
             if (idx > maxIdx)
                 maxIdx = idx;
         }
     }
-    return RARITY_ORDER[Math.max(POWDER_MIN_RARITY_IDX, maxIdx)];
+    return rarity_1.RARITY_ORDER[Math.max(POWDER_MIN_RARITY_IDX, maxIdx)];
 }
 // Bot's "power rarity" — the max petal rarity across their loadout. Drives
 // target selection: a common-loadout bot hunts uncommon mobs, a mythic bot
@@ -419,7 +419,7 @@ function getBotMaxRarityIdx(bot) {
         for (const item of bot.loadout) {
             if (!item || item.type !== 'petal' || !item.rarity)
                 continue;
-            const idx = RARITY_ORDER.indexOf(item.rarity);
+            const idx = rarity_1.RARITY_ORDER.indexOf(item.rarity);
             if (idx > maxIdx)
                 maxIdx = idx;
         }
@@ -429,15 +429,15 @@ function getBotMaxRarityIdx(bot) {
 // Which mob tier(s) this bot prefers to engage. Mirrors the progression rule
 // "one tier above your gear, except mythic stays on mythic and ultra+ hunts
 // bosses". Empty set = no preference (fall through to standard priority).
-const MYTHIC_IDX = 5;
-const ULTRA_IDX = 6;
+const MYTHIC_IDX = rarity_1.RARITY_ORDER.indexOf('mythic');
+const ULTRA_IDX = rarity_1.RARITY_ORDER.indexOf('ultra');
 function preferredMobTiersForBot(botIdx) {
     if (botIdx >= ULTRA_IDX)
         return new Set(['super', 'unique', 'apex']);
     if (botIdx === MYTHIC_IDX)
         return new Set(['mythic']);
-    if (botIdx >= 0 && botIdx < RARITY_ORDER.length - 1) {
-        return new Set([RARITY_ORDER[botIdx + 1]]);
+    if (botIdx >= 0 && botIdx < rarity_1.RARITY_ORDER.length - 1) {
+        return new Set([rarity_1.RARITY_ORDER[botIdx + 1]]);
     }
     return new Set();
 }
@@ -579,12 +579,12 @@ function pickYggdrasilRarity(loadout) {
         for (const item of loadout) {
             if (!item || item.type !== 'petal' || !item.rarity)
                 continue;
-            const idx = RARITY_ORDER.indexOf(item.rarity);
+            const idx = rarity_1.RARITY_ORDER.indexOf(item.rarity);
             if (idx > maxIdx)
                 maxIdx = idx;
         }
     }
-    return RARITY_ORDER[maxIdx];
+    return rarity_1.RARITY_ORDER[maxIdx];
 }
 function equipYggdrasilSlot(bot, state) {
     if (state.yggdrasilSlot !== undefined)

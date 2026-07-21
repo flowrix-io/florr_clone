@@ -14,6 +14,7 @@ import {
 import { WALL_GRID } from '../map_data';
 import { getMobStats } from '../mobs';
 import { markEnemyDamaged } from './utils';
+import { markDeadAndEmit } from './shared/killHandler';
 import { isInMazeRegion, mazeBlocksLine } from '../maze';
 
 // Boundary threshold for wall extension (same as out-of-bounds zone)
@@ -365,10 +366,7 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             if (io) markEnemyDamaged(otherEnemy);
 
                             if (otherEnemy.health <= 0) {
-                                (otherEnemy as any).isDead = true;
-                                if (io) {
-                                    io.emit('enemyDestroyed', otherEnemy.id);
-                                }
+                                markDeadAndEmit(otherEnemy, io);
                             }
                         }
                     } else if (!thisMobIsPet && otherMobIsPet) {
@@ -379,10 +377,7 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             if (io) markEnemyDamaged(otherEnemy);
 
                             if (otherEnemy.health <= 0) {
-                                (otherEnemy as any).isDead = true;
-                                if (io) {
-                                    io.emit('enemyDestroyed', otherEnemy.id);
-                                }
+                                markDeadAndEmit(otherEnemy, io);
                             }
                         }
                     }
@@ -400,10 +395,7 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             if (io) markEnemyDamaged(enemy);
 
                             if (enemy.health <= 0) {
-                                (enemy as any).isDead = true;
-                                if (io) {
-                                    io.emit('enemyDestroyed', enemy.id);
-                                }
+                                markDeadAndEmit(enemy, io);
                             }
                         }
                     } else if (!otherMobIsPet && thisMobIsPet) {
@@ -414,10 +406,7 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
                             if (io) markEnemyDamaged(enemy);
 
                             if (enemy.health <= 0) {
-                                (enemy as any).isDead = true;
-                                if (io) {
-                                    io.emit('enemyDestroyed', enemy.id);
-                                }
+                                markDeadAndEmit(enemy, io);
                             }
                         }
                     }

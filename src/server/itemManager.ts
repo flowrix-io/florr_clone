@@ -19,68 +19,14 @@ function getEligiblePetalTypes(): string[] {
 }
 import { checkItemWallCollisions } from './physics';
 import { getAllPetalTypes, getPetalStats, isUndroppableEggPetalType } from '../petals';
-
-// Rarity type
-type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
-
-// Rarity order from lowest to highest
-const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
-
-// Calculate crafting chance for upgrading from one rarity to the next
-function getCraftingChance(rarityIndex: number): number {
-    const baseChance = 64;
-    return baseChance / Math.pow(2, rarityIndex);
-}
-
-// Calculate upgrade chance for a drop (crafting chance of upgraded rarity / 3)
-// The crafting chance for upgrading TO a rarity is calculated FROM the previous rarity
-function getDropUpgradeChance(currentRarity: Rarity): number {
-    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
-    if (currentIndex === -1 || currentIndex >= RARITY_ORDER.length - 1) {
-        return 0; // Invalid rarity or already at max tier
-    }
-    
-    // Crafting chance for upgrading TO the next tier is calculated FROM the current tier
-    // (same as crafting from currentRarity to nextRarity)
-    const craftingChance = getCraftingChance(currentIndex);
-    
-    // Upgrade chance is crafting chance divided by 3
-    return craftingChance / 3;
-}
-
-// Upgrade a rarity by one tier if possible
-function upgradeRarity(rarity: Rarity): Rarity {
-    const currentIndex = RARITY_ORDER.indexOf(rarity);
-    if (currentIndex >= 0 && currentIndex < RARITY_ORDER.length - 1) {
-        return RARITY_ORDER[currentIndex + 1];
-    }
-    return rarity; // Already at max tier
-}
-
-// Calculate downgrade chance for a drop (1 / (1 + craft chance to that rarity))
-// The crafting chance for upgrading TO a rarity is calculated FROM the previous rarity
-function getDropDowngradeChance(currentRarity: Rarity): number {
-    const currentIndex = RARITY_ORDER.indexOf(currentRarity);
-    if (currentIndex === -1 || currentIndex === 0) {
-        return 0; // Invalid rarity or already at lowest tier (common)
-    }
-    
-    // Crafting chance for upgrading TO the current tier is calculated FROM the previous tier
-    // (craft chance from currentIndex-1 to currentIndex)
-    const craftingChanceToCurrentRarity = getCraftingChance(currentIndex - 1);
-    
-    // Downgrade chance is 1 / (1 + craft chance to that rarity)
-    return 1 / (1 + craftingChanceToCurrentRarity);
-}
-
-// Downgrade a rarity by one tier if possible
-function downgradeRarity(rarity: Rarity): Rarity {
-    const currentIndex = RARITY_ORDER.indexOf(rarity);
-    if (currentIndex > 0 && currentIndex < RARITY_ORDER.length) {
-        return RARITY_ORDER[currentIndex - 1];
-    }
-    return rarity; // Already at lowest tier
-}
+import {
+    RARITY_ORDER,
+    Rarity,
+    getDropUpgradeChance,
+    getDropDowngradeChance,
+    upgradeRarity,
+    downgradeRarity,
+} from './shared/rarity';
 
 // Function to handle mob drops when a mob dies
 // Accepts enemy data object instead of live enemy to avoid issues with cleaned up enemies

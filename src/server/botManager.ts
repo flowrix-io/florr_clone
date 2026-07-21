@@ -43,6 +43,7 @@ import {
 } from './squadManager';
 import { registerBotGuild, clearBotGuilds, getBotGuildNameForBot } from './guildManager';
 import { cleanupPlayerPetalActionState } from '../petal_actions';
+import { RARITY_ORDER } from './shared/rarity';
 
 const BOT_ID_PREFIX = 'bot_';
 const TARGET_TOTAL_PLAYERS = 23;
@@ -116,7 +117,6 @@ const HIGH_TIERS = new Set(['epic', 'legendary', 'mythic', 'ultra']);
 // Raid traversal: when the bot is farther than this from the raid anchor,
 // swap slot 0 for powder to close distance faster. Beyond combat range.
 const RAID_POWDER_MIN_DIST = 600;
-const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 // Powder has no common tier, so we clamp the floor at uncommon.
 const POWDER_MIN_RARITY_IDX = 1;
 
@@ -535,8 +535,8 @@ function getBotMaxRarityIdx(bot: ServerPlayer): number {
 // Which mob tier(s) this bot prefers to engage. Mirrors the progression rule
 // "one tier above your gear, except mythic stays on mythic and ultra+ hunts
 // bosses". Empty set = no preference (fall through to standard priority).
-const MYTHIC_IDX = 5;
-const ULTRA_IDX = 6;
+const MYTHIC_IDX = RARITY_ORDER.indexOf('mythic');
+const ULTRA_IDX = RARITY_ORDER.indexOf('ultra');
 function preferredMobTiersForBot(botIdx: number): Set<string> {
     if (botIdx >= ULTRA_IDX) return new Set(['super', 'unique', 'apex']);
     if (botIdx === MYTHIC_IDX) return new Set(['mythic']);

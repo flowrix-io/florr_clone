@@ -4,6 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MOB_DROP_TABLES = void 0;
 exports.calculateMobDrops = calculateMobDrops;
 const mob_configs_1 = require("./mob_configs");
+const rarity_1 = require("./server/shared/rarity");
 exports.MOB_DROP_TABLES = {
     bee: {
         guaranteed: true, // Bees always drop something
@@ -949,13 +950,12 @@ for (const mobType in mob_configs_1.BASE_MOB_CONFIGS) {
         });
     }
 }
-const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
 // Scale a drop's rarity to the mob's rarity: 90% chance the item is one tier
 // below the mob, 10% chance it keeps its table rarity.
 function scaleDropRarity(drop, mobRarityIndex) {
     const adjusted = { ...drop };
     if (mobRarityIndex > 0 && Math.random() < 0.9) {
-        adjusted.rarity = RARITY_ORDER[mobRarityIndex - 1];
+        adjusted.rarity = rarity_1.RARITY_ORDER[mobRarityIndex - 1];
     }
     return adjusted;
 }
@@ -965,8 +965,8 @@ function calculateMobDrops(mobType, mobRarity) {
     if (!dropTable || dropTable.drops.length === 0) {
         return [];
     }
-    const rarityIndex = RARITY_ORDER.indexOf(mobRarity);
-    const uncommonIndex = RARITY_ORDER.indexOf('uncommon');
+    const rarityIndex = rarity_1.RARITY_ORDER.indexOf(mobRarity);
+    const uncommonIndex = rarity_1.RARITY_ORDER.indexOf('uncommon');
     // Unusual mobs drop every item in their table, guaranteed, at table rarity.
     if (rarityIndex === uncommonIndex) {
         return dropTable.drops.map(drop => ({ ...drop }));

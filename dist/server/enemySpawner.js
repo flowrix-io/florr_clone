@@ -21,8 +21,10 @@ const maze_1 = require("../maze");
 const mobs_1 = require("../mobs");
 const apiKeyApi_1 = require("./apiKeyApi");
 const playerManager_1 = require("./playerManager");
-// Tier order from lowest to highest
-const TIER_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique', 'apex'];
+const rarity_1 = require("./shared/rarity");
+const weighted_1 = require("./shared/weighted");
+const buildEnemy_1 = require("./shared/buildEnemy");
+const positions_1 = require("./shared/positions");
 // Sections (0-8) where all rarities have equal spawn chance
 // Section layout:
 //   0 | 1 | 2
@@ -45,39 +47,15 @@ const EQUAL_RARITY_TIER_WEIGHTS = [
 ];
 // Helper function to select tier from equal rarity weights
 function selectEqualRarityTier() {
-    const roll = Math.random();
-    let cumulative = 0;
-    for (const entry of EQUAL_RARITY_TIER_WEIGHTS) {
-        cumulative += entry.weight;
-        if (roll < cumulative) {
-            return entry.tier;
-        }
-    }
-    return 'common'; // Fallback
+    return (0, weighted_1.pickWeighted)(EQUAL_RARITY_TIER_WEIGHTS).tier;
 }
 // Helper function to select a mob type using spawn_weight for weighted random selection
 function selectWeightedMobType(eligibleMobTypes, tier) {
-    const weights = eligibleMobTypes.map(type => {
-        const stats = (0, mobs_1.getMobStats)(type, tier);
-        return stats?.spawn_weight ?? 1;
-    });
-    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-    let roll = Math.random() * totalWeight;
-    for (let i = 0; i < eligibleMobTypes.length; i++) {
-        roll -= weights[i];
-        if (roll <= 0)
-            return eligibleMobTypes[i];
-    }
-    return eligibleMobTypes[eligibleMobTypes.length - 1];
-}
-// Boundary threshold for out-of-bounds zone (same as wall extension threshold)
-const BOUNDARY_THRESHOLD = 100;
-// Helper function to check if a position is in the out-of-bounds zone
-function isInOutOfBoundsZone(x, y) {
-    return x < BOUNDARY_THRESHOLD ||
-        x > constants_2.ACTUAL_WORLD_WIDTH - BOUNDARY_THRESHOLD ||
-        y < BOUNDARY_THRESHOLD ||
-        y > constants_2.ACTUAL_WORLD_HEIGHT - BOUNDARY_THRESHOLD;
+    const pool = eligibleMobTypes.map(type => ({
+        type,
+        weight: (0, mobs_1.getMobStats)(type, tier)?.spawn_weight ?? 1,
+    }));
+    return (0, weighted_1.pickWeighted)(pool).type;
 }
 // Helper function to get section number (0-8) from world position
 const SECTION_SIZE = 20000;
@@ -85,41 +63,6 @@ function getSectionAtPosition(x, y) {
     const sectionX = Math.max(0, Math.min(2, Math.floor(x / SECTION_SIZE)));
     const sectionY = Math.max(0, Math.min(2, Math.floor(y / SECTION_SIZE)));
     return sectionY * 3 + sectionX;
-}
-// Helper function to upgrade a tier by one level (if possible)
-function upgradeTier(tier) {
-    const currentIndex = TIER_ORDER.indexOf(tier);
-    if (currentIndex >= 0 && currentIndex < TIER_ORDER.length - 1) {
-        return TIER_ORDER[currentIndex + 1];
-    }
-    return tier; // Already at max tier
-}
-// Helper function to downgrade a tier by one level (if possible)
-function downgradeTier(tier) {
-    const currentIndex = TIER_ORDER.indexOf(tier);
-    if (currentIndex > 0 && currentIndex < TIER_ORDER.length) {
-        return TIER_ORDER[currentIndex - 1];
-    }
-    return tier; // Already at lowest tier
-}
-// Calculate crafting chance for upgrading from one rarity to the next
-// (same formula as in itemManager.ts)
-function getCraftingChance(rarityIndex) {
-    const baseChance = 64;
-    return baseChance / Math.pow(2, rarityIndex);
-}
-// Calculate downgrade chance for a mob (1 / (1 + craft chance to that rarity))
-// The crafting chance for upgrading TO a rarity is calculated FROM the previous rarity
-function getMobDowngradeChance(currentTier) {
-    const currentIndex = TIER_ORDER.indexOf(currentTier);
-    if (currentIndex === -1 || currentIndex === 0) {
-        return 0; // Invalid tier or already at lowest tier (common)
-    }
-    // Crafting chance for upgrading TO the current tier is calculated FROM the previous tier
-    // (craft chance from currentIndex-1 to currentIndex)
-    const craftingChanceToCurrentTier = getCraftingChance(currentIndex - 1);
-    // Downgrade chance is 1 / (1 + craft chance to that rarity)
-    return 1 / (1 + craftingChanceToCurrentTier);
 }
 // Helper function to get spawn zone type for a given position
 function getSpawnZoneType(x, y) {
@@ -262,7 +205,7 @@ function getRandomPositionInZoneTypeInSection(zoneType, section) {
         const clampedX = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
         const clampedY = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
         // Skip if position is in out-of-bounds zone
-        if (isInOutOfBoundsZone(clampedX, clampedY)) {
+        if ((0, positions_1.isInOutOfBoundsZone)(clampedX, clampedY)) {
             continue;
         }
         return { x: clampedX, y: clampedY };
@@ -282,7 +225,7 @@ function getRandomPositionInZoneType(zoneType) {
     x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
     y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
     // Skip if position is in out-of-bounds zone (retry if needed)
-    if (isInOutOfBoundsZone(x, y)) {
+    if ((0, positions_1.isInOutOfBoundsZone)(x, y)) {
         // Try one more time with a different zone if available
         if (zones.length > 1) {
             const otherZone = zones.find(z => z !== zone) || zones[0];
@@ -291,7 +234,7 @@ function getRandomPositionInZoneType(zoneType) {
             x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
             y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
             // If still in out-of-bounds zone, return null
-            if (isInOutOfBoundsZone(x, y)) {
+            if ((0, positions_1.isInOutOfBoundsZone)(x, y)) {
                 return null;
             }
         }
@@ -370,30 +313,18 @@ function createEnemy(helpers) {
         attempts++;
         // Spawn near the player with the lowest mob density
         const player = constants_1.players[targetPlayerId] || constants_1.players[realPlayerIds[0]];
-        // Generate position within player's viewport (with buffer)
-        const vpW = player.viewportWidth || constants_2.VIEWPORT_WIDTH;
-        const vpH = player.viewportHeight || constants_2.VIEWPORT_HEIGHT;
-        const viewportBuffer = constants_2.VIEWPORT_BUFFER;
-        const minX = player.x - vpW / 2 - viewportBuffer;
-        const maxX = player.x + vpW / 2 + viewportBuffer;
-        const minY = player.y - vpH / 2 - viewportBuffer;
-        const maxY = player.y + vpH / 2 + viewportBuffer;
-        x = minX + Math.random() * (maxX - minX);
-        y = minY + Math.random() * (maxY - minY);
-        // Clamp to world boundaries
-        x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
-        y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
+        // Generate position within player's viewport (with buffer), clamped to world.
+        const point = (0, positions_1.samplePointInViewport)(player);
+        x = point.x;
+        y = point.y;
         // Skip if position is in out-of-bounds zone
-        if (isInOutOfBoundsZone(x, y)) {
+        if ((0, positions_1.isInOutOfBoundsZone)(x, y)) {
             continue;
         }
-        // Check if position collides with wall tiles (state 1 = wall, state 2 = water)
-        const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
-        const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
         // Spawn zones are populated by spawnZoneManager (wave-based), so the
         // density loop must skip them or it would double-fill the area.
         const inSpawnZone = isPositionInAnySpawnZone(x, y);
-        if (!collidesWithWall && !inSpawnZone) {
+        if (!(0, positions_1.isWallAt)(x, y) && !inSpawnZone) {
             validPosition = true;
         }
     }
@@ -414,24 +345,14 @@ function createEnemy(helpers) {
             newAttempts++;
             // Use same target player for phase 2 retries
             const player = constants_1.players[targetPlayerId] || constants_1.players[realPlayerIds[0]];
-            const vpW = player.viewportWidth || constants_2.VIEWPORT_WIDTH;
-            const vpH = player.viewportHeight || constants_2.VIEWPORT_HEIGHT;
-            const viewportBuffer = constants_2.VIEWPORT_BUFFER;
-            const minX = player.x - vpW / 2 - viewportBuffer;
-            const maxX = player.x + vpW / 2 + viewportBuffer;
-            const minY = player.y - vpH / 2 - viewportBuffer;
-            const maxY = player.y + vpH / 2 + viewportBuffer;
-            x = minX + Math.random() * (maxX - minX);
-            y = minY + Math.random() * (maxY - minY);
-            x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
-            y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
-            if (isInOutOfBoundsZone(x, y))
+            const point = (0, positions_1.samplePointInViewport)(player);
+            x = point.x;
+            y = point.y;
+            if ((0, positions_1.isInOutOfBoundsZone)(x, y))
                 continue;
-            const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
-            const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
             const inSpawnZone = isPositionInAnySpawnZone(x, y);
-            if (!collidesWithWall && !inPetalRange && !inSpawnZone) {
+            if (!(0, positions_1.isWallAt)(x, y) && !inPetalRange && !inSpawnZone) {
                 newValidPosition = true;
             }
         }
@@ -480,7 +401,7 @@ function createEnemy(helpers) {
             y = minY + Math.random() * (maxY - minY);
             x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
             y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
-            if (isInOutOfBoundsZone(x, y))
+            if ((0, positions_1.isInOutOfBoundsZone)(x, y))
                 continue;
             const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
             const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
@@ -569,12 +490,12 @@ function createEnemy(helpers) {
         // Tier upgrade or downgrade
         const upgradeRoll = Math.random();
         if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-            tier = upgradeTier(tier);
+            tier = (0, rarity_1.upgradeRarity)(tier);
         }
         else {
-            const downgradeChance = getMobDowngradeChance(tier);
+            const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
             if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                tier = downgradeTier(tier);
+                tier = (0, rarity_1.downgradeRarity)(tier);
             }
         }
     }
@@ -612,12 +533,12 @@ function createEnemy(helpers) {
             // Tier upgrade or downgrade
             const upgradeRoll = Math.random();
             if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = upgradeTier(tier);
+                tier = (0, rarity_1.upgradeRarity)(tier);
             }
             else {
-                const downgradeChance = getMobDowngradeChance(tier);
+                const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
                 if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = downgradeTier(tier);
+                    tier = (0, rarity_1.downgradeRarity)(tier);
                 }
             }
         }
@@ -660,26 +581,9 @@ function createEnemy(helpers) {
     if (overlapsExistingMob) {
         return null;
     }
-    const currentTime = Date.now();
-    const enemy = (0, server_utils_1.makeEnemy)({
-        id: Math.random().toString(36).substr(2, 9),
-        type: mobType,
-        tier,
-        x,
-        y,
-        angle: Math.random() * Math.PI * 2,
-        health: mobStats.health,
-        maxHealth: mobStats.health,
-        speed: mobStats.speed,
-        damage: mobStats.damage,
-        knockbackX: 0,
-        knockbackY: 0,
-        aiType: mobStats.ai_type,
-        range: mobStats.range,
-        reversed: reversed ?? mobStats.reversed ?? false,
-        spawnTime: currentTime,
-        lastViewportCheck: currentTime // Mark as in viewport since we spawned it there
-    });
+    const enemy = (0, buildEnemy_1.buildEnemy)(mobType, tier, x, y, { reversed });
+    if (!enemy)
+        return null;
     // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
     // Spawn centipede body segments as a chain trailing the head
     if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
@@ -740,7 +644,7 @@ function createEnemyInZone(helpers, zone) {
         y = zMinY + Math.random() * (zMaxY - zMinY);
         x = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_WIDTH, x));
         y = Math.max(0, Math.min(constants_2.ACTUAL_WORLD_HEIGHT, y));
-        if (isInOutOfBoundsZone(x, y))
+        if ((0, positions_1.isInOutOfBoundsZone)(x, y))
             continue;
         const tileState = (0, constants_2.getTileState)(map_data_1.WALL_GRID, x, y);
         if ((0, constants_2.isTileIdBlocking)(tileState))
@@ -819,12 +723,12 @@ function createEnemyInZone(helpers, zone) {
         }
         const upgradeRoll = Math.random();
         if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-            tier = upgradeTier(tier);
+            tier = (0, rarity_1.upgradeRarity)(tier);
         }
         else {
-            const downgradeChance = getMobDowngradeChance(tier);
+            const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
             if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                tier = downgradeTier(tier);
+                tier = (0, rarity_1.downgradeRarity)(tier);
             }
         }
     }
@@ -838,12 +742,12 @@ function createEnemyInZone(helpers, zone) {
         else {
             const upgradeRoll = Math.random();
             if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = upgradeTier(tier);
+                tier = (0, rarity_1.upgradeRarity)(tier);
             }
             else {
-                const downgradeChance = getMobDowngradeChance(tier);
+                const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
                 if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = downgradeTier(tier);
+                    tier = (0, rarity_1.downgradeRarity)(tier);
                 }
             }
         }
@@ -879,26 +783,9 @@ function createEnemyInZone(helpers, zone) {
     });
     if (overlapsExistingMob)
         return null;
-    const currentTime = Date.now();
-    const enemy = (0, server_utils_1.makeEnemy)({
-        id: Math.random().toString(36).substr(2, 9),
-        type: mobType,
-        tier,
-        x,
-        y,
-        angle: Math.random() * Math.PI * 2,
-        health: mobStats.health,
-        maxHealth: mobStats.health,
-        speed: mobStats.speed,
-        damage: mobStats.damage,
-        knockbackX: 0,
-        knockbackY: 0,
-        aiType: mobStats.ai_type,
-        range: mobStats.range,
-        reversed: reversed ?? mobStats.reversed ?? false,
-        spawnTime: currentTime,
-        lastViewportCheck: currentTime
-    });
+    const enemy = (0, buildEnemy_1.buildEnemy)(mobType, tier, x, y, { reversed });
+    if (!enemy)
+        return null;
     // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
     if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
         spawnCentipedeBodySegments(enemy);
@@ -917,33 +804,12 @@ function spawnInitialSpawns(parent) {
     if (!parentStats || !parentStats.initial_spawns)
         return;
     const parentRadius = (parentStats.size * 40) / 2;
-    const currentTime = Date.now();
     for (const childType of parentStats.initial_spawns) {
-        const childStats = (0, mobs_1.getMobStats)(childType, parent.tier);
-        if (!childStats)
-            continue;
         const angle = Math.random() * Math.PI * 2;
         const dist = parentRadius + 30 + Math.random() * parentRadius;
-        const child = (0, server_utils_1.makeEnemy)({
-            id: Math.random().toString(36).substr(2, 9),
-            type: childType,
-            tier: parent.tier,
-            x: parent.x + Math.cos(angle) * dist,
-            y: parent.y + Math.sin(angle) * dist,
-            angle: Math.random() * Math.PI * 2,
-            health: childStats.health,
-            maxHealth: childStats.health,
-            speed: childStats.speed,
-            damage: childStats.damage,
-            knockbackX: 0,
-            knockbackY: 0,
-            aiType: childStats.ai_type,
-            range: childStats.range,
-            reversed: childStats.reversed ?? false,
-            spawnTime: currentTime,
-            lastViewportCheck: currentTime,
-            parentHoleId: parent.id,
-        });
+        const child = (0, buildEnemy_1.buildEnemy)(childType, parent.tier, parent.x + Math.cos(angle) * dist, parent.y + Math.sin(angle) * dist, { parentHoleId: parent.id });
+        if (!child)
+            continue;
         constants_1.enemies.push(child);
     }
 }
@@ -967,34 +833,20 @@ function spawnCentipedeBodySegments(head) {
     let prevId = head.id;
     let prevX = head.x;
     let prevY = head.y;
-    const currentTime = Date.now();
     for (let i = 1; i <= segmentCount; i++) {
         const segX = prevX + dirX * spacing;
         const segY = prevY + dirY * spacing;
-        const segment = (0, server_utils_1.makeEnemy)({
-            id: Math.random().toString(36).substr(2, 9),
-            type: bodyType,
-            tier: head.tier,
-            x: segX,
-            y: segY,
-            angle: head.angle,
-            health: bodyStats.health,
-            maxHealth: bodyStats.health,
-            speed: bodyStats.speed,
-            damage: bodyStats.damage,
-            knockbackX: 0,
-            knockbackY: 0,
-            aiType: bodyStats.ai_type,
-            range: bodyStats.range,
-            reversed: bodyStats.reversed ?? false,
+        const segment = (0, buildEnemy_1.buildEnemy)(bodyType, head.tier, segX, segY, {
             // undefined for wild centipedes, set for pet ones — either way the key exists.
             ownerId: head.ownerId,
-            spawnTime: currentTime,
-            lastViewportCheck: currentTime,
             leaderId: prevId,
             headId: head.id,
             segmentIndex: i,
         });
+        if (!segment)
+            break;
+        // Segments inherit the head's facing (buildEnemy defaults angle to random).
+        segment.angle = head.angle;
         constants_1.enemies.push(segment);
         prevId = segment.id;
         prevX = segX;
@@ -1085,7 +937,7 @@ function createSpecialMob(tier, helpers, targetSection) {
         return null;
     }
     // Check if position is in out-of-bounds zone
-    if (isInOutOfBoundsZone(position.x, position.y)) {
+    if ((0, positions_1.isInOutOfBoundsZone)(position.x, position.y)) {
         console.error(`Spawn position for ${tier} mob is in out-of-bounds zone. Trying alternative position...`);
         // Try to find a new position in the same zone type
         const newPosition = getRandomPositionInZoneType(zoneType);
@@ -1093,7 +945,7 @@ function createSpecialMob(tier, helpers, targetSection) {
             console.error(`Could not find valid position for ${tier} mob outside out-of-bounds zone`);
             return null;
         }
-        if (isInOutOfBoundsZone(newPosition.x, newPosition.y)) {
+        if ((0, positions_1.isInOutOfBoundsZone)(newPosition.x, newPosition.y)) {
             console.error(`Could not find valid position for ${tier} mob outside out-of-bounds zone`);
             return null;
         }
@@ -1141,6 +993,11 @@ function createSpecialMob(tier, helpers, targetSection) {
         return null;
     }
     const currentTime = Date.now();
+    // NOTE: intentionally calls makeEnemy directly instead of buildEnemy.
+    // Special mobs (ultra/super/unique bosses) historically omit `reversed` and
+    // `lastViewportCheck`; buildEnemy would set both, changing the wire payload
+    // (see the makeEnemy docstring — concrete defaults add keys to enemySpawned/
+    // enemiesUpdate). Preserve the existing key set.
     return (0, server_utils_1.makeEnemy)({
         id: Math.random().toString(36).substr(2, 9),
         type: mobType,
