@@ -296,16 +296,16 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 maxQuantity: 1
             },
             {
-                type: 'consumable',
-                itemType: 'health_potion',
+                type: 'petal',
+                itemType: 'azalea',
                 rarity: 'common',
-                probability: 0.4, // 40% chance for health potion
+                probability: 0.1, // 40% chance for health potion
                 minQuantity: 1,
                 maxQuantity: 1
             },
             {
                 type: 'petal',
-                itemType: 'light',
+                itemType: 'dahlia',
                 rarity: 'common',
                 probability: 0.5, // 50% chance for light
                 minQuantity: 1,
@@ -318,7 +318,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         drops: [
             {
                 type: 'petal',
-                itemType: 'rose',
+                itemType: 'dahlia',
                 rarity: 'common',
                 probability: 0.4, // 40% chance for rose
                 minQuantity: 1,

@@ -422,6 +422,17 @@ exports.CHANGELOG = [
             'Admin give and spawn mob commands can now have amounts',
             'New admin command: killall',
         ]
+    },
+    {
+        date: 'July 20, 2026',
+        changes: [
+            'Reworked Rose',
+            'New petal: Dahlia',
+            'New petal: Azalea',
+            'Sandstorm now spins faster',
+            'Fixed mobile login',
+            'Fixed common mobs dropping better petals than uncommon mobs'
+        ]
     }
 ];
 class ChangelogManager {
