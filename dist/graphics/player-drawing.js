@@ -171,6 +171,9 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
     const currentTime = this.frameTimestamp;
     const playerSizeMultiplier = player.sizeMultiplier ?? 1.0;
     const baseRadius = (60 + (core_1.PLAYER_SIZE / 2) * (playerSizeMultiplier - 1)) * petalExtension;
+    // Defend-only petals (rose) never extend on attack — mirrors the server clamp
+    // so remote players' roses don't render flung out while attacking.
+    const defendOnlyBaseRadius = (60 + (core_1.PLAYER_SIZE / 2) * (playerSizeMultiplier - 1)) * Math.min(petalExtension, 1.0);
     const totalSlots = nextSlotIndex;
     const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
     const ctx = this.ctx;
@@ -194,7 +197,7 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
         const rotationAngle = (currentTime * rotationSpeed) % (Math.PI * 2);
         const totalAngle = fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
         const petalRange = (stats.range ?? 1.0) * playerRangeModifier;
-        const petalRadius = baseRadius * petalRange;
+        const petalRadius = (stats.defendOnly ? defendOnlyBaseRadius : baseRadius) * petalRange;
         const customSize = petal.customSize;
         const baseStatsSize = stats.size;
         const clumpCount = stats.count || 1;

@@ -31,6 +31,9 @@ export interface PetalStats {
     count: number; // Number of petals to spawn per equipped item (default 1)
     actions?: string; // Action sequence string like "heal 20; break;" (optional)
     passiveHeal?: number; // Passive healing per second (optional)
+    burstHeal?: number; // HP restored when the petal detaches, reaches the flower and is consumed (rose-style)
+    burstHealChargeMs?: number; // Time the petal must be in orbit before its burst heal can trigger (default 1000)
+    defendOnly?: boolean; // When true, the petal never extends while attacking (still contracts on defend)
     isAdminPetal?: boolean; // Whether the petal is an admin petal (default false)
     range?: number; // Multiplier for how much the petal extends from player (default 1.0)
     projectile?: {
@@ -178,6 +181,9 @@ interface BasePetalConfig {
     poisonDuration?: number; // Duration in milliseconds that poison effect lasts (optional)
     actions?: string; // Action sequence string like "heal 20; break;"
     passiveHeal?: number; // Passive healing per second (optional)
+    burstHeal?: number; // HP restored when the petal detaches, reaches the flower and is consumed (rose-style)
+    burstHealChargeMs?: number; // Time the petal must be in orbit before its burst heal can trigger (default 1000)
+    defendOnly?: boolean; // When true, the petal never extends while attacking (still contracts on defend)
     isAdminPetal?: boolean; // Whether the petal is an admin petal (default false)
     range?: number; // Multiplier for how much the petal extends from player (default 1.0)
     projectile?: {
@@ -749,11 +755,13 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
             damage: 5,
             health: 5,
             size: 0.9,
-        cooldown: 1500,
-            description: "It heals, but not very good at combat",
+        cooldown: 3500,
+            description: "Its healing properties are amazing. Not so good at combat though",
             color: "#FF69B4",
         count: 1,
-            passiveHeal: 1, // Base heal: 1 HP/sec at common
+            burstHeal: 10, // Base burst heal at common; consumed on use (rysteria_gardn-style)
+            burstHealChargeMs: 1000,
+            defendOnly: true,
             image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 </svg>`
@@ -2104,6 +2112,49 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 `,
         isAdminPetal: false
     },
+    dahlia: {
+        name: "Dahlia",
+        damage: 3,
+        health: 3,
+        size: 0.33,
+        cooldown: 1.2,
+        description: "Less powerful but more consistent",
+        color: "#FF00FF",
+        count: 3,
+        burstHeal: 3,
+        burstHealChargeMs: 1000,
+        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
+</svg>`,
+    },
+    azalea: {
+        name: "Azalea",
+        damage: 3,
+        health: 3,
+        size: 0.33,
+        cooldown: 1.2,
+        description: "Much more powerful than rose",
+        color: "#FF00FF",
+        count: 1,
+        burstHeal: 20,
+        burstHealChargeMs: 1000,
+        image: `<svg xmlns="http://www.w3.org/2000/svg"
+     width="32"
+     height="32"
+     viewBox="0 0 32 32">
+  <path
+    d="
+      M 24 16
+      Q 24 2.1436 12 9.0718
+      Q 0 16 12 22.9282
+      Q 24 29.8564 24 16
+      Z"
+    fill="#ff94c9"
+    stroke="#cf78a3"
+    stroke-width="3"
+    stroke-linejoin="round"/>
+</svg>`,
+    },
     sparkle: {
         name: "Sparkle Petal",
         damage: 9999999999,
@@ -2269,7 +2320,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         isAdminPetal: true
     },
     egg: {
-        name: "Egg Petal",
+        name: "Egg",
         damage: 5,
         health: 5,
         size: 1.0,
@@ -2286,7 +2337,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         isAdminPetal: true
     },
     glass: {
-        name: "Glass Petal",
+        name: "Glass",
         damage: 12,
         health: Infinity,
         size: 1.0,
@@ -2485,6 +2536,8 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         ? Math.pow(3, rarityIndex)
         : Math.pow(3, mythicIndex) * Math.pow(Math.sqrt(3), rarityIndex - mythicIndex);
     let passiveHeal = baseConfig.passiveHeal ? baseConfig.passiveHeal * passiveHealMultiplier : undefined;
+    // burstHeal follows the same curve as passiveHeal
+    const burstHeal = baseConfig.burstHeal ? baseConfig.burstHeal * passiveHealMultiplier : undefined;
     let cooldown = baseConfig.cooldown;
     
     if (petalType === 'yggdrasil') {
@@ -2584,6 +2637,9 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         count: overrides.count ?? baseConfig.count,
         actions: overrides.actions ?? baseConfig.actions,
         passiveHeal: passiveHeal, // Scaled passive healing per second
+        burstHeal: burstHeal, // Scaled one-shot heal delivered when the petal is consumed
+        burstHealChargeMs: baseConfig.burstHealChargeMs,
+        defendOnly: baseConfig.defendOnly,
         isAdminPetal: baseConfig.isAdminPetal ?? false,
         range: baseConfig.range ?? 1.0, // Default range multiplier
         projectile: baseConfig.projectile, // Include projectile config if present

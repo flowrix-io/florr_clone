@@ -210,6 +210,9 @@ function restoreIndependentPetalInstance(
     ensureInstanceArrays(current, currentStats);
     const restoredHealth = snapshotMaxHealth ?? current.maxHealth ?? currentStats.health;
     current.instanceOnCooldown![instanceIndex] = false;
+    if (Array.isArray(current.instanceCooldownEndTime)) {
+        current.instanceCooldownEndTime[instanceIndex] = undefined;
+    }
     current.instanceHealth![instanceIndex] = restoredHealth;
     current.health = Math.max(0, ...current.instanceHealth!);
     current.onCooldown = current.instanceOnCooldown!.every((c: boolean) => c);
@@ -251,6 +254,27 @@ function isInstanceOnCooldown(petal: any, instanceIndex: number, petalStats: any
 const SPRING_FORCE = 600; // Spring force back to orbit position (pixels per second^2) - reduced from 300
 const DAMPING = 0.72; // Velocity damping per frame (0-1, lower = more damping)
 const SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after spawn - reduced from 500
+
+// Healing-skill multiplier applied to all petal healing (passive and burst).
+// Skills are disabled inside the PVP arena.
+const HEAL_SKILL_MULTIPLIERS: Record<string, number> = {
+    common: 1.0,
+    uncommon: 1.1,
+    rare: 1.2,
+    epic: 1.35,
+    legendary: 1.6,
+    mythic: 2.0,
+    ultra: 2.6,
+    super: 3.3,
+    unique: 4.0,
+    apex: 4.8
+};
+
+function getHealingSkillMultiplier(player: ServerPlayer): number {
+    return !player.inPvpArena && player.skills?.healingMultiplier
+        ? (HEAL_SKILL_MULTIPLIERS[player.skills.healingMultiplier] || 1.0)
+        : 1.0;
+}
 
 function getEffectiveCooldown(petal: any, petalStats: any): number {
     let cooldownTime = petalStats.cooldown || 10000;
@@ -918,22 +942,7 @@ export function updatePlayerState(
                 if (petalStats && petalStats.passiveHeal) {
                     // Passive heal is already scaled by rarity (sqrt(3) per level) in generatePetalStats
                     // Now apply healing skill multiplier
-                    const SKILL_MULTIPLIERS: Record<string, number> = {
-                        common: 1.0,
-                        uncommon: 1.1,
-                        rare: 1.2,
-                        epic: 1.35,
-                        legendary: 1.6,
-                        mythic: 2.0,
-                        ultra: 2.6,
-                        super: 3.3,
-                        unique: 4.0,
-                        apex: 4.8
-                    };
-                    // Skills are disabled inside the PVP arena.
-                    const healingMultiplier = !player.inPvpArena && player.skills?.healingMultiplier
-                        ? (SKILL_MULTIPLIERS[player.skills.healingMultiplier] || 1.0)
-                        : 1.0;
+                    const healingMultiplier = getHealingSkillMultiplier(player);
                     
                     // Calculate heal per second, then multiply by deltaTime (in seconds)
                     const healPerSecond = petalStats.passiveHeal * healingMultiplier;
@@ -1256,6 +1265,9 @@ export function updatePlayerState(
         // Keep petals a constant distance from the flower edge: scale only the body-radius portion by sizeMultiplier.
         const playerSizeMult = player.sizeMultiplier ?? 1.0;
         const baseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMult - 1)) * petalExtension;
+        // Defend-only petals (rose) never fly out while attacking — their extension is
+        // clamped at the neutral orbit, though they still pull in on defend (<1).
+        const defendOnlyBaseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMult - 1)) * Math.min(petalExtension, 1.0);
         const totalSlots = nextSlotIndex;
         const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
         const playerModifiers = calculatePlayerModifiers(player);
@@ -1330,8 +1342,50 @@ export function updatePlayerState(
 
             const instancePetalStats = getPetalStats(petal.petalType, petal.rarity);
 
-            // Skip petals that are on cooldown (per-instance for clumped, slot-wide otherwise)
+            // Skip petals that are on cooldown (per-instance for clumped, slot-wide otherwise).
+            // Restore backstop: breaking schedules a setTimeout to end the cooldown, but
+            // that timer only lives in this process — a loadout that crosses a
+            // cross-server portal (or is otherwise imported) arrives with
+            // onCooldown: true and no timer, so without this the petal never comes
+            // back (e.g. a rose consumed by its burst heal right before the portal).
+            // Breaks stamp cooldownEndTime/instanceCooldownEndTime (absolute ms)
+            // alongside the timer; once the stamp passes — or if it's missing
+            // entirely, as on data from servers predating the stamp — restore here
+            // in the tick. Double-firing with a live timer is safe: the timer's
+            // callback bails when onCooldown is already false.
             if (isInstanceOnCooldown(petal, instanceIndex, instancePetalStats)) {
+                if (hasIndependentInstances(instancePetalStats)) {
+                    const endTime = Array.isArray(petal.instanceCooldownEndTime)
+                        ? petal.instanceCooldownEndTime[instanceIndex]
+                        : undefined;
+                    if (endTime === undefined || currentTime >= endTime) {
+                        restoreIndependentPetalInstance(
+                            player.id, loadoutIndex, instanceIndex,
+                            petal.petalType, petal.rarity, petal.maxHealth, io
+                        );
+                    }
+                } else if (player.loadout[loadoutIndex] === petal &&
+                           (petal.cooldownEndTime === undefined || currentTime >= petal.cooldownEndTime)) {
+                    // (identity check: with count > 1 the slot appears once per
+                    // instance; only the first hit restores/emits.)
+                    const restoredPetal = {
+                        type: petal.type,
+                        petalType: petal.petalType,
+                        rarity: petal.rarity,
+                        maxHealth: petal.maxHealth,
+                        health: petal.maxHealth,
+                        onCooldown: false
+                    };
+                    applyPetalHealthBonus(restoredPetal, player);
+                    player.loadout[loadoutIndex] = restoredPetal;
+                    io.emit('petalRestored', {
+                        playerId: player.id,
+                        slotIndex: loadoutIndex,
+                        petal: player.loadout[loadoutIndex]
+                    });
+                }
+                // Restored or not, this instance sits this tick out; a restored
+                // petal starts orbiting on the next tick like a timer restore.
                 continue;
             }
 
@@ -1372,6 +1426,14 @@ export function updatePlayerState(
                         // Per-instance: only this instance breaks; other instances keep working
                         ensureInstanceArrays(petal, petalStats);
                         petal.instanceOnCooldown![instanceIndex] = true;
+                        // Absolute restore deadline alongside the setTimeout — the timer
+                        // dies with this process (cross-server portal transfer), the
+                        // stamp travels with the loadout. See the tick-loop backstop.
+                        const cdCount = petalStats.count ?? 1;
+                        if (!Array.isArray(petal.instanceCooldownEndTime) || petal.instanceCooldownEndTime.length !== cdCount) {
+                            petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
+                        }
+                        petal.instanceCooldownEndTime[instanceIndex] = currentTime + cooldownTime;
                         resetPetalPhysicsOnBreak(player.id, loadoutIndex, instanceIndex);
                         const snapshotPetalType = petal.petalType;
                         const snapshotRarity = petal.rarity;
@@ -1396,6 +1458,9 @@ export function updatePlayerState(
                     } else {
                         // Non-clumped: whole slot breaks (legacy behavior)
                         petal.onCooldown = true;
+                        // Absolute restore deadline — survives process handoff where the
+                        // setTimeout below does not. See the tick-loop backstop.
+                        petal.cooldownEndTime = currentTime + cooldownTime;
                         resetSlotPetalPhysicsOnBreak(player.id, loadoutIndex);
                         const originalPetal = {
                             type: petal.type,
@@ -1457,7 +1522,7 @@ export function updatePlayerState(
 
             // Apply petal range multiplier and player range modifier to base radius
             const petalRange = (petalStats.range ?? 1.0) * playerRangeModifier;
-            const petalRadius = baseRadius * petalRange;
+            const petalRadius = (petalStats.defendOnly ? defendOnlyBaseRadius : baseRadius) * petalRange;
 
             // Calculate target orbit position (where petal should be without physics)
             let targetX = player.x + Math.cos(totalAngle) * petalRadius;
@@ -1478,7 +1543,14 @@ export function updatePlayerState(
             // Skip physics for petals with range 0 (they should stay at player position)
             let petalX: number;
             let petalY: number;
-            
+
+            // Rose-style burst heal (rysteria_gardn): once the petal has been in orbit
+            // past its charge time and the flower is below half health, it detaches,
+            // homes to the flower, heals a burst and is consumed. Set inside the
+            // physics branch (needs the petal's spawn time); consumed after the
+            // position is final.
+            let burstHealHoming = false;
+
             if (petalStats.fixedDirection !== undefined) {
                 // Fixed-direction petals stay directly on the player
                 petalX = player.x;
@@ -1518,9 +1590,13 @@ export function updatePlayerState(
                 // — not the petal's current physics-displaced position or the player —
                 // means "30 px attraction" reliably lights up when a mob is 30 px from
                 // where the petal will naturally swing past.
+                burstHealHoming = !!petalStats.burstHeal &&
+                    player.health < player.maxHealth / 2 &&
+                    timeSinceSpawn >= (petalStats.burstHealChargeMs ?? 1000);
+
                 let closestEnemy: typeof enemies[number] | null = null;
                 let closestDistanceSq = Infinity;
-                if (playerPetalAttractionRadius > 0) {
+                if (playerPetalAttractionRadius > 0 && !burstHealHoming) {
                     // Broad-phase around this petal's own orbit point. The eligibility test
                     // below is `dist <= attractionRadius + thatMob's radius`, so querying
                     // `attractionRadius + largest mob radius` returns a strict superset of
@@ -1593,6 +1669,15 @@ export function updatePlayerState(
                     const projectionAngle = baseProjectionAngle + rotationSpeed * MOB_ORBIT_SPIN_BOOST * (deltaTime * 1000);
                     effectiveTargetX = closestEnemy.x + Math.cos(projectionAngle) * mobOrbitRadius;
                     effectiveTargetY = closestEnemy.y + Math.sin(projectionAngle) * mobOrbitRadius;
+                }
+
+                if (burstHealHoming) {
+                    // Home straight to the flower. Keeping the glide window open every
+                    // tick uses the overshoot-free first-order approach instead of the
+                    // spring, so the petal flies in cleanly and tracks a moving player.
+                    effectiveTargetX = player.x;
+                    effectiveTargetY = player.y;
+                    physicsState.glideUntil = currentTime + PETAL_RELEASE_GLIDE_MS;
                 }
 
                 if (physicsState.glideUntil !== undefined && currentTime < physicsState.glideUntil) {
@@ -1695,6 +1780,21 @@ export function updatePlayerState(
                 y: petalY,
                 noPhysics: petalStats.noPhysics || false
             });
+
+            // Burst-heal delivery: when the homing petal touches the flower it heals
+            // and is consumed — zeroing the instance sends it through the normal
+            // break/cooldown/reload flow on the next tick.
+            if (burstHealHoming) {
+                const healDx = player.x - petalX;
+                const healDy = player.y - petalY;
+                const contactDist = effectivePlayerSize / 2;
+                if (healDx * healDx + healDy * healDy <= contactDist * contactDist) {
+                    player.health = Math.min(player.maxHealth,
+                        player.health + petalStats.burstHeal! * getHealingSkillMultiplier(player));
+                    setInstanceHealth(petal, instanceIndex, petalStats, 0);
+                    continue;
+                }
+            }
 
             // Bubble pops in defensive position and propels the player away from where it was.
             // Boost magnitude scales up with rarity; the slot's cooldown also scales down (handled in the break flow).

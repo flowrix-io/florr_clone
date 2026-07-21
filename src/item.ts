@@ -5,11 +5,12 @@ export interface Item {
   health?: number; // For petals: current health
   maxHealth?: number; // For petals: maximum health
   onCooldown?: boolean; // For all items: cooldown state
+  cooldownEndTime?: number; // Absolute ms timestamp when the slot's cooldown ends (backstop for restore timers lost to process handoff)
   customDamage?: number; // Custom damage override (writable via memory)
   customSize?: number; // Custom size override (writable via memory)
   instanceHealth?: number[]; // Per-instance health for clumped petals (one entry per spawned instance)
   instanceOnCooldown?: boolean[]; // Per-instance cooldown state for clumped petals
-  instanceCooldownEndTime?: number[]; // Absolute ms timestamp when each instance's cooldown ends
+  instanceCooldownEndTime?: (number | undefined)[]; // Absolute ms timestamp when each instance's cooldown ends (undefined = not on cooldown)
 }
 
 export interface WorldItem extends Item {
