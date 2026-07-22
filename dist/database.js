@@ -314,13 +314,26 @@ exports.database = {
     // Remove invalid eggs from all player inventories and loadouts.
     // `invalidEggTypes` holds inventory keys like `petal_<mob>_egg`; the loadout
     // stores `petalType` without the `petal_` prefix, so we check both forms.
+    // Admin accounts are exempt: unobtainable eggs are kept for them so admins can
+    // still hold/use eggs for mobs flagged noEggDrop.
     removeInvalidEggs: (invalidEggTypes) => {
         const invalidLoadoutPetalTypes = new Set();
         for (const key of invalidEggTypes) {
             invalidLoadoutPetalTypes.add(key.startsWith('petal_') ? key.slice('petal_'.length) : key);
         }
+        // Collect the userIds of admin accounts. `db.players` is keyed by userId
+        // while the admin flag lives on the User record (keyed by username), so we
+        // map admins back to their userId to skip them below.
+        const adminUserIds = new Set();
+        for (const username in db.users) {
+            const user = db.users[username];
+            if (user?.admin === true)
+                adminUserIds.add(user.id);
+        }
         let cleaned = 0;
         for (const userId in db.players) {
+            if (adminUserIds.has(userId))
+                continue;
             const player = db.players[userId];
             if (!player)
                 continue;
