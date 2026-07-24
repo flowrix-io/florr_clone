@@ -180,7 +180,17 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
     const showGlow = this.showRarityGlow;
     const playerX = player.x;
     const playerY = player.y;
-    const serverPositions = player.petalPositions;
+    // Only the local player receives authoritative per-petal positions from the
+    // server (server.ts only puts the `p` array on the owning client's delta).
+    // Remote players can still carry a STALE petalPositions array — it leaks in
+    // via the full-player broadcasts that spread the whole server object
+    // (currentPlayers on join, newPlayer, updatePlayers/playerUpdated first
+    // sight) — and gameStateUpdate never refreshes it for them, since `sp.p` is
+    // absent for non-self. Using that frozen array would anchor their petals to
+    // absolute coords that no longer track the moving player (wrong position,
+    // no orbit) and hide any instance missing from the snapshot. Treat it as
+    // authoritative for self only; everyone else gets canonical orbit below.
+    const serverPositions = player.id === currentPlayerId ? player.petalPositions : undefined;
     const petalCache = this.petalImageCache;
     for (let idx = 0, n = petalInstances.length; idx < n; idx++) {
         const inst = petalInstances[idx];
