@@ -116,7 +116,11 @@ const HIGH_TIERS = new Set(['epic', 'legendary', 'mythic', 'ultra']);
 
 // Raid traversal: when the bot is farther than this from the raid anchor,
 // swap slot 0 for powder to close distance faster. Beyond combat range.
-const RAID_POWDER_MIN_DIST = 600;
+// Two thresholds (equip when far / unequip when near) instead of one: a bot
+// hovering right at a single boundary would otherwise swap its loadout every
+// tick, which both flickers on clients and yanks its speed up and down.
+const RAID_POWDER_EQUIP_DIST = 700;
+const RAID_POWDER_UNEQUIP_DIST = 460;
 // Powder has no common tier, so we clamp the floor at uncommon.
 const POWDER_MIN_RARITY_IDX = 1;
 
@@ -211,6 +215,61 @@ interface BotAIState {
     wanderTargetY: number;
     nextWanderTime: number;
     respawnAt?: number;
+    // Idle pause during wander — bots stand still for a beat instead of
+    // marching between wander points nonstop. atWanderTarget latches arrival
+    // so the "do I pause here?" roll happens once per trip, not once per tick
+    // spent standing on the target.
+    idleUntil?: number;
+    atWanderTarget?: boolean;
+    // Sticky farming zone. Re-picking the anchor from a distance-sorted list
+    // every tick made the "k-th nearest zone" flip as the bot moved, which is
+    // the classic two-point shuffle: walk toward A, A becomes nearest, anchor
+    // becomes B, walk back. The zone is chosen once and held.
+    farmZoneX?: number;
+    farmZoneY?: number;
+    farmZoneRarityIdx?: number;
+    farmZoneUntil?: number;
+    farmZoneRotation?: number;
+    // Mode hysteresis: highRarity mode lingers this long past the last positive
+    // scan so a mob drifting in and out of range can't flap the anchor (and
+    // with it the tether radius) between modes every tick.
+    highRarityUntil?: number;
+    // Target commitment. Without it two similarly-scored mobs swap the target
+    // every tick and the bot walks back and forth between them.
+    targetId?: string;
+    targetAcquiredAt?: number;
+    pickupId?: string;
+    // Flee hysteresis — bots keep running until meaningfully healed rather
+    // than flipping between flee and attack at the threshold.
+    fleeing?: boolean;
+    fleeUntil?: number;
+    // Movement smoothing: last committed heading, turn-rate limited toward the
+    // AI's requested direction so bots arc instead of snapping (and so a
+    // one-tick direction flip can't translate into a visible jitter).
+    headX?: number;
+    headY?: number;
+    // Strafe/circling direction, flipped on a slow timer so orbiting looks
+    // deliberate but not robotic.
+    strafeDir?: number;
+    strafeFlipAt?: number;
+    // Smoothed raid slot angle — the assigned slot jumps whenever the raider
+    // set changes, so the bot eases toward it instead of teleporting around.
+    slotAngle?: number;
+    // Oscillation detector: samples position on a fixed interval and counts
+    // direction reversals / non-movement. Trips an unstick maneuver.
+    oscSampleAt?: number;
+    oscX?: number;
+    oscY?: number;
+    oscPrevDX?: number;
+    oscPrevDY?: number;
+    oscReversals?: number;
+    oscStill?: number;
+    unstickUntil?: number;
+    unstickDirX?: number;
+    unstickDirY?: number;
+    unstickTrips?: number;
+    unstickTripsAt?: number;
+    suppressTargetUntil?: number;
     // A* path state (raid / group mode only)
     pathNodes?: Waypoint[];
     pathIndex?: number;
@@ -225,12 +284,6 @@ interface BotAIState {
     // with a yggdrasil petal so it can revive a teammate that goes down.
     // Restored when the bot is alone again.
     yggdrasilSlot?: { slot: number; original: any };
-    // Stuck detection: position snapshot from the last check and the time it
-    // was taken. If the bot hasn't moved meaningfully between checks it gets
-    // a forced wander re-pick so it doesn't sit forever flailing into a wall.
-    lastStuckCheckTime?: number;
-    lastStuckCheckX?: number;
-    lastStuckCheckY?: number;
     // followPath throttles: last A* recompute (raid anchors on moving bosses
     // otherwise invalidate the goal every couple of ticks and drain the whole
     // per-tick A* budget forever), and last greedy-LOS smoothing pass (the
@@ -587,7 +640,15 @@ function getFarmingZoneType(rarityIdx: number): string {
 // piling onto the nearest one. Falls back through neighbour zone types when
 // the bot's preferred type isn't on the map (so a map without rare zones
 // still routes uncommon-tier bots somewhere sensible).
-function pickFarmingZoneAnchor(bot: ServerPlayer, rarityIdx: number): { x: number; y: number } | null {
+//
+// The candidate list is ordered by world position, NOT by distance from the
+// bot. Distance ordering made the pick unstable: as the bot walked toward the
+// k-th nearest zone that zone became the (k-1)-th, the pick slid onto a
+// different zone, and the bot turned around — a permanent two-point shuffle
+// between whichever pair of zones kept trading places. `rotation` lets the
+// caller advance a bot to a different zone deliberately (see the farm-zone
+// timer in computeBotMode) instead of it happening as a side effect of moving.
+function pickFarmingZoneAnchor(bot: ServerPlayer, rarityIdx: number, rotation: number = 0): { x: number; y: number } | null {
     // Try the bot's preferred type first, then walk down toward common, then
     // up toward mythic. Stops as soon as some zone type has any zones.
     const tried = new Set<string>();
@@ -611,13 +672,11 @@ function pickFarmingZoneAnchor(bot: ServerPlayer, rarityIdx: number): { x: numbe
 
     let h = 0;
     for (let i = 0; i < bot.id.length; i++) h = ((h * 31) + bot.id.charCodeAt(i)) | 0;
-    const offset = Math.abs(h) % zones.length;
-    // Sort by distance and pick the `offset`-th nearest so bots spread across
-    // available zones rather than all clustering on the closest one.
-    const scored = zones
-        .map(z => ({ z, d: (z.cx - bot.x) ** 2 + (z.cy - bot.y) ** 2 }))
-        .sort((a, b) => a.d - b.d);
-    const pick = scored[Math.min(offset, scored.length - 1)].z;
+    // Position-independent ordering so the same bot always maps to the same
+    // zone for a given rotation, no matter where it currently stands.
+    const ordered = [...zones].sort((a, b) => (a.cx - b.cx) || (a.cy - b.cy));
+    const idx = (((Math.abs(h) + rotation) % ordered.length) + ordered.length) % ordered.length;
+    const pick = ordered[idx];
     return { x: pick.cx, y: pick.cy };
 }
 
@@ -659,6 +718,10 @@ function unequipRaidPowder(bot: ServerPlayer, state: BotAIState): void {
 // also packs the heal petal. The revive range itself (in playerState.ts) is
 // only 80 px, so the petal is only useful when the bots are tight.
 const YGGDRASIL_BUDDY_RANGE = 600;
+// Once equipped, the buddy has to get this far away before the petal is
+// dropped again — otherwise a bot pacing around the 600 px mark re-rolls its
+// loadout every tick.
+const YGGDRASIL_BUDDY_DROP_RANGE = 820;
 // Range at which a bot will go out of its way to revive a downed teammate.
 // Larger than the petal's actual revive range so the bot has time to close
 // the last bit of distance before its rotating petals brush the corpse.
@@ -720,8 +783,8 @@ function unequipYggdrasilSlot(bot: ServerPlayer, state: BotAIState): void {
 // True if there's at least one other live bot within YGGDRASIL_BUDDY_RANGE.
 // Used to decide whether to keep yggdrasil equipped — there's no point
 // carrying a revive petal when the bot is alone.
-function hasNearbyBotBuddy(bot: ServerPlayer): boolean {
-    const rSq = YGGDRASIL_BUDDY_RANGE * YGGDRASIL_BUDDY_RANGE;
+function hasNearbyBotBuddy(bot: ServerPlayer, range: number = YGGDRASIL_BUDDY_RANGE): boolean {
+    const rSq = range * range;
     for (const id in players) {
         if (id === bot.id) continue;
         if (!isBot(id)) continue;
@@ -1027,7 +1090,7 @@ function removeBot(id: string, io: SocketIOServer): void {
     }
     delete players[id];
     botAIState.delete(id);
-    botJitter.delete(id);
+    botPersona.delete(id);
     botSquadNextTick.delete(id);
     cleanupPlayerPetalActionState(id);
     io.emit('playerDisconnected', id);
@@ -1131,6 +1194,28 @@ function respawnBot(bot: ServerPlayer, io: SocketIOServer): void {
         state.wanderTargetY = bot.y;
         state.nextWanderTime = 0;
         state.respawnAt = undefined;
+        // The bot reappears somewhere else entirely: everything derived from
+        // where it used to be (target, path, heading, watchdog samples) is
+        // stale, and a leftover unstick maneuver would drive it out of its
+        // new spawn for no reason.
+        state.targetId = undefined;
+        state.targetAcquiredAt = undefined;
+        state.pickupId = undefined;
+        state.fleeing = false;
+        state.fleeUntil = undefined;
+        state.idleUntil = undefined;
+        state.slotAngle = undefined;
+        state.headX = undefined;
+        state.headY = undefined;
+        state.unstickUntil = undefined;
+        state.suppressTargetUntil = undefined;
+        state.pathNodes = undefined;
+        state.pathIndex = undefined;
+        state.pathGoalTileX = undefined;
+        state.pathGoalTileY = undefined;
+        state.pathCreatedAt = undefined;
+        resetOscillationSampler(bot, state, Date.now());
+        // Farming zone survives death — the bot goes back to where it farms.
     }
 
     io.emit('playerRespawned', bot);
@@ -1609,13 +1694,26 @@ function followPath(
     return true;
 }
 
-// Per-bot strafe direction (+1 or -1). Deterministic so the bot commits to
-// one circling direction instead of oscillating.
-function tangentDirection(botId: string): number {
-    // Simple hash: sum of char codes, parity picks direction
-    let h = 0;
-    for (let i = 0; i < botId.length; i++) h = (h + botId.charCodeAt(i)) | 0;
-    return (h & 1) === 0 ? 1 : -1;
+// Per-bot strafe direction (+1 or -1). Held for several seconds at a time so
+// the bot commits to a circling direction instead of oscillating, then flipped
+// on a slow randomized timer so orbits don't read as a fixed animation loop.
+const STRAFE_FLIP_MIN_MS = 3500;
+const STRAFE_FLIP_MAX_MS = 9000;
+function nextStrafeFlip(now: number): number {
+    return now + STRAFE_FLIP_MIN_MS + Math.random() * (STRAFE_FLIP_MAX_MS - STRAFE_FLIP_MIN_MS);
+}
+function tangentDirection(botId: string, state: BotAIState, now: number): number {
+    if (state.strafeDir === undefined) {
+        // Simple hash: sum of char codes, parity picks the initial direction
+        let h = 0;
+        for (let i = 0; i < botId.length; i++) h = (h + botId.charCodeAt(i)) | 0;
+        state.strafeDir = (h & 1) === 0 ? 1 : -1;
+        state.strafeFlipAt = nextStrafeFlip(now);
+    } else if (now >= (state.strafeFlipAt ?? 0)) {
+        state.strafeDir = -state.strafeDir;
+        state.strafeFlipAt = nextStrafeFlip(now);
+    }
+    return state.strafeDir;
 }
 
 type Anchor = { x: number; y: number } | null;
@@ -1627,16 +1725,29 @@ function withinAnchor(anchor: Anchor, x: number, y: number, radius: number): boo
     return dx * dx + dy * dy <= radius * radius;
 }
 
+// Distance advantage (px) a rival mob must beat before a bot abandons the
+// target it is already committed to. Without it, two mobs of the same tier at
+// near-equal distance swap the "best" slot every tick and the bot walks back
+// and forth between them, never reaching either.
+const TARGET_STICKINESS = 320;
+// Same idea for ground loot, but smaller: drops don't move, so the only thing
+// being damped is the bot's own position wobble flipping which one is nearest.
+const PICKUP_STICKINESS = 140;
+
 function pickBestEnemyTarget(
     bot: ServerPlayer,
     anchor: Anchor,
     tetherRadius: number,
-    preferredTiers: Set<string>
+    preferredTiers: Set<string>,
+    stickyId?: string,
+    stickiness: number = TARGET_STICKINESS
 ): { enemy: typeof enemies[number]; dist: number } | null {
     // Score = priority * 10000 - distance, so bosses within their aggro range
     // beat every regular mob and the closer target wins among same tier.
     // Preferred-tier (matches bot's rarity progression) gets a +0.5 priority
     // bump so it beats same-tier-class unpreferred mobs, but never bosses.
+    // The bot's existing target gets a flat score bonus on top (see
+    // TARGET_STICKINESS) so ties resolve in favour of staying committed.
     let best: typeof enemies[number] | null = null;
     let bestScore = -Infinity;
     let bestDist = 0;
@@ -1667,7 +1778,8 @@ function pickBestEnemyTarget(
 
         const priority = tierPriority(enemy.tier);
         const prefBonus = preferredTiers.has(enemy.tier) ? 0.5 : 0;
-        const score = (priority + prefBonus) * 10000 - d;
+        const stickyBonus = (stickyId !== undefined && enemy.id === stickyId) ? stickiness : 0;
+        const score = (priority + prefBonus) * 10000 - d + stickyBonus;
         if (score > bestScore) {
             bestScore = score;
             best = enemy;
@@ -1687,10 +1799,15 @@ function pickBestEnemyTarget(
 function findPickupTarget(
     bot: ServerPlayer,
     anchor: Anchor,
-    tetherRadius: number
+    tetherRadius: number,
+    stickyId?: string
 ): { item: typeof items[number]; dist: number } | null {
     let best: typeof items[number] | null = null;
+    // Effective distance of the current pick; the item the bot is already
+    // walking to competes with a discount so two drops at similar range don't
+    // trade places every tick and leave the bot shuffling between them.
     let bestDist = ITEM_SEEK_RANGE;
+    let bestRealDist = ITEM_SEEK_RANGE;
 
     for (const item of items) {
         if (item.pickedUpBy && item.pickedUpBy.has(bot.id)) continue;
@@ -1703,13 +1820,15 @@ function findPickupTarget(
         const dx = item.x - bot.x;
         const dy = item.y - bot.y;
         const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < bestDist) {
-            bestDist = d;
+        const scored = (stickyId !== undefined && item.id === stickyId) ? d - PICKUP_STICKINESS : d;
+        if (scored < bestDist) {
+            bestDist = scored;
+            bestRealDist = d;
             best = item;
         }
     }
 
-    return best ? { item: best, dist: bestDist } : null;
+    return best ? { item: best, dist: bestRealDist } : null;
 }
 
 // --- Mode detection ---
@@ -2056,7 +2175,21 @@ interface ModeContext {
     returnRadius: number;
 }
 
-function computeBotMode(bot: ServerPlayer, groups: Map<string, GroupInfo>): ModeContext {
+// How long highRarity mode survives past the last positive scan, and how long
+// a bot farms one zone before rotating to another.
+const HIGH_RARITY_LINGER_MS = 4000;
+const FARM_ZONE_MIN_MS = 90_000;
+const FARM_ZONE_MAX_MS = 240_000;
+// Once the bot is this close to its farm zone the timer starts mattering —
+// a bot still walking across the map shouldn't rotate to a new zone mid-trip.
+const FARM_ZONE_ARRIVED_DIST = 1200;
+
+function computeBotMode(
+    bot: ServerPlayer,
+    groups: Map<string, GroupInfo>,
+    state: BotAIState,
+    now: number
+): ModeContext {
     // Forced raid (chat-triggered): every bot rallies on the target regardless
     // of distance or whether any human is in that biome. Without this, bots
     // stay tethered to the nearest human and never cross into an empty biome
@@ -2085,7 +2218,14 @@ function computeBotMode(bot: ServerPlayer, groups: Map<string, GroupInfo>): Mode
 
     // High rarity: legendary+ mob nearby AND this bot's group has enough
     // members to justify grouping. Rally on the group centroid.
+    // The scan result is latched for HIGH_RARITY_LINGER_MS: a mob wandering
+    // across the scan boundary would otherwise flip the anchor between the
+    // group centroid and the (far away) farm zone on alternating ticks, and
+    // the bot would visibly stutter between the two.
     if (hasHighRarityMobNearby(bot, HIGH_RARITY_SCAN_RANGE)) {
+        state.highRarityUntil = now + HIGH_RARITY_LINGER_MS;
+    }
+    if (state.highRarityUntil !== undefined && now < state.highRarityUntil) {
         const g = groups.get(bot.id);
         if (g && g.size >= GROUP_MIN_FOR_MODE) {
             return {
@@ -2101,8 +2241,33 @@ function computeBotMode(bot: ServerPlayer, groups: Map<string, GroupInfo>): Mode
     // farms the mob tier its loadout was tuned for, instead of just wandering
     // wherever it spawned. Ultra+ bots get the wider mythic-zone roam radius
     // (they're hunting boss spawns), everyone else uses the standard tether.
+    //
+    // The chosen zone is cached on the bot: it only changes when the bot's
+    // gear band changes, or when it has actually settled in the zone and its
+    // farm timer runs out (at which point it moves on to another zone, the
+    // way a player eventually rotates elsewhere).
     const botRarityIdx = getBotMaxRarityIdx(bot);
-    const zone = pickFarmingZoneAnchor(bot, botRarityIdx);
+    let zone: { x: number; y: number } | null = null;
+    if (state.farmZoneX !== undefined && state.farmZoneY !== undefined
+        && state.farmZoneRarityIdx === botRarityIdx) {
+        zone = { x: state.farmZoneX, y: state.farmZoneY };
+        const dx = zone.x - bot.x;
+        const dy = zone.y - bot.y;
+        const arrived = dx * dx + dy * dy < FARM_ZONE_ARRIVED_DIST * FARM_ZONE_ARRIVED_DIST;
+        if (arrived && state.farmZoneUntil !== undefined && now >= state.farmZoneUntil) {
+            zone = null;   // timer expired while on station — rotate onward
+            state.farmZoneRotation = (state.farmZoneRotation ?? 0) + 1;
+        }
+    }
+    if (!zone) {
+        zone = pickFarmingZoneAnchor(bot, botRarityIdx, state.farmZoneRotation ?? 0);
+        if (zone) {
+            state.farmZoneX = zone.x;
+            state.farmZoneY = zone.y;
+            state.farmZoneRarityIdx = botRarityIdx;
+            state.farmZoneUntil = now + FARM_ZONE_MIN_MS + Math.random() * (FARM_ZONE_MAX_MS - FARM_ZONE_MIN_MS);
+        }
+    }
     if (zone) {
         const isHighTier = botRarityIdx >= ULTRA_IDX;
         return {
@@ -2129,33 +2294,69 @@ function computeBotMode(bot: ServerPlayer, groups: Map<string, GroupInfo>): Mode
 const BOT_SEPARATION_RADIUS = PLAYER_SIZE * 2.2;
 // How strongly the separation vector blends into intended direction.
 const BOT_SEPARATION_STRENGTH = 0.9;
-// Per-bot persistent tiny jitter so two bots chasing the same spot still drift
-// a few px apart instead of sitting on identical coordinates. Keyed by bot id.
-// standoffBias: signed radial offset (±px) so each bot parks on a slightly
-// different ring around a target — kills the feedback loop where every bot
-// converges on the same standoff and then oscillates as separation shoves
-// them in and out of adjacent bands.
-const botJitter = new Map<string, { x: number; y: number; standoffBias: number }>();
-function getBotJitter(id: string): { x: number; y: number; standoffBias: number } {
-    let j = botJitter.get(id);
-    if (!j) {
-        const a = Math.random() * Math.PI * 2;
-        j = {
+
+/**
+ * Per-bot "personality" — a persistent set of small behavioural offsets so no
+ * two bots play identically. Rolled once per bot id and held for its lifetime.
+ *
+ *  x / y            unit bias vector; keeps two bots chasing the same spot from
+ *                   sitting on identical coordinates.
+ *  standoffBias     how far inside max petal reach this bot orbits (px). Always
+ *                   negative: bots vary in how tightly they crowd a mob, but
+ *                   never park beyond reach where their petals can't connect.
+ *                   Spreading the ring also stops every bot from converging on
+ *                   one distance and being shoved in and out of it together by
+ *                   separation.
+ *  reactionMs       delay between spotting a target and committing to it.
+ *  turnRate         max heading change per tick (rad). Low = lumbering.
+ *  wanderSpeed      cruise speed multiplier while wandering.
+ *  idleChance       chance of pausing on arrival at a wander point.
+ *  aggression       how long the bot stays in a fight before running.
+ */
+interface BotPersona {
+    x: number;
+    y: number;
+    standoffBias: number;
+    reactionMs: number;
+    turnRate: number;
+    wanderSpeed: number;
+    idleChance: number;
+    aggression: number;
+}
+const botPersona = new Map<string, BotPersona>();
+function getBotPersona(id: string): BotPersona {
+    let p = botPersona.get(id);
+    if (!p) {
+        // Seeded off the bot id so a persona is stable even if the map entry is
+        // rebuilt, and so behaviour is reproducible when debugging a given bot.
+        const rng = seededRng(hashString(id));
+        const a = rng() * Math.PI * 2;
+        p = {
             x: Math.cos(a),
             y: Math.sin(a),
-            standoffBias: (Math.random() - 0.5) * 30, // ±15 px
+            standoffBias: -(2 + rng() * 38),           // 2-40 px inside max reach
+            reactionMs: 120 + rng() * 320,             // 120-440 ms
+            turnRate: 0.26 + rng() * 0.22,             // 0.26-0.48 rad/tick
+            wanderSpeed: 0.40 + rng() * 0.30,          // 0.40-0.70
+            idleChance: rng() * 0.45,
+            aggression: 0.85 + rng() * 0.30,           // 0.85-1.15
         };
-        botJitter.set(id, j);
+        botPersona.set(id, p);
     }
-    return j;
+    return p;
 }
+
+// Speed below which heading changes are instant. A near-stationary player can
+// pivot freely; only a bot already moving has to arc into its new direction.
+const FREE_TURN_SPEED = 55;
 
 function driveMove(
     bot: ServerPlayer,
     dirX: number,
     dirY: number,
     speedMult: number,
-    petalExtension: number
+    petalExtension: number,
+    agility: number = 1.0
 ): void {
     // Separation: push away from any other bot inside BOT_SEPARATION_RADIUS,
     // weighted by 1 - dist/radius so near-touches dominate over mid-range
@@ -2179,9 +2380,9 @@ function driveMove(
 
     // Persistent per-bot bias + a tiny tick-level wobble so motion looks alive
     // instead of pixel-locked. Kept small (<0.15) so it never overrides intent.
-    const jitter = getBotJitter(bot.id);
-    const wobbleX = jitter.x * 0.08 + (Math.random() - 0.5) * 0.06;
-    const wobbleY = jitter.y * 0.08 + (Math.random() - 0.5) * 0.06;
+    const persona = getBotPersona(bot.id);
+    const wobbleX = persona.x * 0.08 + (Math.random() - 0.5) * 0.06;
+    const wobbleY = persona.y * 0.08 + (Math.random() - 0.5) * 0.06;
 
     let outX = dirX + sepX * BOT_SEPARATION_STRENGTH + wobbleX;
     let outY = dirY + sepY * BOT_SEPARATION_STRENGTH + wobbleY;
@@ -2192,6 +2393,36 @@ function driveMove(
     } else {
         outX = dirX;
         outY = dirY;
+    }
+
+    // Turn-rate limiting. The AI can request any direction on any tick; a real
+    // player's hand can't. Easing the heading toward the request does two
+    // things: movement reads as a human arcing around rather than a turret
+    // snapping, and a decision that flip-flops between two opposite directions
+    // can no longer translate into visible per-tick vibration — the heading
+    // just hovers near the midpoint until something breaks the tie.
+    const state = botAIState.get(bot.id);
+    if (state) {
+        const speed = Math.sqrt(bot.velocityX * bot.velocityX + bot.velocityY * bot.velocityY);
+        if (state.headX === undefined || state.headY === undefined || speed < FREE_TURN_SPEED) {
+            state.headX = outX;
+            state.headY = outY;
+        } else {
+            const cur = Math.atan2(state.headY, state.headX);
+            const want = Math.atan2(outY, outX);
+            let delta = want - cur;
+            // Shortest signed arc
+            while (delta > Math.PI) delta -= Math.PI * 2;
+            while (delta < -Math.PI) delta += Math.PI * 2;
+            const maxTurn = persona.turnRate * agility;
+            if (delta > maxTurn) delta = maxTurn;
+            else if (delta < -maxTurn) delta = -maxTurn;
+            const next = cur + delta;
+            state.headX = Math.cos(next);
+            state.headY = Math.sin(next);
+        }
+        outX = state.headX;
+        outY = state.headY;
     }
 
     bot.inputs.useMouse = true;
@@ -2277,6 +2508,119 @@ function rebuildBossIndex(): void {
     }
 }
 
+// --- Trajectory watchdog (oscillation / stuck detection) ---
+//
+// Every individual decision here can be locally reasonable and still add up to
+// a bot pacing between two spots forever: two mobs trading "closest", a wander
+// point behind a wall, an anchor that moves because the bot moved. Rather than
+// enumerating causes, this watches the trajectory the decisions actually
+// produce. Position is sampled on a fixed interval; when consecutive samples
+// keep pointing in opposite directions — or the bot barely moves while still
+// being driven — it is forced into a committed escape for a beat, which breaks
+// whatever tie was flip-flopping.
+const OSC_SAMPLE_MS = 450;
+const OSC_MIN_STEP = 10;            // px in a sample worth calling "movement"
+const OSC_REVERSAL_DOT = -0.30;     // cos of the angle between consecutive steps
+const OSC_TRIP_REVERSALS = 3;       // ~1.4 s of back-and-forth
+const OSC_STILL_TRIPS = 3;          // ~1.4 s of going nowhere
+const UNSTICK_MIN_MS = 900;
+const UNSTICK_MAX_MS = 1700;
+// While escaping, combat targeting is suppressed so the bot doesn't walk
+// straight back into the situation it was oscillating in.
+const UNSTICK_TARGET_SUPPRESS_MS = 1200;
+const UNSTICK_PROBE_DIST = 260;
+// Jamming this many times inside this window means sidestepping isn't enough:
+// the destination itself keeps walking the bot back into the same corner
+// (normal-mode navigation is a cheap steering probe, which can't reason its
+// way out of a concave wall). Escalate by sending it somewhere else entirely.
+const UNSTICK_ESCALATE_TRIPS = 3;
+const UNSTICK_ESCALATE_WINDOW_MS = 15_000;
+
+// Keep the watchdog quiet while the bot is deliberately standing still.
+function resetOscillationSampler(bot: ServerPlayer, state: BotAIState, now: number): void {
+    state.oscSampleAt = now;
+    state.oscX = bot.x;
+    state.oscY = bot.y;
+    state.oscStill = 0;
+    state.oscReversals = 0;
+    state.oscPrevDX = undefined;
+    state.oscPrevDY = undefined;
+}
+
+function detectOscillation(bot: ServerPlayer, state: BotAIState, now: number): boolean {
+    if (state.oscSampleAt === undefined) {
+        resetOscillationSampler(bot, state, now);
+        return false;
+    }
+    if (now - state.oscSampleAt < OSC_SAMPLE_MS) return false;
+
+    const dx = bot.x - (state.oscX ?? bot.x);
+    const dy = bot.y - (state.oscY ?? bot.y);
+    state.oscSampleAt = now;
+    state.oscX = bot.x;
+    state.oscY = bot.y;
+
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < OSC_MIN_STEP) {
+        state.oscStill = (state.oscStill ?? 0) + 1;
+        state.oscReversals = 0;
+    } else {
+        state.oscStill = 0;
+        const pdx = state.oscPrevDX;
+        const pdy = state.oscPrevDY;
+        if (pdx !== undefined && pdy !== undefined) {
+            const plen = Math.sqrt(pdx * pdx + pdy * pdy) || 1;
+            const dot = (dx * pdx + dy * pdy) / (len * plen);
+            state.oscReversals = dot < OSC_REVERSAL_DOT ? (state.oscReversals ?? 0) + 1 : 0;
+        }
+        state.oscPrevDX = dx;
+        state.oscPrevDY = dy;
+    }
+
+    if ((state.oscReversals ?? 0) >= OSC_TRIP_REVERSALS || (state.oscStill ?? 0) >= OSC_STILL_TRIPS) {
+        state.oscReversals = 0;
+        state.oscStill = 0;
+        state.oscPrevDX = undefined;
+        state.oscPrevDY = undefined;
+        return true;
+    }
+    return false;
+}
+
+// Escape direction for a bot that tripped the watchdog. Sidesteps first —
+// perpendicular to the rut is the shortest way out of a two-point shuffle —
+// then progressively wider, and finally straight back. The leading side is
+// randomized so a knot of stuck bots doesn't all peel off the same way.
+function pickUnstickDirection(bot: ServerPlayer, state: BotAIState): { x: number; y: number } {
+    const base = Math.atan2(state.headY ?? 0, state.headX ?? 1);
+    const side = Math.random() < 0.5 ? 1 : -1;
+    const offsets = [
+        (Math.PI / 2) * side, -(Math.PI / 2) * side,
+        (2 * Math.PI / 3) * side, -(2 * Math.PI / 3) * side,
+        Math.PI,
+        (Math.PI / 3) * side, -(Math.PI / 3) * side,
+        0
+    ];
+    for (const off of offsets) {
+        const a = base + off;
+        const dx = Math.cos(a);
+        const dy = Math.sin(a);
+        if (!rayHitsWall(bot.x, bot.y, bot.x + dx * UNSTICK_PROBE_DIST, bot.y + dy * UNSTICK_PROBE_DIST)) {
+            return { x: dx, y: dy };
+        }
+    }
+    const a = Math.random() * Math.PI * 2;
+    return { x: Math.cos(a), y: Math.sin(a) };
+}
+
+// Combat orbit controller: how many px off the standoff ring corresponds to a
+// full-strength radial correction. Larger = lazier, smoother approach.
+const ORBIT_RADIAL_GAIN = 90;
+// Flee hysteresis — recover to this multiple of the flee threshold before
+// re-engaging, and stay in flight at least this long once committed.
+const FLEE_RECOVER_RATIO = 2.0;
+const FLEE_MIN_MS = 1200;
+
 export function updateBotAI(io: SocketIOServer): void {
     const now = Date.now();
     rebuildBossIndex();
@@ -2320,7 +2664,57 @@ export function updateBotAI(io: SocketIOServer): void {
             continue;
         }
 
-        const mode = computeBotMode(bot, groups);
+        const persona = getBotPersona(id);
+
+        // Trajectory watchdog. Runs ahead of every decision branch so it also
+        // covers bots oscillating in combat, on a path, or while regrouping —
+        // the old stuck check lived in the wander branch and never saw them.
+        if (state.unstickUntil !== undefined && now < state.unstickUntil) {
+            const steered = steerAroundWalls(bot.x, bot.y, state.unstickDirX ?? 1, state.unstickDirY ?? 0);
+            driveMove(bot, steered.x, steered.y, 0.8, 1.0, 1.6);
+            continue;
+        }
+        if (detectOscillation(bot, state, now)) {
+            const dir = pickUnstickDirection(bot, state);
+            state.unstickDirX = dir.x;
+            state.unstickDirY = dir.y;
+            state.unstickUntil = now + UNSTICK_MIN_MS + Math.random() * (UNSTICK_MAX_MS - UNSTICK_MIN_MS);
+            state.suppressTargetUntil = now + UNSTICK_TARGET_SUPPRESS_MS;
+            state.targetId = undefined;
+            state.pickupId = undefined;
+            state.nextWanderTime = 0;
+            state.idleUntil = undefined;
+            // The cached path is a prime suspect for the rut — drop it.
+            state.pathNodes = undefined;
+            state.pathIndex = undefined;
+            state.pathGoalTileX = undefined;
+            state.pathGoalTileY = undefined;
+            state.pathCreatedAt = undefined;
+            // Commit the heading immediately rather than easing into it.
+            state.headX = dir.x;
+            state.headY = dir.y;
+            // Repeat offender? Then the destination is the problem, not the
+            // local geometry — give the bot a different place to be.
+            if (state.unstickTripsAt === undefined || now - state.unstickTripsAt > UNSTICK_ESCALATE_WINDOW_MS) {
+                state.unstickTripsAt = now;
+                state.unstickTrips = 1;
+            } else {
+                state.unstickTrips = (state.unstickTrips ?? 0) + 1;
+            }
+            if ((state.unstickTrips ?? 0) >= UNSTICK_ESCALATE_TRIPS) {
+                state.unstickTrips = 0;
+                state.unstickTripsAt = now;
+                state.farmZoneRotation = (state.farmZoneRotation ?? 0) + 1;
+                state.farmZoneX = undefined;
+                state.farmZoneY = undefined;
+                state.farmZoneUntil = undefined;
+            }
+            const steered = steerAroundWalls(bot.x, bot.y, dir.x, dir.y);
+            driveMove(bot, steered.x, steered.y, 0.8, 1.0, 1.6);
+            continue;
+        }
+
+        const mode = computeBotMode(bot, groups, state, now);
         const anchor = mode.anchor;
         const anchorDist = anchor
             ? Math.sqrt((anchor.x - bot.x) ** 2 + (anchor.y - bot.y) ** 2)
@@ -2331,17 +2725,23 @@ export function updateBotAI(io: SocketIOServer): void {
         // anchor that traversal speed actually matters — both raid traversal
         // (heading to a boss) and normal mode (heading to its band's farming
         // zone) qualify. Restored once the bot is in engagement range, so
-        // combat slot 0 is back online before petals are needed.
-        if (anchorDist > RAID_POWDER_MIN_DIST) {
+        // combat slot 0 is back online before petals are needed. Separate
+        // equip/unequip distances keep a bot loitering near the boundary from
+        // re-rolling its loadout every tick.
+        if (anchorDist > RAID_POWDER_EQUIP_DIST) {
             equipRaidPowder(bot, state);
-        } else {
+        } else if (anchorDist < RAID_POWDER_UNEQUIP_DIST) {
             unequipRaidPowder(bot, state);
         }
 
         // Yggdrasil buddy swap: when another bot is close enough that they
         // could plausibly need a revive, slot 1 is replaced with a yggdrasil
-        // petal. Restored when the bot is alone again.
-        if (hasNearbyBotBuddy(bot)) {
+        // petal. Restored when the bot is alone again — at a wider range than
+        // it was equipped, so the swap can't chatter.
+        const buddyRange = state.yggdrasilSlot !== undefined
+            ? YGGDRASIL_BUDDY_DROP_RANGE
+            : YGGDRASIL_BUDDY_RANGE;
+        if (hasNearbyBotBuddy(bot, buddyRange)) {
             equipYggdrasilSlot(bot, state);
         } else {
             unequipYggdrasilSlot(bot, state);
@@ -2372,7 +2772,30 @@ export function updateBotAI(io: SocketIOServer): void {
             continue;
         }
 
-        let target = pickBestEnemyTarget(bot, anchor, mode.tetherRadius, preferredTiers);
+        // Target selection, with commitment. The raw score flips between two
+        // equally-good mobs on tiny position changes; TARGET_STICKINESS makes
+        // the bot hold the one it chose until a rival is clearly better, so it
+        // stops walking half-way to one mob and turning back toward the other.
+        let target = (state.suppressTargetUntil !== undefined && now < state.suppressTargetUntil)
+            ? null
+            : pickBestEnemyTarget(bot, anchor, mode.tetherRadius, preferredTiers, state.targetId);
+
+        if (target) {
+            if (target.enemy.id !== state.targetId) {
+                state.targetId = target.enemy.id;
+                state.targetAcquiredAt = now;
+            }
+            // Reaction time: a player doesn't lock on the instant a mob crosses
+            // into range. Until the delay elapses the bot carries on with what
+            // it was doing, which reads as noticing rather than tracking.
+            if (now - (state.targetAcquiredAt ?? 0) < persona.reactionMs) {
+                target = null;
+            }
+        } else {
+            state.targetId = undefined;
+            state.targetAcquiredAt = undefined;
+        }
+
         let isBossTarget = !!(target && BOSS_TIERS.has(target.enemy.tier));
 
         // Ram interception: if a non-target mob is sitting in the bot's path
@@ -2417,14 +2840,38 @@ export function updateBotAI(io: SocketIOServer): void {
         }
 
         const healthRatio = bot.health / Math.max(1, bot.maxHealth);
-        // Bosses are too valuable to flee — commit unless critically low
-        const fleeThreshold = isBossTarget ? FLEE_HEALTH_RATIO * 0.5 : FLEE_HEALTH_RATIO;
+        // Bosses are too valuable to flee — commit unless critically low.
+        // Persona shifts the bar either way: some bots bail at the first sign
+        // of trouble, others stay in far too long.
+        const baseFlee = FLEE_HEALTH_RATIO * (2 - persona.aggression);
+        const fleeThreshold = isBossTarget ? baseFlee * 0.5 : baseFlee;
 
-        if (target && healthRatio < fleeThreshold) {
+        // Flee/fight hysteresis. Sitting exactly on the threshold used to flip
+        // the decision every tick — the bot backed off, healed a sliver,
+        // re-engaged, got hit, backed off: a two-position shuffle driven by
+        // health rather than geometry. Now it commits to running until it has
+        // actually recovered.
+        if (state.fleeing) {
+            if (healthRatio > fleeThreshold * FLEE_RECOVER_RATIO && now >= (state.fleeUntil ?? 0)) {
+                state.fleeing = false;
+            }
+        } else if (healthRatio < fleeThreshold) {
+            state.fleeing = true;
+            state.fleeUntil = now + FLEE_MIN_MS;
+        }
+
+        if (target && state.fleeing) {
             const dx = bot.x - target.enemy.x;
             const dy = bot.y - target.enemy.y;
             const d = Math.sqrt(dx * dx + dy * dy) || 1;
-            driveMove(bot, dx / d, dy / d, 1.0, 0.7);
+            // Break away at an angle instead of straight back: a dead-straight
+            // retreat line from a chasing mob is a bot tell.
+            const strafe = tangentDirection(bot.id, state, now);
+            const ax = dx / d + (-dy / d) * 0.35 * strafe;
+            const ay = dy / d + (dx / d) * 0.35 * strafe;
+            const am = Math.sqrt(ax * ax + ay * ay) || 1;
+            const steered = steerAroundWalls(bot.x, bot.y, ax / am, ay / am);
+            driveMove(bot, steered.x, steered.y, 1.0, 0.7, 1.5);
             continue;
         }
 
@@ -2449,76 +2896,21 @@ export function updateBotAI(io: SocketIOServer): void {
             // gets double-counted and bots park just outside actual reach.
             const baseStandoff = petalReach - STANDOFF_SAFETY_BUFFER + mobRadius - 10;
             // Per-bot radial bias spreads the equilibrium ring so neighboring
-            // bots don't all target the same distance and thrash between the
-            // retreat/strafe/creep bands.
-            const standoff = baseStandoff + getBotJitter(bot.id).standoffBias;
+            // bots don't all sit at the same distance and get shoved in and
+            // out of it together by separation. Strictly inward: baseStandoff
+            // is already the outer edge of what the petals can reach.
+            const standoff = baseStandoff + persona.standoffBias;
             const dangerDist = PLAYER_SIZE / 2 + mobRadius + 6; // body-touch threshold
 
-            let moveX: number;
-            let moveY: number;
-            let speedMult: number;
-            let petalExt: number;
-
-            // Boss raiders: each bot owns an angular slot around the boss so
-            // they spread out instead of stacking. Kicks in once inside the
-            // engagement band (d < standoff + 80); approach from farther away
-            // still uses the direct-path logic below.
-            const slotAngle = isBossTarget ? raidSlots.get(bot.id) : undefined;
-
             if (d < dangerDist) {
-                // Too close — shove off at full speed but stay in attack state
-                // so petals remain extended while killing the mob.
-                moveX = -dirX;
-                moveY = -dirY;
-                speedMult = 1.0;
-                petalExt = extendedPetalExt;
-            } else if (slotAngle !== undefined && d < standoff + 80) {
-                // Steer to the slot position around the boss. When the bot is
-                // already at its slot, fall through to a small tangential
-                // strafe so it isn't a sitting duck for AoE.
-                const slotX = target.enemy.x + Math.cos(slotAngle) * standoff;
-                const slotY = target.enemy.y + Math.sin(slotAngle) * standoff;
-                const sx = slotX - bot.x;
-                const sy = slotY - bot.y;
-                const sd = Math.sqrt(sx * sx + sy * sy);
-                if (sd > 40) {
-                    moveX = sx / (sd || 1);
-                    moveY = sy / (sd || 1);
-                    speedMult = Math.min(0.8, 0.3 + sd / 400);
-                } else {
-                    const dir = tangentDirection(bot.id);
-                    moveX = -dirY * dir;
-                    moveY = dirX * dir;
-                    speedMult = 0.2;
-                }
-                petalExt = extendedPetalExt;
-            } else if (d < standoff - 20) {
-                // Inside standoff but past the body-collision threshold — back
-                // out while keeping petals trained on the mob. Band widened
-                // vs. the strafe band below so small position wobble can't
-                // flip the bot between retreating and strafing every tick.
-                const dir = tangentDirection(bot.id);
-                // 70% retreat + 30% strafe (deterministic direction)
-                moveX = dirX * -0.7 + -dirY * dir * 0.3;
-                moveY = dirY * -0.7 + dirX * dir * 0.3;
-                speedMult = 0.6;
-                petalExt = extendedPetalExt;
-            } else if (d < standoff + 20) {
-                // In the sweet spot — pure strafe, no forward/backward component
-                // (deterministic per-bot direction so bots don't oscillate).
-                const dir = tangentDirection(bot.id);
-                moveX = -dirY * dir;
-                moveY = dirX * dir;
-                speedMult = 0.35;
-                petalExt = extendedPetalExt;
-            } else if (d < standoff + 80) {
-                // Just outside reach — creep in slowly so we don't overshoot
-                // the sweet spot under movement smoothing.
-                moveX = dirX;
-                moveY = dirY;
-                speedMult = 0.35;
-                petalExt = extendedPetalExt;
-            } else {
+                // Too close — shove off but stay in attack state so petals
+                // remain extended while killing the mob. High agility: this is
+                // the one case where an instant direction change is right.
+                driveMove(bot, -dirX, -dirY, 1.0, extendedPetalExt, 3.0);
+                continue;
+            }
+
+            if (d > standoff + 80) {
                 // Far away — close distance at full speed. Raid/group bots
                 // use A* to navigate around wall clusters; normal bots use
                 // the cheap steering probe. (No speed-mod compensation: this
@@ -2527,29 +2919,89 @@ export function updateBotAI(io: SocketIOServer): void {
                     continue;
                 }
                 const steered = steerAroundWalls(bot.x, bot.y, dirX, dirY);
-                moveX = steered.x;
-                moveY = steered.y;
-                speedMult = 0.95;
-                petalExt = extendedPetalExt;
-                driveMove(bot, moveX, moveY, speedMult, petalExt);
+                driveMove(bot, steered.x, steered.y, 0.95, extendedPetalExt);
                 continue;
             }
 
-            // Close-range bands (everything except "far away"): cancel out the
-            // bot's aggregated speed modifier (powder, etc.) so per-tick
-            // movement matches what each band's speedMult was tuned for. A
-            // powder-wearing bot moving 2× through the standoff zone otherwise
-            // overshoots every band and ping-pongs between shove / retreat /
-            // strafe instead of orbiting in the sweet spot.
+            const strafe = tangentDirection(bot.id, state, now);
+            let moveX: number;
+            let moveY: number;
+            let speedMult: number;
+
+            // Boss raiders own an angular slot around the boss so they spread
+            // out instead of stacking on one side.
+            const slotAngle = isBossTarget ? raidSlots.get(bot.id) : undefined;
+
+            if (slotAngle !== undefined) {
+                // Ease toward the assigned slot. The raw assignment jumps every
+                // time a raider joins or dies (the slots are redealt), and
+                // snapping to the new angle sent bots sprinting around the boss
+                // — or, with two raiders trading slots, back and forth forever.
+                const cur = state.slotAngle;
+                let use: number;
+                if (cur === undefined) {
+                    use = slotAngle;
+                } else {
+                    let delta = slotAngle - cur;
+                    while (delta > Math.PI) delta -= Math.PI * 2;
+                    while (delta < -Math.PI) delta += Math.PI * 2;
+                    const step = 0.06;
+                    use = cur + Math.max(-step, Math.min(step, delta));
+                }
+                state.slotAngle = use;
+
+                const slotX = target.enemy.x + Math.cos(use) * standoff;
+                const slotY = target.enemy.y + Math.sin(use) * standoff;
+                const sx = slotX - bot.x;
+                const sy = slotY - bot.y;
+                const sd = Math.sqrt(sx * sx + sy * sy);
+                if (sd > 12) {
+                    // Speed tapers continuously to the strafe speed as the bot
+                    // settles in, so there's no threshold to flip across.
+                    moveX = sx / sd;
+                    moveY = sy / sd;
+                    speedMult = Math.min(0.8, 0.15 + sd / 300);
+                } else {
+                    moveX = -dirY * strafe;
+                    moveY = dirX * strafe;
+                    speedMult = 0.18;
+                }
+            } else {
+                // Continuous orbit controller. This replaces the old ladder of
+                // discrete distance bands (retreat / strafe / creep in), where
+                // a bot whose distance wobbled across a band edge would flip
+                // between backing off and closing in every tick — the in-combat
+                // form of the two-position shuffle. Now the radial correction
+                // is proportional to how far off the standoff ring the bot is
+                // and passes smoothly through zero at the ring itself, so
+                // there's nothing to flip between.
+                const err = d - standoff;                                    // + = too far out
+                const radial = Math.max(-1, Math.min(1, err / ORBIT_RADIAL_GAIN));
+                // Circle hardest when settled on the ring, less while correcting.
+                const tangential = 1 - 0.55 * Math.min(1, Math.abs(radial));
+                moveX = dirX * radial + (-dirY * strafe) * tangential;
+                moveY = dirY * radial + (dirX * strafe) * tangential;
+                const m = Math.sqrt(moveX * moveX + moveY * moveY) || 1;
+                moveX /= m;
+                moveY /= m;
+                speedMult = 0.28 + 0.45 * Math.min(1, Math.abs(err) / 110);
+            }
+
+            // Close range: cancel out the bot's aggregated speed modifier
+            // (powder, etc.) so per-tick movement matches what the controller
+            // was tuned for. A powder-wearing bot moving 2× through the
+            // standoff zone otherwise overshoots the ring every tick and
+            // ping-pongs across it instead of orbiting.
             const speedMod = getBotSpeedMod(bot);
             const effectiveSpeedMult = speedMod > 1.0 ? speedMult / speedMod : speedMult;
-            driveMove(bot, moveX, moveY, effectiveSpeedMult, petalExt);
+            driveMove(bot, moveX, moveY, effectiveSpeedMult, extendedPetalExt);
             continue;
         }
 
         // No combat target — try to grab a nearby drop we earned
-        const pickup = findPickupTarget(bot, anchor, mode.tetherRadius);
+        const pickup = findPickupTarget(bot, anchor, mode.tetherRadius, state.pickupId);
         if (pickup) {
+            state.pickupId = pickup.item.id;
             const dx = pickup.item.x - bot.x;
             const dy = pickup.item.y - bot.y;
             const d = pickup.dist || Math.sqrt(dx * dx + dy * dy) || 1;
@@ -2563,28 +3015,20 @@ export function updateBotAI(io: SocketIOServer): void {
             }
             continue;
         }
+        state.pickupId = undefined;
 
-        // Stuck detection: if the bot hasn't moved meaningfully since the last
-        // check, force a fresh wander target. Without this, bots that wander
-        // into a concave wall pocket spend the next 3-7 seconds flailing —
-        // steerAroundWalls returns the blocked direction when every offset
-        // hits a wall, and the per-tick wobble in driveMove makes it look
-        // like the bot is twitching in random directions.
-        const STUCK_CHECK_INTERVAL_MS = 1500;
-        const STUCK_MOVE_THRESHOLD = 30;
-        if (state.lastStuckCheckTime === undefined) {
-            state.lastStuckCheckTime = now;
-            state.lastStuckCheckX = bot.x;
-            state.lastStuckCheckY = bot.y;
-        } else if (now - state.lastStuckCheckTime >= STUCK_CHECK_INTERVAL_MS) {
-            const moved = Math.hypot(bot.x - (state.lastStuckCheckX ?? bot.x), bot.y - (state.lastStuckCheckY ?? bot.y));
-            if (moved < STUCK_MOVE_THRESHOLD) {
-                state.nextWanderTime = 0; // force a re-pick below
-            }
-            state.lastStuckCheckTime = now;
-            state.lastStuckCheckX = bot.x;
-            state.lastStuckCheckY = bot.y;
+        // Idle pause — nothing to fight, nothing to grab. Real players stop to
+        // look around instead of marching between waypoints without a break.
+        if (state.idleUntil !== undefined && now < state.idleUntil) {
+            bot.inputs.useMouse = false;
+            bot.inputs.keys = [];
+            bot.inputs.petalExtension = 1.0;
+            // Standing still on purpose isn't being stuck — keep the watchdog
+            // from reading a deliberate pause as a jam.
+            resetOscillationSampler(bot, state, now);
+            continue;
         }
+        state.idleUntil = undefined;
 
         // Wander — keep target inside the current cluster radius so raid/
         // group bots stay tight and normal bots stay tethered.
@@ -2627,6 +3071,7 @@ export function updateBotAI(io: SocketIOServer): void {
             state.wanderTargetX = pickedX;
             state.wanderTargetY = pickedY;
             state.nextWanderTime = now + 3000 + Math.random() * 4000;
+            state.atWanderTarget = false;
         }
 
         const wdx = state.wanderTargetX - bot.x;
@@ -2634,18 +3079,34 @@ export function updateBotAI(io: SocketIOServer): void {
         const wd = Math.sqrt(wdx * wdx + wdy * wdy);
 
         if (wd < 30) {
+            // Arrived. Decide once — not every tick — whether to linger here,
+            // then line up the next hop shortly. The re-pick is deliberately
+            // not immediate: a bot walled in on all sides gets its wander
+            // target snapped back to its own position, and re-running the
+            // 16-raycast pick every tick for it would be pure waste.
+            if (!state.atWanderTarget) {
+                state.atWanderTarget = true;
+                if (Math.random() < persona.idleChance) {
+                    state.idleUntil = now + 500 + Math.random() * 2200;
+                }
+            }
+            state.nextWanderTime = Math.min(state.nextWanderTime, now + 250 + Math.random() * 500);
             bot.inputs.useMouse = false;
             bot.inputs.keys = [];
             bot.inputs.petalExtension = 1.0;
-            state.nextWanderTime = Math.min(state.nextWanderTime, now + 600);
+            resetOscillationSampler(bot, state, now);
         } else {
+            state.atWanderTarget = false;
+            // Per-bot cruise speed with a slow drift, so a field of wandering
+            // bots doesn't move like a single formation at one fixed pace.
+            const cruise = persona.wanderSpeed * (0.9 + 0.1 * Math.sin(now / 900 + persona.x * 6));
             // Steer around walls on wanders too, otherwise bots park against a
             // wall tile until nextWanderTime fires and the target is reshuffled.
             if (wd > WALL_TILE_SIZE) {
                 const steered = steerAroundWalls(bot.x, bot.y, wdx / wd, wdy / wd);
-                driveMove(bot, steered.x, steered.y, 0.55, 1.0);
+                driveMove(bot, steered.x, steered.y, cruise, 1.0);
             } else {
-                driveMove(bot, wdx / wd, wdy / wd, 0.55, 1.0);
+                driveMove(bot, wdx / wd, wdy / wd, cruise, 1.0);
             }
         }
     }
