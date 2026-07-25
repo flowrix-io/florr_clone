@@ -13,6 +13,18 @@ function padLoadout(arr: (Item | null)[] | undefined, size: number): (Item | nul
     return out;
 }
 
+// Full-player broadcasts (currentPlayers, newPlayer, updatePlayers, transfers)
+// spread the whole server player object, which carries that tick's raw
+// petalPositions: absolute coords with no per-petal interpolation targets, and —
+// for a flower outside the recipient's petal-detail range — never refreshed
+// again. Rendering those would pin the ring to coords the flower has since moved
+// away from. The gameStateUpdate `p` channel is the only valid source, so drop
+// the raw array at ingestion and let that channel (re)build it.
+function withoutRawPetalPositions<T extends { petalPositions?: any }>(player: T): T {
+    if (player.petalPositions) player.petalPositions = undefined;
+    return player;
+}
+
 export { Socket };
 
 export function initMultiPlayerMode(game: any, serverIp: string) {
@@ -388,13 +400,13 @@ function setupSocketListeners(game: any) {
         game.players.clear();
         Object.values(players).forEach(player => {
             // Don't override health with max health
-            game.players.set(player.id, {
+            game.players.set(player.id, withoutRawPetalPositions({
                 ...player,
                 imageLoaded: true,
                 score: 0,
                 velocityX: 0,
                 velocityY: 0
-            });
+            }));
         });
         // Update loadout display after player loadout and inventory is received
         if (game.socket.id && game.players.has(game.socket.id) && game.inventoryManager) {
@@ -404,13 +416,13 @@ function setupSocketListeners(game: any) {
 
     game.socket.on('newPlayer', (player: Player) => {
         //console.log('New player joined:', player);
-        game.players.set(player.id, {
+        game.players.set(player.id, withoutRawPetalPositions({
             ...player,
             imageLoaded: true,
             score: 0,
             velocityX: 0,
             velocityY: 0
-        });
+        }));
         if (player.id === game.socket.id && game.inventoryManager) {
             game.inventoryManager.updateLoadoutDisplay();
         }
@@ -421,17 +433,13 @@ function setupSocketListeners(game: any) {
         game.lastHeartbeat = now; // Update heartbeat on any server message
 
         const existingPlayer = game.players.get(player.id);
-        const isCurrentPlayer = player.id === game.socket?.id;
 
         if (existingPlayer) {
+            // Positions are targets only — game.ts eases every flower (local and
+            // remote) toward them at the same rate. (This handler is dead anyway:
+            // the server never emits 'playerMoved'; gameStateUpdate carries P.)
             existingPlayer.targetX = player.x;
             existingPlayer.targetY = player.y;
-            if (!isCurrentPlayer) {
-                const sNow = performance.now();
-                if (!existingPlayer._snapshots) existingPlayer._snapshots = [];
-                existingPlayer._snapshots.push({ t: sNow, x: player.x, y: player.y });
-                if (existingPlayer._snapshots.length > 12) existingPlayer._snapshots.shift();
-            }
 
             // Update other properties
             existingPlayer.angle = player.angle;
@@ -442,7 +450,7 @@ function setupSocketListeners(game: any) {
             existingPlayer.level = player.level;
             existingPlayer.score = player.score;
         } else {
-            game.players.set(player.id, {
+            game.players.set(player.id, withoutRawPetalPositions({
                 ...player,
                 imageLoaded: true,
                 score: 0,
@@ -450,7 +458,7 @@ function setupSocketListeners(game: any) {
                 velocityY: 0,
                 targetX: player.x,
                 targetY: player.y
-            });
+            }));
         }
     });
 
@@ -1381,25 +1389,17 @@ function setupSocketListeners(game: any) {
         if (serverPlayers) {
             for (const sp of serverPlayers) {
                 const id = sp.i;
-                const isSelf = id === (game.activePlayerId || game.socket?.id);
                 const existing = game.players.get(id);
                 if (existing) {
+                    // Players (self AND remote) only carry target*: game.ts eases
+                    // every flower toward it with the same gardn exponential lerp,
+                    // so remote players move exactly like the local one. They used
+                    // to also feed the enemies' time-based `_snapshots` buffer,
+                    // which replayed the server path at an 80ms render delay — a
+                    // visibly different motion curve from the local flower's ease.
+                    // Enemies still use snapshots (see the E-loop).
                     if (sp.x !== undefined) existing.targetX = sp.x;
                     if (sp.y !== undefined) existing.targetY = sp.y;
-                    if (!isSelf && existing.targetX !== undefined && existing.targetY !== undefined) {
-                        // Remote players: feed the same time-based snapshot buffer
-                        // enemies use — game.ts prefers it over the exponential-lerp
-                        // fallback, which lags and rubber-bands under latency. (The
-                        // old 'playerMoved' path that used to push these is dead —
-                        // the server never emits it.) Omitted fields fall back to
-                        // target* (last authoritative), never the render-mutated x/y.
-                        if (!existing._snapshots) existing._snapshots = [];
-                        const buf = existing._snapshots;
-                        const t = buf.length > 0 && snapTimeMs <= buf[buf.length - 1].t
-                            ? buf[buf.length - 1].t + 1 : snapTimeMs;
-                        buf.push({ t, x: existing.targetX, y: existing.targetY });
-                        if (buf.length > 12) buf.shift();
-                    }
                     if (sp.a !== undefined) existing.angle = sp.a;
                     if (sp.vx !== undefined) existing.velocityX = sp.vx;
                     if (sp.vy !== undefined) existing.velocityY = sp.vy;
@@ -1656,13 +1656,13 @@ function setupSocketListeners(game: any) {
                 }
             } else {
                 // Add new player
-                player = {
+                player = withoutRawPetalPositions({
                     ...serverPlayer,
                     image: new Image(),
                     imageLoaded: false,
                     targetX: serverPlayer.x,
                     targetY: serverPlayer.y,
-                };
+                });
                 player.loadout = padLoadout(serverPlayer.loadout, 20);
                 game.players.set(serverPlayer.id, player);
             }

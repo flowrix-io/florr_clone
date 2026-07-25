@@ -204,18 +204,21 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
     const showGlow = this.showRarityGlow;
     const playerX = player.x;
     const playerY = player.y;
-    // Only the local player receives authoritative per-petal positions from the
-    // server (server.ts only puts the `p` array on the owning client's delta).
-    // Remote players can still carry a STALE petalPositions array — it leaks in
-    // via the full-player broadcasts that spread the whole server object
-    // (currentPlayers on join, newPlayer, updatePlayers/playerUpdated first
-    // sight) — and gameStateUpdate never refreshes it for them, since `sp.p` is
-    // absent for non-self. Using that frozen array would anchor their petals to
-    // absolute coords that no longer track the moving player (wrong position,
-    // no orbit) and hide any instance missing from the snapshot. Treat it as
-    // authoritative for self only; everyone else gets canonical orbit below.
+    // EVERY flower on screen renders its petals from the server's authoritative
+    // per-petal positions — the local player and remote players run the exact same
+    // path. The server sends the `p` array for the recipient plus every on-screen
+    // player (see server.ts PETAL_DETAIL_MAX_PLAYERS); it sends an empty array when
+    // a flower drops out of that range, which lands here as `undefined` and falls
+    // back to the canonical client-side orbit below.
+    //
+    // Remote players used to ALWAYS take that canonical-orbit fallback, which drew
+    // them from a wallclock-derived phase with no knowledge of server petal state:
+    // a reloading petal popped straight to full orbit radius instead of gliding out
+    // from the flower centre, half-broken clumps still drew every instance, and
+    // mob-attracted petals stayed pinned to the ring.
+    const rawServerPositions = player.petalPositions;
     const serverPositions: any[] | undefined =
-        player.id === currentPlayerId ? player.petalPositions : undefined;
+        rawServerPositions && rawServerPositions.length > 0 ? rawServerPositions : undefined;
     const petalCache = this.petalImageCache;
 
     for (let idx = 0, n = petalInstances.length; idx < n; idx++) {
@@ -275,23 +278,24 @@ Graphics.prototype.drawPlayerPetals = function(this: Graphics, player: Player, p
             }
             if (foundX !== null) {
                 // Server petal positions are absolute coords orbiting the player's
-                // SERVER position. The local flower renders at its predicted position
-                // (client-side prediction), so anchor petals to the *smoothed* server
-                // reference (_refX/_refY) — using the raw 30Hz targetX/Y would subtract
-                // a stairstep from the interpolated petal and make petals jitter. Falls
-                // back to targetX/playerX. Only the local player has serverPositions.
+                // SERVER position, while the flower itself renders at its eased
+                // position, so anchor petals to that same eased reference
+                // (_refX/_refY, republished by game.ts easeToTarget for every
+                // flower) — using the raw 30Hz targetX/Y would subtract a stairstep
+                // from the interpolated petal and make petals jitter. Both the
+                // flower and its petals ease at the same rate, so the ring stays
+                // centred with no drift. Falls back to targetX/playerX.
                 const refX = player._refX ?? player.targetX ?? playerX;
                 const refY = player._refY ?? player.targetY ?? playerY;
                 petalX = foundX - refX;
                 petalY = (foundY as number) - refY;
             } else if (serverPositions) {
-                // Local player (only the local player has serverPositions): no entry
-                // for this instance means the server hasn't placed it — broken
-                // (per-instance health/cooldown) or just restored, with its first
-                // position still a snapshot away. Hide it for that 1-2 frame window.
-                // The canonical fallback below derives its angle from wallclock time,
-                // not the server orbit phase, so drawing it there flashes the petal
-                // at a wrong position the instant it respawns.
+                // The server placed this flower's petals but not this instance —
+                // it's broken (per-instance health/cooldown) or just restored, with
+                // its first position still a snapshot away. Hide it for that 1-2
+                // frame window. The canonical fallback below derives its angle from
+                // wallclock time, not the server orbit phase, so drawing it there
+                // flashes the petal at a wrong position the instant it respawns.
                 continue;
             } else {
                 petalX = Math.cos(totalAngle) * petalRadius + clumpOffsetX;

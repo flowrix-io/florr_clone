@@ -75,12 +75,14 @@ export interface Player {
   speed_boost?: boolean;
   targetX: number;
   targetY: number;
-  // Smoothly-interpolated server position for the local (predicted) player, used
-  // only to anchor its absolute petal positions (player.x/y itself is predicted).
+  // The flower's own eased render position, republished by game.ts easeToTarget()
+  // for EVERY player, and used to anchor that player's absolute (server-sent)
+  // petal positions in graphics/player-drawing.ts.
   _refX?: number;
   _refY?: number;
-  // Snapshot buffer for high-ping interpolation (remote players only)
-  _snapshots?: { t: number; x: number; y: number }[];
+  // NOTE: players deliberately have NO `_snapshots` buffer (enemies do). Every
+  // flower, local and remote, renders by easing x/y toward targetX/targetY at
+  // the same rate — see game.ts easeToTarget()/predictLocalPlayer().
   // Effective speed multiplier from the server (speed boosts / speed petals), so
   // client-side prediction can move at the same speed as the server.
   speedFactor?: number;
@@ -88,7 +90,11 @@ export interface Player {
   targetEye?: {x: number, y: number};
   isDead?: boolean;
   petalExtension?: number; // Petal extension value from server (per-player)
-  petalPositions?: Array<{ loadoutIndex: number; instanceIndex: number; x: number; y: number; targetX?: number; targetY?: number; noPhysics?: boolean }>; // Petal positions from server (with interpolation targets)
+  // Authoritative per-petal positions from the server, with interpolation targets.
+  // Sent for the local player AND every on-screen remote player (server.ts
+  // PETAL_DETAIL_MAX_PLAYERS); empty/absent means "out of detail range", and
+  // player-drawing.ts falls back to a canonical client-side orbit for that flower.
+  petalPositions?: Array<{ loadoutIndex: number; instanceIndex: number; x: number; y: number; targetX?: number; targetY?: number; noPhysics?: boolean }>;
   tp?: number; // Talent Points
   skills?: {
     damage?: string; // Rarity tier: common, uncommon, rare, etc.

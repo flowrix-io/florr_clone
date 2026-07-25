@@ -129,9 +129,9 @@ class Game {
         this.beforeUnloadHandler = null;
         this.abortController = new AbortController();
         this.createdElements = []; // Track DOM elements for cleanup
-        // Reused result for interpolateFromSnapshots: it runs once per remote
-        // player and per enemy per FRAME, and both call sites copy x/y/angle out
-        // immediately, so a fresh object per call was pure GC pressure.
+        // Reused result for interpolateFromSnapshots: it runs once per enemy per
+        // FRAME (players ease toward target* instead), and the call site copies
+        // x/y/angle out immediately, so a fresh object per call was pure GC pressure.
         this._interpScratch = { x: 0, y: 0, angle: undefined };
         // Reused per-frame container for the not-yet-picked-up item filter.
         this._visibleItemsScratch = new Map();
@@ -1130,51 +1130,37 @@ class Game {
             this.enemies.delete(enemyId);
         }
         // Interpolate all players' positions using frame-rate-independent smoothing
-        const lerpFactor = this.interpolationAmount;
         const now = performance.now();
         const frameDeltaMs = this.lastInterpolationTime > 0 ? now - this.lastInterpolationTime : 16.67;
         this.lastInterpolationTime = now;
-        // Frame-rate-independent exponential smoothing: equivalent to lerpFactor at 60fps
-        // rate ~= -ln(1 - lerpFactor) * 60
-        const smoothingRate = -Math.log(1 - lerpFactor) * 60;
-        const smoothingFactor = 1 - Math.exp(-smoothingRate * frameDeltaMs / 1000);
-        // How far in the past remote entities are rendered. 80ms = ~2.4 server ticks,
+        // One ease amount for the whole frame, shared by the local flower, remote
+        // flowers, petals and enemy facing — so nothing eases at a different rate
+        // than anything else. See easeAmount().
+        const smoothingFactor = this.easeAmount(frameDeltaMs);
+        // How far in the past remote enemies are rendered. 80ms = ~2.4 server ticks,
         // which guarantees a bracket pair even with moderate network jitter (±33ms).
         const RENDER_DELAY_MS = 80;
         const renderTime = now - RENDER_DELAY_MS;
         const localPlayerId = this.activePlayerId || this.socket?.id || '';
         for (const [pid, player] of this.players.entries()) {
-            // The local flower's position (and its _refX/_refY petal anchor) is
-            // owned by predictLocalPlayer() — gardn eased interpolation, applied
-            // later this frame. Don't also lerp it here or the two would fight;
-            // just fall through to the shared petal interpolation below. Remote
-            // players still interpolate toward their server targets.
+            // EVERY flower — yours and everyone else's — renders with the same
+            // gardn eased interpolation toward its authoritative server position,
+            // so a remote player moving beside you glides exactly the way you do.
+            // (Remote players used to use time-based snapshot interpolation with an
+            // 80ms render delay instead: a faithful replay of the server path, so
+            // they started, stopped and cornered sharply while the local flower —
+            // which cannot afford that delay without adding input latency — eased.
+            // Two different motion curves on identical entities read as "other
+            // players move differently".) The local flower is stepped later this
+            // frame by predictLocalPlayer(), which applies the SAME ease and also
+            // republishes _refX/_refY for its server-anchored petal ring; don't
+            // also step it here or the two would fight.
             const isLocalPredicted = pid === localPlayerId && !player.isDead;
             if (isLocalPredicted) {
                 // no-op: handled by predictLocalPlayer()
             }
             else if (player.targetX !== undefined && player.targetY !== undefined) {
-                const snaps = player._snapshots;
-                if (snaps && snaps.length >= 2) {
-                    const interp = this.interpolateFromSnapshots(snaps, renderTime);
-                    if (interp) {
-                        player.x = interp.x;
-                        player.y = interp.y;
-                    }
-                }
-                else {
-                    // Fallback to lerp until the snapshot buffer has at least two entries
-                    const dx = player.targetX - player.x;
-                    const dy = player.targetY - player.y;
-                    if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
-                        player.x = player.targetX;
-                        player.y = player.targetY;
-                    }
-                    else {
-                        player.x += dx * smoothingFactor;
-                        player.y += dy * smoothingFactor;
-                    }
-                }
+                this.easeToTarget(player, smoothingFactor);
             }
             // Interpolate petal positions
             if (player.petalPositions) {
@@ -1458,12 +1444,22 @@ class Game {
             this.predInit = true;
             return;
         }
-        // Frame-rate-independent exponential lerp; same shape as gardn's
-        // Ui::lerp_amount = 1 - (1 - k)^(dt*60). interpolationAmount is k at 60fps.
+        // easeToTarget also republishes _refX/_refY, the petal-ring anchor.
+        this.easeToTarget(player, this.easeAmount(frameDeltaMs));
+    }
+    // Frame-rate-independent exponential ease amount; same shape as gardn's
+    // Ui::lerp_amount = 1 - (1 - k)^(dt*60). interpolationAmount is k at 60fps.
+    // dt is clamped so a backgrounded tab's huge frame gap can't produce a
+    // full-strength snap on the frame it resumes.
+    easeAmount(frameDeltaMs) {
         const dtMs = Math.min(frameDeltaMs, 100);
         const k = Math.min(0.999, Math.max(0.001, this.interpolationAmount));
         const rate = -Math.log(1 - k) * 60;
-        const amt = 1 - Math.exp(-rate * dtMs / 1000);
+        return 1 - Math.exp(-rate * dtMs / 1000);
+    }
+    // Step a flower's rendered position toward its authoritative server position.
+    // Shared by the local flower and every remote one so they move identically.
+    easeToTarget(player, amt) {
         const dx = player.targetX - player.x;
         const dy = player.targetY - player.y;
         if (dx * dx + dy * dy > 600 * 600) {
@@ -1471,13 +1467,18 @@ class Game {
             player.x = player.targetX;
             player.y = player.targetY;
         }
+        else if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
+            // Settle exactly on target instead of asymptoting forever.
+            player.x = player.targetX;
+            player.y = player.targetY;
+        }
         else {
             player.x += dx * amt;
             player.y += dy * amt;
         }
-        // Local petals are drawn as (serverPetalAbsolute - _refX) offset from the
-        // flower render (player-drawing.ts). Anchoring _refX to the exact render
-        // position keeps the petal ring centered on the flower with no drift.
+        // Petals are drawn as (serverPetalAbsolute - _refX) offset from the flower
+        // render (player-drawing.ts). Anchoring _refX to the exact render position
+        // keeps every petal ring — local and remote — centered with no drift.
         player._refX = player.x;
         player._refY = player.y;
     }

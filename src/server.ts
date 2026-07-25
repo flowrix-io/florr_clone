@@ -895,6 +895,13 @@ interface AuthenticatedSocket extends Socket {
 // ghost item. All are recovered by one itemsUpdate full replace.
 const ITEM_CHANNEL_EVENTS = ['itemsSpawned', 'itemSpawned', 'itemRemoved', 'itemPickedUp', 'itemsUpdate'] as const;
 
+// How many OTHER flowers one client receives authoritative per-petal positions
+// for each tick (their own is always sent). Everyone on screen normally fits;
+// past this, the furthest-arriving ones fall back to client-side canonical orbit
+// so a packed hub can't push the per-tick payload toward the uWS backpressure
+// limit. ~150–200 wire bytes per detailed flower per tick.
+const PETAL_DETAIL_MAX_PLAYERS = 12;
+
 // All world items this socket's player (including split-screen halves) can
 // currently see: eligibility-listed for them and not yet picked up by them.
 // Used on authenticate and as the drop-recovery payload.
@@ -5939,6 +5946,20 @@ function start_loop() {
             const changedPlayers: any[] = [];
             const currentPlayerIds = new Set<string>();
 
+            // Per-petal positions go to the recipient for their OWN flower and for
+            // every other flower on their screen, so both render through the exact
+            // same authoritative path (see petalsOut below). Bounded by the standard
+            // on-screen box plus a hard budget, so a crowded hub can't multiply the
+            // per-tick payload without limit — anyone past the budget falls back to
+            // client-side canonical orbit. Budget is consumed in the stable
+            // players-object order, so the same flowers keep detail tick to tick
+            // instead of flickering between the two render paths.
+            const petalBoxW = (player?.viewportWidth || VIEWPORT_WIDTH) / 2 + VIEWPORT_BUFFER;
+            const petalBoxH = (player?.viewportHeight || VIEWPORT_HEIGHT) / 2 + VIEWPORT_BUFFER;
+            const petalOriginX = player?.x || 0;
+            const petalOriginY = player?.y || 0;
+            let petalDetailBudget = PETAL_DETAIL_MAX_PLAYERS;
+
             for (const snap of playerSnapshots) {
                 const p = snap.p;
                 currentPlayerIds.add(p.id);
@@ -5970,20 +5991,34 @@ function start_loop() {
                 const sm = quantize(p.speedFactor ?? 1, 0.01);
                 const su = isSelf ? (p.lastProcessedInputSeq ?? 0) : 0;
 
-                // Petal positions: only sent to the local player for their *own* petals.
-                // For other players we omit the entire `p` array — the recipient's client
-                // already computes canonical orbit positions itself from the player's angle,
-                // slot index, and extension (see player-drawing.ts ~line 272). Skipping this
-                // for non-self players removes ~150–200 bytes per other-player delta, which
-                // was the dominant cost in busy scenes since the petalsSig flips every tick
-                // as players aim. Physics-displaced petals on other players will visually
-                // snap to canonical orbit, which is the acceptable tradeoff.
-                let petalsOut: any[] | null = null;
+                // Petal positions: sent for the recipient's own flower AND for every
+                // other flower on their screen (budget permitting), so all petals
+                // render from the same authoritative source. This used to be self-only
+                // — everyone else's petals were client-computed canonical orbit, which
+                // cannot reproduce reload fly-out from the flower centre, per-instance
+                // breaks (a half-broken clump still drew every petal), mob attraction,
+                // or the server's true orbit phase. Cost is ~150–200 bytes per on-screen
+                // player per tick, gated by the on-screen box, the detail budget, and
+                // the petalsSig delta check below.
+                let wantPetals = isSelf;
+                if (!wantPetals && petalDetailBudget > 0 &&
+                    Math.abs(p.x - petalOriginX) <= petalBoxW &&
+                    Math.abs(p.y - petalOriginY) <= petalBoxH) {
+                    wantPetals = true;
+                    petalDetailBudget--;
+                }
+                // Always an array: when a flower drops out of detail range, an empty
+                // `p` is what tells its client to release the stale absolute positions
+                // and fall back to canonical orbit (the petalsSig check sends it once).
+                const petalsOut: any[] = [];
+                // 0 = "no detail for this flower". Seeded to 1 when detail IS being
+                // sent so that a genuinely empty array (every petal broken) stays
+                // distinguishable from dropping out of range.
                 let petalsSig = 0;
-                if (isSelf) {
+                if (wantPetals) {
+                    petalsSig = 1;
                     const petalPrecision = quality === 'slow' ? 6 : quality === 'medium' ? 4 : 3;
                     const petalsRaw = snap.petalsRaw;
-                    petalsOut = [];
                     for (let pi2 = 0; pi2 < petalsRaw.length; pi2++) {
                         const pos = petalsRaw[pi2];
                         const px = quantize(pos.x, petalPrecision);
@@ -5999,6 +6034,8 @@ function start_loop() {
                         if (np) petal.N = 1;
                         petalsOut.push(petal);
                     }
+                    // Never let a mixed hash land on the "no detail" sentinel.
+                    if (petalsSig === 0) petalsSig = 1;
                 }
 
                 const prev = lastPlayers.get(p.id);
@@ -6032,9 +6069,9 @@ function start_loop() {
                 // Echo the last input sequence processed by the server. This gives the
                 // client a stable acknowledgement marker when RTT is high or uneven.
                 if (isSelf && (prev ? prev.u !== su : su !== 0)) { delta.u = su; changed = true; }
-                // petalsOut is null for non-self players (their clients dead-reckon orbit
-                // positions). Only self gets the per-tick petal array.
-                if (petalsOut && (prev ? prev.petalsSig !== petalsSig : petalsOut.length > 0)) {
+                // petalsSig is 0 for a flower with no petal detail this tick, so a
+                // flower leaving detail range sends `p: []` exactly once.
+                if (prev ? prev.petalsSig !== petalsSig : petalsOut.length > 0) {
                     delta.p = petalsOut;
                     changed = true;
                 }
