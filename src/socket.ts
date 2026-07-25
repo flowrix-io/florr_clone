@@ -25,6 +25,52 @@ function withoutRawPetalPositions<T extends { petalPositions?: any }>(player: T)
     return player;
 }
 
+// After the splitter petal runs, this client owns two flowers — `socket.id` and
+// `${socket.id}_split2` — but drives only one at a time (`game.activePlayerId`,
+// flipped by the server's `playerSwitched`). The camera, prediction, inventory
+// panel and loadout bar all follow that ACTIVE half (game.getLocalPlayer()), so
+// every "is this me?" event check has to as well. Comparing against
+// `socket.id` alone answered for the abandoned half: the death screen never
+// appeared when the clone died, its broken petals never refreshed the loadout
+// bar, and shop/inventory updates landed on a player object nothing rendered.
+function localPlayerId(game: any): string {
+    return game.activePlayerId || game.socket?.id || '';
+}
+
+function localPlayer(game: any): Player | undefined {
+    return game.players.get(localPlayerId(game));
+}
+
+// True for the half currently being driven — use for camera/UI/death state.
+function isLocalPlayerId(game: any, id: string | undefined): boolean {
+    return !!id && id === localPlayerId(game);
+}
+
+// True for EITHER half — use for things that belong to the account rather than
+// to the flower on screen (loot eligibility, shared inventory, pickup anims).
+function isOwnPlayerId(game: any, id: string | undefined): boolean {
+    if (!id) return false;
+    const socketId = game.socket?.id;
+    if (!socketId) return false;
+    return id === socketId || id === game.activePlayerId || id === `${socketId}_split2`;
+}
+
+// Run `fn` on every flower this client owns. Account-wide state (inventory,
+// stars) is ONE object shared by both halves on the server, so applying a
+// snapshot to a single half leaves the other showing a stale bag the moment
+// the player switches.
+function forEachOwnPlayer(game: any, fn: (player: any) => void): void {
+    const socketId = game.socket?.id;
+    if (!socketId) return;
+    const seen = new Set<string>();
+    for (const id of [socketId, game.activePlayerId, `${socketId}_split2`]) {
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const p = game.players.get(id);
+        if (p) fn(p);
+    }
+}
+
 export { Socket };
 
 export function initMultiPlayerMode(game: any, serverIp: string) {
@@ -310,7 +356,7 @@ function setupSocketListeners(game: any) {
         console.log(`[CLIENT] Player ${data.playerId} teleported to (${data.newX}, ${data.newY})`);
 
         const player = game.players.get(data.playerId);
-        const isCurrentPlayer = data.playerId === game.socket.id;
+        const isCurrentPlayer = isLocalPlayerId(game, data.playerId);
 
         if (isCurrentPlayer && player && game.graphics) {
             // Freeze the current frame and iris close over it
@@ -335,7 +381,7 @@ function setupSocketListeners(game: any) {
         console.log(`[CLIENT] Entered teleporter, waiting ${data.timeRequired}ms to teleport`);
 
         // Set spinning state on the current player
-        const currentPlayer = game.players.get(game.socket.id);
+        const currentPlayer = localPlayer(game);
         if (currentPlayer) {
             currentPlayer.teleporterCharging = true;
             currentPlayer.teleporterChargeStart = Date.now();
@@ -347,7 +393,7 @@ function setupSocketListeners(game: any) {
         console.log('[CLIENT] Left teleporter before teleporting');
 
         // Clear spinning state on the current player
-        const currentPlayer = game.players.get(game.socket.id);
+        const currentPlayer = localPlayer(game);
         if (currentPlayer) {
             currentPlayer.teleporterCharging = false;
             currentPlayer.teleporterChargeStart = undefined;
@@ -369,13 +415,30 @@ function setupSocketListeners(game: any) {
         // Update active player ID if this is our split
         if (data.originalId === game.socket.id || game.activePlayerId === data.originalId) {
             game.activePlayerId = data.activePlayerId;
-            
+
             // Clear petal physics states for both split players to force reinitialization
             // This ensures petals properly move out when switching
             if (game.graphics && game.graphics.clearPetalPhysicsForPlayer) {
                 game.graphics.clearPetalPhysicsForPlayer(data.originalId);
                 game.graphics.clearPetalPhysicsForPlayer(`${data.originalId}_split2`);
             }
+
+            // The camera just jumped to the other flower, so everything keyed to
+            // "the half I'm driving" has to follow it in the same frame: the
+            // death overlay belongs to the half that died, and the loadout bar
+            // renders the active half's petals (the two halves carry separate
+            // loadouts).
+            const active = game.players.get(data.activePlayerId);
+            if (active) {
+                if (active.isDead && !game.isPlayerDead) {
+                    game.isPlayerDead = true;
+                    game.showDeathScreen(active.killedBy);
+                } else if (!active.isDead && game.isPlayerDead) {
+                    game.isPlayerDead = false;
+                    game.hideDeathScreen();
+                }
+            }
+            game.inventoryManager?.updateLoadoutDisplay();
         }
     });
 
@@ -927,7 +990,7 @@ function setupSocketListeners(game: any) {
             player.loadout[data.slotIndex]!.health = 0;
             player.loadout[data.slotIndex]!.onCooldown = true;
             game.showPetalBreakEffect(player.x, player.y, data.petalType);
-            if (data.playerId === game.socket.id) {
+            if (isLocalPlayerId(game, data.playerId)) {
                 scheduleLoadoutUIUpdate();
             }
         }
@@ -937,7 +1000,7 @@ function setupSocketListeners(game: any) {
         const player = game.players.get(data.playerId);
         if (player && player.loadout) {
             player.loadout[data.slotIndex] = data.petal;
-            if (data.playerId === game.socket.id) {
+            if (isLocalPlayerId(game, data.playerId)) {
                 scheduleLoadoutUIUpdate();
             }
         }
@@ -988,8 +1051,9 @@ function setupSocketListeners(game: any) {
     };
 
     game.socket.on('itemPickedUp', (itemId: string) => {
-        // Local player picked up this item — animate toward them
-        registerPickupAnim(itemId, game.socket?.id);
+        // Local player picked up this item — animate toward the half that's
+        // actually on screen (the pickup is emitted to the socket, not per half).
+        registerPickupAnim(itemId, localPlayerId(game));
     });
 
     game.socket.on('itemRemoved', (itemId: string) => {
@@ -1001,7 +1065,7 @@ function setupSocketListeners(game: any) {
         const player = game.players.get(data.playerId);
         if (player) {
             registerPickupAnim(data.itemId, data.playerId);
-            if (data.playerId === game.socket.id) {
+            if (isOwnPlayerId(game, data.playerId)) {
                 if (game.isInventoryOpen) {
                     game.inventoryManager.updateInventoryDisplay();
                 }
@@ -1010,9 +1074,9 @@ function setupSocketListeners(game: any) {
     });
 
     game.socket.on('inventoryUpdate', (inventory: Item[]) => {
-        const player = game.players.get(game.socket?.id || '');
+        const player = localPlayer(game);
         if (player) {
-            player.inventory = inventory;
+            forEachOwnPlayer(game, p => { p.inventory = inventory; });
             game.inventoryManager?.reconcileStagedWithInventory();
             // Update inventory display if it's open
             if (game.isInventoryOpen) {
@@ -1079,7 +1143,7 @@ function setupSocketListeners(game: any) {
             Object.assign(existingPlayer, player);
             // Reset the isDead flag
             existingPlayer.isDead = false;
-            if (player.id === game.socket.id) {
+            if (isLocalPlayerId(game, player.id)) {
                 game.isPlayerDead = false;
                 game.hideDeathScreen();
             }
@@ -1131,7 +1195,7 @@ function setupSocketListeners(game: any) {
             let inventoryChanged = false;
             let mobKillsChanged = false;
 
-            if (updatedPlayer.id === game.socket?.id) {
+            if (isOwnPlayerId(game, updatedPlayer.id)) {
                 // Use reference check - server always sends new objects when data changes
                 loadoutChanged = updatedPlayer.loadout !== undefined && player.loadout !== updatedPlayer.loadout;
                 inventoryChanged = updatedPlayer.inventory !== undefined && player.inventory !== updatedPlayer.inventory;
@@ -1167,8 +1231,10 @@ function setupSocketListeners(game: any) {
                 game.inventoryManager?.reconcileStagedWithInventory();
             }
 
-            // Update displays if this is the current player
-            if (updatedPlayer.id === game.socket?.id) {
+            // Update displays if this is the current player. Both halves count:
+            // the inventory is shared, and a switch delivers the newly active
+            // half's loadout under ITS id — the loadout bar has to follow it.
+            if (isOwnPlayerId(game, updatedPlayer.id)) {
                 if (game.isInventoryOpen && inventoryChanged) {
                     game.inventoryManager.updateInventoryDisplay();
                 }
@@ -1209,14 +1275,14 @@ function setupSocketListeners(game: any) {
             player.tp = data.tp;
             player.skills = data.skills;
             // Update skills menu if this is the current player and menu is open
-            if (data.playerId === game.socket?.id && game.skillsManager) {
+            if (isLocalPlayerId(game, data.playerId) && game.skillsManager) {
                 game.skillsManager.updateSkills(data.tp, data.skills);
             }
         }
     });
 
     game.socket.on('speedBoostActive', (playerId: string) => {
-        if (playerId === game.socket.id) {
+        if (isOwnPlayerId(game, playerId)) {
             game.speedBoostActive = true;
         }
     });
@@ -1227,9 +1293,9 @@ function setupSocketListeners(game: any) {
 
     // Absorb tab of the craft menu: server destroyed the petals and granted XP.
     game.socket.on('itemsAbsorbed', (data: { xpGained: number, absorbedCount: number, inventory: any }) => {
-        const player = game.players.get(game.socket?.id || '');
+        const player = localPlayer(game);
         if (player && data.inventory) {
-            player.inventory = data.inventory;
+            forEachOwnPlayer(game, p => { p.inventory = data.inventory; });
             game.inventoryManager?.reconcileStagedWithInventory();
         }
         game.inventoryManager?.handleItemsAbsorbed(data);
@@ -1237,9 +1303,9 @@ function setupSocketListeners(game: any) {
 
     game.socket.on('absorbFailed', (data: { message?: string, inventory?: any }) => {
         console.warn('[CLIENT] absorbFailed:', data?.message);
-        const player = game.players.get(game.socket?.id || '');
+        const player = localPlayer(game);
         if (player && data?.inventory) {
-            player.inventory = data.inventory;
+            forEachOwnPlayer(game, p => { p.inventory = data.inventory; });
             game.inventoryManager?.reconcileStagedWithInventory();
         }
         game.inventoryManager?.handleAbsorbFailed();
@@ -1247,9 +1313,9 @@ function setupSocketListeners(game: any) {
 
     game.socket.on('craftingFinished', (data: { successCount: number, failCount: number, newItem: Item, inventory: any, petalsReturned?: number }) => {
         console.log('[CLIENT] craftingFinished received:', data);
-        const player = game.players.get(game.socket?.id || '');
+        const player = localPlayer(game);
         if (player) {
-            player.inventory = data.inventory;
+            forEachOwnPlayer(game, p => { p.inventory = data.inventory; });
             // Anything staged into the slots after this craft was sent is
             // still present in the snapshot — re-deduct it (dupe guard).
             game.inventoryManager?.reconcileStagedWithInventory();
@@ -1292,10 +1358,9 @@ function setupSocketListeners(game: any) {
     // Shop handlers
     game.socket.on('shopPurchaseSuccess', (data: { inventory: any, stars: number }) => {
         console.log('[CLIENT] shopPurchaseSuccess received:', data);
-        const player = game.players.get(game.socket.id);
+        const player = localPlayer(game);
         if (player) {
-            player.inventory = data.inventory;
-            player.stars = data.stars;
+            forEachOwnPlayer(game, p => { p.inventory = data.inventory; p.stars = data.stars; });
             game.inventoryManager?.reconcileStagedWithInventory();
             if (game.inventoryManager) {
                 game.inventoryManager.updateInventoryDisplay();
@@ -1316,9 +1381,9 @@ function setupSocketListeners(game: any) {
 
     game.socket.on('codeRedeemSuccess', (data: { code?: string, stars: number, totalStars: number }) => {
         console.log('[CLIENT] codeRedeemSuccess received:', data);
-        const player = game.players.get(game.socket.id);
+        const player = localPlayer(game);
         if (player) {
-            player.stars = data.totalStars;
+            forEachOwnPlayer(game, p => { p.stars = data.totalStars; });
             if (game.shopManager) {
                 game.shopManager.handleCodeRedeemSuccess(data.stars);
                 game.shopManager.updateStarsDisplay();
@@ -1599,7 +1664,7 @@ function setupSocketListeners(game: any) {
                 const inv = (game as any).inventoryManager;
                 const suppressMs = inv?.LOADOUT_SYNC_SUPPRESS_MS ?? 0;
                 const lastLocal = inv?.lastLocalLoadoutChange ?? 0;
-                const isLocal = serverPlayer.id === game.socket?.id;
+                const isLocal = isLocalPlayerId(game, serverPlayer.id);
                 const suppress = isLocal && Date.now() - lastLocal < suppressMs;
                 if (!suppress) {
                     player.inventory = serverPlayer.inventory;
@@ -1636,7 +1701,7 @@ function setupSocketListeners(game: any) {
                 if (serverPlayer.mobKills !== undefined) {
                     const mobKillsChanged = player.mobKills !== serverPlayer.mobKills;
                     player.mobKills = serverPlayer.mobKills;
-                    if (mobKillsChanged && serverPlayer.id === game.socket?.id && game.inventoryManager) {
+                    if (mobKillsChanged && isLocalPlayerId(game, serverPlayer.id) && game.inventoryManager) {
                         game.inventoryManager.updateMobGalleryIfOpen();
                     }
                 }
@@ -1695,8 +1760,8 @@ function setupSocketListeners(game: any) {
             player.isDead = true;
             player.angle = data.angle; // Set the random rotation
         }
-        
-        if (data.playerId === game.socket.id) {
+
+        if (isLocalPlayerId(game, data.playerId)) {
             game.isPlayerDead = true;
             game.showDeathScreen(data.killedBy);
         }
@@ -1716,7 +1781,7 @@ function setupSocketListeners(game: any) {
         }
         
         // If the revived player is the local player, hide death screen
-        if (data.revivedPlayerId === game.socket.id) {
+        if (isLocalPlayerId(game, data.revivedPlayerId)) {
             game.isPlayerDead = false;
             game.hideDeathScreen();
         }

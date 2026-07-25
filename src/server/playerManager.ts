@@ -36,6 +36,7 @@ import { getRarityIndex, RARITY_LEVELS } from '../petals';
 import { ITEM_KEY_TO_ID } from '../inventoryCodec';
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { playerUserIds } from './gameState';
+import { getOriginalSocketId } from './utils';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { MapElement } from '../constants';
 import {
@@ -107,7 +108,7 @@ export function enterPvpArena(player: ServerPlayer, io?: SocketIOServer): void {
     recalculatePlayerStats(player, io);
     player.health = player.maxHealth;
     if (io) {
-        io.to(player.id).emit('inventoryUpdated', player.inventory);
+        io.to(getOriginalSocketId(player.id)).emit('inventoryUpdated', player.inventory);
     }
 }
 
@@ -145,14 +146,14 @@ export function exitPvpArena(
     player.health = player.maxHealth;
 
     if (io) {
-        io.to(player.id).emit('inventoryUpdated', player.inventory);
+        io.to(getOriginalSocketId(player.id)).emit('inventoryUpdated', player.inventory);
         // Push the restored regular loadout authoritatively so the client stops
         // holding the PVP loadout the instant it leaves the arena. Without this
         // the client keeps the PVP petals until the next tick sync and can emit
         // a stale `updateLoadout` that the server would persist as the regular
         // loadout (the mode-tag guard in the updateLoadout handler is the other
         // half of that fix).
-        io.to(player.id).emit('playerUpdated', player);
+        io.to(getOriginalSocketId(player.id)).emit('playerUpdated', player);
     }
     if (savePlayerProgress) {
         const userId = playerUserIds[player.id];
@@ -208,7 +209,7 @@ export function enterMazeState(player: ServerPlayer, io?: SocketIOServer): void 
 /** Push the now-live track's TP pool and talent tree to the owning client. */
 function emitSkillsUpdate(player: ServerPlayer, io?: SocketIOServer): void {
     if (!io) return;
-    io.to(player.id).emit('skillsUpdated', {
+    io.to(getOriginalSocketId(player.id)).emit('skillsUpdated', {
         playerId: player.id,
         tp: player.tp || 0,
         skills: player.skills || {}
@@ -1034,7 +1035,7 @@ export function recalculatePlayerStats(player: ServerPlayer, io?: SocketIOServer
     
     // Emit update only to the affected player
     if (io) {
-        io.to(player.id).emit('playerUpdated', player);
+        io.to(getOriginalSocketId(player.id)).emit('playerUpdated', player);
     }
 }
 
@@ -1123,7 +1124,7 @@ function applyXPToLiveTrack(
         
         // Emit level up event only to the affected player
         for (let level = oldLevel + 1; level <= newLevel; level++) {
-            io.to(player.id).emit('levelUp', {
+            io.to(getOriginalSocketId(player.id)).emit('levelUp', {
                 playerId: player.id,
                 level: level,
                 maxHealth: calculateMaxHealthFromLevel(level),
@@ -1132,7 +1133,7 @@ function applyXPToLiveTrack(
         }
 
         // Emit skills update only to the affected player
-        io.to(player.id).emit('skillsUpdated', {
+        io.to(getOriginalSocketId(player.id)).emit('skillsUpdated', {
             playerId: player.id,
             tp: player.tp,
             skills: player.skills

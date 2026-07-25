@@ -11,6 +11,7 @@ import {
 } from '../constants';
 import { playerUserIds } from './gameState';
 import { savePlayerProgress } from './playerManager';
+import { getOriginalSocketId } from './utils';
 
 /**
  * Setup cross-server transfer endpoints
@@ -188,7 +189,7 @@ export async function transferPlayerToServer(
                                 console.log(`[SERVER ${currentServerConfig.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
                                 
                                 // Notify client about successful transfer
-                                io.to(player.id).emit('playerTransferred', {
+                                io.to(getOriginalSocketId(player.id)).emit('playerTransferred', {
                                     targetServer: targetServerConfig,
                                     transferToken: response.transferToken,
                                     targetX,
@@ -225,7 +226,7 @@ export async function transferPlayerToServer(
                                 console.log(`[SERVER ${currentServerConfig.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
                                 
                                 // Notify client about successful transfer
-                                io.to(player.id).emit('playerTransferred', {
+                                io.to(getOriginalSocketId(player.id)).emit('playerTransferred', {
                                     targetServer: targetServerConfig,
                                     transferToken: response.transferToken,
                                     targetX,

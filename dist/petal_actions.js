@@ -1533,6 +1533,18 @@ function switchPlayer(player, io, socketId) {
         console.warn(`[PetalActions] Active player ${activePlayerId} not found in players map`);
         return;
     }
+    // Park the half we just left. Only the ACTIVE half receives inputs, so the
+    // other one keeps replaying whichever mouse direction / held keys were last
+    // written to it and walks off on its own forever — straight through mobs,
+    // teleporters and walls. Keep an inputs OBJECT (updatePlayerState bails on a
+    // missing one, which would freeze its petals and passive heal) but empty it,
+    // and drop the velocity so it stops where it stands instead of coasting.
+    const parkedPlayer = constants_1.players[splitState.activeIndex === 0 ? splitState.player2.id : splitState.player1.id];
+    if (parkedPlayer) {
+        parkedPlayer.inputs = { keys: [], petalExtension: 1.0 };
+        parkedPlayer.velocityX = 0;
+        parkedPlayer.velocityY = 0;
+    }
     // Notify the specific client (or all clients if socketId not provided)
     if (socketId) {
         io.to(socketId).emit('playerSwitched', {

@@ -58,7 +58,9 @@ import {
     cleanupEnemy,
     trackMobKill,
     markEnemyDamaged,
-    pendingEnemyDamageUpdates
+    pendingEnemyDamageUpdates,
+    getActivePlayerForSocket,
+    getOriginalSocketId
 } from './server/utils';
 import {
     createSquad,
@@ -1193,6 +1195,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                 if (activePlayer && players[activePlayer.id]) {
                     players[activePlayer.id].inputs = inputData;
                     players[activePlayer.id].lastProcessedInputSeq = inputData.seq;
+                    // The camera is on the active half, so the streaming boxes
+                    // are built from ITS viewport — keep it sized like the
+                    // client's window instead of whatever it inherited at split.
+                    players[activePlayer.id].viewportWidth = player.viewportWidth;
+                    players[activePlayer.id].viewportHeight = player.viewportHeight;
                 }
             } else {
                 // Normal player - apply inputs directly
@@ -3373,7 +3380,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
     // Handle respawn request
     socket.on('requestRespawn', () => {
-        const player = players[socket.id];
+        // Respawn the half the client is actually driving: when the splitter
+        // clone dies, `players[socket.id]` is the OTHER half and still alive,
+        // so this used to silently do nothing and the death screen never left.
+        const player = getActivePlayerForSocket(socket.id);
         if (player && player.isDead) {
             respawnPlayer(player);
             player.isDead = false;
@@ -5236,10 +5246,11 @@ function updateMobProjectiles(deltaTimeMs: number) {
     //   mpSpawn  — projectiles newly in this player's viewport (slim spawn payload)
     //   mpRemove — projectiles that have left viewport or been destroyed (ids only)
     for (const playerId of Object.keys(players)) {
-        const player = players[playerId];
-        if (!player) continue;
         const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
         if (!socket || !socket.userId) continue;
+        // Box the client's CAMERA flower, which is the active half while split.
+        const player = getActivePlayerForSocket(playerId);
+        if (!player) continue;
         const vw = (player.viewportWidth || VIEWPORT_WIDTH) * 1.5;
         const vh = (player.viewportHeight || VIEWPORT_HEIGHT) * 1.5;
 
@@ -5438,10 +5449,11 @@ function updatePlayerProjectiles(deltaTimeMs: number) {
     // See updateMobProjectiles for the rationale — straight-line dead-reckoning
     // on the client means we only need spawn + remove events.
     for (const playerId of Object.keys(players)) {
-        const player = players[playerId];
-        if (!player) continue;
         const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
         if (!socket || !socket.userId) continue;
+        // Box the client's CAMERA flower, which is the active half while split.
+        const player = getActivePlayerForSocket(playerId);
+        if (!player) continue;
         const vw = (player.viewportWidth || VIEWPORT_WIDTH) * 1.5;
         const vh = (player.viewportHeight || VIEWPORT_HEIGHT) * 1.5;
 
@@ -5906,7 +5918,14 @@ function start_loop() {
 
             const precision = quality === 'slow' ? 2 : quality === 'medium' ? 1 : 0.5;
             const anglePrecision = quality === 'slow' ? 0.1 : 0.05;
-            const player = players[playerId];
+            // The flower this client's camera is locked to. With the splitter
+            // petal in play that is the ACTIVE half (`${playerId}_split2` half
+            // the time), which can stand anywhere on the map — so it, not
+            // `players[playerId]`, defines the viewport box for enemies and
+            // petal detail, and it is the flower that needs full-precision
+            // "self" fields for local prediction.
+            const player = getActivePlayerForSocket(playerId);
+            const selfId = player ? player.id : playerId;
 
             // Translate transport-level drop records into channel resyncs.
             // emitWithStatus/sendRaw note the event name whenever uWS discards
@@ -5963,7 +5982,7 @@ function start_loop() {
             for (const snap of playerSnapshots) {
                 const p = snap.p;
                 currentPlayerIds.add(p.id);
-                const isSelf = p.id === playerId;
+                const isSelf = p.id === selfId;
 
                 const faceFlags = snap.faceFlags;
                 const equipFlags = snap.equipFlags;
@@ -6482,7 +6501,8 @@ export function rotateMazeToDay(day: number): void {
         const spawn = getMazeSpawnPosition();
         p.x = spawn.x;
         p.y = spawn.y;
-        io.to(pid).emit('playerTeleported', { newX: spawn.x, newY: spawn.y, playerId: pid });
+        // `players` includes splitter halves, which own no socket of their own.
+        io.to(getOriginalSocketId(pid)).emit('playerTeleported', { newX: spawn.x, newY: spawn.y, playerId: pid });
     }
 }
 

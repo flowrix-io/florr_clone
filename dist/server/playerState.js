@@ -735,10 +735,11 @@ function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
                     (0, playerManager_1.addItem)(attacker.inventory, rarity, itemKey, count);
                 }
             }
-            io.to(attacker.id).emit('inventoryUpdated', attacker.inventory);
+            // A splitter half has no socket of its own — address the owner.
+            io.to((0, utils_1.getOriginalSocketId)(attacker.id)).emit('inventoryUpdated', attacker.inventory);
         }
         victim.inventory = [];
-        io.to(victim.id).emit('inventoryUpdated', victim.inventory);
+        io.to((0, utils_1.getOriginalSocketId)(victim.id)).emit('inventoryUpdated', victim.inventory);
         // Mark dead immediately so passive-heal can't revive the victim before
         // their own update tick runs the standard death handler.
         victim.isDead = true;
@@ -2198,7 +2199,11 @@ function updatePlayerState(player, deltaTime, deps) {
             if (player.currentTeleporter !== teleporterId) {
                 player.currentTeleporter = teleporterId;
                 player.teleporterEnterTime = currentTime;
-                io.to(player.id).emit('teleporterEntered', {
+                // Teleporter feedback goes to the OWNING SOCKET, not the player
+                // id: a splitter half (`..._split2`) has no socket of its own, so
+                // addressing it dropped the event and the flower charged up with
+                // no spin animation and no iris transition.
+                io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('teleporterEntered', {
                     teleporterId,
                     timeRequired: 1000,
                     teleportTo: element.properties.teleportTo
@@ -2217,7 +2222,7 @@ function updatePlayerState(player, deltaTime, deps) {
                     player.teleporterEnterTime = undefined;
                     transferPlayerToServer(player, teleportTo.serverPort, teleportTo.x * constants_1.SCALE_FACTOR, teleportTo.y * constants_1.SCALE_FACTOR, io, database, useHttps, currentServerConfig, currentServerPort).catch(error => {
                         console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player ${player.name}:`, error);
-                        io.to(player.id).emit('transferFailed', { message: 'Failed to connect to target server' });
+                        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('transferFailed', { message: 'Failed to connect to target server' });
                         player.teleportCooldown = undefined;
                     });
                     return;
@@ -2228,7 +2233,7 @@ function updatePlayerState(player, deltaTime, deps) {
                     player.currentTeleporter = undefined;
                     player.teleporterEnterTime = undefined;
                     console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
-                    io.to(player.id).emit('playerTeleported', {
+                    io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTeleported', {
                         newX,
                         newY,
                         playerId: player.id
@@ -2243,7 +2248,7 @@ function updatePlayerState(player, deltaTime, deps) {
         console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
         player.currentTeleporter = undefined;
         player.teleporterEnterTime = undefined;
-        io.to(player.id).emit('teleporterExited');
+        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('teleporterExited');
     }
     const wasInArena = !!player.inPvpArena;
     player.x = newX;

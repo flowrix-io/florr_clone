@@ -16,6 +16,7 @@ const maze_1 = require("../maze");
 const botManager_1 = require("./botManager");
 const autoUpdate_1 = require("./autoUpdate");
 const guildManager_1 = require("./guildManager");
+const utils_1 = require("./utils");
 // Coordinate validation for commands that place entities (teleport, spawn).
 // Positions past MAX_SANE_WORLD_COORD are always typos — and large enough ones
 // push tile/cell indices past 2^53 where the collision scan loops can no longer
@@ -283,8 +284,9 @@ function executeServerCommand(command, executor, deps, socketId) {
                     (0, playerManager_1.exitMazeState)(targetPlayer, io);
                     (0, playerManager_1.recalculatePlayerStats)(targetPlayer, io);
                 }
-                // Emit teleport event to client for visual effects
-                io.to(targetPlayerId).emit('playerTeleported', {
+                // Emit teleport event to client for visual effects. A splitter
+                // half owns no socket — address the client that drives it.
+                io.to((0, utils_1.getOriginalSocketId)(targetPlayerId)).emit('playerTeleported', {
                     newX: x,
                     newY: y,
                     playerId: targetPlayerId
@@ -577,7 +579,7 @@ function executeServerCommand(command, executor, deps, socketId) {
                 (0, playerManager_1.addItem)(targetPlayer.inventory, rarity, itemKey, amount);
                 // Emit inventory update to the player
                 if (targetSocket) {
-                    io.to(targetPlayerId).emit('inventoryUpdated', targetPlayer.inventory);
+                    io.to((0, utils_1.getOriginalSocketId)(targetPlayerId)).emit('inventoryUpdated', targetPlayer.inventory);
                 }
                 // Save player progress if user is authenticated
                 if (targetSocket?.userId) {

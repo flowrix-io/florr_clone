@@ -10,6 +10,7 @@ const http_1 = __importDefault(require("http"));
 const constants_1 = require("../constants");
 const gameState_1 = require("./gameState");
 const playerManager_1 = require("./playerManager");
+const utils_1 = require("./utils");
 /**
  * Setup cross-server transfer endpoints
  */
@@ -145,7 +146,7 @@ async function transferPlayerToServer(player, targetServerPort, targetX, targetY
                             if (response.success) {
                                 console.log(`[SERVER ${currentServerConfig.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
                                 // Notify client about successful transfer
-                                io.to(player.id).emit('playerTransferred', {
+                                io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTransferred', {
                                     targetServer: targetServerConfig,
                                     transferToken: response.transferToken,
                                     targetX,
@@ -179,7 +180,7 @@ async function transferPlayerToServer(player, targetServerPort, targetX, targetY
                             if (response.success) {
                                 console.log(`[SERVER ${currentServerConfig.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
                                 // Notify client about successful transfer
-                                io.to(player.id).emit('playerTransferred', {
+                                io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTransferred', {
                                     targetServer: targetServerConfig,
                                     transferToken: response.transferToken,
                                     targetX,

@@ -1,6 +1,6 @@
 import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
 import { ServerPlayer } from '../player';
-import { ENEMY_TIERS, enemies } from '../constants';
+import { ENEMY_TIERS, enemies, players } from '../constants';
 import { splitPlayers } from '../petal_actions';
 import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadManager';
 import { isBot } from './botManager';
@@ -108,6 +108,29 @@ export function getOriginalSocketId(playerId: string): string {
     }
     // Not a split player, return as-is
     return playerId;
+}
+
+/**
+ * The flower a socket is actually driving / looking at.
+ *
+ * After the splitter petal runs, one client owns TWO flowers — `socketId` and
+ * `${socketId}_split2` — but only ever controls (and renders the camera on) the
+ * ACTIVE one, which `switchPlayer` flips between. The inactive half can be left
+ * anywhere on the map.
+ *
+ * Every per-socket stream and every "act on my flower" handler must key off
+ * THIS player, not `players[socketId]`. Keying off the socket id streamed the
+ * world around the abandoned half: enemies near the clone were never sent and
+ * the ones near the original half were explicitly removed, so the client
+ * rendered an empty map while the clone walked through mobs it could not see.
+ *
+ * Returns undefined only if the socket has no player at all.
+ */
+export function getActivePlayerForSocket(socketId: string): ServerPlayer | undefined {
+    const state = splitPlayers.get(socketId);
+    if (!state) return players[socketId];
+    const activeId = state.activeIndex === 0 ? state.player1.id : state.player2.id;
+    return players[activeId] || players[socketId];
 }
 
 // Helper function to get eligible players for a drop based on damage ranking

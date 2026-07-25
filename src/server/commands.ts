@@ -21,6 +21,7 @@ import {
     syncGuildToOnlineMembers,
     MAX_GUILD_SIZE
 } from './guildManager';
+import { getOriginalSocketId } from './utils';
 
 // AuthenticatedSocket interface (matches definition in server.ts)
 interface AuthenticatedSocket extends Socket {
@@ -315,8 +316,9 @@ export function executeServerCommand(
                     recalculatePlayerStats(targetPlayer, io);
                 }
 
-                // Emit teleport event to client for visual effects
-                io.to(targetPlayerId).emit('playerTeleported', {
+                // Emit teleport event to client for visual effects. A splitter
+                // half owns no socket — address the client that drives it.
+                io.to(getOriginalSocketId(targetPlayerId)).emit('playerTeleported', {
                     newX: x,
                     newY: y,
                     playerId: targetPlayerId
@@ -607,7 +609,7 @@ export function executeServerCommand(
 
                 // Emit inventory update to the player
                 if (targetSocket) {
-                    io.to(targetPlayerId).emit('inventoryUpdated', targetPlayer.inventory);
+                    io.to(getOriginalSocketId(targetPlayerId)).emit('inventoryUpdated', targetPlayer.inventory);
                 }
 
                 // Save player progress if user is authenticated
