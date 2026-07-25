@@ -782,7 +782,21 @@ export function getMaxJaggedOffset(points: JaggedPoint[], minT: number, maxT: nu
 // (movement prediction). Keeping a single implementation guarantees the predicted
 // position resolves walls/water identically to the server, so prediction doesn't
 // fight the authoritative position at walls (jitter) or at water edges (springing).
-export const COLLISION_BUFFER = 5; // Buffer between entities and walls
+
+// Extra slack folded into the tile-scan reach and into the substep cap. It is NOT
+// added to the collision shape itself: entities collide with walls as a disc of
+// exactly their own radius (see checkTileCollision), same as mobs/players collide
+// with each other and same as the maze resolver, so the hitbox matches the one the
+// debug overlay draws. Keeping it in `reach` just makes the scan a superset.
+export const COLLISION_BUFFER = 5;
+
+// Push-out overshoot, in px. resolveTileCollision lands the entity at exactly its
+// radius from the surface; float error at large world coordinates can leave that a
+// hair *inside* the detection boundary, which resolveEntityWallCollisions reads as
+// "unresolved" and stepPlayerMovement then refuses to move through — i.e. the
+// entity wedges against the wall. Overshooting by a hundredth of a pixel is
+// invisible and guarantees the resolved position tests clear.
+const WALL_RESOLVE_EPS = 0.01;
 
 export interface TileCollisionResult {
     collided: boolean;
@@ -852,10 +866,15 @@ export function checkTileCollision(worldX: number, worldY: number, halfSize: num
     const minTileY = Math.max(0, worldToTileY(worldY - reach));
     const maxTileY = Math.min(WALL_GRID_HEIGHT - 1, worldToTileY(worldY + reach));
 
+    // The disc's bounding box, used only to bound the span over which a jagged edge
+    // is sampled (the jaggedness is the wall's shape, not the entity's).
     const entityLeft = worldX - halfSize;
     const entityRight = worldX + halfSize;
     const entityTop = worldY - halfSize;
     const entityBottom = worldY + halfSize;
+
+    // First corner-region hit found, returned only if no flat-face hit turns up.
+    let cornerHit: TileCollisionResult | null = null;
 
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
         for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
@@ -897,67 +916,92 @@ export function checkTileCollision(worldX: number, worldY: number, halfSize: num
                 }
             }
 
-            // Inflate the collision plane outward by COLLISION_BUFFER. resolveTileCollision
-            // rests the entity exactly on this inflated plane, so detection and resolution
-            // share one boundary. Without this, detection fired at the true tile edge while
-            // resolution parked the entity COLLISION_BUFFER short of it — leaving a gap the
-            // entity drifts back into every frame and gets ejected from again, i.e. the
-            // sawtooth that makes flowers/mobs shake against walls.
-            effectiveLeft -= COLLISION_BUFFER;
-            effectiveRight += COLLISION_BUFFER;
-            effectiveTop -= COLLISION_BUFFER;
-            effectiveBottom += COLLISION_BUFFER;
+            // Circular hitbox. The entity is a disc of radius `halfSize` centred on
+            // (worldX, worldY) — NOT its bounding square, which reached 41% further at
+            // the diagonals and stopped flowers short of every wall corner. Test the
+            // nearest point on the (jagged-adjusted) tile rect against that radius.
+            // resolveTileCollision pushes back out to exactly this same boundary, so
+            // detection and resolution still agree — no dead zone, no sawtooth shake.
+            const nearX = worldX < effectiveLeft ? effectiveLeft : (worldX > effectiveRight ? effectiveRight : worldX);
+            const nearY = worldY < effectiveTop ? effectiveTop : (worldY > effectiveBottom ? effectiveBottom : worldY);
+            const nearDX = worldX - nearX;
+            const nearDY = worldY - nearY;
+            // nearDX/nearDY both 0 ⇒ the centre itself is inside the rect: always a
+            // collision, including for a zero-radius probe (point projectiles).
+            const centerInside = nearDX === 0 && nearDY === 0;
+            if (!centerInside && nearDX * nearDX + nearDY * nearDY >= halfSize * halfSize) continue;
 
-            if (
-                entityRight > effectiveLeft &&
-                entityLeft < effectiveRight &&
-                entityBottom > effectiveTop &&
-                entityTop < effectiveBottom
-            ) {
-                return { collided: true, tileX, tileY, state, effectiveLeft, effectiveRight, effectiveTop, effectiveBottom };
-            }
+            const hit: TileCollisionResult = { collided: true, tileX, tileY, state, effectiveLeft, effectiveRight, effectiveTop, effectiveBottom };
+            // A hit whose centre lies inside one of the tile's slabs resolves against a
+            // flat face; one outside both resolves radially against a corner point.
+            // Prefer face hits. On a wall built from adjacent tiles an entity pressed
+            // against the face sits within its radius of a tile seam, and that seam
+            // "corner" is interior geometry — resolving against it would nudge the
+            // entity sideways along the wall. The neighbouring tile that actually owns
+            // the centre yields the clean face push, so keep scanning for it and fall
+            // back to the corner hit only if no face hit exists.
+            if (nearDX === 0 || nearDY === 0) return hit;
+            if (!cornerHit) cornerHit = hit;
         }
     }
 
-    return null;
+    return cornerHit;
 }
 
-// Push an entity out of a tile along the axis of minimum overlap.
+// Push an entity's disc out of a tile: flat faces clamp the offending axis (so the
+// entity slides along the wall), convex corners push radially off the corner point
+// (so the disc rolls around it instead of catching on a square's edge), and a centre
+// embedded in the tile ejects along the axis of least penetration.
 export function resolveTileCollision(
     entityX: number,
     entityY: number,
     entityHalfSize: number,
     collision: TileCollisionResult
 ): { x: number; y: number } {
-    const entityLeft = entityX - entityHalfSize;
-    const entityRight = entityX + entityHalfSize;
-    const entityTop = entityY - entityHalfSize;
-    const entityBottom = entityY + entityHalfSize;
+    const left = collision.effectiveLeft;
+    const right = collision.effectiveRight;
+    const top = collision.effectiveTop;
+    const bottom = collision.effectiveBottom;
+    // Rest the entity exactly its own radius from the surface — the same boundary
+    // checkTileCollision detects on — plus the float-error overshoot.
+    const r = entityHalfSize + WALL_RESOLVE_EPS;
 
-    const overlapLeft = entityRight - collision.effectiveLeft;
-    const overlapRight = collision.effectiveRight - entityLeft;
-    const overlapTop = entityBottom - collision.effectiveTop;
-    const overlapBottom = collision.effectiveBottom - entityTop;
+    const insideX = entityX > left && entityX < right;
+    const insideY = entityY > top && entityY < bottom;
 
-    const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
-
-    let newX = entityX;
-    let newY = entityY;
-
-    // effectiveLeft/Right/Top/Bottom are already inflated by COLLISION_BUFFER in
-    // checkTileCollision, so resting the entity flush against them keeps the buffer gap
-    // while landing exactly on the detection boundary (no dead zone, no shake).
-    if (minOverlap === overlapLeft) {
-        newX = collision.effectiveLeft - entityHalfSize;
-    } else if (minOverlap === overlapRight) {
-        newX = collision.effectiveRight + entityHalfSize;
-    } else if (minOverlap === overlapTop) {
-        newY = collision.effectiveTop - entityHalfSize;
-    } else if (minOverlap === overlapBottom) {
-        newY = collision.effectiveBottom + entityHalfSize;
+    if (insideX && insideY) {
+        // Centre embedded in the tile: there is no nearest surface point to push
+        // along, so fall back to least-penetration ejection (unchanged behaviour —
+        // stepPlayerMovement's MAX_STEP cap exists to keep this off the far face).
+        const overlapLeft = entityX - left;
+        const overlapRight = right - entityX;
+        const overlapTop = entityY - top;
+        const overlapBottom = bottom - entityY;
+        const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+        if (minOverlap === overlapLeft) return { x: left - r, y: entityY };
+        if (minOverlap === overlapRight) return { x: right + r, y: entityY };
+        if (minOverlap === overlapTop) return { x: entityX, y: top - r };
+        return { x: entityX, y: bottom + r };
     }
 
-    return { x: newX, y: newY };
+    if (insideY) {
+        // Nearest surface is the left or right face.
+        return { x: entityX < left ? left - r : right + r, y: entityY };
+    }
+    if (insideX) {
+        return { x: entityX, y: entityY < top ? top - r : bottom + r };
+    }
+
+    // Corner region: push radially so the disc's edge — not its bounding box —
+    // touches the corner point.
+    const cornerX = entityX < left ? left : right;
+    const cornerY = entityY < top ? top : bottom;
+    let dx = entityX - cornerX;
+    let dy = entityY - cornerY;
+    let d = Math.sqrt(dx * dx + dy * dy);
+    if (!(d > 0)) { dx = 1; dy = 0; d = 1; } // sitting exactly on the corner point
+    const s = r / d;
+    return { x: cornerX + dx * s, y: cornerY + dy * s };
 }
 
 // Iteratively resolve wall/water collisions for an entity of the given size.
