@@ -44,10 +44,18 @@ export class DailyStreakWidget {
     private static readonly BORDER_W = 4;
     private static readonly WIDTH = 220;
     private static readonly HEIGHT = 150;
+    // How long the star wobbles after a claim before the widget settles.
+    private static readonly PULSE_MS = 3000;
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
     private state: DailyStreakState | null = null;
     private rafId: number | null = null;
+    private timerId: number | null = null;
+    private running = false;
+    // Matches the canvas's initial state: appended with no display override.
+    private visible = true;
+    private pulseUntilMs = 0;
+    private lastSig = '';
 
     constructor() {
         this.canvas = document.createElement('canvas');
@@ -76,38 +84,114 @@ export class DailyStreakWidget {
 
     update(state: DailyStreakState): void {
         this.state = state;
-        this.startAnimating();
+        // Wobble to celebrate a fresh claim, but only briefly. `newDay` is sent
+        // once at login and stays true for the whole session, so keying the
+        // animation off it alone meant the widget never stopped animating.
+        if (state.newDay) this.pulseUntilMs = performance.now() + DailyStreakWidget.PULSE_MS;
+        this.lastSig = '';
+        // Restart the schedule so the new state (and any pulse) shows on this
+        // frame instead of at the next one-second tick.
+        this.stopAnimating();
+        if (this.visible) this.startAnimating();
     }
 
     show(): void {
         this.canvas.style.setProperty('display', 'block', 'important');
+        this.visible = true;
+        this.lastSig = '';
         if (this.state) this.startAnimating();
     }
 
     hide(): void {
         this.canvas.style.setProperty('display', 'none', 'important');
+        this.visible = false;
+        // A display:none canvas keeps its bitmap, so there is nothing to redraw
+        // until it comes back — drop the timer entirely rather than tick blind.
         this.stopAnimating();
     }
 
     private startAnimating(): void {
-        if (this.rafId !== null) return;
-        const tick = () => {
-            this.draw();
-            this.rafId = requestAnimationFrame(tick);
-        };
-        this.rafId = requestAnimationFrame(tick);
+        if (this.running) return;
+        this.running = true;
+        this.step();
     }
 
     private stopAnimating(): void {
+        this.running = false;
         if (this.rafId !== null) {
             cancelAnimationFrame(this.rafId);
             this.rafId = null;
         }
+        if (this.timerId !== null) {
+            clearTimeout(this.timerId);
+            this.timerId = null;
+        }
     }
 
-    private draw(): void {
+    /**
+     * One draw-if-needed step, which then reschedules itself.
+     *
+     * A full redraw is not cheap — two roundRect fills, a Path2D star stroked at
+     * 36px with round joins, and five stroked text runs — and this used to run on
+     * every display frame for as long as the title screen was up, even though the
+     * only thing that changes is a second-granularity countdown. Now the rAF loop
+     * runs solely while the post-claim wobble is animating; once that settles the
+     * widget wakes once per second, on the second boundary, and redraws only when
+     * the rendered text actually differs (so an hours-away countdown, which reads
+     * `2h 14m`, costs one redraw per minute).
+     */
+    private step(): void {
+        this.rafId = null;
+        this.timerId = null;
+        if (!this.running) return;
+
+        const pulseLeft = this.pulseUntilMs - performance.now();
+        const pulsing = pulseLeft > 0;
+        this.drawIfChanged(pulsing ? pulseLeft / DailyStreakWidget.PULSE_MS : 0);
+
+        if (pulsing) {
+            this.rafId = requestAnimationFrame(() => this.step());
+        } else {
+            // Land just past the next whole second so the countdown ticks over
+            // promptly instead of drifting up to a second behind.
+            this.timerId = window.setTimeout(() => this.step(), 1000 - (Date.now() % 1000) + 5);
+        }
+    }
+
+    /** Skip the redraw entirely when nothing on the widget would look different. */
+    private drawIfChanged(pulseAmount: number): void {
         const state = this.state;
         if (!state) return;
+        const now = Date.now();
+        const text = this.computeText(state, now);
+        if (pulseAmount > 0) {
+            // The star is mid-wobble; every frame differs regardless of the text.
+            this.lastSig = '';
+        } else {
+            const sig = `${text.cycleDay}|${text.status}|${text.nextText}|${text.resetText}`;
+            if (sig === this.lastSig) return;
+            this.lastSig = sig;
+        }
+        this.draw(state, text, pulseAmount);
+    }
+
+    /** Everything the widget renders that can change over time. */
+    private computeText(state: DailyStreakState, now: number) {
+        const claimed = now < state.nextClaimAtMs;
+        return {
+            cycleDay: state.streak > 0 ? ((state.streak - 1) % 5) + 1 : 0,
+            status: claimed ? `Claimed · Day ${state.streak}` : 'Ready to claim!',
+            claimed,
+            nextText: claimed ? `Next: ${formatDuration(state.nextClaimAtMs - now)}` : 'Next: now',
+            resetText: `Resets: ${formatDuration(state.streakExpiresAtMs - now)}`,
+        };
+    }
+
+    private draw(
+        state: DailyStreakState,
+        text: ReturnType<DailyStreakWidget['computeText']>,
+        pulseAmount: number,
+    ): void {
         const ctx = this.ctx;
         const W = DailyStreakWidget.WIDTH;
         const H = DailyStreakWidget.HEIGHT;
@@ -124,15 +208,16 @@ export class DailyStreakWidget {
         (ctx as any).roundRect(borderW, borderW, W - borderW * 2, H - borderW * 2, Math.max(0, radius - 2));
         ctx.fill();
 
-        const now = Date.now();
-        const claimed = now < state.nextClaimAtMs;
-        const cycleDay = state.streak > 0 ? ((state.streak - 1) % 5) + 1 : 0;
+        const cycleDay = text.cycleDay;
 
         // ----- Single star centered near the top -----
         const starCx = W / 2;
         const starCy = 40;
-        const pulseMs = performance.now();
-        const pulse = state.newDay ? 1 + Math.sin(pulseMs / 140) * 0.08 : 1;
+        // Amplitude decays with the remaining pulse time so the wobble eases out
+        // instead of snapping back to rest when the animation stops.
+        const pulse = pulseAmount > 0
+            ? 1 + Math.sin(performance.now() / 140) * 0.08 * pulseAmount
+            : 1;
         this.drawStar(ctx, starCx, starCy, 22 * pulse, cycleDay > 0, state.newDay);
 
         // Number inside star (cycle day)
@@ -155,20 +240,17 @@ export class DailyStreakWidget {
         ctx.lineWidth = 3;
         ctx.strokeStyle = '#000000';
         const statusY = 74;
-        const status = claimed ? `Claimed · Day ${state.streak}` : 'Ready to claim!';
-        ctx.strokeText(status, W / 2, statusY);
-        ctx.fillStyle = claimed ? '#ffffff' : '#ffe65d';
-        ctx.fillText(status, W / 2, statusY);
+        ctx.strokeText(text.status, W / 2, statusY);
+        ctx.fillStyle = text.claimed ? '#ffffff' : '#ffe65d';
+        ctx.fillText(text.status, W / 2, statusY);
 
         // ----- Countdown lines -----
         ctx.font = '11px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.lineWidth = 2.5;
 
-        const nextText = claimed
-            ? `Next: ${formatDuration(state.nextClaimAtMs - now)}`
-            : 'Next: now';
-        const resetText = `Resets: ${formatDuration(state.streakExpiresAtMs - now)}`;
+        const nextText = text.nextText;
+        const resetText = text.resetText;
 
         const lineY1 = 100;
         const lineY2 = 120;

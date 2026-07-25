@@ -1427,6 +1427,7 @@ function setupSocketListeners(game: any) {
         const serverPlayers: any[] | undefined = data.P;
         const serverEnemies: any[] | undefined = data.E;
         const removedEnemyIds: string[] | undefined = data.R;
+        const removedPlayerIds: string[] | undefined = data.D;
 
         // De-jittered snapshot timeline. Stamping snapshots with *arrival* time
         // lets network jitter distort the timeline: under latency, TCP delivers
@@ -1574,6 +1575,17 @@ function setupSocketListeners(game: any) {
             }
         }
 
+        // Players the server has culled: out of our visibility box, or gone.
+        // Without this every flower we ever saw stayed in the map forever,
+        // frozen at its last-known position and still drawn on the minimap.
+        // Never drop a flower we own — the local halves are always streamed.
+        if (removedPlayerIds) {
+            for (const id of removedPlayerIds) {
+                if (isOwnPlayerId(game, id)) continue;
+                game.players.delete(id);
+            }
+        }
+
         // Explicit removes only: drop just the enemies the server told us to drop.
         // Stationary / unchanged enemies aren't mentioned at all and stay as-is.
         if (removedEnemyIds) {
@@ -1590,6 +1602,14 @@ function setupSocketListeners(game: any) {
             if (serverEnemies) for (const e of serverEnemies) mentioned.add(e.i);
             for (const id of Array.from(game.enemies.keys()) as string[]) {
                 if (!mentioned.has(id)) handleEnemyOutOfView(id);
+            }
+            // Same for players: after a resync the server re-sends every visible
+            // flower as a first-sight record, so anything P doesn't mention is a
+            // ghost whose D entry was lost with the dropped frame.
+            const mentionedPlayers = new Set<string>();
+            if (serverPlayers) for (const sp of serverPlayers) mentionedPlayers.add(sp.i);
+            for (const id of Array.from(game.players.keys()) as string[]) {
+                if (!mentionedPlayers.has(id) && !isOwnPlayerId(game, id)) game.players.delete(id);
             }
         }
 

@@ -5370,6 +5370,10 @@ function start_loop() {
             }
             playerSnapshots.push({
                 p,
+                // Socket that owns this flower (a splitter half resolves to the
+                // socket driving both halves). Recipient-invariant, so resolve
+                // it once here instead of per recipient in the O(N²) send loop.
+                ownerId: (0, utils_1.getOriginalSocketId)(p.id),
                 faceFlags,
                 equipFlags,
                 renderFlags: p.renderFlags ?? 0,
@@ -5440,6 +5444,25 @@ function start_loop() {
             const lastPlayers = socket.lastSentPlayers;
             const changedPlayers = [];
             const currentPlayerIds = new Set();
+            // This recipient's visibility box: 200% of their viewport, the same
+            // box the enemy filter below uses, so flowers and mobs pop in and out
+            // together. Players used to be exempt from it entirely — every socket
+            // received every player on the server, including ones 200k units away
+            // in the maze — so the payload grew with the whole player count and
+            // the client's players map only ever shrank on disconnect.
+            const vw = (player?.viewportWidth || constants_2.VIEWPORT_WIDTH) * 2;
+            const vh = (player?.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 2;
+            const px0 = player?.x || 0;
+            const py0 = player?.y || 0;
+            // Exemptions from the box — clients need these flowers off-screen:
+            //  - both of this socket's own halves (splitter leaves one behind),
+            //  - squadmates, whose minimap dots are drawn from the players map,
+            //  - everyone in the PvP arena while we're in it, since the arena
+            //    leaderboard is built from the players map and the arena
+            //    (r=2500) is larger than the visibility box.
+            const squad = (0, squadManager_1.getSquadForPlayer)(playerId);
+            const squadIds = squad ? new Set(squad.memberIds) : null;
+            const selfInArena = !!player?.inPvpArena;
             // Per-petal positions go to the recipient for their OWN flower and for
             // every other flower on their screen, so both render through the exact
             // same authoritative path (see petalsOut below). Bounded by the standard
@@ -5450,13 +5473,24 @@ function start_loop() {
             // instead of flickering between the two render paths.
             const petalBoxW = (player?.viewportWidth || constants_2.VIEWPORT_WIDTH) / 2 + constants_2.VIEWPORT_BUFFER;
             const petalBoxH = (player?.viewportHeight || constants_2.VIEWPORT_HEIGHT) / 2 + constants_2.VIEWPORT_BUFFER;
-            const petalOriginX = player?.x || 0;
-            const petalOriginY = player?.y || 0;
             let petalDetailBudget = PETAL_DETAIL_MAX_PLAYERS;
             for (const snap of playerSnapshots) {
                 const p = snap.p;
-                currentPlayerIds.add(p.id);
                 const isSelf = p.id === selfId;
+                // Cull before anything else: a player that fails this is left out
+                // of currentPlayerIds, which puts them on the remove list below.
+                if (!isSelf && snap.ownerId !== playerId) {
+                    let visible = (squadIds !== null && squadIds.has(snap.ownerId)) ||
+                        (selfInArena && !!p.inPvpArena);
+                    if (!visible) {
+                        const pdx = p.x - px0;
+                        const pdy = p.y - py0;
+                        visible = (pdx < 0 ? -pdx : pdx) < vw && (pdy < 0 ? -pdy : pdy) < vh;
+                    }
+                    if (!visible)
+                        continue;
+                }
+                currentPlayerIds.add(p.id);
                 const faceFlags = snap.faceFlags;
                 const equipFlags = snap.equipFlags;
                 const renderFlags = snap.renderFlags;
@@ -5492,8 +5526,8 @@ function start_loop() {
                 // the petalsSig delta check below.
                 let wantPetals = isSelf;
                 if (!wantPetals && petalDetailBudget > 0 &&
-                    Math.abs(p.x - petalOriginX) <= petalBoxW &&
-                    Math.abs(p.y - petalOriginY) <= petalBoxH) {
+                    Math.abs(p.x - px0) <= petalBoxW &&
+                    Math.abs(p.y - py0) <= petalBoxH) {
                     wantPetals = true;
                     petalDetailBudget--;
                 }
@@ -5645,16 +5679,19 @@ function start_loop() {
                     });
                 }
             }
-            // Drop tracking for players that are no longer present (disconnects).
+            // Explicit-remove list for players, mirroring the enemy one below:
+            // anyone we previously sent who has left the visibility box or is no
+            // longer on the server. Dropping them from lastPlayers alone only
+            // stopped the deltas — the client kept the flower forever, frozen at
+            // its last-known position, still drawn and still on the minimap.
+            const removedPlayerIds = [];
             for (const id of lastPlayers.keys()) {
-                if (!currentPlayerIds.has(id))
+                if (!currentPlayerIds.has(id)) {
+                    removedPlayerIds.push(id);
                     lastPlayers.delete(id);
+                }
             }
             // Filter enemies to this player's viewport (200% buffer)
-            const vw = (player?.viewportWidth || constants_2.VIEWPORT_WIDTH) * 2;
-            const vh = (player?.viewportHeight || constants_2.VIEWPORT_HEIGHT) * 2;
-            const px0 = player?.x || 0;
-            const py0 = player?.y || 0;
             const viewportEnemies = [];
             for (let ei = 0; ei < constants_2.enemies.length; ei++) {
                 const e = constants_2.enemies[ei];
@@ -5735,7 +5772,8 @@ function start_loop() {
             // zero bandwidth instead of an empty-but-still-emitted heartbeat.
             // Never skip a pending resync: even an empty F=1 snapshot is
             // meaningful (it tells the client its remaining enemies are stale).
-            if (!fullResync && changedPlayers.length === 0 && changedEnemies.length === 0 && removedEnemyIds.length === 0) {
+            if (!fullResync && changedPlayers.length === 0 && changedEnemies.length === 0 &&
+                removedEnemyIds.length === 0 && removedPlayerIds.length === 0) {
                 socket.lastUpdateTime = now;
                 continue;
             }
@@ -5751,6 +5789,8 @@ function start_loop() {
                 gameState.E = changedEnemies;
             if (removedEnemyIds.length > 0)
                 gameState.R = removedEnemyIds;
+            if (removedPlayerIds.length > 0)
+                gameState.D = removedPlayerIds;
             if (fullResync)
                 gameState.F = 1;
             socket.lastUpdateTime = now;

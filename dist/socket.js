@@ -1254,6 +1254,7 @@ function setupSocketListeners(game) {
         const serverPlayers = data.P;
         const serverEnemies = data.E;
         const removedEnemyIds = data.R;
+        const removedPlayerIds = data.D;
         // De-jittered snapshot timeline. Stamping snapshots with *arrival* time
         // lets network jitter distort the timeline: under latency, TCP delivers
         // several ticks in a burst with near-identical timestamps, and the
@@ -1419,6 +1420,17 @@ function setupSocketListeners(game) {
                 }
             }
         }
+        // Players the server has culled: out of our visibility box, or gone.
+        // Without this every flower we ever saw stayed in the map forever,
+        // frozen at its last-known position and still drawn on the minimap.
+        // Never drop a flower we own — the local halves are always streamed.
+        if (removedPlayerIds) {
+            for (const id of removedPlayerIds) {
+                if (isOwnPlayerId(game, id))
+                    continue;
+                game.players.delete(id);
+            }
+        }
         // Explicit removes only: drop just the enemies the server told us to drop.
         // Stationary / unchanged enemies aren't mentioned at all and stay as-is.
         if (removedEnemyIds) {
@@ -1438,6 +1450,17 @@ function setupSocketListeners(game) {
             for (const id of Array.from(game.enemies.keys())) {
                 if (!mentioned.has(id))
                     handleEnemyOutOfView(id);
+            }
+            // Same for players: after a resync the server re-sends every visible
+            // flower as a first-sight record, so anything P doesn't mention is a
+            // ghost whose D entry was lost with the dropped frame.
+            const mentionedPlayers = new Set();
+            if (serverPlayers)
+                for (const sp of serverPlayers)
+                    mentionedPlayers.add(sp.i);
+            for (const id of Array.from(game.players.keys())) {
+                if (!mentionedPlayers.has(id) && !isOwnPlayerId(game, id))
+                    game.players.delete(id);
             }
         }
         if (serverEnemies) {
