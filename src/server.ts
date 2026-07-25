@@ -4002,6 +4002,31 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 const ENEMY_SPEED_MULTIPLIER = 2;
 const ENEMY_CHASE_RANGE = 500;
 const ENEMY_WANDER_RANGE = 200;
+// Random wander is size-relative: how far a mob strays per hop scales with its
+// radius, so a mob 10x wider covers 10x the ground instead of taking the same
+// absolute step a common does. Mob `speed` is constant across rarities (only
+// `size` scales, SIZE_SCALING 1.5 -> 42.9), so an unscaled step that reads as a
+// few body-lengths for a common (radius 30) is a tenth of a body-length for an
+// apex (radius 858) — the "big mobs look frozen" bug. Normalised against a
+// radius above the common tier's 30 so small mobs also settle down in absolute
+// terms rather than only being caught up to.
+const WANDER_REF_RADIUS = 50;
+// Ceiling on the resulting wander velocity. Straight radius-proportional scaling
+// drifts an apex mob at ~2000 u/s — 7x a player's top speed — so clamp the passive
+// step to the player's base speed. MAX_SPEED is per second; this is per 30 TPS tick.
+const MAX_WANDER_STEP = MAX_SPEED / 30;
+
+// Radius-derived multiplier applied to every random-wander distance/speed below.
+// _radius/_mobStats are cached by rebuildEnemyGrid, but that pass skips pets and
+// runs after this one on a mob's first tick, hence the fallback.
+function wanderSizeFactor(enemy: Enemy): number {
+    let radius = enemy._radius;
+    if (radius === undefined) {
+        const stats = enemy._mobStats ?? getMobStats(enemy.type, enemy.tier);
+        radius = stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2;
+    }
+    return radius / WANDER_REF_RADIUS;
+}
 // Mobs that chase at exactly the player's base speed (MAX_SPEED) instead of
 // their stat-derived step: a fleeing flower can never outrun them, but they
 // can't gain on one running straight either — florr's pursuit feel.
@@ -4432,9 +4457,11 @@ function moveEnemies() {
             } else {
                 // Owner is dead or disconnected, pet wanders
                 enemy.isChasing = false;
+                const petWanderFactor = wanderSizeFactor(enemy);
                 if (enemy.wanderTargetX === undefined || currentTime - (enemy.lastWanderTime || 0) > 3000) {
-                    enemy.wanderTargetX = enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
-                    enemy.wanderTargetY = enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
+                    const range = ENEMY_WANDER_RANGE * petWanderFactor;
+                    enemy.wanderTargetX = enemy.x + (Math.random() * 2 - 1) * range;
+                    enemy.wanderTargetY = enemy.y + (Math.random() * 2 - 1) * range;
                     enemy.lastWanderTime = currentTime;
                 }
 
@@ -4444,7 +4471,7 @@ function moveEnemies() {
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
                     if (distance > 5) {
-                        const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5;
+                        const speed = Math.min(enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5 * petWanderFactor, MAX_WANDER_STEP);
                         enemy.x += (dx / distance) * speed;
                         enemy.y += (dy / distance) * speed;
                         enemy.angle = Math.atan2(dy, dx);
@@ -4856,9 +4883,11 @@ function moveEnemies() {
                 // Centipede heads keep the target-based wander with own-segment
                 // avoidance — the chain-follow pass depends on smooth directed head
                 // movement, so it's intentionally not the gardn passive below.
+                const headWanderFactor = wanderSizeFactor(enemy);
                 if (enemy.wanderTargetX === undefined || currentTime - (enemy.lastWanderTime || 0) > 3000) {
-                    enemy.wanderTargetX = enemy.x + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
-                    enemy.wanderTargetY = enemy.y + (Math.random() * 2 - 1) * ENEMY_WANDER_RANGE;
+                    const range = ENEMY_WANDER_RANGE * headWanderFactor;
+                    enemy.wanderTargetX = enemy.x + (Math.random() * 2 - 1) * range;
+                    enemy.wanderTargetY = enemy.y + (Math.random() * 2 - 1) * range;
                     enemy.lastWanderTime = currentTime;
                 }
                 if (enemy.wanderTargetX !== undefined) {
@@ -4866,7 +4895,12 @@ function moveEnemies() {
                     const dy = enemy.wanderTargetY! - enemy.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     if (distance > 5) {
-                        const speed = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5;
+                        // Range alone isn't enough here: this form walks to the target at a
+                        // fixed step, so a bigger range would just take proportionally longer.
+                        // Scale the step too (same cap as the passive machine). Segments are
+                        // snapped to their leader at fixed spacing every tick, so a faster
+                        // head doesn't stretch the chain.
+                        const speed = Math.min(enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.5 * headWanderFactor, MAX_WANDER_STEP);
                         let moveX = dx / distance;
                         let moveY = dy / distance;
                         const avoid = computeOwnSegmentAvoidance(enemy);
@@ -4898,7 +4932,10 @@ function moveEnemies() {
                 // base is scaled per-mob (gardn-matched wander baseline). This used to
                 // carry a 3x roam factor, which sent mobs sprinting way too far per
                 // move — removed for gardn-like short wander hops.
-                const ACCEL = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.25;
+                // Hop distance is (sum of accel)/FRICTION, so scaling ACCEL by the mob's
+                // radius factor scales the distance covered per move phase with it — the
+                // phase durations stay fixed, which is what keeps hops size-proportional.
+                const ACCEL = enemy.speed * ENEMY_SPEED_MULTIPLIER * 0.25 * wanderSizeFactor(enemy);
 
                 let accelX = 0;
                 let accelY = 0;
@@ -4955,6 +4992,15 @@ function moveEnemies() {
                 // gardn Motion.cc integrator: friction bleeds velocity, accel refills it.
                 enemy.velX = (enemy.velX ?? 0) * (1 - FRICTION) + accelX;
                 enemy.velY = (enemy.velY ?? 0) * (1 - FRICTION) + accelY;
+                // Clamp the size-scaled drift so the largest mobs can't outrun players.
+                // velX/velY are exclusively this integrator's state (physics.ts only ever
+                // zeroes them on a wall hit), so clamping here affects nothing else.
+                const velMag = Math.sqrt(enemy.velX * enemy.velX + enemy.velY * enemy.velY);
+                if (velMag > MAX_WANDER_STEP) {
+                    const k = MAX_WANDER_STEP / velMag;
+                    enemy.velX *= k;
+                    enemy.velY *= k;
+                }
                 enemy.x += enemy.velX;
                 enemy.y += enemy.velY;
             }
