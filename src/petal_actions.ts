@@ -1,5 +1,6 @@
 import { PetalAction, parsePetalActions, getRarityIndex } from './petals';
 import { ServerPlayer } from './player';
+import { sanitizePlayerForClient } from './server/playerWire';
 import { Item } from './item';
 import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
@@ -1700,7 +1701,7 @@ export function splitPlayer(player: ServerPlayer, io: any): void {
     });
     
     // Send full player data including loadout to clients so they can render the split player's petals
-    io.emit('playerUpdated', splitPlayer2);
+    io.emit('playerUpdated', sanitizePlayerForClient(splitPlayer2));
 
     console.log(`[PetalActions] Player ${player.name} (${player.id}) split into 2 players with separate inventories and states`);
 }
@@ -1762,14 +1763,14 @@ export function switchPlayer(player: ServerPlayer, io: any, socketId?: string): 
             activePlayerId: activePlayerId
         });
         // Send full player data including loadout to the client so they can display the correct loadout
-        io.to(socketId).emit('playerUpdated', activePlayer);
+        io.to(socketId).emit('playerUpdated', sanitizePlayerForClient(activePlayer));
     } else {
         io.emit('playerSwitched', {
             originalId: originalId,
             activePlayerId: activePlayerId
         });
         // Send full player data including loadout to all clients
-        io.emit('playerUpdated', activePlayer);
+        io.emit('playerUpdated', sanitizePlayerForClient(activePlayer));
     }
 
     console.log(`[PetalActions] Switched to player ${splitState.activeIndex === 0 ? '1' : '2'} (activePlayerId=${activePlayerId})`);

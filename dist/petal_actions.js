@@ -18,6 +18,7 @@ exports.splitPlayer = splitPlayer;
 exports.switchPlayer = switchPlayer;
 exports.updatePetalPosition = updatePetalPosition;
 const petals_1 = require("./petals");
+const playerWire_1 = require("./server/playerWire");
 const server_utils_1 = require("./server_utils");
 const server_1 = require("./server");
 const buildEnemy_1 = require("./server/shared/buildEnemy");
@@ -1497,7 +1498,7 @@ function splitPlayer(player, io) {
         player2Id: splitPlayer2.id
     });
     // Send full player data including loadout to clients so they can render the split player's petals
-    io.emit('playerUpdated', splitPlayer2);
+    io.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(splitPlayer2));
     console.log(`[PetalActions] Player ${player.name} (${player.id}) split into 2 players with separate inventories and states`);
 }
 // Switch between split players
@@ -1552,7 +1553,7 @@ function switchPlayer(player, io, socketId) {
             activePlayerId: activePlayerId
         });
         // Send full player data including loadout to the client so they can display the correct loadout
-        io.to(socketId).emit('playerUpdated', activePlayer);
+        io.to(socketId).emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(activePlayer));
     }
     else {
         io.emit('playerSwitched', {
@@ -1560,7 +1561,7 @@ function switchPlayer(player, io, socketId) {
             activePlayerId: activePlayerId
         });
         // Send full player data including loadout to all clients
-        io.emit('playerUpdated', activePlayer);
+        io.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(activePlayer));
     }
     console.log(`[PetalActions] Switched to player ${splitState.activeIndex === 0 ? '1' : '2'} (activePlayerId=${activePlayerId})`);
 }

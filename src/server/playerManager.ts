@@ -1,5 +1,6 @@
 import { Server as SocketIOServer } from '../ws_server';
 import { ServerPlayer, PlayerInventory, PlayerSkills } from '../player';
+import { sanitizePlayerForClient } from './playerWire';
 import { Item } from '../item';
 import { getPetalStats, PlayerModifiers } from '../petals';
 import {
@@ -153,7 +154,7 @@ export function exitPvpArena(
         // a stale `updateLoadout` that the server would persist as the regular
         // loadout (the mode-tag guard in the updateLoadout handler is the other
         // half of that fix).
-        io.to(getOriginalSocketId(player.id)).emit('playerUpdated', player);
+        io.to(getOriginalSocketId(player.id)).emit('playerUpdated', sanitizePlayerForClient(player));
     }
     if (savePlayerProgress) {
         const userId = playerUserIds[player.id];
@@ -1035,7 +1036,7 @@ export function recalculatePlayerStats(player: ServerPlayer, io?: SocketIOServer
     
     // Emit update only to the affected player
     if (io) {
-        io.to(getOriginalSocketId(player.id)).emit('playerUpdated', player);
+        io.to(getOriginalSocketId(player.id)).emit('playerUpdated', sanitizePlayerForClient(player));
     }
 }
 

@@ -15,6 +15,7 @@ exports.removeAllBots = removeAllBots;
 exports.maintainBotCount = maintainBotCount;
 exports.triggerBotRaid = triggerBotRaid;
 exports.updateBotAI = updateBotAI;
+const playerWire_1 = require("./playerWire");
 const constants_1 = require("../constants");
 const map_data_1 = require("../map_data");
 const petals_1 = require("../petals");
@@ -904,7 +905,7 @@ function createBot(io) {
             io.emit('playerInvulnerabilityEnded', { playerId: id });
         }
     }, BOT_SPAWN_INVULNERABILITY_MS);
-    io.emit('newPlayer', bot);
+    io.emit('newPlayer', (0, playerWire_1.sanitizePublicPlayerForClient)(bot));
     return bot;
 }
 function removeBot(id, io) {

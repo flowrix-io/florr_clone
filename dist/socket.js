@@ -1112,6 +1112,30 @@ function setupSocketListeners(game) {
             }
         }
     });
+    // Incremental mob-gallery counter. The server used to re-send the entire
+    // player (inventory, loadout and the whole mobKills table — ~9.9KB on a
+    // late-game save) on every single kill just to move one number; this is the
+    // ~12-byte version of that. `c` is the authoritative count, not a delta, so
+    // a dropped frame self-heals on the next kill of the same type.
+    game.socket.on('mobKillUpdate', (data) => {
+        forEachOwnPlayer(game, p => {
+            if (!p.mobKills)
+                p.mobKills = {};
+            if (!p.mobKills[data.t])
+                p.mobKills[data.t] = {};
+            p.mobKills[data.t][data.r] = data.c;
+        });
+        // Same debounce as the old playerUpdated path — several mobs dying in
+        // one tick would otherwise re-render the gallery once per kill.
+        if (game.inventoryManager) {
+            if (mobGalleryUpdateTimeout)
+                clearTimeout(mobGalleryUpdateTimeout);
+            mobGalleryUpdateTimeout = setTimeout(() => {
+                game.inventoryManager.updateMobGalleryIfOpen();
+                mobGalleryUpdateTimeout = null;
+            }, 100);
+        }
+    });
     game.socket.on('skillsUpdated', (data) => {
         const player = game.players.get(data.playerId);
         if (player) {

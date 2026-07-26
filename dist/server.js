@@ -57,6 +57,7 @@ if (invalidEggTypes.size > 0) {
     }
 }
 const player_1 = require("./player");
+const playerWire_1 = require("./server/playerWire");
 const inventoryCodec_1 = require("./inventoryCodec");
 const petal_actions_1 = require("./petal_actions");
 const petals_1 = require("./petals");
@@ -1264,7 +1265,7 @@ io.on('connection', (socket) => {
                 skills: constants_2.players[socket.id].skills || {}
             });
             // Send current game state
-            socket.emit('currentPlayers', constants_2.players);
+            socket.emit('currentPlayers', (0, playerWire_1.sanitizePlayersForClient)(constants_2.players, socket.id));
             // Only send enemies in viewport with 200% buffer on connection
             const enemiesInViewport = (0, playerState_1.getEnemiesInViewport200Percent)();
             socket.emit('enemiesUpdate', enemiesInViewport);
@@ -1274,7 +1275,7 @@ io.on('connection', (socket) => {
             socket.emit('decorationsUpdate', gameState_1.decorations);
             socket.emit('sandsUpdate', gameState_1.sands);
             // Notify other players
-            socket.broadcast.emit('newPlayer', constants_2.players[socket.id]);
+            socket.broadcast.emit('newPlayer', (0, playerWire_1.sanitizePublicPlayerForClient)(constants_2.players[socket.id]));
         }
         else {
             socket.emit('authenticated', {
@@ -1513,7 +1514,7 @@ io.on('connection', (socket) => {
         });
         // Add cooldown to the item in player's loadout (client-side handles the visual)
         // Update the player state (only relevant to this player)
-        socket.emit('playerUpdated', player);
+        socket.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
     });
     // XP handling is now managed by the global addXPToPlayer function
     // Add a name update handler
@@ -1649,7 +1650,7 @@ io.on('connection', (socket) => {
             // accounting safe: the shifted loadout and the regular-terms
             // inventory can never mix.)
             if (player.inMaze) {
-                socket.emit('playerUpdated', player);
+                socket.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
                 socket.emit('chatMessage', {
                     sender: 'System',
                     content: '<span style="color: #c77dff;">You cannot equip new petals in the maze — set up your loadout on the title screen before entering.</span>',
@@ -1668,7 +1669,7 @@ io.on('connection', (socket) => {
             // persist it. Reject and echo authoritative state so the client
             // resyncs. A missing tag is treated as "not in PVP".
             if (!!data.inPvpArena !== !!player.inPvpArena) {
-                socket.emit('playerUpdated', player);
+                socket.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
                 return;
             }
             // Track which slots had items before to detect changes
@@ -1881,7 +1882,7 @@ io.on('connection', (socket) => {
             // Recalculate player stats based on equipped petal modifiers
             (0, playerManager_1.recalculatePlayerStats)(player, io);
             // Only the player needs their own loadout update
-            socket.emit('playerUpdated', player);
+            socket.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
             // Persist to DB so title-screen edits survive re-authentication when the game starts
             if (socket.userId) {
                 savePlayerProgressImmediate(player, socket.userId);
@@ -3181,7 +3182,7 @@ io.on('connection', (socket) => {
             skills: player.skills
         });
         // Emit player update to sync stats (only to this player)
-        socket.emit('playerUpdated', player);
+        socket.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
     });
     socket.on('resetSkills', () => {
         const player = constants_2.players[socket.id];
@@ -3226,7 +3227,7 @@ io.on('connection', (socket) => {
             skills: player.skills
         });
         // Emit player update to sync stats (only to this player)
-        socket.emit('playerUpdated', player);
+        socket.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
     });
     socket.on('craftItems', (data) => {
         try {
@@ -3535,7 +3536,7 @@ io.on('connection', (socket) => {
                 inventory: player.inventory,
                 stars: player.stars
             });
-            socket.emit('playerUpdated', player);
+            socket.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
         }
         catch (error) {
             console.error('[SHOP] Error during purchase:', error);
@@ -3608,7 +3609,7 @@ io.on('connection', (socket) => {
                 timestamp: Date.now()
             };
             database_1.database.addNotification(notification);
-            socket.emit('playerUpdated', player);
+            socket.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
         }
         catch (error) {
             console.error('[SHOP] Error during code redemption:', error);
@@ -6193,7 +6194,10 @@ setInterval(() => {
     Object.entries(constants_2.players).forEach(([socketId, player]) => {
         const socket = io.sockets.sockets.get(socketId);
         if (socket && socket.userId) {
-            socket.emit('savePlayerProgress', player);
+            // No payload: the client handler only flashes the save indicator and
+            // ignores its argument, so shipping the whole player here was ~9.9KB
+            // per player per minute for nothing.
+            socket.emit('savePlayerProgress');
             savePlayerProgress(player, socket.userId);
         }
     });

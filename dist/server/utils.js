@@ -279,14 +279,21 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
                 });
             }
         }
-        // Emit playerUpdated only to the eligible player (not all clients)
+        // Stream just the one counter that moved. This used to emit the whole
+        // ServerPlayer (~9.9KB for a late-game save — the mobKills table alone
+        // was 3.6KB of it) on EVERY mob kill, which at a few kills a second was
+        // the single largest thing on this socket's downstream.
+        //
+        // The count is absolute rather than an increment, so a frame the uWS
+        // backpressure guard drops can't leave the client's gallery permanently
+        // off by one — the next kill of that same type re-states the truth.
         if (io) {
             const originalSocketId = getOriginalSocketId(playerId);
-            const playerUpdate = {
-                ...player,
-                mobKills: player.mobKills
-            };
-            io.to(originalSocketId).emit('playerUpdated', playerUpdate);
+            io.to(originalSocketId).emit('mobKillUpdate', {
+                t: enemy.type,
+                r: enemy.tier,
+                c: player.mobKills[enemy.type][enemy.tier],
+            });
         }
     }
 }

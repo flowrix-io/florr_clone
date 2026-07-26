@@ -37,6 +37,7 @@ exports.recalculatePlayerStats = recalculatePlayerStats;
 exports.addXPToPlayer = addXPToPlayer;
 exports.addMazeXPToPlayer = addMazeXPToPlayer;
 exports.savePlayerProgress = savePlayerProgress;
+const playerWire_1 = require("./playerWire");
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
 const maze_1 = require("../maze");
@@ -145,7 +146,7 @@ function exitPvpArena(player, io, savePlayerProgress) {
         // a stale `updateLoadout` that the server would persist as the regular
         // loadout (the mode-tag guard in the updateLoadout handler is the other
         // half of that fix).
-        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerUpdated', player);
+        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
     }
     if (savePlayerProgress) {
         const userId = gameState_1.playerUserIds[player.id];
@@ -963,7 +964,7 @@ function recalculatePlayerStats(player, io) {
     }
     // Emit update only to the affected player
     if (io) {
-        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerUpdated', player);
+        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
     }
 }
 /**

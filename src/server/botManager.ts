@@ -5,6 +5,7 @@
 
 import { Server as SocketIOServer } from '../ws_server';
 import { ServerPlayer } from '../player';
+import { sanitizePublicPlayerForClient } from './playerWire';
 import {
     players,
     enemies,
@@ -1065,7 +1066,7 @@ function createBot(io: SocketIOServer): ServerPlayer {
         }
     }, BOT_SPAWN_INVULNERABILITY_MS);
 
-    io.emit('newPlayer', bot);
+    io.emit('newPlayer', sanitizePublicPlayerForClient(bot));
     return bot;
 }
 
