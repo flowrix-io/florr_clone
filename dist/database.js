@@ -32,6 +32,8 @@ if (fs.existsSync(dbPath)) {
     fs.unlinkSync(dbPath);
 }
 const inventoryPath = path.join(__dirname, 'inventory.json');
+/** Staging file for the atomic write in writeDatabase(); never read at startup. */
+const tmpPath = inventoryPath + '.tmp';
 // Database backups: timestamped snapshots of inventory.json, kept one level
 // above the runtime dir (outside dist/) so redeploys can't delete them.
 const backupDir = path.join(__dirname, '..', 'db_backups');
@@ -55,6 +57,13 @@ const pruneOldBackups = () => {
 // Password hashing configuration
 const SALT_ROUNDS = 12;
 let db = { players: {}, users: {} };
+/**
+ * Set when the database file exists but could not be loaded. Every write is
+ * then refused: the in-memory db is the empty default, and persisting it would
+ * turn a recoverable bad file into permanent, total account loss. Operator has
+ * to restore from db_backups and restart.
+ */
+let loadFailed = false;
 const readDatabase = () => {
     try {
         if (fs.existsSync(inventoryPath)) {
@@ -66,21 +75,46 @@ const readDatabase = () => {
         }
     }
     catch (error) {
+        loadFailed = true;
         console.error('Error reading database file:', error);
+        console.error(`[DATABASE] FATAL: ${inventoryPath} exists but could not be loaded. ` +
+            'Refusing all writes so the file is not overwritten with an empty database. ' +
+            'Restore from db_backups and restart.');
     }
 };
 let writePending = false;
 const writeDatabase = () => {
+    if (loadFailed)
+        return;
     if (writePending)
         return;
     writePending = true;
     setImmediate(() => {
         writePending = false;
         try {
-            fs.writeFileSync(inventoryPath, JSON.stringify(db, null, 2));
+            // Write-then-rename, never in place. writeFileSync truncates its
+            // target before writing, so a crash partway through (the process
+            // has died on heap exhaustion before) used to leave inventory.json
+            // half-written. readDatabase's JSON.parse would then throw, the
+            // catch would swallow it, the server would come up on an EMPTY db,
+            // and the next save would persist that emptiness over the ruined
+            // file — every account gone. rename(2) is atomic within a
+            // filesystem, so a crash now leaves the previous good file intact.
+            const json = JSON.stringify(db, null, 2);
+            fs.writeFileSync(tmpPath, json);
+            // Parse the bytes back off disk before they replace the live file:
+            // a short write or bad encoding must never be promoted (mirrors the
+            // read-back check backupDatabase already does).
+            JSON.parse(fs.readFileSync(tmpPath, 'utf-8'));
+            fs.renameSync(tmpPath, inventoryPath);
         }
         catch (error) {
             console.error('Error writing to database file:', error);
+            try {
+                if (fs.existsSync(tmpPath))
+                    fs.unlinkSync(tmpPath);
+            }
+            catch { }
         }
     });
 };

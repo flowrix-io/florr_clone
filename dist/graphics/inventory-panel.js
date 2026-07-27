@@ -55,6 +55,8 @@ class CanvasInventoryPanel {
         this.cachedFilter = '';
         // Canvas redraw dirty-tracking — skip the full canvas paint when nothing is visible.
         this.canvasDirty = true;
+        /** Scopes the invalidation listeners registered in attachTo() to this panel's lifetime. */
+        this.listenerAbort = new AbortController();
         this.lastHoverIndex = -2;
         this.lastScrollY = -1;
         this.hasAnimatedPetals = false;
@@ -287,6 +289,28 @@ class CanvasInventoryPanel {
             }
         });
         this.resizeObserver.observe(this.canvas);
+        // Recover the painted output whenever it can no longer be trusted.
+        //
+        // draw() repaints only when it can see a reason to (inventory hash,
+        // hover, scroll, lerp, animated petals) and otherwise keeps whatever is
+        // already on the canvas — this is the only panel that does that; the
+        // craft and mob-gallery canvases repaint every frame and so can't get
+        // stuck. But the *browser* can invalidate the canvas behind our back: it
+        // may discard the backing store of a hidden tab under memory pressure,
+        // and a GPU context loss blanks it outright. Neither changes any state
+        // draw() inspects, so the panel keeps early-returning and the stale or
+        // blank frame survives until something happens to move the scroll —
+        // which is exactly the "scroll down and back up and it fixes itself"
+        // symptom. Force a full relayout+repaint on the way back in.
+        const invalidate = () => { this.layoutDirty = true; this.canvasDirty = true; };
+        const signal = this.listenerAbort.signal;
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden)
+                invalidate();
+        }, { signal });
+        window.addEventListener('focus', invalidate, { signal });
+        this.canvas.addEventListener('contextlost', invalidate, { signal });
+        this.canvas.addEventListener('contextrestored', invalidate, { signal });
         // Mount a real <input> for the search field, positioned absolutely on
         // top of the canvas. The canvas paints the background; the input
         // handles every keystroke (gardn's TextInput approach).
@@ -341,6 +365,7 @@ class CanvasInventoryPanel {
     /** Tear down DOM resources. Call when the panel is destroyed. */
     destroy() {
         this.stop();
+        this.listenerAbort.abort();
         this.resizeObserver?.disconnect();
         this.resizeObserver = null;
         if (this.searchInputEl) {
@@ -394,6 +419,14 @@ class CanvasInventoryPanel {
         if (this.canvas.width !== w || this.canvas.height !== h) {
             this.canvas.width = w;
             this.canvas.height = h;
+            // Assigning width/height resets the backing store to transparent
+            // black. This panel is the only one that keeps its painted output
+            // across frames, so without re-arming the dirty flag draw() can
+            // early-out and leave the panel blank. A CSS resize is covered by
+            // the ResizeObserver, but the backing store also tracks
+            // devicePixelRatio — moving the window to another monitor or
+            // zooming changes `w` with cssW unchanged, which nothing else sees.
+            this.canvasDirty = true;
         }
         return { dpr, cssW, cssH };
     }

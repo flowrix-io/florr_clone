@@ -40,7 +40,7 @@ if (invalidEggTypes.size > 0) {
 
 import { ServerPlayer, PlayerInventory, PlayerSkills, FaceFlags } from './player';
 import { sanitizePlayerForClient, sanitizePublicPlayerForClient, sanitizePlayersForClient } from './server/playerWire';
-import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY, getItemCount } from './inventoryCodec';
+import { dictToInventory, ID_TO_RARITY, ID_TO_ITEM_KEY, getItemCount, getInventoryCodecSignature } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalActions, spawnPet, despawnPet, despawnAllPlayerPets, cleanupPlayerPetalActionState } from './petal_actions';
 import { RARITY_LEVELS, getRarityIndex, Rarity, isUndroppableEggPetalType, ABSORB_XP, ABSORBING_SKILL_MULTIPLIERS } from './petals';
 import { WORLD_HEIGHT, ENEMY_TIERS, KNOCKBACK_RECOVERY_SPEED, ENEMY_SIZE, PLAYER_SIZE, MAX_SPEED, RESPAWN_INVULNERABILITY_TIME, enemies, players, dots, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, SCALE_FACTOR, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, getTileState, SECTION_CONFIGS, isInPvpArena, isTileIdBlocking } from './constants';
@@ -421,6 +421,12 @@ app.get('/api/leaderboard', (req, res) => {
 // The uWS app was created above; SSL vs plain was selected there based on
 // USE_HTTPS + cert availability. HTTP routes and the WebSocket route share
 // a single port; app.listen() is called at the bottom of this file.
+// Publish the inventory wire-format fingerprint before any client can connect,
+// so a client running a build with a different petal→id table is told to reload
+// instead of silently decoding every inventory entry as the wrong petal.
+Server.protocolSignature = getInventoryCodecSignature();
+console.log(`[SERVER] Inventory codec signature: ${Server.protocolSignature}`);
+
 const io = new Server(app);
 
 // Set ioInstance for use in modules

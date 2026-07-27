@@ -925,6 +925,29 @@ export class Game {
             }
         }, { signal });
 
+        // Every "held" input is released by an event the browser stops
+        // delivering the moment focus leaves the page: keyup for keys, mouseup
+        // for buttons AND for the inventory drag gesture. Alt-tabbing (or
+        // switching tabs) therefore leaves that state stuck until the user
+        // happens to press and release the same input again.
+        //
+        // The drag is the damaging one: a surviving drag is dropped by the next
+        // unrelated click after the user comes back, silently unequipping or
+        // swapping a petal — see InventoryManager.cancelDrag. Held keys/buttons
+        // are cosmetic by comparison (the flower walks on, petals stay
+        // extended), but they're the same defect, so release everything here.
+        const releaseHeldInput = () => {
+            this.inventoryManager?.cancelDrag();
+            this.keysPressed.clear();
+            this.mouseButtonsPressed.clear();
+            this.graphics.showRarityGlow = false;
+            this.graphics.altKeyPressed = false;
+        };
+        window.addEventListener('blur', releaseHeldInput, { signal });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) releaseHeldInput();
+        }, { signal });
+
         // Add name input change listener
         this.nameInput?.addEventListener('change', () => {
             if (this.socket && this.nameInput) {

@@ -285,6 +285,11 @@ app.get('/api/leaderboard', (req, res) => {
 // The uWS app was created above; SSL vs plain was selected there based on
 // USE_HTTPS + cert availability. HTTP routes and the WebSocket route share
 // a single port; app.listen() is called at the bottom of this file.
+// Publish the inventory wire-format fingerprint before any client can connect,
+// so a client running a build with a different petal→id table is told to reload
+// instead of silently decoding every inventory entry as the wrong petal.
+ws_server_1.Server.protocolSignature = (0, inventoryCodec_1.getInventoryCodecSignature)();
+console.log(`[SERVER] Inventory codec signature: ${ws_server_1.Server.protocolSignature}`);
 const io = new ws_server_1.Server(app);
 // Set ioInstance for use in modules
 ioInstance = io;

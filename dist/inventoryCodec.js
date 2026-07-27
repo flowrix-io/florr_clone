@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ID_TO_RARITY = exports.RARITY_TO_ID = exports.ID_TO_ITEM_KEY = exports.ITEM_KEY_TO_ID = void 0;
 exports.initInventoryCodec = initInventoryCodec;
+exports.getInventoryCodecSignature = getInventoryCodecSignature;
 exports.addItem = addItem;
 exports.removeItem = removeItem;
 exports.hasItem = hasItem;
@@ -42,6 +43,44 @@ function initInventoryCodec(rarityLevels, petalTypes) {
     for (const pt of sorted) {
         registerItemKey(`petal_${pt}`);
     }
+    codecSignature = computeSignature();
+}
+let codecSignature = '';
+/**
+ * Fingerprint of the (rarity|item) → id assignment this process will use.
+ *
+ * A PlayerInventory is a flat [rarityId, itemId, count, ...] triplet array: the
+ * item names never travel, only their numbers. Those numbers come from the
+ * SORTED petal list above (plus auto-generated `<mob>_egg` petals), so adding a
+ * single petal or mob renumbers every entry that sorts after it. A client
+ * holding an older table then decodes every one of those entries as a DIFFERENT
+ * petal at the right rarity — the whole inventory reads as items the player has
+ * never owned, and any loadout edit it then sends is computed against that.
+ *
+ * Derived from the live tables rather than a hand-bumped constant, so it cannot
+ * drift from what is actually on the wire: forgetting to bump it is impossible.
+ */
+function computeSignature() {
+    // FNV-1a over the id→name mapping in id order. Order matters — that IS the
+    // wire contract — so this deliberately changes when anything is renumbered.
+    let h = 0x811c9dc5;
+    const mix = (s) => {
+        for (let i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 0x01000193);
+        }
+        h ^= 0x7c;
+        h = Math.imul(h, 0x01000193);
+    };
+    for (let i = 0; i < exports.ID_TO_RARITY.size; i++)
+        mix(exports.ID_TO_RARITY.get(i) || '');
+    for (let i = 0; i < exports.ID_TO_ITEM_KEY.size; i++)
+        mix(exports.ID_TO_ITEM_KEY.get(i) || '');
+    return (h >>> 0).toString(16).padStart(8, '0') + '-' + exports.ID_TO_ITEM_KEY.size.toString(36);
+}
+/** See computeSignature. Empty until initInventoryCodec() has run. */
+function getInventoryCodecSignature() {
+    return codecSignature;
 }
 // --- Inventory operations on compact number[] format ---
 /** Find the index of a (rarityId, itemId) triplet, or -1 */

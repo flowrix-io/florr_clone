@@ -416,6 +416,8 @@ class InventoryManager {
         this.dragStartX = 0;
         this.dragStartY = 0;
         this.CLICK_DRAG_THRESHOLD = 5;
+        /** Scopes this manager's document-level listeners to its own lifetime (see setupDragAndDrop). */
+        this.listenerAbort = new AbortController();
         this.ITEM_RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
         this.lastMazeLockHintAt = 0;
         this.game = game;
@@ -1170,21 +1172,55 @@ class InventoryManager {
         this.dragSource = null;
         this.dragStartElement = null;
     }
+    /**
+     * Abort an in-flight drag WITHOUT performing a drop.
+     *
+     * A drag only ends on the document-level `mouseup`, which the browser never
+     * delivers if the page loses focus while the button is held (alt-tab, tab
+     * switch, OS window change). The drag state would then outlive the gesture
+     * and the *next* unrelated click anywhere on the page would run `endDrag`
+     * with a stale `dragSource` — dropping a petal the user is no longer
+     * dragging, against a slot index whose contents may have changed since.
+     * That fires moveItemToInventory/swapLoadoutItems/equipItemToLoadout and the
+     * server persists it, so the bogus loadout/inventory edit survives a reload.
+     */
+    cancelDrag() {
+        if (!this.isDragging)
+            return;
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        if (this.dragCanvas)
+            this.dragCanvas.style.display = 'none';
+        if (this.dragStartElement)
+            this.dragStartElement.style.opacity = '';
+        const canvasBar = this.game.loadoutBar;
+        if (canvasBar && canvasBar.endDrag)
+            canvasBar.endDrag();
+        this.isDragging = false;
+        this.dragSource = null;
+        this.dragStartElement = null;
+    }
     setupDragAndDrop() {
+        // Bound to this manager's lifetime. These are document-level, and a new
+        // InventoryManager is built on every join (plus one each for the title
+        // screen's craft panel and mob gallery) — leaving them attached meant a
+        // dead manager still answered mouseup. One that was mid-drag when the
+        // player left the game would then run endDrag against its stale player
+        // and emit updateLoadout on the socket the new session is still using.
+        const signal = this.listenerAbort.signal;
         // Global mouse move and mouse up for drag operations
         document.addEventListener('mousemove', (e) => {
             this.onDragMove(e);
-        });
+        }, { signal });
         document.addEventListener('mouseup', (e) => {
             if (this.isDragging) {
                 this.endDrag(e);
             }
-        });
+        }, { signal });
         // Right-click on the crafting canvas removes a batch of 5
         this.craftingPanel?.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             this.removeCraftingBatch();
-        });
+        }, { signal });
     }
     swapLoadoutItems(fromSlot, toSlot) {
         if (this.blockLoadoutEditInMaze())
@@ -1891,6 +1927,7 @@ class InventoryManager {
         return Math.round(chance * 100) / 100;
     }
     cleanup() {
+        this.listenerAbort.abort();
         this.inventoryPanel?.remove();
         this.canvasCraftingPanel?.destroy();
         this.craftingPanel?.remove();

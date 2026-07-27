@@ -234,6 +234,12 @@ class WSServer {
                 const socket = new WSSocket(ws, id, this);
                 ws.getUserData().socket = socket;
                 this.sockets_map.set(id, socket);
+                // Wire-compatibility token first: the client checks it before it
+                // treats the connection as usable, so an incompatible build
+                // never gets as far as authenticating and decoding an inventory.
+                if (WSServer.protocolSignature) {
+                    ws.send((0, binary_codec_1.encode)(['__sys', 'proto', WSServer.protocolSignature]), SEND_BINARY, SEND_COMPRESSED);
+                }
                 // Send the client its ID
                 ws.send((0, binary_codec_1.encode)(['__sys', 'id', id]), SEND_BINARY, SEND_COMPRESSED);
                 // Notify connection handlers
@@ -304,3 +310,10 @@ class WSServer {
 }
 exports.WSServer = WSServer;
 exports.Server = WSServer;
+/**
+ * Opaque wire-compatibility token handed to every client in the connection
+ * handshake. Set by the app at boot (see server.ts); this layer only relays
+ * it and never interprets it. A client whose own token differs is running a
+ * build that would decode this server's payloads incorrectly.
+ */
+WSServer.protocolSignature = '';

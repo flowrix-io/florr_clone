@@ -8,6 +8,57 @@
  */
 
 import { encode, decode } from './binary_codec';
+import { getInventoryCodecSignature } from './inventoryCodec';
+
+/**
+ * Guards against a client whose wire format no longer matches the server's.
+ *
+ * The server publishes its inventory codec signature in the connection
+ * handshake (see ws_server.ts). If ours differs, this bundle would decode the
+ * server's [rarityId, itemId, count] inventory triplets against a different
+ * petal→id table and render — and then edit — petals the player has never
+ * owned. There is no safe way to continue, so reload to pick up the matching
+ * build (index.html fetches bundle.bin with cache: 'no-store', so a reload is
+ * guaranteed to get the current one).
+ *
+ * Returns true if the connection is safe to use.
+ */
+const PROTO_RELOAD_KEY = 'protoMismatchReloadAt';
+function verifyProtocol(serverSig: string): boolean {
+    const ourSig = getInventoryCodecSignature();
+    if (!serverSig || !ourSig || serverSig === ourSig) {
+        try { sessionStorage.removeItem(PROTO_RELOAD_KEY); } catch {}
+        return true;
+    }
+
+    console.error(`[CLIENT] Protocol mismatch: server=${serverSig} client=${ourSig}`);
+
+    // Reload at most once per session for this. If the fresh bundle still
+    // disagrees the mismatch is not staleness (a half-finished deploy, a proxy
+    // serving an old bundle.bin), and reloading forever would just spin.
+    let alreadyTried = false;
+    try {
+        alreadyTried = !!sessionStorage.getItem(PROTO_RELOAD_KEY);
+        sessionStorage.setItem(PROTO_RELOAD_KEY, String(Date.now()));
+    } catch {
+        // sessionStorage unavailable (private mode) — treat as first attempt.
+    }
+
+    if (alreadyTried) {
+        console.error('[CLIENT] Still mismatched after reloading; refusing to connect.');
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;'
+            + 'justify-content:center;background:rgba(0,0,0,0.85);color:#fff;font:16px sans-serif;'
+            + 'text-align:center;padding:24px;';
+        el.textContent = 'This page is out of date and could not update itself. '
+            + 'Please hard-refresh (Ctrl/Cmd+Shift+R) to keep playing.';
+        document.body.appendChild(el);
+        return false;
+    }
+
+    window.location.reload();
+    return false;
+}
 
 // Per-event bandwidth profiling. The wrapper records the true wire-byte size of every
 // frame (encoded length, not a JSON estimate) split by event name and direction.
@@ -28,6 +79,8 @@ export class WSClientSocket {
     private maxReconnectDelay: number = 10000;
     private currentReconnectDelay: number = 1000;
     private pendingMessages: Uint8Array[] = [];
+    /** Cleared only if the server's handshake signature is incompatible with ours. */
+    private protocolOk: boolean = true;
 
     private eventBytes: Map<string, EventByteStats> = new Map();
     private static readonly VOLATILE_EVENTS = new Set(['playerInput', 'ping']);
@@ -93,7 +146,19 @@ export class WSClientSocket {
                     // Handle system events
                     if (eventName === '__sys') {
                         const [type, data] = args;
+                        if (type === 'proto') {
+                            // Arrives ahead of 'id'. A mismatch reloads the page,
+                            // so latch it and never fire 'connect' — the game must
+                            // not authenticate against a server it cannot decode.
+                            this.protocolOk = verifyProtocol(data);
+                            if (!this.protocolOk) {
+                                this.shouldReconnect = false;
+                                try { this.ws?.close(); } catch {}
+                            }
+                            return;
+                        }
                         if (type === 'id') {
+                            if (!this.protocolOk) return;
                             this.id = data;
                             this.connected = true;
 
