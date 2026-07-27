@@ -48,7 +48,7 @@ import { WORLD_MAP, WALL_GRID } from './map_data';
 import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { MobProjectile } from './enemy';
 import { Item, ItemWithRarity, WorldItem } from './item';
-import { getPetalStats } from './petals';
+import { getPetalStats, getEffectivePetalCooldown } from './petals';
 import { getMobStats, getAllMobTypes, SIZE_SCALING } from './mobs';
 
 // Import from refactored modules
@@ -1444,7 +1444,11 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                         
                         // Handle cooldown timers
                         if (petal.onCooldown && petalStats) {
-                            const cooldownTime = petalStats.cooldown || 10000;
+                            const cooldownTime = getEffectivePetalCooldown(petal.petalType, petal.rarity, petalStats);
+                            // Stamp the deadline the tick-loop backstop reads, so the
+                            // spawn-in reload isn't cut short by it (or left without an
+                            // end if this timer dies with the process).
+                            petal.cooldownEndTime = Date.now() + cooldownTime;
                             const timeoutKey = `${socket.id}-${i}`;
                             // Snapshot identity so a stale timer doesn't clobber a swapped slot
                             const snapshotPetalType = petal.petalType;
@@ -2126,7 +2130,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
                         // console.log(`[PET DEBUG] Petal stats for ${petal.petalType}:`, petalStats ? { petMobType: petalStats.petMobType, petMobRarity: petalStats.petMobRarity } : 'null');
                         
                         if (petalStats) {
-                            const cooldownTime = petalStats.cooldown || 10000;
+                            const cooldownTime = getEffectivePetalCooldown(petal.petalType, petal.rarity, petalStats);
+                            // Deadline for the tick-loop backstop; without it a freshly
+                            // equipped petal's reload is cancelled on the next tick.
+                            petal.cooldownEndTime = Date.now() + cooldownTime;
                             // Capture targetPlayerId in closure for setTimeout
                             const targetId = targetPlayerId;
                             // Snapshot the petal identity at scheduling time so a stale timer

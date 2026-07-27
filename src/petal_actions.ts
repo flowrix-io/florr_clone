@@ -1,4 +1,4 @@
-import { PetalAction, parsePetalActions, getRarityIndex } from './petals';
+import { PetalAction, parsePetalActions, getRarityIndex, getEffectivePetalCooldown } from './petals';
 import { ServerPlayer } from './player';
 import { sanitizePlayerForClient } from './server/playerWire';
 import { Item } from './item';
@@ -596,10 +596,11 @@ function markPetalForBreak(petalId: string, context: ActionContext): void {
         });
         
         // Get cooldown time from petal stats
-        const PETAL_CONFIG = require('./petals').PETAL_CONFIG;
-        const petalStats = (petal.petalType && petal.rarity) ? PETAL_CONFIG[petal.petalType]?.[petal.rarity] : undefined;
-        const cooldownTime = petalStats?.cooldown || 10000;
-        
+        const cooldownTime = getEffectivePetalCooldown(petal.petalType, petal.rarity);
+        // Deadline for the tick-loop restore backstop in playerState — a break
+        // with no stamp gets restored on the next tick instead of reloading.
+        petal.cooldownEndTime = Date.now() + cooldownTime;
+
         // Schedule petal restoration.
         // Snapshot identity so a stale timer doesn't clobber a swapped slot.
         const snapshotPetalType = originalPetal.petalType;

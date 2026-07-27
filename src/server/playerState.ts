@@ -3,7 +3,7 @@ import { ServerPlayer } from '../player';
 import { Enemy } from '../server_utils';
 import { PlayerProjectile } from '../enemy';
 import { WorldItem } from '../item';
-import { RARITY_LEVELS, getRarityIndex, Rarity, getAllPetalTypes, getPetalStats } from '../petals';
+import { RARITY_LEVELS, getRarityIndex, Rarity, getAllPetalTypes, getPetalStats, getEffectivePetalCooldown } from '../petals';
 import {
     players,
     enemies,
@@ -264,6 +264,31 @@ function setInstanceHealth(petal: any, instanceIndex: number, petalStats: any, v
     }
 }
 
+/**
+ * Has an on-cooldown petal/instance reached its restore deadline? Stamps one
+ * when it's missing (returning false for this tick) rather than reading
+ * "no deadline" as "expired" — see the backstop in the tick loop.
+ */
+function cooldownDeadlinePassed(petal: any, instanceIndex: number, petalStats: any, currentTime: number): boolean {
+    if (hasIndependentInstances(petalStats)) {
+        const count = petalStats.count ?? 1;
+        if (!Array.isArray(petal.instanceCooldownEndTime) || petal.instanceCooldownEndTime.length !== count) {
+            petal.instanceCooldownEndTime = new Array(count).fill(undefined);
+        }
+        const endTime = petal.instanceCooldownEndTime[instanceIndex];
+        if (endTime === undefined) {
+            petal.instanceCooldownEndTime[instanceIndex] = currentTime + getEffectiveCooldown(petal, petalStats);
+            return false;
+        }
+        return currentTime >= endTime;
+    }
+    if (petal.cooldownEndTime === undefined) {
+        petal.cooldownEndTime = currentTime + getEffectiveCooldown(petal, petalStats);
+        return false;
+    }
+    return currentTime >= petal.cooldownEndTime;
+}
+
 function isInstanceOnCooldown(petal: any, instanceIndex: number, petalStats: any): boolean {
     if (hasIndependentInstances(petalStats) && Array.isArray(petal.instanceOnCooldown)) {
         return !!petal.instanceOnCooldown[instanceIndex];
@@ -298,12 +323,7 @@ function getHealingSkillMultiplier(player: ServerPlayer): number {
 }
 
 function getEffectiveCooldown(petal: any, petalStats: any): number {
-    let cooldownTime = petalStats.cooldown || 10000;
-    if (petal.petalType === 'bubble' && petal.rarity) {
-        const rarityIdx = Math.max(0, getRarityIndex(petal.rarity));
-        cooldownTime = Math.max(50, cooldownTime * Math.pow(0.85, rarityIdx));
-    }
-    return cooldownTime;
+    return getEffectivePetalCooldown(petal.petalType, petal.rarity, petalStats);
 }
 
 function getSpongeAbsorbDuration(player: ServerPlayer): number {
@@ -1303,23 +1323,28 @@ export function updatePlayerState(
             // onCooldown: true and no timer, so without this the petal never comes
             // back (e.g. a rose consumed by its burst heal right before the portal).
             // Breaks stamp cooldownEndTime/instanceCooldownEndTime (absolute ms)
-            // alongside the timer; once the stamp passes — or if it's missing
-            // entirely, as on data from servers predating the stamp — restore here
-            // in the tick. Double-firing with a live timer is safe: the timer's
-            // callback bails when onCooldown is already false.
+            // alongside the timer; once the stamp passes, restore here in the tick.
+            // Double-firing with a live timer is safe: the timer's callback bails
+            // when onCooldown is already false.
+            //
+            // A MISSING stamp must never mean "expired". Plenty of paths put a
+            // petal on cooldown with a timer but no stamp (equipping a new petal,
+            // the spawn-in reload, on_break actions, and — until this was fixed —
+            // the collision break below), and treating undefined as expired
+            // restored every one of them on the very next tick: petals broke and
+            // came back ~50ms later at full health, with no reload at all. Adopt a
+            // deadline instead, so an unstamped cooldown still runs its full
+            // length and an imported one recovers a cooldown after arrival.
             if (isInstanceOnCooldown(petal, instanceIndex, instancePetalStats)) {
                 if (hasIndependentInstances(instancePetalStats)) {
-                    const endTime = Array.isArray(petal.instanceCooldownEndTime)
-                        ? petal.instanceCooldownEndTime[instanceIndex]
-                        : undefined;
-                    if (endTime === undefined || currentTime >= endTime) {
+                    if (cooldownDeadlinePassed(petal, instanceIndex, instancePetalStats, currentTime)) {
                         restoreIndependentPetalInstance(
                             player.id, loadoutIndex, instanceIndex,
                             petal.petalType, petal.rarity, petal.maxHealth, io
                         );
                     }
                 } else if (player.loadout[loadoutIndex] === petal &&
-                           (petal.cooldownEndTime === undefined || currentTime >= petal.cooldownEndTime)) {
+                           cooldownDeadlinePassed(petal, instanceIndex, instancePetalStats, currentTime)) {
                     // (identity check: with count > 1 the slot appears once per
                     // instance; only the first hit restores/emits.)
                     const restoredPetal = {
@@ -1408,6 +1433,16 @@ export function updatePlayerState(
                         // Slot shows cooldown only when every instance is on cooldown
                         if (petal.instanceOnCooldown!.every((c: boolean) => c)) {
                             petal.onCooldown = true;
+                            // Tell clients too, or the loadout slot never draws its
+                            // reload: nothing else pushes the slot-level flag out
+                            // (petalRestored is the only other carrier, and that's
+                            // the end of the reload, not the start).
+                            io.emit('petalBroken', {
+                                playerId: player.id,
+                                slotIndex: loadoutIndex,
+                                petalType: petal.petalType,
+                                rarity: petal.rarity
+                            });
                         }
                     } else {
                         // Non-clumped: whole slot breaks (legacy behavior)
@@ -2174,11 +2209,21 @@ export function updatePlayerState(
                         }
 
                         const cooldownTime = getEffectiveCooldown(petal, petalStats);
+                        // Absolute restore deadline alongside the setTimeout. Without it
+                        // the tick-loop backstop has no idea when this cooldown is meant
+                        // to end — and this is the path petals normally break on, so a
+                        // missing stamp meant every petal reloaded instantly.
+                        const cooldownEndsAt = Date.now() + cooldownTime;
 
                         if (hasIndependentInstances(petalStats)) {
                             // Per-instance: only this instance breaks; other instances keep working
                             ensureInstanceArrays(petal, petalStats);
                             petal.instanceOnCooldown![instanceIndex] = true;
+                            const cdCount = petalStats.count ?? 1;
+                            if (!Array.isArray(petal.instanceCooldownEndTime) || petal.instanceCooldownEndTime.length !== cdCount) {
+                                petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
+                            }
+                            petal.instanceCooldownEndTime[instanceIndex] = cooldownEndsAt;
                             resetPetalPhysicsOnBreak(player.id, loadoutIndex, instanceIndex);
                             const snapshotPetalType = petal.petalType;
                             const snapshotRarity = petal.rarity;
@@ -2198,10 +2243,18 @@ export function updatePlayerState(
 
                             if (petal.instanceOnCooldown!.every((c: boolean) => c)) {
                                 petal.onCooldown = true;
+                                // See the matching emit in the tick-loop break above.
+                                io.emit('petalBroken', {
+                                    playerId: player.id,
+                                    slotIndex: loadoutIndex,
+                                    petalType: petal.petalType,
+                                    rarity: petal.rarity
+                                });
                             }
                         } else {
                             // Non-clumped: whole slot breaks (legacy behavior)
                             petal.onCooldown = true;
+                            petal.cooldownEndTime = cooldownEndsAt;
                             resetSlotPetalPhysicsOnBreak(player.id, loadoutIndex);
                             const originalPetal = {
                                 type: petal.type,

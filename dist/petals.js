@@ -5,6 +5,7 @@ exports.getRarityIndex = getRarityIndex;
 exports.getLightningDamage = getLightningDamage;
 exports.getLightningScalingInfo = getLightningScalingInfo;
 exports.getPetalStats = getPetalStats;
+exports.getEffectivePetalCooldown = getEffectivePetalCooldown;
 exports.getAllPetalTypes = getAllPetalTypes;
 exports.isEggPetalType = isEggPetalType;
 exports.isUndroppableEggPetalType = isUndroppableEggPetalType;
@@ -2473,6 +2474,26 @@ const inventoryCodec_1 = require("./inventoryCodec");
 (0, inventoryCodec_1.initInventoryCodec)(exports.RARITY_LEVELS, Object.keys(exports.PETAL_CONFIG));
 function getPetalStats(petalType, rarity) {
     return exports.PETAL_CONFIG[petalType]?.[rarity] || null;
+}
+/**
+ * Reload time for a broken petal, in ms. SHARED server+client: the server times
+ * the restore with it, the loadout bar sweeps its reload wedge with it. Keep it
+ * that way — a client-side guess (it used to hardcode 10s for every petal) makes
+ * the wedge finish nowhere near when the petal actually comes back.
+ *
+ * `stats` is optional purely to save the caller a second lookup when it already
+ * has them.
+ */
+function getEffectivePetalCooldown(petalType, rarity, stats) {
+    const s = stats ?? (petalType ? getPetalStats(petalType, rarity || 'common') : null);
+    let cooldown = s?.cooldown || 10000;
+    // Bubble reloads faster the rarer it is — the one petal whose reload isn't
+    // just its stat block.
+    if (petalType === 'bubble' && rarity) {
+        const rarityIdx = Math.max(0, getRarityIndex(rarity));
+        cooldown = Math.max(50, cooldown * Math.pow(0.85, rarityIdx));
+    }
+    return cooldown;
 }
 function getAllPetalTypes() {
     return Object.keys(exports.PETAL_CONFIG);

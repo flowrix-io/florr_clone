@@ -433,6 +433,13 @@ exports.CHANGELOG = [
             'Fixed mobile login',
             'Fixed common mobs dropping better petals than uncommon mobs'
         ]
+    },
+    {
+        date: 'July 26, 2026',
+        changes: [
+            'Fixed petals reloading instantly(there are no bugs)',
+            'Fixed inventory getting corrupted'
+        ]
     }
 ];
 class ChangelogManager {

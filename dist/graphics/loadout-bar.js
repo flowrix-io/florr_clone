@@ -227,9 +227,16 @@ class CanvasLoadoutBar {
             const on = !!(item && item.onCooldown);
             const prev = this.lastOnCooldown.get(i) === true;
             if (on && !prev) {
-                // Entered cooldown via server; use existing timer if set, else 10s default
-                if (!this.cooldownEnd.has(i))
-                    this.triggerCooldown(i, 10000);
+                // Entered cooldown via server; use existing timer if set, else the
+                // petal's own reload. This used to be a flat 10s for everything,
+                // which is 8x too long for a basic (1.2s) and 25x for a light
+                // (0.4s) — the wedge barely moved before the server restored the
+                // petal and wiped it, so there was no visible reload at all.
+                if (!this.cooldownEnd.has(i)) {
+                    this.triggerCooldown(i, item && item.type === 'petal'
+                        ? (0, petals_1.getEffectivePetalCooldown)(item.petalType, item.rarity)
+                        : 10000);
+                }
             }
             else if (!on && prev) {
                 // Cleared by server — end animation

@@ -1156,7 +1156,11 @@ io.on('connection', (socket) => {
                         }
                         // Handle cooldown timers
                         if (petal.onCooldown && petalStats) {
-                            const cooldownTime = petalStats.cooldown || 10000;
+                            const cooldownTime = (0, petals_2.getEffectivePetalCooldown)(petal.petalType, petal.rarity, petalStats);
+                            // Stamp the deadline the tick-loop backstop reads, so the
+                            // spawn-in reload isn't cut short by it (or left without an
+                            // end if this timer dies with the process).
+                            petal.cooldownEndTime = Date.now() + cooldownTime;
                             const timeoutKey = `${socket.id}-${i}`;
                             // Snapshot identity so a stale timer doesn't clobber a swapped slot
                             const snapshotPetalType = petal.petalType;
@@ -1783,7 +1787,10 @@ io.on('connection', (socket) => {
                         const petalStats = (0, petals_2.getPetalStats)(petal.petalType, petal.rarity || 'common');
                         // console.log(`[PET DEBUG] Petal stats for ${petal.petalType}:`, petalStats ? { petMobType: petalStats.petMobType, petMobRarity: petalStats.petMobRarity } : 'null');
                         if (petalStats) {
-                            const cooldownTime = petalStats.cooldown || 10000;
+                            const cooldownTime = (0, petals_2.getEffectivePetalCooldown)(petal.petalType, petal.rarity, petalStats);
+                            // Deadline for the tick-loop backstop; without it a freshly
+                            // equipped petal's reload is cancelled on the next tick.
+                            petal.cooldownEndTime = Date.now() + cooldownTime;
                             // Capture targetPlayerId in closure for setTimeout
                             const targetId = targetPlayerId;
                             // Snapshot the petal identity at scheduling time so a stale timer
