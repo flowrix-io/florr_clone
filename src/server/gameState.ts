@@ -61,6 +61,7 @@ export const playerUserIds: Record<string, string> = {}; // Maps player ID to us
 export const mobProjectiles: MobProjectile[] = []; // Track all active mob projectiles
 export const playerProjectiles: PlayerProjectile[] = []; // Track all active player projectiles
 export const petalLastProjectileTime: Map<string, number> = new Map(); // Track last projectile time per petal instance
+export const petalLastRadiationTime: Map<string, number> = new Map(); // Track last radiation pulse per petal instance (uranium)
 
 // Delta sync: for each player, the set of projectile IDs they currently "know about" (i.e. were
 // told about via a spawn event and not yet told to remove). Used so we only re-broadcast a
@@ -90,6 +91,32 @@ export interface GroundPollen {
 export const groundPollens: GroundPollen[] = [];
 export const GROUND_POLLEN_LIFETIME_MS = 5000;
 export const GROUND_POLLEN_DAMAGE_INTERVAL_MS = 500;
+
+// A thrown web petal leaves one of these behind: a stationary field that halves
+// the speed of everything standing in it. Mirrors gardn's kWeb entity — spawned
+// by alloc_web() when the petal despawns, 10s lifetime, and Collision.cc clamps
+// the speed_ratio of anything overlapping it to 0.5.
+export interface WebField {
+    id: string;
+    playerId: string;
+    x: number;
+    y: number;
+    radius: number;
+    rarity: string;
+    expiresAt: number;
+}
+export const webFields: WebField[] = [];
+export const WEB_LIFETIME_MS = 10000;       // gardn: entity_set_despawn_tick(web, 10 * TPS)
+export const WEB_SLOW_FACTOR = 0.5;         // gardn: speed_ratio = min(speed_ratio, 0.5)
+// gardn re-evaluates the overlap every tick and resets speed_ratio afterwards.
+// Here the slow is a short timed one that the field keeps refreshing, so a mob
+// walking out of a web is back to full speed within this long.
+export const WEB_SLOW_LINGER_MS = 250;
+// How far an attacking throw carries the web out from the petal's orbit. gardn
+// accelerates the petal at 30x PLAYER_ACCELERATION for its 0.6s despawn window,
+// which carries it several screens; that is unreadable at florr's zoom, so the
+// throw is shortened to land just inside the viewport.
+export const WEB_THROW_DISTANCE = 620;
 
 // Track item expiration timeouts for cleanup
 export const itemExpirationTimeouts: Map<string, NodeJS.Timeout> = new Map();

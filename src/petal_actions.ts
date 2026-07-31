@@ -262,6 +262,15 @@ function applyPlayerEffect(player: ServerPlayer, type: PlayerEffect['type'], val
     player.effects.push({ type, value, duration, startTime: Date.now() });
 }
 
+/**
+ * Grant (or refresh) a temporary shield on a flower. Shell's burst shield uses
+ * this; effects of a given type don't stack (applyPlayerEffect replaces), which
+ * matches gardn where a fresh shell overwrites rather than adds.
+ */
+export function grantShield(player: ServerPlayer, amount: number, durationMs: number): void {
+    applyPlayerEffect(player, 'shield', amount, durationMs);
+}
+
 // Explode petal and deal area damage
 function explodePetal(x: number, y: number, petalSize: number, damage: number, enemies: Enemy[], io: any, player?: ServerPlayer): void {
     // Throttle explosions to 1 per 20ms
@@ -475,7 +484,24 @@ export function despawnAllPlayerPets(playerId: string, io: any): void {
 const MAX_PET_ENTITIES_PER_PLAYER = 50;
 
 // Spawn a pet mob that belongs to a player
-export function spawnPet(mobType: string, rarity: string, x: number, y: number, ownerId: string, io: any, skipDuplicateCheck: boolean = false): void {
+export function spawnPet(mobType: string, rarity: string, x: number, y: number, ownerId: string, io: any, skipDuplicateCheck: boolean = false, count: number = 1): void {
+    // Petals that summon a squad (stick -> two sandstorms). The duplicate check
+    // runs once for the whole squad, otherwise each summon would despawn the
+    // previous one and only the last would survive.
+    if (count > 1) {
+        if (!skipDuplicateCheck) {
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                if (enemies[i].ownerId === ownerId && enemies[i].type === mobType) {
+                    despawnPet(enemies[i], io);
+                }
+            }
+        }
+        for (let i = 0; i < count; i++) {
+            spawnPet(mobType, rarity, x, y, ownerId, io, true, 1);
+        }
+        return;
+    }
+
     // Validate mob type
     const allMobTypes = getAllMobTypes();
     if (!allMobTypes.includes(mobType)) {

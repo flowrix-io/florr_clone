@@ -687,6 +687,10 @@ export function respawnPlayer(player: ServerPlayer, io: SocketIOServer) {
     player.lastDamageTime = 0;
     player.isDead = false;
     player.secondChanceCooldownUntil = undefined; // Reset second chance cooldown on respawn
+    // Poison does not survive death
+    player.poisonDamage = undefined;
+    player.poisonUntil = undefined;
+    player.poisonSource = undefined;
 
     setTimeout(() => {
         player.isInvulnerable = false;
@@ -923,7 +927,8 @@ export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers 
         magnetism: 0,
         luck: 1.0,
         petalAttractionRadius: 30,
-        aggroRadius: 0
+        aggroRadius: 0,
+        poisonArmor: 0
     };
     
     if (!player.loadout) return modifiers;
@@ -970,6 +975,12 @@ export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers 
         }
         if (petalModifiers.aggroRadius !== undefined && modifiers.aggroRadius !== undefined) {
             modifiers.aggroRadius += petalModifiers.aggroRadius;
+        }
+        // Poison armor does NOT stack: gardn takes the strongest equipped lotus
+        // (`player.poison_armor = std::fmax(...)` in Process/Flower.cc), the same
+        // way salt's damage reflection is documented as not stacking with itself.
+        if (petalModifiers.poisonArmor !== undefined && modifiers.poisonArmor !== undefined) {
+            modifiers.poisonArmor = Math.max(modifiers.poisonArmor, petalModifiers.poisonArmor);
         }
     }
 

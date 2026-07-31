@@ -46,6 +46,7 @@ class Game {
         this.mobProjectiles = new Map(); // Store mob projectiles
         this.playerProjectiles = new Map(); // Store player projectiles
         this.groundPollens = new Map(); // Store ground pollen drops from broken pollen petals
+        this.webFields = new Map(); // Store web fields left by thrown web petals
         this.items = new Map();
         this.pickedUpItems = new Set(); // Track items picked up by this player
         this.gameLoopId = null;
@@ -1091,7 +1092,7 @@ class Game {
         }
         // Use active player ID for rendering (or socket.id if not split)
         const activePlayerId = this.activePlayerId || this.socket?.id || '';
-        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension, this.groundPollens);
+        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension, this.groundPollens, this.webFields);
         // Overlays drawn after render() must re-establish the HiDPI base
         // transform so they render at native resolution in logical coordinates.
         const ui = this.graphics.uiScale || 1;

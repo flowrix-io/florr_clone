@@ -13,6 +13,9 @@ export interface BaseMobConfig {
     ai_type: 'passive' | 'neutral' | 'hostile' | 'sandstorm';
     range: number;
     section?: number[]; // Optional: section numbers (0-8) where this mob spawns. Empty array (or omitted) means the mob does not spawn naturally.
+    min_rarity?: string; // Optional: lowest rarity this mob spawns at. Lower rarities get an empty section list, so every spawner's section filter rejects them.
+    poison?: number; // Optional: poison damage per millisecond inflicted on players on contact
+    poisonDuration?: number; // Optional: milliseconds the inflicted poison lasts
     visual_scale?: number; // Optional: visual scale multiplier (affects rendering only, not hitbox)
     reversed?: boolean; // Optional: whether the mob image should be flipped horizontally
     hideRotation?: boolean; // Optional: whether to hide the mob's rotation visually
@@ -33,6 +36,14 @@ export interface BaseMobConfig {
     spawn_waves?: string[][];
     initial_spawns?: string[];
     no_mob_collision?: boolean;
+    // Mobs that summon escorts on a timer while alive (queen ant). Each summon is
+    // removed again after `lifetimeMs`, and `maxAlive` caps the standing escort.
+    periodic_spawn?: {
+        mobType: string;
+        intervalMs: number;
+        lifetimeMs: number;
+        maxAlive: number;
+    };
 }
 
 export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
@@ -294,7 +305,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
             ['worker_ant', 'soldier_ant'],
             ['soldier_ant', 'worker_ant', 'worker_ant'],
             ['soldier_ant', 'soldier_ant'],
-            ['soldier_ant', 'soldier_ant', 'soldier_ant']
+            // Death wave: the queen comes out last (gardn ANTHOLE_SPAWNS)
+            ['soldier_ant', 'soldier_ant', 'queen_ant']
         ]
     },
     fire_ant_hole: {
@@ -628,6 +640,9 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         range: 100,
         section: [1],
         hideRotation: true,
+        // Sandstorms drop Stick instead of an egg — Stick summons two of them,
+        // so the egg would have been a strictly worse duplicate (gardn parity).
+        noEggDrop: true,
     },
     cactus: {
         name: "Cactus",
@@ -2518,5 +2533,162 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         section: [1],
         spawn_weight: 0,
         noEggDrop: true,
+    },
+    evil_centipede: {
+        name: "Evil Centipede",
+        damage: 10,
+        health: 50,
+        size: 1.0,
+        visual_scale: 1.2,
+        speed: 2.4,
+        cooldown: 2000,
+        description: "This one loves flowers",
+        color: "#905db0",
+        image: `<svg width="32" height="32" viewBox="-45 -45 90 90" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="-30" r="15" fill="#333333" />
+  <circle cx="0" cy="30" r="15" fill="#333333" />
+  <circle cx="0" cy="0" r="35" fill="#905db0" stroke="#734a8d" stroke-width="7" />
+  <path d="M 25 -10 Q 45 -10 55 -30" fill="none" stroke="#333333" stroke-width="3" />
+  <circle cx="55" cy="-30" r="5" fill="#333333" />
+  <path d="M 25 10 Q 45 10 55 30" fill="none" stroke="#333333" stroke-width="3" />
+  <circle cx="55" cy="30" r="5" fill="#333333" />
+</svg>`,
+        ai_type: 'hostile',
+        range: 500,
+        section: [0],
+        spawn_weight: 0.4,
+        min_rarity: 'rare',
+        poison: 0.005,      // 5 damage per second
+        poisonDuration: 2000,
+    },
+    evil_centipede_body: {
+        name: "Evil Centipede",
+        damage: 10,
+        health: 50,
+        size: 1.0,
+        visual_scale: 1.2,
+        speed: 2.4,
+        cooldown: 2000,
+        description: "A segment of an evil centipede",
+        color: "#905db0",
+        image: `<svg width="32" height="32" viewBox="-45 -45 90 90" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="-30" r="15" fill="#333333" />
+  <circle cx="0" cy="30" r="15" fill="#333333" />
+  <circle cx="0" cy="0" r="35" fill="#905db0" stroke="#734a8d" stroke-width="7" />
+</svg>`,
+        ai_type: 'hostile',
+        range: 0,
+        section: [2],
+        spawn_weight: 0,
+        noEggDrop: true,
+        min_rarity: 'rare',
+        poison: 0.005,
+        poisonDuration: 2000,
+    },
+    queen_ant: {
+        name: "Queen Ant",
+        damage: 10,
+        health: 400,
+        size: 2.0,
+        visual_scale: 1.2,
+        speed: 2.2,
+        cooldown: 2000,
+        description: "You must have done something really bad if she's chasing you",
+        color: "#808080",
+        image: `<svg id="queen-ant-svg" width="32" height="32" viewBox="-70 -45 140 90" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="-25" cy="0" r="30" fill="#555555" stroke="#454545" stroke-width="7" />
+
+  <g fill="#eeeeee" fill-opacity="0.5">
+    <ellipse cx="0" cy="0" rx="30" ry="14" transform="translate(-14 -16) rotate(-18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; 24; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+    <ellipse cx="0" cy="0" rx="30" ry="14" transform="translate(-14 16) rotate(18)">
+      <animateTransform attributeName="transform"
+                        type="rotate"
+                        additive="sum"
+                        values="0; -24; 0" keyTimes="0; 0.5; 1"
+                        dur="1s"
+                        repeatCount="indefinite"
+                        calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1" />
+    </ellipse>
+  </g>
+
+  <circle cx="0" cy="0" r="25" fill="#555555" stroke="#454545" stroke-width="7" />
+
+  <path fill="none" stroke="#292929" stroke-width="7" stroke-linecap="round">
+    <animate attributeName="d"
+             dur="1s"
+             repeatCount="indefinite"
+             calcMode="spline" keySplines="0.4 0 0.6 1; 0.6 0 0.4 1"
+             keyTimes="0; 0.5; 1"
+             values="M 25 -10.5 Q 41.5 -15 58 -7.5 M 25 10.5 Q 41.5 15 58 7.5;
+                     M 25 -10.5 Q 41.5 -11 58 -3.5 M 25 10.5 Q 41.5 11 58 3.5;
+                     M 25 -10.5 Q 41.5 -15 58 -7.5 M 25 10.5 Q 41.5 15 58 7.5" />
+  </path>
+
+  <circle cx="25" cy="0" r="21" fill="#555555" stroke="#454545" stroke-width="7" />
+</svg>`,
+        ai_type: 'hostile',
+        range: 750,
+        section: [4],
+        spawn_weight: 0.1,
+        min_rarity: 'rare',
+        periodic_spawn: {
+            mobType: 'soldier_ant',
+            intervalMs: 2000,
+            lifetimeMs: 10000,
+            maxAlive: 5,
+        },
+    },
+    digger: {
+        name: "Digger",
+        damage: 25,
+        health: 1000,
+        size: 2.0,
+        visual_scale: 1.0,
+        speed: 2.6,
+        cooldown: 2000,
+        description: "Friend or foe? You'll never know...",
+        color: "#999999",
+        image: `<svg width="32" height="32" viewBox="-40 -40 80 80" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#111111" fill-rule="evenodd" d="
+    M 25 0 A 25 25 0 1 0 -25 0 A 25 25 0 1 0 25 0
+    M 24.749 24.749
+    Q 9.899 23.899 0 35
+    Q -9.899 23.899 -24.749 24.749
+    Q -23.899 9.899 -35 0
+    Q -23.899 -9.899 -24.749 -24.749
+    Q -9.899 -23.899 0 -35
+    Q 9.899 -23.899 24.749 -24.749
+    Q 23.899 -9.899 35 0
+    Q 23.899 9.899 24.749 24.749
+    Z" />
+
+  <circle cx="0" cy="0" r="26.5" fill="#7a7a7a" />
+  <circle cx="0" cy="0" r="23.5" fill="#999999" />
+
+  <g fill="#000000">
+    <rect x="-10" y="-11.3" width="6" height="13" />
+    <rect x="4" y="-11.3" width="6" height="13" />
+  </g>
+  <g fill="#ffffff">
+    <rect x="-10" y="-7.8" width="6" height="6" />
+    <rect x="4" y="-7.8" width="6" height="6" />
+  </g>
+
+  <path d="M -6 10 Q 0 14.5 6 10" fill="none" stroke="#222222" stroke-width="1.5" stroke-linecap="round" />
+</svg>`,
+        ai_type: 'hostile',
+        range: 600,
+        section: [4],
+        spawn_weight: 0.08,
+        min_rarity: 'rare',
+        hideRotation: true,
     },
 }

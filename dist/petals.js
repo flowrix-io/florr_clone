@@ -2174,6 +2174,315 @@ const BASE_PETAL_CONFIGS = {
   />
 </svg>`
     },
+    // ---------------------------------------------------------------------
+    // The twelve petals below are ported from ~/rysteria_gardn. Each `image`
+    // is a direct transcription of that petal's case in
+    // Client/Assets/Petal.cc: gardn draws into a canvas where the shape is
+    // laid out around the petal's own radius, so every viewBox here is the
+    // tight bound of that same geometry (path extent + half the stroke) and
+    // the coordinates are gardn's, unaltered.
+    // ---------------------------------------------------------------------
+    web: {
+        name: "Web",
+        damage: 5,
+        health: 10,
+        size: 1.2,
+        cooldown: 3000,
+        description: "It's really sticky. Throw it to leave a web that slows everything caught in it",
+        color: "#FFFFFF",
+        count: 1,
+        defendOnly: true,
+        webRadius: 90,
+        image: `<svg width="32" height="32" viewBox="-12.5 -12.5 25 25" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 11 0
+           Q 4.32 3.14 3.4 10.46
+           Q -1.65 5.08 -8.9 6.47
+           Q -5.34 0 -8.9 -6.47
+           Q -1.65 -5.08 3.4 -10.46
+           Q 4.32 -3.14 11 0 Z"
+        fill="#ffffff"
+        stroke="#cfcfcf"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round" />
+</svg>`,
+        isAdminPetal: false
+    },
+    guided_missile: {
+        name: "Guided Missile",
+        damage: 25,
+        health: 5,
+        size: 1.0,
+        cooldown: 2000,
+        description: "Locks onto the nearest mob before it launches",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="-14 -9 28 18" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 11 0 L -11 -6 L -11 6 Z"
+        fill="#222222"
+        stroke="#222222"
+        stroke-width="5"
+        stroke-linecap="round"
+        stroke-linejoin="round" />
+</svg>`,
+        isAdminPetal: false,
+        projectile: {
+            count: 1,
+            distance: 700,
+            speed: 350,
+            spreadAngle: 0.0,
+            seekRange: 1000,
+            seekCone: Math.PI / 4
+        }
+    },
+    blue_iris: {
+        name: "Blue Iris",
+        damage: 0,
+        health: 10,
+        size: 0.7,
+        cooldown: 1500,
+        poison: 0.015, // 15 damage per second
+        poisonDuration: 2000,
+        description: "Deals its effects quicker than traditional irises",
+        color: "#000000",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="-8.5 -8.5 17 17" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="0" r="7" fill="#39e9f1" stroke="#2dbac0" stroke-width="3" />
+</svg>`,
+        isAdminPetal: false
+    },
+    stick: {
+        name: "Stick",
+        damage: 1,
+        health: 10,
+        size: 1.3,
+        cooldown: 3000,
+        description: "Harnesses the power of the wind, summoning two sandstorms",
+        color: "#8c6239",
+        count: 1,
+        petMobType: "sandstorm",
+        petMobRarity: "common",
+        petCount: 2,
+        image: `<svg width="32" height="32" viewBox="-9.5 -13.5 17 27" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 0 10 L 0 0 L 4 -7 M 0 0 L -6 -10" stroke="#654a19" stroke-width="7" />
+    <path d="M 0 10 L 0 0 L 4 -7 M 0 0 L -6 -10" stroke="#7d5b1f" stroke-width="3" />
+  </g>
+</svg>`,
+        isAdminPetal: false
+    },
+    pincer: {
+        name: "Pincer",
+        damage: 10,
+        health: 10,
+        size: 1.0,
+        cooldown: 2500,
+        poison: 0.005, // 5 damage per second
+        poisonDuration: 1000,
+        slowFactor: 0.5, // gardn slow_ticks: speed_ratio clamped to 0.5
+        slowDuration: 2000, // gardn slow_inflict_seconds = 2
+        description: "Slows and poisons targets for a short duration",
+        color: "#333333",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="-11.5 -6.5 23 13" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 10 5 Q 4 -14 -10 5 Q 4 0 10 5 Z"
+        fill="#333333"
+        stroke="#292929"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round" />
+</svg>`,
+        isAdminPetal: false
+    },
+    moon: {
+        name: "Moon",
+        damage: 1,
+        health: 1000,
+        size: 2.6,
+        cooldown: 10000,
+        knockback: 30,
+        description: "Where did this come from?",
+        color: "#878787",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="-52.5 -52.5 105 105" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="moon-crater-clip">
+      <circle cx="0" cy="0" r="50" />
+    </clipPath>
+  </defs>
+
+  <circle cx="0" cy="0" r="50" fill="#878787" stroke="#6d6d6d" stroke-width="5" />
+
+  <g clip-path="url(#moon-crater-clip)" fill="#999999" stroke="#7c7c7c" stroke-width="3">
+    <circle cx="-18" cy="-24" r="13" />
+    <circle cx="16" cy="-31" r="8" />
+    <circle cx="33" cy="-5" r="15" />
+    <circle cx="4" cy="2" r="11" />
+    <circle cx="-33" cy="6" r="9" />
+    <circle cx="-9" cy="30" r="14" />
+    <circle cx="24" cy="29" r="10" />
+    <circle cx="-44" cy="-40" r="12" />
+    <circle cx="47" cy="41" r="16" />
+    <circle cx="-40" cy="46" r="11" />
+  </g>
+</svg>`,
+        isAdminPetal: false
+    },
+    lotus: {
+        name: "Lotus",
+        damage: 5,
+        health: 5,
+        size: 1.2,
+        cooldown: 2000,
+        description: "Absorbs some of the poison damage taken by the flower. Does not stack with itself",
+        color: "#ce76db",
+        count: 1,
+        playerModifiers: {
+            poisonArmor: 5 // damage-per-second of poison neutralised
+        },
+        image: `<svg width="32" height="32" viewBox="-11 -11 22 22" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 0 -10
+           C 1.44 -7.11 2.05 -5.89 1.83 -4.41
+           C 2.72 -5.62 4.01 -6.05 7.07 -7.07
+           C 6.05 -4.01 5.62 -2.72 4.41 -1.83
+           C 5.89 -2.05 7.11 -1.44 10 0
+           C 7.11 1.44 5.89 2.05 4.41 1.83
+           C 5.62 2.72 6.05 4.01 7.07 7.07
+           C 4.01 6.05 2.72 5.62 1.83 4.41
+           C 2.05 5.89 1.44 7.11 0 10
+           C -1.44 7.11 -2.05 5.89 -1.83 4.41
+           C -2.72 5.62 -4.01 6.05 -7.07 7.07
+           C -6.05 4.01 -5.62 2.72 -4.41 1.83
+           C -5.89 2.05 -7.11 1.44 -10 0
+           C -7.11 -1.44 -5.89 -2.05 -4.41 -1.83
+           C -5.62 -2.72 -6.05 -4.01 -7.07 -7.07
+           C -4.01 -6.05 -2.72 -5.62 -1.83 -4.41
+           C -2.05 -5.89 -1.44 -7.11 0 -10 Z"
+        fill="#ce76db"
+        stroke="#a760b1"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round" />
+  <circle cx="0" cy="0" r="1.74" fill="#a760b1" />
+</svg>`,
+        isAdminPetal: false
+    },
+    heaviest: {
+        name: "Heaviest",
+        damage: 10,
+        health: 200,
+        size: 1.3,
+        cooldown: 15000,
+        knockback: 30,
+        description: "This thing is so heavy that nothing gets in the way",
+        color: "#333333",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="-17.5 -17.5 35 35" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="0" r="16" fill="#333333" stroke="#292929" stroke-width="3" />
+  <circle cx="6" cy="-6" r="4.6" fill="#cccccc" />
+</svg>`,
+        isAdminPetal: false
+    },
+    rice: {
+        name: "Rice",
+        damage: 5,
+        health: 2,
+        size: 1.3,
+        cooldown: 50,
+        description: "Spawns instantly, but not very strong",
+        color: "#ffffff",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="-12.5 -7 25 12" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke-linecap="round">
+    <path d="M -8 0 Q 0 -3.5 8 0" stroke="#cfcfcf" stroke-width="9" />
+    <path d="M -8 0 Q 0 -3.5 8 0" stroke="#ffffff" stroke-width="5" />
+  </g>
+</svg>`,
+        isAdminPetal: false
+    },
+    uranium: {
+        name: "Uranium",
+        damage: 4,
+        health: 10,
+        size: 1.0,
+        cooldown: 2500,
+        description: "Periodically releases radiation in a large radius",
+        color: "#63bf2e",
+        count: 1,
+        radiation: {
+            radius: 160,
+            intervalMs: 1000
+        },
+        emissive: true,
+        lightColor: "#63bf2e",
+        image: `<svg width="32" height="32" viewBox="-10.5 -10.5 21 21" xmlns="http://www.w3.org/2000/svg">
+  <polygon points="-7,-5 -1,-9 7,-6 9,3 2,9 -5,6 -8,2"
+           fill="#63bf2e"
+           stroke="#509b25"
+           stroke-width="3"
+           stroke-linejoin="round">
+    <animateTransform attributeName="transform"
+                      type="scale"
+                      values="1; 1.1; 1"
+                      keyTimes="0; 0.5; 1"
+                      dur="1.2s"
+                      repeatCount="indefinite" />
+  </polygon>
+</svg>`,
+        isAdminPetal: false
+    },
+    honey: {
+        name: "Honey",
+        damage: 10,
+        health: 10,
+        size: 1.1,
+        cooldown: 1700,
+        slowFactor: 0.8, // gardn honey_ticks: speed_ratio clamped to 0.8
+        slowDuration: 5000, // gardn honey_ticks = 5 * TPS
+        description: "This is so sticky it slows down whatever it hits",
+        color: "#f7cf2f",
+        count: 1,
+        image: `<svg width="32" height="32" viewBox="-12.5 -12.5 25 25" xmlns="http://www.w3.org/2000/svg">
+  <polygon points="11,0 5.5,9.526 -5.5,9.526 -11,0 -5.5,-9.526 5.5,-9.526"
+           fill="#f7cf2f"
+           stroke="#c8a826"
+           stroke-width="3"
+           stroke-linejoin="round" />
+</svg>`,
+        isAdminPetal: false
+    },
+    shell: {
+        name: "Shell",
+        damage: 5,
+        health: 25,
+        size: 1.1,
+        cooldown: 3500,
+        description: "Adds a temporary shield to your flower",
+        color: "#fcdd86",
+        count: 1,
+        burstShield: 22,
+        burstHealChargeMs: 1000,
+        defendOnly: true,
+        image: `<svg width="32" height="32" viewBox="-14 -16 28 32" xmlns="http://www.w3.org/2000/svg">
+  <g transform="scale(0.5) translate(-5 0)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 9.27 -28.53
+             A 30 30 0 0 1 9.27 28.53
+             Q 0 20 -15 8
+             Q -20 0 -15 -8
+             Q 0 -20 9.27 -28.53 Z"
+          fill="#fcdd86"
+          stroke="#ccb36d"
+          stroke-width="5" />
+    <g fill="none" stroke="#ccb36d" stroke-width="4">
+      <path d="M 12 15 Q 0 8 -8 5" />
+      <path d="M 17.4 6 Q 0 3.2 -6.2 2" />
+      <path d="M 17.4 -6 Q 0 -3.2 -6.2 -2" />
+      <path d="M 12 -15 Q 0 -8 -8 -5" />
+    </g>
+  </g>
+</svg>`,
+        isAdminPetal: false
+    },
 };
 // Helper function to darken a hex color for egg stroke
 function darkenColor(hex, factor = 0.7) {
@@ -2357,7 +2666,7 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         // For modifiers, we can either:
         // 1. Use override if provided (for rarity-specific scaling) - overrides are NOT scaled
         // 2. Scale base modifiers by rarity multiplier
-        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined || overrideModifiers.magnetism !== undefined || overrideModifiers.luck !== undefined || overrideModifiers.petalAttractionRadius !== undefined || overrideModifiers.aggroRadius !== undefined) {
+        if (overrideModifiers.damage !== undefined || overrideModifiers.maxHealth !== undefined || overrideModifiers.speed !== undefined || overrideModifiers.range !== undefined || overrideModifiers.rotationSpeed !== undefined || overrideModifiers.playerRadius !== undefined || overrideModifiers.magnetism !== undefined || overrideModifiers.luck !== undefined || overrideModifiers.petalAttractionRadius !== undefined || overrideModifiers.aggroRadius !== undefined || overrideModifiers.poisonArmor !== undefined) {
             // Use override modifiers directly (not scaled, as they're already rarity-specific)
             playerModifiers = {
                 damage: overrideModifiers.damage ?? baseModifiers.damage,
@@ -2369,10 +2678,11 @@ function generatePetalStats(baseConfig, rarity, petalType) {
                 magnetism: overrideModifiers.magnetism ?? baseModifiers.magnetism,
                 luck: overrideModifiers.luck ?? baseModifiers.luck,
                 petalAttractionRadius: overrideModifiers.petalAttractionRadius ?? baseModifiers.petalAttractionRadius,
-                aggroRadius: overrideModifiers.aggroRadius ?? baseModifiers.aggroRadius
+                aggroRadius: overrideModifiers.aggroRadius ?? baseModifiers.aggroRadius,
+                poisonArmor: overrideModifiers.poisonArmor ?? baseModifiers.poisonArmor
             };
         }
-        else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined || baseModifiers.magnetism !== undefined || baseModifiers.luck !== undefined || baseModifiers.petalAttractionRadius !== undefined || baseModifiers.aggroRadius !== undefined) {
+        else if (baseModifiers.damage !== undefined || baseModifiers.maxHealth !== undefined || baseModifiers.speed !== undefined || baseModifiers.range !== undefined || baseModifiers.rotationSpeed !== undefined || baseModifiers.playerRadius !== undefined || baseModifiers.magnetism !== undefined || baseModifiers.luck !== undefined || baseModifiers.petalAttractionRadius !== undefined || baseModifiers.aggroRadius !== undefined || baseModifiers.poisonArmor !== undefined) {
             // Scale base modifiers by rarity multiplier
             // Formula: baseValue * (1 + (rarityIndex / 8) * 3)
             // This scales from 1x at common to 4x at unique
@@ -2406,8 +2716,22 @@ function generatePetalStats(baseConfig, rarity, petalType) {
                     : undefined,
                 aggroRadius: baseModifiers.aggroRadius !== undefined
                     ? baseModifiers.aggroRadius * modifierRarityMultiplier
+                    : undefined,
+                poisonArmor: baseModifiers.poisonArmor !== undefined
+                    ? baseModifiers.poisonArmor * modifierRarityMultiplier
                     : undefined
             };
+        }
+        // Poison armor is the one modifier measured in damage-per-second rather
+        // than as a ratio, so it has to ride the DAMAGE curve (3x per rarity)
+        // instead of the gentle 1x..4x one the ratio modifiers use. Mob poison
+        // scales with DAMAGE_SCALING, so on the modifier curve a lotus that fully
+        // negates a common evil centipede absorbs under 2% of a mythic one's bite.
+        // Explicit per-rarity overrides stay literal, as everywhere else.
+        if (playerModifiers
+            && overrideModifiers.poisonArmor === undefined
+            && baseModifiers.poisonArmor !== undefined) {
+            playerModifiers.poisonArmor = baseModifiers.poisonArmor * multiplier;
         }
     }
     return {
@@ -2436,6 +2760,23 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         attractionForce: overrides.attractionForce ?? baseConfig.attractionForce,
         petMobType: baseConfig.petMobType, // Include pet mob type if present
         petMobRarity: baseConfig.petMobRarity, // Include pet mob rarity if present
+        petCount: baseConfig.petCount,
+        slowFactor: baseConfig.slowFactor,
+        // A stall gets longer with rarity as well as harder (the strength side
+        // is the rarity-vs-rarity contest in applySlow/stallPower). Same gentle
+        // 1x..4x curve the ratio player-modifiers use, so an apex pincer holds a
+        // mob for ~4x as long as a common one rather than 3^9 times as long.
+        slowDuration: baseConfig.slowDuration !== undefined
+            ? baseConfig.slowDuration * (1 + (rarityIndex / 8) * 3)
+            : undefined,
+        // The web field grows with rarity (gardn steps 100 -> 200 from Web to
+        // Large Web); same 1x..~2.2x curve, so unique lands just under 200.
+        webRadius: baseConfig.webRadius !== undefined
+            ? baseConfig.webRadius * (1 + (rarityIndex / 8) * 1.2)
+            : undefined,
+        radiation: baseConfig.radiation,
+        // burstShield follows the same curve as burstHeal
+        burstShield: baseConfig.burstShield ? baseConfig.burstShield * passiveHealMultiplier : undefined,
         fixedDirection: overrides.fixedDirection ?? baseConfig.fixedDirection,
         visualOffsetX: overrides.visualOffsetX ?? baseConfig.visualOffsetX,
         visualOffsetY: overrides.visualOffsetY ?? baseConfig.visualOffsetY,

@@ -274,6 +274,13 @@ export interface ServerPlayer {
   // inventory. `undefined` = never customised (defaults to a copy of the
   // regular loadout on first maze entry); an explicit array is respected.
   mazeLoadout?: (Item | null)[];
+  // Poison inflicted by a mob's body contact (evil centipede). One stack at a
+  // time: a fresh bite replaces the old one rather than adding to it, matching
+  // how petal poison refreshes on mobs. Lotus subtracts from `poisonDamage`
+  // (see calculatePlayerModifiers().poisonArmor) rather than shortening it.
+  poisonDamage?: number;   // damage per second currently ticking
+  poisonUntil?: number;    // timestamp the poison lapses
+  poisonSource?: { type: string; tier: string }; // credited in `killedBy` if the poison finishes the player
   lastDamagedByPlayerId?: string; // ID of the most recent player to damage this player (for PVP kill credit)
   spongeDamageEffects?: Array<{
     remainingDamage: number;

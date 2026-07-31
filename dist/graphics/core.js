@@ -468,20 +468,27 @@ class Graphics {
             lifetime: 100
         });
     }
-    showDamageText(enemyId, x, y, damage) {
+    showDamageText(enemyId, x, y, damage, fromPoison = false) {
         const now = Date.now();
-        const lastTime = this.lastDamageTextTime.get(enemyId) || 0;
+        // Poison accumulates under its own key: sharing one bucket would let a
+        // poison tick land inside a petal hit's throttle window and repaint the
+        // whole total purple (or the reverse).
+        const key = fromPoison ? `${enemyId}|p` : enemyId;
+        const lastTime = this.lastDamageTextTime.get(key) || 0;
         if (now - lastTime < this.DAMAGE_TEXT_COOLDOWN) {
-            const currentAccumulated = this.accumulatedDamage.get(enemyId) || 0;
-            this.accumulatedDamage.set(enemyId, currentAccumulated + damage);
+            const currentAccumulated = this.accumulatedDamage.get(key) || 0;
+            this.accumulatedDamage.set(key, currentAccumulated + damage);
             return;
         }
-        const accumulated = this.accumulatedDamage.get(enemyId) || 0;
+        const accumulated = this.accumulatedDamage.get(key) || 0;
         const totalDamage = accumulated + damage;
         if (totalDamage > 0) {
-            this.lastDamageTextTime.set(enemyId, now);
-            this.accumulatedDamage.delete(enemyId);
-            this.showFloatingText(x, y - 20, `-${Math.round(totalDamage)}`, '#ff0000', 16);
+            this.lastDamageTextTime.set(key, now);
+            this.accumulatedDamage.delete(key);
+            const color = fromPoison ? Graphics.POISON_TEXT_COLOR : '#ff0000';
+            // Nudge poison numbers sideways so a simultaneous petal hit and
+            // poison tick don't stack directly on top of each other.
+            this.showFloatingText(x + (fromPoison ? 14 : 0), y - 20, `-${Math.round(totalDamage)}`, color, 16);
         }
     }
     getAccumulatedDamage(enemyId) {
@@ -820,3 +827,6 @@ Graphics.PETAL_GLOW_PAD = 16;
 // resident. Frames larger than a sheet get their own dedicated canvas.
 Graphics.ATLAS_SHEET_SIDE = 2048;
 Graphics.ATLAS_PAD = 2; // gutter so bilinear sampling can't bleed neighbors
+// Poison ticks are shown in the game's poison purple (the same colour a
+// poisoned flower and the iris petals use) rather than damage red.
+Graphics.POISON_TEXT_COLOR = '#ce76db';

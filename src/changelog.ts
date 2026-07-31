@@ -455,6 +455,28 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Fixed petals reloading instantly(there are no bugs)',
             'Fixed inventory getting corrupted'
         ]
+    },
+    {
+        date: 'July 29, 2026',
+        changes: [
+            'New mob: Evil Centipede',
+            'New mob: Queen Ant',
+            'New mob: Digger',
+            'New petal: Shell',
+            'New petal: Uranium',
+            'New petal: Pincer',
+            'New petal: Web',
+            'New petal: Guided Missile',
+            'New petal: Blue Iris',
+            'New petal: Stick',
+            'New petal: Moon',
+            'New petal: Lotus',
+            'New petal: Heaviest',
+            'New petal: Rice',
+            'Poison damage numbers are purple now',
+            'Added stalling mechanics to the game',
+            'Honey slows, not a lure petal'
+        ]
     }
 ];
 

@@ -1,5 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.stallPower = stallPower;
+exports.applySlow = applySlow;
 exports.forgetEnemyFromRaindropAura = forgetEnemyFromRaindropAura;
 exports.cleanupPetalPhysicsStates = cleanupPetalPhysicsStates;
 exports.getRaindropAuraRadius = getRaindropAuraRadius;
@@ -11,6 +13,7 @@ exports.getEnemiesInViewport200Percent = getEnemiesInViewport200Percent;
 exports.isPositionInPlayerPetalRange = isPositionInPlayerPetalRange;
 exports.getEnemiesInViewportCount = getEnemiesInViewportCount;
 exports.validatePlayerPositions = validatePlayerPositions;
+exports.trySecondChance = trySecondChance;
 exports.updatePlayerState = updatePlayerState;
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
@@ -28,6 +31,56 @@ const enemyGrid_1 = require("./enemyGrid");
 // iteration, so sharing one buffer would let the second clobber the first.
 const _enemyQueryBuffer = [];
 const _attractionQueryBuffer = [];
+// The guided-missile target scan and uranium's radiation pulse both run inside
+// the same petal iteration, so they need buffers of their own for the same reason.
+const _seekQueryBuffer = [];
+const _radiationQueryBuffer = [];
+// How long shell's burst shield lasts once delivered.
+const BURST_SHIELD_DURATION_MS = 10000;
+/**
+ * How much of a stall lands on this mob, in [0, 1].
+ *
+ * A stall is a contest between the rarity of whatever inflicted it and the
+ * rarity of the mob resisting it, fought on the same x3-per-tier ladder that
+ * damage and health climb. Matched rarities give the source its full designed
+ * slow; every tier the mob has on the source divides what gets through by
+ * three, so a common pincer barely tickles a mythic mob. A source ABOVE the
+ * mob's tier is already at full effect, hence the clamp at 1 — rarity buys you
+ * reliability against tougher mobs, never a slow stronger than the petal's own
+ * design value.
+ */
+function stallPower(sourceRarity, mobTier) {
+    const src = (0, petals_1.getRarityIndex)(sourceRarity);
+    const mob = (0, petals_1.getRarityIndex)(mobTier);
+    if (src < 0 || mob < 0)
+        return 1;
+    return Math.min(1, Math.pow(3, src - mob));
+}
+/**
+ * Slow a mob down for a while. `speed` is what every movement branch in
+ * moveEnemies() reads, so a slow is a scale-down of that field with the
+ * pre-slow value parked in `baseSpeed`; server.ts's updateSlowEffects restores
+ * it when the timer lapses. Re-applying picks the stronger of the two slows and
+ * always extends the timer, so standing in a web keeps the mob crawling.
+ *
+ * `baseFactor` is the source's design value (0.5 for web/pincer, 0.8 for
+ * honey); what actually lands is that value pulled back toward "no slow" by the
+ * mob's resistance — see stallPower.
+ */
+function applySlow(enemy, baseFactor, until, sourceRarity) {
+    const factor = 1 - (1 - baseFactor) * stallPower(sourceRarity, enemy.tier);
+    // Nothing worth applying: leave baseSpeed/slowUntil untouched so a
+    // negligible stall can't extend the timer on a real one.
+    if (factor >= 0.999)
+        return;
+    if (enemy.baseSpeed === undefined)
+        enemy.baseSpeed = enemy.speed;
+    const slowed = enemy.baseSpeed * factor;
+    if (enemy.slowUntil === undefined || enemy.slowUntil <= Date.now() || slowed < enemy.speed) {
+        enemy.speed = slowed;
+    }
+    enemy.slowUntil = Math.max(enemy.slowUntil ?? 0, until);
+}
 const playerManager_1 = require("./playerManager");
 const inventoryCodec_1 = require("../inventoryCodec");
 const utils_1 = require("./utils");
@@ -116,6 +169,16 @@ function spawnGroundPollen(io, player, petalStats, petal, petalX, petalY, petalS
         rarity: petal.rarity,
         lifetime: gameState_1.GROUND_POLLEN_LIFETIME_MS
     });
+}
+// Leave a web field where a thrown web petal came to rest. gardn's web petal is
+// launched outward while attacking (or dropped where it sits while defending)
+// and spawns the field from alloc_web() when it despawns 0.6s later; the petal
+// itself is consumed either way and reloads normally.
+function spawnWebField(io, player, radius, rarity, x, y) {
+    const now = Date.now();
+    const id = `web_${player.id}_${now}_${Math.random().toString(36).slice(2, 7)}`;
+    gameState_1.webFields.push({ id, playerId: player.id, x, y, radius, rarity, expiresAt: now + gameState_1.WEB_LIFETIME_MS });
+    io.emit('webSpawned', { id, x, y, radius, rarity, lifetime: gameState_1.WEB_LIFETIME_MS });
 }
 // --- Per-instance petal health/cooldown helpers ---
 // Some petals spawn multiple instances (count > 1) that should each carry their own
@@ -935,6 +998,14 @@ function updatePlayerState(player, deltaTime, deps) {
                             }, 50);
                         }
                     }
+                    // Poisonous mobs (evil centipede) leave poison on contact.
+                    // One stack: a fresh bite replaces whatever was ticking.
+                    const mobStats = enemy._mobStats ?? (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                    if (mobStats?.poison && mobStats.poisonDuration) {
+                        player.poisonDamage = mobStats.poison * 1000; // per-ms -> per-second
+                        player.poisonUntil = Date.now() + mobStats.poisonDuration;
+                        player.poisonSource = { type: enemy.type, tier: enemy.tier };
+                    }
                 }
                 // Always emit knockback (and current health state)
                 io.emit('playerDamaged', {
@@ -1071,10 +1142,15 @@ function updatePlayerState(player, deltaTime, deps) {
         // swing past. See the query at the attraction block below.
         // Initialize petal positions array
         player.petalPositions = [];
-        // Pollen pre-pass: when the player attacks/defends, every alive pollen
-        // instance drops a puff at its own orbit position. Health is zeroed in
-        // a second pass so non-clumped multi-count petals (which share
-        // petal.health) don't have instance 0 short-circuit the others.
+        // Field-dropping pre-pass: when the player attacks/defends, every alive
+        // pollen instance drops a puff and every alive web instance leaves a web,
+        // each at its own orbit position. Health is zeroed in a second pass so
+        // non-clumped multi-count petals (which share petal.health) don't have
+        // instance 0 short-circuit the others.
+        //
+        // Web follows gardn: attacking LAUNCHES it outward (the field lands
+        // WEB_THROW_DISTANCE past the orbit), defending drops it where it sits.
+        // Either way the petal is consumed and reloads normally.
         {
             const playerExt = player.inputs?.petalExtension || 1.0;
             if (playerExt !== 1.0) {
@@ -1082,10 +1158,14 @@ function updatePlayerState(player, deltaTime, deps) {
                 const dropsToBreak = [];
                 for (let idx = 0; idx < petalInstances.length; idx++) {
                     const { petal, instanceIndex, slotIndex } = petalInstances[idx];
-                    if (!petal || petal.petalType !== 'pollen')
+                    if (!petal)
                         continue;
+                    const isPollen = petal.petalType === 'pollen';
                     const stats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
                     if (!stats)
+                        continue;
+                    const isWeb = !!stats.webRadius;
+                    if (!isPollen && !isWeb)
                         continue;
                     if (isInstanceOnCooldown(petal, instanceIndex, stats))
                         continue;
@@ -1096,7 +1176,10 @@ function updatePlayerState(player, deltaTime, deps) {
                         ? slotIndex * angleStep
                         : slotIndex * angleStep + rotationAngle;
                     const range = (stats.range ?? 1.0) * playerRangeModifier;
-                    const orbitR = baseRadius * range;
+                    // Web is defendOnly, so it is sitting at its unextended orbit
+                    // radius when the throw starts — same rule the main petal loop
+                    // uses below.
+                    const orbitR = (stats.defendOnly ? defendOnlyBaseRadius : baseRadius) * range;
                     let dropX = player.x + Math.cos(totalAngle) * orbitR;
                     let dropY = player.y + Math.sin(totalAngle) * orbitR;
                     const eSize = petal.customSize !== undefined ? petal.customSize : stats.size;
@@ -1107,7 +1190,18 @@ function updatePlayerState(player, deltaTime, deps) {
                         dropX += Math.cos(subAngle) * clumpSpacing;
                         dropY += Math.sin(subAngle) * clumpSpacing;
                     }
-                    spawnGroundPollen(io, player, stats, petal, dropX, dropY, 12 * eSize);
+                    if (isWeb) {
+                        // Throwing (attacking) flings it outward along the petal's
+                        // own bearing; defending plants it in place.
+                        if (playerExt > 1.0) {
+                            dropX += Math.cos(totalAngle) * gameState_1.WEB_THROW_DISTANCE;
+                            dropY += Math.sin(totalAngle) * gameState_1.WEB_THROW_DISTANCE;
+                        }
+                        spawnWebField(io, player, stats.webRadius, petal.rarity ?? 'common', dropX, dropY);
+                    }
+                    else {
+                        spawnGroundPollen(io, player, stats, petal, dropX, dropY, 12 * eSize);
+                    }
                     dropsToBreak.push({ petal, instanceIndex, stats });
                 }
                 for (const d of dropsToBreak) {
@@ -1322,6 +1416,10 @@ function updatePlayerState(player, deltaTime, deps) {
             // physics branch (needs the petal's spawn time); consumed after the
             // position is final.
             let burstHealHoming = false;
+            // Shell works the same way, but it flies home to lay a shield on the
+            // flower rather than to heal it, and it waits for the current shield
+            // to lapse instead of for missing health.
+            let burstShieldHoming = false;
             if (petalStats.fixedDirection !== undefined) {
                 // Fixed-direction petals stay directly on the player
                 petalX = player.x;
@@ -1363,9 +1461,12 @@ function updatePlayerState(player, deltaTime, deps) {
                 burstHealHoming = !!petalStats.burstHeal &&
                     player.health < player.maxHealth &&
                     timeSinceSpawn >= (petalStats.burstHealChargeMs ?? 1000);
+                burstShieldHoming = !!petalStats.burstShield &&
+                    (0, petal_actions_1.getShieldAmount)(player) <= 0 &&
+                    timeSinceSpawn >= (petalStats.burstHealChargeMs ?? 1000);
                 let closestEnemy = null;
                 let closestDistanceSq = Infinity;
-                if (playerPetalAttractionRadius > 0 && !burstHealHoming) {
+                if (playerPetalAttractionRadius > 0 && !burstHealHoming && !burstShieldHoming) {
                     // Broad-phase around this petal's own orbit point. The eligibility test
                     // below is `dist <= attractionRadius + thatMob's radius`, so querying
                     // `attractionRadius + largest mob radius` returns a strict superset of
@@ -1433,7 +1534,7 @@ function updatePlayerState(player, deltaTime, deps) {
                     effectiveTargetX = closestEnemy.x + Math.cos(projectionAngle) * mobOrbitRadius;
                     effectiveTargetY = closestEnemy.y + Math.sin(projectionAngle) * mobOrbitRadius;
                 }
-                if (burstHealHoming) {
+                if (burstHealHoming || burstShieldHoming) {
                     // Home straight to the flower. Keeping the glide window open every
                     // tick uses the overshoot-free first-order approach instead of the
                     // spring, so the petal flies in cleanly and tracks a moving player.
@@ -1533,12 +1634,17 @@ function updatePlayerState(player, deltaTime, deps) {
             // Burst-heal delivery: when the homing petal touches the flower it heals
             // and is consumed — zeroing the instance sends it through the normal
             // break/cooldown/reload flow on the next tick.
-            if (burstHealHoming) {
+            if (burstHealHoming || burstShieldHoming) {
                 const healDx = player.x - petalX;
                 const healDy = player.y - petalY;
                 const contactDist = effectivePlayerSize / 2;
                 if (healDx * healDx + healDy * healDy <= contactDist * contactDist) {
-                    player.health = Math.min(player.maxHealth, player.health + petalStats.burstHeal * getHealingSkillMultiplier(player));
+                    if (burstHealHoming) {
+                        player.health = Math.min(player.maxHealth, player.health + petalStats.burstHeal * getHealingSkillMultiplier(player));
+                    }
+                    else {
+                        (0, petal_actions_1.grantShield)(player, petalStats.burstShield, BURST_SHIELD_DURATION_MS);
+                    }
                     setInstanceHealth(petal, instanceIndex, petalStats, 0);
                     continue;
                 }
@@ -1616,7 +1722,40 @@ function updatePlayerState(player, deltaTime, deps) {
                 if (currentTime - lastShotTime >= cooldown) {
                     // Calculate projectile angle - shoot in the direction the petal is facing (tangent to rotation)
                     // The petal is at totalAngle, so the projectile should go in that direction
-                    const projectileAngle = totalAngle;
+                    let projectileAngle = totalAngle;
+                    // Guided shots re-aim at the nearest mob inside a cone around
+                    // the firing direction (gardn find_nearest_enemy_within_angle).
+                    // Done once, at launch — the shot still flies straight, so the
+                    // client's dead-reckoning stays exact.
+                    if (projectileConfig.seekRange) {
+                        const cone = projectileConfig.seekCone ?? Math.PI / 4;
+                        const seekCandidates = (0, enemyGrid_1.queryEnemiesNear)(petalX, petalY, projectileConfig.seekRange, _seekQueryBuffer);
+                        let bestDistSq = Infinity;
+                        let bestAngle = null;
+                        for (let _si = 0; _si < seekCandidates.length; _si++) {
+                            const candidate = seekCandidates[_si];
+                            if (candidate.isDead)
+                                continue;
+                            const sdx = candidate.x - petalX;
+                            const sdy = candidate.y - petalY;
+                            const sDistSq = sdx * sdx + sdy * sdy;
+                            if (sDistSq > projectileConfig.seekRange * projectileConfig.seekRange)
+                                continue;
+                            if (sDistSq >= bestDistSq)
+                                continue;
+                            let delta = Math.atan2(sdy, sdx) - projectileAngle;
+                            while (delta > Math.PI)
+                                delta -= Math.PI * 2;
+                            while (delta < -Math.PI)
+                                delta += Math.PI * 2;
+                            if (Math.abs(delta) > cone)
+                                continue;
+                            bestDistSq = sDistSq;
+                            bestAngle = Math.atan2(sdy, sdx);
+                        }
+                        if (bestAngle !== null)
+                            projectileAngle = bestAngle;
+                    }
                     const projectileSpeed = projectileConfig.speed || 200; // pixels per second
                     const spreadAngle = projectileConfig.spreadAngle || 0.2; // radians
                     const projectileCount = projectileConfig.count || 1;
@@ -1654,6 +1793,42 @@ function updatePlayerState(player, deltaTime, deps) {
                     // server.ts evicts from the front of the map as an O(1) LRU.
                     gameState_1.petalLastProjectileTime.delete(petalId);
                     gameState_1.petalLastProjectileTime.set(petalId, currentTime);
+                }
+            }
+            // Uranium: a damage pulse over everything in a wide radius, on its own
+            // timer. Reuses petalLastRadiationTime (an LRU map like the projectile
+            // one) so each petal instance pulses independently of its neighbours.
+            if (petalStats.radiation) {
+                const lastPulse = gameState_1.petalLastRadiationTime.get(petalId) || 0;
+                if (currentTime - lastPulse >= petalStats.radiation.intervalMs) {
+                    gameState_1.petalLastRadiationTime.delete(petalId);
+                    gameState_1.petalLastRadiationTime.set(petalId, currentTime);
+                    const pulseRadius = petalStats.radiation.radius;
+                    const pulseDamage = petalStats.damage * (petalStats.radiation.damageFactor ?? 1) * (0, petal_actions_1.getDamageMultiplier)(player);
+                    const irradiated = (0, enemyGrid_1.queryEnemiesNear)(petalX, petalY, pulseRadius, _radiationQueryBuffer);
+                    for (let _ri = 0; _ri < irradiated.length; _ri++) {
+                        const target = irradiated[_ri];
+                        if (target.isDead)
+                            continue;
+                        const rdx = target.x - petalX;
+                        const rdy = target.y - petalY;
+                        const reach = pulseRadius + (target._radius ?? constants_1.ENEMY_SIZE / 2);
+                        if (rdx * rdx + rdy * rdy > reach * reach)
+                            continue;
+                        (0, utils_1.trackDamage)(target, player.id, pulseDamage);
+                        target.health = Math.max(0, target.health - pulseDamage);
+                        (0, utils_1.markEnemyDamaged)(target);
+                        if (target.health <= 0 && !target.isDead) {
+                            const index = constants_1.enemies.findIndex(e => e.id === target.id);
+                            if (index !== -1) {
+                                (0, killHandler_1.killEnemy)(target, index, constants_1.enemies, killCtxFromDeps(deps), {
+                                    killerPlayerId: player.id,
+                                    trackMobKillTiming: 'sync-snapshot',
+                                    requireNonEmptyContributors: true,
+                                });
+                            }
+                        }
+                    }
                 }
             }
             // Check collision with enemies — broad-phase via spatial grid (built
@@ -1721,12 +1896,19 @@ function updatePlayerState(player, deltaTime, deps) {
                         // Check if there's already a poison effect from this player
                         const existingPoisonIndex = enemy.poisonEffects.findIndex(p => p.playerId === player.id);
                         if (existingPoisonIndex >= 0) {
-                            // Refresh the existing poison effect with the new damage and duration
-                            enemy.poisonEffects[existingPoisonIndex] = {
-                                damage: petalStats.poison,
-                                endTime: endTime,
-                                playerId: player.id
-                            };
+                            // gardn's rule (Damage.cc): a fresh bite only takes over
+                            // when it would outlast what is already ticking —
+                            // `if (defender.poison_ticks < attacker.poison_damage.time * TPS)`.
+                            // Without the guard, a short weak poison stomps a long
+                            // strong one: pincer (1s) landing after iris (6s) used to
+                            // wipe the iris poison and leave 1s of 5dps in its place.
+                            if (enemy.poisonEffects[existingPoisonIndex].endTime < endTime) {
+                                enemy.poisonEffects[existingPoisonIndex] = {
+                                    damage: petalStats.poison,
+                                    endTime: endTime,
+                                    playerId: player.id
+                                };
+                            }
                         }
                         else {
                             // Add a new poison effect
@@ -1736,6 +1918,12 @@ function updatePlayerState(player, deltaTime, deps) {
                                 playerId: player.id
                             });
                         }
+                    }
+                    // Sticky petals (honey / pincer) slow what they touch. How
+                    // much of it lands depends on the petal's rarity against the
+                    // mob's — see stallPower.
+                    if (petalStats.slowFactor && petalStats.slowDuration) {
+                        applySlow(enemy, petalStats.slowFactor, currentTime + petalStats.slowDuration, petal.rarity ?? 'common');
                     }
                     // Apply knockback to enemy
                     const knockbackForce = petalStats.knockback || 0;

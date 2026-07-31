@@ -11,14 +11,16 @@ exports.getXPFromEnemy = getXPFromEnemy;
 const constants_1 = require("./constants");
 const sands = [];
 function isCentipedeHeadType(type) {
-    return type === 'centipede' || type === 'desert_centipede';
+    return type === 'centipede' || type === 'desert_centipede' || type === 'evil_centipede';
 }
 function isCentipedeBodyType(type) {
-    return type === 'centipede_body' || type === 'desert_centipede_body';
+    return type === 'centipede_body' || type === 'desert_centipede_body' || type === 'evil_centipede_body';
 }
 function getCentipedeBodyType(headType) {
     if (headType === 'desert_centipede')
         return 'desert_centipede_body';
+    if (headType === 'evil_centipede')
+        return 'evil_centipede_body';
     return 'centipede_body';
 }
 /**
@@ -93,6 +95,10 @@ function makeEnemy(init) {
         leaderId: init.leaderId,
         headId: init.headId,
         segmentIndex: init.segmentIndex,
+        baseSpeed: init.baseSpeed,
+        slowUntil: init.slowUntil,
+        lastPeriodicSpawnTime: init.lastPeriodicSpawnTime,
+        despawnAt: init.despawnAt,
         isDead: init.isDead,
         _radius: init._radius,
         _mobStats: init._mobStats,

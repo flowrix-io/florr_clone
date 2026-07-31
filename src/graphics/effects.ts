@@ -9,6 +9,7 @@ declare module './core' {
         drawPetalParticleEffects(): void;
         drawFallingStars(): void;
         drawGroundPollens(groundPollens: Map<string, any>): void;
+        drawWebFields(webFields: Map<string, any>): void;
         drawRaindropAuras(players: Map<string, Player>): void;
     }
 }
@@ -245,6 +246,69 @@ Graphics.prototype.drawGroundPollens = function(this: Graphics, groundPollens: M
         this.ctx.arc(pollen.x, pollen.y, pollen.radius, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.stroke();
+    }
+    this.ctx.restore();
+};
+
+/**
+ * Web fields left by thrown web petals. Transcribed from gardn's
+ * Client/Assets/Web.cc draw_web(): ten spokes out to the rim, then five
+ * concentric rings of quadratic segments that sag toward the middle between
+ * consecutive spokes, all in one translucent white stroke.
+ */
+Graphics.prototype.drawWebFields = function(this: Graphics, webFields: Map<string, any>): void {
+    const now = Date.now();
+    const SPOKES = 10;
+    const LEVELS = 5;
+
+    this.ctx.save();
+    for (const web of webFields.values()) {
+        const elapsed = now - (web.spawnedAt || now);
+        const lifetime = web.lifetime || 10000;
+        // Self-prune rather than just skipping: if the server's `webRemoved`
+        // never lands (dropped under backpressure), the entry would otherwise
+        // sit in the map for the rest of the session.
+        if (elapsed >= lifetime) {
+            webFields.delete(web.id);
+            continue;
+        }
+        // Hold full opacity for most of its life, then fade out.
+        const fadeStart = lifetime * 0.75;
+        const alpha = elapsed < fadeStart ? 1 : 1 - (elapsed - fadeStart) / (lifetime - fadeStart);
+
+        const r = web.radius;
+        this.ctx.save();
+        this.ctx.translate(web.x, web.y);
+        this.ctx.rotate(web.angle || 0);
+        this.ctx.globalAlpha = alpha * (0x60 / 0xff);
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineCap = 'round';
+        // gardn strokes at 0.75 in a 10-unit web, i.e. 7.5% of the radius.
+        this.ctx.lineWidth = Math.max(1, r * 0.075);
+        this.ctx.beginPath();
+
+        for (let i = 0; i < SPOKES; i++) {
+            const angle = (2 * i * Math.PI) / SPOKES;
+            this.ctx.moveTo(0, 0);
+            this.ctx.lineTo(r * Math.cos(angle), r * Math.sin(angle));
+        }
+
+        for (let j = 0; j < LEVELS; j++) {
+            const curr = (j * r) / LEVELS;
+            const below = curr - r / (2 * LEVELS);
+            this.ctx.moveTo(curr, 0);
+            for (let i = 0; i < SPOKES; i++) {
+                const angle = (2 * (i + 1) * Math.PI) / SPOKES;
+                const before = ((2 * i + 1) * Math.PI) / SPOKES;
+                this.ctx.quadraticCurveTo(
+                    below * Math.cos(before), below * Math.sin(before),
+                    curr * Math.cos(angle), curr * Math.sin(angle)
+                );
+            }
+        }
+
+        this.ctx.stroke();
+        this.ctx.restore();
     }
     this.ctx.restore();
 };

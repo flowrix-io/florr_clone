@@ -48,6 +48,7 @@ export class Game {
     private mobProjectiles: Map<string, any> = new Map(); // Store mob projectiles
     private playerProjectiles: Map<string, any> = new Map(); // Store player projectiles
     public groundPollens: Map<string, any> = new Map(); // Store ground pollen drops from broken pollen petals
+    public webFields: Map<string, any> = new Map(); // Store web fields left by thrown web petals
     private items: Map<string, WorldItem> = new Map();
     private pickedUpItems: Set<string> = new Set(); // Track items picked up by this player
     get isInventoryOpen(): boolean {
@@ -1228,7 +1229,7 @@ export class Game {
         
         // Use active player ID for rendering (or socket.id if not split)
         const activePlayerId = this.activePlayerId || this.socket?.id || '';
-        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension, this.groundPollens);
+        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension, this.groundPollens, this.webFields);
         // Overlays drawn after render() must re-establish the HiDPI base
         // transform so they render at native resolution in logical coordinates.
         const ui = this.graphics.uiScale || 1;

@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const maze_1 = require("../maze");
-core_1.Graphics.prototype.render = function (players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0, groundPollens) {
+core_1.Graphics.prototype.render = function (players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0, groundPollens, webFields) {
     // Cache timestamp for this frame to avoid Date.now() per enemy
     this.frameTimestamp = Date.now();
     // Apply the antialiasing preference at the start of every frame so
@@ -95,6 +95,10 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
     // Draw ground pollen drops below enemies/items so they sit on the ground
     if (groundPollens && groundPollens.size > 0) {
         this.drawGroundPollens(groundPollens);
+    }
+    // Draw web fields below enemies so caught mobs render on top of the web
+    if (webFields && webFields.size > 0) {
+        this.drawWebFields(webFields);
     }
     // Draw raindrop auras (grass + droplets) below enemies and players
     this.drawRaindropAuras(players);

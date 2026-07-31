@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.knownPlayerProjectilesByPlayer = exports.knownMobProjectilesByPlayer = exports.petalLastProjectileTime = exports.playerProjectiles = exports.mobProjectiles = exports.playerUserIds = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
+exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.WEB_THROW_DISTANCE = exports.WEB_SLOW_LINGER_MS = exports.WEB_SLOW_FACTOR = exports.WEB_LIFETIME_MS = exports.webFields = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.knownPlayerProjectilesByPlayer = exports.knownMobProjectilesByPlayer = exports.petalLastRadiationTime = exports.petalLastProjectileTime = exports.playerProjectiles = exports.mobProjectiles = exports.playerUserIds = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
 exports.setSuperMobInSection = setSuperMobInSection;
 exports.getSuperMobInSection = getSuperMobInSection;
 exports.clearSuperMobFromSection = clearSuperMobFromSection;
@@ -60,6 +60,7 @@ exports.playerUserIds = {}; // Maps player ID to user ID
 exports.mobProjectiles = []; // Track all active mob projectiles
 exports.playerProjectiles = []; // Track all active player projectiles
 exports.petalLastProjectileTime = new Map(); // Track last projectile time per petal instance
+exports.petalLastRadiationTime = new Map(); // Track last radiation pulse per petal instance (uranium)
 // Delta sync: for each player, the set of projectile IDs they currently "know about" (i.e. were
 // told about via a spawn event and not yet told to remove). Used so we only re-broadcast a
 // projectile's full state once on spawn / viewport-enter, instead of every tick.
@@ -74,6 +75,18 @@ function allocatePlayerProjectileId() { return _nextPlayerProjectileId++; }
 exports.groundPollens = [];
 exports.GROUND_POLLEN_LIFETIME_MS = 5000;
 exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = 500;
+exports.webFields = [];
+exports.WEB_LIFETIME_MS = 10000; // gardn: entity_set_despawn_tick(web, 10 * TPS)
+exports.WEB_SLOW_FACTOR = 0.5; // gardn: speed_ratio = min(speed_ratio, 0.5)
+// gardn re-evaluates the overlap every tick and resets speed_ratio afterwards.
+// Here the slow is a short timed one that the field keeps refreshing, so a mob
+// walking out of a web is back to full speed within this long.
+exports.WEB_SLOW_LINGER_MS = 250;
+// How far an attacking throw carries the web out from the petal's orbit. gardn
+// accelerates the petal at 30x PLAYER_ACCELERATION for its 0.6s despawn window,
+// which carries it several screens; that is unreadable at florr's zoom, so the
+// throw is shortened to land just inside the viewport.
+exports.WEB_THROW_DISTANCE = 620;
 // Track item expiration timeouts for cleanup
 exports.itemExpirationTimeouts = new Map();
 // Track petal cooldown timeouts for cleanup (key: `${socketId}-${loadoutIndex}`)

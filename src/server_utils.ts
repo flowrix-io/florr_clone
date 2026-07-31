@@ -14,15 +14,16 @@ export interface PoisonEffect {
 }
 
 export function isCentipedeHeadType(type: string): boolean {
-  return type === 'centipede' || type === 'desert_centipede';
+  return type === 'centipede' || type === 'desert_centipede' || type === 'evil_centipede';
 }
 
 export function isCentipedeBodyType(type: string): boolean {
-  return type === 'centipede_body' || type === 'desert_centipede_body';
+  return type === 'centipede_body' || type === 'desert_centipede_body' || type === 'evil_centipede_body';
 }
 
 export function getCentipedeBodyType(headType: string): string {
   if (headType === 'desert_centipede') return 'desert_centipede_body';
+  if (headType === 'evil_centipede') return 'evil_centipede_body';
   return 'centipede_body';
 }
 
@@ -77,6 +78,14 @@ export interface Enemy {
   leaderId?: string;  // ID of the segment this one follows (undefined for the head)
   headId?: string;  // ID of the centipede head for the whole chain
   segmentIndex?: number;  // 0 = head, 1..N = body segments
+  // Slow (web/honey/pincer). `speed` is the value every movement branch reads, so
+  // a slow is applied by scaling it down and restoring `baseSpeed` when it lapses
+  // (see updateSlowEffects) rather than by teaching ~15 call sites about slows.
+  baseSpeed?: number;   // unslowed speed, captured the first time a slow lands
+  slowUntil?: number;   // timestamp the current slow expires
+  // Periodic summoner (queen ant) and the despawn timer on what it summons
+  lastPeriodicSpawnTime?: number;
+  despawnAt?: number;   // timestamp this mob removes itself, 0/undefined = never
   // Server-internal caches. Declared here rather than bolted on through `as any`
   // so they are part of the shape from birth (see makeEnemy).
   isDead?: boolean;             // spliced from `enemies` at end of tick; still referenced by in-flight loops
@@ -166,6 +175,10 @@ export function makeEnemy(init: EnemyInit): Enemy {
     leaderId: init.leaderId,
     headId: init.headId,
     segmentIndex: init.segmentIndex,
+    baseSpeed: init.baseSpeed,
+    slowUntil: init.slowUntil,
+    lastPeriodicSpawnTime: init.lastPeriodicSpawnTime,
+    despawnAt: init.despawnAt,
     isDead: init.isDead,
     _radius: init._radius,
     _mobStats: init._mobStats,

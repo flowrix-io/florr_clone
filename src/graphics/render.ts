@@ -3,11 +3,11 @@ import { isInMazeRegion } from '../maze';
 
 declare module './core' {
     interface Graphics {
-        render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension?: number, groundPollens?: Map<string, any>): void;
+        render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension?: number, groundPollens?: Map<string, any>, webFields?: Map<string, any>): void;
     }
 }
 
-Graphics.prototype.render = function(this: Graphics, players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0, groundPollens?: Map<string, any>): void {
+Graphics.prototype.render = function(this: Graphics, players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0, groundPollens?: Map<string, any>, webFields?: Map<string, any>): void {
     // Cache timestamp for this frame to avoid Date.now() per enemy
     this.frameTimestamp = Date.now();
 
@@ -114,6 +114,11 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     // Draw ground pollen drops below enemies/items so they sit on the ground
     if (groundPollens && groundPollens.size > 0) {
         this.drawGroundPollens(groundPollens);
+    }
+
+    // Draw web fields below enemies so caught mobs render on top of the web
+    if (webFields && webFields.size > 0) {
+        this.drawWebFields(webFields);
     }
 
     // Draw raindrop auras (grass + droplets) below enemies and players

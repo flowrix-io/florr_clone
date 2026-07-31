@@ -1152,7 +1152,7 @@ io.on('connection', (socket) => {
                             const petMobType = petalStats.petMobType;
                             // Pet inherits the petal's rarity
                             // console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${player.id} on spawn`);
-                            (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, player.x, player.y, player.id, io);
+                            (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, player.x, player.y, player.id, io, false, petalStats.petCount ?? 1);
                         }
                         // Handle cooldown timers
                         if (petal.onCooldown && petalStats) {
@@ -1199,7 +1199,7 @@ io.on('connection', (socket) => {
                                         const restoredPlayer = constants_2.players[socket.id];
                                         if (restoredPlayer && !restoredPlayer.isDead) {
                                             // console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${restoredPlayer.id} when petal restored on spawn`);
-                                            (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, restoredPlayer.x, restoredPlayer.y, restoredPlayer.id, io);
+                                            (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, restoredPlayer.x, restoredPlayer.y, restoredPlayer.id, io, false, petalStats.petCount ?? 1);
                                         }
                                     }
                                 }
@@ -1344,7 +1344,10 @@ io.on('connection', (socket) => {
                         keysToDelete.push(key);
                     }
                 });
-                keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
+                keysToDelete.forEach(key => {
+                    gameState_1.petalLastProjectileTime.delete(key);
+                    gameState_1.petalLastRadiationTime.delete(key);
+                });
                 // Clean up petal physics states
                 (0, playerState_1.cleanupPetalPhysicsStates)(playerId);
                 (0, petal_actions_1.cleanupPlayerPetalActionState)(playerId);
@@ -1385,7 +1388,10 @@ io.on('connection', (socket) => {
                     keysToDelete.push(key);
                 }
             });
-            keysToDelete.forEach(key => gameState_1.petalLastProjectileTime.delete(key));
+            keysToDelete.forEach(key => {
+                gameState_1.petalLastProjectileTime.delete(key);
+                gameState_1.petalLastRadiationTime.delete(key);
+            });
             // Clean up petal physics states for this player
             (0, playerState_1.cleanupPetalPhysicsStates)(socket.id);
             (0, petal_actions_1.cleanupPlayerPetalActionState)(socket.id);
@@ -1836,7 +1842,7 @@ io.on('connection', (socket) => {
                                             const player = constants_2.players[targetPlayerId];
                                             if (player && !player.isDead) {
                                                 // console.log(`[PET] Spawning pet ${petMobType} (${restoredPetal.rarity}) for player ${player.id} when petal restored`);
-                                                (0, petal_actions_1.spawnPet)(petMobType, restoredPetal.rarity, player.x, player.y, player.id, io);
+                                                (0, petal_actions_1.spawnPet)(petMobType, restoredPetal.rarity, player.x, player.y, player.id, io, false, restoredPetalStats.petCount ?? 1);
                                             }
                                             else {
                                                 // console.log(`[PET DEBUG] Player check failed: player=${!!player}, isDead=${player?.isDead}`);
@@ -1865,7 +1871,7 @@ io.on('connection', (socket) => {
                             // console.log(`[PET DEBUG] Player check: player=`, !!player, `isDead=`, player?.isDead);
                             if (player && !player.isDead) {
                                 // console.log(`[PET] Spawning pet ${petMobType} (${petal.rarity}) for player ${player.id} when petal equipped`);
-                                (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, player.x, player.y, player.id, io);
+                                (0, petal_actions_1.spawnPet)(petMobType, petal.rarity, player.x, player.y, player.id, io, false, petalStatsForSpawn.petCount ?? 1);
                             }
                             else {
                                 // console.log(`[PET DEBUG] Failed to spawn: player=${!!player}, isDead=${player?.isDead}`);
@@ -3660,6 +3666,21 @@ function wanderSizeFactor(enemy) {
 // Mobs that chase at exactly the player's base speed (MAX_SPEED) instead of
 // their stat-derived step: a fleeing flower can never outrun them, but they
 // can't gain on one running straight either — florr's pursuit feel.
+/**
+ * How fast this mob is currently moving relative to normal, 1 = unslowed.
+ *
+ * Slows work by scaling `enemy.speed` (see applySlow), which covers every branch
+ * that derives its step from that field. The two branches below deliberately do
+ * NOT: mobs in PLAYER_SPEED_CHASERS chase and retreat at a fixed fraction of the
+ * player's own speed so they can never be outrun. Without this factor a web,
+ * honey or pincer slow did nothing at all to the mobs it matters most against —
+ * measured at 0.92x instead of 0.5x on a chasing soldier ant.
+ */
+function speedScaleOf(enemy) {
+    if (enemy.slowUntil === undefined || !enemy.baseSpeed)
+        return 1;
+    return enemy.speed / enemy.baseSpeed;
+}
 const PLAYER_SPEED_CHASERS = new Set([
     'bee',
     'ladybug', 'shiny_ladybug', 'dark_ladybug',
@@ -3669,6 +3690,118 @@ const PLAYER_SPEED_CHASERS = new Set([
 // gardn StaticData SUMMON_RETREAT_RADIUS: hole-spawned mobs defend a territory
 // this large around their hole; dragged past it they give up and head home.
 const SUMMON_RETREAT_RADIUS = 600;
+/**
+ * Restore the speed of mobs whose slow (web/honey/pincer) has lapsed. Slows are
+ * applied by scaling `enemy.speed` down and parking the original in `baseSpeed`
+ * (see applySlow in playerState.ts), so every movement branch respects them
+ * without knowing they exist — this is the only place that undoes one.
+ */
+function updateSlowEffects() {
+    const currentTime = Date.now();
+    for (const enemy of constants_2.enemies) {
+        if (enemy.slowUntil === undefined)
+            continue;
+        if (currentTime < enemy.slowUntil)
+            continue;
+        if (enemy.baseSpeed !== undefined)
+            enemy.speed = enemy.baseSpeed;
+        enemy.slowUntil = undefined;
+    }
+}
+/**
+ * Tick the poison a mob's bite left on a flower (evil centipede). Lotus's
+ * poisonArmor is subtracted from the per-second rate, so enough of it makes the
+ * flower immune outright rather than merely slowing the bleed.
+ */
+function updatePlayerPoison(deltaTime) {
+    const currentTime = Date.now();
+    for (const id in constants_2.players) {
+        const player = constants_2.players[id];
+        if (!player.poisonUntil)
+            continue;
+        if (player.isDead || currentTime >= player.poisonUntil) {
+            player.poisonUntil = undefined;
+            player.poisonDamage = undefined;
+            player.poisonSource = undefined;
+            continue;
+        }
+        if (player.isInvulnerable)
+            continue;
+        const armor = (0, playerManager_1.calculatePlayerModifiers)(player).poisonArmor ?? 0;
+        const dps = Math.max(0, (player.poisonDamage ?? 0) - armor);
+        if (dps <= 0)
+            continue;
+        player.health -= dps * deltaTime;
+        player.lastDamageTime = currentTime;
+        if (player.health <= 0 && !(0, playerState_1.trySecondChance)(player, io)) {
+            player.health = 0;
+            player.isDead = true;
+            if (player.poisonSource)
+                player.killedBy = player.poisonSource;
+            (0, petal_actions_1.despawnAllPlayerPets)(player.id, io);
+            io.emit('playerDied', { playerId: player.id });
+        }
+        io.emit('playerDamaged', {
+            playerId: player.id,
+            health: player.health,
+            maxHealth: player.maxHealth,
+            isInvulnerable: player.isInvulnerable,
+            knockbackX: 0,
+            knockbackY: 0,
+            damageDealt: dps * deltaTime
+        });
+    }
+}
+/**
+ * Mobs that summon escorts on a timer while they live (queen ant), plus the
+ * expiry of what they summoned. The escort is capped and time-limited so a
+ * long-lived queen can't flood the section.
+ */
+function updatePeriodicSpawns() {
+    const currentTime = Date.now();
+    for (let i = constants_2.enemies.length - 1; i >= 0; i--) {
+        const enemy = constants_2.enemies[i];
+        if (enemy.despawnAt !== undefined && currentTime >= enemy.despawnAt && !enemy.isDead) {
+            enemy.isDead = true;
+            (0, utils_1.cleanupEnemy)(enemy);
+            constants_2.enemies.splice(i, 1);
+            io.emit('enemyDestroyed', enemy.id);
+        }
+    }
+    for (const enemy of constants_2.enemies) {
+        if (enemy.isDead)
+            continue;
+        const stats = enemy._mobStats ?? (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
+        const spawnCfg = stats?.periodic_spawn;
+        if (!spawnCfg)
+            continue;
+        const last = enemy.lastPeriodicSpawnTime ?? 0;
+        if (currentTime - last < spawnCfg.intervalMs)
+            continue;
+        enemy.lastPeriodicSpawnTime = currentTime;
+        let alive = 0;
+        for (const other of constants_2.enemies) {
+            if (other.parentHoleId === enemy.id && other.type === spawnCfg.mobType)
+                alive++;
+        }
+        if (alive >= spawnCfg.maxAlive)
+            continue;
+        // Behind the summoner, like gardn's queen ant.
+        const radius = (stats.size * 40) / 2;
+        const behindX = enemy.x - Math.cos(enemy.angle) * radius;
+        const behindY = enemy.y - Math.sin(enemy.angle) * radius;
+        const child = (0, buildEnemy_1.buildEnemy)(spawnCfg.mobType, enemy.tier, behindX, behindY, {
+            parentHoleId: enemy.id,
+            ownerId: enemy.ownerId,
+        });
+        if (!child)
+            continue;
+        child.despawnAt = currentTime + spawnCfg.lifetimeMs;
+        child.targetPlayerId = enemy.targetPlayerId;
+        constants_2.enemies.push(child);
+        io.emit('enemySpawned', child);
+    }
+}
 function updatePoisonEffects(deltaTime) {
     const currentTime = Date.now();
     constants_2.enemies.forEach(enemy => {
@@ -3696,7 +3829,7 @@ function updatePoisonEffects(deltaTime) {
                 (0, utils_1.trackDamage)(enemy, poison.playerId, poison.damage * deltaTime * 1000);
             });
             // Mark enemy for batched damage update at end of frame
-            (0, utils_1.markEnemyDamaged)(enemy);
+            (0, utils_1.markEnemyPoisonDamaged)(enemy);
             // Check if enemy dies from poison (only process once per enemy)
             if (enemy.health <= 0 && !enemy.isDead) {
                 // Mark enemy as dead to prevent multiple death handlers
@@ -4169,7 +4302,7 @@ function moveEnemies() {
                         }
                         else {
                             const returnSpeed = PLAYER_SPEED_CHASERS.has(enemy.type)
-                                ? constants_2.MAX_SPEED / 30
+                                ? (constants_2.MAX_SPEED / 30) * speedScaleOf(enemy)
                                 : enemy.speed * ENEMY_SPEED_MULTIPLIER;
                             enemy.x += (homeDx / homeDist) * returnSpeed;
                             enemy.y += (homeDy / homeDist) * returnSpeed;
@@ -4295,7 +4428,7 @@ function moveEnemies() {
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance > 0) {
                     const speed = PLAYER_SPEED_CHASERS.has(enemy.type)
-                        ? constants_2.MAX_SPEED / 30 // player base speed, per 30 TPS tick
+                        ? (constants_2.MAX_SPEED / 30) * speedScaleOf(enemy) // player base speed, per 30 TPS tick
                         : enemy.speed * ENEMY_SPEED_MULTIPLIER;
                     let moveX = dx / distance;
                     let moveY = dy / distance;
@@ -5117,6 +5250,40 @@ function updateGroundPollens() {
         }
     }
 }
+// Reusable buffer for the web-field enemy-grid query (see updateWebFields).
+const _webQueryBuffer = [];
+/**
+ * Web fields left behind by thrown web petals: expire them, and halve the speed
+ * of everything standing in one. gardn does this in Collision.cc by clamping
+ * `speed_ratio` for any entity overlapping a kWeb entity, which it recomputes
+ * from scratch each tick; here the field keeps refreshing a short timed slow, so
+ * a mob that walks out is back to full speed a fraction of a second later.
+ */
+function updateWebFields() {
+    const currentTime = Date.now();
+    for (let i = gameState_1.webFields.length - 1; i >= 0; i--) {
+        const web = gameState_1.webFields[i];
+        if (currentTime >= web.expiresAt) {
+            gameState_1.webFields.splice(i, 1);
+            io.emit('webRemoved', web.id);
+            continue;
+        }
+        const caught = (0, enemyGrid_1.queryEnemiesNear)(web.x, web.y, web.radius, _webQueryBuffer);
+        for (let j = 0; j < caught.length; j++) {
+            const enemy = caught[j];
+            if (enemy.isDead)
+                continue;
+            const dx = enemy.x - web.x;
+            const dy = enemy.y - web.y;
+            const reach = web.radius + (enemy._radius ?? constants_2.ENEMY_SIZE / 2);
+            if (dx * dx + dy * dy >= reach * reach)
+                continue;
+            // The field carries the rarity of the petal that was thrown, so a
+            // high-rarity web still bites on mobs that shrug off a common one.
+            (0, playerState_1.applySlow)(enemy, gameState_1.WEB_SLOW_FACTOR, currentTime + gameState_1.WEB_SLOW_LINGER_MS, web.rarity);
+        }
+    }
+}
 // updatePlayerState moved to playerState module - using imported function
 // Admin test hook: force every tick's `deltaTime` to a fixed value for a
 // window, so a slow/GC-stalled tick (real load, e.g. a mob-dense maze) can be
@@ -5279,6 +5446,12 @@ function start_loop() {
             (0, petal_actions_1.updatePetalActions)(deltaTime);
             // Update poison effects
             updatePoisonEffects(deltaTime);
+            updatePlayerPoison(deltaTime);
+            // Expire mob slows before movement runs so a lapsed slow doesn't
+            // cost the mob a tick of speed.
+            updateSlowEffects();
+            // Queen-ant style escorts (and their despawn timers)
+            updatePeriodicSpawns();
             for (let i = 0; i < mobCatchupCalls; i++) {
                 moveEnemies();
             }
@@ -5289,6 +5462,8 @@ function start_loop() {
         }
         // Update ground pollen drops (damage zones from broken pollen petals)
         updateGroundPollens();
+        // Update web fields (slow zones from thrown web petals)
+        updateWebFields();
         // Update viewport status for all enemies. Strided: this pass exists to
         // feed a 30-second despawn timer, so a ~166 ms cadence is equivalent —
         // no need to box-test all ~1400 enemies every tick.
@@ -5303,8 +5478,12 @@ function start_loop() {
         // enemy into dictionary mode for the rest of its life).
         if (utils_1.pendingEnemyDamageUpdates.size > 0) {
             const damagedEnemies = [];
-            utils_1.pendingEnemyDamageUpdates.forEach((health, enemyId) => {
-                damagedEnemies.push({ enemyId, health });
+            utils_1.pendingEnemyDamageUpdates.forEach((pending, enemyId) => {
+                // `p` is omitted for ordinary damage so the common case stays
+                // two fields on the wire.
+                damagedEnemies.push(pending.poisonOnly
+                    ? { enemyId, health: pending.health, p: 1 }
+                    : { enemyId, health: pending.health });
             });
             utils_1.pendingEnemyDamageUpdates.clear();
             io.emit('enemiesDamaged', damagedEnemies);
@@ -5395,6 +5574,14 @@ function start_loop() {
                 gameState_1.petalLastProjectileTime.delete(key);
             }
         }
+        if (gameState_1.petalLastRadiationTime.size > 1000) {
+            let toRemove = gameState_1.petalLastRadiationTime.size - 1000;
+            for (const key of gameState_1.petalLastRadiationTime.keys()) {
+                if (toRemove-- <= 0)
+                    break;
+                gameState_1.petalLastRadiationTime.delete(key);
+            }
+        }
         // Helper function to quantize positions (reduce precision to save bandwidth)
         const quantize = (value, precision = 1) => {
             return Math.round(value / precision) * precision;
@@ -5412,6 +5599,8 @@ function start_loop() {
                 faceFlags |= player_1.FaceFlags.Defending;
                 mouth = 4;
             }
+            if (p.poisonUntil && Date.now() < p.poisonUntil)
+                faceFlags |= player_1.FaceFlags.Poisoned;
             let equipFlags = 0;
             if (p.loadout) {
                 const loadoutLen = Math.min(p.loadout.length, 10);

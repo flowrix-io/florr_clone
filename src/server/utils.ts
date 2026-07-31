@@ -12,10 +12,37 @@ import { forgetEnemyFromRaindropAura } from './playerState';
 // avoids monkey-patching `pendingDamageUpdate` / `lastDamageHealth` onto
 // every damaged enemy and the per-tick `delete` that follows — both of which
 // V8 punishes by transitioning the enemy object to dictionary (slow) mode.
-export const pendingEnemyDamageUpdates: Map<string, number> = new Map();
+export interface PendingEnemyDamage {
+    health: number;
+    /**
+     * True while every point of damage batched for this enemy this tick came
+     * from poison, which is what lets the client tint the floating number
+     * purple. Any direct hit in the same batch clears it — the number the
+     * client derives is one health delta covering both, and a petal hit is the
+     * larger, more informative part of it.
+     */
+    poisonOnly: boolean;
+}
+export const pendingEnemyDamageUpdates: Map<string, PendingEnemyDamage> = new Map();
 
 export function markEnemyDamaged(enemy: Enemy): void {
-    pendingEnemyDamageUpdates.set(enemy.id, enemy.health);
+    const pending = pendingEnemyDamageUpdates.get(enemy.id);
+    if (pending) {
+        pending.health = enemy.health;
+        pending.poisonOnly = false;
+    } else {
+        pendingEnemyDamageUpdates.set(enemy.id, { health: enemy.health, poisonOnly: false });
+    }
+}
+
+/** As markEnemyDamaged, but the damage came from a poison tick. */
+export function markEnemyPoisonDamaged(enemy: Enemy): void {
+    const pending = pendingEnemyDamageUpdates.get(enemy.id);
+    if (pending) {
+        pending.health = enemy.health;
+    } else {
+        pendingEnemyDamageUpdates.set(enemy.id, { health: enemy.health, poisonOnly: true });
+    }
 }
 
 // Helper function to track damage dealt to an enemy

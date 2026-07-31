@@ -178,7 +178,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         ]
     },
     ant_hole: {
-        guaranteed: false,
+        guaranteed: true,
         drops: [
             {
                 type: 'petal',
@@ -199,7 +199,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         ]
     },
     fire_ant_hole: {
-        guaranteed: false,
+        guaranteed: true,
         drops: [
             {
                 type: 'petal',
@@ -374,6 +374,16 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 itemType: 'rock',
                 rarity: 'common',
                 probability: 0.6, // 60% chance for rock
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                // Replaces the auto-generated sandstorm egg (see noEggDrop on the
+                // mob config) — Stick summons two sandstorms itself.
+                type: 'petal',
+                itemType: 'stick',
+                rarity: 'common',
+                probability: 0.25,
                 minQuantity: 1,
                 maxQuantity: 1
             },
@@ -821,7 +831,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         ]
     },
     desert_centipede_body: {
-        guaranteed: false,
+        guaranteed: true,
         drops: [
             {
                 type: 'petal',
@@ -834,7 +844,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         ]
     },
     centipede: {
-        guaranteed: false,
+        guaranteed: true,
         drops: [
             {
                 type: 'petal',
@@ -847,7 +857,7 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
         ]
     },
     centipede_body: {
-        guaranteed: false,
+        guaranteed: true,
         drops: [
             {
                 type: 'petal',
@@ -920,6 +930,106 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
                 itemType: 'magnet',
                 rarity: 'common',
                 probability: 0.8,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'shell',
+                rarity: 'common',
+                probability: 0.6,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    evil_centipede: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'blue_iris',
+                rarity: 'common',
+                probability: 0.35,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'iris',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+        ]
+    },
+    evil_centipede_body: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'blue_iris',
+                rarity: 'common',
+                probability: 0.2,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'iris',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    queen_ant: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'wing',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'iris',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'stinger',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            }
+        ]
+    },
+    digger: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'uranium',
+                rarity: 'common',
+                probability: 0.5,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'cutter',
+                rarity: 'common',
+                probability: 0.15,
                 minQuantity: 1,
                 maxQuantity: 1
             }

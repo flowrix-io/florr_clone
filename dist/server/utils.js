@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pendingEnemyDamageUpdates = void 0;
 exports.markEnemyDamaged = markEnemyDamaged;
+exports.markEnemyPoisonDamaged = markEnemyPoisonDamaged;
 exports.trackDamage = trackDamage;
 exports.calculateDPS = calculateDPS;
 exports.getOriginalSocketId = getOriginalSocketId;
@@ -17,14 +18,26 @@ const squadManager_1 = require("./squadManager");
 const botManager_1 = require("./botManager");
 const apiKeyApi_1 = require("./apiKeyApi");
 const playerState_1 = require("./playerState");
-// Per-tick batch of enemies that took damage. Keyed by enemy.id with the
-// post-damage health snapshot. Using a module-level Map (cleared on flush)
-// avoids monkey-patching `pendingDamageUpdate` / `lastDamageHealth` onto
-// every damaged enemy and the per-tick `delete` that follows — both of which
-// V8 punishes by transitioning the enemy object to dictionary (slow) mode.
 exports.pendingEnemyDamageUpdates = new Map();
 function markEnemyDamaged(enemy) {
-    exports.pendingEnemyDamageUpdates.set(enemy.id, enemy.health);
+    const pending = exports.pendingEnemyDamageUpdates.get(enemy.id);
+    if (pending) {
+        pending.health = enemy.health;
+        pending.poisonOnly = false;
+    }
+    else {
+        exports.pendingEnemyDamageUpdates.set(enemy.id, { health: enemy.health, poisonOnly: false });
+    }
+}
+/** As markEnemyDamaged, but the damage came from a poison tick. */
+function markEnemyPoisonDamaged(enemy) {
+    const pending = exports.pendingEnemyDamageUpdates.get(enemy.id);
+    if (pending) {
+        pending.health = enemy.health;
+    }
+    else {
+        exports.pendingEnemyDamageUpdates.set(enemy.id, { health: enemy.health, poisonOnly: true });
+    }
 }
 // Helper function to track damage dealt to an enemy
 function trackDamage(enemy, playerId, damage) {

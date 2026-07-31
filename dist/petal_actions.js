@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.splitPlayers = exports.globalPetalMemory = void 0;
 exports.executePetalActions = executePetalActions;
+exports.grantShield = grantShield;
 exports.despawnPet = despawnPet;
 exports.despawnAllPlayerPets = despawnAllPlayerPets;
 exports.spawnPet = spawnPet;
@@ -202,6 +203,14 @@ function applyPlayerEffect(player, type, value, duration) {
     player.effects = player.effects.filter(e => e.type !== type);
     player.effects.push({ type, value, duration, startTime: Date.now() });
 }
+/**
+ * Grant (or refresh) a temporary shield on a flower. Shell's burst shield uses
+ * this; effects of a given type don't stack (applyPlayerEffect replaces), which
+ * matches gardn where a fresh shell overwrites rather than adds.
+ */
+function grantShield(player, amount, durationMs) {
+    applyPlayerEffect(player, 'shield', amount, durationMs);
+}
 // Explode petal and deal area damage
 function explodePetal(x, y, petalSize, damage, enemies, io, player) {
     // Throttle explosions to 1 per 20ms
@@ -377,7 +386,23 @@ function despawnAllPlayerPets(playerId, io) {
 // not eggs: a full loadout of ordinary eggs stays far below this.
 const MAX_PET_ENTITIES_PER_PLAYER = 50;
 // Spawn a pet mob that belongs to a player
-function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false) {
+function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false, count = 1) {
+    // Petals that summon a squad (stick -> two sandstorms). The duplicate check
+    // runs once for the whole squad, otherwise each summon would despawn the
+    // previous one and only the last would survive.
+    if (count > 1) {
+        if (!skipDuplicateCheck) {
+            for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
+                if (constants_1.enemies[i].ownerId === ownerId && constants_1.enemies[i].type === mobType) {
+                    despawnPet(constants_1.enemies[i], io);
+                }
+            }
+        }
+        for (let i = 0; i < count; i++) {
+            spawnPet(mobType, rarity, x, y, ownerId, io, true, 1);
+        }
+        return;
+    }
     // Validate mob type
     const allMobTypes = (0, mobs_1.getAllMobTypes)();
     if (!allMobTypes.includes(mobType)) {

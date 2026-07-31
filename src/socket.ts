@@ -693,6 +693,20 @@ function setupSocketListeners(game: any) {
         game.groundPollens.delete(id);
     });
 
+    game.socket.on('webSpawned', (web: any) => {
+        game.webFields.set(web.id, {
+            ...web,
+            // A per-web random rotation, as gardn's alloc_web does, so stacked
+            // webs don't line their spokes up.
+            angle: Math.random() * Math.PI * 2,
+            spawnedAt: Date.now()
+        });
+    });
+
+    game.socket.on('webRemoved', (id: string) => {
+        game.webFields.delete(id);
+    });
+
     game.socket.on('enemyMoved', (enemy: Enemy) => {
         // Enemy movement update - uses same path as all enemy updates
         handleEnemyUpdate(enemy);
@@ -750,7 +764,7 @@ function setupSocketListeners(game: any) {
     });
 
     // Unified handler for enemy damage - all damage goes through the same path
-    function handleEnemyDamage(data: { enemyId: string, health: number }) {
+    function handleEnemyDamage(data: { enemyId: string, health: number, p?: 1 }) {
         const enemy = game.enemies.get(data.enemyId);
         if (enemy) {
             const oldHealth = enemy.health;
@@ -759,8 +773,9 @@ function setupSocketListeners(game: any) {
             // Calculate damage dealt and show floating damage number (throttled)
             if (oldHealth > data.health) {
                 const damage = oldHealth - data.health;
-                // Use throttled damage text to prevent spam when many enemies are damaged
-                game.graphics.showDamageText(data.enemyId, enemy.x, enemy.y, damage);
+                // Use throttled damage text to prevent spam when many enemies are damaged.
+                // `p` marks a batch whose damage was all poison — shown in purple.
+                game.graphics.showDamageText(data.enemyId, enemy.x, enemy.y, damage, data.p === 1);
             }
         }
     }
@@ -849,7 +864,7 @@ function setupSocketListeners(game: any) {
         handleEnemyDamage(data);
     });
 
-    game.socket.on('enemiesDamaged', (damagedEnemies: Array<{ enemyId: string, health: number }>) => {
+    game.socket.on('enemiesDamaged', (damagedEnemies: Array<{ enemyId: string, health: number, p?: 1 }>) => {
         // Batch handler for multiple enemy damage updates - uses same path
         for (const data of damagedEnemies) {
             handleEnemyDamage(data);

@@ -628,6 +628,18 @@ function setupSocketListeners(game) {
     game.socket.on('groundPollenRemoved', (id) => {
         game.groundPollens.delete(id);
     });
+    game.socket.on('webSpawned', (web) => {
+        game.webFields.set(web.id, {
+            ...web,
+            // A per-web random rotation, as gardn's alloc_web does, so stacked
+            // webs don't line their spokes up.
+            angle: Math.random() * Math.PI * 2,
+            spawnedAt: Date.now()
+        });
+    });
+    game.socket.on('webRemoved', (id) => {
+        game.webFields.delete(id);
+    });
     game.socket.on('enemyMoved', (enemy) => {
         // Enemy movement update - uses same path as all enemy updates
         handleEnemyUpdate(enemy);
@@ -673,8 +685,9 @@ function setupSocketListeners(game) {
             // Calculate damage dealt and show floating damage number (throttled)
             if (oldHealth > data.health) {
                 const damage = oldHealth - data.health;
-                // Use throttled damage text to prevent spam when many enemies are damaged
-                game.graphics.showDamageText(data.enemyId, enemy.x, enemy.y, damage);
+                // Use throttled damage text to prevent spam when many enemies are damaged.
+                // `p` marks a batch whose damage was all poison — shown in purple.
+                game.graphics.showDamageText(data.enemyId, enemy.x, enemy.y, damage, data.p === 1);
             }
         }
     }

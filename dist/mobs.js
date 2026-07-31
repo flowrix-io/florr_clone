@@ -469,6 +469,50 @@ const MOB_XP_TABLES = {
         super: 350000,
         unique: 1950000
     },
+    evil_centipede: {
+        common: 3,
+        uncommon: 9,
+        rare: 60,
+        epic: 480,
+        legendary: 2400,
+        mythic: 54000,
+        ultra: 270000,
+        super: 2100000,
+        unique: 11700000
+    },
+    evil_centipede_body: {
+        common: 1,
+        uncommon: 3,
+        rare: 15,
+        epic: 120,
+        legendary: 600,
+        mythic: 13500,
+        ultra: 67500,
+        super: 525000,
+        unique: 2900000
+    },
+    queen_ant: {
+        common: 15,
+        uncommon: 60,
+        rare: 360,
+        epic: 2400,
+        legendary: 13500,
+        mythic: 270000,
+        ultra: 1350000,
+        super: 10500000,
+        unique: 54000000
+    },
+    digger: {
+        common: 20,
+        uncommon: 80,
+        rare: 480,
+        epic: 3200,
+        legendary: 18000,
+        mythic: 360000,
+        ultra: 1800000,
+        super: 14000000,
+        unique: 72000000
+    },
     ant_hole: {
         common: 5,
         uncommon: 20,
@@ -940,6 +984,15 @@ function generateMobStats(baseConfig, rarity, mobType) {
     // Generate name with prefix
     const prefix = RARITY_PREFIXES[rarity];
     const name = overrides.name || (prefix ? `${prefix} ${baseConfig.name.replace('Common ', '')}` : baseConfig.name);
+    // `min_rarity` is enforced by emptying the section list below that rarity.
+    // Every spawner (density loop, zones, maze, biome tables) already filters on
+    // `getMobStats(type, tier).section`, so there is exactly one thing to get
+    // right here instead of a check at each of those call sites.
+    let section = overrides.section ?? baseConfig.section ?? [];
+    const minRarity = baseConfig.min_rarity;
+    if (minRarity && exports.RARITY_LEVELS.indexOf(rarity) < exports.RARITY_LEVELS.indexOf(minRarity)) {
+        section = [];
+    }
     return {
         name,
         damage,
@@ -954,7 +1007,7 @@ function generateMobStats(baseConfig, rarity, mobType) {
         ai_type: overrides.ai_type ?? baseConfig.ai_type,
         range: overrides.range ?? baseConfig.range,
         xp,
-        section: overrides.section ?? baseConfig.section ?? [],
+        section,
         visual_scale: overrides.visual_scale ?? baseConfig.visual_scale ?? 1.0,
         reversed: overrides.reversed ?? baseConfig.reversed ?? false,
         hideRotation: overrides.hideRotation ?? baseConfig.hideRotation ?? false,
@@ -966,7 +1019,15 @@ function generateMobStats(baseConfig, rarity, mobType) {
         projectile: overrides.projectile ?? baseConfig.projectile,
         spawn_waves: overrides.spawn_waves ?? baseConfig.spawn_waves,
         initial_spawns: overrides.initial_spawns ?? baseConfig.initial_spawns,
-        no_mob_collision: overrides.no_mob_collision ?? baseConfig.no_mob_collision
+        no_mob_collision: overrides.no_mob_collision ?? baseConfig.no_mob_collision,
+        periodic_spawn: overrides.periodic_spawn ?? baseConfig.periodic_spawn,
+        // Poison is damage, so it rides the same DAMAGE_SCALING curve the mob's
+        // body damage does — otherwise an apex evil centipede's bite would tick
+        // for the same 5 dps as a common one and be pure decoration.
+        poison: overrides.poison ?? (baseConfig.poison !== undefined
+            ? baseConfig.poison * DAMAGE_SCALING[rarity]
+            : undefined),
+        poisonDuration: overrides.poisonDuration ?? baseConfig.poisonDuration
     };
 }
 // Generate the full mob configuration
@@ -1009,9 +1070,13 @@ function getMobRarities(mobType) {
 function getMobTypesBySection(section) {
     const result = [];
     for (const mobType of Object.keys(exports.MOB_CONFIG)) {
-        // Check the common rarity to get the section (all rarities share the same section)
-        const stats = exports.MOB_CONFIG[mobType]?.common;
-        if (stats && stats.section.includes(section)) {
+        // Read the declared section off the base config rather than a rarity
+        // row: a `min_rarity` mob has an EMPTY section list on every rarity
+        // below its floor (that is how the floor is enforced), so checking the
+        // common row alone would leave evil centipedes/queen ants/diggers out
+        // of their biome's texture preload.
+        const declared = mob_configs_1.BASE_MOB_CONFIGS[mobType]?.section;
+        if (declared && declared.includes(section)) {
             result.push(mobType);
         }
     }
