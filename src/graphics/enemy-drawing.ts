@@ -78,15 +78,6 @@ Graphics.prototype.drawMobProjectile = function(this: Graphics, projectile: any,
                 petalSize,
                 petalSize
             );
-
-            // Add rarity glow effect for non-common projectiles
-            if (projectile.petalRarity !== 'common') {
-                this.ctx.save();
-                this.ctx.shadowColor = petalStats.color;
-                this.ctx.shadowBlur = 5;
-                this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
-                this.ctx.restore();
-            }
         } catch (error) {
             console.error(`[Graphics] Error drawing projectile petal image:`, error);
             // Fallback to colored circle if image fails

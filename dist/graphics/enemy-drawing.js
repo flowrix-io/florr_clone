@@ -54,14 +54,6 @@ core_1.Graphics.prototype.drawMobProjectile = function (projectile, currentTime,
         try {
             // Draw the petal canvas image centered at origin
             this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
-            // Add rarity glow effect for non-common projectiles
-            if (projectile.petalRarity !== 'common') {
-                this.ctx.save();
-                this.ctx.shadowColor = petalStats.color;
-                this.ctx.shadowBlur = 5;
-                this.ctx.drawImage(petalCanvas, -petalSize / 2, -petalSize / 2, petalSize, petalSize);
-                this.ctx.restore();
-            }
         }
         catch (error) {
             console.error(`[Graphics] Error drawing projectile petal image:`, error);

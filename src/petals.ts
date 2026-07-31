@@ -2434,15 +2434,22 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         size: 1.0,
         cooldown: 2000,
         description: "Locks onto the nearest mob before it launches",
-        color: "#000000",
+        color: "#7c7c7c",
         count: 1,
-        image: `<svg width="32" height="32" viewBox="-14 -9 28 18" xmlns="http://www.w3.org/2000/svg">
-  <path d="M 11 0 L -11 -6 L -11 6 Z"
-        fill="#222222"
-        stroke="#222222"
+        // Traced from rysteria_gardn PetalID::kHomingMissile (Client/Assets/Petal.cc),
+        // static variant: exhaust fixed at x = -20, targeting dot lit red.
+        image: `<svg width="32" height="32" viewBox="-34 -13 48 26" xmlns="http://www.w3.org/2000/svg">
+  <path d="M -13 -7 L -33 0 L -13 7 Z" fill="#eb4c34" />
+  <path d="M -13 -2.1 L -19 0 L -13 2.1 Z" fill="#ebe834" />
+  <path d="M 11 0 L -11 -10 L -11 10 Z"
+        fill="#7c7c7c"
+        stroke="#7c7c7c"
         stroke-width="5"
         stroke-linecap="round"
         stroke-linejoin="round" />
+  <path d="M 11 0 L -11 -10 L -11 10 Z" fill="#999999" />
+  <circle cx="0" cy="0" r="2" fill="#cf0000" />
+  <circle cx="0" cy="0" r="1.3333" fill="#ff0000" />
 </svg>`,
         isAdminPetal: false,
         projectile: {
