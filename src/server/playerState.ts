@@ -1000,31 +1000,12 @@ function applyPvpDamage(
     }
 }
 
+
 /**
- * Update player state (movement, collisions, etc.)
- * This is the main function that handles all player state updates
+ * Base 1 HP/sec plus every equipped petal's passiveHeal, scaled by the healing
+ * skill. Only the primary loadout heals — slots 10+ are storage.
  */
-export function updatePlayerState(
-    player: ServerPlayer, 
-    deltaTime: number,
-    deps: PlayerStateDependencies
-): void {
-    if (!player || !player.inputs) {
-        return;
-    }
-
-    // Don't update movement for dead players
-    if (player.isDead) {
-        return;
-    }
-
-    const { io, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
-
-    // Update player effects
-    updatePlayerEffects(player, deltaTime);
-    updateSpongeDamage(player, deltaTime, io);
-
-    // Apply passive healing (base 1 HP/sec + petal bonuses)
+function applyPassiveHealing(player: ServerPlayer, deltaTime: number): void {
     if (!player.isDead) {
         let totalPassiveHeal = 1.0 * deltaTime; // Base passive heal: 1 HP/sec
         const loadout = player.loadout || [];
@@ -1037,7 +1018,7 @@ export function updatePlayerState(
                     // Passive heal is already scaled by rarity (sqrt(3) per level) in generatePetalStats
                     // Now apply healing skill multiplier
                     const healingMultiplier = getHealingSkillMultiplier(player);
-                    
+
                     // Calculate heal per second, then multiply by deltaTime (in seconds)
                     const healPerSecond = petalStats.passiveHeal * healingMultiplier;
                     const healThisFrame = healPerSecond * deltaTime;
@@ -1045,15 +1026,19 @@ export function updatePlayerState(
                 }
             }
         }
-        
+
         if (totalPassiveHeal > 0) {
             player.health = Math.min(player.maxHealth, player.health + totalPassiveHeal);
         }
     }
+}
 
-    // Apply raindrop aura damage to mobs around the player
-    applyRaindropAuraDamage(player, deps);
-
+/**
+ * The velocity the player is trying to reach this tick, from mouse or keyboard
+ * input. Also caches the clamped speed multiplier on the player, which the
+ * broadcast sends to the owning client for prediction.
+ */
+function computeTargetVelocity(player: ServerPlayer): { targetVelocityX: number; targetVelocityY: number } {
     let targetVelocityX = 0;
     let targetVelocityY = 0;
 
@@ -1102,6 +1087,191 @@ export function updatePlayerState(
             player.angle = Math.atan2(targetVelocityY, targetVelocityX);
         }
     }
+
+    return { targetVelocityX, targetVelocityY };
+}
+
+/**
+ * Expand the loadout into one entry per petal instance, assigning each an orbit
+ * slot. Petals with `count` occupy `count` entries; `clumped` petals share a
+ * single slot so their instances cluster instead of spreading round the ring.
+ *
+ * Returns the instances and the number of slots consumed (the ring divisor).
+ */
+function buildPetalInstances(
+    player: ServerPlayer,
+    io: SocketIOServer,
+): { petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number, slotIndex: number}>; nextSlotIndex: number } {
+    const petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number, slotIndex: number}> = [];
+    let nextSlotIndex = 0;
+    try {
+        for (let i = 0; i < player.loadout.length; i++) {
+            // Secondary loadout (slots 10+) is storage only — don't spawn petals
+            if (i >= 10) continue;
+            const petal = player.loadout[i];
+            if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
+                const petalStats = getPetalStats(petal.petalType, petal.rarity);
+                if (!petalStats) continue;
+
+                const count = petalStats.count || 1; // Use count from stats, default to 1
+
+                // Validate count is a valid number
+                if (typeof count !== 'number' || count < 1 || !isFinite(count)) {
+                    console.warn('Invalid petal count:', count, 'for', petal.petalType, petal.rarity);
+                    continue;
+                }
+
+                // Clumped petals share a single orbit slot across all their instances
+                const clumped = !!petalStats.clumped;
+                const sharedSlot = nextSlotIndex;
+                // Ensure per-instance health/cooldown arrays are sized to count
+                ensureInstanceArrays(petal, petalStats);
+                // Create multiple instances based on count
+                for (let j = 0; j < count; j++) {
+                    const slotIndex = clumped ? sharedSlot : nextSlotIndex;
+                    if (!clumped) nextSlotIndex++;
+                    petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i, slotIndex });
+
+                    // Execute petal actions immediately when spawned
+                    if (petalStats.actions) {
+                        const petalId = `${player.id}_${i}_${j}`;
+                        const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
+                        const actionContext = {
+                            player: player,
+                            petalX: player.x, // Will be updated with actual position in game loop
+                            petalY: player.y, // Will be updated with actual position in game loop
+                            petalSize: effectiveSize * 40,
+                            petalDamage: petalStats.damage, // Include petal damage for rarity scaling
+                            enemies: enemies,
+                            io: io,
+                            petalId: petalId,
+                            loadoutIndex: i,
+                            instanceIndex: j
+                        };
+                        executePetalActionsOnSpawn(petalStats.actions, actionContext);
+                    }
+                }
+                if (clumped) nextSlotIndex++;
+            }
+        }
+    } catch (error) {
+        console.error('Error building petal instances:', error);
+    }
+
+    return { petalInstances, nextSlotIndex };
+}
+
+/**
+ * Field-dropping pre-pass: when the player attacks or defends, every alive
+ * pollen instance drops a puff and every alive web instance leaves a web, each
+ * at its own orbit position. Health is zeroed in a second pass so non-clumped
+ * multi-count petals (which share petal.health) don't have instance 0
+ * short-circuit the others.
+ *
+ * Web follows gardn: attacking LAUNCHES it outward (the field lands
+ * WEB_THROW_DISTANCE past the orbit), defending drops it where it sits. Either
+ * way the petal is consumed and reloads normally.
+ */
+function dropFieldsOnExtension(opts: {
+    player: ServerPlayer;
+    io: SocketIOServer;
+    petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number, slotIndex: number}>;
+    playerOrbitPhase: number;
+    angleStep: number;
+    playerRangeModifier: number;
+    defendOnlyBaseRadius: number;
+    playerSizeMult: number;
+}): void {
+    const {
+        player, io, petalInstances, playerOrbitPhase, angleStep,
+        playerRangeModifier, defendOnlyBaseRadius, playerSizeMult,
+    } = opts;
+
+    const playerExt = player.inputs?.petalExtension || 1.0;
+    if (playerExt !== 1.0) {
+        const baseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMult - 1)) * playerExt;
+        const dropsToBreak: Array<{petal: any, instanceIndex: number, stats: any}> = [];
+        for (let idx = 0; idx < petalInstances.length; idx++) {
+            const {petal, instanceIndex, slotIndex} = petalInstances[idx];
+            if (!petal) continue;
+            const isPollen = petal.petalType === 'pollen';
+            const stats = getPetalStats(petal.petalType, petal.rarity);
+            if (!stats) continue;
+            const isWeb = !!stats.webRadius;
+            if (!isPollen && !isWeb) continue;
+            if (isInstanceOnCooldown(petal, instanceIndex, stats)) continue;
+            if (getInstanceHealth(petal, instanceIndex, stats) <= 0) continue;
+
+            const rotationAngle = ((stats.speed ?? 1.0) * playerOrbitPhase * 2) % (Math.PI * 2);
+            const totalAngle = stats.fixedDirection !== undefined
+                ? slotIndex * angleStep
+                : slotIndex * angleStep + rotationAngle;
+            const range = (stats.range ?? 1.0) * playerRangeModifier;
+            // Web is defendOnly, so it is sitting at its unextended orbit
+            // radius when the throw starts — same rule the main petal loop
+            // uses below.
+            const orbitR = (stats.defendOnly ? defendOnlyBaseRadius : baseRadius) * range;
+            let dropX = player.x + Math.cos(totalAngle) * orbitR;
+            let dropY = player.y + Math.sin(totalAngle) * orbitR;
+
+            const eSize = (petal as any).customSize !== undefined ? (petal as any).customSize : stats.size;
+            const clumpCount = stats.count || 1;
+            if (stats.clumped && clumpCount > 1) {
+                const clumpSpacing = eSize * 40 * 0.5;
+                const subAngle = (instanceIndex / clumpCount) * Math.PI * 2 + totalAngle;
+                dropX += Math.cos(subAngle) * clumpSpacing;
+                dropY += Math.sin(subAngle) * clumpSpacing;
+            }
+
+            if (isWeb) {
+                // Throwing (attacking) flings it outward along the petal's
+                // own bearing; defending plants it in place.
+                if (playerExt > 1.0) {
+                    dropX += Math.cos(totalAngle) * WEB_THROW_DISTANCE;
+                    dropY += Math.sin(totalAngle) * WEB_THROW_DISTANCE;
+                }
+                spawnWebField(io, player, stats.webRadius!, petal.rarity ?? 'common', dropX, dropY);
+            } else {
+                spawnGroundPollen(io, player, stats, petal, dropX, dropY, 12 * eSize);
+            }
+            dropsToBreak.push({petal, instanceIndex, stats});
+        }
+        for (const d of dropsToBreak) {
+            setInstanceHealth(d.petal, d.instanceIndex, d.stats, 0);
+        }
+    }
+}
+
+/**
+ * Update player state (movement, collisions, etc.)
+ * This is the main function that handles all player state updates
+ */
+export function updatePlayerState(
+    player: ServerPlayer, 
+    deltaTime: number,
+    deps: PlayerStateDependencies
+): void {
+    if (!player || !player.inputs) {
+        return;
+    }
+
+    // Don't update movement for dead players
+    if (player.isDead) {
+        return;
+    }
+
+    const { io, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
+
+    // Update player effects
+    updatePlayerEffects(player, deltaTime);
+    updateSpongeDamage(player, deltaTime, io);
+
+    applyPassiveHealing(player, deltaTime);
+
+    // Apply raindrop aura damage to mobs around the player
+    applyRaindropAuraDamage(player, deps);
+
+    const { targetVelocityX, targetVelocityY } = computeTargetVelocity(player);
 
     // Player movement physics (gardn friction + substepped wall/water collision).
     // Run through the SHARED stepPlayerMovement so the client's movement prediction
@@ -1253,62 +1423,7 @@ export function updatePlayerState(
 
     // Check for petal-enemy collisions
     if (player.loadout) {
-        // Build array of petal instances considering count property
-        const petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number, slotIndex: number}> = [];
-        let nextSlotIndex = 0;
-        try {
-            for (let i = 0; i < player.loadout.length; i++) {
-                // Secondary loadout (slots 10+) is storage only — don't spawn petals
-                if (i >= 10) continue;
-                const petal = player.loadout[i];
-                if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
-                    const petalStats = getPetalStats(petal.petalType, petal.rarity);
-                    if (!petalStats) continue;
-
-                    const count = petalStats.count || 1; // Use count from stats, default to 1
-
-                    // Validate count is a valid number
-                    if (typeof count !== 'number' || count < 1 || !isFinite(count)) {
-                        console.warn('Invalid petal count:', count, 'for', petal.petalType, petal.rarity);
-                        continue;
-                    }
-
-                    // Clumped petals share a single orbit slot across all their instances
-                    const clumped = !!petalStats.clumped;
-                    const sharedSlot = nextSlotIndex;
-                    // Ensure per-instance health/cooldown arrays are sized to count
-                    ensureInstanceArrays(petal, petalStats);
-                    // Create multiple instances based on count
-                    for (let j = 0; j < count; j++) {
-                        const slotIndex = clumped ? sharedSlot : nextSlotIndex;
-                        if (!clumped) nextSlotIndex++;
-                        petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i, slotIndex });
-                        
-                        // Execute petal actions immediately when spawned
-                        if (petalStats.actions) {
-                            const petalId = `${player.id}_${i}_${j}`;
-                            const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
-                            const actionContext = {
-                                player: player,
-                                petalX: player.x, // Will be updated with actual position in game loop
-                                petalY: player.y, // Will be updated with actual position in game loop
-                                petalSize: effectiveSize * 40,
-                                petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                                enemies: enemies,
-                                io: io,
-                                petalId: petalId,
-                                loadoutIndex: i,
-                                instanceIndex: j
-                            };
-                            executePetalActionsOnSpawn(petalStats.actions, actionContext);
-                        }
-                    }
-                    if (clumped) nextSlotIndex++;
-                }
-            }
-        } catch (error) {
-            console.error('Error building petal instances:', error);
-        }
+        const { petalInstances, nextSlotIndex } = buildPetalInstances(player, io);
 
         const currentTime = Date.now();
         const petalExtension = player.inputs.petalExtension || 1.0;
@@ -1339,70 +1454,10 @@ export function updatePlayerState(
         // Initialize petal positions array
         player.petalPositions = [];
 
-        // Field-dropping pre-pass: when the player attacks/defends, every alive
-        // pollen instance drops a puff and every alive web instance leaves a web,
-        // each at its own orbit position. Health is zeroed in a second pass so
-        // non-clumped multi-count petals (which share petal.health) don't have
-        // instance 0 short-circuit the others.
-        //
-        // Web follows gardn: attacking LAUNCHES it outward (the field lands
-        // WEB_THROW_DISTANCE past the orbit), defending drops it where it sits.
-        // Either way the petal is consumed and reloads normally.
-        {
-            const playerExt = player.inputs?.petalExtension || 1.0;
-            if (playerExt !== 1.0) {
-                const baseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMult - 1)) * playerExt;
-                const dropsToBreak: Array<{petal: any, instanceIndex: number, stats: any}> = [];
-                for (let idx = 0; idx < petalInstances.length; idx++) {
-                    const {petal, instanceIndex, slotIndex} = petalInstances[idx];
-                    if (!petal) continue;
-                    const isPollen = petal.petalType === 'pollen';
-                    const stats = getPetalStats(petal.petalType, petal.rarity);
-                    if (!stats) continue;
-                    const isWeb = !!stats.webRadius;
-                    if (!isPollen && !isWeb) continue;
-                    if (isInstanceOnCooldown(petal, instanceIndex, stats)) continue;
-                    if (getInstanceHealth(petal, instanceIndex, stats) <= 0) continue;
-
-                    const rotationAngle = ((stats.speed ?? 1.0) * playerOrbitPhase * 2) % (Math.PI * 2);
-                    const totalAngle = stats.fixedDirection !== undefined
-                        ? slotIndex * angleStep
-                        : slotIndex * angleStep + rotationAngle;
-                    const range = (stats.range ?? 1.0) * playerRangeModifier;
-                    // Web is defendOnly, so it is sitting at its unextended orbit
-                    // radius when the throw starts — same rule the main petal loop
-                    // uses below.
-                    const orbitR = (stats.defendOnly ? defendOnlyBaseRadius : baseRadius) * range;
-                    let dropX = player.x + Math.cos(totalAngle) * orbitR;
-                    let dropY = player.y + Math.sin(totalAngle) * orbitR;
-
-                    const eSize = (petal as any).customSize !== undefined ? (petal as any).customSize : stats.size;
-                    const clumpCount = stats.count || 1;
-                    if (stats.clumped && clumpCount > 1) {
-                        const clumpSpacing = eSize * 40 * 0.5;
-                        const subAngle = (instanceIndex / clumpCount) * Math.PI * 2 + totalAngle;
-                        dropX += Math.cos(subAngle) * clumpSpacing;
-                        dropY += Math.sin(subAngle) * clumpSpacing;
-                    }
-
-                    if (isWeb) {
-                        // Throwing (attacking) flings it outward along the petal's
-                        // own bearing; defending plants it in place.
-                        if (playerExt > 1.0) {
-                            dropX += Math.cos(totalAngle) * WEB_THROW_DISTANCE;
-                            dropY += Math.sin(totalAngle) * WEB_THROW_DISTANCE;
-                        }
-                        spawnWebField(io, player, stats.webRadius!, petal.rarity ?? 'common', dropX, dropY);
-                    } else {
-                        spawnGroundPollen(io, player, stats, petal, dropX, dropY, 12 * eSize);
-                    }
-                    dropsToBreak.push({petal, instanceIndex, stats});
-                }
-                for (const d of dropsToBreak) {
-                    setInstanceHealth(d.petal, d.instanceIndex, d.stats, 0);
-                }
-            }
-        }
+        dropFieldsOnExtension({
+            player, io, petalInstances, playerOrbitPhase, angleStep,
+            playerRangeModifier, defendOnlyBaseRadius, playerSizeMult,
+        });
 
         for (let idx = 0; idx < petalInstances.length; idx++) {
             const {petal, instanceIndex, loadoutIndex, slotIndex} = petalInstances[idx];
