@@ -1351,6 +1351,12 @@ function moveEnemies() {
     // Enemies reach clients via enemySpawned/enemyDestroyed, not a bulk update here.
 }
 
+// A dying ant hole sometimes has a digger under it (gardn Death.cc, gated on
+// DIGGER_SPAWN_CHANCE). This is the digger's ONLY spawn path — its section list
+// is empty, so nothing else in the game can roll one.
+const DIGGER_SPAWN_CHANCE = 0.05;
+const DIGGER_SPAWNING_HOLES = new Set(['ant_hole', 'fire_ant_hole']);
+
 /**
  * Remove every enemy that died this tick, awarding its XP and loot to whoever
  * dealt the most damage. Runs after melee combat so mob-vs-mob kills are
@@ -1377,6 +1383,18 @@ function reapDeadEnemies() {
                 trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
                 handleMobDrops(enemy);
                 sendBossMobDefeatedMessage(enemy, io, players);
+            }
+        }
+
+        // A wild hole can leave a digger behind. Pet holes are excluded — a
+        // player's own summon shouldn't hatch a hostile. Appending is safe here:
+        // the loop walks backwards, so the new mob is never visited this pass
+        // (and it spawns at full health, so it wouldn't be reaped anyway).
+        if (DIGGER_SPAWNING_HOLES.has(enemy.type) && !enemy.ownerId && Math.random() < DIGGER_SPAWN_CHANCE) {
+            const digger = buildEnemy('digger', enemy.tier, enemy.x, enemy.y);
+            if (digger) {
+                enemies.push(digger);
+                io.emit('enemySpawned', digger);
             }
         }
 

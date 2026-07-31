@@ -186,6 +186,16 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
         currentTime = this.frameTimestamp * 2;
     }
     let rendered = false;
+    // The digger is a flower, not a sprite: gardn dispatches kDigger straight
+    // into draw_static_flower instead of a mob drawing, so it renders here
+    // through the same flower path players use. No death tint on this branch —
+    // the tint is blended per shape by the SVG renderer below and there are no
+    // shapes here; the scale-up and fade still read as a death (same trade-off
+    // as the garbage pile above).
+    if (enemy.type === 'digger') {
+        this.drawDiggerFlower(enemy, enemySize);
+        rendered = true;
+    }
     // Mobs are drawn straight from their compiled canvas commands, at the mob's
     // real size, every frame. There is deliberately NO bitmap bake in front of
     // this — one was added in e847451 and removed again after measurement: it
@@ -194,7 +204,7 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
     // nothing evicted it, and animation quantized to the baked frame count.
     // Above ~256px the live path is also simply FASTER than blitting a baked
     // frame, since the bake downscales a big source on every draw.
-    if (mobSVG && this.svgRenderer.isInitialized()) {
+    if (!rendered && mobSVG && this.svgRenderer.isInitialized()) {
         try {
             // x, y, rotation are 0 because transforms are already applied by the context
             // Pass true to indicate this is a mob render (disable anti-aliasing)
@@ -248,6 +258,63 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
     // drawn by drawGameObjects in a single world-frame pass afterwards.
     if (isDying)
         this.ctx.globalAlpha = 1.0;
+};
+// gardn's ColorID::kGray (FLOWER_COLORS[1] = 0xff999999) — the body colour its
+// digger is spawned with. Not read off mob stats: generateMobStats overwrites
+// every mob's `color` with its rarity colour.
+const DIGGER_FLOWER_COLOR = '#999999';
+/**
+ * Draw the digger as a flower with a spinning cutter, mirroring gardn's
+ * kDigger case (Client/Assets/Mob.cc): draw_static_flower with a gray body,
+ * square eyes and an equipped cutter, i.e. it looks like a player carrying a
+ * cutter rather than like a bug.
+ *
+ * Called with the mob's local frame already active (origin at the mob centre,
+ * and unrotated — the digger's `hideRotation` keeps its face upright the way a
+ * flower's is). The flower art is authored in radius-25 space, the same space
+ * drawFlower and the player petal ring use, so everything scales by radius/25.
+ */
+core_1.Graphics.prototype.drawDiggerFlower = function (enemy, enemySize) {
+    const ctx = this.ctx;
+    const radius = enemySize / 2;
+    const scale = radius / 25;
+    // Cutter first, so the blade sits behind the face. It spins off wallclock at
+    // the rate an equipped cutter does on a player (drawPlayerPetals: petal
+    // speed * 0.002 rad/ms) and is sized like one (12 * petal size), so the
+    // digger's blade and a player's read as the same object.
+    const cutterStats = (0, core_1.getPetalStats)('cutter', 'common');
+    const cutterCanvas = this.getPetalCanvas('cutter_common', this.frameTimestamp);
+    if (cutterStats && cutterCanvas && cutterCanvas.width > 0 && cutterCanvas.height > 0) {
+        const cutterSize = 12 * cutterStats.size * scale;
+        ctx.save();
+        ctx.rotate((this.frameTimestamp * (cutterStats.speed ?? 1.0) * 0.002) % (Math.PI * 2));
+        ctx.drawImage(cutterCanvas, -cutterSize / 2, -cutterSize / 2, cutterSize, cutterSize);
+        ctx.restore();
+    }
+    // The body never rotates, so the digger has to show where it is heading with
+    // its eyes — same offsets and easing drawPlayer uses for a flower.
+    const angle = enemy.angle || 0;
+    const targetEyeX = Math.cos(angle) * 2;
+    const targetEyeY = Math.sin(angle) * 4.4;
+    let eye = enemy._eye;
+    if (!eye) {
+        eye = enemy._eye = { x: targetEyeX, y: targetEyeY };
+    }
+    else {
+        eye.x += (targetEyeX - eye.x) * 0.15;
+        eye.y += (targetEyeY - eye.y) * 0.15;
+    }
+    this.drawFlower({
+        radius,
+        color: DIGGER_FLOWER_COLOR,
+        faceFlags: core_1.FaceFlags.SquareEyes,
+        // Not EquipmentFlags.Cutter: drawFlower has no cutter branch (a player's
+        // cutter is drawn by the petal ring), and the blade is already drawn above.
+        equipFlags: 0,
+        eyeX: eye.x,
+        eyeY: eye.y,
+        mouth: 14.5,
+    });
 };
 core_1.Graphics.prototype.getEligiblePetalTypes = function () {
     if (!this.cachedEligiblePetalTypes) {

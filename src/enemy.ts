@@ -53,7 +53,7 @@ export interface PlayerProjectile {
 
 export interface Enemy {
   id: string;
-  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body' | 'ant_hole' | 'fire_ant_hole';
+  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body' | 'ant_hole' | 'fire_ant_hole' | 'digger';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   x: number;
   y: number;
@@ -86,6 +86,9 @@ export interface Enemy {
   targetAngle?: number;
   // Snapshot buffer for high-ping interpolation
   _snapshots?: { t: number; x: number; y: number; angle?: number }[];
+  // Client-only: eased eye offset for mobs rendered as flowers (the digger),
+  // mirroring Player.eye. Never set server-side.
+  _eye?: { x: number; y: number };
   // Centipede chain tracking
   leaderId?: string;
   headId?: string;

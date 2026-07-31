@@ -2642,9 +2642,14 @@ exports.BASE_MOB_CONFIGS = {
 </svg>`,
         ai_type: 'hostile',
         range: 600,
-        section: [4],
-        spawn_weight: 0.08,
-        min_rarity: 'rare',
+        // No natural spawn anywhere (not in Ant Hell): the digger only ever
+        // crawls out of a dying ant hole / fire ant hole, at DIGGER_SPAWN_CHANCE
+        // in server.ts — same as gardn's Death.cc. An empty section list is how
+        // "never spawns naturally" is expressed (see generateMobStats), so it
+        // is skipped by the density loop, zone spawns, biome tables and maze.
+        section: [],
         hideRotation: true,
+        // The in-world sprite is the flower renderer (graphics/enemy-drawing.ts),
+        // matching gardn's kDigger case; this SVG is only the gallery/icon art.
     },
 };
