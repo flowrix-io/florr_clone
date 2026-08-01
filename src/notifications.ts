@@ -52,6 +52,10 @@ export class NotificationsManager {
     }
 
     public setCanvas(canvas: HTMLCanvasElement): void {
+        // setupMouseListeners() has no matching teardown, so re-binding the
+        // canvas it is already on would silently stack another set of pointer
+        // listeners. Idempotent by contract.
+        if (this.canvas === canvas) return;
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.setupMouseListeners();

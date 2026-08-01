@@ -4,35 +4,29 @@ import { getBiomeSvgFile } from './biomes';
 import { FloatingPetalManager } from './floating_petals';
 
 /**
- * Owns the title-screen canvas. Draws the scrolling biome background, runs the
- * floating-petal renderer, and exposes the canvas/context so TitleScreen can
- * paint UI on top of the same canvas via the per-frame `onFrame` callback.
+ * Draws the title screen's scrolling biome background and floating petals.
  *
- * This is the single visible canvas on the title screen: bg + petals + UI all
- * land here, and pointer events for the title UI register against it.
+ * It does NOT own a canvas or an animation loop. It paints into the one canvas
+ * the whole client shares (`#gameCanvas`, see AppShell) and is stepped by the
+ * shell's single frame loop through `drawFrame()`. It used to create its own
+ * `title-background-canvas` and run its own requestAnimationFrame — that second
+ * surface and second loop were what made every title↔game handover a
+ * synchronisation problem.
  */
 export class BackgroundAnimation {
     private backgroundCanvas: HTMLCanvasElement;
     private backgroundCtx: CanvasRenderingContext2D;
     private backgroundTexture: HTMLImageElement;
     private backgroundTime: number = 0;
-    private animationId: number = 0;
 
     private floatingPetalManager: FloatingPetalManager;
     private petalsVisible: boolean = true;
 
-    private onFrame: (() => void) | null = null;
-
     constructor() {
-        this.backgroundCanvas = document.createElement('canvas');
-        this.backgroundCanvas.id = 'title-background-canvas';
-        this.backgroundCanvas.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            pointer-events: auto;
-            z-index: 1000;
-        `;
+        // Adopt the shared canvas rather than creating a second one.
+        const shared = document.getElementById('gameCanvas') as HTMLCanvasElement | null;
+        if (!shared) throw new Error('BackgroundAnimation: #gameCanvas is missing');
+        this.backgroundCanvas = shared;
         applyZoomCompensation(this.backgroundCanvas, true, true);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d')!;
         this.backgroundTexture = new Image();
@@ -42,10 +36,6 @@ export class BackgroundAnimation {
     public getCanvas(): HTMLCanvasElement { return this.backgroundCanvas; }
     public getCtx(): CanvasRenderingContext2D { return this.backgroundCtx; }
 
-    /** Mounts the canvas into document.body. */
-    public mount(): void {
-        document.body.appendChild(this.backgroundCanvas);
-    }
 
     public async loadTexture(biomeName?: string): Promise<void> {
         const biome = biomeName || localStorage.getItem('spawnBiome') || 'default';
@@ -145,7 +135,11 @@ export class BackgroundAnimation {
         }
     }
 
-    private animate = (): void => {
+    /**
+     * One frame of background + petals. Called by the title scene, which is
+     * itself called by the shell's loop — this class never schedules anything.
+     */
+    public drawFrame(): void {
         this.backgroundTime += 16;
         this.drawScrollingBackground();
         if (this.petalsVisible) {
@@ -158,30 +152,6 @@ export class BackgroundAnimation {
                 this.backgroundCanvas.height / dpr,
             );
         }
-        if (this.onFrame) this.onFrame();
-        this.animationId = requestAnimationFrame(this.animate);
-    };
-
-    public start(onFrame?: () => void): void {
-        this.onFrame = onFrame ?? null;
-        if (!this.animationId) {
-            this.animate();
-        }
-    }
-
-    public stop(): void {
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
-            this.animationId = 0;
-        }
-    }
-
-    public hide(): void {
-        this.backgroundCanvas.style.display = 'none';
-    }
-
-    public show(): void {
-        this.backgroundCanvas.style.display = 'block';
     }
 
     public hideFloatingPetals(): void {

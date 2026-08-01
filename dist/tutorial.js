@@ -13,6 +13,9 @@ class Tutorial {
         this.tutorialBox = null;
         this.highlightOverlay = null;
         this.completedSteps = new Set();
+        // A Tutorial is constructed per game; without this its document/window
+        // listeners survived cleanup() and accumulated one set per join.
+        this.listenerAbort = new AbortController();
         this.steps = [
             {
                 id: 'welcome',
@@ -378,16 +381,16 @@ class Tutorial {
                 this.completedSteps.add('crafting_opened');
             }
         };
-        document.addEventListener('keydown', handleKeyDown);
+        // Bound to the abort signal so cleanup() actually releases them. They
+        // used to be stashed on `this` "for cleanup" that never removed them.
+        const signal = this.listenerAbort.signal;
+        document.addEventListener('keydown', handleKeyDown, { signal });
         // Listen for loadout equip events emitted by the canvas loadout system
         const onEquip = () => {
             if (this.isActive)
                 this.completedSteps.add('item_equipped');
         };
-        window.addEventListener('loadout:equip', onEquip);
-        // Store references for cleanup
-        this.keyDownHandler = handleKeyDown;
-        this.loadoutEquipHandler = onEquip;
+        window.addEventListener('loadout:equip', onEquip, { signal });
     }
     nextStep() {
         this.currentStep++;
@@ -445,6 +448,7 @@ class Tutorial {
         this.start();
     }
     cleanup() {
+        this.listenerAbort.abort();
         this.tutorialBox?.remove();
         this.tutorialOverlay?.remove();
         this.highlightOverlay?.remove();

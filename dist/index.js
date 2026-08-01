@@ -10,6 +10,7 @@ const ws_client_1 = require("./ws_client");
 const inventoryCodec_1 = require("./inventoryCodec");
 const map_data_1 = require("./map_data");
 const maze_1 = require("./maze");
+const app_shell_1 = require("./app_shell");
 // Build today's maze immediately from the local clock. The server's
 // authoritative 'mazeInfo' (sent at socket connection and on daily rotation)
 // overrides this if the days ever disagree, but the local fallback guarantees
@@ -87,6 +88,7 @@ const bootstrap = async () => {
         }, 100);
         // Set up game event listeners
         setupGameEventListeners();
+        registerGameScene();
         console.log('[Index] Application initialized successfully');
     }
     catch (error) {
@@ -265,148 +267,108 @@ function setupGameEventListeners() {
             const serverIp = titleScreen?.getServerIP() || window.location.origin;
             const showStats = titleScreen?.getShowStats() || false;
             const dynamicSkybox = titleScreen?.getDynamicSkybox() || false;
-            currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets, showStats, dynamicSkybox);
-            window.currentGame = currentGame;
-            // Set changelog and notifications managers on graphics
-            if (titleScreen && currentGame.graphics) {
-                const changelogManager = titleScreen.changelogManager;
-                const notificationsManager = titleScreen.notificationsManager;
-                if (changelogManager) {
-                    currentGame.graphics.setChangelogManager(changelogManager);
-                }
-                if (notificationsManager) {
-                    currentGame.graphics.setNotificationsManager(notificationsManager);
-                }
-                const leaderboardManager = titleScreen.leaderboardManager;
-                if (leaderboardManager) {
-                    currentGame.graphics.setLeaderboardManager(leaderboardManager);
-                }
-                const guildMenuManager = titleScreen.guildMenuManager;
-                if (guildMenuManager) {
-                    currentGame.graphics.setGuildMenuManager(guildMenuManager);
-                    currentGame.guildMenu = guildMenuManager;
-                    currentGame.connectGuildMenu?.(guildMenuManager);
-                }
-                // Point the Skin Studio canvas menu at the in-game canvas (the
-                // singleton's socket is already connected in Game's constructor).
-                currentGame.graphics.setSkinStudio?.((0, skinStudio_1.getSkinStudio)());
-                // Hand the title-screen canvas-button strip to the in-game
-                // graphics so the same icon buttons paint on the gameCanvas
-                // and route their clicks through TitleScreen's handler.
-                const canvasButtons = titleScreen.getCanvasButtons?.();
-                if (canvasButtons) {
-                    currentGame.graphics.setTitleCanvasButtons(canvasButtons);
-                }
-            }
-            // Capture title screen screenshot for iris transition (also stored for exit animation)
-            if (currentGame?.graphics) {
-                const titleCanvas = document.getElementById('title-background-canvas');
-                const screenshot = document.createElement('canvas');
-                screenshot.width = window.innerWidth;
-                screenshot.height = window.innerHeight;
-                const sctx = screenshot.getContext('2d');
-                if (titleCanvas)
-                    sctx.drawImage(titleCanvas, 0, 0, screenshot.width, screenshot.height);
-                // Hold the title screenshot fully covering the screen until the
-                // first server position arrives (Game.gameLoop calls
-                // beginIrisReveal), so the world never flashes at the origin.
-                currentGame.graphics.startIrisRevealHold(screenshot);
-            }
-            // Hide title screen and show game
-            titleScreen?.hideTitleScreen();
-            titleScreen?.showExitButton();
-            // Reset connecting flag after a short delay
-            setTimeout(() => {
-                isConnecting = false;
-                // Ensure connectingDiv is removed (backup)
-                const connectingDiv = document.getElementById('connectingDiv');
-                if (connectingDiv) {
-                    connectingDiv.remove();
-                }
-            }, 1000);
+            // Hand over to the game scene. The shell snapshots the title screen
+            // first, then runs `prepare` (which builds the Game and, in doing
+            // so, resizes and clears the shared canvas), then commits and plays
+            // the wipe: the world irises in through the frozen title screen,
+            // held fully covered until the game reports readyToReveal().
+            app_shell_1.appShell.switchTo('game', {
+                prepare: () => {
+                    currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets, showStats, dynamicSkybox);
+                    // A plain reference for other modules to reach the running
+                    // game. It is NOT what decides who renders — the shell's
+                    // mode is.
+                    window.currentGame = currentGame;
+                    // Hand the shared panel managers to Graphics so they get
+                    // drawn in the game's render pass.
+                    if (!titleScreen || !currentGame.graphics)
+                        return;
+                    const g = currentGame.graphics;
+                    const ts = titleScreen;
+                    if (ts.changelogManager)
+                        g.setChangelogManager(ts.changelogManager);
+                    if (ts.notificationsManager)
+                        g.setNotificationsManager(ts.notificationsManager);
+                    if (ts.leaderboardManager)
+                        g.setLeaderboardManager(ts.leaderboardManager);
+                    if (ts.guildMenuManager) {
+                        g.setGuildMenuManager(ts.guildMenuManager);
+                        currentGame.guildMenu = ts.guildMenuManager;
+                        currentGame.connectGuildMenu?.(ts.guildMenuManager);
+                    }
+                    g.setSkinStudio?.((0, skinStudio_1.getSkinStudio)());
+                    // The icon-button strip is the title screen's widget; the
+                    // game just paints it. Its input stays on the title
+                    // screen's own canvas listeners — same canvas, so no
+                    // second binding.
+                    const canvasButtons = ts.getCanvasButtons?.();
+                    if (canvasButtons)
+                        g.setTitleCanvasButtons(canvasButtons);
+                },
+                onDone: () => {
+                    isConnecting = false;
+                    document.getElementById('connectingDiv')?.remove();
+                },
+            });
         });
     }
-    // Handle exit button click
+    // Handle exit button click. All this does is ask the shell to change
+    // scenes; the teardown, the reveal and the reconnect all hang off the
+    // scene hooks in registerGameScene() so there is exactly one exit path
+    // whether the click came from this button, the death screen or ENTER.
     const exitButton = titleScreen.getExitButtonContainer().querySelector('#exitButton');
     if (exitButton) {
         exitButton.addEventListener('click', () => {
-            if (!currentGame)
+            if (!currentGame || app_shell_1.appShell.isTransitioning())
                 return;
             titleScreen?.hideExitButton();
-            // Briefly show title screen canvas to capture a fresh screenshot
-            const titleCanvas = document.getElementById('title-background-canvas');
-            if (titleCanvas)
-                titleCanvas.style.display = 'block';
-            titleScreen?.startBackgroundAnimation();
-            titleScreen?.startCanvasRendering();
-            // Wait a few frames for title screen canvases to fully render
-            let framesWaited = 0;
-            const waitForRender = () => {
-                framesWaited++;
-                if (framesWaited < 3) {
-                    requestAnimationFrame(waitForRender);
-                    return;
-                }
-                // Capture screenshot from the now-rendered title canvas
-                const screenshot = document.createElement('canvas');
-                screenshot.width = window.innerWidth;
-                screenshot.height = window.innerHeight;
-                const sctx = screenshot.getContext('2d');
-                if (titleCanvas)
-                    sctx.drawImage(titleCanvas, 0, 0, screenshot.width, screenshot.height);
-                // Hide title screen canvas so only game canvas is visible during animation
-                if (titleCanvas)
-                    titleCanvas.style.display = 'none';
-                titleScreen?.stopCanvasRendering();
-                titleScreen?.stopBackgroundAnimation();
-                // Ensure game canvas is visible (animateBackground may have hidden it)
-                const gameCanvas = document.getElementById('gameCanvas');
-                if (gameCanvas)
-                    gameCanvas.style.display = 'block';
-                // Start iris close animation
-                currentGame.graphics.startIrisClose(screenshot, () => {
-                    if (currentGame) {
-                        currentGame.cleanup();
-                        currentGame = null;
-                        window.currentGame = null;
-                    }
-                    // Now fully show the title screen
-                    titleScreen?.showTitleScreen();
-                    // game.cleanup() now hands the still-connected socket back to the
-                    // title screen via reuseSocketForTitleScreen (no disconnect), so
-                    // preconnectedSocket normally already points at a live socket and we
-                    // just re-authenticate to refresh the loadout/inventory. The reconnect
-                    // path below is only a fallback for when the connection was actually
-                    // lost (e.g. the socket dropped on its own).
-                    if (!preconnectedSocket || !preconnectedSocket.connected) {
-                        preconnectedSocket = null;
-                        window.preconnectedSocket = null;
-                        preconnectToServer();
-                        // After the socket connects, re-authenticate through the title screen
-                        // inventory manager so it refreshes player data via 'authenticated'.
-                        const waitForConnect = () => {
-                            if (preconnectedSocket && preconnectedSocket.connected) {
-                                const inv = titleScreen?.titleScreenInventoryManager;
-                                inv?.reauthenticate();
-                            }
-                            else {
-                                setTimeout(waitForConnect, 100);
-                            }
-                        };
-                        setTimeout(waitForConnect, 100);
-                    }
-                    else {
-                        // Socket already connected — just trigger a refresh
-                        const inv = titleScreen?.titleScreenInventoryManager;
-                        inv?.reauthenticate();
-                    }
-                    // Reset connecting flag so user can rejoin
-                    isConnecting = false;
-                });
-                currentGame.graphics.irisTitleScreen = true;
-            };
-            requestAnimationFrame(waitForRender);
+            app_shell_1.appShell.switchTo('title');
         });
     }
+}
+/**
+ * Registers the game scene once, at boot. The shell calls these hooks from
+ * inside its loop while the transition is fully closed, so the handover cannot
+ * be half-applied: whatever else happens, a scene change always runs exactly
+ * this teardown and this setup.
+ */
+function registerGameScene() {
+    app_shell_1.appShell.registerScene('game', {
+        frame: () => currentGame?.frame(),
+        readyToReveal: () => currentGame?.readyToReveal() ?? true,
+        onFrameError: (error) => currentGame?.onFrameError(error),
+        onEnter: () => {
+            titleScreen?.hideTitleScreen();
+            titleScreen?.showExitButton();
+        },
+        onExit: () => {
+            currentGame?.cleanup();
+            currentGame = null;
+            window.currentGame = null;
+            isConnecting = false;
+            // cleanup() hands the still-connected socket back to the title
+            // screen via reuseSocketForTitleScreen (no disconnect), so
+            // preconnectedSocket normally already points at a live socket and
+            // we just re-authenticate to refresh the loadout/inventory. The
+            // reconnect path below is only a fallback for when the connection
+            // was actually lost (e.g. the socket dropped on its own).
+            const reauth = () => titleScreen?.titleScreenInventoryManager?.reauthenticate();
+            if (!preconnectedSocket || !preconnectedSocket.connected) {
+                preconnectedSocket = null;
+                window.preconnectedSocket = null;
+                preconnectToServer();
+                const waitForConnect = () => {
+                    if (preconnectedSocket && preconnectedSocket.connected)
+                        reauth();
+                    else
+                        setTimeout(waitForConnect, 100);
+                };
+                setTimeout(waitForConnect, 100);
+            }
+            else {
+                reauth();
+            }
+        },
+    });
 }
 // Add this at the top of index.ts, before the Game class

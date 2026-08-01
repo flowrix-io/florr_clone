@@ -167,6 +167,7 @@ function roundedRect(ctx, x, y, w, h, r) {
 }
 class CanvasMobGalleryPanel {
     constructor() {
+        this.listenerAbort = new AbortController();
         this.kills = {};
         this.rarities = petals_1.RARITY_LEVELS.filter((r) => r !== 'apex');
         this.cellRects = [];
@@ -262,13 +263,21 @@ class CanvasMobGalleryPanel {
         if (!ctx)
             throw new Error('CanvasMobGalleryPanel: 2d context unavailable');
         this.ctx = ctx;
-        this.canvas.addEventListener('mousemove', this.handleMouseMove);
-        this.canvas.addEventListener('mouseleave', this.handleMouseLeave);
-        this.canvas.addEventListener('mousedown', this.handleMouseDown);
-        this.canvas.addEventListener('wheel', this.handleWheel, { passive: false });
+        const signal = this.listenerAbort.signal;
+        this.canvas.addEventListener('mousemove', this.handleMouseMove, { signal });
+        this.canvas.addEventListener('mouseleave', this.handleMouseLeave, { signal });
+        this.canvas.addEventListener('mousedown', this.handleMouseDown, { signal });
+        this.canvas.addEventListener('wheel', this.handleWheel, { passive: false, signal });
         // Document-level mouseup ends scroll drag when the release lands
-        // outside the canvas — same pattern other canvas panels use.
-        document.addEventListener('mouseup', this.handleDocumentMouseUp);
+        // outside the canvas — same pattern other canvas panels use. Bound to
+        // the abort signal: this panel is rebuilt whenever the title screen is
+        // re-shown, and document listeners outlive the canvas that owns them.
+        document.addEventListener('mouseup', this.handleDocumentMouseUp, { signal });
+    }
+    /** Releases every listener registered in the constructor. */
+    destroy() {
+        this.stop();
+        this.listenerAbort.abort();
     }
     attachTo(parent) {
         parent.appendChild(this.canvas);

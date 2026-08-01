@@ -431,13 +431,13 @@ class InventoryManager {
                 window.altKeyPressed = true;
                 this.updateTooltipValues(true);
             }
-        });
+        }, { signal: this.listenerAbort.signal });
         document.addEventListener('keyup', (e) => {
             if (e.key === 'Alt') {
                 window.altKeyPressed = false;
                 this.updateTooltipValues(false);
             }
-        });
+        }, { signal: this.listenerAbort.signal });
         if (!mobGalleryOnly && !craftingOnly) {
             // Loadout bar is now canvas-rendered (see graphics/loadout-bar.ts).
             // Ensure any legacy DOM loadout bar is removed.
@@ -1929,7 +1929,9 @@ class InventoryManager {
     cleanup() {
         this.listenerAbort.abort();
         this.inventoryPanel?.remove();
+        this.canvasInventoryPanel?.destroy();
         this.canvasCraftingPanel?.destroy();
+        this.canvasMobGalleryPanel?.destroy();
         this.craftingPanel?.remove();
         this.mobGalleryPanel?.remove();
         this.dragCanvas?.remove();

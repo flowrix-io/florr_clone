@@ -156,12 +156,9 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     // Draw the live PVP leaderboard (only visible while in the arena)
     this.drawPvpLeaderboard(players, currentPlayerId);
 
-    // Draw changelog and notifications menus
-    // Ensure canvas z-index is low so UI elements stay on top (only while in-game)
-    if (this.canvas && (window as any).currentGame) {
-        this.canvas.style.zIndex = '0';
-    }
-
+    // Draw changelog and notifications menus. The canvas' stacking is set once
+    // by AppShell.attachCanvas() and never changes, so there is nothing to
+    // re-assert per frame here any more.
     if (this.changelogManager) {
         this.changelogManager.render();
     }

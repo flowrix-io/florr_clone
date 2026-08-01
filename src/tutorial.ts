@@ -20,6 +20,9 @@ export class Tutorial {
     private tutorialBox: HTMLDivElement | null = null;
     private highlightOverlay: HTMLDivElement | null = null;
     private completedSteps: Set<string> = new Set();
+    // A Tutorial is constructed per game; without this its document/window
+    // listeners survived cleanup() and accumulated one set per join.
+    private readonly listenerAbort: AbortController = new AbortController();
 
     private readonly steps: TutorialStep[] = [
         {
@@ -414,17 +417,16 @@ export class Tutorial {
             }
         };
 
-        document.addEventListener('keydown', handleKeyDown);
+        // Bound to the abort signal so cleanup() actually releases them. They
+        // used to be stashed on `this` "for cleanup" that never removed them.
+        const signal = this.listenerAbort.signal;
+        document.addEventListener('keydown', handleKeyDown, { signal });
 
         // Listen for loadout equip events emitted by the canvas loadout system
         const onEquip = () => {
             if (this.isActive) this.completedSteps.add('item_equipped');
         };
-        window.addEventListener('loadout:equip', onEquip);
-
-        // Store references for cleanup
-        (this as any).keyDownHandler = handleKeyDown;
-        (this as any).loadoutEquipHandler = onEquip;
+        window.addEventListener('loadout:equip', onEquip, { signal });
     }
 
     private nextStep(): void {
@@ -494,6 +496,7 @@ export class Tutorial {
     }
 
     public cleanup(): void {
+        this.listenerAbort.abort();
         this.tutorialBox?.remove();
         this.tutorialOverlay?.remove();
         this.highlightOverlay?.remove();

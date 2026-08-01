@@ -192,15 +192,6 @@ exports.titleScreenStyles = `
     }
 
 
-    #title-background-canvas {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-        z-index: 1;
-    }
 `;
 // Function to inject styles
 function injectTitleScreenStyles() {

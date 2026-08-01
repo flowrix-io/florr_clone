@@ -37,6 +37,10 @@ export class SkillsManager {
     private skillsPanel: HTMLDivElement | null = null;
     private canvasSkillsPanel: CanvasSkillsPanel | null = null;
     private isOpen: boolean = false;
+    // Every listener this manager registers is bound to this signal so
+    // cleanup() releases them all — a SkillsManager is created per game, so a
+    // missed removal leaks one more document listener on every join.
+    private readonly listenerAbort: AbortController = new AbortController();
     private game: GameInterface;
 
     constructor(game: GameInterface) {
@@ -86,7 +90,7 @@ export class SkillsManager {
             if (e.key === 'Escape' && this.isOpen) {
                 this.hide();
             }
-        });
+        }, { signal: this.listenerAbort.signal });
     }
 
     private upgradeSkill(skillId: string, rarity: string): void {
@@ -183,6 +187,7 @@ export class SkillsManager {
     }
 
     public cleanup(): void {
+        this.listenerAbort.abort();
         this.canvasSkillsPanel?.destroy();
         this.canvasSkillsPanel = null;
         this.skillsPanel?.remove();

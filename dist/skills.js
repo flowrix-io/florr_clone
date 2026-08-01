@@ -30,6 +30,10 @@ class SkillsManager {
         this.skillsPanel = null;
         this.canvasSkillsPanel = null;
         this.isOpen = false;
+        // Every listener this manager registers is bound to this signal so
+        // cleanup() releases them all — a SkillsManager is created per game, so a
+        // missed removal leaks one more document listener on every join.
+        this.listenerAbort = new AbortController();
         this.game = game;
         this.createSkillsPanel();
     }
@@ -72,7 +76,7 @@ class SkillsManager {
             if (e.key === 'Escape' && this.isOpen) {
                 this.hide();
             }
-        });
+        }, { signal: this.listenerAbort.signal });
     }
     upgradeSkill(skillId, rarity) {
         const socket = this.game.getSocket();
@@ -154,6 +158,7 @@ class SkillsManager {
         return this.isOpen;
     }
     cleanup() {
+        this.listenerAbort.abort();
         this.canvasSkillsPanel?.destroy();
         this.canvasSkillsPanel = null;
         this.skillsPanel?.remove();

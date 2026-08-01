@@ -223,24 +223,15 @@ export class Graphics {
     public loadingMobs: Set<string> = new Set();
     public mobBaseCacheKeys: Map<string, string> = new Map();
 
-    // Iris transition (circle reveal) animation
+    // In-world teleporter wipe (see graphics/iris-transition.ts). Scene changes
+    // use AppShell's transition, not this.
     public irisTransitionActive: boolean = false;
     public irisTransitionStartTime: number = 0;
     public irisScreenshot: HTMLCanvasElement | null = null;
     public irisClosing: boolean = false;
-    public irisTitleScreen: boolean = false;
     public irisOnComplete: (() => void) | null = null;
     public readonly IRIS_TRANSITION_DURATION: number = 800;
     public readonly IRIS_OUTLINE_WIDTH: number = 6;
-    // Join hold: the iris stays fully closed (title screenshot covering the
-    // whole screen) instead of revealing on a timer, so the world is never
-    // shown at the origin (0,0) before the first authoritative player
-    // position arrives. Game.gameLoop calls beginIrisReveal() once the player
-    // has spawned AND one covered frame has baked the visible mobs, so the
-    // reveal is smooth. irisWaitStartTime feeds a timeout fallback.
-    public irisWaiting: boolean = false;
-    public irisWaitStartTime: number = 0;
-    public readonly IRIS_WAIT_TIMEOUT_MS: number = 6000;
 
     // Canvas-based death screen
     public deathScreenVisible: boolean = false;
@@ -692,40 +683,31 @@ export class Graphics {
         this.invalidateStaticMapCache?.();
     }
 
+    // The panel managers are long-lived singletons owned by the title screen
+    // and bound to the shared canvas once, when it is created. Handing them to
+    // Graphics only says "draw these in my render pass" — it must NOT re-point
+    // them at a canvas. Each of these setters used to call setCanvas(), which
+    // re-ran the manager's setupMouseListeners() and left the previous set
+    // attached, leaking a full set of pointer listeners per join.
     public setChangelogManager(changelogManager: any): void {
         this.changelogManager = changelogManager;
-        if (changelogManager && this.canvas) {
-            changelogManager.setCanvas(this.canvas);
-        }
     }
 
     public setNotificationsManager(notificationsManager: any): void {
         this.notificationsManager = notificationsManager;
-        if (notificationsManager && this.canvas) {
-            notificationsManager.setCanvas(this.canvas);
-        }
     }
 
     public setLeaderboardManager(leaderboardManager: any): void {
         this.leaderboardManager = leaderboardManager;
-        if (leaderboardManager && this.canvas) {
-            leaderboardManager.setCanvas(this.canvas);
-        }
     }
 
     public setGuildMenuManager(guildMenuManager: any): void {
         this.guildMenuManager = guildMenuManager;
-        if (guildMenuManager && this.canvas) {
-            guildMenuManager.setCanvas(this.canvas);
-        }
     }
 
     public skinStudioManager: any = null;
     public setSkinStudio(skinStudioManager: any): void {
         this.skinStudioManager = skinStudioManager;
-        if (skinStudioManager && this.canvas) {
-            skinStudioManager.setCanvas(this.canvas);
-        }
     }
 
     /**
@@ -736,107 +718,17 @@ export class Graphics {
      * a click on a button doesn't also leak through to player controls.
      */
     public titleCanvasButtons: any = null;
-    private titleButtonListenersAttached: boolean = false;
+    /**
+     * Draw-only. The icon strip's input is bound once, at boot, by
+     * TitleScreen.setupCanvasUIListeners() on the canvas both scenes share —
+     * so the game only needs to know what to paint.
+     *
+     * This used to attach a full second set of pointer listeners (plus
+     * document-level mouseup/touchend that were never removed) every time a
+     * Game was constructed, i.e. one more leaked set per join.
+     */
     public setTitleCanvasButtons(buttons: any): void {
         this.titleCanvasButtons = buttons;
-        if (this.titleButtonListenersAttached || !this.canvas || !buttons) return;
-        this.titleButtonListenersAttached = true;
-
-        const toLocal = (e: MouseEvent): { x: number; y: number } => {
-            const r = this.canvas!.getBoundingClientRect();
-            // Logical coordinates: divide the physical backing-store ratio by
-            // the device scale so hit-testing matches the logical layout.
-            const s = getBaseDeviceScale();
-            return {
-                x: (e.clientX - r.left) * (this.canvas!.width / r.width) / s,
-                y: (e.clientY - r.top) * (this.canvas!.height / r.height) / s,
-            };
-        };
-
-        // Capture phase + stopImmediatePropagation when the press/release lands
-        // on a button — that prevents the bubble-phase player-control handlers
-        // (registered later on the same canvas) from running.
-        this.canvas.addEventListener('mousedown', (e: MouseEvent) => {
-            const { x, y } = toLocal(e);
-            if (buttons.press(x, y)) {
-                e.stopImmediatePropagation();
-                e.preventDefault();
-            }
-        }, true);
-
-        this.canvas.addEventListener('mouseup', (e: MouseEvent) => {
-            const { x, y } = toLocal(e);
-            if (buttons.releaseClick(x, y)) {
-                e.stopImmediatePropagation();
-                e.preventDefault();
-            }
-        }, true);
-
-        // Swallow the matching `click` event when the press/release landed on
-        // a button. Without this, game.ts's click handler still fires —
-        // forwarding to settings.handleClick when settings has just opened,
-        // which interprets the off-panel click as click-outside-to-dismiss
-        // and closes settings on the same click that opened it.
-        this.canvas.addEventListener('click', (e: MouseEvent) => {
-            const { x, y } = toLocal(e);
-            if (buttons.isPointOnButton(x, y)) {
-                e.stopImmediatePropagation();
-                e.preventDefault();
-            }
-        }, true);
-
-        // Hover doesn't need to block propagation — game cursor tracking still
-        // wants to see the move events.
-        this.canvas.addEventListener('mousemove', (e: MouseEvent) => {
-            const { x, y } = toLocal(e);
-            buttons.setHover(x, y);
-        });
-
-        this.canvas.addEventListener('mouseleave', () => {
-            buttons.clearHover();
-        });
-
-        // Document-level mouseup so a press that ends outside the canvas still
-        // clears the pressed state — same pattern TitleScreen uses.
-        document.addEventListener('mouseup', () => {
-            buttons.release();
-        });
-
-        // Touch equivalents of the capture-phase mouse handlers above. Needed
-        // because mobile browsers only synthesize mousedown/mouseup once,
-        // right after touchend — too late to show a "pressed" state or
-        // reliably register a tap, so these buttons need real touch events.
-        const toLocalTouch = (t: Touch): { x: number; y: number } => {
-            const r = this.canvas!.getBoundingClientRect();
-            const s = getBaseDeviceScale();
-            return {
-                x: (t.clientX - r.left) * (this.canvas!.width / r.width) / s,
-                y: (t.clientY - r.top) * (this.canvas!.height / r.height) / s,
-            };
-        };
-
-        this.canvas.addEventListener('touchstart', (e: TouchEvent) => {
-            const { x, y } = toLocalTouch(e.changedTouches[0]);
-            if (buttons.press(x, y)) {
-                e.stopImmediatePropagation();
-                e.preventDefault();
-            }
-        }, { capture: true, passive: false });
-
-        this.canvas.addEventListener('touchend', (e: TouchEvent) => {
-            const { x, y } = toLocalTouch(e.changedTouches[0]);
-            if (buttons.releaseClick(x, y)) {
-                e.stopImmediatePropagation();
-                e.preventDefault();
-            }
-        }, { capture: true, passive: false });
-
-        document.addEventListener('touchend', () => {
-            buttons.release();
-        });
-        document.addEventListener('touchcancel', () => {
-            buttons.release();
-        });
     }
 
     public setupItemSprites(itemSprites: Record<string, HTMLImageElement>) {

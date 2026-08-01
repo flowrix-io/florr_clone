@@ -49,7 +49,9 @@ class Game {
         this.webFields = new Map(); // Store web fields left by thrown web petals
         this.items = new Map();
         this.pickedUpItems = new Set(); // Track items picked up by this player
-        this.gameLoopId = null;
+        // Sprites are set up asynchronously in the fallback path; the shell may
+        // already be calling frame() by then, so drawing waits on this.
+        this.assetsReady = false;
         // Add enemy size multipliers as a class property
         // Add property to track if player is dead
         this.isPlayerDead = false;
@@ -165,7 +167,9 @@ class Game {
         // Register as the active game instance before starting the loop
         // (so any previous game loop will detect it's no longer active and stop)
         window.currentGame = this;
-        // Initialize sprites and start game
+        // Initialize sprites. Nothing here starts a render loop — the shell's
+        // loop is already running and calls frame() once this Game is the
+        // active scene. `assetsReady` gates drawing until sprites are in.
         if (preloadedAssets) {
             // Assets already loaded, just set up item sprites and start
             console.log('[Game] Sprites already loaded, starting game immediately');
@@ -180,7 +184,7 @@ class Game {
                 console.log('[Game] Petal images not preloaded, loading dynamically');
                 this.graphics.preloadPetalImages().catch(console.error);
             }
-            this.gameLoop();
+            this.assetsReady = true;
         }
         else {
             // Load sprites dynamically (fallback)
@@ -192,7 +196,7 @@ class Game {
             ]).then(() => {
                 console.log('[Game] All sprites loaded successfully');
                 this.graphics.setupItemSprites(this.assetLoader.itemSprites);
-                this.gameLoop();
+                this.assetsReady = true;
             }).catch(console.error);
         }
         // Set up color picker functionality
@@ -252,11 +256,9 @@ class Game {
         this.canvas.addEventListener('mousemove', (event) => {
             // Loadout bar hover/drag tracking (screen-space)
             const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event, true);
-            // Settings panel hover/slider drag
-            if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
-                window.titleScreen.handleSettingsMouseMoveExternal(sx);
-                window.titleScreen.handleSettingsHoverExternal(sx, sy);
-            }
+            // The settings panel and the icon-button strip are driven by the
+            // title screen's own listeners on this same canvas — see
+            // TitleScreen.setupCanvasUIListeners(). No forwarding needed.
             // Debug panel hover (close-button highlight)
             if (debug_menu_1.debugMenuPanel.isMenuOpen()) {
                 debug_menu_1.debugMenuPanel.handleHover(sx, sy);
@@ -305,15 +307,9 @@ class Game {
         }, { signal: this.abortController.signal });
         // Add mouse button listeners for petal extension/retraction
         this.canvas.addEventListener('mousedown', (event) => {
-            // Intercept clicks for canvas settings panel
-            if (event.button === 0 && window.titleScreen && window.titleScreen.isSettingsOpen()) {
-                const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event, true);
-                if (window.titleScreen.handleSettingsMouseDownExternal(sx, sy)) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    return;
-                }
-            }
+            // The settings panel and icon strip already had their chance at
+            // this event: the title screen's listeners on this canvas were
+            // registered first and stop propagation when they consume it.
             // Debug panel swallows mousedown over it so interacting with it
             // doesn't trigger attacks underneath.
             if (event.button === 0 && debug_menu_1.debugMenuPanel.isMenuOpen()) {
@@ -364,18 +360,8 @@ class Game {
         }, { signal: this.abortController.signal });
         this.canvas.addEventListener('mouseup', (event) => {
             this.mouseButtonsPressed.delete(event.button);
-            if (window.titleScreen) {
-                window.titleScreen.handleSettingsMouseUpExternal();
-            }
         }, { signal: this.abortController.signal });
-        // Canvas click handler for settings panel
         this.canvas.addEventListener('click', (event) => {
-            if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
-                const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event, true);
-                if (window.titleScreen.handleSettingsClickExternal(sx, sy)) {
-                    event.stopPropagation();
-                }
-            }
             if (debug_menu_1.debugMenuPanel.isMenuOpen()) {
                 const { x: sx, y: sy } = (0, zoom_compensation_1.canvasCoords)(this.canvas, event, true);
                 if (debug_menu_1.debugMenuPanel.handleClick(sx, sy)) {
@@ -387,19 +373,11 @@ class Game {
         this.canvas.addEventListener('contextmenu', (event) => {
             event.preventDefault();
         }, { signal: this.abortController.signal });
-        // Scroll wheel for settings panel
-        this.canvas.addEventListener('wheel', (event) => {
-            if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
-                window.titleScreen.handleSettingsWheelExternal(event.deltaY);
-                event.preventDefault();
-            }
-        }, { passive: false, signal: this.abortController.signal });
         // Touch controls for the mobile joystick + attack/retract buttons.
         // Only active when Request Mobile is on; preventDefault stops the
         // page from scrolling/pinch-zooming while dragging the joystick.
-        // Touches landing on the icon-button strip are intercepted earlier
-        // (capture phase, see Graphics.setTitleCanvasButtons) and never reach
-        // here via stopImmediatePropagation.
+        // Touches landing on the icon-button strip are consumed by the title
+        // screen's listeners on this canvas, which run first.
         const touchPoints = (touches) => {
             const points = [];
             for (let i = 0; i < touches.length; i++) {
@@ -430,10 +408,13 @@ class Game {
         };
         this.canvas.addEventListener('touchend', endTouches, { passive: false, signal: this.abortController.signal });
         this.canvas.addEventListener('touchcancel', endTouches, { passive: false, signal: this.abortController.signal });
-        // Initialize exit button
-        this.exitButton = document.getElementById('exitButton');
-        // Add exit button click handler
-        this.exitButton?.addEventListener('click', () => this.handleExit(), { signal: this.abortController.signal });
+        // No exit-button handler here on purpose: the exit-to-title flow is
+        // owned by setupGameEventListeners() in src/index.ts, which runs the
+        // iris-close animation and only then calls cleanup(). A second listener
+        // here used to tear the game down synchronously on the same click,
+        // killing the render loop that the still-pending iris animation needs
+        // to reach its completion callback — so the title screen never
+        // came back.
         // Set up item sprites
         this.assetLoader.setupItemSprites().then(() => {
             this.graphics.setupItemSprites(this.assetLoader.itemSprites);
@@ -1015,10 +996,36 @@ class Game {
     easeInOutCubic(t) {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
-    gameLoop() {
-        // Stop this loop if a different Game instance has taken over
-        // (prevents duplicate loops after exit + re-enter)
-        if (window.currentGame && window.currentGame !== this)
+    /**
+     * AppScene hook: the shell holds the transition fully closed until the
+     * first authoritative position has snapped the camera and one covered frame
+     * has rendered — that covered frame warms the mob bitmaps behind the cover,
+     * so the reveal itself is jank-free and the world never flashes at (0,0).
+     */
+    readyToReveal() {
+        if (!this.predInit)
+            return false;
+        if (!this._irisCoveredFrameRendered) {
+            this._irisCoveredFrameRendered = true;
+            return false;
+        }
+        return true;
+    }
+    /**
+     * AppScene hook: the shell already logged and kept the loop alive. All we
+     * have to do is undo any half-applied render state. render() swaps
+     * `graphics.ctx` to the offscreen world buffer partway through, so a throw
+     * in there would otherwise leave every later frame drawing into the buffer
+     * instead of onto the screen.
+     */
+    onFrameError(_error) {
+        const mainCtx = this.graphics?.canvas?.getContext('2d');
+        if (mainCtx)
+            this.graphics.ctx = mainCtx;
+    }
+    /** One frame of the game scene, called by the shell's single loop. */
+    frame() {
+        if (!this.assetsReady)
             return;
         const frameStartMs = this.showStats ? performance.now() : 0;
         // Calculate FPS and update stats
@@ -1068,18 +1075,7 @@ class Game {
             }
         }
         this.update();
-        // Release the join iris hold (see startIrisRevealHold) once the first
-        // authoritative position has snapped the camera AND one covered frame
-        // has rendered — that covered frame draws the now-visible mobs, baking
-        // their bitmaps behind the cover so the reveal itself is jank-free.
-        if (this.graphics.irisWaiting && this.predInit) {
-            if (this._irisCoveredFrameRendered) {
-                this.graphics.beginIrisReveal();
-            }
-            else {
-                this._irisCoveredFrameRendered = true;
-            }
-        }
+        // The join reveal is held by the shell via readyToReveal() — see above.
         // Filter out items that this player has already picked up.
         // The Map is reused across frames (clear + refill) — rebuilding it
         // allocated a Map + entries every frame.
@@ -1135,7 +1131,6 @@ class Game {
             this.sectionMsPeak.mobs = Math.max(this.sectionMsPeak.mobs, g.perfMobsMs);
             this.sectionMsPeak.proj = Math.max(this.sectionMsPeak.proj, g.perfProjectilesMs);
         }
-        requestAnimationFrame(() => this.gameLoop());
     }
     update() {
         // Clean up enemies that have completed their death animation
@@ -1787,12 +1782,12 @@ class Game {
         this.guildMenu = menu;
         menu.setSocket(this.socket);
     }
+    /**
+     * Called by the shell once the game scene is off screen (behind a fully
+     * closed transition). There is no loop to cancel — the shell simply stops
+     * calling frame() — so this is pure resource teardown.
+     */
     cleanup() {
-        // Stop the game loop immediately to prevent further drawing
-        if (this.gameLoopId) {
-            cancelAnimationFrame(this.gameLoopId);
-            this.gameLoopId = null;
-        }
         // Abort all event listeners registered with the signal
         this.abortController.abort();
         // Return to the title screen WITHOUT dropping the connection. Disconnecting
@@ -1853,8 +1848,8 @@ class Game {
         }
         this.keysPressed.clear();
         this.mouseButtonsPressed.clear();
-        // Hide game canvas
-        this.canvas.style.display = 'none';
+        // The canvas is shared with the title screen and stays visible; the
+        // shell just stops calling this scene's frame().
         // Clean up sub-managers
         this.inventoryManager.cleanup();
         this.skillsManager.cleanup();
@@ -1862,9 +1857,6 @@ class Game {
         this.chat?.cleanup();
         this.tutorial.cleanup();
         debug_menu_1.debugMenuPanel.close();
-    }
-    handleExit() {
-        this.cleanup();
     }
     // Method to load biome-specific background textures
     /**

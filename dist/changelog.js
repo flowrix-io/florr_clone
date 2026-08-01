@@ -491,6 +491,10 @@ class ChangelogManager {
         });
     }
     setCanvas(canvas) {
+        // Idempotent: setupMouseListeners() has no teardown, so re-binding the
+        // same canvas would stack a second set of pointer listeners.
+        if (this.canvas === canvas)
+            return;
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.setupMouseListeners();

@@ -63,10 +63,13 @@ Graphics.prototype.getItemCanvas = function(this: Graphics, item: WorldItem): HT
         ctx.restore();
     }
 
-    // Draw sprite only for non-petal items (petal drawn on top separately)
+    // Draw sprite only for non-petal items (petal drawn on top separately).
+    // The sprite must be checked for readiness, not just existence: a PNG that
+    // 404s (the consumable sprites have no files) still leaves an Image object
+    // here, and drawImage() on a broken/undecoded one throws InvalidStateError.
     if (!isPetal) {
         const sprite = this.itemSprites[item.type];
-        if (sprite) {
+        if (sprite && sprite.complete && sprite.naturalWidth > 0) {
             ctx.drawImage(sprite, -15, -15, 30, 30);
         }
     } else if (item.petalType && item.rarity) {
@@ -223,9 +226,10 @@ Graphics.prototype.drawItem = function(this: Graphics, item: WorldItem, players?
         // Draw petal procedurally
         this.drawWorldPetal(item);
     } else {
-        // Draw other items with sprites
+        // Draw other items with sprites (see getItemCanvas: a sprite whose file
+        // failed to load is still an Image, and drawing it throws).
         const sprite = this.itemSprites[item.type];
-        if (sprite) {
+        if (sprite && sprite.complete && sprite.naturalWidth > 0) {
             this.ctx.drawImage(sprite, -15, -15, 30, 30);
         }
     }

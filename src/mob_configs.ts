@@ -2466,7 +2466,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         ai_type: 'passive',
         range: 500,
         section: [0],
-        spawn_weight: 0.4,
+        spawn_weight: 0.2,
     },
     centipede_body: {
         name: "Centipede",
@@ -2556,7 +2556,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         ai_type: 'hostile',
         range: 500,
         section: [0],
-        spawn_weight: 0.4,
+        spawn_weight: 0.1,
         min_rarity: 'rare',
         poison: 0.005,      // 5 damage per second
         poisonDuration: 2000,

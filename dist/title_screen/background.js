@@ -6,41 +6,24 @@ const biome_svgs_1 = require("../biome_svgs");
 const biomes_1 = require("./biomes");
 const floating_petals_1 = require("./floating_petals");
 /**
- * Owns the title-screen canvas. Draws the scrolling biome background, runs the
- * floating-petal renderer, and exposes the canvas/context so TitleScreen can
- * paint UI on top of the same canvas via the per-frame `onFrame` callback.
+ * Draws the title screen's scrolling biome background and floating petals.
  *
- * This is the single visible canvas on the title screen: bg + petals + UI all
- * land here, and pointer events for the title UI register against it.
+ * It does NOT own a canvas or an animation loop. It paints into the one canvas
+ * the whole client shares (`#gameCanvas`, see AppShell) and is stepped by the
+ * shell's single frame loop through `drawFrame()`. It used to create its own
+ * `title-background-canvas` and run its own requestAnimationFrame — that second
+ * surface and second loop were what made every title↔game handover a
+ * synchronisation problem.
  */
 class BackgroundAnimation {
     constructor() {
         this.backgroundTime = 0;
-        this.animationId = 0;
         this.petalsVisible = true;
-        this.onFrame = null;
-        this.animate = () => {
-            this.backgroundTime += 16;
-            this.drawScrollingBackground();
-            if (this.petalsVisible) {
-                // drawScrollingBackground already set the base scale(dpr); pass
-                // logical dimensions so petals fill the screen at native res.
-                const dpr = (0, zoom_compensation_1.getBaseDeviceScale)();
-                this.floatingPetalManager.draw(this.backgroundCtx, this.backgroundCanvas.width / dpr, this.backgroundCanvas.height / dpr);
-            }
-            if (this.onFrame)
-                this.onFrame();
-            this.animationId = requestAnimationFrame(this.animate);
-        };
-        this.backgroundCanvas = document.createElement('canvas');
-        this.backgroundCanvas.id = 'title-background-canvas';
-        this.backgroundCanvas.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            pointer-events: auto;
-            z-index: 1000;
-        `;
+        // Adopt the shared canvas rather than creating a second one.
+        const shared = document.getElementById('gameCanvas');
+        if (!shared)
+            throw new Error('BackgroundAnimation: #gameCanvas is missing');
+        this.backgroundCanvas = shared;
         (0, zoom_compensation_1.applyZoomCompensation)(this.backgroundCanvas, true, true);
         this.backgroundCtx = this.backgroundCanvas.getContext('2d');
         this.backgroundTexture = new Image();
@@ -48,10 +31,6 @@ class BackgroundAnimation {
     }
     getCanvas() { return this.backgroundCanvas; }
     getCtx() { return this.backgroundCtx; }
-    /** Mounts the canvas into document.body. */
-    mount() {
-        document.body.appendChild(this.backgroundCanvas);
-    }
     async loadTexture(biomeName) {
         const biome = biomeName || localStorage.getItem('spawnBiome') || 'default';
         const svgFile = (0, biomes_1.getBiomeSvgFile)(biome);
@@ -137,23 +116,19 @@ class BackgroundAnimation {
             console.log('Error drawing background:', error);
         }
     }
-    start(onFrame) {
-        this.onFrame = onFrame ?? null;
-        if (!this.animationId) {
-            this.animate();
+    /**
+     * One frame of background + petals. Called by the title scene, which is
+     * itself called by the shell's loop — this class never schedules anything.
+     */
+    drawFrame() {
+        this.backgroundTime += 16;
+        this.drawScrollingBackground();
+        if (this.petalsVisible) {
+            // drawScrollingBackground already set the base scale(dpr); pass
+            // logical dimensions so petals fill the screen at native res.
+            const dpr = (0, zoom_compensation_1.getBaseDeviceScale)();
+            this.floatingPetalManager.draw(this.backgroundCtx, this.backgroundCanvas.width / dpr, this.backgroundCanvas.height / dpr);
         }
-    }
-    stop() {
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
-            this.animationId = 0;
-        }
-    }
-    hide() {
-        this.backgroundCanvas.style.display = 'none';
-    }
-    show() {
-        this.backgroundCanvas.style.display = 'block';
     }
     hideFloatingPetals() {
         this.petalsVisible = false;

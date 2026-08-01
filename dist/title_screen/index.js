@@ -22,6 +22,7 @@ const debug_menu_1 = require("../debug_menu");
 const auth_form_1 = require("./auth_form");
 const submanagers_1 = require("./submanagers");
 const canvas_buttons_1 = require("./canvas_buttons");
+const app_shell_1 = require("../app_shell");
 var styles_1 = require("./styles");
 Object.defineProperty(exports, "injectTitleScreenStyles", { enumerable: true, get: function () { return styles_1.injectTitleScreenStyles; } });
 Object.defineProperty(exports, "titleScreenStyles", { enumerable: true, get: function () { return styles_1.titleScreenStyles; } });
@@ -68,15 +69,16 @@ class TitleScreen {
         // Title-UI rendering shares the BackgroundAnimation RAF; this flag gates
         // whether the per-frame onFrame callback actually paints title UI.
         this.uiRenderingEnabled = false;
-        /** Single per-frame callback for the title canvas — matches appendToBody. */
-        this.titleFrame = () => {
+        /**
+         * One frame of the title scene, called by the shell's single loop. The
+         * title screen no longer starts, stops or owns an animation loop.
+         */
+        this.frame = () => {
+            this.background.drawFrame();
             // Debug button visibility tracks the settings checkbox live (same
             // per-frame localStorage read pattern as renderStatsCounters).
             this.canvasButtons.setDebugVisible((0, debug_menu_1.isDebugMenuEnabled)());
-            // Frame-time samples for the debug graphs; the game loop records its
-            // own frames, so only sample here while no game is running.
-            if (!window.currentGame)
-                debug_menu_1.debugMenuPanel.recordClientFrame();
+            debug_menu_1.debugMenuPanel.recordClientFrame();
             if (this.uiRenderingEnabled) {
                 this.renderCanvasUI();
                 this.drawTitleLoadout();
@@ -595,15 +597,9 @@ class TitleScreen {
         this.setupNameInputPersistence();
     }
     async appendToBody() {
-        this.background.mount();
         document.body.appendChild(this.gameMenu);
         document.body.appendChild(this.exitButtonContainer);
         document.body.appendChild(this.loadingScreen);
-        // Hide the in-game canvas while on the title screen; the title canvas
-        // owns rendering until a game starts.
-        const gameCanvas = document.getElementById('gameCanvas');
-        if (gameCanvas)
-            gameCanvas.style.display = 'none';
         // Hide the DOM button containers — those buttons are now drawn on the
         // shared title canvas. The DOM containers stay around so they can be
         // shown again in-game (when the title canvas isn't active).
@@ -617,15 +613,15 @@ class TitleScreen {
         if (domChangelog && domChangelog.classList.contains('shake')) {
             this.canvasButtons.setShake('changelog', true);
         }
-        // Load and start background animation. The per-frame callback runs all
-        // remaining canvas work on the shared canvas: title UI (gated by
-        // uiRenderingEnabled), then the changelog/notifications/leaderboard/
-        // guild overlay.
+        // Register as the shell's title scene. The shell owns the only frame
+        // loop; `frame()` above paints bg + petals + title UI + menu overlays.
         await this.background.loadTexture();
         this.uiRenderingEnabled = true;
-        this.background.start(this.titleFrame);
-        // The loadout bar now paints onto the shared title canvas via
-        // titleFrame; if the auth form is up, hide it so it doesn't draw.
+        app_shell_1.appShell.attachCanvas(this.background.getCanvas());
+        app_shell_1.appShell.registerScene('title', this);
+        app_shell_1.appShell.start();
+        // The loadout bar paints onto the shared canvas via frame(); if the
+        // auth form is up, hide it so it doesn't draw.
         if (this.authForm.isVisible()) {
             this.titleScreenInventoryManager.hideLoadoutBar();
         }
@@ -649,36 +645,67 @@ class TitleScreen {
         }, 2000); // Wait 2 seconds for connection attempt
     }
     /**
-     * Sets up canvas UI event listeners for mouse and keyboard input
+     * The one set of canvas pointer listeners for the title screen's widgets.
+     *
+     * They live on the shared canvas and are registered at boot, i.e. before
+     * any Game binds its own handlers to the same element — so these run first
+     * and can swallow an event with stopImmediatePropagation() when a title
+     * widget consumed it, keeping button and settings clicks from also being
+     * read as gameplay input.
+     *
+     * Two kinds of widget live here, and they differ only in when they are
+     * live, not in how they are wired:
+     *   - always-on (icon button strip, settings panel), which is why the game
+     *     no longer needs its own copy of this input path forwarded through
+     *     handleSettings*External-style bridge methods;
+     *   - title-only (start button, biome picker, auth form), gated on the
+     *     shell's mode.
      */
     setupCanvasUIListeners() {
+        const at = (e) => (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e, true);
+        const consume = (e) => { e.stopImmediatePropagation(); e.preventDefault(); };
+        const titleMode = () => !app_shell_1.appShell.isGameMode();
         // Mouse click handling. Canvas buttons run their own click logic on
         // mouseup-over-same-button (see mousedown/mouseup handlers below) so
         // we filter them out of the generic click path here.
         this.uiCanvas.addEventListener('click', (e) => {
-            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e, true);
-            if (this.canvasButtons.isPointOnButton(x, y))
+            const { x, y } = at(e);
+            if (this.canvasButtons.isPointOnButton(x, y)) {
+                consume(e);
                 return;
-            this.handleCanvasClick(x, y);
+            }
+            if (this.settings.isMenuOpen() && this.settings.handleClick(x, y)) {
+                consume(e);
+                return;
+            }
+            if (titleMode())
+                this.handleCanvasClick(x, y);
         });
         // Mouse move for hover effects
         this.uiCanvas.addEventListener('mousemove', (e) => {
-            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e, true);
+            const { x, y } = at(e);
             this.canvasButtons.setHover(x, y);
             this.settings.handleMouseMove(x);
-            this.handleCanvasHover(x, y);
+            if (this.settings.isMenuOpen())
+                this.settings.handleHover(x, y);
+            if (titleMode())
+                this.handleCanvasHover(x, y);
         });
         // Mouse down for pressed state
         this.uiCanvas.addEventListener('mousedown', (e) => {
-            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e, true);
+            const { x, y } = at(e);
             if (this.canvasButtons.press(x, y)) {
                 this.pressedButton = null;
+                consume(e);
                 return;
             }
             if (this.settings.handleMouseDown(x, y)) {
                 this.pressedButton = null;
+                consume(e);
                 return;
             }
+            if (!titleMode())
+                return;
             if (this.hoveredStartButton)
                 this.pressedButton = 'start';
             else if (this.hoveredBiomeIndex >= 0)
@@ -691,14 +718,31 @@ class TitleScreen {
         // Mouse up to clear pressed state and dispatch canvas-button clicks
         // (which only fire when mouseup lands on the same button as mousedown).
         this.uiCanvas.addEventListener('mouseup', (e) => {
-            const { x, y } = (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, e, true);
-            this.canvasButtons.releaseClick(x, y);
+            const { x, y } = at(e);
+            if (this.canvasButtons.releaseClick(x, y))
+                consume(e);
         });
         document.addEventListener('mouseup', () => {
             this.pressedButton = null;
             this.settings.handleMouseUp();
             this.canvasButtons.release();
         });
+        // Touch equivalents for the icon strip. Mobile browsers only synthesize
+        // mousedown/mouseup once, right after touchend — too late to show a
+        // pressed state or reliably register a tap.
+        const atTouch = (t) => (0, zoom_compensation_1.canvasCoords)(this.uiCanvas, t, true);
+        this.uiCanvas.addEventListener('touchstart', (e) => {
+            const { x, y } = atTouch(e.changedTouches[0]);
+            if (this.canvasButtons.press(x, y))
+                consume(e);
+        }, { passive: false });
+        this.uiCanvas.addEventListener('touchend', (e) => {
+            const { x, y } = atTouch(e.changedTouches[0]);
+            if (this.canvasButtons.releaseClick(x, y))
+                consume(e);
+        }, { passive: false });
+        document.addEventListener('touchend', () => this.canvasButtons.release());
+        document.addEventListener('touchcancel', () => this.canvasButtons.release());
         // Mouse leave to clear hover
         this.uiCanvas.addEventListener('mouseleave', () => {
             this.hoveredBiomeIndex = -1;
@@ -712,7 +756,7 @@ class TitleScreen {
         this.uiCanvas.addEventListener('wheel', (e) => {
             if (this.settings.isMenuOpen()) {
                 this.settings.handleWheel(e.deltaY);
-                e.preventDefault();
+                consume(e);
             }
         }, { passive: false });
         // Keyboard input for name field and auth form
@@ -726,13 +770,13 @@ class TitleScreen {
             if (this.settings.handleKeyDown(e))
                 return;
             // Don't interfere with game controls for non-settings input
-            if (window.currentGame)
+            if (app_shell_1.appShell.isGameMode())
                 return;
             // Handle auth form input
             if (this.authForm.handleKeyDown(e))
                 return;
-            // Only handle if name input is focused and not in game
-            if (this.isNameInputFocused && !window.currentGame) {
+            // Only handle if name input is focused (title scene only)
+            if (this.isNameInputFocused) {
                 if (e.key === 'Backspace') {
                     this.playerName = this.playerName.slice(0, -1);
                     localStorage.setItem('playerName', this.playerName);
@@ -755,8 +799,12 @@ class TitleScreen {
                 }
             }
         });
-        // Handle window resize
+        // Handle window resize. In game mode the Game's own resize handler
+        // owns the shared canvas (it also honours the antialiasing setting and
+        // resizes the low-res world buffer), so don't fight it.
         window.addEventListener('resize', () => {
+            if (app_shell_1.appShell.isGameMode())
+                return;
             (0, zoom_compensation_1.applyZoomCompensation)(this.uiCanvas, true, true);
         });
     }
@@ -1401,54 +1449,33 @@ class TitleScreen {
         // gameMenu is empty (contents moved elsewhere), keep it hidden
         this.gameMenu.style.display = 'none';
     }
+    // Note: these deliberately never touch canvas `display`. The canvas is
+    // shared with the game, so hiding it here would blank the whole client.
+    // "Hidden" means "the title scene stops painting its UI" — the shell
+    // decides which scene paints at all.
     hideCenterText() {
-        if (this.uiCanvas) {
-            this.uiCanvas.style.display = 'none';
-        }
         this.titleScreenInventoryManager?.hideLoadoutBar();
         this.stopCanvasRendering();
     }
     showCenterText() {
-        if (this.uiCanvas) {
-            this.uiCanvas.style.display = 'block';
-        }
         this.titleScreenInventoryManager?.showLoadoutBar();
         this.startCanvasRendering();
     }
+    /**
+     * Tear down the title screen's *DOM* surface. The canvas is shared with the
+     * game and the shell decides who paints it, so nothing here hides, resizes
+     * or re-points a canvas any more — doing that was how the two halves used
+     * to fight over one screen.
+     */
     hideTitleScreen() {
-        // Stop canvas rendering
         this.stopCanvasRendering();
-        // Hide canvas
-        if (this.uiCanvas) {
-            this.uiCanvas.style.display = 'none';
-        }
         this.hideAuthContainer();
         this.hideGameMenu();
         this.hideCenterText();
         this.hideFloatingPetals();
-        this.stopBackgroundAnimation();
-        this.hideBackgroundCanvas();
         this.submanagers.setTitleScreenVisible(false);
         this.submanagers.dailyStreakWidget?.hide();
-        // Hide all title screen panels
         this.hideTitleScreenPanels();
-        // Resize canvas back to full screen for game
-        const gameCanvas = document.getElementById('gameCanvas');
-        if (gameCanvas) {
-            // Resize canvas to full screen dimensions
-            // Reset canvas positioning to full screen
-            gameCanvas.style.position = 'absolute';
-            gameCanvas.style.left = '0px';
-            gameCanvas.style.top = '0px';
-            gameCanvas.style.zIndex = '0';
-            gameCanvas.style.pointerEvents = 'auto';
-            gameCanvas.style.display = 'block';
-            // Main game canvas is HiDPI (physical-resolution backing store).
-            (0, zoom_compensation_1.applyZoomCompensation)(gameCanvas, true, true);
-            // Re-setup canvas on managers with full screen dimensions
-            this.changelogManager.setCanvas(gameCanvas);
-            this.notificationsManager.setCanvas(gameCanvas);
-        }
     }
     hideTitleScreenPanels() {
         // Hide inventory panel
@@ -1508,6 +1535,10 @@ class TitleScreen {
             this.submanagers.shop = null;
         }
         if (this.submanagers.mobGallery) {
+            // cleanup() first: dropping the reference alone left this
+            // InventoryManager's document-level listeners attached, and
+            // showTitleScreen() builds a fresh one every time we come back.
+            this.submanagers.mobGallery.cleanup();
             const mobGalleryPanel = document.getElementById('mobGalleryPanel');
             mobGalleryPanel?.remove();
             this.submanagers.mobGallery = null;
@@ -1516,22 +1547,9 @@ class TitleScreen {
     showTitleScreen() {
         // Reset connecting state so the title screen doesn't show the connecting animation
         this.authForm.setConnecting(false);
-        // Show canvas
-        if (this.uiCanvas) {
-            this.uiCanvas.style.display = 'block';
-        }
-        // Hide the in-game canvas; the title canvas owns rendering again.
-        const gameCanvas = document.getElementById('gameCanvas');
-        if (gameCanvas)
-            gameCanvas.style.display = 'none';
-        // Re-attach panel managers to the title canvas — the in-game graphics
-        // pointed them at gameCanvas while the game was running.
-        const titleCanvas = this.background.getCanvas();
-        this.changelogManager.setCanvas(titleCanvas);
-        this.notificationsManager.setCanvas(titleCanvas);
-        this.leaderboardManager.setCanvas(titleCanvas);
-        this.guildMenuManager.setCanvas(titleCanvas);
-        this.skinStudio.setCanvas(titleCanvas);
+        // No canvas juggling here: there is one canvas and the panel managers
+        // were bound to it once, in the constructor. They stay bound for the
+        // life of the page whichever scene is on screen.
         // Hide the DOM button containers — canvas buttons paint on title.
         this.exitButtonContainer.style.display = 'none';
         const bottomLeftButtons = document.getElementById('bottomLeftButtons');
@@ -1552,8 +1570,6 @@ class TitleScreen {
         this.showGameMenu();
         this.showCenterText();
         this.showFloatingPetals();
-        this.showBackgroundCanvas();
-        this.startBackgroundAnimation();
         this.submanagers.setTitleScreenVisible(true);
         this.submanagers.dailyStreakWidget?.show();
         // Re-show title screen chat
@@ -1612,31 +1628,11 @@ class TitleScreen {
     renderSettingsOverlay(ctx) {
         this.settings.render(ctx);
     }
-    /** Forward a click to the settings panel (for in-game canvas). Returns true if consumed. */
-    handleSettingsClickExternal(x, y) {
-        return this.settings.handleClick(x, y);
-    }
-    /** Forward hover to the settings panel (for in-game canvas) */
-    handleSettingsHoverExternal(x, y) {
-        this.settings.handleHover(x, y);
-    }
-    /** Forward mousedown for settings slider dragging (for in-game canvas). Returns true if consumed. */
-    handleSettingsMouseDownExternal(x, y) {
-        return this.settings.handleMouseDown(x, y);
-    }
-    /** Forward mousemove for settings slider dragging (for in-game canvas) */
-    handleSettingsMouseMoveExternal(x) {
-        this.settings.handleMouseMove(x);
-    }
-    /** Forward mouseup for settings (for in-game canvas) */
-    handleSettingsMouseUpExternal() {
-        this.pressedButton = null;
-        this.settings.handleMouseUp();
-    }
-    /** Forward wheel event for settings scroll (for in-game canvas) */
-    handleSettingsWheelExternal(deltaY) {
-        this.settings.handleWheel(deltaY);
-    }
+    // The handleSettings*External bridge that used to live here is gone: the
+    // game had to forward every pointer event to the settings panel because
+    // the panel's own listeners were on the *other* canvas. There is one canvas
+    // now, so setupCanvasUIListeners() sees those events directly in both
+    // scenes.
     getShowHitboxes() { return this.settings.getShowHitboxes(); }
     getShowStats() { return this.settings.getShowStats(); }
     getDynamicSkybox() { return this.settings.getDynamicSkybox(); }
@@ -1662,10 +1658,10 @@ class TitleScreen {
     destroyFloatingPetals() { this.background.destroyFloatingPetals(); }
     hideFloatingPetals() { this.background.hideFloatingPetals(); }
     showFloatingPetals() { this.background.showFloatingPetals(); }
-    hideBackgroundCanvas() { this.background.hide(); }
-    showBackgroundCanvas() { this.background.show(); }
-    startBackgroundAnimation() { this.background.start(this.titleFrame); }
-    stopBackgroundAnimation() { this.background.stop(); }
+    /** AppScene hook: the title screen is always ready to be revealed. */
+    onEnter() {
+        this.showTitleScreen();
+    }
     /**
      * Route a canvas-button click into the same logic the DOM button handlers
      * used to run. Closes peer panels first so the open one toggles cleanly.
