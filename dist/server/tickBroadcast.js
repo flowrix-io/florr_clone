@@ -464,6 +464,11 @@ function encodeEnemyDelta(e, prev, precision) {
         wire.h = next.h;
         if (next.H !== defaultMaxH)
             wire.H = next.H;
+        // Pet marker: pets are otherwise indistinguishable from wild mobs on the
+        // wire, and the client suppresses boss bars for them. Ownership never
+        // changes, so it only needs to ride the first-sight record.
+        if (e.ownerId)
+            wire.o = 1;
         return { wire, next };
     }
     if (prev.x === next.x && prev.y === next.y && prev.a === next.a &&

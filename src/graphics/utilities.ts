@@ -326,12 +326,17 @@ Graphics.prototype.drawBossBars = function(this: Graphics, enemies: Map<string, 
     // The super/unique candidate list is refreshed at 4Hz instead of scanning the whole
     // enemies Map every frame — bosses (de)spawn rarely; the viewport test below still
     // runs per frame so bars appear/disappear instantly as the camera moves.
+    // Target dummies and pets are never bosses: dummies are a permanent DPS-test
+    // fixture and pets belong to a player, so neither earns the screen-top bar.
     const nowMs = this.frameTimestamp || Date.now();
     if (nowMs - this._bossCandidatesAt > 250) {
         this._bossCandidatesAt = nowMs;
         this._bossCandidates.length = 0;
         for (const e of enemies.values()) {
-            if (e.tier === 'super' || e.tier === 'unique') this._bossCandidates.push(e);
+            if (e.tier !== 'super' && e.tier !== 'unique') continue;
+            if (e.type === 'target_dummy') continue;
+            if (e.isPet || e.ownerId) continue;
+            this._bossCandidates.push(e);
         }
     }
     const bossMobs: Enemy[] = [];

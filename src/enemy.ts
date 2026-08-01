@@ -75,6 +75,11 @@ export interface Enemy {
   lastMeleeAttackTime?: number;  // Last time this enemy performed a melee attack
   reversed?: boolean;  // Whether the mob image should be flipped horizontally
   ownerId?: string;  // ID of the player who owns this pet (if this is a pet)
+  // Client-side "this is somebody's pet" flag. `ownerId` only rides along on the
+  // full `enemySpawned` payload; the per-tick delta stream carries just the `o`
+  // marker (see tickBroadcast.encodeEnemyDelta), so anything the renderer needs
+  // to gate on pet-ness reads this instead.
+  isPet?: boolean;
   petImage?: string;  // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
   // DPS tracking for target dummies
   currentDPS?: number;  // Current calculated DPS

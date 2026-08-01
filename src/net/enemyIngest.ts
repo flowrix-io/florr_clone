@@ -43,6 +43,9 @@ export function applyEnemyUpdate(game: any, enemy: Enemy, snapTimeMs?: number) {
         enemy.targetX = enemy.x;
         enemy.targetY = enemy.y;
         enemy.targetAngle = enemy.angle;
+        // The full `enemySpawned` payload identifies a pet by `ownerId`; the delta
+        // stream sets `isPet` directly. Normalize so the renderer only reads one.
+        if (enemy.ownerId) enemy.isPet = true;
         game.enemies.set(enemy.id, enemy);
     }
 }

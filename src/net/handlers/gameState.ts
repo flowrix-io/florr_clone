@@ -261,6 +261,7 @@ export function registerGameStateHandlers(game: any): void {
                         angle: e.a ?? 0,
                         health: e.h,
                         maxHealth,
+                        isPet: e.o === 1,
                     } as any, snapTimeMs);
                 }
             }

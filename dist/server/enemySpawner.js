@@ -64,6 +64,19 @@ function getSectionAtPosition(x, y) {
     const sectionY = Math.max(0, Math.min(2, Math.floor(y / SECTION_SIZE)));
     return sectionY * 3 + sectionX;
 }
+// Target dummies never despawn and are effectively unkillable, so any duplicate
+// that slips through is permanent. Cap them at one of each rarity per section.
+function targetDummyExistsInSection(tier, section) {
+    for (const e of constants_1.enemies) {
+        if (e.type !== 'target_dummy')
+            continue;
+        if (e.tier !== tier)
+            continue;
+        if (getSectionAtPosition(e.x, e.y) === section)
+            return true;
+    }
+    return false;
+}
 // Helper function to get spawn zone type for a given position
 function getSpawnZoneType(x, y) {
     for (const element of map_data_1.WORLD_MAP) {
@@ -443,12 +456,6 @@ function createEnemy(helpers) {
             reversed = spawnSelection.reversed;
             if (spawnSelection.mobType) {
                 mobType = spawnSelection.mobType;
-                if (mobType === 'target_dummy') {
-                    const existingDummy = constants_1.enemies.find((e) => e.type === 'target_dummy' && e.tier === tier);
-                    if (existingDummy) {
-                        return null;
-                    }
-                }
             }
             else {
                 const allMobTypes = (0, mobs_1.getAllMobTypes)();
@@ -487,15 +494,19 @@ function createEnemy(helpers) {
             }
             mobType = selectWeightedMobType(eligibleMobTypes, tier);
         }
-        // Tier upgrade or downgrade
-        const upgradeRoll = Math.random();
-        if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-            tier = (0, rarity_1.upgradeRarity)(tier);
-        }
-        else {
-            const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
-            if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                tier = (0, rarity_1.downgradeRarity)(tier);
+        // Tier upgrade or downgrade. Target dummies keep exactly the rarity the
+        // biome asked for — drifting off it would produce a rarity the
+        // one-per-section check never cleared, and dummies are permanent.
+        if (mobType !== 'target_dummy') {
+            const upgradeRoll = Math.random();
+            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
+                tier = (0, rarity_1.upgradeRarity)(tier);
+            }
+            else {
+                const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
+                if (downgradeChance > 0 && Math.random() < downgradeChance) {
+                    tier = (0, rarity_1.downgradeRarity)(tier);
+                }
             }
         }
     }
@@ -560,6 +571,10 @@ function createEnemy(helpers) {
             return null;
         }
         mobType = selectWeightedMobType(eligibleMobTypes, tier);
+    }
+    // Checked against the FINAL tier, after any upgrade/downgrade roll.
+    if (mobType === 'target_dummy' && targetDummyExistsInSection(tier, getSectionAtPosition(x, y))) {
+        return null;
     }
     // Get mob stats from config
     let mobStats = (0, mobs_1.getMobStats)(mobType, tier);
@@ -682,11 +697,6 @@ function createEnemyInZone(helpers, zone) {
             reversed = spawnSelection.reversed;
             if (spawnSelection.mobType) {
                 mobType = spawnSelection.mobType;
-                if (mobType === 'target_dummy') {
-                    const existingDummy = constants_1.enemies.find((e) => e.type === 'target_dummy' && e.tier === tier);
-                    if (existingDummy)
-                        return null;
-                }
             }
             else {
                 const allMobTypes = (0, mobs_1.getAllMobTypes)();
@@ -721,14 +731,17 @@ function createEnemyInZone(helpers, zone) {
                 return null;
             mobType = selectWeightedMobType(eligibleMobTypes, tier);
         }
-        const upgradeRoll = Math.random();
-        if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-            tier = (0, rarity_1.upgradeRarity)(tier);
-        }
-        else {
-            const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
-            if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                tier = (0, rarity_1.downgradeRarity)(tier);
+        // Target dummies keep the biome's exact rarity (see createEnemy).
+        if (mobType !== 'target_dummy') {
+            const upgradeRoll = Math.random();
+            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
+                tier = (0, rarity_1.upgradeRarity)(tier);
+            }
+            else {
+                const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
+                if (downgradeChance > 0 && Math.random() < downgradeChance) {
+                    tier = (0, rarity_1.downgradeRarity)(tier);
+                }
             }
         }
     }
@@ -766,6 +779,10 @@ function createEnemyInZone(helpers, zone) {
         if (eligibleMobTypes.length === 0)
             return null;
         mobType = selectWeightedMobType(eligibleMobTypes, tier);
+    }
+    // Checked against the FINAL tier, after any upgrade/downgrade roll.
+    if (mobType === 'target_dummy' && targetDummyExistsInSection(tier, getSectionAtPosition(x, y))) {
+        return null;
     }
     const mobStats = (0, mobs_1.getMobStats)(mobType, tier);
     if (!mobStats)

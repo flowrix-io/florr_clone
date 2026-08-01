@@ -281,6 +281,7 @@ function registerGameStateHandlers(game) {
                         angle: e.a ?? 0,
                         health: e.h,
                         maxHealth,
+                        isPet: e.o === 1,
                     }, snapTimeMs);
                 }
             }
